@@ -22,10 +22,10 @@ app.get('/', (req, res) => {
 });
 
 // GET - Ottieni tutti gli esercizi
-app.get('/api/exercises', async (req, res) => {
+app.get('/api/sites', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('exercises')
+      .from('sites')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -37,10 +37,10 @@ app.get('/api/exercises', async (req, res) => {
 });
 
 // POST - Crea un nuovo esercizio
-app.post('/api/exercises', async (req, res) => {
+app.post('/api/sites', async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('exercises')
+      .from('sites')
       .insert([req.body])
       .select();
 
@@ -52,11 +52,11 @@ app.post('/api/exercises', async (req, res) => {
 });
 
 // PUT - Aggiorna un esercizio
-app.put('/api/exercises/:id', async (req, res) => {
+app.put('/api/sites/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { data, error } = await supabase
-      .from('exercises')
+      .from('sites')
       .update(req.body)
       .eq('id', id)
       .select();
@@ -69,11 +69,11 @@ app.put('/api/exercises/:id', async (req, res) => {
 });
 
 // DELETE - Elimina un esercizio
-app.delete('/api/exercises/:id', async (req, res) => {
+app.delete('/api/sites/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const { error } = await supabase
-      .from('exercises')
+      .from('sites')
       .delete()
       .eq('id', id);
 
