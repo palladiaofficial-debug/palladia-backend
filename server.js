@@ -83,6 +83,40 @@ app.delete('/api/sites/:id', async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+// POST - Genera POS con AI
+app.post('/api/sites/:id/generate-pos', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { address, workType, numWorkers } = req.body;
+    
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-3-5-sonnet-20241022',
+        max_tokens: 4096,
+        messages: [{
+          role: 'user',
+          content: `Genera POS conforme D.lgs 81/2008:
+Cantiere: ${address}
+Lavori: ${workType}
+Operai: ${numWorkers}
+
+Include rischi, DPI, emergenze.`
+        }]
+      })
+    });
+    
+    const data = await response.json();
+    res.json({ content: data.content[0].text });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 // Avvia il server
 app.listen(PORT, () => {
