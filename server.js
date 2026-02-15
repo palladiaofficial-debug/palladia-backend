@@ -90,6 +90,7 @@ app.post('/api/sites/:id/generate-pos', async (req, res) => {
     const { id } = req.params;
     const { address, workType, numWorkers } = req.body;
     
+    // Genera contenuto con Claude
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -102,23 +103,21 @@ app.post('/api/sites/:id/generate-pos', async (req, res) => {
         max_tokens: 4096,
         messages: [{
           role: 'user',
-          content: `Genera POS conforme D.lgs 81/2008:
-Cantiere: ${address}
-Lavori: ${workType}
-Operai: ${numWorkers}
-
-Include rischi, DPI, emergenze.`
+          content: `Genera POS D.lgs 81/2008: Cantiere: ${address}, Lavori: ${workType}, Operai: ${numWorkers}. Include rischi, DPI, emergenze.`
         }]
       })
     });
     
     const data = await response.json();
-    res.json({ content: data.content[0].text });
+    const content = data.content[0].text;
+    
+    // Per ora ritorna solo il contenuto (PDF generation coming soon)
+    res.json({ content });
+    
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
-});
-// Avvia il server
+});// Avvia il server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
