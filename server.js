@@ -84,6 +84,7 @@ app.delete('/api/sites/:id', async (req, res) => {
   }
 });
 // POST - Genera POS con AI
+// POST - Genera POS con AI e PDF
 app.post('/api/sites/:id/generate-pos', async (req, res) => {
   try {
     const { id } = req.params;
@@ -117,7 +118,6 @@ Include rischi, DPI, emergenze.`
     res.status(500).json({ error: error.message });
   }
 });
-
 // Avvia il server
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
