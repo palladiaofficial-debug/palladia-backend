@@ -130,6 +130,7 @@ Minimo 15.000 parole. Massima completezza tecnica e conformità normativa.`;
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
     }
 
+    // Use streaming to keep connection alive during long generation
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -140,15 +141,40 @@ Minimo 15.000 parole. Massima completezza tecnica e conformità normativa.`;
       body: JSON.stringify({
         model: 'claude-sonnet-4-5-20250929',
         max_tokens: 16000,
+        stream: true,
         messages: [{ role: 'user', content: megaPrompt }]
       })
     });
 
-    const data = await response.json();
     if (!response.ok) {
-      return res.status(502).json({ error: 'Anthropic API error', details: data });
+      const errData = await response.json();
+      return res.status(502).json({ error: 'Anthropic API error', details: errData });
     }
-    res.json({ content: data.content[0].text, posData });
+
+    // Collect streamed chunks into full text
+    let fullText = '';
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6);
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'content_block_delta' && event.delta?.text) {
+              fullText += event.delta.text;
+            }
+          } catch (e) { /* skip non-JSON lines */ }
+        }
+      }
+    }
+
+    res.json({ content: fullText, posData });
     
   } catch (error) {
     res.status(500).json({ error: error.message });
