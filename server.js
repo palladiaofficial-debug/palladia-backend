@@ -9,7 +9,8 @@ const PORT = process.env.PORT || 3001;
 app.use(cors({
   origin: ['https://palladia-kappa.vercel.app', 'https://palladia-site-master.lovable.app', 'http://localhost:5173'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 app.use(express.json());
 
@@ -20,6 +21,10 @@ const supabase = createClient(
 
 app.get('/', (req, res) => {
   res.json({ message: 'Palladia Backend API is running!' });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 app.get('/api/sites', async (req, res) => {
@@ -143,15 +148,6 @@ Minimo 15.000 parole. Massima completezza tecnica e conformità normativa.`;
   }
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
 });
-```
-
-Incolla, salva, chiudi. Poi:
-```
-del server.js
-ren server_cors.js server.js
-git add .
-git commit -m "Fix CORS headers"
-git push
