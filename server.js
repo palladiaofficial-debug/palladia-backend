@@ -126,6 +126,10 @@ GENERA DOCUMENTO COMPLETO (15.000+ parole) CON QUESTE SEZIONI OBBLIGATORIE:
 GENERA TUTTO in formato TESTO STRUTTURATO, DETTAGLIATO, PROFESSIONALE.
 Minimo 15.000 parole. Massima completezza tecnica e conformità normativa.`;
 
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -134,13 +138,16 @@ Minimo 15.000 parole. Massima completezza tecnica e conformità normativa.`;
         'anthropic-version': '2023-06-01'
       },
       body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
+        model: 'claude-sonnet-4-5-20250929',
         max_tokens: 16000,
         messages: [{ role: 'user', content: megaPrompt }]
       })
     });
-    
+
     const data = await response.json();
+    if (!response.ok) {
+      return res.status(502).json({ error: 'Anthropic API error', details: data });
+    }
     res.json({ content: data.content[0].text, posData });
     
   } catch (error) {
