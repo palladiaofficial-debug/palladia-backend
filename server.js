@@ -3,6 +3,7 @@ const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const { generatePdf } = require('./pdf-generator');
+const { buildPosDocument } = require('./pos-template');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -161,6 +162,81 @@ async function collectStreamText(response) {
   }
 
   return fullText;
+}
+
+// --- Helper: build prompt for AI risks only (Haiku) ---
+function buildRisksPrompt(posData) {
+  const works = posData.selectedWorks?.join('\n- ') || 'Da definire';
+  return `Sei un Coordinatore per la Sicurezza esperto. Genera SOLO la sezione "Lavorazioni e Rischi" di un POS per le seguenti lavorazioni di cantiere.
+
+CANTIERE: ${posData.siteAddress || 'N/A'}
+NATURA LAVORI: ${posData.workType || 'N/A'}
+
+LAVORAZIONI PREVISTE:
+- ${works}
+
+Per OGNI lavorazione genera:
+
+### [Nome Lavorazione]
+
+**Descrizione tecnica:** descrizione dettagliata della lavorazione e delle fasi operative.
+
+**Rischi identificati e valutazione (matrice P x D):**
+
+| Rischio | P (1-4) | D (1-4) | R (PxD) | Livello |
+|---------|---------|---------|---------|---------|
+(elenca tutti i rischi con probabilita', danno, indice di rischio e livello: Basso/Medio/Alto/Molto Alto)
+
+Legenda: P=Probabilita' (1=Improbabile, 2=Poco probabile, 3=Probabile, 4=Molto probabile), D=Danno (1=Lieve, 2=Medio, 3=Grave, 4=Molto grave), R=PxD
+
+**Misure di prevenzione e protezione:**
+- (elenco dettagliato misure specifiche)
+
+**DPI obbligatori:**
+| DPI | Norma UNI EN | Note |
+|-----|-------------|------|
+(tabella DPI specifici con norme di riferimento)
+
+**Attrezzature e verifiche:**
+| Attrezzatura | Verifica richiesta | Frequenza |
+|-------------|-------------------|-----------|
+(tabella attrezzature con verifiche)
+
+---
+
+Rispondi SOLO con il contenuto delle lavorazioni, senza intestazioni di sezione o preamboli. Sii tecnico, preciso e conforme al D.lgs 81/2008.`;
+}
+
+// --- Helper: call Anthropic Haiku (non-streaming, for template mode) ---
+async function callAnthropicHaiku(prompt) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY not configured on server');
+  }
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': process.env.ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 4000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+
+  if (!response.ok) {
+    const errData = await response.json();
+    const err = new Error('Anthropic API error');
+    err.status = 502;
+    err.details = errData;
+    throw err;
+  }
+
+  const data = await response.json();
+  return data.content?.[0]?.text || '';
 }
 
 // ==================== ROUTES ====================
@@ -520,6 +596,132 @@ app.get('/api/pos/:posId/pdf', async (req, res) => {
   } catch (error) {
     if (!res.headersSent) {
       res.status(500).json({ error: error.message });
+    }
+  }
+});
+
+// --- POS Template Generation (non-streaming, hybrid mode) ---
+app.post('/api/generate-pos-template', async (req, res) => {
+  try {
+    const posData = req.body;
+    const siteId = posData.siteId || null;
+
+    let revision = 1;
+    if (siteId) {
+      revision = await getNextRevision(siteId);
+    }
+
+    // Step 1: Generate only the risks section with Haiku
+    const risksPrompt = buildRisksPrompt(posData);
+    const aiRisks = await callAnthropicHaiku(risksPrompt);
+
+    // Step 2: Assemble the full document with template + AI risks
+    const fullText = buildPosDocument(posData, revision, aiRisks);
+
+    // Step 3: Save to Supabase
+    let posId = null;
+    if (siteId) {
+      const { data: saved, error: saveError } = await supabase
+        .from('pos_documents')
+        .insert([{
+          site_id: siteId,
+          revision,
+          content: fullText,
+          pos_data: posData,
+          created_by: posData.createdBy || null
+        }])
+        .select()
+        .single();
+
+      if (saveError) {
+        console.error('Failed to save POS:', saveError.message);
+      } else {
+        posId = saved?.id || null;
+      }
+    }
+
+    res.json({
+      content: fullText,
+      posData,
+      revision,
+      posId,
+      mode: 'template'
+    });
+
+  } catch (error) {
+    const status = error.status || 500;
+    res.status(status).json({ error: error.message, details: error.details });
+  }
+});
+
+// --- POS Template Generation (SSE streaming for progress feedback) ---
+app.post('/api/generate-pos-template-stream', async (req, res) => {
+  try {
+    const posData = req.body;
+    const siteId = posData.siteId || null;
+
+    let revision = 1;
+    if (siteId) {
+      revision = await getNextRevision(siteId);
+    }
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    // Send meta info
+    res.write(`data: ${JSON.stringify({ type: 'meta', revision, mode: 'template' })}\n\n`);
+
+    // Step 1: Notify client that AI is generating risks
+    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Generazione rischi specifici con AI...' })}\n\n`);
+
+    const risksPrompt = buildRisksPrompt(posData);
+    const aiRisks = await callAnthropicHaiku(risksPrompt);
+
+    // Step 2: Notify client that template is being assembled
+    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento completo...' })}\n\n`);
+
+    const fullText = buildPosDocument(posData, revision, aiRisks);
+
+    // Send the full document as a single text event
+    res.write(`data: ${JSON.stringify({ type: 'text', text: fullText })}\n\n`);
+
+    // Step 3: Save to Supabase
+    let posId = null;
+    if (siteId) {
+      const { data: saved, error: saveError } = await supabase
+        .from('pos_documents')
+        .insert([{
+          site_id: siteId,
+          revision,
+          content: fullText,
+          pos_data: posData,
+          created_by: posData.createdBy || null
+        }])
+        .select()
+        .single();
+
+      if (saveError) {
+        console.error('Failed to save POS:', saveError.message);
+      } else {
+        posId = saved?.id || null;
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template' })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+  } catch (error) {
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    } else {
+      const status = error.status || 500;
+      res.status(status).json({ error: error.message, details: error.details });
     }
   }
 });
