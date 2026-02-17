@@ -336,6 +336,118 @@ app.post('/api/sites/:id/generate-pos-stream', async (req, res) => {
   }
 });
 
+// --- Standalone POS Generation (SSE streaming, no siteId required) ---
+app.post('/api/generate-pos-stream', async (req, res) => {
+  try {
+    const posData = req.body;
+    const siteId = posData.siteId || null;
+
+    let revision = 1;
+    if (siteId) {
+      revision = await getNextRevision(siteId);
+    }
+
+    const megaPrompt = buildPosPrompt(posData, revision);
+
+    // Set up SSE headers
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
+    res.write(`data: ${JSON.stringify({ type: 'meta', revision })}\n\n`);
+
+    const response = await callAnthropicStream(megaPrompt);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let fullText = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value, { stream: true });
+      for (const line of chunk.split('\n')) {
+        if (line.startsWith('data: ')) {
+          const jsonStr = line.slice(6);
+          if (jsonStr === '[DONE]') continue;
+          try {
+            const event = JSON.parse(jsonStr);
+            if (event.type === 'content_block_delta' && event.delta?.text) {
+              const text = event.delta.text;
+              fullText += text;
+              res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
+            }
+          } catch (e) { /* skip non-JSON lines */ }
+        }
+      }
+    }
+
+    // Save to Supabase (optional - only if siteId provided)
+    let posId = null;
+    if (siteId) {
+      const { data: saved, error: saveError } = await supabase
+        .from('pos_documents')
+        .insert([{
+          site_id: siteId,
+          revision,
+          content: fullText,
+          pos_data: posData,
+          created_by: posData.createdBy || null
+        }])
+        .select()
+        .single();
+
+      if (saveError) {
+        console.error('Failed to save POS:', saveError.message);
+      } else {
+        posId = saved?.id || null;
+      }
+    }
+
+    res.write(`data: ${JSON.stringify({ type: 'done', posId, revision })}\n\n`);
+    res.write('data: [DONE]\n\n');
+    res.end();
+
+  } catch (error) {
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    } else {
+      const status = error.status || 500;
+      res.status(status).json({ error: error.message, details: error.details });
+    }
+  }
+});
+
+// --- PDF Export (direct, from content in request body) ---
+app.post('/api/generate-pdf', (req, res) => {
+  try {
+    const { content, siteName, revision, posData } = req.body;
+    if (!content) {
+      return res.status(400).json({ error: 'content is required' });
+    }
+
+    const fileName = `POS-Rev${revision || 1}-${(siteName || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+
+    const pdfStream = generatePdf(content, {
+      siteName: siteName || 'Cantiere',
+      revision: revision || 1,
+      posData: posData || {}
+    });
+
+    pdfStream.pipe(res);
+    pdfStream.end();
+
+  } catch (error) {
+    if (!res.headersSent) {
+      res.status(500).json({ error: error.message });
+    }
+  }
+});
+
 // --- POS Documents: list by site ---
 app.get('/api/sites/:id/pos', async (req, res) => {
   try {
