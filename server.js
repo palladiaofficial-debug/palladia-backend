@@ -229,6 +229,7 @@ async function callAnthropicHaiku(prompt) {
 
   if (!response.ok) {
     const errData = await response.json();
+    console.error('Anthropic Haiku error:', JSON.stringify(errData));
     const err = new Error('Anthropic API error');
     err.status = 502;
     err.details = errData;
@@ -716,8 +717,9 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     res.end();
 
   } catch (error) {
+    console.error('generate-pos-template-stream error:', error.message, JSON.stringify(error.details));
     if (res.headersSent) {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message, details: error.details })}\n\n`);
       res.end();
     } else {
       const status = error.status || 500;
