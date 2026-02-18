@@ -4,6 +4,7 @@ const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
 const { generatePdf } = require('./pdf-generator');
 const { buildPosDocument } = require('./pos-template');
+const { selectSigns } = require('./sign-selector');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,7 +15,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -509,16 +510,26 @@ app.post('/api/generate-pdf', (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
 
+    const signs = selectSigns(posData);
     const pdfStream = generatePdf(content, {
       siteName: siteName || 'Cantiere',
       revision: revision || 1,
-      posData: posData || {}
+      posData: posData || {},
+      signs
+    });
+
+    pdfStream.on('error', (err) => {
+      console.error('PDF stream error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     });
 
     pdfStream.pipe(res);
     pdfStream.end();
 
   } catch (error) {
+    console.error('PDF generation error:', error.message);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message });
     }
@@ -585,16 +596,26 @@ app.get('/api/pos/:posId/pdf', async (req, res) => {
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
 
+    const signs = selectSigns(pos.pos_data);
     const pdfStream = generatePdf(pos.content, {
       siteName,
       revision: pos.revision,
-      posData: pos.pos_data
+      posData: pos.pos_data,
+      signs
+    });
+
+    pdfStream.on('error', (err) => {
+      console.error('PDF stream error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     });
 
     pdfStream.pipe(res);
     pdfStream.end();
 
   } catch (error) {
+    console.error('PDF generation error:', error.message);
     if (!res.headersSent) {
       res.status(500).json({ error: error.message });
     }
