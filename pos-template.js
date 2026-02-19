@@ -3,7 +3,51 @@
  * Conforme al D.lgs 81/2008 e s.m.i.
  */
 
-function buildPosDocument(posData, revision, aiRisks) {
+function buildSegnaleticaSection(signs) {
+  const ZONE_ORDER = [
+    'INGRESSO E PERIMETRO',
+    'OBBLIGHI E DPI',
+    'ZONE DI LAVORAZIONE SPECIFICA',
+    'EMERGENZA E PRIMO SOCCORSO',
+    'ANTINCENDIO'
+  ];
+
+  if (!signs || signs.length === 0) {
+    return `La segnaletica di sicurezza e' definita in conformita' al D.lgs 81/2008 Titolo V e alle norme ISO 7010. ` +
+      `I cartelli devono essere esposti nelle aree indicate dal coordinatore per la sicurezza, ` +
+      `in posizione visibile e ad altezza non inferiore a 2 m da terra.`;
+  }
+
+  let output = `La segnaletica di sicurezza e' predisposta in conformita' al D.lgs 81/2008 Titolo V ` +
+    `(artt. 161-166) e alle norme ISO 7010:2019. I cartelli sotto elencati sono stati selezionati ` +
+    `automaticamente in base alle lavorazioni previste nel presente POS e devono essere esposti ` +
+    `nelle ubicazioni indicate, in posizione ben visibile e ad altezza minima di 2 m da terra.\n\n` +
+    `Il datore di lavoro e' responsabile della messa in opera, manutenzione e sostituzione dei cartelli ` +
+    `danneggiati o mancanti. Il preposto verifica quotidianamente la cartellonistica prima dell'avvio.\n\n`;
+
+  let nr = 1;
+  for (const zone of ZONE_ORDER) {
+    const zoneSigns = signs.filter(s => s.zone === zone);
+    if (zoneSigns.length === 0) continue;
+
+    output += `### ${zone}\n\n`;
+    output += `| Nr. | Cartello | Categoria | Ubicazione raccomandata | Rif. normativo |\n`;
+    output += `|-----|----------|-----------|-------------------------|----------------|\n`;
+
+    for (const sign of zoneSigns) {
+      const nome = sign.name.replace(/\.jpg$/i, '');
+      const cat  = sign.category || '';
+      const loc  = (sign.location || '[DA DEFINIRE]').replace(/\n/g, ' ');
+      const norm = (sign.norm || '[DA COMPILARE]').replace(/\n/g, ' ');
+      output += `| ${nr} | ${nome} | ${cat} | ${loc} | ${norm} |\n`;
+      nr++;
+    }
+    output += `\n`;
+  }
+  return output;
+}
+
+function buildPosDocument(posData, revision, aiRisks, signs = []) {
   const d = posData || {};
   const rev = revision || 1;
   const oggi = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -165,58 +209,7 @@ ${aiRisks || '[SEZIONE DA GENERARE - Nessun contenuto AI disponibile]'}
 
 ## SEZIONE 6 - SEGNALETICA DI SICUREZZA (ISO 7010)
 
-### 6.1 Segnaletica di divieto (cerchio rosso, sfondo bianco)
-| Codice | Segnale | Ubicazione |
-|--------|---------|------------|
-| P001 | Divieto generico | Ingresso cantiere |
-| P002 | Vietato fumare | Depositi, baraccamenti |
-| P003 | Vietato fumare e usare fiamme libere | Deposito sostanze infiammabili |
-| P006 | Vietato l'accesso ai non addetti ai lavori | Ingresso cantiere, zone pericolose |
-| P007 | Divieto di accesso ai portatori di pacemaker | Zona saldatura, apparecchi elettromagnetici |
-| P008 | Vietato ai pedoni | Zona manovre mezzi |
-
-### 6.2 Segnaletica di avvertimento (triangolo giallo)
-| Codice | Segnale | Ubicazione |
-|--------|---------|------------|
-| W001 | Pericolo generico | Zone a rischio specifico |
-| W006 | Tensione elettrica pericolosa | Quadri elettrici |
-| W007 | Carrelli in movimento | Viabilita' di cantiere |
-| W008 | Pericolo di inciampo | Dislivelli, ostacoli a terra |
-| W009 | Caduta con dislivello | Bordi scavi, aperture nel vuoto |
-| W012 | Pericolo scivolamento | Aree bagnate |
-| W016 | Sostanze tossiche | Deposito sostanze pericolose |
-| W023 | Sostanze corrosive | Deposito acidi/basi |
-| W026 | Pericolo caduta materiali | Sotto zone di lavoro in quota |
-
-### 6.3 Segnaletica di obbligo (cerchio blu)
-| Codice | Segnale | Ubicazione |
-|--------|---------|------------|
-| M001 | Protezione obbligatoria degli occhi | Zone con proiezione schegge |
-| M002 | Casco di protezione obbligatorio | Tutto il cantiere |
-| M003 | Protezione obbligatoria dell'udito | Zone con rumore >85 dB(A) |
-| M004 | Protezione obbligatoria vie respiratorie | Zone con polveri/vapori |
-| M008 | Calzature di sicurezza obbligatorie | Tutto il cantiere |
-| M009 | Guanti di protezione obbligatori | Zone di manipolazione materiali |
-| M010 | Indumenti protettivi obbligatori | Zone specifiche |
-| M014 | Imbracatura di sicurezza obbligatoria | Lavori in quota >2 m |
-| M015 | Giubbotto ad alta visibilita' obbligatorio | Zone di transito mezzi |
-
-### 6.4 Segnaletica di salvataggio (rettangolo verde)
-| Codice | Segnale | Ubicazione |
-|--------|---------|------------|
-| E001 | Uscita di emergenza | Vie di fuga |
-| E002 | Direzione uscita di emergenza | Lungo le vie di fuga |
-| E003 | Primo soccorso | Presso cassetta PS |
-| E010 | DAE (defibrillatore) | Se presente in cantiere |
-| E011 | Lavaocchi di emergenza | Presso deposito chimici |
-
-### 6.5 Segnaletica antincendio (rettangolo rosso)
-| Codice | Segnale | Ubicazione |
-|--------|---------|------------|
-| F001 | Estintore | Presso ogni estintore |
-| F002 | Idrante | Presso ogni idrante |
-| F003 | Scala antincendio | Se presente |
-| F005 | Direzione da seguire (antincendio) | Percorso verso presidi |
+${buildSegnaleticaSection(signs)}
 
 ---
 
@@ -543,4 +536,4 @@ ${(d.workers && d.workers.length > 0)
 `;
 }
 
-module.exports = { buildPosDocument };
+module.exports = { buildPosDocument, buildSegnaleticaSection };

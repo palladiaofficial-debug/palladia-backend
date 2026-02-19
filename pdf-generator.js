@@ -3,10 +3,20 @@
 const PDFDocument = require('pdfkit');
 const path = require('path');
 
+const { ZONE_ORDER, Z_INGRESSO, Z_DPI, Z_LAVORO, Z_EMERGENZA, Z_ANTINC } = require('./sign-selector');
+
 const MARGIN = 50;
 const PAGE_WIDTH = 595.28; // A4
 const PAGE_HEIGHT = 841.89;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+
+const ZONE_META = {
+  'INGRESSO E PERIMETRO':          { label: 'INGRESSO E PERIMETRO',          color: '#1E3A5F' },
+  'OBBLIGHI E DPI':                { label: 'OBBLIGHI E DPI',                color: '#1A6A8A' },
+  'ZONE DI LAVORAZIONE SPECIFICA': { label: 'ZONE DI LAVORAZIONE SPECIFICA', color: '#D68910' },
+  'EMERGENZA E PRIMO SOCCORSO':    { label: 'EMERGENZA E PRIMO SOCCORSO',    color: '#1E8449' },
+  'ANTINCENDIO':                   { label: 'ANTINCENDIO',                   color: '#922B21' },
+};
 
 const COLORS = {
   primary:      '#1E3A5F',
@@ -660,6 +670,48 @@ function renderSignatures(doc) {
   }
 }
 
+// ─── REGISTRO SEGNALETICA TABELLARE ───────────────────────────────────────────
+function renderSignRegistry(doc, signs) {
+  if (!signs || signs.length === 0) return;
+
+  pageBreakIfNeeded(doc, 80);
+  doc.moveDown(0.8);
+  const regY = doc.y;
+
+  doc.save();
+  doc.rect(MARGIN, regY, CONTENT_WIDTH, 26).fillColor(COLORS.primary).fill();
+  doc.rect(MARGIN, regY, 5, 26).fillColor(COLORS.accent).fill();
+  doc.restore();
+  doc.font('Inter-Bold').fontSize(11).fillColor(COLORS.white);
+  doc.text('REGISTRO SEGNALETICA — CHECKLIST DI VERIFICA', MARGIN + 14, regY + 7, { width: CONTENT_WIDTH });
+  doc.y = regY + 26 + 6;
+
+  doc.font('Inter').fontSize(8.5).fillColor(COLORS.textGray);
+  doc.text(
+    'Il CSE utilizza il presente registro per verificare la corretta esposizione della cartellonistica ' +
+    'prima dell\'avvio dei lavori e durante le visite periodiche in cantiere.',
+    MARGIN, doc.y, { width: CONTENT_WIDTH, lineGap: 1.5 }
+  );
+  doc.moveDown(0.6);
+
+  const tableRows = [
+    '| Nr. | Zona | Cartello | Ubicazione raccomandata | Norma di riferimento |',
+    '|-----|------|----------|-------------------------|----------------------|'
+  ];
+  let nr = 1;
+  for (const zone of ZONE_ORDER) {
+    const zoneSigns = signs.filter(s => s.zone === zone);
+    for (const sign of zoneSigns) {
+      const nome = sign.name.replace(/\.jpg$/i, '');
+      const loc  = (sign.location || '').split(',')[0].trim();
+      const norm = (sign.norm || '').split('—')[0].trim();
+      tableRows.push(`| ${nr} | ${zone} | ${nome} | ${loc} | ${norm} |`);
+      nr++;
+    }
+  }
+  renderTable(doc, tableRows);
+}
+
 // ─── SEGNALETICA CON IMMAGINI REALI ───────────────────────────────────────────
 function renderSegnaleticaImages(doc, signs) {
   if (!signs || signs.length === 0) return;
@@ -733,45 +785,54 @@ function renderSegnaleticaImages(doc, signs) {
     doc.y = imgY + imgH + 36;
   }
 
-  // ── Griglia altri cartelli per categoria ──────────────────────────────────
+  // ── Registro segnaletica tabellare ────────────────────────────────────────
+  renderSignRegistry(doc, signs);
+
+  // ── Griglia cartelli organizzata per ZONA ─────────────────────────────────
   if (others.length === 0) return;
 
-  const categoryOrder = [
-    { key: 'Cartelli di divieto fondo bianco contenuto rosso', label: 'DIVIETO',                    color: '#C0392B' },
-    { key: 'Cartelli fondo giallo (pericolo)',                  label: 'PERICOLO / AVVERTIMENTO',    color: '#D68910' },
-    { key: 'Cartelli fondo blu (obbligo)',                      label: 'OBBLIGO',                    color: '#1A6A8A' },
-    { key: 'Cartelli fondo verde',                              label: 'EMERGENZA / SALVATAGGIO',    color: '#1E8449' },
-    { key: 'Cartelli antincendio',                              label: 'ANTINCENDIO',                color: '#922B21' },
-  ];
+  // Nuova pagina per la griglia immagini
+  doc.addPage();
 
-  const COLS    = 4;
-  const IMG_SZ  = 70;
-  const LABEL_H = 24;
-  const CELL_H  = IMG_SZ + LABEL_H + 6;
-  const CELL_W  = CONTENT_WIDTH / COLS;
+  // Intestazione griglia
+  const gridTitleY = doc.y;
+  doc.save();
+  doc.rect(MARGIN, gridTitleY, CONTENT_WIDTH, 28).fillColor(COLORS.primary).fill();
+  doc.rect(MARGIN, gridTitleY, 5, 28).fillColor(COLORS.accent).fill();
+  doc.restore();
+  doc.font('Inter-Bold').fontSize(11).fillColor(COLORS.white);
+  doc.text('TAVOLA IMMAGINI — ORGANIZZATA PER ZONA DI UTILIZZO', MARGIN + 14, gridTitleY + 8, { width: CONTENT_WIDTH });
+  doc.y = gridTitleY + 28 + 8;
 
-  for (const cat of categoryOrder) {
-    const catSigns = others.filter(s => s.category === cat.key);
-    if (catSigns.length === 0) continue;
+  const COLS   = 3;
+  const IMG_SZ = 80;
+  const NAME_H = 18;
+  const LOC_H  = 14;
+  const NORM_H = 12;
+  const CELL_H = IMG_SZ + NAME_H + LOC_H + NORM_H + 14;
+  const CELL_W = CONTENT_WIDTH / COLS;
 
-    // Intestazione categoria
+  for (const zone of ZONE_ORDER) {
+    const zoneSigns = others.filter(s => s.zone === zone);
+    if (zoneSigns.length === 0) continue;
+
+    const meta = ZONE_META[zone] || { label: zone, color: COLORS.primary };
+
     if (doc.y > PAGE_HEIGHT - 80) doc.addPage();
     doc.moveDown(0.5);
-    const catY = doc.y;
-
+    const zoneY = doc.y;
     doc.save();
-    doc.rect(MARGIN, catY, CONTENT_WIDTH, 20).fillColor(cat.color).fillOpacity(0.12).fill();
-    doc.rect(MARGIN, catY, 4, 20).fillColor(cat.color).fillOpacity(1).fill();
+    doc.rect(MARGIN, zoneY, CONTENT_WIDTH, 22).fillColor(meta.color).fillOpacity(0.12).fill();
+    doc.rect(MARGIN, zoneY, 4, 22).fillColor(meta.color).fillOpacity(1).fill();
     doc.restore();
-    doc.font('Inter-Bold').fontSize(8).fillColor(cat.color);
-    doc.text(cat.label, MARGIN + 9, catY + 5, { width: CONTENT_WIDTH });
-    doc.y = catY + 20 + 4;
+    doc.font('Inter-Bold').fontSize(9).fillColor(meta.color);
+    doc.text(meta.label, MARGIN + 10, zoneY + 6, { width: CONTENT_WIDTH });
+    doc.y = zoneY + 22 + 6;
 
-    // Griglia
     let col  = 0;
     let rowY = doc.y;
 
-    for (const s of catSigns) {
+    for (const sign of zoneSigns) {
       if (col === 0 && rowY + CELL_H > PAGE_HEIGHT - 70) {
         doc.addPage();
         rowY = doc.y;
@@ -781,9 +842,7 @@ function renderSegnaleticaImages(doc, signs) {
       const imgX  = cellX + (CELL_W - IMG_SZ) / 2;
 
       try {
-        doc.image(s.path, imgX, rowY, {
-          width: IMG_SZ, height: IMG_SZ, fit: [IMG_SZ, IMG_SZ]
-        });
+        doc.image(sign.path, imgX, rowY, { width: IMG_SZ, height: IMG_SZ, fit: [IMG_SZ, IMG_SZ] });
       } catch (e) {
         doc.save();
         doc.rect(imgX, rowY, IMG_SZ, IMG_SZ).strokeColor(COLORS.line).lineWidth(0.5).stroke();
@@ -792,19 +851,25 @@ function renderSegnaleticaImages(doc, signs) {
         doc.text('N/D', imgX, rowY + IMG_SZ / 2 - 4, { width: IMG_SZ, align: 'center' });
       }
 
-      doc.font('Inter').fontSize(6.5).fillColor(COLORS.text);
-      doc.text(s.name, cellX + 2, rowY + IMG_SZ + 3, {
-        width: CELL_W - 4, align: 'center', lineGap: 1
-      });
+      const textY = rowY + IMG_SZ + 4;
+      const nome = sign.name.replace(/\.jpg$/i, '');
+
+      doc.font('Inter-Bold').fontSize(8).fillColor(COLORS.text);
+      doc.text(nome, cellX + 2, textY, { width: CELL_W - 4, align: 'center', lineGap: 1 });
+
+      const locBrief = (sign.location || '').split(',')[0].trim();
+      doc.font('Inter').fontSize(7).fillColor(COLORS.textGray);
+      doc.text(locBrief, cellX + 2, textY + NAME_H, { width: CELL_W - 4, align: 'center', lineGap: 1 });
+
+      const normBrief = (sign.norm || '').split('—')[0].trim();
+      doc.font('Inter').fontSize(6.5).fillColor(COLORS.textGray);
+      doc.text(normBrief, cellX + 2, textY + NAME_H + LOC_H, { width: CELL_W - 4, align: 'center', lineGap: 1 });
 
       col++;
-      if (col >= COLS) {
-        col  = 0;
-        rowY += CELL_H;
-      }
+      if (col >= COLS) { col = 0; rowY += CELL_H; }
     }
 
-    doc.y = rowY + (col > 0 ? CELL_H : 0) + 6;
+    doc.y = rowY + (col > 0 ? CELL_H : 0) + 10;
   }
 }
 

@@ -638,7 +638,8 @@ app.post('/api/generate-pos-template', async (req, res) => {
     const aiRisks = await callAnthropicHaiku(risksPrompt);
 
     // Step 2: Assemble the full document with template + AI risks
-    const fullText = buildPosDocument(posData, revision, aiRisks);
+    const signs = selectSigns(posData);
+    const fullText = buildPosDocument(posData, revision, aiRisks, signs);
 
     // Step 3: Save to Supabase
     let posId = null;
@@ -706,7 +707,8 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     // Step 2: Notify client that template is being assembled
     res.write(`data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento completo...' })}\n\n`);
 
-    const fullText = buildPosDocument(posData, revision, aiRisks);
+    const signs = selectSigns(posData);
+    const fullText = buildPosDocument(posData, revision, aiRisks, signs);
 
     // Send the full document as a single text event
     res.write(`data: ${JSON.stringify({ type: 'text', text: fullText })}\n\n`);
