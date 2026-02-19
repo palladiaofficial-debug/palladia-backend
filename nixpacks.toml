@@ -1,8 +1,35 @@
-[phases.setup] 
-nixPkgs = ['nodejs_20'] 
- 
-[phases.install] 
-cmds = ['npm ci'] 
- 
-[start] 
-cmd = 'npm start' 
+[phases.setup]
+nixPkgs = [
+  'nodejs_20',
+  'glib',
+  'nss',
+  'nspr',
+  'dbus',
+  'atk',
+  'cups',
+  'expat',
+  'libdrm',
+  'mesa',
+  'pango',
+  'cairo',
+  'alsa-lib',
+  'at-spi2-atk',
+  'at-spi2-core',
+  'xorg.libX11',
+  'xorg.libXcomposite',
+  'xorg.libXdamage',
+  'xorg.libXext',
+  'xorg.libXfixes',
+  'xorg.libXrandr',
+  'xorg.libxcb',
+  'libgbm',
+  'udev',
+  'fontconfig',
+  'freetype'
+]
+
+[phases.install]
+cmds = ['npm ci']
+
+[start]
+cmd = 'npm start'

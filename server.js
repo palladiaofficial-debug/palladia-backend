@@ -5,6 +5,8 @@ const { createClient } = require('@supabase/supabase-js');
 const { generatePdf } = require('./pdf-generator');
 const { buildPosDocument } = require('./pos-template');
 const { selectSigns } = require('./sign-selector');
+const { generatePosHtml } = require('./pos-html-generator');
+const { rendererPool } = require('./pdf-renderer');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -498,41 +500,30 @@ app.post('/api/generate-pos-stream', async (req, res) => {
   }
 });
 
-// --- PDF Export (direct, from content in request body) ---
-app.post('/api/generate-pdf', (req, res) => {
+// --- PDF Export (direct, from content in request body) — HTML+Puppeteer pipeline ---
+app.post('/api/generate-pdf', async (req, res) => {
   try {
     const { content, siteName, revision, posData } = req.body;
-    if (!content) {
-      return res.status(400).json({ error: 'content is required' });
+    if (!posData) {
+      return res.status(400).json({ error: 'posData is required' });
     }
 
-    const fileName = `POS-Rev${revision || 1}-${(siteName || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const rev      = revision || 1;
+    const name     = siteName || posData.siteAddress || 'Cantiere';
+    const fileName = `POS-Rev${rev}-${name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const docTitle = `POS – ${name} – Rev. ${rev}`;
+
+    const signs     = selectSigns(posData);
+    const html      = generatePosHtml(posData, rev, content || '', signs);
+    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: rev });
+
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-
-    const signs = selectSigns(posData);
-    const pdfStream = generatePdf(content, {
-      siteName: siteName || 'Cantiere',
-      revision: revision || 1,
-      posData: posData || {},
-      signs
-    });
-
-    pdfStream.on('error', (err) => {
-      console.error('PDF stream error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
-    });
-
-    pdfStream.pipe(res);
-    pdfStream.end();
+    res.send(pdfBuffer);
 
   } catch (error) {
     console.error('PDF generation error:', error.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: error.message });
-    }
+    if (!res.headersSent) res.status(500).json({ error: error.message });
   }
 });
 
@@ -568,7 +559,7 @@ app.get('/api/pos/:posId', async (req, res) => {
   }
 });
 
-// --- PDF Export ---
+// --- PDF Export da posId — HTML+Puppeteer pipeline ---
 app.get('/api/pos/:posId/pdf', async (req, res) => {
   try {
     const { posId } = req.params;
@@ -580,7 +571,6 @@ app.get('/api/pos/:posId/pdf', async (req, res) => {
     if (error) throw error;
     if (!pos) return res.status(404).json({ error: 'POS not found' });
 
-    // Fetch site name for header
     let siteName = 'Cantiere';
     if (pos.site_id) {
       const { data: site } = await supabase
@@ -588,37 +578,22 @@ app.get('/api/pos/:posId/pdf', async (req, res) => {
         .select('name, site_name, address')
         .eq('id', pos.site_id)
         .single();
-      if (site) {
-        siteName = site.site_name || site.name || site.address || 'Cantiere';
-      }
+      if (site) siteName = site.site_name || site.name || site.address || 'Cantiere';
     }
 
+    const signs     = selectSigns(pos.pos_data || {});
+    const html      = generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    const docTitle  = `POS – ${siteName} – Rev. ${pos.revision}`;
+    const fileName  = `POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pos.revision });
+
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf"`);
-
-    const signs = selectSigns(pos.pos_data);
-    const pdfStream = generatePdf(pos.content, {
-      siteName,
-      revision: pos.revision,
-      posData: pos.pos_data,
-      signs
-    });
-
-    pdfStream.on('error', (err) => {
-      console.error('PDF stream error:', err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: err.message });
-      }
-    });
-
-    pdfStream.pipe(res);
-    pdfStream.end();
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
 
   } catch (error) {
     console.error('PDF generation error:', error.message);
-    if (!res.headersSent) {
-      res.status(500).json({ error: error.message });
-    }
+    if (!res.headersSent) res.status(500).json({ error: error.message });
   }
 });
 
@@ -748,6 +723,84 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
       const status = error.status || 500;
       res.status(status).json({ error: error.message, details: error.details });
     }
+  }
+});
+
+// ── PDF HTML v2: da body (content già pronto) ─────────────────────────────────
+// Equivalente di /api/generate-pdf ma usa il nuovo pipeline HTML+Puppeteer.
+app.post('/api/generate-pdf-html', async (req, res) => {
+  try {
+    const { content, siteName, revision, posData } = req.body;
+    if (!posData) return res.status(400).json({ error: 'posData is required' });
+
+    const signs    = selectSigns(posData);
+    const html     = generatePosHtml(posData, revision || 1, content || '', signs);
+    const docTitle = `POS – ${siteName || posData.siteAddress || 'Cantiere'} – Rev. ${revision || 1}`;
+    const fileName = `POS-Rev${revision || 1}-${(siteName || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
+    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: revision || 1 });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('generate-pdf-html error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+});
+
+// ── PDF HTML v2: da posId salvato su Supabase ─────────────────────────────────
+app.get('/api/pos/:posId/pdf-html', async (req, res) => {
+  try {
+    const { posId } = req.params;
+    const { data: pos, error } = await supabase
+      .from('pos_documents')
+      .select('*')
+      .eq('id', posId)
+      .single();
+    if (error) throw error;
+    if (!pos) return res.status(404).json({ error: 'POS not found' });
+
+    let siteName = 'Cantiere';
+    if (pos.site_id) {
+      const { data: site } = await supabase
+        .from('sites')
+        .select('name, site_name, address')
+        .eq('id', pos.site_id)
+        .single();
+      if (site) siteName = site.site_name || site.name || site.address || 'Cantiere';
+    }
+
+    const signs    = selectSigns(pos.pos_data || {});
+    const html     = generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    const docTitle = `POS – ${siteName} – Rev. ${pos.revision}`;
+    const fileName = `POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
+
+    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pos.revision });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('pdf-html error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+});
+
+// ── PDF HTML v2: genera HTML (debug/preview) ──────────────────────────────────
+app.post('/api/generate-pos-html', async (req, res) => {
+  try {
+    const posData  = req.body;
+    const revision = posData.revision || 1;
+    const signs    = selectSigns(posData);
+    const html     = generatePosHtml(posData, revision, posData.content || '', signs);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (error) {
+    console.error('generate-pos-html error:', error.message);
+    res.status(500).json({ error: error.message });
   }
 });
 

@@ -1,0 +1,39 @@
+{
+  "siteAddress": "Via Roma 42, 20121 Milano (MI)",
+  "client": "Rossi Immobiliare S.r.l.",
+  "workType": "Manutenzione straordinaria terrazza e impermeabilizzazione copertura",
+  "budget": "85000",
+  "startDate": "01/03/2026",
+  "endDate": "30/06/2026",
+  "numWorkers": 4,
+
+  "companyName": "Edil Bianchi S.r.l.",
+  "companyVat": "IT03456789012",
+
+  "responsabileLavori": "Ing. Marco Bianchi",
+  "csp": "Ing. Laura Ferretti",
+  "cse": "Ing. Laura Ferretti",
+  "rspp": "Geom. Antonio Verdi",
+  "rls": "Sig. Giovanni Rossi",
+  "medico": "Dr. Enrico Sala",
+  "primoSoccorso": "Sig. Roberto Neri (cell. 340 1234567)",
+  "antincendio": "Sig. Roberto Neri (cell. 340 1234567)",
+  "direttoreTecnico": "Geom. Fabio Colombo",
+  "preposto": "Geom. Fabio Colombo",
+
+  "selectedWorks": [
+    "Rimozione manto impermeabilizzante esistente",
+    "Demolizione massetto in pendenza",
+    "Posa nuovo massetto in pendenza con alleggerito",
+    "Impermeabilizzazione con guaina bituminosa armata",
+    "Posa pavimentazione in piastrelle gres porcellanato",
+    "Installazione e smontaggio ponteggio di facciata"
+  ],
+
+  "workers": [
+    { "name": "Mario Rossi",    "qualification": "Muratore qualificato", "matricola": "001" },
+    { "name": "Luigi Bianchi",  "qualification": "Posatore piastrelle",  "matricola": "002" },
+    { "name": "Franco Verdi",   "qualification": "Ponteggiatore",        "matricola": "003" },
+    { "name": "Piero Neri",     "qualification": "Manovale",             "matricola": "004" }
+  ]
+}

@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POS Template — Design System Reference — Palladia</title>
+  <style>
+    /*
+     * ═══════════════════════════════════════════════════════════════
+     *  POS TEMPLATE — DESIGN SYSTEM REFERENCE
+     *  Palladia Standard v1 — Luglio 2025
+     *
+     *  Questo file è la REFERENCE VISIVA del sistema di stile.
+     *  Il codice CSS effettivo usato nella generazione è in:
+     *    pos-html-generator.js → buildCss()
+     *
+     *  Apri questo file in un browser per vedere il design system.
+     * ═══════════════════════════════════════════════════════════════
+     */
+
+    /* ── PALETTE ─────────────────────────────────────────────────── */
+    :root {
+      --gray-900:  #2C2C2C;   /* body text */
+      --gray-800:  #3A3A3A;   /* section headers, section-title bg */
+      --gray-700:  #5A5A5A;   /* lavorazione-block header bg */
+      --gray-600:  #666666;   /* muted text */
+      --gray-300:  #CCCCCC;   /* borders */
+      --gray-200:  #EEEEEE;   /* sub-title bg */
+      --gray-100:  #F6F6F6;   /* table zebra rows */
+      --gray-50:   #FAFAFA;   /* info boxes bg */
+      --white:     #FFFFFF;
+
+      --risk-low:       #27AE60;
+      --risk-medium:    #E8A000;
+      --risk-high:      #E67E22;
+      --risk-very-high: #C0392B;
+      --callout-bg:     #FFF8E1;
+      --callout-border: #E8A000;
+    }
+
+    /* ── RESET ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── BASE ────────────────────────────────────────────────────── */
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 10.5pt;
+      color: var(--gray-900);
+      line-height: 1.55;
+      background: #F0F0F0;
+      padding: 20px;
+    }
+
+    /* ── A4 PAGE PREVIEW ─────────────────────────────────────────── */
+    .page {
+      width: 210mm;
+      min-height: 297mm;
+      background: white;
+      margin: 0 auto 30px auto;
+      padding: 16mm 15mm 20mm 15mm;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      position: relative;
+    }
+    .page--cover {
+      padding: 0;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── DEMO LABEL ──────────────────────────────────────────────── */
+    .demo-label {
+      font-family: monospace;
+      font-size: 9pt;
+      color: #888;
+      margin: 20px auto 6px auto;
+      width: 210mm;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .demo-label::before, .demo-label::after {
+      content: '';
+      flex: 1;
+      border-top: 1px dashed #CCC;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       COPERTINA
+    ═══════════════════════════════════════════════════════════════ */
+    .cover-sidebar {
+      width: 68mm;
+      min-height: 297mm;
+      background: var(--gray-800);
+      color: white;
+      padding: 28mm 10mm 14mm 14mm;
+      display: flex;
+      flex-direction: column;
+    }
+    .cover-sidebar-brand {
+      font-size: 11pt;
+      font-weight: bold;
+      letter-spacing: 4pt;
+      text-transform: uppercase;
+      color: #AAAAAA;
+      margin-bottom: 16mm;
+    }
+    .cover-sidebar-item { margin-bottom: 9mm; }
+    .cover-label {
+      font-size: 6pt;
+      letter-spacing: 1.5pt;
+      text-transform: uppercase;
+      color: #888888;
+      margin-bottom: 2pt;
+    }
+    .cover-value {
+      font-size: 9.5pt;
+      font-weight: bold;
+      color: white;
+      line-height: 1.3;
+    }
+    .cover-sidebar-footer {
+      margin-top: auto;
+      font-size: 7pt;
+      color: #666666;
+      padding-top: 6mm;
+      border-top: 0.5pt solid #555555;
+    }
+    .cover-main {
+      flex: 1;
+      padding: 22mm 14mm 14mm 16mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .cover-title {
+      font-size: 21pt;
+      font-weight: bold;
+      color: var(--gray-900);
+      text-transform: uppercase;
+      letter-spacing: 0.5pt;
+      line-height: 1.2;
+      margin-bottom: 4mm;
+    }
+    .cover-subtitle { font-size: 9.5pt; color: #666; margin-bottom: 10mm; }
+    .cover-rev-badge {
+      display: inline-block;
+      background: var(--gray-800);
+      color: white;
+      font-size: 9pt;
+      font-weight: bold;
+      padding: 3pt 12pt;
+      border-radius: 3pt;
+      margin-bottom: 10mm;
+    }
+    .cover-divider { border: none; border-top: 1pt solid #E0E0E0; margin: 0 0 8mm 0; }
+    .cover-info-box {
+      border: 0.5pt solid #DDDDDD;
+      border-radius: 3pt;
+      padding: 8mm 10mm;
+      background: var(--gray-50);
+      margin-bottom: 8mm;
+    }
+    .cover-info-row { display: flex; margin-bottom: 4pt; font-size: 9.5pt; }
+    .cover-info-label { font-weight: bold; color: var(--gray-800); min-width: 38mm; flex-shrink: 0; }
+    .cover-sig-row { display: flex; gap: 6pt; margin-top: 6mm; }
+    .cover-sig-box {
+      flex: 1;
+      border: 0.5pt solid var(--gray-300);
+      border-radius: 2pt;
+      padding: 6pt 8pt;
+      min-height: 22mm;
+    }
+    .cover-sig-label { font-size: 6.5pt; color: #888; text-transform: uppercase; margin-bottom: 2pt; }
+    .cover-sig-name { font-size: 8.5pt; font-weight: bold; }
+    .cover-footer-note {
+      font-size: 7pt;
+      color: #AAAAAA;
+      margin-top: 6mm;
+      border-top: 0.5pt solid #EEEEEE;
+      padding-top: 3mm;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════
+       COMPONENTI CONTENUTO
+    ═══════════════════════════════════════════════════════════════ */
+
+    /* .section-title — barra grigia scura piena */
+    .section-title {
+      background: var(--gray-800);
+      color: white;
+      font-size: 10.5pt;
+      font-weight: bold;
+      text-transform: uppercase;
+      letter-spacing: 0.8pt;
+      padding: 6.5pt 11pt;
+      margin: 18pt 0 10pt 0;
+    }
+
+    /* .sub-title — sfondo grigio chiaro con bordo sinistro */
+    .sub-title {
+      background: var(--gray-200);
+      border-left: 4pt solid var(--gray-800);
+      font-size: 9.5pt;
+      font-weight: bold;
+      padding: 4.5pt 9pt;
+      margin: 11pt 0 6pt 0;
+    }
+
+    /* .table — stile tabella professionale */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9pt;
+      margin: 6pt 0 12pt 0;
+    }
+    thead th {
+      background: var(--gray-800);
+      color: white;
+      font-weight: bold;
+      font-size: 8.5pt;
+      padding: 5pt 7pt;
+      text-align: left;
+      border: 0.5pt solid #2A2A2A;
+    }
+    tbody tr:nth-child(even) { background: var(--gray-100); }
+    tbody tr:nth-child(odd)  { background: white; }
+    tbody td {
+      padding: 4pt 7pt;
+      border: 0.5pt solid var(--gray-300);
+      vertical-align: top;
+      line-height: 1.45;
+    }
+
+    /* .badge — badge colorato livello rischio */
+    .badge {
+      display: inline-block;
+      border-radius: 3pt;
+      padding: 2pt 7pt;
+      font-size: 7.5pt;
+      font-weight: bold;
+      color: white;
+      white-space: nowrap;
+    }
+    .badge-low       { background: var(--risk-low); }
+    .badge-medium    { background: var(--risk-medium); }
+    .badge-high      { background: var(--risk-high); }
+    .badge-very-high { background: var(--risk-very-high); }
+
+    /* .risk-num — badge valore numerico R(PxD) */
+    .risk-num { display: inline-block; border-radius: 3pt; padding: 2pt 7pt; font-size: 8pt; font-weight: bold; color: white; }
+    .risk-low       { background: var(--risk-low); }
+    .risk-medium    { background: var(--risk-medium); }
+    .risk-high      { background: var(--risk-high); }
+    .risk-very-high { background: var(--risk-very-high); }
+
+    /* .callout — avviso / nota */
+    .callout {
+      background: var(--callout-bg);
+      border-left: 4pt solid var(--callout-border);
+      padding: 6pt 10pt;
+      margin: 8pt 0;
+      font-size: 9.5pt;
+    }
+
+    /* .lavorazione-block — scheda lavorazione (mai tagliata a metà) */
+    .lavorazione-block {
+      border: 0.8pt solid #C8C8C8;
+      margin: 12pt 0 16pt 0;
+    }
+    .lav-header {
+      background: var(--gray-700);
+      color: white;
+      font-weight: bold;
+      font-size: 10pt;
+      padding: 6pt 10pt;
+    }
+    .lav-body { padding: 8pt 10pt 5pt 10pt; }
+    .lav-body p { margin-bottom: 4pt; }
+    .lav-body ul { margin: 4pt 0 6pt 16pt; }
+    .lav-body .bold-line { font-weight: bold; margin: 7pt 0 3pt 0; color: var(--gray-800); }
+    .lav-body table { margin: 5pt 0 8pt 0; font-size: 8.5pt; }
+
+    /* .emergency-grid — griglia numeri emergenza */
+    .emergency-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 7pt;
+      margin: 8pt 0 14pt 0;
+    }
+    .emergency-card {
+      background: var(--gray-800);
+      color: white;
+      text-align: center;
+      padding: 8pt 6pt;
+      border-radius: 3pt;
+    }
+    .emergency-number { font-size: 20pt; font-weight: bold; display: block; }
+    .emergency-label  { font-size: 7pt; color: #BBBBBB; margin-top: 2pt; }
+
+    /* .signature-box — box firma */
+    .signature-box {
+      border: 0.5pt solid var(--gray-300);
+      border-left: 3pt solid var(--gray-800);
+      border-radius: 0 2pt 2pt 0;
+      padding: 8pt 10pt;
+      min-height: 48mm;
+      margin-bottom: 8pt;
+    }
+    .sig-role  { font-weight: bold; font-size: 9.5pt; color: var(--gray-800); margin-bottom: 4pt; }
+    .sig-name  { font-size: 9pt; margin-bottom: 10pt; }
+    .sig-lines { display: flex; gap: 12pt; margin-top: 8pt; }
+    .sig-field { flex: 1; }
+    .sig-label { font-size: 7pt; color: #777; margin-bottom: 2pt; }
+    .sig-line  { border-bottom: 0.5pt solid #AAAAAA; height: 14pt; }
+
+    /* placeholder */
+    .placeholder { color: #D68910; font-weight: bold; font-style: italic; }
+
+    /* misc */
+    p  { margin-bottom: 5pt; line-height: 1.55; }
+    ul { margin: 4pt 0 8pt 18pt; }
+    li { margin-bottom: 3pt; }
+    hr { border: none; border-top: 0.5pt solid #E0E0E0; margin: 8pt 0; }
+    .muted { color: #777; font-size: 9pt; }
+    strong { font-weight: bold; }
+    .bold-line { font-weight: bold; margin: 7pt 0 3pt 0; }
+
+    /* ── PRINT ────────────────────────────────────────────────────── */
+    @page { size: A4; margin: 16mm 15mm 20mm 15mm; }
+    @page :first { margin: 0; }
+    @media print {
+      body { background: none; padding: 0; }
+      .demo-label, .ds-section { display: none; }
+      .page { box-shadow: none; margin: 0; width: auto; min-height: auto; padding: 0; }
+      .page--cover { break-after: page; page-break-after: always; }
+
+      .section-title { break-after: avoid; page-break-after: avoid; }
+      .sub-title      { break-after: avoid; page-break-after: avoid; }
+      .lavorazione-block { break-inside: avoid; page-break-inside: avoid; }
+      .emergency-card    { break-inside: avoid; page-break-inside: avoid; }
+      .signature-box     { break-inside: avoid; page-break-inside: avoid; }
+      table              { break-inside: avoid; page-break-inside: avoid; }
+      table.allow-break  { break-inside: auto; page-break-inside: auto; }
+      table.allow-break thead { display: table-header-group; }
+      table.allow-break tr    { break-inside: avoid; page-break-inside: avoid; }
+      h1, h2, h3         { break-after: avoid; page-break-after: avoid; }
+      p                  { orphans: 3; widows: 3; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     PAGINA 1: COPERTINA
+═══════════════════════════════════════════════════════════════════ -->
+<div class="demo-label">PAGINA 1 — COPERTINA</div>
+<div class="page page--cover">
+  <div class="cover-sidebar">
+    <div class="cover-sidebar-brand">Palladia</div>
+
+    <div class="cover-sidebar-item">
+      <div class="cover-label">Oggetto</div>
+      <div class="cover-value">Manutenzione straordinaria terrazza</div>
+    </div>
+    <div class="cover-sidebar-item">
+      <div class="cover-label">Committente</div>
+      <div class="cover-value">Rossi Immobiliare S.r.l.</div>
+    </div>
+    <div class="cover-sidebar-item">
+      <div class="cover-label">Cantiere</div>
+      <div class="cover-value">Via Roma 42, Milano</div>
+    </div>
+    <div class="cover-sidebar-item">
+      <div class="cover-label">Impresa esecutrice</div>
+      <div class="cover-value">Edil Bianchi S.r.l.</div>
+    </div>
+    <div class="cover-sidebar-item">
+      <div class="cover-label">P.IVA</div>
+      <div class="cover-value">IT03456789012</div>
+    </div>
+    <div class="cover-sidebar-item">
+      <div class="cover-label">Revisione</div>
+      <div class="cover-value">Rev. 1</div>
+    </div>
+    <div class="cover-sidebar-item">
+      <div class="cover-label">Data emissione</div>
+      <div class="cover-value">19/02/2026</div>
+    </div>
+
+    <div class="cover-sidebar-footer">
+      Documento generato con Palladia<br>D.lgs 81/2008 e s.m.i.
+    </div>
+  </div>
+
+  <div class="cover-main">
+    <div>
+      <div class="cover-title">Piano Operativo<br>di Sicurezza</div>
+      <div class="cover-subtitle">ai sensi del D.lgs 81/2008 e s.m.i. — Allegato XV</div>
+      <div class="cover-rev-badge">Revisione 1</div>
+      <div class="cover-divider"></div>
+
+      <div class="cover-info-box">
+        <div class="cover-info-row">
+          <span class="cover-info-label">Natura dei lavori</span>
+          <span>Manutenzione straordinaria terrazza e impermeabilizzazione copertura</span>
+        </div>
+        <div class="cover-info-row">
+          <span class="cover-info-label">Committente</span>
+          <span>Rossi Immobiliare S.r.l.</span>
+        </div>
+        <div class="cover-info-row">
+          <span class="cover-info-label">Cantiere</span>
+          <span>Via Roma 42, 20121 Milano (MI)</span>
+        </div>
+        <div class="cover-info-row">
+          <span class="cover-info-label">Periodo</span>
+          <span>01/03/2026 – 30/06/2026</span>
+        </div>
+        <div class="cover-info-row">
+          <span class="cover-info-label">Impresa</span>
+          <span>Edil Bianchi S.r.l.</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:7pt; color:#777; text-transform:uppercase; letter-spacing:0.5pt; margin-bottom:5pt;">Firme del documento</div>
+      <div class="cover-sig-row">
+        <div class="cover-sig-box">
+          <div class="cover-sig-label">Datore di lavoro</div>
+          <div class="cover-sig-name">Edil Bianchi S.r.l.</div>
+        </div>
+        <div class="cover-sig-box">
+          <div class="cover-sig-label">RSPP</div>
+          <div class="cover-sig-name">Geom. Antonio Verdi</div>
+        </div>
+        <div class="cover-sig-box">
+          <div class="cover-sig-label">CSE (presa visione)</div>
+          <div class="cover-sig-name">Ing. Laura Ferretti</div>
+        </div>
+      </div>
+      <div class="cover-footer-note">
+        Elaborato ai sensi del D.lgs 81/2008 art. 89 c.1 lett. h — Versione digitale generata con Palladia
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     PAGINA 2: CONTENUTO — tutti i componenti
+═══════════════════════════════════════════════════════════════════ -->
+<div class="demo-label">PAGINA 2 — COMPONENTI CONTENUTO</div>
+<div class="page">
+
+  <!-- SECTION TITLE -->
+  <div class="section-title">Sezione 1 — Intestazione e Dati Identificativi</div>
+  <p>Il presente Piano Operativo di Sicurezza (POS) viene redatto ai sensi dell'art. 89, comma 1,
+  lettera h) del D.lgs 81/2008 e s.m.i.</p>
+
+  <!-- TABLE -->
+  <table>
+    <thead><tr><th>Campo</th><th>Valore</th></tr></thead>
+    <tbody>
+      <tr><td>Impresa esecutrice</td><td>Edil Bianchi S.r.l.</td></tr>
+      <tr><td>Partita IVA</td><td>IT03456789012</td></tr>
+      <tr><td>Cantiere</td><td>Via Roma 42, 20121 Milano (MI)</td></tr>
+      <tr><td>Committente</td><td>Rossi Immobiliare S.r.l.</td></tr>
+      <tr><td>Revisione</td><td>1</td></tr>
+    </tbody>
+  </table>
+
+  <!-- SUB-TITLE -->
+  <div class="sub-title">2.2 Elenco lavoratori impiegati in cantiere</div>
+  <table>
+    <thead><tr><th style="width:5%">N.</th><th>Nominativo</th><th>Qualifica</th><th>Matricola</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Mario Rossi</td><td>Muratore qualificato</td><td>001</td></tr>
+      <tr><td>2</td><td>Luigi Bianchi</td><td>Posatore piastrelle</td><td>002</td></tr>
+      <tr><td>3</td><td>Franco Verdi</td><td>Ponteggiatore</td><td>003</td></tr>
+    </tbody>
+  </table>
+
+  <!-- LAVORAZIONE BLOCK -->
+  <div class="section-title">Sezione 5 — Lavorazioni, Rischi e Misure di Prevenzione</div>
+
+  <div class="lavorazione-block">
+    <div class="lav-header">Rimozione manto impermeabilizzante esistente</div>
+    <div class="lav-body">
+      <p class="bold-line"><strong>Descrizione tecnica:</strong></p>
+      <p>Rimozione meccanica e manuale del manto impermeabilizzante esistente mediante utensili manuali
+      e macchine scarificatrici. Il materiale rimosso viene depositato in appositi contenitori per lo smaltimento.</p>
+
+      <p class="bold-line"><strong>Rischi identificati e valutazione (matrice P×D):</strong></p>
+      <table>
+        <thead><tr><th>Rischio</th><th>P (1–4)</th><th>D (1–4)</th><th>R (P×D)</th><th>Livello</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Caduta dall'alto dalla copertura</td><td>3</td><td>4</td>
+            <td><span class="risk-num risk-very-high">12</span></td>
+            <td><span class="badge badge-high">Alto</span></td>
+          </tr>
+          <tr>
+            <td>Inalazione polveri e fibre</td><td>2</td><td>3</td>
+            <td><span class="risk-num risk-medium">6</span></td>
+            <td><span class="badge badge-medium">Medio</span></td>
+          </tr>
+          <tr>
+            <td>Urti e tagli con attrezzatura</td><td>2</td><td>2</td>
+            <td><span class="risk-num risk-low">4</span></td>
+            <td><span class="badge badge-medium">Medio</span></td>
+          </tr>
+          <tr>
+            <td>Scivolamento su superficie irregolare</td><td>2</td><td>2</td>
+            <td><span class="risk-num risk-low">4</span></td>
+            <td><span class="badge badge-medium">Medio</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p class="bold-line"><strong>Misure di prevenzione e protezione:</strong></p>
+      <ul>
+        <li>Installazione di parapetti perimetrali fissi h ≥ 1 m o sistemi di arresto caduta</li>
+        <li>Utilizzo obbligatorio di imbracatura anticaduta con cordino e punto di ancoraggio certificato</li>
+        <li>Mascherina FFP2 obbligatoria durante le operazioni di rimozione</li>
+        <li>Delimitazione dell'area sottostante con transenna e segnaletica</li>
+      </ul>
+
+      <p class="bold-line"><strong>DPI obbligatori:</strong></p>
+      <table>
+        <thead><tr><th>DPI</th><th>Norma UNI EN</th><th>Note</th></tr></thead>
+        <tbody>
+          <tr><td>Imbracatura anticaduta</td><td>UNI EN 361:2002</td><td>Classe A, con punto di ancoraggio certificato</td></tr>
+          <tr><td>Facciale filtrante FFP2</td><td>UNI EN 149:2009</td><td>Per polveri di demolizione</td></tr>
+          <tr><td>Casco di protezione</td><td>UNI EN 397:2012</td><td>Obbligatorio in tutta l'area</td></tr>
+          <tr><td>Guanti antitaglio</td><td>UNI EN 388:2016</td><td>Livello D taglio</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- CALLOUT -->
+  <div class="callout">
+    ⚠ <strong>Nota:</strong> La sezione 5 viene generata automaticamente da AI (Haiku) in base
+    alle lavorazioni selezionate. Verificare e integrare dove necessario prima della firma.
+  </div>
+
+  <!-- EMERGENCY GRID -->
+  <div class="section-title">Sezione 7 — Procedure di Emergenza</div>
+  <div class="sub-title">7.1 Numeri di emergenza</div>
+  <div class="emergency-grid">
+    <div class="emergency-card"><span class="emergency-number">112</span><div class="emergency-label">Emergenza Unica Europea</div></div>
+    <div class="emergency-card"><span class="emergency-number">115</span><div class="emergency-label">Vigili del Fuoco</div></div>
+    <div class="emergency-card"><span class="emergency-number">118</span><div class="emergency-label">Emergenza Sanitaria</div></div>
+    <div class="emergency-card"><span class="emergency-number">113</span><div class="emergency-label">Polizia di Stato</div></div>
+    <div class="emergency-card"><span class="emergency-number">112</span><div class="emergency-label">Carabinieri</div></div>
+    <div class="emergency-card" style="background:#555;">
+      <span class="emergency-number" style="font-size:13pt;">02 66101029</span>
+      <div class="emergency-label">Centro Antiveleni — Milano</div>
+    </div>
+  </div>
+
+  <!-- SIGNATURES -->
+  <div class="section-title">Sezione 14 — Firme e Presa Visione</div>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:8pt; margin:8pt 0;">
+    <div class="signature-box">
+      <div class="sig-role">Datore di Lavoro dell'impresa esecutrice</div>
+      <div class="sig-name">Edil Bianchi S.r.l.</div>
+      <div class="sig-lines">
+        <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
+        <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
+      </div>
+    </div>
+    <div class="signature-box">
+      <div class="sig-role">RSPP</div>
+      <div class="sig-name">Geom. Antonio Verdi</div>
+      <div class="sig-lines">
+        <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
+        <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <hr>
+  <p class="muted" style="text-align:center; font-size:8pt;">
+    Documento generato con Palladia — D.lgs 81/2008 e s.m.i. — 19/02/2026 — Revisione 1
+  </p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════
+     DESIGN SYSTEM REFERENCE — visibile solo nel browser
+═══════════════════════════════════════════════════════════════════ -->
+<div class="demo-label">DESIGN SYSTEM — CLASSI CSS DISPONIBILI</div>
+<div class="page ds-section" style="font-family:monospace; font-size:9pt; color:#333; line-height:2;">
+  <h2 style="font-family:Arial; font-size:13pt; margin-bottom:12pt;">Classi CSS — Riferimento rapido</h2>
+
+  <div class="section-title">section-title</div>
+  <div class="sub-title">sub-title</div>
+  <div class="callout">callout — avvisi e note</div>
+
+  <div style="margin:10pt 0;">
+    <strong>Badges:</strong><br>
+    <span class="badge badge-low" style="margin-right:4pt;">Basso</span>
+    <span class="badge badge-medium" style="margin-right:4pt;">Medio</span>
+    <span class="badge badge-high" style="margin-right:4pt;">Alto</span>
+    <span class="badge badge-very-high">Molto Alto</span>
+  </div>
+
+  <div style="margin:10pt 0;">
+    <strong>Risk values:</strong><br>
+    <span class="risk-num risk-low" style="margin-right:4pt;">3</span>
+    <span class="risk-num risk-medium" style="margin-right:4pt;">6</span>
+    <span class="risk-num risk-high" style="margin-right:4pt;">9</span>
+    <span class="risk-num risk-very-high">16</span>
+  </div>
+
+  <div style="margin:10pt 0; font-family:Arial; font-size:9pt; color:#555;">
+    <strong>Classi anti-taglio (print):</strong><br>
+    <code>.lavorazione-block</code> — scheda lavorazione (break-inside: avoid)<br>
+    <code>.no-break</code> — blocco generico mai tagliato<br>
+    <code>.keep-next</code> — non separare da elemento successivo<br>
+    <code>.page-break</code> — forza interruzione di pagina<br>
+    <code>table</code> — di default avoid, override con <code>.allow-break</code><br>
+    <code>table.allow-break thead</code> — header ripetuto su ogni pagina
+  </div>
+</div>
+
+</body>
+</html>
