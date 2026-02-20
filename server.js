@@ -692,8 +692,11 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     const signs = selectSigns(posData);
     const fullText = buildPosDocument(posData, revision, aiRisks, signs);
 
-    // Send the full document as a single text event
-    res.write(`data: ${JSON.stringify({ type: 'text', text: fullText })}\n\n`);
+    // Send document in chunks to avoid HTTP/2 frame size limits (Railway proxy)
+    const CHUNK_SIZE = 512;
+    for (let i = 0; i < fullText.length; i += CHUNK_SIZE) {
+      res.write(`data: ${JSON.stringify({ type: 'text', text: fullText.slice(i, i + CHUNK_SIZE) })}\n\n`);
+    }
 
     // Step 3: Save to Supabase
     let posId = null;
