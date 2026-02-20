@@ -520,7 +520,7 @@ app.post('/api/generate-pdf', async (req, res) => {
     const docTitle = `POS – ${name} – Rev. ${rev}`;
 
     const signs     = selectSigns(posData);
-    const html      = generatePosHtml(posData, rev, content || '', signs);
+    const html      = await generatePosHtml(posData, rev, content || '', signs);
     const pdfBuffer = await rendererPool.render(html, { docTitle, revision: rev });
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -588,7 +588,7 @@ app.get('/api/pos/:posId/pdf', async (req, res) => {
     }
 
     const signs     = selectSigns(pos.pos_data || {});
-    const html      = generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    const html      = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
     const docTitle  = `POS – ${siteName} – Rev. ${pos.revision}`;
     const fileName  = `POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
     const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pos.revision });
@@ -793,7 +793,7 @@ app.post('/api/generate-pdf-html', async (req, res) => {
     if (!posData) return res.status(400).json({ error: 'posData is required' });
 
     const signs    = selectSigns(posData);
-    const html     = generatePosHtml(posData, revision || 1, content || '', signs);
+    const html     = await generatePosHtml(posData, revision || 1, content || '', signs);
     const docTitle = `POS – ${siteName || posData.siteAddress || 'Cantiere'} – Rev. ${revision || 1}`;
     const fileName = `POS-Rev${revision || 1}-${(siteName || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
@@ -832,7 +832,7 @@ app.get('/api/pos/:posId/pdf-html', async (req, res) => {
     }
 
     const signs    = selectSigns(pos.pos_data || {});
-    const html     = generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    const html     = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
     const docTitle = `POS – ${siteName} – Rev. ${pos.revision}`;
     const fileName = `POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
@@ -854,12 +854,35 @@ app.post('/api/generate-pos-html', async (req, res) => {
     const posData  = req.body;
     const revision = posData.revision || 1;
     const signs    = selectSigns(posData);
-    const html     = generatePosHtml(posData, revision, posData.content || '', signs);
+    const html     = await generatePosHtml(posData, revision, posData.content || '', signs);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(html);
   } catch (error) {
     console.error('generate-pos-html error:', error.message);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ── HTML Preview: renderizza POS come HTML navigabile (per iframe frontend) ────
+app.get('/api/pos/:posId/html', async (req, res) => {
+  try {
+    const { posId } = req.params;
+    const { data: pos, error } = await supabase
+      .from('pos_documents')
+      .select('*')
+      .eq('id', posId)
+      .single();
+    if (error) throw error;
+    if (!pos) return res.status(404).json({ error: 'POS not found' });
+
+    const signs = selectSigns(pos.pos_data || {});
+    const html  = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.send(html);
+  } catch (error) {
+    console.error('pos-html preview error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
   }
 });
 
