@@ -164,6 +164,26 @@ function buildLavorazioneHtml(aiRisks) {
   return html || '<div class="callout">Nessuna lavorazione generata.</div>';
 }
 
+// ── SEGNALETICA — helpers ─────────────────────────────────────────────────────
+const CAT_META = {
+  'Cartelli di divieto fondo bianco contenuto rosso': { label: 'Divieto',                  color: '#CC0000', iso: 'P' },
+  'Cartelli fondo blu (obbligo)':                     { label: 'Obbligo',                  color: '#1565C0', iso: 'M' },
+  'Cartelli fondo giallo (pericolo)':                 { label: 'Avvertimento / Pericolo',  color: '#B8860B', iso: 'W' },
+  'Cartelli fondo verde':                             { label: 'Emergenza / Salvataggio',  color: '#2E7D32', iso: 'E' },
+  'Cartelli antincendio':                             { label: 'Antincendio',              color: '#8B0000', iso: 'F' },
+  'Generale':                                         { label: 'Generale',                 color: '#37474F', iso: ''  },
+};
+function catColor(category) {
+  return (CAT_META[category] || CAT_META['Generale']).color;
+}
+function catLabel(category) {
+  return (CAT_META[category] || CAT_META['Generale']).label;
+}
+function extractIso(norm) {
+  const m = (norm || '').match(/ISO\s+7010\s+[A-Z]\d+/i);
+  return m ? m[0].replace(/\s+/, ' ') : '';
+}
+
 // ── SEGNALETICA CON IMMAGINI ──────────────────────────────────────────────────
 function buildSegnaleticaHtml(signsWithImages) {
   if (!signsWithImages || signsWithImages.length === 0) {
@@ -172,30 +192,78 @@ function buildSegnaleticaHtml(signsWithImages) {
     ad altezza non inferiore a 2 m da terra, nelle aree indicate dal CSE.</p>`;
   }
 
-  let html = `<p>La segnaletica di sicurezza è predisposta in conformità al D.lgs 81/2008 Titolo V
-  (artt. 161–166) e alle norme ISO 7010:2019. I cartelli sono stati selezionati automaticamente
-  in base alle lavorazioni previste e devono essere esposti nelle ubicazioni indicate,
-  in posizione ben visibile e ad altezza minima di 2 m da terra.</p>`;
+  // ── intro normativa
+  let html = `<p class="sign-intro">La segnaletica di sicurezza è predisposta in conformità al
+  <strong>D.lgs 81/2008 Titolo V (artt. 161–166)</strong> e alle norme
+  <strong>ISO 7010:2019</strong>. I cartelli sono selezionati automaticamente in base alle
+  lavorazioni previste e devono essere esposti nelle ubicazioni indicate,
+  in posizione ben visibile a un'altezza minima di <strong>2 m da terra</strong>,
+  garantendo contrasto visivo con lo sfondo.</p>`;
 
+  // ── tabella riepilogativa per categoria
+  const catCounts = {};
+  for (const sign of signsWithImages) {
+    const cat = sign.category || 'Generale';
+    catCounts[cat] = (catCounts[cat] || 0) + 1;
+  }
+  const total = signsWithImages.length;
+
+  html += `<table class="sign-summary-table">
+  <thead>
+    <tr>
+      <th style="width:6%"></th>
+      <th style="width:42%">Categoria</th>
+      <th style="width:36%">Riferimento normativo</th>
+      <th style="width:16%">N° cartelli</th>
+    </tr>
+  </thead>
+  <tbody>`;
+
+  const catOrder = [
+    'Cartelli di divieto fondo bianco contenuto rosso',
+    'Cartelli fondo blu (obbligo)',
+    'Cartelli fondo giallo (pericolo)',
+    'Cartelli fondo verde',
+    'Cartelli antincendio',
+    'Generale',
+  ];
+  for (const cat of catOrder) {
+    if (!catCounts[cat]) continue;
+    const meta = CAT_META[cat] || CAT_META['Generale'];
+    html += `<tr>
+      <td><span class="cat-dot" style="background:${meta.color}"></span></td>
+      <td><strong>${meta.label}</strong></td>
+      <td style="font-size:8pt;color:#555">D.lgs 81/08 Titolo V${meta.iso ? ` — ISO 7010 ${meta.iso}xxx` : ''}</td>
+      <td style="text-align:center;font-weight:bold">${catCounts[cat]}</td>
+    </tr>`;
+  }
+  html += `<tr class="sign-summary-total">
+    <td colspan="3"><strong>TOTALE CARTELLI NEL CANTIERE</strong></td>
+    <td style="text-align:center;font-weight:bold">${total}</td>
+  </tr>
+  </tbody></table>`;
+
+  // ── cartelli per zona
   for (const zone of ZONE_ORDER) {
     const zoneSigns = signsWithImages.filter(s => s.zone === zone);
     if (!zoneSigns.length) continue;
 
-    html += `<div class="sub-title">${esc(zone)}</div>
+    html += `<div class="sign-zone-header">${esc(zone)}</div>
     <div class="signs-grid">`;
 
     for (const sign of zoneSigns) {
-      const name = sign.name.replace(/\.jpg$/i, '');
-      const norm = (sign.norm || '').replace(/\n/g, ' ');
-      const loc  = (sign.location || '').replace(/\n/g, ' ');
+      const name  = sign.name.replace(/\.jpg$/i, '');
+      const isoCode = extractIso(sign.norm || '');
+      const color = catColor(sign.category);
+      const loc   = (sign.location || '').replace(/\n/g, ' ');
       html += `
-      <div class="sign-card">
+      <div class="sign-card" style="border-top:4pt solid ${color}">
         ${sign.imgSrc
           ? `<img src="${sign.imgSrc}" class="sign-img" alt="${esc(name)}">`
           : `<div class="sign-img-placeholder">?</div>`}
         <div class="sign-name">${esc(name)}</div>
-        <div class="sign-norm">${esc(norm)}</div>
-        <div class="sign-location-text">${esc(loc)}</div>
+        ${isoCode ? `<div class="sign-iso" style="color:${color}">${esc(isoCode)}</div>` : ''}
+        ${loc ? `<div class="sign-location-text">${esc(loc)}</div>` : ''}
       </div>`;
     }
     html += `</div>`;
@@ -510,62 +578,114 @@ tbody td {
 .lav-body .bold-line { font-weight: bold; margin: 5pt 0 2pt 0; color: #3A3A3A; }
 .lav-body table      { margin: 4pt 0 6pt 0; font-size: 8.5pt; }
 
-/* ═══ SEGNALETICA GRID ══════════════════════════════════════════════ */
+/* ═══ SEGNALETICA ═══════════════════════════════════════════════════ */
+.sign-intro {
+  margin-bottom: 8pt;
+  font-size: 9.5pt;
+  line-height: 1.5;
+}
+
+/* Tabella riepilogativa categorie */
+.sign-summary-table {
+  margin-bottom: 12pt !important;
+  font-size: 9pt;
+}
+.sign-summary-table thead th { background: #2C2C2C; }
+.sign-summary-total td {
+  background: #F0F0F0 !important;
+  border-top: 1pt solid #999;
+}
+.cat-dot {
+  display: inline-block;
+  width: 10pt;
+  height: 10pt;
+  border-radius: 50%;
+  vertical-align: middle;
+}
+
+/* Intestazione zona */
+.sign-zone-header {
+  background: #2C2C2C;
+  color: white;
+  font-size: 8.5pt;
+  font-weight: bold;
+  letter-spacing: 1pt;
+  text-transform: uppercase;
+  padding: 4pt 8pt;
+  margin: 12pt 0 5pt 0;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* Griglia 4 colonne */
 .signs-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6pt;
-  margin: 6pt 0 10pt 0;
+  margin: 0 0 6pt 0;
   break-inside: auto;
 }
+
+/* Card singolo cartello */
 .sign-card {
-  border: 0.5pt solid #E0E0E0;
-  border-radius: 3pt;
-  padding: 5pt 4pt;
+  border: 0.5pt solid #D8D8D8;
+  border-radius: 0 0 3pt 3pt; /* angoli bassi, bordo top è la categoria */
+  padding: 5pt 4pt 5pt 4pt;
   text-align: center;
-  background: #FAFAFA;
+  background: #FFFFFF;
   break-inside: avoid;
   page-break-inside: avoid;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
+
+/* Immagine del cartello */
 .sign-img {
   width: 100%;
-  max-width: 36mm;
-  height: 30mm;
+  max-width: 34mm;
+  height: 28mm;
   object-fit: contain;
   display: block;
-  margin: 0 auto 3pt auto;
+  margin: 4pt auto 5pt auto;
   background: white;
 }
 .sign-img-placeholder {
-  width: 36mm;
-  height: 30mm;
+  width: 34mm;
+  height: 28mm;
   background: #EEEEEE;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 16pt;
+  font-size: 14pt;
   color: #AAAAAA;
-  margin: 0 auto 3pt auto;
+  margin: 4pt auto 5pt auto;
 }
+
+/* Testi del cartello */
 .sign-name {
   font-size: 6.5pt;
   font-weight: bold;
-  color: #2C2C2C;
+  color: #1A1A1A;
   margin-bottom: 2pt;
   line-height: 1.3;
+  text-align: center;
 }
-.sign-norm {
-  font-size: 5.5pt;
-  color: #888888;
-  margin-bottom: 1pt;
-  line-height: 1.2;
+.sign-iso {
+  font-size: 6pt;
+  font-weight: bold;
+  letter-spacing: 0.5pt;
+  margin-bottom: 2pt;
+  text-transform: uppercase;
 }
 .sign-location-text {
   font-size: 5.5pt;
-  color: #555555;
+  color: #666666;
   font-style: italic;
-  line-height: 1.2;
+  line-height: 1.25;
+  text-align: center;
+  margin-top: auto;
 }
 
 /* ═══ EMERGENCY GRID ════════════════════════════════════════════════ */
