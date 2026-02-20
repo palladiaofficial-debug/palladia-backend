@@ -219,10 +219,11 @@ function buildCss() {
 }
 
 /* ═══ PAGE ═════════════════════════════════════════════════════════
-   RIMOSSO @page :first { margin: 0 } — causava sovrapposizione
-   header/footer Puppeteer con la copertina.
-   Tutti i margini uniformi: il PDF è pulito su ogni pagina.       */
-@page { size: A4; margin: 16mm 15mm 20mm 15mm; }
+   NESSUN MARGINE nel CSS @page — i margini sono impostati
+   esclusivamente da Puppeteer page.pdf({ margin: {...} }).
+   Avere margini in entrambi i posti causa sovrapposizione
+   indefinita dell'header/footer sul contenuto della pagina.       */
+@page { size: A4; }
 
 /* ═══ BASE ═════════════════════════════════════════════════════════ */
 body {
@@ -241,12 +242,12 @@ img { max-width: 100%; height: auto; display: block; }
   break-after: page;
   page-break-after: always;
   display: flex;
-  min-height: 257mm;  /* A4 meno margini top+bottom (16+20=36mm, +4 buffer) */
+  min-height: 253mm;  /* A4 (297mm) meno margini Puppeteer top+bottom (22+22=44mm) */
   overflow: visible;
 }
 .cover-sidebar {
   width: 65mm;
-  min-height: 257mm;
+  min-height: 253mm;
   background: #3A3A3A;
   color: white;
   padding: 10mm 10mm 12mm 12mm;

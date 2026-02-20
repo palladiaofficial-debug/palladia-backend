@@ -126,13 +126,13 @@ async function renderHtmlToPdf(html, opts = {}) {
       headerTemplate: headerTemplate(docTitle),
       footerTemplate: footerTemplate(revision),
 
-      // Margini: top e bottom devono essere >= altezza header/footer
-      // La copertina usa @page:first { margin: 0 } che Puppeteer onora per il contenuto,
-      // ma header/footer Puppeteer sono SEMPRE presenti su tutte le pagine.
-      // Aumentiamo leggermente top margin per la copertina non ci sia sovrapposizione.
+      // Margini: Puppeteer è l'UNICA autorità sui margini.
+      // Il CSS @page nel documento HTML NON deve avere 'margin' —
+      // avere margini in entrambi i posti causa overlap indefinito.
+      // top/bottom a 22mm: dà spazio sufficiente a header e footer (font 7.5pt + bordo + padding).
       margin: {
-        top:    '16mm',
-        bottom: '18mm',
+        top:    '22mm',
+        bottom: '22mm',
         left:   '15mm',
         right:  '15mm'
       }
@@ -213,7 +213,7 @@ class PdfRendererPool {
         displayHeaderFooter: true,
         headerTemplate: headerTemplate(docTitle),
         footerTemplate: footerTemplate(revision),
-        margin: { top: '16mm', bottom: '18mm', left: '15mm', right: '15mm' }
+        margin: { top: '22mm', bottom: '22mm', left: '15mm', right: '15mm' }
       });
     } finally {
       await page.close();
