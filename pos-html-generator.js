@@ -293,12 +293,75 @@ function buildCss() {
 }
 
 /* ═══ PAGE ═════════════════════════════════════════════════════════
-   MARGINI: CSS @page E Puppeteer devono corrispondere esattamente.
-   CSS @page { margin } dice a Chromium dove fare iniziare il contenuto.
-   Puppeteer margin { top/bottom } colloca header/footer in quella zona.
-   Se solo Puppeteer li imposta, il contenuto parte da Y=0 e l'header
-   (che arriva a Y=22mm) si sovrappone visivamente al primo elemento.  */
-@page { size: A4; margin: 22mm 15mm; }
+   CSS @page margin → 0.
+   Puppeteer (pdf-renderer.js) imposta margin top/bottom 18mm.
+   Puppeteer SOVRASCRIVE CSS @page margin → la sorgente unica di verità
+   è Puppeteer. Impostare 0 qui evita conflitti.
+
+   STRATEGIA ANTI-OVERLAP DEFINITIVA:
+   - Puppeteer margin top=18mm, bottom=18mm → contenuto parte da Y=18mm
+   - .pdf-header e .pdf-footer usano position:fixed con top:0 / bottom:0
+   - I fixed element stanno in Y=0..14mm (top) e Y=283..297mm (bottom)
+   - Il contenuto parte da Y=18mm → 4mm di buffer → ZERO sovrapposizioni */
+@page { size: A4; margin: 0; }
+
+/* ═══ FIXED HEADER — appare su ogni pagina nell'area margine superiore */
+.pdf-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 14mm;
+  padding: 0 15mm 2pt 15mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  border-bottom: 0.5pt solid #CCCCCC;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 7.5pt;
+  color: #555555;
+  box-sizing: border-box;
+  background: white;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.pdf-header-brand {
+  font-weight: bold;
+  color: #3A3A3A;
+  letter-spacing: 1pt;
+}
+.pdf-header-title { color: #666666; }
+
+/* ═══ FIXED FOOTER — appare su ogni pagina nell'area margine inferiore */
+.pdf-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 14mm;
+  padding: 2pt 15mm 0 15mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  border-top: 0.5pt solid #CCCCCC;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 7.5pt;
+  color: #555555;
+  box-sizing: border-box;
+  background: white;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.pdf-footer-dlgs { color: #888888; }
+.pdf-footer-rev  { color: #888888; }
+.pdf-footer-page {
+  color: #3A3A3A;
+  font-weight: bold;
+}
+/* Numero pagina via CSS counter (supportato da Chromium in print mode) */
+.pdf-footer-page::before {
+  content: "Pagina " counter(page) " di " counter(pages);
+}
 
 /* ═══ BASE ═════════════════════════════════════════════════════════ */
 body {
@@ -307,10 +370,7 @@ body {
   color: #2C2C2C;
   line-height: 1.55;
   background: white;
-  /* 3mm di respiro sopra e sotto su ogni pagina — evita che il
-     contenuto tocchi esattamente il bordo dell'header/footer */
-  padding-top: 3mm;
-  padding-bottom: 3mm;
+  padding: 0;
 }
 img { max-width: 100%; height: auto; display: block; }
 
@@ -321,12 +381,12 @@ img { max-width: 100%; height: auto; display: block; }
   break-after: page;
   page-break-after: always;
   display: flex;
-  min-height: 247mm;  /* A4 (297mm) - margini @page (22+22=44mm) - body padding (3+3=6mm) */
+  min-height: 261mm;  /* A4 (297mm) - margini Puppeteer (18+18=36mm) */
   overflow: visible;
 }
 .cover-sidebar {
   width: 65mm;
-  min-height: 247mm;
+  min-height: 261mm;
   background: #3A3A3A;
   color: white;
   padding: 10mm 10mm 12mm 12mm;
@@ -1311,6 +1371,21 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   <style>${buildCss()}</style>
 </head>
 <body>
+
+<!-- HEADER fisso — vive nell'area margine superiore (top:0..14mm).
+     Il contenuto parte da Y=18mm (Puppeteer margin) → gap di 4mm → nessuna sovrapposizione. -->
+<div class="pdf-header">
+  <span class="pdf-header-brand">PALLADIA</span>
+  <span class="pdf-header-title">${esc(docTitle)}</span>
+</div>
+
+<!-- FOOTER fisso — vive nell'area margine inferiore (bottom:0..14mm). -->
+<div class="pdf-footer">
+  <span class="pdf-footer-dlgs">D.lgs 81/2008 e s.m.i.</span>
+  <span class="pdf-footer-page"></span>
+  <span class="pdf-footer-rev">Rev. ${rev}</span>
+</div>
+
 ${cover}
 <div class="content">
 ${s0_firme}

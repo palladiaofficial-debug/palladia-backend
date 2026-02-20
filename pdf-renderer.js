@@ -2,7 +2,11 @@
 
 /**
  * PDF Renderer — Puppeteer
- * Converte HTML in PDF A4 con header/footer e page numbers.
+ * Converte HTML in PDF A4.
+ *
+ * Header e footer sono gestiti tramite CSS position:fixed nel documento HTML
+ * (vedi pos-html-generator.js → .pdf-header / .pdf-footer).
+ * Questo evita il conflitto tra CSS @page margin e Puppeteer margin.
  *
  * Richiede: npm install puppeteer
  */
@@ -16,64 +20,12 @@ try {
 }
 
 /**
- * Genera il template HTML dell'header (mostrato su tutte le pagine tranne la copertina).
- * Puppeteer NON eredita i font/stili del documento principale in questi template.
- */
-function headerTemplate(docTitle) {
-  return `
-  <div style="
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 7.5pt;
-    color: #555555;
-    width: 100%;
-    padding: 0 15mm;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    border-bottom: 0.5pt solid #CCCCCC;
-    padding-bottom: 2pt;
-    box-sizing: border-box;
-    height: 100%;
-  ">
-    <span style="font-weight: bold; color: #3A3A3A; letter-spacing: 1pt;">PALLADIA</span>
-    <span style="color: #666666;">${docTitle.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>
-  </div>`;
-}
-
-/**
- * Genera il template HTML del footer con "Pagina X di Y".
- */
-function footerTemplate(revision) {
-  return `
-  <div style="
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 7.5pt;
-    color: #555555;
-    width: 100%;
-    padding: 0 15mm;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    border-top: 0.5pt solid #CCCCCC;
-    padding-top: 2pt;
-    box-sizing: border-box;
-    height: 100%;
-  ">
-    <span style="color: #888888;">D.lgs 81/2008 e s.m.i.</span>
-    <span style="color: #3A3A3A; font-weight: bold;">
-      Pagina <span class="pageNumber"></span> di <span class="totalPages"></span>
-    </span>
-    <span style="color: #888888;">Rev. ${revision}</span>
-  </div>`;
-}
-
-/**
  * Renderizza HTML → Buffer PDF usando Puppeteer.
  *
+ * Header e footer sono CSS position:fixed nel documento HTML — non usare
+ * displayHeaderFooter di Puppeteer (causa overlap non risolvibile).
+ *
  * @param {string} html - HTML completo da convertire
- * @param {object} opts - opzioni
- * @param {string} opts.docTitle - titolo per l'header
- * @param {number} opts.revision - revisione per il footer
  * @returns {Promise<Buffer>} - buffer PDF
  */
 async function renderHtmlToPdf(html, opts = {}) {
@@ -83,9 +35,6 @@ async function renderHtmlToPdf(html, opts = {}) {
       'Nota: la prima installazione scarica Chromium (~170 MB).'
     );
   }
-
-  const docTitle = opts.docTitle || 'Piano Operativo di Sicurezza';
-  const revision = opts.revision || 1;
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -120,19 +69,15 @@ async function renderHtmlToPdf(html, opts = {}) {
       format: 'A4',
       printBackground: true,
 
-      // Header su tutte le pagine (inclusa copertina — ma la copertina usa @page:first margin:0
-      // quindi l'header cade sopra la sidebar e non interferisce visivamente)
-      displayHeaderFooter: true,
-      headerTemplate: headerTemplate(docTitle),
-      footerTemplate: footerTemplate(revision),
+      // Header/footer sono CSS position:fixed nell'HTML — NON usare displayHeaderFooter.
+      // I margini Puppeteer creano lo spazio fisico dove i fixed element atterrano.
+      // I fixed element stanno a top:0/bottom:0 → nell'area del margine Puppeteer.
+      // Il contenuto parte da Y=18mm (margine top) → NESSUNA SOVRAPPOSIZIONE.
+      displayHeaderFooter: false,
 
-      // Margini: Puppeteer è l'UNICA autorità sui margini.
-      // Il CSS @page nel documento HTML NON deve avere 'margin' —
-      // avere margini in entrambi i posti causa overlap indefinito.
-      // top/bottom a 22mm: dà spazio sufficiente a header e footer (font 7.5pt + bordo + padding).
       margin: {
-        top:    '22mm',
-        bottom: '22mm',
+        top:    '18mm',
+        bottom: '18mm',
         left:   '15mm',
         right:  '15mm'
       }
@@ -197,10 +142,8 @@ class PdfRendererPool {
   async render(html, opts = {}) {
     if (!puppeteer) throw new Error('Puppeteer non installato. Esegui: npm install puppeteer');
 
-    const docTitle = opts.docTitle || 'Piano Operativo di Sicurezza';
-    const revision = opts.revision || 1;
-    const browser  = await this._getBrowser();
-    const page     = await browser.newPage();
+    const browser = await this._getBrowser();
+    const page    = await browser.newPage();
 
     try {
       await page.setViewport({ width: 794, height: 1123 });
@@ -210,10 +153,8 @@ class PdfRendererPool {
       return await page.pdf({
         format: 'A4',
         printBackground: true,
-        displayHeaderFooter: true,
-        headerTemplate: headerTemplate(docTitle),
-        footerTemplate: footerTemplate(revision),
-        margin: { top: '22mm', bottom: '22mm', left: '15mm', right: '15mm' }
+        displayHeaderFooter: false,
+        margin: { top: '18mm', bottom: '18mm', left: '15mm', right: '15mm' }
       });
     } finally {
       await page.close();
