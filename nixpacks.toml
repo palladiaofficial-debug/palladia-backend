@@ -22,7 +22,6 @@ nixPkgs = [
   'xorg.libXfixes',
   'xorg.libXrandr',
   'xorg.libxcb',
-  'libgbm',
   'udev',
   'fontconfig',
   'freetype'
