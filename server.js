@@ -8,6 +8,14 @@ const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 
+// Prevent Node.js 20 from crashing the process on unhandled errors
+process.on('uncaughtException', (err) => {
+  console.error('[PROCESS] uncaughtException — kept alive:', err.message, err.stack);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('[PROCESS] unhandledRejection — kept alive:', reason);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -650,8 +658,32 @@ app.post('/api/generate-pos-template', async (req, res) => {
   }
 });
 
+// Helper: safe SSE write — never throws, logs failures
+function sseWrite(res, data) {
+  try {
+    if (!res.writableEnded) res.write(data);
+  } catch (e) {
+    console.error('[SSE write error]', e.message);
+  }
+}
+
 // --- POS Template Generation (SSE streaming for progress feedback) ---
 app.post('/api/generate-pos-template-stream', async (req, res) => {
+  console.log('[template-stream] request received');
+
+  // Attach error handlers to socket/res so write errors don't crash the process
+  res.on('error', (e) => console.error('[template-stream] res error:', e.message));
+  if (req.socket) {
+    req.socket.setNoDelay(true);
+    req.socket.setTimeout(0);
+    req.socket.on('error', (e) => console.error('[template-stream] socket error:', e.message));
+  }
+
+  let headersFlused = false;
+  let heartbeatTimer = null;
+
+  // Outer try/catch: also catches any error thrown inside the inner catch block
+  // (Express 5 re-throws catch-block errors onto the async chain — we block that here)
   try {
     const posData = req.body;
     const siteId = posData.siteId || null;
@@ -660,78 +692,95 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     if (siteId) {
       revision = await getNextRevision(siteId);
     }
+    console.log('[template-stream] revision', revision);
 
     // Set up SSE headers (Connection: keep-alive omitted — forbidden in HTTP/2)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
+    headersFlused = true;
+    console.log('[template-stream] headers flushed');
 
-    // Send meta info
-    res.write(`data: ${JSON.stringify({ type: 'meta', revision, mode: 'template' })}\n\n`);
+    sseWrite(res, `data: ${JSON.stringify({ type: 'meta', revision, mode: 'template' })}\n\n`);
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Generazione rischi specifici con AI...' })}\n\n`);
 
-    // Step 1: Notify client that AI is generating risks
-    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Generazione rischi specifici con AI...' })}\n\n`);
+    // Heartbeat every 10s to keep Railway proxy alive
+    heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
 
-    // Heartbeat every 15s to prevent Railway HTTP/2 proxy idle-timeout
-    const heartbeat = setInterval(() => {
-      try { res.write(': keepalive\n\n'); } catch (_) {}
-    }, 15000);
-
-    let aiRisks;
+    console.log('[template-stream] calling Haiku...');
+    let aiRisks = '';
     try {
       const risksPrompt = buildRisksPrompt(posData);
       aiRisks = await callAnthropicHaiku(risksPrompt);
-    } finally {
-      clearInterval(heartbeat);
+      console.log('[template-stream] Haiku done, length:', aiRisks.length);
+    } catch (aiErr) {
+      console.error('[template-stream] Haiku error:', aiErr.message);
+      // Continue with empty risks rather than aborting the stream
+      aiRisks = '[Sezione rischi non disponibile — errore AI]';
     }
 
-    // Step 2: Notify client that template is being assembled
-    res.write(`data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento completo...' })}\n\n`);
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento completo...' })}\n\n`);
 
     const signs = selectSigns(posData);
     const fullText = buildPosDocument(posData, revision, aiRisks, signs);
+    console.log('[template-stream] document built, length:', fullText.length);
 
-    // Send document in chunks to avoid HTTP/2 frame size limits (Railway proxy)
+    // Send document in chunks to avoid HTTP/2 frame size issues
     const CHUNK_SIZE = 512;
     for (let i = 0; i < fullText.length; i += CHUNK_SIZE) {
-      res.write(`data: ${JSON.stringify({ type: 'text', text: fullText.slice(i, i + CHUNK_SIZE) })}\n\n`);
+      sseWrite(res, `data: ${JSON.stringify({ type: 'text', text: fullText.slice(i, i + CHUNK_SIZE) })}\n\n`);
     }
+    console.log('[template-stream] chunks sent');
 
-    // Step 3: Save to Supabase
+    // Save to Supabase
     let posId = null;
     if (siteId) {
-      const { data: saved, error: saveError } = await supabase
-        .from('pos_documents')
-        .insert([{
-          site_id: siteId,
-          revision,
-          content: fullText,
-          pos_data: posData,
-          created_by: posData.createdBy || null
-        }])
-        .select()
-        .single();
+      try {
+        const { data: saved, error: saveError } = await supabase
+          .from('pos_documents')
+          .insert([{
+            site_id: siteId,
+            revision,
+            content: fullText,
+            pos_data: posData,
+            created_by: posData.createdBy || null
+          }])
+          .select()
+          .single();
 
-      if (saveError) {
-        console.error('Failed to save POS:', saveError.message);
-      } else {
-        posId = saved?.id || null;
+        if (saveError) {
+          console.error('[template-stream] Supabase save error:', saveError.message);
+        } else {
+          posId = saved?.id || null;
+          console.log('[template-stream] saved posId:', posId);
+        }
+      } catch (dbErr) {
+        console.error('[template-stream] Supabase exception:', dbErr.message);
       }
     }
 
-    res.write(`data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template' })}\n\n`);
-    res.write('data: [DONE]\n\n');
-    res.end();
+    sseWrite(res, `data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template' })}\n\n`);
+    sseWrite(res, 'data: [DONE]\n\n');
+    if (!res.writableEnded) res.end();
+    console.log('[template-stream] complete');
 
   } catch (error) {
-    console.error('generate-pos-template-stream error:', error.message, JSON.stringify(error.details));
-    if (res.headersSent) {
-      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message, details: error.details })}\n\n`);
-      res.end();
-    } else {
-      const status = error.status || 500;
-      res.status(status).json({ error: error.message, details: error.details });
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    console.error('[template-stream] fatal error:', error.message);
+    try {
+      if (headersFlused) {
+        sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
+        if (!res.writableEnded) res.end();
+      } else {
+        const status = error.status || 500;
+        res.status(status).json({ error: String(error.message) });
+      }
+    } catch (innerErr) {
+      console.error('[template-stream] error handler threw:', innerErr.message);
     }
   }
 });

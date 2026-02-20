@@ -180,7 +180,15 @@ class PdfRendererPool {
     }).then(b => {
       this._browser = b;
       this._launching = null;
+      b.on('disconnected', () => {
+        console.warn('[Puppeteer] browser disconnected — will relaunch on next request');
+        this._browser = null;
+      });
       return b;
+    }).catch(err => {
+      console.error('[Puppeteer] launch failed:', err.message);
+      this._launching = null;
+      throw err;
     });
 
     return this._launching;
