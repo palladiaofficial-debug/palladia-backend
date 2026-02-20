@@ -347,10 +347,9 @@ app.post('/api/sites/:id/generate-pos-stream', async (req, res) => {
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
 
-    // Set up SSE headers
+    // Set up SSE headers (Connection: keep-alive omitted — forbidden in HTTP/2)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
@@ -429,10 +428,9 @@ app.post('/api/generate-pos-stream', async (req, res) => {
 
     const megaPrompt = buildPosPrompt(posData, revision);
 
-    // Set up SSE headers
+    // Set up SSE headers (Connection: keep-alive omitted — forbidden in HTTP/2)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
@@ -663,10 +661,9 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
       revision = await getNextRevision(siteId);
     }
 
-    // Set up SSE headers
+    // Set up SSE headers (Connection: keep-alive omitted — forbidden in HTTP/2)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
@@ -676,8 +673,18 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     // Step 1: Notify client that AI is generating risks
     res.write(`data: ${JSON.stringify({ type: 'status', message: 'Generazione rischi specifici con AI...' })}\n\n`);
 
-    const risksPrompt = buildRisksPrompt(posData);
-    const aiRisks = await callAnthropicHaiku(risksPrompt);
+    // Heartbeat every 15s to prevent Railway HTTP/2 proxy idle-timeout
+    const heartbeat = setInterval(() => {
+      try { res.write(': keepalive\n\n'); } catch (_) {}
+    }, 15000);
+
+    let aiRisks;
+    try {
+      const risksPrompt = buildRisksPrompt(posData);
+      aiRisks = await callAnthropicHaiku(risksPrompt);
+    } finally {
+      clearInterval(heartbeat);
+    }
 
     // Step 2: Notify client that template is being assembled
     res.write(`data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento completo...' })}\n\n`);
