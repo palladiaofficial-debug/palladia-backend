@@ -127,6 +127,12 @@ function parseMd(md) {
     else if (listItems.length && !t) { flushList(); continue; }
     if (!t) { continue; }
     if (t === '---' || t === '***' || t === '___') continue;
+    // Markdown headings ## and # → styled sub-headers within lavorazioni
+    if (/^#{1,2}\s/.test(t)) {
+      const text = t.replace(/^#+\s+/, '');
+      html += `<p class="bold-line" style="font-size:10pt;color:#2C2C2C;margin-top:6pt">${boldify(text)}</p>`;
+      continue;
+    }
     if (/^\*\*[^*].*(\*\*:?|:)$/.test(t)) { html += `<p class="bold-line">${boldify(t)}</p>`; continue; }
     html += `<p>${boldify(t)}</p>`;
   }
@@ -287,11 +293,12 @@ function buildCss() {
 }
 
 /* ═══ PAGE ═════════════════════════════════════════════════════════
-   NESSUN MARGINE nel CSS @page — i margini sono impostati
-   esclusivamente da Puppeteer page.pdf({ margin: {...} }).
-   Avere margini in entrambi i posti causa sovrapposizione
-   indefinita dell'header/footer sul contenuto della pagina.       */
-@page { size: A4; }
+   MARGINI: CSS @page E Puppeteer devono corrispondere esattamente.
+   CSS @page { margin } dice a Chromium dove fare iniziare il contenuto.
+   Puppeteer margin { top/bottom } colloca header/footer in quella zona.
+   Se solo Puppeteer li imposta, il contenuto parte da Y=0 e l'header
+   (che arriva a Y=22mm) si sovrappone visivamente al primo elemento.  */
+@page { size: A4; margin: 22mm 15mm; }
 
 /* ═══ BASE ═════════════════════════════════════════════════════════ */
 body {
@@ -300,6 +307,10 @@ body {
   color: #2C2C2C;
   line-height: 1.55;
   background: white;
+  /* 3mm di respiro sopra e sotto su ogni pagina — evita che il
+     contenuto tocchi esattamente il bordo dell'header/footer */
+  padding-top: 3mm;
+  padding-bottom: 3mm;
 }
 img { max-width: 100%; height: auto; display: block; }
 
@@ -310,12 +321,12 @@ img { max-width: 100%; height: auto; display: block; }
   break-after: page;
   page-break-after: always;
   display: flex;
-  min-height: 253mm;  /* A4 (297mm) meno margini Puppeteer top+bottom (22+22=44mm) */
+  min-height: 247mm;  /* A4 (297mm) - margini @page (22+22=44mm) - body padding (3+3=6mm) */
   overflow: visible;
 }
 .cover-sidebar {
   width: 65mm;
-  min-height: 253mm;
+  min-height: 247mm;
   background: #3A3A3A;
   color: white;
   padding: 10mm 10mm 12mm 12mm;
@@ -711,24 +722,46 @@ tbody td {
 .signature-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 7pt;
+  gap: 8pt;
   margin: 6pt 0;
 }
 .signature-box {
   border: 0.5pt solid #CCCCCC;
-  border-left: 3pt solid #3A3A3A;
-  border-radius: 0 2pt 2pt 0;
-  padding: 7pt 9pt;
-  min-height: 44mm;
+  border-left: 3pt solid #2C2C2C;
+  border-radius: 0 3pt 3pt 0;
+  padding: 8pt 10pt 8pt 10pt;
+  min-height: 60mm;
   break-inside: avoid;
   overflow: hidden;
 }
-.sig-role  { font-weight: bold; font-size: 9pt; color: #3A3A3A; margin-bottom: 3pt; }
-.sig-name  { font-size: 9pt; margin-bottom: 8pt; }
-.sig-lines { display: flex; gap: 10pt; margin-top: 6pt; }
-.sig-field { flex: 1; min-width: 0; }
-.sig-label { font-size: 7pt; color: #777777; margin-bottom: 2pt; }
-.sig-line  { border-bottom: 0.5pt solid #AAAAAA; height: 14pt; }
+.sig-role {
+  font-weight: bold;
+  font-size: 9.5pt;
+  color: #1A1A1A;
+  margin-bottom: 2pt;
+  padding-bottom: 4pt;
+  border-bottom: 0.5pt solid #EEEEEE;
+}
+.sig-name  { font-size: 9pt; color: #444444; margin-bottom: 10pt; }
+.sig-body  { display: flex; gap: 10pt; align-items: flex-start; margin-top: 4pt; }
+.sig-stamp {
+  flex-shrink: 0;
+  width: 33mm;
+  height: 22mm;
+  border: 0.5pt dashed #BBBBBB;
+  border-radius: 2pt;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #CCCCCC;
+  font-size: 6.5pt;
+  letter-spacing: 1pt;
+  text-transform: uppercase;
+}
+.sig-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10pt; }
+.sig-field  { flex: 1; min-width: 0; }
+.sig-label  { font-size: 7pt; color: #777777; margin-bottom: 3pt; }
+.sig-line   { border-bottom: 0.5pt solid #999999; min-height: 16pt; }
 
 /* ═══ TYPOGRAPHY ════════════════════════════════════════════════════ */
 p          { margin-bottom: 4pt; line-height: 1.55; orphans: 3; widows: 3; overflow: hidden; }
@@ -749,6 +782,28 @@ h3 { font-size: 10pt; margin: 6pt 0 3pt 0; }
 .no-break   { break-inside: avoid; page-break-inside: avoid; }
 .keep-next  { break-after: avoid; page-break-after: avoid; }
 `;
+}
+
+// ── FIRMA BOX — helper riusabile ──────────────────────────────────────────────
+function buildSigBox(role, name, fullWidth = false) {
+  return `
+  <div class="signature-box"${fullWidth ? ' style="margin:8pt 0;"' : ''}>
+    <div class="sig-role">${esc(role)}</div>
+    <div class="sig-name">${name}</div>
+    <div class="sig-body">
+      <div class="sig-stamp">Timbro</div>
+      <div class="sig-fields">
+        <div class="sig-field">
+          <div class="sig-label">Firma</div>
+          <div class="sig-line"></div>
+        </div>
+        <div class="sig-field">
+          <div class="sig-label">Data</div>
+          <div class="sig-line"></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
 }
 
 // ── MAIN BUILDER (async per caricamento immagini cartelli) ─────────────────────
@@ -858,6 +913,24 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
     </div>
   </div>
 </div>`;
+
+  // ── PAGINA FIRME (INIZIO DOCUMENTO) ────────────────────────────────────────
+  const s0_firme = `
+<div class="section-title page-break">Firme e Sottoscrizione del Documento</div>
+<p>Il presente Piano Operativo di Sicurezza, redatto ai sensi dell'art. 89 comma 1 lettera h)
+del D.lgs 81/2008 e s.m.i., viene sottoscritto dalle figure responsabili dell'impresa esecutrice
+per attestazione di redazione, presa visione e accettazione delle disposizioni contenute.</p>
+<div class="signature-grid">
+  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', v(d.companyName))}
+  ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', v(d.rspp))}
+  ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', v(d.rls))}
+  ${buildSigBox('Medico Competente', v(d.medico))}
+</div>
+${buildSigBox('CSE — Coordinatore per la Sicurezza in fase di Esecuzione (per presa visione)', v(d.cse), true)}
+<p class="muted" style="margin-top:10pt;font-size:8pt;text-align:center;">
+  Le firme apposte nella presente pagina, corredate del timbro aziendale, attestano l'avvenuta
+  redazione e condivisione del POS ai sensi del D.lgs 81/2008.
+</p>`;
 
   const s1 = `
 <div class="section-title">Sezione 1 — Intestazione e Dati Identificativi</div>
@@ -1203,52 +1276,19 @@ da assenza &gt;60 giorni per malattia.</p>
 
   const s14 = `
 <div class="section-title page-break">Sezione 14 — Firme e Presa Visione</div>
-<p>Il presente Piano Operativo di Sicurezza è stato redatto ai sensi del D.lgs 81/2008 e s.m.i. e viene
-sottoscritto per accettazione e presa visione dalle seguenti figure responsabili:</p>
+<p>Il presente Piano Operativo di Sicurezza è stato redatto ai sensi del D.lgs 81/2008 e s.m.i.
+e viene sottoscritto per accettazione e presa visione dalle seguenti figure responsabili.
+Le firme devono essere apposte con timbro aziendale a fianco della firma per piena validità.</p>
 <div class="signature-grid">
-  <div class="signature-box">
-    <div class="sig-role">Datore di Lavoro dell'impresa esecutrice</div>
-    <div class="sig-name">${v(d.companyName)}</div>
-    <div class="sig-lines">
-      <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
-      <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
-    </div>
-  </div>
-  <div class="signature-box">
-    <div class="sig-role">RSPP</div>
-    <div class="sig-name">${v(d.rspp)}</div>
-    <div class="sig-lines">
-      <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
-      <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
-    </div>
-  </div>
-  <div class="signature-box">
-    <div class="sig-role">RLS</div>
-    <div class="sig-name">${v(d.rls)}</div>
-    <div class="sig-lines">
-      <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
-      <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
-    </div>
-  </div>
-  <div class="signature-box">
-    <div class="sig-role">Medico Competente</div>
-    <div class="sig-name">${v(d.medico)}</div>
-    <div class="sig-lines">
-      <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
-      <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
-    </div>
-  </div>
+  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', v(d.companyName))}
+  ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', v(d.rspp))}
+  ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', v(d.rls))}
+  ${buildSigBox('Medico Competente', v(d.medico))}
 </div>
-<div class="signature-box" style="margin:7pt 0 12pt 0;">
-  <div class="sig-role">CSE — Coordinatore per la Sicurezza in fase di Esecuzione (per presa visione)</div>
-  <div class="sig-name">${v(d.cse)}</div>
-  <div class="sig-lines">
-    <div class="sig-field"><div class="sig-label">Firma</div><div class="sig-line"></div></div>
-    <div class="sig-field"><div class="sig-label">Data</div><div class="sig-line"></div></div>
-  </div>
-</div>
-<div class="sub-title">Dichiarazione presa visione dei lavoratori</div>
-<p>I sottoscritti dichiarano di aver ricevuto copia del presente POS e di impegnarsi al rispetto delle disposizioni.</p>
+${buildSigBox('CSE — Coordinatore per la Sicurezza in fase di Esecuzione (per presa visione)', v(d.cse), true)}
+<div class="sub-title" style="margin-top:16pt;">Dichiarazione presa visione dei lavoratori</div>
+<p>I sottoscritti dichiarano di aver ricevuto copia del presente POS e di impegnarsi al rispetto delle disposizioni
+ai sensi dell'art. 17 D.lgs 81/2008.</p>
 <table class="allow-break">
   <thead><tr>
     <th style="width:6%">N.</th>
@@ -1273,6 +1313,7 @@ sottoscritto per accettazione e presa visione dalle seguenti figure responsabili
 <body>
 ${cover}
 <div class="content">
+${s0_firme}
 ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
 </div>
 </body>
