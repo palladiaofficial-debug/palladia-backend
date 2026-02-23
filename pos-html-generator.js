@@ -280,428 +280,425 @@ function buildSegnaleticaHtml(signsWithImages) {
 // ── CSS ───────────────────────────────────────────────────────────────────────
 function buildCss() {
   return `
-/* ═══ RESET — regola 0: tutto parte da zero ════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════
+   PALLADIA PDF — Stylesheet v5
+   Margini gestiti SOLO da Puppeteer: top/bottom 18mm, left/right 16mm.
+   @page { margin:0 } evita il doppio margine CSS+Puppeteer.
+   displayHeaderFooter:true → Chrome inietta header/footer nelle aree
+   di margine; pageNumber e totalPages sono sempre corretti.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── RESET ─────────────────────────────────────────────────────────── */
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
-  /* REGOLA FERREA 1: nessun testo esce mai dal suo contenitore */
   word-break: break-word;
   overflow-wrap: break-word;
-  /* REGOLA FERREA 2: nessun elemento flex occupa più spazio del dovuto */
   min-width: 0;
 }
 
-/* ═══ PAGE ═════════════════════════════════════════════════════════
-   CSS @page margin → 0.
-   Puppeteer (pdf-renderer.js) imposta margin top/bottom 18mm.
-   Puppeteer SOVRASCRIVE CSS @page margin → la sorgente unica di verità
-   è Puppeteer. Impostare 0 qui evita conflitti.
+/* ── PAGE ───────────────────────────────────────────────────────────
+   margin:0 → nessun margine CSS aggiuntivo.
+   I margini fisici vengono SOLO da Puppeteer (18mm top/bottom, 16mm sides).
+   Chrome pagina il contenuto nell'area che Puppeteer riserva (261×178mm). */
+@page {
+  size: A4;
+  margin: 0;
+}
 
-   STRATEGIA ANTI-OVERLAP DEFINITIVA:
-   - Puppeteer margin top=18mm, bottom=18mm → contenuto parte da Y=18mm
-   - .pdf-header e .pdf-footer usano position:fixed con top:0 / bottom:0
-   - I fixed element stanno in Y=0..14mm (top) e Y=283..297mm (bottom)
-   - Il contenuto parte da Y=18mm → 4mm di buffer → ZERO sovrapposizioni */
-@page { size: A4; margin: 0; }
-
-/* ═══ FIXED HEADER — appare su ogni pagina nell'area margine superiore */
-.pdf-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 14mm;
-  padding: 0 15mm 2pt 15mm;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-  border-bottom: 0.5pt solid #CCCCCC;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 7.5pt;
-  color: #555555;
-  box-sizing: border-box;
-  background: white;
+/* ── BASE ───────────────────────────────────────────────────────────── */
+html, body {
+  margin: 0;
+  padding: 0;
   -webkit-print-color-adjust: exact;
   print-color-adjust: exact;
 }
-.pdf-header-brand {
-  font-weight: bold;
-  color: #3A3A3A;
-  letter-spacing: 1pt;
-}
-.pdf-header-title { color: #666666; }
-
-/* ═══ FIXED FOOTER — appare su ogni pagina nell'area margine inferiore */
-.pdf-footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 14mm;
-  padding: 2pt 15mm 0 15mm;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  border-top: 0.5pt solid #CCCCCC;
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 7.5pt;
-  color: #555555;
-  box-sizing: border-box;
-  background: white;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-.pdf-footer-dlgs { color: #888888; }
-.pdf-footer-rev  { color: #888888; }
-.pdf-footer-page {
-  color: #3A3A3A;
-  font-weight: bold;
-}
-/* Numero pagina via CSS counter (supportato da Chromium in print mode) */
-.pdf-footer-page::before {
-  content: "Pagina " counter(page) " di " counter(pages);
-}
-
-/* ═══ BASE ═════════════════════════════════════════════════════════ */
 body {
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 10.5pt;
-  color: #2C2C2C;
-  line-height: 1.55;
-  background: white;
-  padding: 0;
+  font-size: 10pt;
+  color: #1E1E1E;
+  line-height: 1.65;
+  background: #FFFFFF;
 }
-img { max-width: 100%; height: auto; display: block; }
 
-/* ═══ COVER ════════════════════════════════════════════════════════
-   min-height invece di height fissa: il contenuto non viene tagliato.
-   overflow: visible: nessun clip, mai.                              */
+/* ── DOC WRAPPER ─────────────────────────────────────────────────────
+   Tutto il documento vive dentro .doc.
+   width/max-width:100% → non può espandersi oltre il parent. */
+.doc {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.doc.debug { outline: 1px dashed #ff0000; }
+
+img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* ── ANTI-TAGLIO ─────────────────────────────────────────────────────
+   Titoli: non isolare in fondo a una pagina.
+   Righe tabella: non dividere a metà. thead si ripete.
+   Le tabelle possono continuare su più pagine (NO table break-inside:avoid). */
+h1, h2, h3 {
+  break-after: avoid-page;
+  page-break-after: avoid;
+}
+tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+thead {
+  display: table-header-group;
+}
+.no-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* ── COVER ─────────────────────────────────────────────────────────────
+   min-height = A4 (297mm) - @page margin top+bottom (18+18=36mm) = 261mm
+   La cover occupa esattamente la prima pagina di contenuto.
+   width/max-width:100% → non può mai essere più larga del parent.
+   ───────────────────────────────────────────────────────────────────── */
 .cover {
   break-after: page;
   page-break-after: always;
   display: flex;
-  min-height: 261mm;  /* A4 (297mm) - margini Puppeteer (18+18=36mm) */
-  overflow: visible;
+  width: 100%;
+  max-width: 100%;
+  min-height: 261mm;
+  overflow: hidden;
 }
 .cover-sidebar {
-  width: 65mm;
-  min-height: 261mm;
-  background: #3A3A3A;
-  color: white;
-  padding: 10mm 10mm 12mm 12mm;
+  width: 62mm;
+  max-width: 62mm;
+  flex-shrink: 0;
+  background: #2C2C2C;
+  color: #FFFFFF;
+  padding: 12mm 9mm 10mm 10mm;
   display: flex;
   flex-direction: column;
-  overflow: hidden;  /* la sidebar può clippare, è by design */
+  overflow: hidden;
 }
 .cover-sidebar-brand {
-  font-size: 11pt;
+  font-size: 10pt;
   font-weight: bold;
-  letter-spacing: 4pt;
+  letter-spacing: 3.5pt;
   text-transform: uppercase;
-  color: #BBBBBB;
-  margin-bottom: 12mm;
+  color: #AAAAAA;
+  margin-bottom: 10mm;
+  padding-bottom: 6mm;
+  border-bottom: 0.5pt solid #484848;
 }
-.cover-sidebar-item { margin-bottom: 7mm; overflow: hidden; }
+.cover-sidebar-item {
+  margin-bottom: 6mm;
+  overflow: hidden;
+}
 .cover-label {
-  font-size: 6pt;
-  letter-spacing: 1.5pt;
+  font-size: 5.5pt;
+  letter-spacing: 1.2pt;
   text-transform: uppercase;
   color: #888888;
   margin-bottom: 2pt;
 }
 .cover-value {
-  font-size: 9pt;
+  font-size: 8.5pt;
   font-weight: bold;
-  color: white;
-  line-height: 1.3;
+  color: #FFFFFF;
+  line-height: 1.35;
 }
 .cover-sidebar-footer {
   margin-top: auto;
-  font-size: 7pt;
+  font-size: 6.5pt;
   color: #666666;
-  padding-top: 6mm;
-  border-top: 0.5pt solid #555555;
+  padding-top: 5mm;
+  border-top: 0.5pt solid #444444;
+  line-height: 1.5;
 }
 .cover-main {
   flex: 1;
-  padding: 10mm 12mm 12mm 14mm;
+  min-width: 0;
+  max-width: 100%;
+  padding: 12mm 10mm 10mm 12mm;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
-  background: white;
+  background: #FFFFFF;
   overflow: hidden;
 }
+.cover-top { flex: 1; }
 .cover-title {
-  font-size: 19pt;
+  font-size: 22pt;
   font-weight: bold;
-  color: #2C2C2C;
+  color: #1E1E1E;
   text-transform: uppercase;
-  letter-spacing: 0.5pt;
-  line-height: 1.2;
-  margin-bottom: 3mm;
+  letter-spacing: 0.3pt;
+  line-height: 1.15;
+  margin-bottom: 4mm;
 }
 .cover-subtitle {
   font-size: 9pt;
-  color: #666666;
-  margin-bottom: 8mm;
+  color: #777777;
+  margin-bottom: 7mm;
+  font-style: italic;
 }
 .cover-rev-badge {
   display: inline-block;
-  background: #3A3A3A;
-  color: white;
-  font-size: 9pt;
+  background: #2C2C2C;
+  color: #FFFFFF;
+  font-size: 8.5pt;
   font-weight: bold;
-  padding: 3pt 12pt;
-  border-radius: 3pt;
-  margin-bottom: 8mm;
+  padding: 3pt 11pt;
+  border-radius: 2pt;
+  margin-bottom: 7mm;
+  letter-spacing: 0.3pt;
 }
 .cover-divider {
   border: none;
-  border-top: 1pt solid #E0E0E0;
+  border-top: 0.75pt solid #E8E8E8;
   margin: 0 0 6mm 0;
 }
 .cover-info-box {
-  border: 0.5pt solid #DDDDDD;
-  border-radius: 3pt;
-  padding: 6mm 8mm;
-  background: #FAFAFA;
+  border: 0.75pt solid #E8E8E8;
+  border-radius: 2pt;
+  padding: 5mm 7mm;
+  background: #F8F8F8;
   margin-bottom: 6mm;
-  overflow: hidden;
 }
 .cover-info-row {
   display: flex;
-  margin-bottom: 3pt;
-  font-size: 9pt;
-  overflow: hidden;
+  align-items: baseline;
+  margin-bottom: 4pt;
+  font-size: 8.5pt;
 }
+.cover-info-row:last-child { margin-bottom: 0; }
 .cover-info-label {
   font-weight: bold;
-  color: #3A3A3A;
-  width: 36mm;
+  color: #2C2C2C;
+  width: 34mm;
   flex-shrink: 0;
+  font-size: 8pt;
 }
 .cover-info-val {
-  color: #2C2C2C;
+  color: #333333;
   flex: 1;
   overflow: hidden;
+  font-size: 8.5pt;
 }
+.cover-bottom { flex-shrink: 0; }
 .cover-sig-row {
   display: flex;
   gap: 5pt;
-  margin-top: 4mm;
+  margin-top: 5mm;
 }
 .cover-sig-box {
   flex: 1;
-  border: 0.5pt solid #CCCCCC;
-  border-radius: 2pt;
-  padding: 5pt 6pt;
-  min-height: 18mm;
-  overflow: hidden;
+  border: 0.5pt solid #DDDDDD;
+  border-top: 2pt solid #2C2C2C;
+  padding: 7pt 8pt 10pt;
+  min-height: 38mm;
 }
 .cover-sig-label {
-  font-size: 6pt;
-  color: #888888;
+  font-size: 5.5pt;
+  color: #999999;
   text-transform: uppercase;
   letter-spacing: 0.5pt;
-  margin-bottom: 2pt;
+  margin-bottom: 3pt;
 }
 .cover-sig-name {
   font-size: 8pt;
   font-weight: bold;
-  color: #2C2C2C;
-  word-break: break-word;
+  color: #1E1E1E;
 }
 .cover-footer-note {
-  font-size: 7pt;
-  color: #AAAAAA;
+  font-size: 6.5pt;
+  color: #BBBBBB;
   margin-top: 4mm;
+  padding-top: 3mm;
   border-top: 0.5pt solid #EEEEEE;
-  padding-top: 2mm;
+  line-height: 1.4;
 }
 
-/* ═══ SECTION TITLE ════════════════════════════════════════════════ */
+/* ── SECTION TITLE ──────────────────────────────────────────────────── */
 .section-title {
-  background: #3A3A3A;
-  color: white;
-  font-size: 10.5pt;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 0.8pt;
-  padding: 6pt 10pt;
-  margin: 16pt 0 8pt 0;
-  break-after: avoid;
-  page-break-after: avoid;
-  overflow: hidden;
-}
-
-/* ═══ SUB-TITLE ════════════════════════════════════════════════════ */
-.sub-title {
-  background: #EEEEEE;
-  border-left: 4pt solid #3A3A3A;
+  background: #2C2C2C;
+  color: #FFFFFF;
   font-size: 9.5pt;
   font-weight: bold;
-  padding: 4pt 8pt;
-  margin: 9pt 0 5pt 0;
+  text-transform: uppercase;
+  letter-spacing: 1pt;
+  padding: 8pt 11pt;
+  margin: 28pt 0 14pt 0;
   break-after: avoid;
   page-break-after: avoid;
-  overflow: hidden;
+  break-before: avoid;
+  page-break-before: avoid;
+}
+.section-title:first-child { margin-top: 0; }
+
+/* ── SUB-TITLE ──────────────────────────────────────────────────────── */
+.sub-title {
+  background: #F0F0F0;
+  border-left: 3pt solid #2C2C2C;
+  font-size: 9pt;
+  font-weight: bold;
+  padding: 6pt 10pt;
+  margin: 18pt 0 9pt 0;
+  break-after: avoid;
+  page-break-after: avoid;
+  color: #1E1E1E;
 }
 
-/* ═══ TABLES ═══════════════════════════════════════════════════════
-   REGOLA FERREA 3: tutte le tabelle hanno layout fisso.
-   Le celle si adattano alla larghezza disponibile e il testo va a capo. */
+/* ── TABLES ─────────────────────────────────────────────────────────── */
 table {
   width: 100%;
   max-width: 100%;
-  table-layout: fixed;       /* ← regola ferrea: celle non esplodono mai */
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 9pt;
-  margin: 5pt 0 10pt 0;
-  break-inside: avoid;
-  page-break-inside: avoid;
+  margin: 6pt 0 14pt 0;
 }
 table.allow-break {
   break-inside: auto;
   page-break-inside: auto;
 }
 table.allow-break thead { display: table-header-group; }
-table.allow-break tr    { break-inside: avoid; page-break-inside: avoid; }
 thead th {
-  background: #3A3A3A;
-  color: white;
+  background: #2C2C2C;
+  color: #FFFFFF;
   font-weight: bold;
-  font-size: 8.5pt;
-  padding: 4pt 6pt;
+  font-size: 8pt;
+  padding: 5pt 7pt;
   text-align: left;
-  border: 0.5pt solid #2A2A2A;
-  overflow: hidden;              /* ← regola ferrea */
+  border: 0.5pt solid #1E1E1E;
+  overflow: hidden;
   word-break: break-word;
+  line-height: 1.4;
 }
-tbody tr:nth-child(even) { background: #F6F6F6; }
-tbody tr:nth-child(odd)  { background: white; }
+tbody tr:nth-child(even) { background: #F7F7F7; }
+tbody tr:nth-child(odd)  { background: #FFFFFF; }
 tbody td {
-  padding: 3pt 6pt;
-  border: 0.5pt solid #CCCCCC;
+  padding: 6pt 8pt;
+  border: 0.5pt solid #DDDDDD;
   vertical-align: top;
-  line-height: 1.45;
-  overflow: hidden;              /* ← regola ferrea */
+  line-height: 1.6;
   word-break: break-word;
   overflow-wrap: break-word;
 }
 
-/* ═══ RISK BADGES ══════════════════════════════════════════════════ */
+/* ── RISK BADGES ────────────────────────────────────────────────────── */
 .badge {
   display: inline-block;
-  border-radius: 3pt;
-  padding: 1pt 5pt;
+  border-radius: 2pt;
+  padding: 1.5pt 6pt;
   font-size: 7.5pt;
   font-weight: bold;
-  color: white;
+  color: #FFFFFF;
   white-space: nowrap;
 }
-.badge-low       { background: #27AE60; }
-.badge-medium    { background: #E8A000; }
-.badge-high      { background: #E67E22; }
-.badge-very-high { background: #C0392B; }
-.risk-num { display:inline-block; border-radius:3pt; padding:1pt 5pt; font-size:8pt; font-weight:bold; color:white; }
-.risk-low       { background: #27AE60; }
-.risk-medium    { background: #E8A000; }
-.risk-high      { background: #E67E22; }
-.risk-very-high { background: #C0392B; }
+.badge-low       { background: #2E7D32; }
+.badge-medium    { background: #E65100; }
+.badge-high      { background: #B71C1C; }
+.badge-very-high { background: #880E4F; }
+.risk-num {
+  display: inline-block;
+  border-radius: 2pt;
+  padding: 1.5pt 5pt;
+  font-size: 8pt;
+  font-weight: bold;
+  color: #FFFFFF;
+  min-width: 22pt;
+  text-align: center;
+}
+.risk-low       { background: #2E7D32; }
+.risk-medium    { background: #E65100; }
+.risk-high      { background: #B71C1C; }
+.risk-very-high { background: #880E4F; }
 
-/* ═══ CALLOUT ══════════════════════════════════════════════════════ */
+/* ── CALLOUT ────────────────────────────────────────────────────────── */
 .callout {
-  background: #FFF8E1;
-  border-left: 4pt solid #E8A000;
-  padding: 5pt 8pt;
-  margin: 6pt 0;
-  font-size: 9.5pt;
+  background: #FFFDE7;
+  border-left: 3pt solid #F9A825;
+  padding: 7pt 10pt;
+  margin: 8pt 0;
+  font-size: 9pt;
   break-inside: avoid;
-  overflow: hidden;
+  border-radius: 0 2pt 2pt 0;
 }
 
-/* ═══ LAVORAZIONE BLOCKS ════════════════════════════════════════════
-   REGOLA FERREA 4: i blocchi lunghi POSSONO andare a pagina successiva.
-   break-inside:avoid su blocchi da 3+ pagine causa overflow catastrofico. */
+/* ── LAVORAZIONE BLOCKS ─────────────────────────────────────────────── */
 .lavorazione-block {
-  border: 0.8pt solid #C8C8C8;
-  margin: 10pt 0 14pt 0;
-  break-inside: auto;           /* ← regola ferrea */
+  border: 0.75pt solid #DDDDDD;
+  border-radius: 2pt;
+  margin: 16pt 0 22pt 0;
+  break-inside: auto;
   page-break-inside: auto;
-  overflow: hidden;
 }
 .lav-header {
-  background: #5A5A5A;
-  color: white;
+  background: #484848;
+  color: #FFFFFF;
   font-weight: bold;
-  font-size: 10pt;
-  padding: 5pt 8pt;
-  break-after: avoid;           /* header rimane attaccato al contenuto */
-  page-break-after: avoid;
-  overflow: hidden;
-}
-.lav-body { padding: 6pt 8pt 4pt 8pt; overflow: hidden; }
-.lav-body p          { margin-bottom: 3pt; }
-.lav-body ul         { margin: 3pt 0 5pt 14pt; }
-.lav-body ol         { margin: 3pt 0 5pt 16pt; }
-.lav-body li         { margin-bottom: 2pt; }
-.lav-body .bold-line { font-weight: bold; margin: 5pt 0 2pt 0; color: #3A3A3A; }
-.lav-body table      { margin: 4pt 0 6pt 0; font-size: 8.5pt; }
-
-/* ═══ SEGNALETICA ═══════════════════════════════════════════════════ */
-.sign-intro {
-  margin-bottom: 8pt;
   font-size: 9.5pt;
-  line-height: 1.5;
+  padding: 8pt 11pt;
+  break-after: avoid;
+  page-break-after: avoid;
+  letter-spacing: 0.2pt;
 }
+.lav-body { padding: 11pt 13pt 10pt 13pt; }
+.lav-body p          { margin-bottom: 6pt; }
+.lav-body ul         { margin: 5pt 0 8pt 18pt; }
+.lav-body ol         { margin: 5pt 0 8pt 20pt; }
+.lav-body li         { margin-bottom: 4pt; }
+.lav-body .bold-line { font-weight: bold; margin: 8pt 0 3pt 0; color: #2C2C2C; }
+.lav-body table      { margin: 6pt 0 9pt 0; font-size: 8.5pt; }
 
-/* Tabella riepilogativa categorie */
-.sign-summary-table {
-  margin-bottom: 12pt !important;
+/* ── SEGNALETICA ────────────────────────────────────────────────────── */
+.sign-intro {
+  margin-bottom: 10pt;
   font-size: 9pt;
+  line-height: 1.6;
+  color: #444444;
 }
-.sign-summary-table thead th { background: #2C2C2C; }
+.sign-summary-table { margin-bottom: 14pt !important; }
+.sign-summary-table thead th { background: #1E1E1E; }
 .sign-summary-total td {
-  background: #F0F0F0 !important;
-  border-top: 1pt solid #999;
+  background: #EEEEEE !important;
+  border-top: 1pt solid #AAAAAA;
 }
 .cat-dot {
   display: inline-block;
-  width: 10pt;
-  height: 10pt;
+  width: 9pt;
+  height: 9pt;
   border-radius: 50%;
   vertical-align: middle;
 }
-
-/* Intestazione zona */
 .sign-zone-header {
-  background: #2C2C2C;
-  color: white;
-  font-size: 8.5pt;
+  background: #1E1E1E;
+  color: #FFFFFF;
+  font-size: 8pt;
   font-weight: bold;
   letter-spacing: 1pt;
   text-transform: uppercase;
-  padding: 4pt 8pt;
-  margin: 12pt 0 5pt 0;
+  padding: 5pt 9pt;
+  margin: 14pt 0 6pt 0;
   break-after: avoid;
   page-break-after: avoid;
 }
-
-/* Griglia 4 colonne */
 .signs-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 6pt;
-  margin: 0 0 6pt 0;
+  gap: 7pt;
+  margin: 0 0 8pt 0;
   break-inside: auto;
 }
-
-/* Card singolo cartello */
 .sign-card {
-  border: 0.5pt solid #D8D8D8;
-  border-radius: 0 0 3pt 3pt; /* angoli bassi, bordo top è la categoria */
-  padding: 5pt 4pt 5pt 4pt;
+  border: 0.5pt solid #E0E0E0;
+  border-radius: 0 0 2pt 2pt;
+  padding: 6pt 4pt 5pt;
   text-align: center;
   background: #FFFFFF;
   break-inside: avoid;
@@ -711,133 +708,136 @@ tbody td {
   flex-direction: column;
   align-items: center;
 }
-
-/* Immagine del cartello */
 .sign-img {
   width: 100%;
-  max-width: 34mm;
-  height: 28mm;
+  max-width: 32mm;
+  height: 26mm;
   object-fit: contain;
   display: block;
-  margin: 4pt auto 5pt auto;
-  background: white;
+  margin: 3pt auto 5pt;
+  background: #FFFFFF;
 }
 .sign-img-placeholder {
-  width: 34mm;
-  height: 28mm;
-  background: #EEEEEE;
+  width: 32mm;
+  height: 26mm;
+  background: #F0F0F0;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14pt;
+  font-size: 13pt;
   color: #AAAAAA;
-  margin: 4pt auto 5pt auto;
+  margin: 3pt auto 5pt;
 }
-
-/* Testi del cartello */
 .sign-name {
-  font-size: 6.5pt;
+  font-size: 6pt;
   font-weight: bold;
   color: #1A1A1A;
   margin-bottom: 2pt;
   line-height: 1.3;
-  text-align: center;
 }
 .sign-iso {
-  font-size: 6pt;
+  font-size: 5.5pt;
   font-weight: bold;
-  letter-spacing: 0.5pt;
+  letter-spacing: 0.3pt;
   margin-bottom: 2pt;
   text-transform: uppercase;
 }
 .sign-location-text {
-  font-size: 5.5pt;
-  color: #666666;
+  font-size: 5pt;
+  color: #777777;
   font-style: italic;
-  line-height: 1.25;
+  line-height: 1.3;
   text-align: center;
   margin-top: auto;
+  padding-top: 2pt;
 }
 
-/* ═══ EMERGENCY GRID ════════════════════════════════════════════════ */
+/* ── EMERGENCY GRID ─────────────────────────────────────────────────── */
 .emergency-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 6pt;
-  margin: 6pt 0 12pt 0;
+  gap: 7pt;
+  margin: 8pt 0 14pt 0;
 }
 .emergency-card {
-  background: #3A3A3A;
-  color: white;
+  background: #2C2C2C;
+  color: #FFFFFF;
   text-align: center;
-  padding: 7pt 5pt;
-  border-radius: 3pt;
+  padding: 9pt 6pt;
+  border-radius: 2pt;
   break-inside: avoid;
   overflow: hidden;
 }
-.emergency-number { font-size: 18pt; font-weight: bold; display: block; }
-.emergency-label  { font-size: 7pt; color: #BBBBBB; margin-top: 2pt; }
+.emergency-number { font-size: 17pt; font-weight: bold; display: block; letter-spacing: 0.5pt; }
+.emergency-label  { font-size: 6.5pt; color: #AAAAAA; margin-top: 3pt; line-height: 1.3; }
 
-/* ═══ SIGNATURES ════════════════════════════════════════════════════ */
+/* ── SIGNATURES ─────────────────────────────────────────────────────── */
 .signature-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8pt;
-  margin: 6pt 0;
+  gap: 14pt;
+  margin: 12pt 0;
 }
 .signature-box {
-  border: 0.5pt solid #CCCCCC;
+  border: 0.5pt solid #DDDDDD;
   border-left: 3pt solid #2C2C2C;
-  border-radius: 0 3pt 3pt 0;
-  padding: 8pt 10pt 8pt 10pt;
-  min-height: 60mm;
+  border-radius: 0 2pt 2pt 0;
+  padding: 11pt 13pt 14pt;
+  min-height: 75mm;
   break-inside: avoid;
-  overflow: hidden;
+  page-break-inside: avoid;
 }
 .sig-role {
   font-weight: bold;
-  font-size: 9.5pt;
+  font-size: 9pt;
   color: #1A1A1A;
-  margin-bottom: 2pt;
-  padding-bottom: 4pt;
+  margin-bottom: 3pt;
+  padding-bottom: 6pt;
   border-bottom: 0.5pt solid #EEEEEE;
+  line-height: 1.4;
 }
-.sig-name  { font-size: 9pt; color: #444444; margin-bottom: 10pt; }
-.sig-body  { display: flex; gap: 10pt; align-items: flex-start; margin-top: 4pt; }
+.sig-name  { font-size: 8.5pt; color: #555555; margin-bottom: 12pt; margin-top: 4pt; }
+.sig-body  { display: flex; gap: 12pt; align-items: flex-start; }
 .sig-stamp {
   flex-shrink: 0;
-  width: 33mm;
-  height: 22mm;
-  border: 0.5pt dashed #BBBBBB;
+  width: 34mm;
+  height: 28mm;
+  border: 0.5pt dashed #CCCCCC;
   border-radius: 2pt;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #CCCCCC;
-  font-size: 6.5pt;
+  color: #DDDDDD;
+  font-size: 6pt;
   letter-spacing: 1pt;
   text-transform: uppercase;
 }
-.sig-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10pt; }
+.sig-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14pt; }
 .sig-field  { flex: 1; min-width: 0; }
-.sig-label  { font-size: 7pt; color: #777777; margin-bottom: 3pt; }
-.sig-line   { border-bottom: 0.5pt solid #999999; min-height: 16pt; }
+.sig-label  { font-size: 6.5pt; color: #888888; margin-bottom: 5pt; text-transform: uppercase; letter-spacing: 0.3pt; }
+.sig-line   { border-bottom: 0.5pt solid #BBBBBB; min-height: 20pt; }
 
-/* ═══ TYPOGRAPHY ════════════════════════════════════════════════════ */
-p          { margin-bottom: 4pt; line-height: 1.55; orphans: 3; widows: 3; overflow: hidden; }
-ul, ol     { margin: 3pt 0 6pt 16pt; }
-li         { margin-bottom: 2pt; }
+/* ── TYPOGRAPHY ─────────────────────────────────────────────────────── */
+p          { margin-bottom: 8pt; line-height: 1.7; orphans: 3; widows: 3; }
+ul, ol     { margin: 6pt 0 10pt 19pt; }
+li         { margin-bottom: 5pt; line-height: 1.6; }
 strong     { font-weight: bold; }
-.bold-line { font-weight: bold; margin: 5pt 0 2pt 0; }
-.muted     { color: #777777; font-size: 9pt; }
-.placeholder { color: #D68910; font-weight: bold; font-style: italic; }
-hr         { border: none; border-top: 0.5pt solid #E0E0E0; margin: 6pt 0; }
-h1, h2, h3 { break-after: avoid; page-break-after: avoid; overflow: hidden; }
-h1 { font-size: 13pt; margin: 10pt 0 5pt 0; }
-h2 { font-size: 11pt; margin: 8pt 0 4pt 0; }
-h3 { font-size: 10pt; margin: 6pt 0 3pt 0; }
+.bold-line { font-weight: bold; margin: 9pt 0 3pt 0; }
+.muted     { color: #888888; font-size: 8.5pt; }
+.placeholder { color: #C0852A; font-weight: bold; font-style: italic; }
+hr         { border: none; border-top: 0.5pt solid #E8E8E8; margin: 12pt 0; }
+h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
+h1 { font-size: 13pt; margin: 16pt 0 8pt 0; color: #1E1E1E; }
+h2 { font-size: 11pt; margin: 14pt 0 6pt 0; color: #1E1E1E; }
+h3 { font-size: 10pt; margin: 11pt 0 5pt 0; color: #1E1E1E; }
 
-/* ═══ PAGE BREAK UTILITIES ══════════════════════════════════════════ */
+/* ── CONTENT WRAPPER ─────────────────────────────────────────────────
+   Il div.content avvolge tutte le sezioni dopo la cover.
+   Nessun padding verticale extra: i margini Puppeteer (22mm top/bottom)
+   già garantiscono spazio sufficiente tra contenuto e header/footer. */
+.content { }
+
+/* ── PAGE BREAK UTILITIES ───────────────────────────────────────────── */
 .page-break { break-before: page; page-break-before: always; }
 .no-break   { break-inside: avoid; page-break-inside: avoid; }
 .keep-next  { break-after: avoid; page-break-after: avoid; }
@@ -901,8 +901,10 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
   // ── COPERTINA ──────────────────────────────────────────────────────────────
   const cover = `
 <div class="cover">
+
   <div class="cover-sidebar">
     <div class="cover-sidebar-brand">Palladia</div>
+
     <div class="cover-sidebar-item">
       <div class="cover-label">Oggetto</div>
       <div class="cover-value">${esc(d.workType || '[DA COMPILARE]')}</div>
@@ -925,19 +927,21 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
     </div>
     <div class="cover-sidebar-item">
       <div class="cover-label">Revisione</div>
-      <div class="cover-value">Rev. ${rev}</div>
+      <div class="cover-value">Rev.&#160;${rev}</div>
     </div>
     <div class="cover-sidebar-item">
       <div class="cover-label">Data emissione</div>
       <div class="cover-value">${oggi}</div>
     </div>
+
     <div class="cover-sidebar-footer">
-      Documento generato con Palladia<br>D.lgs 81/2008 e s.m.i.
+      Redatto ai sensi del D.lgs 81/2008 e s.m.i.<br>
+      Generato con Palladia
     </div>
   </div>
 
   <div class="cover-main">
-    <div>
+    <div class="cover-top">
       <div class="cover-title">Piano Operativo<br>di Sicurezza</div>
       <div class="cover-subtitle">ai sensi del D.lgs 81/2008 e s.m.i. — Allegato XV</div>
       <div class="cover-rev-badge">Revisione ${rev}</div>
@@ -946,17 +950,18 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
         ${d.workType    ? `<div class="cover-info-row"><span class="cover-info-label">Natura dei lavori</span><span class="cover-info-val">${esc(d.workType)}</span></div>` : ''}
         ${d.client      ? `<div class="cover-info-row"><span class="cover-info-label">Committente</span><span class="cover-info-val">${esc(d.client)}</span></div>` : ''}
         ${siteName      ? `<div class="cover-info-row"><span class="cover-info-label">Cantiere</span><span class="cover-info-val">${esc(siteName)}</span></div>` : ''}
-        ${(d.startDate||d.endDate) ? `<div class="cover-info-row"><span class="cover-info-label">Periodo</span><span class="cover-info-val">${esc(d.startDate||'')} – ${esc(d.endDate||'')}</span></div>` : ''}
-        ${d.budget      ? `<div class="cover-info-row"><span class="cover-info-label">Importo lavori</span><span class="cover-info-val">€ ${esc(String(d.budget))}</span></div>` : ''}
+        ${(d.startDate||d.endDate) ? `<div class="cover-info-row"><span class="cover-info-label">Periodo</span><span class="cover-info-val">${esc(d.startDate||'')}&#160;–&#160;${esc(d.endDate||'')}</span></div>` : ''}
+        ${d.budget      ? `<div class="cover-info-row"><span class="cover-info-label">Importo lavori</span><span class="cover-info-val">€&#160;${esc(String(d.budget))}</span></div>` : ''}
         <div class="cover-info-row"><span class="cover-info-label">Impresa</span><span class="cover-info-val">${esc(d.companyName||'[DA COMPILARE]')}</span></div>
       </div>
     </div>
-    <div>
-      <div style="font-size:6.5pt;color:#777;text-transform:uppercase;letter-spacing:0.5pt;margin-bottom:4pt;">Firme del documento</div>
+
+    <div class="cover-bottom">
+      <div style="font-size:6pt;color:#AAAAAA;text-transform:uppercase;letter-spacing:0.8pt;margin-bottom:5pt;">Firme del documento</div>
       <div class="cover-sig-row">
         <div class="cover-sig-box">
           <div class="cover-sig-label">Datore di lavoro</div>
-          <div class="cover-sig-name">${esc(d.companyName||'...')}</div>
+          <div class="cover-sig-name">${esc(d.companyName||'—')}</div>
         </div>
         <div class="cover-sig-box">
           <div class="cover-sig-label">RSPP</div>
@@ -968,10 +973,11 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
         </div>
       </div>
       <div class="cover-footer-note">
-        Elaborato ai sensi del D.lgs 81/2008 art. 89 c.1 lett. h — Versione digitale generata con Palladia
+        Elaborato ai sensi del D.lgs 81/2008 art. 89 c.1 lett. h) — Versione digitale generata con Palladia
       </div>
     </div>
   </div>
+
 </div>`;
 
   // ── PAGINA FIRME (INIZIO DOCUMENTO) ────────────────────────────────────────
@@ -1363,6 +1369,49 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   Documento generato con Palladia — D.lgs 81/2008 e s.m.i. — ${oggi} — Revisione ${rev}
 </p>`;
 
+  // BUILD watermark — dentro safe area (non in margine)
+  const buildTs = new Date().toISOString();
+  const buildWatermark = `<div style="position:fixed;bottom:20mm;right:18mm;font-size:7px;color:#bbb;font-family:monospace;z-index:9999;pointer-events:none;">BUILD ${buildTs}</div>`;
+
+  // Safe-area overlay: bordo rosso tratteggiato su OGNI PAGINA
+  // top:18mm bottom:18mm = margini Puppeteer verticali
+  // left:16mm right:16mm = margini Puppeteer laterali
+  const safeAreaOverlay = `<div style="position:fixed;top:18mm;left:16mm;right:16mm;bottom:18mm;outline:2px dashed rgba(220,0,0,0.55);pointer-events:none;z-index:9997;"></div>`;
+
+  // Script diagnostico overflow — logga in console tutti gli elementi
+  // che escono dalla safe area (catturati da pdf-renderer via page.on('console'))
+  // safeLeft  = 16mm in px @96dpi  = 16 * (96/25.4) ≈ 60px
+  // safeRight = viewport(794) - 60 = 734px
+  const diagScript = `
+<script>
+(function(){
+  var MM = 96/25.4;
+  var sL = 16*MM, sR = 794 - 16*MM;
+  var issues = [];
+  document.querySelectorAll('*').forEach(function(el){
+    var r = el.getBoundingClientRect();
+    if(!r || r.width <= 0) return;
+    var tag = el.tagName + (el.className ? '.' + String(el.className).trim().replace(/\\s+/g,'.').substring(0,50) : '');
+    if(r.left < -0.5){
+      issues.push('[OVERFLOW-LEFT-PAGE] ' + tag + ' left=' + r.left.toFixed(1) + ' right=' + r.right.toFixed(1));
+    } else if(r.right > 794.5){
+      issues.push('[OVERFLOW-RIGHT-PAGE] ' + tag + ' left=' + r.left.toFixed(1) + ' right=' + r.right.toFixed(1));
+    } else if(r.left < sL - 1){
+      issues.push('[IN-LEFT-MARGIN] ' + tag + ' left=' + r.left.toFixed(1) + ' (safeL=' + sL.toFixed(1) + ')');
+    } else if(r.right > sR + 1){
+      issues.push('[IN-RIGHT-MARGIN] ' + tag + ' right=' + r.right.toFixed(1) + ' (safeR=' + sR.toFixed(1) + ')');
+    }
+  });
+  if(issues.length){
+    console.log('[DIAG] === OVERFLOW REPORT: ' + issues.length + ' elementi ===');
+    issues.forEach(function(s){ console.log('[DIAG] ' + s); });
+    console.log('[DIAG] === END REPORT ===');
+  } else {
+    console.log('[DIAG] OK — nessun overflow rilevato (safeL=' + sL.toFixed(0) + 'px safeR=' + sR.toFixed(0) + 'px)');
+  }
+})();
+<\/script>`;
+
   return `<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -1371,26 +1420,16 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   <style>${buildCss()}</style>
 </head>
 <body>
-
-<!-- HEADER fisso — vive nell'area margine superiore (top:0..14mm).
-     Il contenuto parte da Y=18mm (Puppeteer margin) → gap di 4mm → nessuna sovrapposizione. -->
-<div class="pdf-header">
-  <span class="pdf-header-brand">PALLADIA</span>
-  <span class="pdf-header-title">${esc(docTitle)}</span>
-</div>
-
-<!-- FOOTER fisso — vive nell'area margine inferiore (bottom:0..14mm). -->
-<div class="pdf-footer">
-  <span class="pdf-footer-dlgs">D.lgs 81/2008 e s.m.i.</span>
-  <span class="pdf-footer-page"></span>
-  <span class="pdf-footer-rev">Rev. ${rev}</span>
-</div>
-
+<div class="doc">
+${buildWatermark}
+${safeAreaOverlay}
 ${cover}
 <div class="content">
 ${s0_firme}
 ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
 </div>
+</div>
+${diagScript}
 </body>
 </html>`;
 }
