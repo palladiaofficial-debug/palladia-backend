@@ -29,12 +29,13 @@ function escT(str) {
 /**
  * Template intestazione.
  *
- * CRITICO Puppeteer: il container esterno ha font-size:0 di default.
- * Ogni testo DEVE avere font-size esplicito in px, anche gli span figli.
- * height:18mm = margine top di Puppeteer → non sconfina mai nel contenuto.
+ * Margine Puppeteer top = 28mm → questo template occupa 28mm.
+ * Il testo è allineato al FONDO del template (vicino al contenuto).
+ * padding: 0 16mm allinea il testo al body padding orizzontale del POS.
+ * CRITICO: font-size:0 sul container, font-size esplicito su ogni span.
  */
 function buildHeaderTemplate(docTitle) {
-  return `<div style="box-sizing:border-box;width:100%;height:18mm;display:flex;align-items:flex-end;padding:0 16mm 4px 16mm;border-bottom:0.5pt solid #DDDDDD;font-family:Arial,Helvetica,sans-serif;font-size:0;">
+  return `<div style="box-sizing:border-box;width:100%;height:28mm;display:flex;align-items:flex-end;padding:0 16mm 5px 16mm;border-bottom:0.5pt solid #DDDDDD;font-family:Arial,Helvetica,sans-serif;font-size:0;">
   <span style="font-size:8px;font-weight:bold;color:#2C2C2C;letter-spacing:0.5pt;flex:0 0 auto;">PALLADIA</span>
   <span style="font-size:8px;color:#999999;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escT(docTitle)}</span>
 </div>`;
@@ -43,14 +44,14 @@ function buildHeaderTemplate(docTitle) {
 /**
  * Template piè di pagina.
  *
- * <span class="pageNumber"> e <span class="totalPages"> ricevono il valore
- * da Chrome via textContent — devono essere elementi standalone con font-size
- * esplicito (non ereditato dal container a font-size:0).
- * height:18mm = margine bottom di Puppeteer.
+ * Margine Puppeteer bottom = 28mm → template alto 28mm.
+ * Il testo è allineato in CIMA (vicino al contenuto).
+ * padding: 0 16mm allinea al body padding orizzontale del POS.
+ * pageNumber e totalPages: iniettati da Chrome — font-size esplicito obbligatorio.
  */
 function buildFooterTemplate(revision) {
   const rev = escT(String(revision || 1));
-  return `<div style="box-sizing:border-box;width:100%;height:18mm;display:flex;align-items:flex-start;padding:4px 16mm 0 16mm;border-top:0.5pt solid #DDDDDD;font-family:Arial,Helvetica,sans-serif;font-size:0;">
+  return `<div style="box-sizing:border-box;width:100%;height:28mm;display:flex;align-items:flex-start;padding:5px 16mm 0 16mm;border-top:0.5pt solid #DDDDDD;font-family:Arial,Helvetica,sans-serif;font-size:0;">
   <span style="font-size:7.5px;color:#BBBBBB;flex:1;">D.Lgs 81/2008 e s.m.i.</span>
   <span style="font-size:7.5px;color:#444444;font-weight:bold;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:7.5px;"></span>&#160;di&#160;<span class="totalPages" style="font-size:7.5px;"></span></span>
   <span style="font-size:7.5px;color:#BBBBBB;flex:1;text-align:right;">Rev.&#160;${rev}</span>
@@ -70,6 +71,14 @@ const LAUNCH_ARGS = [
 ];
 
 // ── Costruisce le opzioni PDF per page.pdf() ──────────────────────────────────
+//
+// Strategia margini:
+//   Verticale (top/bottom): gestito da Puppeteer margin 28mm → spazio per H/F
+//     su OGNI pagina del PDF.
+//   Orizzontale (left/right): gestito da body { padding: 0 16mm } nel CSS del POS.
+//     Puppeteer left/right = 0 → nessun doppio margine laterale.
+//
+// Risultato: contenuto a left=60px nel DOM (16mm×3.78), nessun overflow laterale.
 function makePdfOpts(opts) {
   return {
     format:              'A4',
@@ -79,10 +88,10 @@ function makePdfOpts(opts) {
     headerTemplate:      buildHeaderTemplate(opts.docTitle || ''),
     footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1),
     margin: {
-      top:    '18mm',
-      bottom: '18mm',
-      left:   '16mm',
-      right:  '16mm',
+      top:    '28mm',
+      bottom: '28mm',
+      left:   '0',
+      right:  '0',
     },
   };
 }
@@ -96,12 +105,6 @@ async function renderHtmlToPdf(html, opts = {}) {
   const browser = await puppeteer.launch({ headless: true, args: LAUNCH_ARGS });
   try {
     const page = await browser.newPage();
-    page.on('console', msg => {
-      const t = msg.text();
-      if (t.startsWith('[DIAG]') || t.startsWith('[OVERFLOW') || t.startsWith('[IN-')) {
-        console.log('[browser]', t);
-      }
-    });
     await page.setViewport({ width: 794, height: 1123 });
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     await page.evaluateHandle('document.fonts.ready');
@@ -149,12 +152,6 @@ class PdfRendererPool {
     const browser = await this._getBrowser();
     const page    = await browser.newPage();
     try {
-      page.on('console', msg => {
-        const t = msg.text();
-        if (t.startsWith('[DIAG]') || t.startsWith('[OVERFLOW') || t.startsWith('[IN-')) {
-          console.log('[browser]', t);
-        }
-      });
       await page.setViewport({ width: 794, height: 1123 });
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
       await page.evaluateHandle('document.fonts.ready');

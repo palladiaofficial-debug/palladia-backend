@@ -281,11 +281,13 @@ function buildSegnaleticaHtml(signsWithImages) {
 function buildCss() {
   return `
 /* ═══════════════════════════════════════════════════════════════════
-   PALLADIA PDF — Stylesheet v5
-   Margini gestiti SOLO da Puppeteer: top/bottom 18mm, left/right 16mm.
-   @page { margin:0 } evita il doppio margine CSS+Puppeteer.
-   displayHeaderFooter:true → Chrome inietta header/footer nelle aree
-   di margine; pageNumber e totalPages sono sempre corretti.
+   PALLADIA PDF — Stylesheet v6
+   Strategia margini:
+     Verticale: Puppeteer margin top/bottom = 28mm (per-pagina, H/F in
+                quel buffer). @page { margin:0 } — nessun CSS margin.
+     Orizzontale: body { padding: 0 16mm } → contenuto DOM a left=60px.
+                  Puppeteer left/right = 0 → nessun doppio margine.
+   Safe area effettiva: top/bottom 28mm, left/right 16mm.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── RESET ─────────────────────────────────────────────────────────── */
@@ -320,6 +322,10 @@ body {
   color: #1E1E1E;
   line-height: 1.65;
   background: #FFFFFF;
+  /* Safe area orizzontale nel DOM: contenuto a 16mm da ogni lato.
+     Il margine verticale è gestito da Puppeteer (top/bottom 28mm). */
+  padding: 0 16mm;
+  box-sizing: border-box;
 }
 
 /* ── DOC WRAPPER ─────────────────────────────────────────────────────
@@ -361,9 +367,8 @@ thead {
 }
 
 /* ── COVER ─────────────────────────────────────────────────────────────
-   min-height = A4 (297mm) - @page margin top+bottom (18+18=36mm) = 261mm
-   La cover occupa esattamente la prima pagina di contenuto.
-   width/max-width:100% → non può mai essere più larga del parent.
+   min-height = A4 (297mm) - Puppeteer top (28mm) - Puppeteer bottom (28mm)
+             = 241mm → cover occupa esattamente la prima pagina di contenuto.
    ───────────────────────────────────────────────────────────────────── */
 .cover {
   break-after: page;
@@ -371,7 +376,7 @@ thead {
   display: flex;
   width: 100%;
   max-width: 100%;
-  min-height: 261mm;
+  min-height: 241mm;
   overflow: hidden;
 }
 .cover-sidebar {
@@ -577,6 +582,7 @@ thead th {
   border: 0.5pt solid #1E1E1E;
   overflow: hidden;
   word-break: break-word;
+  overflow-wrap: anywhere;
   line-height: 1.4;
 }
 tbody tr:nth-child(even) { background: #F7F7F7; }
@@ -587,7 +593,7 @@ tbody td {
   vertical-align: top;
   line-height: 1.6;
   word-break: break-word;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* ── RISK BADGES ────────────────────────────────────────────────────── */
@@ -1369,49 +1375,6 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   Documento generato con Palladia — D.lgs 81/2008 e s.m.i. — ${oggi} — Revisione ${rev}
 </p>`;
 
-  // BUILD watermark — dentro safe area (non in margine)
-  const buildTs = new Date().toISOString();
-  const buildWatermark = `<div style="position:fixed;bottom:20mm;right:18mm;font-size:7px;color:#bbb;font-family:monospace;z-index:9999;pointer-events:none;">BUILD ${buildTs}</div>`;
-
-  // Safe-area overlay: bordo rosso tratteggiato su OGNI PAGINA
-  // top:18mm bottom:18mm = margini Puppeteer verticali
-  // left:16mm right:16mm = margini Puppeteer laterali
-  const safeAreaOverlay = `<div style="position:fixed;top:18mm;left:16mm;right:16mm;bottom:18mm;outline:2px dashed rgba(220,0,0,0.55);pointer-events:none;z-index:9997;"></div>`;
-
-  // Script diagnostico overflow — logga in console tutti gli elementi
-  // che escono dalla safe area (catturati da pdf-renderer via page.on('console'))
-  // safeLeft  = 16mm in px @96dpi  = 16 * (96/25.4) ≈ 60px
-  // safeRight = viewport(794) - 60 = 734px
-  const diagScript = `
-<script>
-(function(){
-  var MM = 96/25.4;
-  var sL = 16*MM, sR = 794 - 16*MM;
-  var issues = [];
-  document.querySelectorAll('*').forEach(function(el){
-    var r = el.getBoundingClientRect();
-    if(!r || r.width <= 0) return;
-    var tag = el.tagName + (el.className ? '.' + String(el.className).trim().replace(/\\s+/g,'.').substring(0,50) : '');
-    if(r.left < -0.5){
-      issues.push('[OVERFLOW-LEFT-PAGE] ' + tag + ' left=' + r.left.toFixed(1) + ' right=' + r.right.toFixed(1));
-    } else if(r.right > 794.5){
-      issues.push('[OVERFLOW-RIGHT-PAGE] ' + tag + ' left=' + r.left.toFixed(1) + ' right=' + r.right.toFixed(1));
-    } else if(r.left < sL - 1){
-      issues.push('[IN-LEFT-MARGIN] ' + tag + ' left=' + r.left.toFixed(1) + ' (safeL=' + sL.toFixed(1) + ')');
-    } else if(r.right > sR + 1){
-      issues.push('[IN-RIGHT-MARGIN] ' + tag + ' right=' + r.right.toFixed(1) + ' (safeR=' + sR.toFixed(1) + ')');
-    }
-  });
-  if(issues.length){
-    console.log('[DIAG] === OVERFLOW REPORT: ' + issues.length + ' elementi ===');
-    issues.forEach(function(s){ console.log('[DIAG] ' + s); });
-    console.log('[DIAG] === END REPORT ===');
-  } else {
-    console.log('[DIAG] OK — nessun overflow rilevato (safeL=' + sL.toFixed(0) + 'px safeR=' + sR.toFixed(0) + 'px)');
-  }
-})();
-<\/script>`;
-
   return `<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -1421,15 +1384,12 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
 </head>
 <body>
 <div class="doc">
-${buildWatermark}
-${safeAreaOverlay}
 ${cover}
 <div class="content">
 ${s0_firme}
 ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
 </div>
 </div>
-${diagScript}
 </body>
 </html>`;
 }
