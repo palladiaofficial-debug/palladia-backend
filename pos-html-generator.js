@@ -281,13 +281,16 @@ function buildSegnaleticaHtml(signsWithImages) {
 function buildCss() {
   return `
 /* ═══════════════════════════════════════════════════════════════════
-   PALLADIA PDF — Stylesheet v6
-   Strategia margini:
-     Verticale: Puppeteer margin top/bottom = 28mm (per-pagina, H/F in
-                quel buffer). @page { margin:0 } — nessun CSS margin.
-     Orizzontale: body { padding: 0 16mm } → contenuto DOM a left=60px.
-                  Puppeteer left/right = 0 → nessun doppio margine.
-   Safe area effettiva: top/bottom 28mm, left/right 16mm.
+   PALLADIA PDF — Stylesheet v7
+   Strategia margini definitiva:
+     @page { margin:0 }  → zero margini CSS (nessun doppio margine).
+     Verticale  : Puppeteer top:22mm / bottom:20mm → buffer H/F per-pagina.
+     Orizzontale: body { padding:0 16mm } → contenuto DOM a x=60px su
+                  TUTTE le pagine (il body è un blocco che attraversa tutto).
+   Prevenzione overflow:
+     body { overflow-x:hidden }  → tronca micro-sforamenti orizzontali.
+     img, table { max-width:100% } + table-layout:fixed → nessuna colonna
+     fuori pagina.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── RESET ─────────────────────────────────────────────────────────── */
@@ -322,10 +325,11 @@ body {
   color: #1E1E1E;
   line-height: 1.65;
   background: #FFFFFF;
-  /* Safe area orizzontale nel DOM: contenuto a 16mm da ogni lato.
-     Il margine verticale è gestito da Puppeteer (top/bottom 28mm). */
+  /* Safe area orizzontale: contenuto a 16mm da ogni lato su tutte le pagine.
+     Verticale gestito da Puppeteer (top:22mm / bottom:20mm). */
   padding: 0 16mm;
   box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 /* ── DOC WRAPPER ─────────────────────────────────────────────────────
@@ -344,6 +348,9 @@ img {
   display: block;
   break-inside: avoid;
   page-break-inside: avoid;
+}
+table {
+  max-width: 100%;
 }
 
 /* ── ANTI-TAGLIO ─────────────────────────────────────────────────────
@@ -367,8 +374,8 @@ thead {
 }
 
 /* ── COVER ─────────────────────────────────────────────────────────────
-   min-height = A4 (297mm) - Puppeteer top (28mm) - Puppeteer bottom (28mm)
-             = 241mm → cover occupa esattamente la prima pagina di contenuto.
+   min-height = A4 (297mm) - Puppeteer top (22mm) - Puppeteer bottom (20mm)
+             = 255mm → cover occupa esattamente la prima pagina di contenuto.
    ───────────────────────────────────────────────────────────────────── */
 .cover {
   break-after: page;
@@ -376,7 +383,7 @@ thead {
   display: flex;
   width: 100%;
   max-width: 100%;
-  min-height: 241mm;
+  min-height: 255mm;
   overflow: hidden;
 }
 .cover-sidebar {
