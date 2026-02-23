@@ -19,8 +19,24 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+const ALLOWED_ORIGINS = [
+  /^https:\/\/palladia[a-z0-9-]*\.vercel\.app$/,
+  /^https:\/\/palladia[a-z0-9-]*\.lovable\.app$/,
+  'http://localhost:5173',
+  'http://localhost:3000',
+];
+
 app.use(cors({
-  origin: ['https://palladia-kappa.vercel.app', 'https://palladia-site-master.lovable.app', 'http://localhost:5173'],
+  origin: (origin, callback) => {
+    // Allow requests with no origin (curl, Postman, server-to-server)
+    if (!origin) return callback(null, true);
+    const allowed = ALLOWED_ORIGINS.some(rule =>
+      typeof rule === 'string' ? rule === origin : rule.test(origin)
+    );
+    if (allowed) return callback(null, true);
+    console.warn('[CORS] blocked origin:', origin);
+    callback(new Error(`CORS: origin not allowed — ${origin}`));
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
@@ -886,6 +902,130 @@ app.get('/api/pos/:posId/html', async (req, res) => {
   }
 });
 
+// ── PING ─────────────────────────────────────────────────────────────────────
+app.get('/api/ping', (req, res) => {
+  res.json({
+    ok: true,
+    build: `BUILD_${Date.now()}`,
+    routes: ['/api/ping', '/api/pdf-diag']
+  });
+});
+
+// ── DIAGNOSTICA PDF ─────────────────────────────────────────────────────────
+// GET /api/pdf-diag?step=1  → Puppeteer margin 18/16mm, displayHeaderFooter:false
+// GET /api/pdf-diag?step=2  → Puppeteer margin 0, body padding 18/16mm, displayHeaderFooter:false
+
+function buildDiagHtml(step) {
+  const ts = new Date().toISOString();
+  const buildLabel = `BUILD_${Date.now()}`;
+
+  // CSS varia per step
+  const pageCss = '@page { size:A4; margin:0; }';
+  const bodyCss = step === 2
+    ? 'margin:0; padding:18mm 16mm; box-sizing:border-box;'
+    : 'margin:0; padding:0;';
+
+  // Safe-area dashed (sempre visibile in entrambi gli step)
+  const safeArea = `<div style="position:fixed;top:18mm;left:16mm;right:16mm;bottom:18mm;outline:2px dashed #e00;pointer-events:none;z-index:9998;"></div>`;
+
+  // BUILD watermark in basso a destra (dentro pagina, non H/F)
+  const buildWatermark = `<div style="position:fixed;bottom:6mm;right:8mm;font-size:7pt;color:#555;font-family:monospace;z-index:9999;">${buildLabel}</div>`;
+
+  const rows = Array.from({length: 30}, (_, i) =>
+    `<tr><td>${i+1}</td><td>Contenuto colonna A — riga ${i+1}</td><td>${i*7+3}</td></tr>`
+  ).join('');
+
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>DIAG STEP=${step}</title>
+  <style>
+    ${pageCss}
+    html, body { ${bodyCss} font-family: Arial, sans-serif; font-size:10pt; color:#111; background:#fff; }
+    h1 { font-size:18pt; margin:0 0 6pt 0; color:#c00; }
+    h2 { font-size:12pt; margin:16pt 0 4pt 0; color:#333; page-break-after:avoid; }
+    p  { margin:0 0 5pt 0; line-height:1.5; }
+    table { width:100%; border-collapse:collapse; margin:8pt 0; font-size:9pt; }
+    th { background:#222; color:#fff; padding:4pt 7pt; text-align:left; }
+    td { padding:3pt 7pt; border:0.5pt solid #ccc; }
+    tr:nth-child(even) td { background:#f5f5f5; }
+    tr { break-inside:avoid; }
+    thead { display:table-header-group; }
+    .info { background:#fff8e1; border-left:3pt solid #f90; padding:6pt 10pt; margin:8pt 0; font-size:9pt; }
+  </style>
+</head>
+<body>
+  ${safeArea}
+  ${buildWatermark}
+
+  <h1>DIAG STEP=${step}</h1>
+  <div class="info">
+    <strong>Timestamp:</strong> ${ts}<br>
+    <strong>Step:</strong> ${step}<br>
+    <strong>Config:</strong> ${step === 1
+      ? 'Puppeteer margin top/bottom:18mm left/right:16mm — displayHeaderFooter:false'
+      : 'Puppeteer margin 0 — body padding:18mm 16mm — displayHeaderFooter:false'}
+  </div>
+
+  <h2>Testo di prova</h2>
+  <p>Il bordo rosso tratteggiato rappresenta la safe area (18mm top/bottom, 16mm left/right). Il contenuto NON deve uscire da quel bordo.</p>
+  <p>Se questo testo è visibile con margini su tutti e quattro i lati, la configurazione funziona correttamente per lo step ${step}.</p>
+
+  <h2>Tabella 30 righe</h2>
+  <table>
+    <thead><tr><th style="width:10%">N.</th><th style="width:65%">Descrizione</th><th>Valore</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+
+  <h2>Fine documento</h2>
+  <p>Documento completo. In basso a destra (dentro la pagina, non in header/footer) è visibile il ${buildLabel}.</p>
+</body>
+</html>`;
+}
+
+app.get('/api/pdf-diag', async (req, res) => {
+  const step = parseInt(req.query.step) || 1;
+  console.log(`[pdf-diag] step=${step}`);
+
+  const puppeteerOpts = {
+    format:              'A4',
+    printBackground:     true,
+    preferCSSPageSize:   true,
+    displayHeaderFooter: false,
+    headerTemplate:      '<span></span>',
+    footerTemplate:      '<span></span>',
+    margin: step === 2
+      ? { top: '0', bottom: '0', left: '0', right: '0' }
+      : { top: '18mm', bottom: '18mm', left: '16mm', right: '16mm' }
+  };
+
+  try {
+    const puppeteer = require('puppeteer');
+    const html = buildDiagHtml(step);
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--no-first-run','--no-zygote']
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setViewport({ width: 794, height: 1123 });
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+      await page.evaluateHandle('document.fonts.ready');
+      const pdfBuffer = await page.pdf(puppeteerOpts);
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="diag-step${step}.pdf"`);
+      res.send(pdfBuffer);
+    } finally {
+      await browser.close();
+    }
+  } catch (err) {
+    console.error('[pdf-diag] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log('ROUTES OK: /api/ping, /api/pdf-diag');
 });
