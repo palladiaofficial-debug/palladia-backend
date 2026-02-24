@@ -281,16 +281,15 @@ function buildSegnaleticaHtml(signsWithImages) {
 function buildCss() {
   return `
 /* ═══════════════════════════════════════════════════════════════════
-   PALLADIA PDF — Stylesheet v7
-   Strategia margini definitiva:
+   PALLADIA PDF — Stylesheet v8
+   Strategia margini definitiva (unica sorgente di verità):
      @page { margin:0 }  → zero margini CSS (nessun doppio margine).
      Verticale  : Puppeteer top:22mm / bottom:20mm → buffer H/F per-pagina.
-     Orizzontale: body { padding:0 16mm } → contenuto DOM a x=60px su
-                  TUTTE le pagine (il body è un blocco che attraversa tutto).
+     Orizzontale: .page { padding:0 16mm } → UNICO posto dove si definisce
+                  il margine laterale. body ha padding:0.
    Prevenzione overflow:
-     body { overflow-x:hidden }  → tronca micro-sforamenti orizzontali.
      img, table { max-width:100% } + table-layout:fixed → nessuna colonna
-     fuori pagina.
+     fuori pagina. th/td: overflow-wrap:anywhere.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── RESET ─────────────────────────────────────────────────────────── */
@@ -301,15 +300,6 @@ function buildCss() {
   word-break: break-word;
   overflow-wrap: break-word;
   min-width: 0;
-}
-
-/* ── PAGE ───────────────────────────────────────────────────────────
-   margin:0 → nessun margine CSS aggiuntivo.
-   I margini fisici vengono SOLO da Puppeteer (18mm top/bottom, 16mm sides).
-   Chrome pagina il contenuto nell'area che Puppeteer riserva (261×178mm). */
-@page {
-  size: A4;
-  margin: 0;
 }
 
 /* ── BASE ───────────────────────────────────────────────────────────── */
@@ -325,16 +315,13 @@ body {
   color: #1E1E1E;
   line-height: 1.65;
   background: #FFFFFF;
-  /* Safe area orizzontale: contenuto a 16mm da ogni lato su tutte le pagine.
-     Verticale gestito da Puppeteer (top:22mm / bottom:20mm). */
-  padding: 0 16mm;
-  box-sizing: border-box;
-  overflow-x: hidden;
+  /* Nessun padding sul body — il padding laterale è gestito da .page */
 }
 
 /* ── DOC WRAPPER ─────────────────────────────────────────────────────
-   Tutto il documento vive dentro .doc.
-   width/max-width:100% → non può espandersi oltre il parent. */
+   Tutto il documento vive dentro .doc (figlio di .page).
+   width:100% → occupa esattamente la content-area di .page (già rientrata
+   di 16mm per lato grazie al padding di .page). */
 .doc {
   width: 100%;
   max-width: 100%;
@@ -573,6 +560,11 @@ table {
   border-collapse: collapse;
   font-size: 9pt;
   margin: 6pt 0 14pt 0;
+}
+th, td {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 table.allow-break {
   break-inside: auto;
@@ -854,6 +846,47 @@ h3 { font-size: 10pt; margin: 11pt 0 5pt 0; color: #1E1E1E; }
 .page-break { break-before: page; page-break-before: always; }
 .no-break   { break-inside: avoid; page-break-inside: avoid; }
 .keep-next  { break-after: avoid; page-break-after: avoid; }
+
+/* ── PAGE WRAPPER — margini laterali (unica sorgente di verità) ────────
+   .page avvolge TUTTO il contenuto DOM. Nessun altro elemento deve
+   avere padding/margin laterale che si sommi a questo.
+   Puppeteer gestisce top/bottom via margin:{top:22mm,bottom:20mm};
+   .page gestisce left/right con i !important sotto.
+   ──────────────────────────────────────────────────────────────────── */
+@page { size: A4; margin: 0; }
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.page {
+  padding-left:  16mm !important;
+  padding-right: 16mm !important;
+  padding-top:    0   !important;
+  padding-bottom: 0   !important;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.doc {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
+/* ── ANTI-TAGLIO DEFINITIVO ─────────────────────────────────────────── */
+h1, h2, h3, .section-title, .sub-title {
+  break-after: avoid-page;
+  page-break-after: avoid;
+}
+.card, .signature-box, .callout, .lav-header, .sign-card {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
 `;
 }
 
@@ -1390,11 +1423,13 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   <style>${buildCss()}</style>
 </head>
 <body>
+<div class="page">
 <div class="doc">
 ${cover}
 <div class="content">
 ${s0_firme}
 ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
+</div>
 </div>
 </div>
 </body>
