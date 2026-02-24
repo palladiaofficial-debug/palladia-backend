@@ -316,7 +316,7 @@ body {
   color: #1E1E1E;
   line-height: 1.65;
   background: #FFFFFF;
-  /* Nessun padding sul body — il padding laterale è gestito da .page */
+  /* Nessun padding sul body — tutto il padding è in .doc */
 }
 
 /* ── DOC WRAPPER ─────────────────────────────────────────────────────
@@ -909,8 +909,11 @@ html, body {
 /* ── FOOTER FISSO ─────────────────────────────────────────────────────
    height:9mm. Il padding-bottom:20mm di .doc riserva
    9mm (footer) + 11mm (respiro) sotto il contenuto.
-   Numerazione: .page-num::after usa CSS counter(page) → pagina corrente.
-   .js-total-pages → riempito da _injectTotalPages() in pdf-renderer.js. */
+   Numerazione 2-pass:
+     .page-num::after { content: counter(page) } → pagina corrente CSS-puro
+     .total-pages → inizia con "—"; pdf-renderer.js (Pass 1) ottiene il
+     conteggio reale via pdf-lib.getPageCount(), poi lo inietta server-side
+     prima di Pass 2. Deterministico: si basa su pagine PDF reali. */
 .print-footer {
   position: fixed;
   bottom: 0; left: 0; right: 0;
@@ -938,8 +941,10 @@ html, body {
 }
 .pf-right { font-size: 9px; color: #BBBBBB; line-height: 1.1; flex: 1; text-align: right; }
 
-/* CSS counter(page): pagina corrente — funziona su elementi position:fixed in Chrome */
+/* CSS counter(page): pagina corrente su ogni pagina stampa (position:fixed in Chrome) */
 .page-num::after { content: counter(page); font-size: 9px; line-height: 1.1; }
+/* .total-pages: placeholder "—" → sostituito da _twoPassRender() con il totale reale */
+.total-pages { font-size: 9px; line-height: 1.1; }
 
 /* ── DOC: padding unico per tutto lo spazio verticale e laterale ─────── */
 .doc {
@@ -1518,7 +1523,7 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
 
 <div class="print-footer">
   <span class="pf-left">D.Lgs 81/2008 e s.m.i.</span>
-  <span class="pf-center">Pagina&#160;<span class="page-num"></span>&#160;/&#160;<span class="js-total-pages">?</span></span>
+  <span class="pf-center">Pagina&#160;<span class="page-num"></span>&#160;/&#160;<span class="total-pages">—</span></span>
   <span class="pf-right">Rev.&#160;${rev}</span>
 </div>
 

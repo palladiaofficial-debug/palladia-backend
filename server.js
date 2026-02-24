@@ -1025,7 +1025,122 @@ app.get('/api/pdf-diag', async (req, res) => {
   }
 });
 
+// ── SMOKE TEST PDF ────────────────────────────────────────────────────────────
+// GET /api/pdf-smoke
+// Genera un PDF di test con:
+//   - tabella lunga 30 righe
+//   - tabella con stringhe lunghissime
+//   - contenuto sufficiente per testare salti pagina e numerazione 2-pass
+// Usa il template POS reale — nessun endpoint separato di layout.
+app.get('/api/pdf-smoke', async (req, res) => {
+  try {
+    // Worker con nomi lunghi → testano overflow laterale e tabelle spezzate
+    const workers = Array.from({ length: 30 }, (_, i) => ({
+      name:          `Lavoratore Test ${String(i + 1).padStart(2, '0')} — Cognome Molto Lungo Per Overflow`,
+      qualification: `Qualifica Specifica Settore ${i % 4 === 0 ? 'Elettrico' : i % 4 === 1 ? 'Meccanico' : i % 4 === 2 ? 'Edile' : 'Chimico'} Cat. ${i + 1}`,
+      matricola:     `MAT${String(i + 1).padStart(6, '0')}`,
+    }));
+
+    const smokeData = {
+      companyName:        'Impresa Test Smoke SRL — Denominazione Molto Lunga Per Testare Overflow',
+      companyVat:         '12345678901',
+      siteAddress:        'Via del Collaudo PDF Automatico 123, 20123 Milano (MI) — Indirizzo Lungo',
+      client:             'Cliente Committente Test SpA con ragione sociale estesa',
+      workType:           'Demolizione, bonifica e ricostruzione di edificio residenziale pluripiano con lavorazioni complesse',
+      budget:             '1500000',
+      startDate:          '01/03/2026',
+      endDate:            '31/12/2027',
+      numWorkers:         30,
+      rspp:               'Ing. Mario Rossi — Responsabile SPP con qualifica lunga',
+      rls:                'Sig. Paolo Verdi',
+      medico:             'Dott. Luigi Bianchi — Medico Competente',
+      cse:                'Arch. Anna Neri — Coordinatore per la Sicurezza in fase di Esecuzione',
+      csp:                'Ing. Marco Gialli',
+      responsabileLavori: 'Sig. Giuseppe Rossi',
+      primoSoccorso:      'Sig. Antonio Verde',
+      antincendio:        'Sig. Francesco Blu',
+      preposto:           'Sig. Carlo Arancio',
+      direttoreTecnico:   'Ing. Laura Viola',
+      workers,
+    };
+
+    // Contenuto AI simulato: testo lungo per forzare più pagine e break-inside
+    const smokeRisks = `
+### [Demolizione strutturale]
+**Descrizione:** Attività di demolizione manuale e meccanica di strutture in cemento armato.
+
+**Rischi:**
+- Caduta di materiali dall'alto
+- Crollo parziale di strutture
+- Proiezione di schegge
+
+**Misure preventive:**
+- Puntellamento preventivo delle strutture adiacenti
+- Utilizzo di DPI categoria III: imbracature, elmetti, guanti antitaglio, occhiali
+- Perimetrazione dell'area con rete di sicurezza h=2m
+
+| Rischio | Probabilità | Magnitudo | Livello | R (P×M) |
+|---------|-------------|-----------|---------|---------|
+| Caduta dall'alto | Alta | Grave | Alto | 12 |
+| Schegge | Media | Moderata | Medio | 6 |
+| Crollo | Bassa | Gravissima | Alto | 8 |
+| Rumore | Alta | Lieve | Basso | 3 |
+| Polveri | Alta | Moderata | Medio | 6 |
+
+### [Scavo e movimentazione terra]
+**Descrizione:** Scavi a sezione obbligata per fondazioni profonde oltre 1.5m.
+
+**Rischi principali:**
+- Franamento delle pareti di scavo
+- Investimento da mezzi meccanici
+- Presenza di sottoservizi interrati
+
+**Misure preventive:**
+- Armature metalliche per pareti di scavo oltre 1.5m
+- Segnalazione e segregazione dell'area di lavoro dei mezzi
+- Ricerca preventiva sottoservizi (gas, elettricità, acqua)
+
+| Rischio | Probabilità | Magnitudo | Livello | R (P×M) |
+|---------|-------------|-----------|---------|---------|
+| Franamento | Media | Gravissima | Alto | 12 |
+| Investimento | Bassa | Grave | Medio | 6 |
+| Gas interrato | Bassa | Gravissima | Alto | 8 |
+
+### [Opere in quota — Ponteggi]
+**Descrizione:** Montaggio e utilizzo di ponteggi metallici fissi per lavori in facciata oltre 4m di altezza.
+
+**Rischi:**
+- Caduta dall'alto degli operatori
+- Caduta di materiali e attrezzature
+- Cedimento del ponteggio
+
+**Misure preventive:**
+- PIMUS redatto da tecnico abilitato
+- Formazione specifica 28h per montaggio/smontaggio (Acc. Stato-Regioni 26/01/2006)
+- Ancoraggi ogni 18m² di superficie
+- Tavole fermapiede e parapetti a norma UNI EN 12811
+
+| Rischio | Probabilità | Magnitudo | Livello | R (P×M) |
+|---------|-------------|-----------|---------|---------|
+| Caduta operatori | Media | Gravissima | Molto Alto | 16 |
+| Caduta materiali | Alta | Grave | Alto | 12 |
+| Cedimento | Bassa | Gravissima | Alto | 8 |
+`.trim();
+
+    const html = await generatePosHtml(smokeData, 1, smokeRisks, []);
+    const pdfBuf = await rendererPool.render(html);
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="smoke-test.pdf"');
+    res.send(pdfBuf);
+    console.log('[pdf-smoke] OK — PDF generato, size:', pdfBuf.length, 'bytes');
+  } catch (err) {
+    console.error('[pdf-smoke] ERROR:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('ROUTES OK: /api/ping, /api/pdf-diag');
+  console.log('ROUTES OK: /api/ping, /api/pdf-diag, /api/pdf-smoke');
 });
