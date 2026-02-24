@@ -281,15 +281,16 @@ function buildSegnaleticaHtml(signsWithImages) {
 function buildCss() {
   return `
 /* ═══════════════════════════════════════════════════════════════════
-   PALLADIA PDF — Stylesheet v8
-   Strategia margini definitiva (unica sorgente di verità):
-     @page { margin:0 }  → zero margini CSS (nessun doppio margine).
-     Verticale  : Puppeteer top:22mm / bottom:20mm → buffer H/F per-pagina.
-     Orizzontale: .page { padding:0 16mm } → UNICO posto dove si definisce
-                  il margine laterale. body ha padding:0.
-   Prevenzione overflow:
-     img, table { max-width:100% } + table-layout:fixed → nessuna colonna
-     fuori pagina. th/td: overflow-wrap:anywhere.
+   PALLADIA PDF — Stylesheet v9
+   Architettura header/footer DOM-based (position:fixed):
+     @page { margin:0 }  → zero margini PDF (nessun overlay Puppeteer).
+     Verticale  : .doc { padding: 22mm 16mm 20mm 16mm } — unica sorgente.
+                  22mm = header 10mm + respiro 12mm
+                  20mm = footer  9mm + respiro 11mm
+     Orizzontale: .doc { padding: 0 16mm } — unica sorgente laterale.
+     H/F : position:fixed, height:10mm/9mm, padding:0 16mm → allineati
+           al testo su ogni pagina senza overlay.
+     Numerazione: CSS counter(page) per corrente + JS inject per totale.
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── RESET ─────────────────────────────────────────────────────────── */
@@ -319,13 +320,16 @@ body {
 }
 
 /* ── DOC WRAPPER ─────────────────────────────────────────────────────
-   Tutto il documento vive dentro .doc (figlio di .page).
-   width:100% → occupa esattamente la content-area di .page (già rientrata
-   di 16mm per lato grazie al padding di .page). */
+   .doc è l'unico contenitore di TUTTO il padding del documento:
+     top  22mm = spazio per header (10mm) + respiro (12mm)
+     btm  20mm = spazio per footer ( 9mm) + respiro (11mm)
+     sx/dx 16mm = margini laterali
+   width:100% → non supera mai la larghezza pagina. */
 .doc {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  padding: 22mm 16mm 20mm 16mm;
 }
 .doc.debug { outline: 1px dashed #ff0000; }
 
@@ -838,8 +842,7 @@ h3 { font-size: 10pt; margin: 11pt 0 5pt 0; color: #1E1E1E; }
 
 /* ── CONTENT WRAPPER ─────────────────────────────────────────────────
    Il div.content avvolge tutte le sezioni dopo la cover.
-   Nessun padding verticale extra: i margini Puppeteer (22mm top/bottom)
-   già garantiscono spazio sufficiente tra contenuto e header/footer. */
+   Nessun padding aggiuntivo: lo spazio verticale è già in .doc. */
 .content { }
 
 /* ── PAGE BREAK UTILITIES ───────────────────────────────────────────── */
@@ -847,12 +850,11 @@ h3 { font-size: 10pt; margin: 11pt 0 5pt 0; color: #1E1E1E; }
 .no-break   { break-inside: avoid; page-break-inside: avoid; }
 .keep-next  { break-after: avoid; page-break-after: avoid; }
 
-/* ── PAGE WRAPPER — margini laterali (unica sorgente di verità) ────────
-   .page avvolge TUTTO il contenuto DOM. Nessun altro elemento deve
-   avere padding/margin laterale che si sommi a questo.
-   Puppeteer gestisce top/bottom via margin:{top:22mm,bottom:20mm};
-   .page gestisce left/right con i !important sotto.
-   ──────────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════
+   BLOCCO FINALE — vince su tutto (ordine di cascata CSS, ultimo = forte)
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* @page: zero margini → tutto gestito dal DOM */
 @page { size: A4; margin: 0; }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -864,26 +866,111 @@ html, body {
   print-color-adjust: exact;
 }
 
-.page {
-  padding-left:  16mm !important;
-  padding-right: 16mm !important;
-  padding-top:    0   !important;
-  padding-bottom: 0   !important;
-  width: 100%;
+/* ── HEADER FISSO ─────────────────────────────────────────────────────
+   Si ripete su ogni pagina stampata grazie a position:fixed.
+   height:10mm = barra visiva. Il padding-top:22mm di .doc riserva
+   10mm (header) + 12mm (respiro) sopra il contenuto. */
+.print-header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 10mm;
+  padding: 0 16mm;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 0.4pt solid #DDDDDD;
+  background: #FFFFFF;
+  z-index: 9999;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0; /* container font-size:0 → ogni span ha il suo */
+  line-height: 1.1;
   box-sizing: border-box;
 }
+.ph-brand {
+  font-size: 9px;
+  font-weight: bold;
+  color: #2C2C2C;
+  letter-spacing: 0.5pt;
+  line-height: 1.1;
+  flex: 0 0 auto;
+}
+.ph-title {
+  font-size: 9px;
+  color: #AAAAAA;
+  line-height: 1.1;
+  flex: 1;
+  text-align: right;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding-left: 8px;
+}
 
+/* ── FOOTER FISSO ─────────────────────────────────────────────────────
+   height:9mm. Il padding-bottom:20mm di .doc riserva
+   9mm (footer) + 11mm (respiro) sotto il contenuto.
+   Numerazione: .page-num::after usa CSS counter(page) → pagina corrente.
+   .js-total-pages → riempito da _injectTotalPages() in pdf-renderer.js. */
+.print-footer {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  height: 9mm;
+  padding: 0 16mm;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 0.4pt solid #DDDDDD;
+  background: #FFFFFF;
+  z-index: 9999;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 0;
+  line-height: 1.1;
+  box-sizing: border-box;
+}
+.pf-left  { font-size: 9px; color: #BBBBBB; line-height: 1.1; flex: 1; }
+.pf-center {
+  font-size: 9px;
+  color: #444444;
+  font-weight: bold;
+  line-height: 1.1;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.pf-right { font-size: 9px; color: #BBBBBB; line-height: 1.1; flex: 1; text-align: right; }
+
+/* CSS counter(page): pagina corrente — funziona su elementi position:fixed in Chrome */
+.page-num::after { content: counter(page); font-size: 9px; line-height: 1.1; }
+
+/* ── DOC: padding unico per tutto lo spazio verticale e laterale ─────── */
 .doc {
   width: 100% !important;
   max-width: 100% !important;
+  padding: 22mm 16mm 20mm 16mm !important;
+  box-sizing: border-box !important;
 }
+
+/* ── TABELLE ─────────────────────────────────────────────────────────── */
+table {
+  width: 100% !important;
+  max-width: 100% !important;
+  table-layout: fixed !important;
+  border-collapse: collapse !important;
+}
+th, td {
+  max-width: 100% !important;
+  overflow-wrap: anywhere !important;
+  word-break: break-word !important;
+}
+thead { display: table-header-group; }
+tfoot { display: table-footer-group; }
+tr    { break-inside: avoid; page-break-inside: avoid; }
 
 /* ── ANTI-TAGLIO DEFINITIVO ─────────────────────────────────────────── */
 h1, h2, h3, .section-title, .sub-title {
   break-after: avoid-page;
   page-break-after: avoid;
 }
-.card, .signature-box, .callout, .lav-header, .sign-card {
+img, .card, .signature-box, .callout, .lav-header, .sign-card {
   break-inside: avoid;
   page-break-inside: avoid;
 }
@@ -1423,7 +1510,18 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   <style>${buildCss()}</style>
 </head>
 <body>
-<div class="page">
+
+<div class="print-header">
+  <span class="ph-brand">PALLADIA</span>
+  <span class="ph-title">${esc(docTitle)}</span>
+</div>
+
+<div class="print-footer">
+  <span class="pf-left">D.Lgs 81/2008 e s.m.i.</span>
+  <span class="pf-center">Pagina&#160;<span class="page-num"></span>&#160;/&#160;<span class="js-total-pages">?</span></span>
+  <span class="pf-right">Rev.&#160;${rev}</span>
+</div>
+
 <div class="doc">
 ${cover}
 <div class="content">
@@ -1431,7 +1529,7 @@ ${s0_firme}
 ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
 </div>
 </div>
-</div>
+
 </body>
 </html>`;
 }

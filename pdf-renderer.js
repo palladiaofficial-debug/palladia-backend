@@ -3,63 +3,21 @@
 /**
  * PDF Renderer — Puppeteer (single-stage, no post-processing)
  *
- * Margini gestiti da Puppeteer via page.pdf({ margin }).
- * CSS usa @page { margin: 0 } per evitare doppi margini.
- * Header/footer tramite displayHeaderFooter nativo di Chrome:
- *   - <span class="pageNumber">  → numero pagina corrente
- *   - <span class="totalPages">  → totale pagine
+ * Architettura header/footer v9 — DOM-based (position:fixed in CSS):
+ *   - displayHeaderFooter: FALSE  → nessun template Puppeteer, zero overlay.
+ *   - margin: 0 su tutti i lati  → i margini li gestisce il CSS (.doc padding).
+ *   - .doc { padding: 22mm 16mm 20mm 16mm } → spazio per H/F e margini laterali.
+ *   - Numerazione: CSS counter(page) per pagina corrente +
+ *                  _injectTotalPages() per il totale (pre-PDF, un solo render).
  * Nessun pdf-lib, nessuna manipolazione post-rendering.
- *
- * Richiede: npm install puppeteer
  */
 
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
 
-// PDF_DEBUG=true → logs dettagliati + outline safe area nel diag endpoint.
-// In produzione lasciare false (default) per non spammare i log Railway.
+// PDF_DEBUG=true → report overflow elementi fuori safe area (max 10 righe).
+// Default false — nessun spam Railway.
 const PDF_DEBUG = process.env.PDF_DEBUG === 'true';
-
-// ── HTML escape per testo nei template ────────────────────────────────────────
-function escT(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/**
- * Template intestazione — thin bar ~10mm.
- *
- * height:10mm = barra visiva; il resto del margine top (22-10=12mm) è
- * spazio bianco di respiro tra barra e contenuto.
- * CRITICO Puppeteer: font-size:0 sul container, esplicito su ogni span.
- * padding: 0 16mm → allineato alla griglia .page (stessa colonna del testo).
- */
-function buildHeaderTemplate(docTitle) {
-  return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;padding:0 16mm;border-bottom:0.4pt solid #DDDDDD;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:9px;font-weight:bold;color:#2C2C2C;letter-spacing:0.5pt;line-height:1.1;flex:0 0 auto;">PALLADIA</span>
-  <span style="font-size:9px;color:#AAAAAA;line-height:1.1;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;">${escT(docTitle)}</span>
-</div>`;
-}
-
-/**
- * Template piè di pagina — thin bar ~9mm.
- *
- * height:9mm; il resto del margine bottom (20-9=11mm) è respiro.
- * padding: 0 16mm → allineato alla griglia .page (stessa colonna del testo).
- * pageNumber / totalPages: iniettati da Chrome — font-size esplicito obbligatorio.
- */
-function buildFooterTemplate(revision) {
-  const rev = escT(String(revision || 1));
-  return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;padding:0 16mm;border-top:0.4pt solid #DDDDDD;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:9px;color:#BBBBBB;line-height:1.1;flex:1;">D.Lgs 81/2008 e s.m.i.</span>
-  <span style="font-size:9px;color:#444444;font-weight:bold;line-height:1.1;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:9px;line-height:1.1;"></span>&#160;/&#160;<span class="totalPages" style="font-size:9px;line-height:1.1;"></span></span>
-  <span style="font-size:9px;color:#BBBBBB;line-height:1.1;flex:1;text-align:right;">Rev.&#160;${rev}</span>
-</div>`;
-}
 
 // ── Args Chromium ─────────────────────────────────────────────────────────────
 const LAUNCH_ARGS = [
@@ -75,28 +33,38 @@ const LAUNCH_ARGS = [
 
 // ── Costruisce le opzioni PDF per page.pdf() ──────────────────────────────────
 //
-// Strategia margini definitiva (unica sorgente di verità):
-//   Verticale  → Puppeteer: top:22mm (header 10mm + 12mm respiro)
-//                            bottom:20mm (footer 9mm + 11mm respiro)
-//   Orizzontale → CSS: .page { padding: 0 16mm } gestisce il laterale nel DOM.
-//                 Puppeteer left/right: '0mm' — nessun doppio margine.
-//
-// Header/footer template usano padding:0 16mm per allinearsi alla griglia .page.
-function makePdfOpts(opts) {
+// Tutti i margini a 0: il documento si auto-margina via CSS.
+//   .doc { padding: 22mm 16mm 20mm 16mm } → spazio per H/F CSS + margini testo.
+//   .print-header { position:fixed; top:0; height:10mm; padding:0 16mm }
+//   .print-footer { position:fixed; bottom:0; height:9mm;  padding:0 16mm }
+// displayHeaderFooter:false → zero overlay da Puppeteer.
+function makePdfOpts() {
   return {
     format:              'A4',
     printBackground:     true,
-    preferCSSPageSize:   true,
-    displayHeaderFooter: true,
-    headerTemplate:      buildHeaderTemplate(opts.docTitle || ''),
-    footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1),
+    displayHeaderFooter: false,
     margin: {
-      top:    '22mm',
-      bottom: '20mm',
+      top:    '0mm',
+      bottom: '0mm',
       left:   '0mm',
       right:  '0mm',
     },
   };
+}
+
+// ── Inietta il numero totale di pagine PRIMA del render ───────────────────────
+// Calcola le pagine dall'altezza del documento (viewport = A4 ≈ 1123px).
+// Riempi tutti gli elementi .js-total-pages con il conteggio calcolato.
+// Questo evita un secondo render ed è sufficientemente preciso (±1 pag.).
+async function _injectTotalPages(page) {
+  const total = await page.evaluate(() => {
+    // Il viewport è impostato a 794×1123 (≈ A4 a 96dpi).
+    const a4px = window.innerHeight || 1123;
+    return Math.max(1, Math.ceil(document.documentElement.scrollHeight / a4px));
+  });
+  await page.evaluate((n) => {
+    document.querySelectorAll('.js-total-pages').forEach(el => { el.textContent = n; });
+  }, total);
 }
 
 // ── Debug overflow (solo se PDF_DEBUG=true) ───────────────────────────────────
@@ -137,8 +105,9 @@ async function renderHtmlToPdf(html, opts = {}) {
     await page.setViewport({ width: 794, height: 1123 });
     await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
     await page.evaluateHandle('document.fonts.ready');
+    await _injectTotalPages(page);
     if (PDF_DEBUG) await _debugOverflow(page);
-    return await page.pdf(makePdfOpts(opts));
+    return await page.pdf(makePdfOpts());
   } finally {
     await browser.close();
   }
@@ -185,8 +154,9 @@ class PdfRendererPool {
       await page.setViewport({ width: 794, height: 1123 });
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
       await page.evaluateHandle('document.fonts.ready');
+      await _injectTotalPages(page);
       if (PDF_DEBUG) await _debugOverflow(page);
-      return await page.pdf(makePdfOpts(opts));
+      return await page.pdf(makePdfOpts());
     } finally {
       await page.close();
     }
