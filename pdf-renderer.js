@@ -1,25 +1,61 @@
 'use strict';
 
 /**
- * PDF Renderer — Puppeteer + pdf-lib (2-pass per numerazione deterministica)
+ * PDF Renderer — Puppeteer (single-pass, Puppeteer header/footer nativo)
  *
- * Architettura v10:
- *   - displayHeaderFooter: false  → header/footer nel DOM (position:fixed).
- *   - margin: 0 su tutti i lati  → tutto gestito da .doc { padding:22mm 16mm 20mm 16mm }.
- *   - PASS 1: render → pdf-lib legge getPageCount() → numero pagine reale.
- *   - PASS 2: inject totale in <span class="total-pages"> → re-render definitivo.
- *   - Pagina corrente: CSS counter(page) in .page-num::after (zero JS, 100% affidabile).
- *   - pdf-lib usato SOLO per getPageCount(), mai per disegnare.
+ * Architettura v11 — Puppeteer displayHeaderFooter: true:
+ *   - Header/footer via template Puppeteer: NESSUN overlay, NESSUNA posizione fixed.
+ *   - margin: { top:'22mm', bottom:'20mm', left:'0mm', right:'0mm' }
+ *     Chrome riserva le bande top/bottom per H/F; il contenuto non le invade mai.
+ *   - Laterali 0mm da Puppeteer: .doc { padding: 0 16mm } allinea body con H/F.
+ *   - pageNumber / totalPages: iniettati da Chrome internamente (deterministici).
+ *   - Nessun pdf-lib, nessun 2-pass manuale, nessuna stima da scrollHeight.
  */
 
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
 
-let PDFDocument = null;
-try { ({ PDFDocument } = require('pdf-lib')); } catch { PDFDocument = null; }
-
-// PDF_DEBUG=true → report overflow orizzontale (max 10 righe). Default: false.
+// PDF_DEBUG=true → report overflow (max 10 righe). Default false.
 const PDF_DEBUG = process.env.PDF_DEBUG === 'true';
+
+// ── HTML escape per i template Puppeteer ──────────────────────────────────────
+function escT(str) {
+  if (!str) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Header Puppeteer — barra 10mm.
+ * padding: 0 16mm → allineato al .doc { padding: 0 16mm } del body.
+ * font-size:0 sul container → ogni span ha il suo font-size esplicito.
+ * CRITICO: non usare proprietà che fanno crescere il box in altezza (no wrap).
+ */
+function buildHeaderTemplate(docTitle) {
+  return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #DDDDDD;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
+  <span style="font-size:9px;font-weight:bold;color:#2C2C2C;letter-spacing:0.5pt;line-height:1.1;white-space:nowrap;flex:0 0 auto;">PALLADIA</span>
+  <span style="font-size:9px;color:#AAAAAA;line-height:1.1;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding-left:8px;">${escT(docTitle)}</span>
+</div>`;
+}
+
+/**
+ * Footer Puppeteer — barra 9mm.
+ * padding: 0 16mm → allineato al .doc { padding: 0 16mm }.
+ * pageNumber / totalPages: Chrome li inietta prima di restituire il PDF
+ * → sempre deterministici, zero stima, zero 2-pass manuale.
+ * CRITICO: font-size esplicito su ogni <span>, altrimenti Chrome usa 0.
+ */
+function buildFooterTemplate(revision) {
+  const rev = escT(String(revision || 1));
+  return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #DDDDDD;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
+  <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;white-space:nowrap;">D.Lgs 81/2008 e s.m.i.</span>
+  <span style="font-size:8.5px;color:#444444;font-weight:bold;line-height:1.1;white-space:nowrap;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:8.5px;"></span>&#160;/&#160;<span class="totalPages" style="font-size:8.5px;"></span></span>
+  <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">Rev.&#160;${rev}</span>
+</div>`;
+}
 
 // ── Args Chromium ─────────────────────────────────────────────────────────────
 const LAUNCH_ARGS = [
@@ -33,110 +69,75 @@ const LAUNCH_ARGS = [
   '--font-render-hinting=none',
 ];
 
-// ── Opzioni PDF fisse ─────────────────────────────────────────────────────────
-// Tutti i margini a 0: il CSS gestisce tutto via .doc padding e position:fixed.
-function makePdfOpts() {
+// ── Opzioni PDF ───────────────────────────────────────────────────────────────
+// top:22mm   = header 10mm + 12mm respiro tra barra e primo rigo di testo
+// bottom:20mm = footer  9mm + 11mm respiro tra ultimo rigo e barra
+// left/right:0mm = laterali gestiti da .doc { padding: 0 16mm }
+function makePdfOpts(opts = {}) {
   return {
     format:              'A4',
     printBackground:     true,
-    displayHeaderFooter: false,
-    margin: { top: '0mm', bottom: '0mm', left: '0mm', right: '0mm' },
+    preferCSSPageSize:   true,
+    displayHeaderFooter: true,
+    headerTemplate:      buildHeaderTemplate(opts.docTitle || ''),
+    footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1),
+    margin: {
+      top:    '22mm',
+      bottom: '20mm',
+      left:   '0mm',
+      right:  '0mm',
+    },
   };
 }
 
-// ── Legge il numero reale di pagine dal buffer PDF (pdf-lib) ──────────────────
-async function _getPageCount(pdfBuf) {
-  if (!PDFDocument) return null;
-  try {
-    const doc = await PDFDocument.load(pdfBuf, { ignoreEncryption: true });
-    return doc.getPageCount();
-  } catch (e) {
-    console.warn('[PDF 2-pass] pdf-lib getPageCount failed:', e.message);
-    return null;
-  }
-}
-
-// ── Sostituisce il placeholder del totale nell'HTML (server-side) ─────────────
-// Il placeholder è: <span class="total-pages">—</span>
-// Dopo il replace diventa: <span class="total-pages">N</span>
-function _injectTotal(html, n) {
-  return html.replace(
-    /<span class="total-pages">[^<]*<\/span>/,
-    `<span class="total-pages">${n}</span>`
-  );
-}
-
-// ── Render singolo su un browser già aperto ───────────────────────────────────
-async function _renderOnBrowser(browser, html, doDebug) {
-  const page = await browser.newPage();
-  try {
-    await page.setViewport({ width: 794, height: 1123 });
-    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
-    await page.evaluateHandle('document.fonts.ready');
-    if (doDebug) await _debugOverflow(page);
-    return await page.pdf(makePdfOpts());
-  } finally {
-    await page.close();
-  }
-}
-
-// ── 2-pass render ─────────────────────────────────────────────────────────────
-// Pass 1: render con placeholder "—" → conta pagine reali via pdf-lib.
-// Pass 2: inject totale reale → render definitivo.
-// Se pdf-lib non disponibile: restituisce Pass 1 (fallback sicuro).
-async function _twoPassRender(browser, html) {
-  // — PASS 1 —
-  const pdf1 = await _renderOnBrowser(browser, html, false);
-
-  // — LEGGI PAGINE —
-  const total = await _getPageCount(pdf1);
-  if (!total) {
-    if (PDF_DEBUG) console.warn('[PDF 2-pass] fallback: pdf-lib non disponibile, restituisco Pass 1');
-    return pdf1;
-  }
-
-  // — PASS 2 —
-  const html2 = _injectTotal(html, total);
-  const pdf2  = await _renderOnBrowser(browser, html2, PDF_DEBUG);
-
-  if (PDF_DEBUG) console.log(`[PDF 2-pass] completato: ${total} pagine`);
-  return pdf2;
-}
-
 // ── Debug overflow (solo se PDF_DEBUG=true) ───────────────────────────────────
-// Confronta clientWidth vs scrollWidth su .doc; logga top-10 selettori sforanti.
+// Logga i top-10 elementi che sforano orizzontalmente il .doc o verticalmente
+// la safe area [top:22mm, bottom:277mm] — in pixel a 96dpi.
 async function _debugOverflow(page) {
   const hits = await page.evaluate(() => {
-    const doc = document.querySelector('.doc');
+    const doc  = document.querySelector('.doc');
     const maxW = doc ? doc.clientWidth : document.documentElement.clientWidth;
-    const results = {};
+    // Safe area verticale: 22mm top ≈ 84px, 20mm bottom → limit 297mm-20mm=277mm ≈ 1047px
+    const SAFE_TOP = 84;
+    const SAFE_BTM = 1047;
+    const results  = {};
+
     document.querySelectorAll('*').forEach(el => {
-      if (el.scrollWidth > maxW + 2) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 && r.height === 0) return;
+      const overflow_h = el.scrollWidth > maxW + 2;
+      const overflow_v = r.top < -SAFE_TOP || r.bottom > SAFE_BTM;
+      if (overflow_h || overflow_v) {
         const key = el.tagName.toLowerCase() +
           (el.className && typeof el.className === 'string'
-            ? '.' + el.className.trim().split(/\s+/)[0] : '');
+            ? '.' + el.className.trim().split(/\s+/)[0] : '') +
+          (overflow_h ? ' [W]' : '') + (overflow_v ? ' [V]' : '');
         results[key] = (results[key] || 0) + 1;
       }
     });
     return results;
   });
+
   const entries = Object.entries(hits).slice(0, 10);
   if (entries.length) {
-    console.warn('[PDF_DEBUG] overflow laterale (selettore: count):');
+    console.warn('[PDF_DEBUG] overflow rilevato (W=orizzontale, V=verticale):');
     entries.forEach(([s, n]) => console.warn(`  ${s}: ${n}`));
   } else {
-    console.log('[PDF_DEBUG] nessun overflow — tutti gli elementi dentro .doc');
+    console.log('[PDF_DEBUG] OK — nessun overflow rilevato');
   }
 }
 
-// ── renderHtmlToPdf (browser monouso — test/fallback) ─────────────────────────
+// ── renderHtmlToPdf (browser monouso) ─────────────────────────────────────────
 async function renderHtmlToPdf(html, opts = {}) {
-  if (!puppeteer) throw new Error(
-    'Puppeteer non installato. Esegui: npm install puppeteer'
-  );
+  if (!puppeteer) throw new Error('Puppeteer non installato. Esegui: npm install puppeteer');
   const browser = await puppeteer.launch({ headless: true, args: LAUNCH_ARGS });
   try {
-    return await _twoPassRender(browser, html);
+    const page = await browser.newPage();
+    await page.setViewport({ width: 794, height: 1123 });
+    await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+    await page.evaluateHandle('document.fonts.ready');
+    if (PDF_DEBUG) await _debugOverflow(page);
+    return await page.pdf(makePdfOpts(opts));
   } finally {
     await browser.close();
   }
@@ -175,11 +176,19 @@ class PdfRendererPool {
     return this._launching;
   }
 
-  // render() = 2-pass sul browser condiviso (Pass 1 + Pass 2 sulla stessa istanza).
   async render(html, opts = {}) {
     if (!puppeteer) throw new Error('Puppeteer non installato. Esegui: npm install puppeteer');
     const browser = await this._getBrowser();
-    return await _twoPassRender(browser, html);
+    const page    = await browser.newPage();
+    try {
+      await page.setViewport({ width: 794, height: 1123 });
+      await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
+      await page.evaluateHandle('document.fonts.ready');
+      if (PDF_DEBUG) await _debugOverflow(page);
+      return await page.pdf(makePdfOpts(opts));
+    } finally {
+      await page.close();
+    }
   }
 
   async close() {
