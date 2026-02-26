@@ -284,7 +284,7 @@ function buildCss() {
    PALLADIA PDF — Stylesheet v10
    Architettura header/footer Puppeteer nativo (displayHeaderFooter:true):
      @page { size:A4; margin:0 }  → zero margini CSS (nessun doppio margine).
-     Verticale  : Puppeteer margin top:22mm / bottom:20mm → Chrome riserva
+     Verticale  : Puppeteer margin top:26mm / bottom:24mm → Chrome riserva
                   le bande H/F; il contenuto DOM non le invade MAI.
      Orizzontale: .doc { padding: 0 16mm } → allineato ai template H/F
                   che usano anch'essi padding:0 16mm.
@@ -320,8 +320,8 @@ body {
 
 /* ── DOC WRAPPER ─────────────────────────────────────────────────────
    .doc gestisce SOLO il padding laterale (16mm sx/dx).
-   Il padding verticale NON è nel DOM: Puppeteer margin top:22mm /
-   bottom:20mm riserva le bande H/F — il contenuto non le invade mai.
+   Il padding verticale NON è nel DOM: Puppeteer margin top:26mm /
+   bottom:24mm riserva le bande H/F — il contenuto non le invade mai.
    width:100% → non supera mai la larghezza pagina. */
 .doc {
   width: 100%;
@@ -363,8 +363,8 @@ thead {
 }
 
 /* ── COVER ─────────────────────────────────────────────────────────────
-   min-height = A4 (297mm) - Puppeteer top (22mm) - Puppeteer bottom (20mm)
-             = 255mm → cover occupa esattamente la prima pagina di contenuto.
+   height = A4 (297mm) - Puppeteer top (26mm) - Puppeteer bottom (24mm)
+          = 247mm → cover occupa esattamente la prima pagina di contenuto.
    ───────────────────────────────────────────────────────────────────── */
 .cover {
   break-after: page;
@@ -533,7 +533,7 @@ thead {
   break-before: avoid;
   page-break-before: avoid;
 }
-.section-title:first-child { margin-top: 0; }
+.section-title:first-child { margin-top: 8pt; }
 
 /* ── SUB-TITLE ──────────────────────────────────────────────────────── */
 .sub-title {
@@ -843,12 +843,18 @@ h3 { font-size: 10pt; margin: 11pt 0 5pt 0; color: #1E1E1E; }
 .keep-next  { break-after: avoid; page-break-after: avoid; }
 
 /* ══════════════════════════════════════════════════════════════════════
-   BLOCCO FINALE v10 — vince su tutto (cascata CSS, ultimo = forte)
-   Puppeteer displayHeaderFooter:true: top:22mm / bottom:20mm riservati.
-   Il DOM non deve MAI aggiungere padding verticale (.doc padding:0 16mm).
+   BLOCCO FINALE v13 — vince su tutto (cascata CSS, ultimo = forte)
+   CRITICO: @page margin DEVE coincidere con Puppeteer margin top/bottom.
+   - @page { margin: 26mm 0 24mm 0 } → Chrome layout con area utile
+     247mm/pag (297-26-24). Contenuto DENTRO quell'area, H/F fuori.
+   - Puppeteer margin { top:'26mm', bottom:'24mm' } → stessa banda fisica.
+   - top:26mm = header 10mm + 16mm respiro visivo sopra il contenuto.
+   - bottom:24mm = 15mm respiro visivo + footer 9mm.
+   - Margini aumentati da 22/20 a 26/24 per eliminare la percezione di
+     sovrapposizione tra blocchi dark-bg e le bande header/footer.
    ══════════════════════════════════════════════════════════════════════ */
 
-@page { size: A4; margin: 0; }
+@page { size: A4; margin: 26mm 0 24mm 0; }
 
 *, *::before, *::after { box-sizing: border-box; }
 
@@ -867,6 +873,16 @@ html, body {
   box-sizing: border-box !important;
 }
 
+/* ── COVER — altezza esatta dell'area contenuto ─────────────────────────
+   height: 247mm = 297mm - 26mm top - 24mm bottom.
+   Garantisce che il background scuro della sidebar non sfori mai
+   nell'area footer (24mm) anche con dati variabili o subpixel rounding.
+   overflow:hidden taglia qualsiasi overflow senza rompere il layout.     */
+.cover {
+  height: 247mm !important;
+  overflow: hidden !important;
+}
+
 /* ── TABELLE anti-overflow ───────────────────────────────────────────── */
 table {
   width: 100% !important;
@@ -883,14 +899,29 @@ thead { display: table-header-group; }
 tfoot { display: table-footer-group; }
 tr    { break-inside: avoid; page-break-inside: avoid; }
 
-/* ── ANTI-TAGLIO ─────────────────────────────────────────────────────── */
-h1, h2, h3, .section-title, .sub-title {
-  break-after: avoid-page;
-  page-break-after: avoid;
+/* Nelle tabelle multi-pagina (allow-break) le righe possono spezzarsi:
+   impedisce a righe molto alte di sforare nell'area footer/header.     */
+table.allow-break tr {
+  break-inside: auto !important;
+  page-break-inside: auto !important;
 }
-img, .card, .signature-box, .callout, .lav-header, .sign-card {
-  break-inside: avoid;
-  page-break-inside: avoid;
+
+/* ── ANTI-TAGLIO ─────────────────────────────────────────────────────── */
+h1, h2, h3, .section-title, .sub-title, .lav-header {
+  break-after: avoid-page !important;
+  page-break-after: avoid !important;
+}
+/* Tieni lav-header insieme al corpo: non isolare mai l'intestazione
+   di una lavorazione in fondo a una pagina senza almeno 1 riga di corpo. */
+.lav-header {
+  break-before: auto;
+  break-after: avoid-page !important;
+  page-break-after: avoid !important;
+}
+img, .card, .signature-box, .callout, .lav-header, .sign-card,
+.emergency-card, .sign-cat-title {
+  break-inside: avoid !important;
+  page-break-inside: avoid !important;
 }
 `;
 }

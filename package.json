@@ -17,6 +17,7 @@
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
     "pdfkit": "^0.17.2",
     "puppeteer": "^24.37.5"

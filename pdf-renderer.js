@@ -3,10 +3,11 @@
 /**
  * PDF Renderer — Puppeteer (single-pass, Puppeteer header/footer nativo)
  *
- * Architettura v11 — Puppeteer displayHeaderFooter: true:
+ * Architettura v13 — Puppeteer displayHeaderFooter: true:
  *   - Header/footer via template Puppeteer: NESSUN overlay, NESSUNA posizione fixed.
- *   - margin: { top:'22mm', bottom:'20mm', left:'0mm', right:'0mm' }
+ *   - margin: { top:'26mm', bottom:'24mm', left:'0mm', right:'0mm' }
  *     Chrome riserva le bande top/bottom per H/F; il contenuto non le invade mai.
+ *     Gap header→contenuto: 16mm. Gap contenuto→footer: 15mm.
  *   - Laterali 0mm da Puppeteer: .doc { padding: 0 16mm } allinea body con H/F.
  *   - pageNumber / totalPages: iniettati da Chrome internamente (deterministici).
  *   - Nessun pdf-lib, nessun 2-pass manuale, nessuna stima da scrollHeight.
@@ -70,20 +71,22 @@ const LAUNCH_ARGS = [
 ];
 
 // ── Opzioni PDF ───────────────────────────────────────────────────────────────
-// top:22mm   = header 10mm + 12mm respiro tra barra e primo rigo di testo
-// bottom:20mm = footer  9mm + 11mm respiro tra ultimo rigo e barra
+// top:26mm   = header 10mm + 16mm respiro tra barra e primo rigo di testo
+// bottom:24mm = footer  9mm + 15mm respiro tra ultimo rigo e barra
 // left/right:0mm = laterali gestiti da .doc { padding: 0 16mm }
+// Margini aumentati a 26/24mm per garantire separazione visiva netta
+// tra header/footer e contenuto (dark-bg blocks non sembrano sovrapposti).
+// Corrisponde a @page { margin: 26mm 0 24mm 0 } nel CSS.
 function makePdfOpts(opts = {}) {
   return {
     format:              'A4',
     printBackground:     true,
-    preferCSSPageSize:   true,
     displayHeaderFooter: true,
     headerTemplate:      buildHeaderTemplate(opts.docTitle || ''),
     footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1),
     margin: {
-      top:    '22mm',
-      bottom: '20mm',
+      top:    '26mm',
+      bottom: '24mm',
       left:   '0mm',
       right:  '0mm',
     },
@@ -97,9 +100,9 @@ async function _debugOverflow(page) {
   const hits = await page.evaluate(() => {
     const doc  = document.querySelector('.doc');
     const maxW = doc ? doc.clientWidth : document.documentElement.clientWidth;
-    // Safe area verticale: 22mm top ≈ 84px, 20mm bottom → limit 297mm-20mm=277mm ≈ 1047px
-    const SAFE_TOP = 84;
-    const SAFE_BTM = 1047;
+    // Safe area verticale: 26mm top ≈ 98px, 24mm bottom → limit 297mm-24mm=273mm ≈ 1032px
+    const SAFE_TOP = 98;
+    const SAFE_BTM = 1032;
     const results  = {};
 
     document.querySelectorAll('*').forEach(el => {
