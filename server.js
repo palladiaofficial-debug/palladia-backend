@@ -7,6 +7,18 @@ const { buildPosDocument } = require('./pos-template');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
 const { rendererPool } = require('./pdf-renderer');
+const rateLimit = require('express-rate-limit');
+const v1Router = require('./routes/v1');
+const { sendWelcomeEmail } = require('./services/email');
+
+// Rate limiter per /api/send-welcome: max 5 per IP per 10 minuti
+const welcomeLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }
+});
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -17,6 +29,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const app = express();
+app.set('trust proxy', 1); // Railway/Nginx proxy — req.ip corretto per rate limit e logging
 const PORT = process.env.PORT || 3001;
 
 const ALLOWED_ORIGINS = [
@@ -39,9 +52,53 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id']
 }));
 app.use(express.json({ limit: '10mb' }));
+
+// ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
+app.use('/api/v1', v1Router);
+
+// ── Email transazionali ──────────────────────────────────────────────────────
+/**
+ * POST /api/send-welcome
+ * Body: { email, name, companyName }
+ * Chiamato dal frontend dopo la creazione dell'azienda.
+ * Richiede RESEND_API_KEY in env; se assente logga e risponde 200 (non blocca il flusso).
+ */
+app.post('/api/send-welcome', welcomeLimiter, async (req, res) => {
+  const { email, name, companyName } = req.body || {};
+  if (!email || !name || !companyName) {
+    return res.status(400).json({ error: 'email, name e companyName sono obbligatori' });
+  }
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[EMAIL] RESEND_API_KEY non configurata — welcome email saltata per:', email);
+    return res.json({ sent: false, reason: 'RESEND_API_KEY not set' });
+  }
+  try {
+    await sendWelcomeEmail({ to: email, name, companyName });
+    console.log('[EMAIL] welcome inviata a:', email);
+    res.json({ sent: true });
+  } catch (err) {
+    console.error('[EMAIL] errore invio welcome:', err.message);
+    // Non bloccare il flusso: risponde 200 comunque
+    res.json({ sent: false, reason: err.message });
+  }
+});
+
+// ── Frontend badge (pagine statiche) ────────────────────────────────────────
+// Serve i file in /public (scan.html, setup.html)
+// Le route SPA sono dichiarate PRIMA di express.static per sicurezza esplicita.
+app.get('/scan/:worksiteId', (req, res) => {
+  res.sendFile('scan.html', { root: __dirname + '/public' });
+});
+app.get('/setup', (req, res) => {
+  res.sendFile('setup.html', { root: __dirname + '/public' });
+});
+app.get('/demo', (req, res) => {
+  res.sendFile('demo.html', { root: __dirname + '/public' });
+});
+app.use(express.static(__dirname + '/public'));
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -270,11 +327,14 @@ async function callAnthropicHaiku(prompt) {
 // ==================== ROUTES ====================
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Palladia Backend API is running!' });
+  res.sendFile('index.html', { root: __dirname + '/public' });
 });
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ ok: true, service: 'palladia', ts: new Date().toISOString() });
+});
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, service: 'palladia', ts: new Date().toISOString() });
 });
 
 // --- Sites CRUD ---
