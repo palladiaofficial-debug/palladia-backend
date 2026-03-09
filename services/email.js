@@ -1,7 +1,14 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = 'PalladIA <noreply@palladia.it>';
+
+// Inizializzazione lazy: evita crash al boot se RESEND_API_KEY non è impostata.
+// Il server.js già gestisce il caso RESEND_API_KEY assente con un warning + risposta 200.
+function getResend() {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY not configured');
+  return new Resend(key);
+}
 
 // ─── Template helpers ──────────────────────────────────────────────────────
 
@@ -91,7 +98,7 @@ async function sendWelcomeEmail({ to, name, companyName }) {
     </p>
   `;
 
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM,
     to,
     subject: `Benvenuto su PalladIA — ${companyName} è pronta`,
@@ -120,7 +127,7 @@ async function sendPasswordResetEmail({ to, resetLink }) {
     </p>
   `;
 
-  return resend.emails.send({
+  return getResend().emails.send({
     from: FROM,
     to,
     subject: 'Reimposta la tua password — PalladIA',
