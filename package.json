@@ -18,10 +18,12 @@
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
+    "node-cron": "^4.2.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
     "pdfkit": "^0.17.2",
     "puppeteer": "^24.37.5",
+    "qrcode": "^1.5.4",
     "resend": "^6.9.3"
   },
   "devDependencies": {

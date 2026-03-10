@@ -52,6 +52,42 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   ? 'compat'
   : 'strict';
 
+// ── GET /api/v1/scan/verify-qr — PUBBLICO ────────────────────────────────────
+// Verifica la firma HMAC di un link QR.
+// Chiamato da scan.html al boot: se il QR è invalido o scaduto → blocca l'accesso.
+// Query params: site, t (token), exp (unix timestamp scadenza)
+router.get('/scan/verify-qr', async (req, res) => {
+  const { site, t, exp } = req.query;
+  if (!site || !t || !exp) {
+    return res.status(400).json({ valid: false, error: 'MISSING_PARAMS' });
+  }
+
+  const expNum = Number(exp);
+  if (!Number.isFinite(expNum) || expNum <= 0) {
+    return res.status(400).json({ valid: false, error: 'INVALID_EXP' });
+  }
+
+  // Scadenza
+  if (Date.now() / 1000 > expNum) {
+    return res.json({ valid: false, error: 'QR_EXPIRED', expired_at: new Date(expNum * 1000).toISOString() });
+  }
+
+  // Verifica firma HMAC (riusa la logica di qr.js)
+  const { verifyQrToken } = require('./qr');
+  let valid = false;
+  try {
+    valid = verifyQrToken(site, t, expNum);
+  } catch (e) {
+    return res.status(500).json({ valid: false, error: 'SIGNING_NOT_CONFIGURED' });
+  }
+
+  if (!valid) {
+    return res.json({ valid: false, error: 'INVALID_SIGNATURE' });
+  }
+
+  res.json({ valid: true, site_id: site, expires_at: new Date(expNum * 1000).toISOString() });
+});
+
 // ── GET /api/v1/scan/worksites/:worksiteId — PUBBLICO ─────────────────────────
 // Info non sensibili del cantiere per la schermata di scan.
 // NON espone: company_id, pin_hash, latitude, longitude.

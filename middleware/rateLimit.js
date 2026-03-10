@@ -36,4 +36,14 @@ const apiLimiter = rateLimit({
   message: { error: 'TOO_MANY_REQUESTS' }
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter };
+// Rate limiter per GET /api/v1/asl/:token — accesso pubblico link ASL
+// Key: IP — evita flooding sul PDF generator
+const aslLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter };

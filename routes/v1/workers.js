@@ -2,6 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { auditLog }          = require('../../lib/audit');
 
 // CF italiano: 16 char alfanumerici (uppercase)
 function isValidFiscalCode(cf) {
@@ -40,6 +41,18 @@ router.post('/workers', verifySupabaseJwt, async (req, res) => {
     return res.status(409).json({ error: 'WORKER_ALREADY_EXISTS' });
   }
   if (error) return res.status(400).json({ error: error.message });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'worker.create',
+    targetType: 'worker',
+    targetId:   data.id,
+    payload:    { full_name: data.full_name, fiscal_code: data.fiscal_code },
+    req
+  });
+
   res.status(201).json(data);
 });
 
@@ -110,6 +123,18 @@ router.post('/sites/:siteId/workers', verifySupabaseJwt, async (req, res) => {
     .single();
 
   if (error) return res.status(400).json({ error: error.message });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'worker.assign_site',
+    targetType: 'worker',
+    targetId:   worker_id,
+    payload:    { site_id: siteId, start_date, end_date },
+    req
+  });
+
   res.status(201).json(data);
 });
 

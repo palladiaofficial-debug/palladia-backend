@@ -60,7 +60,9 @@ router.get('/sites/:siteId/qr-link', verifySupabaseJwt, async (req, res) => {
   }
 
   const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const url = `${appBase}/scan?site=${encodeURIComponent(siteId)}&t=${token}&exp=${exp}`;
+  // URL formato: /scan/<siteId>?t=<token>&exp=<unix>
+  // scan.html legge siteId dal path e il token dalla query string
+  const url = `${appBase}/scan/${encodeURIComponent(siteId)}?t=${token}&exp=${exp}`;
 
   res.json({
     url,

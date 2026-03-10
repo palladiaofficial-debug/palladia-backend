@@ -10,6 +10,7 @@ const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
 const v1Router = require('./routes/v1');
 const { sendWelcomeEmail } = require('./services/email');
+const { startMissingExitCron } = require('./services/missingExitCron');
 
 // Rate limiter per /api/send-welcome: max 5 per IP per 10 minuti
 const welcomeLimiter = rateLimit({
@@ -31,6 +32,14 @@ process.on('unhandledRejection', (reason) => {
 const app = express();
 app.set('trust proxy', 1); // Railway/Nginx proxy — req.ip corretto per rate limit e logging
 const PORT = process.env.PORT || 3001;
+
+// GET /api/config — espone solo le chiavi pubbliche al frontend (no secret)
+app.get('/api/config', (req, res) => {
+  res.json({
+    supabase_url:      process.env.SUPABASE_URL      || '',
+    supabase_anon_key: process.env.SUPABASE_ANON_KEY || ''
+  });
+});
 
 const ALLOWED_ORIGINS = [
   /^https:\/\/palladia[a-z0-9-]*\.vercel\.app$/,
@@ -91,6 +100,15 @@ app.post('/api/send-welcome', welcomeLimiter, async (req, res) => {
 // Le route SPA sono dichiarate PRIMA di express.static per sicurezza esplicita.
 app.get('/scan/:worksiteId', (req, res) => {
   res.sendFile('scan.html', { root: __dirname + '/public' });
+});
+app.get('/asl/:token', (req, res) => {
+  res.sendFile('asl.html', { root: __dirname + '/public' });
+});
+app.get('/admin', (req, res) => {
+  res.sendFile('admin.html', { root: __dirname + '/public' });
+});
+app.get('/onboarding', (req, res) => {
+  res.sendFile('onboarding.html', { root: __dirname + '/public' });
 });
 app.get('/setup', (req, res) => {
   res.sendFile('setup.html', { root: __dirname + '/public' });
@@ -1203,4 +1221,10 @@ app.get('/api/pdf-smoke', async (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log('ROUTES OK: /api/ping, /api/pdf-diag, /api/pdf-smoke');
+
+  // Avvia cron giornaliero uscite mancanti (20:00 Europe/Rome)
+  // Solo in produzione o se esplicitamente abilitato
+  if (process.env.NODE_ENV !== 'test') {
+    startMissingExitCron();
+  }
 });

@@ -135,4 +135,96 @@ async function sendPasswordResetEmail({ to, resetLink }) {
   });
 }
 
-module.exports = { sendWelcomeEmail, sendPasswordResetEmail };
+// ─── Email: Alert uscite mancanti ──────────────────────────────────────────
+
+/**
+ * Invia un'email agli admin della company con la lista dei lavoratori
+ * che non hanno timbrato l'uscita.
+ *
+ * @param {{ companyId: string, date: string, missingList: Array }} opts
+ */
+async function sendMissingExitAlert({ companyId, date, missingList }) {
+  if (!missingList || missingList.length === 0) return;
+
+  // Fetch admin users della company
+  const supabase = require('../lib/supabase');
+  const { data: adminUsers } = await supabase
+    .from('company_users')
+    .select('user_id, role')
+    .eq('company_id', companyId)
+    .in('role', ['owner', 'admin']);
+
+  if (!adminUsers || adminUsers.length === 0) return;
+
+  // Recupera email per ogni admin via getUserById (service_role)
+  // Preferibile a listUsers() che restituisce TUTTI gli utenti della piattaforma
+  const adminEmails = [];
+  for (const { user_id } of adminUsers) {
+    try {
+      const { data: { user } } = await supabase.auth.admin.getUserById(user_id);
+      if (user?.email) adminEmails.push(user.email);
+    } catch { /* ignora errori singolo utente */ }
+  }
+
+  if (adminEmails.length === 0) return;
+
+  const [y, m, d] = date.split('-');
+  const dateDisplay = `${d}/${m}/${y}`;
+
+  // Raggruppa per cantiere
+  const bySite = new Map();
+  for (const item of missingList) {
+    const key = item.site_id;
+    if (!bySite.has(key)) bySite.set(key, { name: item.site_name, workers: [] });
+    bySite.get(key).workers.push(item);
+  }
+
+  let siteRows = '';
+  for (const [, { name, workers }] of bySite) {
+    const workerRows = workers.map(w =>
+      `<tr>
+        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${esc(w.worker_name)}</td>
+        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${esc(w.fiscal_code)}</td>
+        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">
+          ${new Date(w.last_entry_time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })}
+        </td>
+      </tr>`
+    ).join('');
+    siteRows += `
+      <p style="margin:20px 0 6px;font-size:13px;font-weight:700;color:#0f172a;">📍 ${esc(name)}</p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:8px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Cod. Fiscale</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Ultima entrata</th>
+        </tr></thead>
+        <tbody>${workerRows}</tbody>
+      </table>`;
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  const body = `
+    <h1 style="margin:0 0 4px;font-size:20px;color:#0f172a;">⚠️ Uscite mancanti — ${dateDisplay}</h1>
+    <p style="margin:0 0 20px;color:#64748b;font-size:14px;line-height:1.6;">
+      I seguenti <strong>${missingList.length} lavoratori</strong> hanno una timbratura di entrata
+      senza la corrispondente uscita. Verificare con i diretti interessati.
+    </p>
+    ${siteRows}
+    <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;line-height:1.6;">
+      Questo alert viene generato automaticamente da PalladIA al termine della giornata lavorativa.
+      I dati di presenza sono registrati in modo append-only e non modificabili.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   adminEmails,
+    subject: `PalladIA — ${missingList.length} uscite mancanti del ${dateDisplay}`,
+    html: layout(`Alert uscite mancanti — ${dateDisplay}`, body)
+  });
+}
+
+module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert };
