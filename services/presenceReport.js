@@ -205,6 +205,9 @@ function pairDayIntervals(dayLogs, geofenceRadius) {
   if (avgDist != null && geofenceRadius != null && avgDist > geofenceRadius * 0.9)
     rawAnomalies.push('Vicino limite area');
 
+  // Distinct methods used in this day's logs (e.g. ['scan', 'admin'])
+  const methods = [...new Set(dayLogs.map(l => l.method).filter(Boolean))];
+
   return {
     firstEntry,
     lastExit,
@@ -212,6 +215,7 @@ function pairDayIntervals(dayLogs, geofenceRadius) {
     intervalsCount: validPairs.length,
     avgDist,
     avgAcc,
+    methods,
     anomalies: formatAnomalies(rawAnomalies)
   };
 }
@@ -256,7 +260,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select(`
-      id, event_type, timestamp_server, distance_m, gps_accuracy_m, worker_id,
+      id, event_type, timestamp_server, distance_m, gps_accuracy_m, worker_id, method,
       worker:workers (id, full_name, fiscal_code)
     `)
     .eq('site_id', siteId)
@@ -309,6 +313,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
         intervals_count: result.intervalsCount,    // n. coppie valide
         avg_distance_m:  result.avgDist,
         avg_accuracy_m:  result.avgAcc,
+        methods:         result.methods,           // e.g. ['scan', 'admin']
         anomalies:       result.anomalies          // formattate con dedup/count
       });
     }
@@ -405,8 +410,9 @@ function generatePresenceReportHtml(data) {
         ? String(row.intervals_count)
         : '<span class="miss">0</span>';
 
-      const distStr = row.avg_distance_m != null ? `${row.avg_distance_m}m` : '—';
-      const accStr  = row.avg_accuracy_m  != null ? `±${row.avg_accuracy_m}m` : '—';
+      const distStr    = row.avg_distance_m != null ? `${row.avg_distance_m}m` : '—';
+      const accStr     = row.avg_accuracy_m  != null ? `±${row.avg_accuracy_m}m` : '—';
+      const methodsStr = row.methods && row.methods.length > 0 ? esc(row.methods.join(', ')) : '—';
 
       const trClass = [
         row.anomalies.length > 0 ? 'tr-anom'   : '',
@@ -424,6 +430,7 @@ function generatePresenceReportHtml(data) {
         <td class="td-num">${intStr}</td>
         <td class="td-num">${distStr}</td>
         <td class="td-num">${accStr}</td>
+        <td class="td-num" style="font-size:7.5pt;color:#555555;">${methodsStr}</td>
         <td class="td-anom-cell">${anomalyHtml}</td>
       </tr>`;
     }
@@ -754,7 +761,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
       <col class="col-date"> <col class="col-name"> <col class="col-cf">
       <col class="col-time"> <col class="col-time"> <col class="col-ore">
       <col class="col-nint"> <col class="col-dist"> <col class="col-gps">
-      <col class="col-anom">
+      <col style="width:9mm;"> <col class="col-anom">
     </colgroup>
     <thead>
       <tr>
@@ -767,6 +774,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
         <th style="text-align:center;">Int.</th>
         <th style="text-align:center;">Dist.</th>
         <th style="text-align:center;">GPS ±m</th>
+        <th style="text-align:center;">Metodo</th>
         <th>Anomalie</th>
       </tr>
     </thead>

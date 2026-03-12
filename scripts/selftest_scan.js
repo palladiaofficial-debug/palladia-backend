@@ -20,7 +20,7 @@
  * Uso:
  *   node scripts/selftest_scan.js
  *
- * 9 gruppi di test (+ 2 mini-check in test 3) — tutti devono passare per deploy sicuro.
+ * 10 gruppi di test (+ 2 mini-check in test 3) — tutti devono passare per deploy sicuro.
  * In modalità 'compat' il test 3 verifica il comportamento di transizione (202 no-write).
  *
  * Test rapido per entrambe le modalità:
@@ -358,6 +358,36 @@ async function run() {
       .maybeSingle();
 
     check('record intatto dopo DELETE fallito',  stillThere?.id === logRow.id,                          stillThere);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 10 — POST /scan/logout-device: revoca sessione worker C
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\nTest 10 — POST /scan/logout-device (revoca sessione worker C)');
+
+  if (!sessionTokenC) {
+    fail('prerequisito: sessionTokenC da test 5');
+  } else {
+    // 10a. Logout con token valido → 200
+    const t10 = await httpPost('/api/v1/scan/logout-device', { session_token: sessionTokenC });
+    check('status 200',   t10.status === 200,   t10);
+    check('ok: true',     t10.body.ok === true,  t10.body);
+
+    // 10b. Secondo logout con lo stesso token (già revocato) → 401
+    const t10b = await httpPost('/api/v1/scan/logout-device', { session_token: sessionTokenC });
+    check('secondo logout → 401',               t10b.status === 401,                          t10b);
+    check('error SESSION_ALREADY_EXPIRED|NOT_FOUND',
+      ['SESSION_ALREADY_EXPIRED', 'SESSION_NOT_FOUND'].includes(t10b.body.error),             t10b.body);
+
+    // 10c. Token inesistente → 401
+    const fakeToken = crypto.randomBytes(32).toString('hex');
+    const t10c = await httpPost('/api/v1/scan/logout-device', { session_token: fakeToken });
+    check('token inesistente → 401',            t10c.status === 401,                          t10c);
+    check('error SESSION_NOT_FOUND',            t10c.body.error === 'SESSION_NOT_FOUND',      t10c.body);
+
+    // 10d. Token malformato → 400
+    const t10d = await httpPost('/api/v1/scan/logout-device', { session_token: 'bad' });
+    check('token malformato → 400',             t10d.status === 400,                          t10d);
   }
 
   // ── Riepilogo ─────────────────────────────────────────────────────────────

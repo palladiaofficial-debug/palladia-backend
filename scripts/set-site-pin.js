@@ -2,16 +2,15 @@
 /**
  * scripts/set-site-pin.js
  *
- * Imposta o aggiorna il PIN di un cantiere (salvato come HMAC-SHA256).
+ * Imposta o aggiorna il PIN di un cantiere (salvato come bcrypt hash).
  *
  * Uso:
  *   node scripts/set-site-pin.js <site_id> <pin>
  *
- * Env richieste: SUPABASE_URL, SUPABASE_KEY, PIN_SIGNING_SECRET
+ * Env richieste: SUPABASE_URL, SUPABASE_KEY
  *
  * Esempio:
- *   PIN_SIGNING_SECRET=mysecret node scripts/set-site-pin.js \
- *     "550e8400-e29b-41d4-a716-446655440000" "1234"
+ *   node scripts/set-site-pin.js "550e8400-e29b-41d4-a716-446655440000" "1234"
  */
 'use strict';
 require('dotenv').config();
@@ -35,7 +34,7 @@ const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY
 async function main() {
   let pinHash;
   try {
-    pinHash = hashPin(pin);
+    pinHash = await hashPin(pin);
   } catch (e) {
     console.error('Errore hash PIN:', e.message);
     process.exit(1);

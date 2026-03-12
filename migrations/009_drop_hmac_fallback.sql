@@ -1,0 +1,19 @@
+-- Migration 009: Drop HMAC fallback — run ONLY after all sites have bcrypt hashes
+--
+-- Prerequisite check (run first):
+--   SELECT id, name FROM sites
+--   WHERE pin_hash IS NOT NULL
+--     AND pin_hash NOT LIKE '$2b$%'
+--     AND pin_hash NOT LIKE '$2a$%'
+--     AND pin_hash NOT LIKE '$2y$%';
+--   → must return 0 rows
+--
+-- If any rows found: re-run `node scripts/set-site-pin.js <id> <pin>` for each site.
+-- Then remove PIN_SIGNING_SECRET from Railway environment variables.
+--
+-- This file is a CHECKLIST, not runnable SQL — the actual code change is in lib/pinHash.js:
+-- Delete the HMAC fallback block (Path B) and the `isBcryptHash` check.
+
+-- Informational only: after removing HMAC support in code, you may also drop the column
+-- that was used to store plaintext PINs (if migration 008 has not been applied yet):
+-- ALTER TABLE sites DROP COLUMN IF EXISTS pin_code;

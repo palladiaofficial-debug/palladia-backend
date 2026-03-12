@@ -244,4 +244,99 @@ router.get('/reports/sites/:id/presenze', verifySupabaseJwt, async (req, res) =>
   res.send(pdfBuffer);
 });
 
+// ── GET /api/v1/worksites/:id/presence-report — alias pubblico ────────────────
+// ?format=pdf|csv  ?from=YYYY-MM-DD  ?to=YYYY-MM-DD
+// Alias semantico di /reports/sites/:id/presenze (pdf) e /reports/presence-range (csv).
+// Stesso middleware JWT + company ownership.
+router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res) => {
+  const siteId = req.params.id;
+  const { format = 'pdf', from, to } = req.query;
+
+  if (!['pdf', 'csv'].includes(format)) {
+    return res.status(400).json({ error: 'format deve essere pdf o csv' });
+  }
+  if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to)) {
+    return res.status(400).json({ error: 'from e to obbligatori (YYYY-MM-DD)' });
+  }
+  if (from > to) {
+    return res.status(400).json({ error: 'from deve essere <= to' });
+  }
+
+  // Forward to the right sub-handler by rewriting the URL params
+  req.params.id = siteId;
+  req.query.siteId = siteId;
+
+  if (format === 'csv') {
+    // Delegate to presence-range logic (inline — avoids double-auth)
+    const daysDiff = (new Date(to) - new Date(from)) / 86_400_000;
+    if (daysDiff > 365) {
+      return res.status(400).json({ error: 'Intervallo massimo 365 giorni per CSV' });
+    }
+    const { data: logs, error: logsErr } = await supabase
+      .from('presence_logs')
+      .select(`
+        worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m,
+        worker:workers (id, full_name, fiscal_code)
+      `)
+      .eq('site_id', siteId)
+      .eq('company_id', req.companyId)
+      .gte('timestamp_server', `${from}T00:00:00.000Z`)
+      .lte('timestamp_server', `${to}T23:59:59.999Z`)
+      .order('worker_id',        { ascending: true })
+      .order('timestamp_server', { ascending: true })
+      .limit(200000);
+
+    if (logsErr) return res.status(500).json({ error: logsErr.message });
+
+    const rows = [
+      'data,lavoratore,codice_fiscale,evento,timestamp,distanza_m,gps_accuracy_m',
+      ...(logs || []).filter(r => r.worker).map(r => [
+        new Date(r.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' }),
+        `"${(r.worker.full_name || '').replace(/"/g, '""')}"`,
+        r.worker.fiscal_code || '',
+        r.event_type,
+        r.timestamp_server,
+        r.distance_m     ?? '',
+        r.gps_accuracy_m ?? ''
+      ].join(','))
+    ].join('\r\n');
+
+    const filename = `presenze-${siteId}-${from}-${to}.csv`;
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send('\uFEFF' + rows);
+  }
+
+  // format === 'pdf'
+  const daysDiff = (new Date(to) - new Date(from)) / 86_400_000;
+  if (daysDiff > 90) {
+    return res.status(400).json({ error: 'Intervallo massimo 90 giorni per PDF' });
+  }
+
+  let reportData;
+  try {
+    reportData = await buildDailyPresenceSummary(siteId, req.companyId, from, to);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    return res.status(500).json({ error: 'DATA_ERROR', detail: err.message });
+  }
+
+  const html = generatePresenceReportHtml(reportData);
+  let pdfBuffer;
+  try {
+    pdfBuffer = await rendererPool.render(html, {
+      docTitle: `Registro Presenze — ${reportData.site.name}`,
+      rev: 1
+    });
+  } catch (renderErr) {
+    return res.status(500).json({ error: 'PDF_RENDER_ERROR' });
+  }
+
+  const filename = `presenze-${siteId}-${from}-${to}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.send(pdfBuffer);
+});
+
 module.exports = router;

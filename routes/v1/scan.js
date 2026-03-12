@@ -2,7 +2,7 @@
 const crypto      = require('crypto');
 const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
-const { verifyPin }        = require('../../lib/pinHash');
+const { verifyPin, hashPin } = require('../../lib/pinHash');
 const { scanLimiter, identifyLimiter } = require('../../middleware/rateLimit');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ router.get('/scan/worksites/:worksiteId', async (req, res) => {
 //   3. Worker sconosciuto                          → richiede PIN + full_name → crea worker + sessione
 //
 // SECURITY: company_id derivato SEMPRE dal cantiere in DB, mai dal body.
-// SECURITY: PIN confrontato con hash HMAC-SHA256, mai in plaintext.
+// SECURITY: PIN confrontato con bcrypt (o HMAC-SHA256 legacy con auto-rehash).
 router.post('/scan/identify', identifyLimiter, async (req, res) => {
   const { worksite_id, fiscal_code, full_name, pin_code } = req.body;
 
@@ -160,16 +160,24 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
   // company_id è derivato dal DB — il client non lo controlla
   const companyId = site.company_id;
 
-  // 3. Validazione PIN (hash HMAC-SHA256, timing-safe)
+  // 3. Validazione PIN (bcrypt; HMAC-SHA256 legacy con auto-rehash)
   const pinRequired = !!site.pin_hash;
   const pinProvided = pin_code != null && String(pin_code).length > 0;
 
-  // Helper locale: true se il PIN supera la verifica
-  function isPinValid() {
-    if (!pinRequired) return true;                         // nessun PIN richiesto
-    if (!pinProvided) return false;                        // PIN richiesto ma non fornito
-    try { return verifyPin(pin_code, site.pin_hash); }     // hash compare
-    catch { return false; }
+  // Helper locale: { valid, usedLegacy }
+  // usedLegacy=true → hash HMAC nel DB, auto-rehash in background dopo successo
+  async function isPinValid() {
+    if (!pinRequired) return { valid: true,  usedLegacy: false };
+    if (!pinProvided) return { valid: false, usedLegacy: false };
+    return verifyPin(pin_code, site.pin_hash);
+  }
+
+  // Schedula rehash bcrypt asincrono (best-effort, non blocca la risposta)
+  function scheduleRehash() {
+    hashPin(pin_code)
+      .then(newHash => supabase.from('sites').update({ pin_hash: newHash }).eq('id', worksite_id))
+      .then(({ error: e }) => { if (e) console.error('[pin] rehash update error:', e.message); })
+      .catch(e => console.error('[pin] rehash hash error:', e.message));
   }
 
   // 4. Cerca worker per CF nella company del cantiere
@@ -186,9 +194,11 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
 
   if (!worker) {
     // Worker sconosciuto → registrazione self-service (richiede PIN + nome)
-    if (!isPinValid()) {
+    const pinResult1 = await isPinValid();
+    if (!pinResult1.valid) {
       return res.status(403).json({ error: 'INVALID_PIN' });
     }
+    if (pinResult1.usedLegacy) scheduleRehash();
     if (!full_name || String(full_name).trim().length < 2) {
       return res.status(400).json({
         error:   'FULL_NAME_REQUIRED',
@@ -232,9 +242,11 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
 
   if (!assoc) {
     // Worker non associato al cantiere → PIN obbligatorio
-    if (!isPinValid()) {
+    const pinResult2 = await isPinValid();
+    if (!pinResult2.valid) {
       return res.status(403).json({ error: 'INVALID_PIN' });
     }
+    if (pinResult2.usedLegacy) scheduleRehash();
     const { error: assocErr } = await supabase
       .from('worksite_workers')
       .insert([{ company_id: companyId, site_id: worksite_id, worker_id: workerId, status: 'active' }]);
@@ -245,7 +257,28 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     return res.status(403).json({ error: 'WORKER_NOT_ACTIVE_ON_SITE' });
   }
 
-  // 6. Genera session token (32 bytes = 64 hex chars, salvato SOLO come hash)
+  // 6. Max 2 sessioni attive per worker — revoca la più vecchia se necessario
+  {
+    const now = new Date().toISOString();
+    const { data: activeSessions, error: sessListErr } = await supabase
+      .from('worker_device_sessions')
+      .select('id, created_at')
+      .eq('worker_id', workerId)
+      .is('revoked_at', null)
+      .gt('expires_at', now)
+      .order('created_at', { ascending: true });
+
+    if (!sessListErr && activeSessions && activeSessions.length >= 2) {
+      // Revoca la sessione più vecchia
+      const oldest = activeSessions[0];
+      await supabase
+        .from('worker_device_sessions')
+        .update({ revoked_at: now })
+        .eq('id', oldest.id);
+    }
+  }
+
+  // 7. Genera session token (32 bytes = 64 hex chars, salvato SOLO come hash)
   const sessionToken = crypto.randomBytes(32).toString('hex');
   const tokenHash    = hashToken(sessionToken);
 
@@ -461,6 +494,41 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     gps_accuracy_m:     Math.round(accuracyM),  // per UI (arrotondato)
     gps_accuracy_m_raw: accuracyM               // per audit/debug (con decimali)
   });
+});
+
+// ── POST /api/v1/scan/logout-device — PUBBLICO (auth via session token) ────────
+// Il lavoratore revoca la propria sessione (es. cambio telefono, logout volontario).
+// Non richiede JWT admin — autentica tramite lo stesso session_token del punch.
+router.post('/scan/logout-device', scanLimiter, async (req, res) => {
+  const { session_token } = req.body;
+
+  if (!session_token || typeof session_token !== 'string' || session_token.length !== 64) {
+    return res.status(400).json({ error: 'INVALID_SESSION_TOKEN' });
+  }
+
+  const tokenHash = hashToken(session_token);
+  const now       = new Date().toISOString();
+
+  const { data: session, error: findErr } = await supabase
+    .from('worker_device_sessions')
+    .select('id, revoked_at, expires_at')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+
+  if (findErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!session) return res.status(401).json({ error: 'SESSION_NOT_FOUND' });
+  if (session.revoked_at || new Date(session.expires_at) < new Date()) {
+    return res.status(401).json({ error: 'SESSION_ALREADY_EXPIRED' });
+  }
+
+  const { error: revokeErr } = await supabase
+    .from('worker_device_sessions')
+    .update({ revoked_at: now })
+    .eq('id', session.id);
+
+  if (revokeErr) return res.status(500).json({ error: 'REVOKE_ERROR' });
+
+  res.json({ ok: true, message: 'Sessione revocata.' });
 });
 
 module.exports = router;

@@ -100,7 +100,7 @@ router.patch('/sites/:siteId/pin', verifySupabaseJwt, async (req, res) => {
   let pin_hash = null;
   if (pin_code != null && String(pin_code).trim().length > 0) {
     try {
-      pin_hash = hashPin(String(pin_code));
+      pin_hash = await hashPin(String(pin_code));
     } catch (e) {
       return res.status(500).json({ error: 'PIN_HASH_ERROR', message: e.message });
     }
