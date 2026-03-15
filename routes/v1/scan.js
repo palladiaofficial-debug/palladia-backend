@@ -158,10 +158,11 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       .single();
 
     if (createErr) {
+      console.error('[identify] worker create error:', createErr.code, createErr.message);
       if (createErr.code === '23505') {
         return res.status(409).json({ error: 'WORKER_ALREADY_EXISTS' });
       }
-      return res.status(500).json({ error: 'WORKER_CREATE_ERROR' });
+      return res.status(500).json({ error: 'WORKER_CREATE_ERROR', code: createErr.code, detail: createErr.message });
     }
     workerId   = newWorker.id;
     workerName = newWorker.full_name;
