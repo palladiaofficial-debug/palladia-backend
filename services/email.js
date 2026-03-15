@@ -1,9 +1,14 @@
 const { Resend } = require('resend');
 
-const FROM = 'PalladIA <noreply@palladia.it>';
+// FROM configurabile via env — DEVE essere un dominio verificato in Resend.
+// Esempio Railway: RESEND_FROM=Palladia <noreply@palladia.it>
+// Fallback sicuro per test: usa il dominio Resend (funziona sempre senza DNS).
+const FROM = process.env.RESEND_FROM || 'Palladia <onboarding@resend.dev>';
+
+// URL app — usato nei link delle email. Configura APP_BASE_URL su Railway.
+const APP_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
 
 // Inizializzazione lazy: evita crash al boot se RESEND_API_KEY non è impostata.
-// Il server.js già gestisce il caso RESEND_API_KEY assente con un warning + risposta 200.
 function getResend() {
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error('RESEND_API_KEY not configured');
@@ -20,34 +25,49 @@ function layout(title, bodyHtml) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${title}</title>
 </head>
-<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 16px;">
+<body style="margin:0;padding:0;background:#f5f5f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f0;padding:48px 16px;">
   <tr><td align="center">
-    <table width="100%" style="max-width:560px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
 
-      <!-- Header -->
+    <!-- Logo strip sopra la card -->
+    <table width="100%" style="max-width:560px;margin-bottom:8px;">
       <tr>
-        <td style="background:#0f172a;padding:28px 32px;">
-          <span style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">PALLADIA</span>
-          <span style="color:#94a3b8;font-size:12px;margin-left:12px;">Registro Presenze Digitale</span>
+        <td style="padding:0 0 16px 4px;">
+          <span style="font-size:15px;font-weight:800;letter-spacing:0.12em;color:#1a1a1a;text-transform:uppercase;">PALLADIA</span>
+          <span style="font-size:12px;color:#9ca3af;margin-left:10px;font-weight:400;letter-spacing:0;">Gestione Cantieri</span>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.04);">
+
+      <!-- Hero band -->
+      <tr>
+        <td style="background:#1a1a1a;padding:36px 40px 32px;">
+          <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#6b7280;">Palladia</p>
+          <h1 style="margin:0;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;line-height:1.2;">${title}</h1>
         </td>
       </tr>
 
       <!-- Body -->
       <tr>
-        <td style="padding:32px;">
+        <td style="padding:36px 40px;">
           ${bodyHtml}
         </td>
       </tr>
 
-      <!-- Footer -->
+      <!-- Divider + Footer -->
       <tr>
-        <td style="background:#f8fafc;padding:20px 32px;border-top:1px solid #e2e8f0;">
-          <p style="margin:0;font-size:11px;color:#94a3b8;line-height:1.6;">
-            PalladIA – Registro Presenze Digitale &middot; info@palladia.it<br />
-            Hai ricevuto questa email perché hai un account su PalladIA.
-            Se non sei stato tu, ignora questa email o contattaci.
-          </p>
+        <td style="padding:0 40px 32px;">
+          <table width="100%" cellpadding="0" cellspacing="0">
+            <tr><td style="border-top:1px solid #f0f0f0;padding-top:24px;">
+              <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.8;">
+                Palladia &mdash; Gestione Cantieri e Sicurezza sul Lavoro<br/>
+                Hai ricevuto questa email perché hai creato un account su Palladia.<br/>
+                Se non sei stato tu, <a href="mailto:info@palladia.it" style="color:#6b7280;">contattaci</a>.
+              </p>
+            </td></tr>
+          </table>
         </td>
       </tr>
 
@@ -59,7 +79,7 @@ function layout(title, bodyHtml) {
 }
 
 function btn(text, href) {
-  return `<a href="${href}" style="display:inline-block;margin-top:24px;padding:12px 28px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:700;">${text}</a>`;
+  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:14px 32px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700;letter-spacing:0.01em;">${text}</a>`;
 }
 
 // ─── Email: Benvenuto ──────────────────────────────────────────────────────
@@ -68,41 +88,55 @@ function btn(text, href) {
  * @param {{ to: string, name: string, companyName: string }} opts
  */
 async function sendWelcomeEmail({ to, name, companyName }) {
-  const firstName = name.split(' ')[0];
+  const firstName = (name || to).split(' ')[0];
+
+  const steps = [
+    { n: '1', title: 'Crea il primo cantiere', desc: 'Aggiungi indirizzo, cliente e stato. Puoi creare quanti cantieri vuoi.' },
+    { n: '2', title: 'Inserisci i lavoratori', desc: 'Nome e codice fiscale sono sufficienti. I dati sono al sicuro e conformi GDPR.' },
+    { n: '3', title: 'Genera il QR per le timbrature', desc: 'Stampa il QR e attaccalo all\'ingresso. I lavoratori timbrano con il telefono, senza app.' },
+    { n: '4', title: 'Genera il POS', desc: 'Piano Operativo di Sicurezza in PDF pronto in meno di un minuto, personalizzato per il cantiere.' },
+  ].map(s => `
+    <tr>
+      <td style="padding:14px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;">
+        <table cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="vertical-align:top;padding-right:16px;">
+              <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#1a1a1a;color:#fff;border-radius:50%;font-size:12px;font-weight:800;">${s.n}</span>
+            </td>
+            <td style="vertical-align:top;">
+              <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#1a1a1a;">${s.title}</p>
+              <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.5;">${s.desc}</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`).join('');
+
   const body = `
-    <h1 style="margin:0 0 8px;font-size:22px;color:#0f172a;">Benvenuto su PalladIA, ${firstName}!</h1>
-    <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">
-      Il tuo account e l'azienda <strong style="color:#0f172a;">${companyName}</strong> sono stati configurati con successo.
-      Puoi già iniziare a gestire i tuoi cantieri.
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${firstName},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      L'azienda <strong style="color:#1a1a1a;">${companyName}</strong> è attiva su Palladia.
+      Puoi iniziare subito a gestire cantieri, lavoratori e timbrature.
     </p>
 
-    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;margin:20px 0;">
-      <tr>
-        <td style="padding:20px 24px;">
-          <p style="margin:0 0 12px;font-size:13px;font-weight:700;color:#0f172a;">Cosa puoi fare adesso:</p>
-          <ul style="margin:0;padding-left:18px;color:#64748b;font-size:13px;line-height:2;">
-            <li>Aggiungere i tuoi cantieri attivi</li>
-            <li>Inserire i lavoratori con codice fiscale</li>
-            <li>Generare i badge QR per le timbrature</li>
-            <li>Produrre il POS in PDF</li>
-          </ul>
-        </td>
-      </tr>
+    <p style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Come iniziare</p>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      ${steps}
     </table>
 
-    ${btn('Vai alla dashboard', 'https://palladia.it/dashboard')}
+    ${btn('Apri la dashboard →', `${APP_URL}/dashboard`)}
 
-    <p style="margin:24px 0 0;font-size:12px;color:#94a3b8;line-height:1.6;">
-      Ricorda: PalladIA supporta la gestione digitale delle presenze ma non sostituisce gli obblighi di legge
-      previsti dal D.Lgs.&nbsp;81/2008. L'azienda resta responsabile della corretta applicazione della normativa.
+    <p style="margin:32px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Palladia supporta la gestione digitale delle presenze in cantiere in conformità al D.Lgs.&nbsp;81/2008.
+      L'impresa resta responsabile del rispetto delle normative vigenti sulla sicurezza sul lavoro.
     </p>
   `;
 
   return getResend().emails.send({
     from: FROM,
     to,
-    subject: `Benvenuto su PalladIA — ${companyName} è pronta`,
-    html: layout('Benvenuto su PalladIA', body),
+    subject: `Benvenuto su Palladia — ${companyName} è pronta`,
+    html: layout(`Benvenuto su Palladia, ${firstName}!`, body),
   });
 }
 

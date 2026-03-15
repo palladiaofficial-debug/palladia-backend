@@ -120,13 +120,23 @@ router.post('/onboarding/setup', verifyJwtOnly, async (req, res) => {
   console.log(`[onboarding] company creata: ${company.id} (${cleanName}) per user ${req.user.id}`);
 
   // Invia email di benvenuto (best-effort: non blocca la risposta)
-  if (req.user.email && process.env.RESEND_API_KEY) {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('[onboarding] RESEND_API_KEY non impostata — email di benvenuto non inviata');
+  } else if (req.user.email) {
     const displayName = (typeof full_name === 'string' && full_name.trim().length > 0)
       ? full_name.trim()
       : req.user.email;
     sendWelcomeEmail({ to: req.user.email, name: displayName, companyName: cleanName })
-      .then(() => console.log(`[onboarding] welcome email inviata a: ${req.user.email}`))
-      .catch(e => console.error('[onboarding] welcome email error:', e.message));
+      .then(result => {
+        if (result?.error) {
+          console.error('[onboarding] welcome email Resend error:', JSON.stringify(result.error));
+        } else {
+          console.log(`[onboarding] welcome email inviata a: ${req.user.email} (id: ${result?.data?.id})`);
+        }
+      })
+      .catch(e => console.error('[onboarding] welcome email eccezione:', e.message));
+  } else {
+    console.warn('[onboarding] user senza email — email di benvenuto non inviata');
   }
 
   res.status(201).json({
