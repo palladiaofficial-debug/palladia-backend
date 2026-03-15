@@ -475,7 +475,7 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
     .from('admin_audit_log')
     .insert([{
       company_id:  session.company_id,
-      user_id:     session.worker_id,
+      user_id:     null,  // worker non è auth user — info worker nel payload
       user_role:   'worker',
       action:      'worker.exit_note',
       target_type: 'worksite',
@@ -498,6 +498,50 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+// ── GET /api/v1/scan/punch-status — PUBBLICO ─────────────────────────────────
+// Restituisce l'ultimo evento del lavoratore su questo cantiere.
+// Usato dalla UI per mostrare il bottone contestuale (entrata/uscita/completato).
+router.get('/scan/punch-status', async (req, res) => {
+  const { worksite_id, session_token } = req.query;
+
+  if (!worksite_id || !session_token) {
+    return res.status(400).json({ error: 'MISSING_FIELDS' });
+  }
+  if (typeof session_token !== 'string' || session_token.length !== 64) {
+    return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
+  }
+
+  const tokenHash = hashToken(session_token);
+  const now       = new Date();
+
+  const { data: session, error: sessErr } = await supabase
+    .from('worker_device_sessions')
+    .select('id, worker_id, expires_at, revoked_at')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+
+  if (sessErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!session)                            return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
+  if (session.revoked_at)                  return res.status(401).json({ error: 'SESSION_REVOKED' });
+  if (new Date(session.expires_at) < now)  return res.status(401).json({ error: 'SESSION_EXPIRED' });
+
+  const { data: lastLog, error: logErr } = await supabase
+    .from('presence_logs')
+    .select('event_type, timestamp_server')
+    .eq('worker_id', session.worker_id)
+    .eq('site_id', worksite_id)
+    .order('timestamp_server', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (logErr) return res.status(500).json({ error: 'DB_ERROR' });
+
+  res.json({
+    last_event_type: lastLog?.event_type  || null,
+    last_timestamp:  lastLog?.timestamp_server || null
+  });
 });
 
 // ── POST /api/v1/scan/logout-device — PUBBLICO ────────────────────────────────

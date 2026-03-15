@@ -22,7 +22,7 @@ router.get('/presence', verifySupabaseJwt, async (req, res) => {
     .from('presence_logs')
     .select(`
       id, event_type, timestamp_server, distance_m, method,
-      worker:workers (id, full_name, fiscal_code)
+      worker:workers (id, full_name, first_name, last_name, fiscal_code)
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)                     // isola sulla company verificata

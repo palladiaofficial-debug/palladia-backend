@@ -46,7 +46,6 @@
       min-height: 100%;
     }
 
-    /* ── Top bar ──────────────────────────────── */
     .topbar {
       width: 100%;
       max-width: 440px;
@@ -54,7 +53,6 @@
       align-items: center;
       justify-content: center;
       padding: 20px 0 8px;
-      margin-bottom: 4px;
     }
     .palladia-logo {
       font-size: 13px;
@@ -63,32 +61,17 @@
       text-transform: uppercase;
       color: var(--text);
     }
-    .palladia-logo span {
-      color: var(--subtle);
-      font-weight: 400;
-      letter-spacing: 0;
-    }
+    .palladia-logo span { color: var(--subtle); font-weight: 400; letter-spacing: 0; }
 
-    /* ── Site header ──────────────────────────── */
     .site-header {
       width: 100%;
       max-width: 440px;
       text-align: center;
       padding: 12px 0 24px;
     }
-    #site-name {
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: var(--text);
-      margin-bottom: 4px;
-    }
-    #site-address {
-      font-size: 14px;
-      color: var(--muted);
-    }
+    #site-name    { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 4px; }
+    #site-address { font-size: 14px; color: var(--muted); }
 
-    /* ── Card ───────────────────────────────────── */
     .card {
       width: 100%;
       max-width: 440px;
@@ -108,14 +91,7 @@
       margin-bottom: 14px;
     }
 
-    /* ── Form ──────────────────────────────────── */
-    label {
-      display: block;
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--muted);
-      margin-bottom: 6px;
-    }
+    label { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
     input[type="text"] {
       width: 100%;
       background: var(--bg);
@@ -129,25 +105,20 @@
       transition: border-color 0.15s, box-shadow 0.15s;
       -webkit-appearance: none;
     }
-    input:focus {
-      border-color: var(--text);
-      box-shadow: 0 0 0 3px rgba(0,0,0,.06);
-    }
+    input:focus { border-color: var(--text); box-shadow: 0 0 0 3px rgba(0,0,0,.06); }
     input::placeholder { color: var(--border); }
-
     .field { margin-bottom: 14px; }
     .field:last-child { margin-bottom: 0; }
 
-    /* ── Buttons ────────────────────────────────── */
     .btn {
       display: block;
       width: 100%;
-      padding: 14px 20px;
+      padding: 15px 20px;
       border: none;
       border-radius: var(--radius);
       font-family: inherit;
-      font-size: 15px;
-      font-weight: 600;
+      font-size: 16px;
+      font-weight: 700;
       cursor: pointer;
       transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
       -webkit-appearance: none;
@@ -156,21 +127,22 @@
     .btn:active  { transform: scale(0.97); }
     .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
 
-    .btn-primary {
-      background: var(--primary);
-      color: #fff;
-    }
-    .btn-primary:not(:disabled):hover { box-shadow: var(--shadow-md); }
-
-    .btn-green {
+    .btn-entry {
       background: var(--green-bg);
       color: #fff;
-      font-size: 16px;
-      font-weight: 700;
-      padding: 16px 20px;
     }
-    .btn-green:not(:disabled):hover { box-shadow: var(--shadow-md); }
-
+    .btn-exit {
+      background: var(--red);
+      color: #fff;
+    }
+    .btn-done {
+      background: var(--bg);
+      color: var(--muted);
+      border: 1.5px solid var(--border);
+      cursor: not-allowed;
+      font-size: 14px;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
     .btn-ghost {
       background: transparent;
       border: 1.5px solid var(--border);
@@ -179,11 +151,9 @@
       font-weight: 500;
       padding: 11px;
     }
-    .btn-ghost:not(:disabled):hover { border-color: var(--subtle); color: var(--text); }
-
     .btn + .btn { margin-top: 8px; }
 
-    /* ── Worker badge ─────────────────────────── */
+    /* Worker badge */
     #worker-badge {
       width: 100%;
       max-width: 440px;
@@ -198,23 +168,35 @@
       box-shadow: var(--shadow);
     }
     .worker-avatar {
-      width: 44px;
-      height: 44px;
+      width: 44px; height: 44px;
       border-radius: 50%;
-      background: var(--text);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 17px;
-      font-weight: 700;
-      flex-shrink: 0;
+      background: var(--text); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 17px; font-weight: 700; flex-shrink: 0;
     }
     .worker-info { flex: 1; min-width: 0; }
     .worker-name { font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .worker-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
 
-    /* ── Punch result card ──────────────────────── */
+    /* Punch area */
+    .punch-area {
+      width: 100%;
+      max-width: 440px;
+    }
+
+    /* GPS hint */
+    #gps-hint {
+      font-size: 12px; font-weight: 500;
+      color: var(--subtle);
+      text-align: center;
+      margin-top: 8px;
+      height: 18px;
+    }
+    #gps-hint.ok    { color: var(--green); }
+    #gps-hint.warn  { color: var(--amber); }
+    #gps-hint.error { color: var(--red); }
+
+    /* Result card */
     #result-card {
       width: 100%;
       max-width: 440px;
@@ -223,38 +205,17 @@
       margin-bottom: 12px;
       text-align: center;
     }
-    #result-card.entry {
-      background: #f0fdf4;
-      border: 1.5px solid #bbf7d0;
-    }
-    #result-card.exit {
-      background: #fef2f2;
-      border: 1.5px solid #fecaca;
-    }
-    .result-icon  { font-size: 36px; margin-bottom: 8px; line-height: 1; }
-    .result-label { font-size: 20px; font-weight: 800; margin-bottom: 6px; letter-spacing: -0.01em; }
+    #result-card.entry { background: #f0fdf4; border: 1.5px solid #bbf7d0; }
+    #result-card.exit  { background: #fef2f2; border: 1.5px solid #fecaca; }
+    .result-icon  { font-size: 32px; margin-bottom: 8px; line-height: 1; }
+    .result-label { font-size: 18px; font-weight: 800; margin-bottom: 4px; letter-spacing: -0.01em; }
     .result-sub   { font-size: 13px; color: var(--muted); }
     #result-card.entry .result-label { color: var(--green); }
-    #result-card.exit  .result-label { color: var(--red);   }
+    #result-card.exit  .result-label { color: var(--red); }
 
-    /* ── GPS status ─────────────────────────────── */
-    #gps-hint {
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--subtle);
-      text-align: center;
-      margin-top: 8px;
-      height: 18px;
-    }
-    #gps-hint.ok    { color: var(--green); }
-    #gps-hint.warn  { color: var(--amber); }
-    #gps-hint.error { color: var(--red);   }
-
-    /* ── Error inline ─────────────────────────── */
+    /* Field error */
     #field-error {
-      font-size: 13px;
-      font-weight: 500;
-      color: var(--red);
+      font-size: 13px; font-weight: 500; color: var(--red);
       margin-bottom: 12px;
       padding: 10px 12px;
       background: #fef2f2;
@@ -262,43 +223,7 @@
       border-radius: 8px;
     }
 
-    /* ── Toast ──────────────────────────────────── */
-    #toast {
-      position: fixed;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%) translateY(100px);
-      background: var(--text);
-      color: #fff;
-      border-radius: 10px;
-      padding: 12px 20px;
-      font-size: 14px;
-      font-weight: 500;
-      max-width: 360px;
-      width: calc(100% - 32px);
-      text-align: center;
-      transition: transform 0.25s ease;
-      z-index: 100;
-      box-shadow: 0 8px 24px rgba(0,0,0,.18);
-    }
-    #toast.visible { transform: translateX(-50%) translateY(0); }
-    #toast.warn    { background: #92400e; }
-    #toast.info    { background: #1e40af; }
-
-    /* ── Spinner ────────────────────────────────── */
-    .spin {
-      display: inline-block;
-      width: 16px; height: 16px;
-      border: 2px solid rgba(255,255,255,.35);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin .65s linear infinite;
-      vertical-align: middle;
-      margin-right: 8px;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    /* ── Note uscita ────────────────────────────── */
+    /* Notes */
     .notes-card textarea {
       width: 100%;
       background: var(--bg);
@@ -316,22 +241,51 @@
     }
     .notes-card textarea:focus { border-color: var(--text); }
 
-    /* ── Helpers ────────────────────────────────── */
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px; left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--text); color: #fff;
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 14px; font-weight: 500;
+      max-width: 360px; width: calc(100% - 32px);
+      text-align: center;
+      transition: transform 0.25s ease;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0,0,0,.18);
+    }
+    #toast.visible { transform: translateX(-50%) translateY(0); }
+    #toast.warn    { background: #92400e; }
+    #toast.info    { background: #1e40af; }
+
+    /* Spinner */
+    .spin {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    .spin-dark {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid rgba(0,0,0,.12);
+      border-top-color: var(--text);
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .hidden { display: none !important; }
     .w-full { width: 100%; max-width: 440px; }
     .text-center { text-align: center; }
     .mt-3 { margin-top: 12px; }
 
-    /* ── Divider ─────────────────────────────────── */
-    .divider {
-      width: 100%;
-      max-width: 440px;
-      height: 1px;
-      background: var(--border);
-      margin: 4px 0 12px;
-    }
-
-    /* ── Fade-in ─────────────────────────────────── */
     @keyframes fadeUp {
       from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
@@ -341,90 +295,78 @@
 </head>
 <body>
 
-  <!-- Top bar -->
   <div class="topbar">
     <div class="palladia-logo">Palladia <span>· Presenze</span></div>
   </div>
 
-  <!-- Site info -->
   <div class="site-header fade-in">
     <h1 id="site-name">Caricamento…</h1>
     <p id="site-address"></p>
   </div>
 
-  <!-- ── STATO: loading ─────────────────────────────────────────────────── -->
+  <!-- STATO: loading -->
   <div id="state-loading" class="w-full text-center" style="padding-top:32px;">
-    <div class="spin" style="width:24px;height:24px;border-width:2.5px;border-color:rgba(0,0,0,.15);border-top-color:#000;display:block;margin:0 auto;"></div>
+    <div class="spin-dark" style="display:block;margin:0 auto;"></div>
   </div>
 
-  <!-- ── STATO: sessione attiva ─────────────────────────────────────────── -->
+  <!-- STATO: sessione attiva -->
   <div id="state-active" class="hidden w-full" style="display:flex;flex-direction:column;align-items:center;">
 
-    <!-- Worker badge -->
     <div id="worker-badge" class="fade-in">
       <div class="worker-avatar" id="avatar-letter">?</div>
       <div class="worker-info">
         <div class="worker-name" id="worker-display-name">—</div>
-        <div class="worker-sub">Sessione attiva</div>
+        <div class="worker-sub" id="worker-status-sub">Sessione attiva</div>
       </div>
     </div>
 
-    <!-- Risultato ultimo punch -->
+    <!-- Risultato punch -->
     <div id="result-card" class="hidden fade-in"></div>
 
-    <!-- Azioni -->
-    <div class="w-full fade-in">
-      <button class="btn btn-green" id="btn-punch">
-        Timbra entrata / uscita
+    <!-- Pulsante punch + GPS -->
+    <div class="punch-area fade-in">
+      <button class="btn btn-entry" id="btn-punch" disabled>
+        <span class="spin-dark" style="border-color:rgba(255,255,255,.3);border-top-color:#fff;display:none;" id="punch-spinner"></span>
+        <span id="punch-label">Timbra entrata</span>
       </button>
       <p id="gps-hint">In attesa del GPS…</p>
       <button class="btn btn-ghost mt-3" id="btn-logout">Cambia lavoratore</button>
     </div>
   </div>
 
-  <!-- ── STATO: identificazione ─────────────────────────────────────────── -->
+  <!-- STATO: identificazione -->
   <div id="state-identify" class="hidden w-full" style="display:flex;flex-direction:column;align-items:center;">
     <div class="card fade-in">
       <p class="card-label">Identificazione lavoratore</p>
-
       <div class="field">
         <label for="input-cf">Codice Fiscale</label>
         <input id="input-cf" type="text" maxlength="16" placeholder="RSSMRA80A01H501U"
                autocomplete="off" autocapitalize="characters" spellcheck="false" inputmode="text">
       </div>
-
       <div id="field-name" class="field hidden">
         <label for="input-name">Nome completo</label>
         <input id="input-name" type="text" placeholder="Mario Rossi" autocomplete="name">
       </div>
-
       <div id="field-error" class="hidden"></div>
-
       <button class="btn btn-primary" id="btn-identify">Continua</button>
     </div>
   </div>
 
-  <!-- Toast -->
   <div id="toast"></div>
 
   <script>
   'use strict';
 
-  // ── Config ─────────────────────────────────────────────────────────────────
   const API = '';
-
   const pathParts = window.location.pathname.split('/');
   const WSITE_ID  = pathParts[pathParts.length - 1];
-
   const _qp      = new URLSearchParams(window.location.search);
   const QR_TOKEN = _qp.get('t');
   const QR_EXP   = _qp.get('exp');
   const HAS_QR   = !!(QR_TOKEN && QR_EXP);
-
   const LS_KEY_TOK = `badge_tok_${WSITE_ID}`;
   const LS_KEY_NAM = `badge_nam_${WSITE_ID}`;
 
-  // ── State ──────────────────────────────────────────────────────────────────
   let sessionToken    = localStorage.getItem(LS_KEY_TOK) || null;
   let workerName      = localStorage.getItem(LS_KEY_NAM) || '';
   let siteInfo        = null;
@@ -433,15 +375,18 @@
   let maxAccuracyM    = 80;
   let punchInProgress = false;
 
-  // ── Helpers ────────────────────────────────────────────────────────────────
+  // Stato punch: 'loading' | 'entry' | 'exit' | 'done'
+  // 'entry' = può timbrare entrata | 'exit' = deve timbrare uscita | 'done' = uscita già registrata
+  let punchState = 'loading';
+
   const $ = id => document.getElementById(id);
 
   function showState(name) {
     ['loading','active','identify'].forEach(s => {
       const el = $(`state-${s}`);
       el.classList.toggle('hidden', s !== name);
-      if (s !== name) el.style.display = '';
-      else el.style.display = name === 'loading' ? 'block' : 'flex';
+      if (s === name) el.style.display = name === 'loading' ? 'block' : 'flex';
+      else el.style.display = '';
     });
   }
 
@@ -458,7 +403,52 @@
     return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
   }
 
-  // ── GPS ────────────────────────────────────────────────────────────────────
+  // ── Render punch button based on punchState ──────────────────────────────
+  function renderPunchButton() {
+    const btn     = $('btn-punch');
+    const label   = $('punch-label');
+    const spinner = $('punch-spinner');
+    const sub     = $('worker-status-sub');
+    const hint    = $('gps-hint');
+
+    spinner.style.display = 'none';
+
+    if (punchState === 'loading') {
+      btn.disabled   = true;
+      btn.className  = 'btn btn-entry';
+      label.textContent = 'Caricamento…';
+      return;
+    }
+
+    if (punchState === 'entry') {
+      btn.className  = 'btn btn-entry';
+      label.textContent = 'Timbra entrata';
+      sub.textContent   = 'Sessione attiva';
+      // enabled only when GPS ready and not in progress
+      btn.disabled   = !gpsCoords || punchInProgress;
+      return;
+    }
+
+    if (punchState === 'exit') {
+      btn.className  = 'btn btn-exit';
+      label.textContent = 'Timbra uscita';
+      sub.textContent   = 'Entrata registrata';
+      btn.disabled   = !gpsCoords || punchInProgress;
+      return;
+    }
+
+    if (punchState === 'done') {
+      btn.className  = 'btn btn-done';
+      btn.disabled   = true;
+      label.textContent = 'Timbratura completata ✓';
+      sub.textContent   = 'Puoi chiudere questa pagina';
+      hint.textContent  = '';
+      hint.className    = '';
+      return;
+    }
+  }
+
+  // ── GPS ───────────────────────────────────────────────────────────────────
   function startGps() {
     if (!navigator.geolocation) {
       $('gps-hint').textContent = 'GPS non disponibile';
@@ -470,22 +460,22 @@
         const acc = pos.coords.accuracy;
         gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: acc };
         const accRound = Math.round(acc);
-        const btn = $('btn-punch');
+
         if (acc > maxAccuracyM) {
           $('gps-hint').textContent = `Precisione GPS: ~${accRound}m — spostati all'aperto`;
           $('gps-hint').className   = 'warn';
-          btn.disabled = true;
         } else {
           $('gps-hint').textContent = `Precisione GPS: ~${accRound}m`;
           $('gps-hint').className   = 'ok';
-          if (!punchInProgress) btn.disabled = false;
         }
+        if (punchState !== 'done' && !punchInProgress) renderPunchButton();
       },
       err => {
         gpsCoords = null;
-        const msgs = { 1: 'Permesso GPS negato — abilitarlo per timbrare', 2: 'Segnale GPS non disponibile', 3: 'Timeout GPS — riprovare' };
+        const msgs = { 1: 'Permesso GPS negato — abilitarlo per timbrare', 2: 'Segnale GPS non disponibile', 3: 'Timeout GPS' };
         $('gps-hint').textContent = msgs[err.code] || 'Errore GPS';
         $('gps-hint').className   = 'error';
+        if (punchState !== 'done') renderPunchButton();
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     );
@@ -495,7 +485,7 @@
     if (gpsWatcher !== null) { navigator.geolocation.clearWatch(gpsWatcher); gpsWatcher = null; }
   }
 
-  // ── API ────────────────────────────────────────────────────────────────────
+  // ── API ───────────────────────────────────────────────────────────────────
   async function apiFetch(method, path, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
@@ -504,7 +494,7 @@
     return { status: r.status, body: json };
   }
 
-  // ── Init ───────────────────────────────────────────────────────────────────
+  // ── Load site info ────────────────────────────────────────────────────────
   async function loadSite() {
     const { status, body } = await apiFetch('GET', `/api/v1/scan/worksites/${WSITE_ID}`);
     if (status !== 200) {
@@ -519,28 +509,59 @@
     return true;
   }
 
+  // ── Load punch status from server ─────────────────────────────────────────
+  async function loadPunchStatus() {
+    if (!sessionToken) return;
+    try {
+      const { status, body } = await apiFetch(
+        'GET',
+        `/api/v1/scan/punch-status?worksite_id=${encodeURIComponent(WSITE_ID)}&session_token=${encodeURIComponent(sessionToken)}`
+      );
+      if (status === 200) {
+        // null or EXIT → can timbra entrata; ENTRY → must timbra uscita
+        if (body.last_event_type === 'ENTRY') {
+          punchState = 'exit';
+        } else {
+          punchState = 'entry';
+        }
+      } else {
+        punchState = 'entry'; // fallback
+      }
+    } catch (e) {
+      punchState = 'entry'; // fallback on network error
+    }
+    renderPunchButton();
+  }
+
+  // ── Activate session ──────────────────────────────────────────────────────
   function activateSession(name) {
     workerName = name;
     localStorage.setItem(LS_KEY_NAM, name);
     $('worker-display-name').textContent = name;
     $('avatar-letter').textContent       = name.trim().charAt(0).toUpperCase();
     $('result-card').classList.add('hidden');
+    punchState = 'loading';
     showState('active');
+    renderPunchButton();
     startGps();
+    loadPunchStatus();  // async: sets punchState when done
   }
 
-  // ── Punch ──────────────────────────────────────────────────────────────────
+  // ── Punch ─────────────────────────────────────────────────────────────────
   $('btn-punch').addEventListener('click', async () => {
-    if (punchInProgress) return;
+    if (punchInProgress || punchState === 'done' || punchState === 'loading') return;
     if (!gpsCoords) {
       toast('GPS non disponibile — attendere il segnale o abilitare i permessi', 'warn');
       return;
     }
 
     punchInProgress = true;
-    const btn = $('btn-punch');
-    btn.disabled  = true;
-    btn.innerHTML = '<span class="spin"></span>Invio…';
+    const btn     = $('btn-punch');
+    const label   = $('punch-label');
+    const spinner = $('punch-spinner');
+    btn.disabled       = true;
+    label.textContent  = 'Invio…';
+    spinner.style.display = 'inline-block';
 
     try {
       const { status, body } = await apiFetch('POST', '/api/v1/scan/punch', {
@@ -560,35 +581,41 @@
         return;
       }
       if (status === 403 && body.error === 'OUTSIDE_GEOFENCE') {
-        toast(`Fuori dalla zona cantiere — distanza ${body.distance_m}m (max ${body.max_allowed_m}m)`, 'error');
+        toast(`Sei troppo lontano dal cantiere — ${body.distance_m}m (max ${body.max_allowed_m}m)`, 'error');
         return;
       }
       if (status === 401)  { clearSession(); toast('Sessione scaduta — identificarsi nuovamente', 'warn'); return; }
-      if (status === 422 && body.error === 'GPS_REQUIRED')          { toast('GPS obbligatorio — abilitare la geolocalizzazione', 'warn'); return; }
-      if (status === 422 && body.error === 'GPS_ACCURACY_REQUIRED') { toast(`Precisione GPS non disponibile — aggiorna e riprova`, 'warn'); return; }
+      if (status === 422 && body.error === 'GPS_REQUIRED')          { toast('GPS obbligatorio — abilita la geolocalizzazione', 'warn'); return; }
       if (status === 422 && body.error === 'GPS_ACCURACY_TOO_LOW')  { toast(`Precisione GPS insufficiente (${body.accuracy_m}m) — spostati all'aperto`, 'warn'); return; }
 
       toast(`Errore: ${body.error || status}`, 'error');
     } catch (e) {
       toast('Errore di rete — verificare la connessione', 'error');
     } finally {
-      punchInProgress = false;
-      btn.disabled    = false;
-      btn.innerHTML   = 'Timbra entrata / uscita';
+      punchInProgress    = false;
+      spinner.style.display = 'none';
+      if (punchState !== 'done') renderPunchButton();
     }
   });
 
   function showResult(data) {
     const isEntry = data.event_type === 'ENTRY';
     const card    = $('result-card');
-    const distStr = data.distance_m != null ? `${data.distance_m}m dal cantiere — ` : '';
-    const accStr  = data.gps_accuracy_m != null ? `±${data.gps_accuracy_m}m` : '';
-    card.className = isEntry ? 'entry' : 'exit';
+
+    // Update punch state
+    punchState = isEntry ? 'exit' : 'done';
+    renderPunchButton();
+
+    const distStr = data.distance_m != null ? ` · ${data.distance_m}m dal cantiere` : '';
+    const accStr  = data.gps_accuracy_m != null ? ` · ±${data.gps_accuracy_m}m` : '';
+
+    card.className = isEntry ? 'entry fade-in' : 'exit fade-in';
     card.innerHTML = `
-      <div class="result-icon">${isEntry ? '✅' : '🔴'}</div>
-      <div class="result-label">${isEntry ? 'ENTRATA REGISTRATA' : 'USCITA REGISTRATA'}</div>
-      <div class="result-sub">${fmtTime(data.timestamp_server)}${distStr || accStr ? ' — ' + distStr + accStr : ''}</div>`;
+      <div class="result-icon">${isEntry ? '✅' : '⏹️'}</div>
+      <div class="result-label">${isEntry ? 'Entrata registrata' : 'Uscita registrata'}</div>
+      <div class="result-sub">${fmtTime(data.timestamp_server)}${distStr}${accStr}</div>`;
     card.classList.remove('hidden');
+
     if (!isEntry) { showNotesSection(); } else { const ns = $('notes-section'); if (ns) ns.remove(); }
   }
 
@@ -602,10 +629,10 @@
     section.className = 'w-full fade-in';
     section.innerHTML = `
       <div class="card notes-card" style="margin-bottom:12px;">
-        <p class="card-label" style="margin-bottom:10px;">Note lavorazione (opzionale)</p>
+        <p class="card-label" style="margin-bottom:10px;">Cosa hai fatto oggi? (opzionale)</p>
         <textarea id="note-input" placeholder="Es: Montaggio armatura pilastro P3, getto calcestruzzo…" maxlength="500"></textarea>
         <button class="btn btn-primary" id="btn-save-note" style="margin-top:10px;">Salva nota</button>
-        <p id="note-status" style="font-size:12px;color:var(--green);text-align:center;margin-top:8px;display:none;">✓ Nota salvata</p>
+        <p id="note-status" style="font-size:13px;color:var(--green);text-align:center;margin-top:8px;display:none;">✓ Nota salvata</p>
       </div>`;
 
     const resultCard = $('result-card');
@@ -640,7 +667,6 @@
     });
   }
 
-  // ── Refresh prompt ──────────────────────────────────────────────────────────
   function showRefreshPrompt(msg) {
     const card = $('result-card');
     card.className = '';
@@ -653,17 +679,17 @@
     card.classList.remove('hidden');
   }
 
-  // ── Logout ──────────────────────────────────────────────────────────────────
+  // ── Logout ────────────────────────────────────────────────────────────────
   $('btn-logout').addEventListener('click', () => {
     clearSession();
-    $('input-cf').value = '';
+    $('input-cf').value   = '';
     $('input-name').value = '';
     $('field-name').classList.add('hidden');
     $('field-error').classList.add('hidden');
   });
 
   function clearSession() {
-    sessionToken = null; workerName = '';
+    sessionToken = null; workerName = ''; punchState = 'loading';
     localStorage.removeItem(LS_KEY_TOK);
     localStorage.removeItem(LS_KEY_NAM);
     stopGps();
@@ -671,7 +697,7 @@
     showState('identify');
   }
 
-  // ── Identify ────────────────────────────────────────────────────────────────
+  // ── Identify ──────────────────────────────────────────────────────────────
   let nameRequired = false;
 
   $('btn-identify').addEventListener('click', doIdentify);
@@ -683,10 +709,7 @@
     const cf   = $('input-cf').value.toUpperCase().trim();
     const name = $('input-name').value.trim();
 
-    if (!cf || cf.length !== 16) {
-      showFieldError('Il Codice Fiscale deve essere di 16 caratteri');
-      return;
-    }
+    if (!cf || cf.length !== 16) { showFieldError('Il Codice Fiscale deve essere di 16 caratteri'); return; }
 
     const btn = $('btn-identify');
     btn.disabled  = true;
@@ -713,22 +736,11 @@
         $('input-name').focus();
         return;
       }
-      if (status === 403 && body.error === 'WORKER_INACTIVE') {
-        showFieldError('Lavoratore non attivo — contattare l\'amministratore');
-        return;
-      }
-      if (status === 403 && body.error === 'WORKER_NOT_ACTIVE_ON_SITE') {
-        showFieldError('Non autorizzato su questo cantiere — contattare l\'amministratore');
-        return;
-      }
-      if (status === 400 && body.error === 'INVALID_FISCAL_CODE') {
-        showFieldError('Codice Fiscale non valido (16 caratteri alfanumerici)');
-        return;
-      }
-      if (status === 503) {
-        showFieldError('Cantiere non configurato — contattare l\'amministratore');
-        return;
-      }
+      if (status === 403 && body.error === 'WORKER_INACTIVE')          { showFieldError('Lavoratore non attivo — contattare l\'amministratore'); return; }
+      if (status === 403 && body.error === 'WORKER_NOT_ACTIVE_ON_SITE') { showFieldError('Non autorizzato su questo cantiere — contattare l\'amministratore'); return; }
+      if (status === 400 && body.error === 'INVALID_FISCAL_CODE')       { showFieldError('Codice Fiscale non valido (16 caratteri alfanumerici)'); return; }
+      if (status === 503) { showFieldError('Cantiere non configurato — contattare l\'amministratore'); return; }
+
       showFieldError(`Errore: ${body.error || status}`);
     } catch (e) {
       showFieldError('Errore di rete — verificare la connessione');
@@ -744,7 +756,7 @@
     el.classList.remove('hidden');
   }
 
-  // ── Verifica QR ─────────────────────────────────────────────────────────────
+  // ── QR verify ─────────────────────────────────────────────────────────────
   async function verifyQrSignature() {
     if (!HAS_QR) return true;
     if (Date.now() / 1000 > Number(QR_EXP)) {
@@ -762,7 +774,7 @@
     return false;
   }
 
-  // ── Bootstrap ──────────────────────────────────────────────────────────────
+  // ── Bootstrap ─────────────────────────────────────────────────────────────
   (async () => {
     showState('loading');
     const qrOk = await verifyQrSignature();
