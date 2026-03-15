@@ -35,4 +35,37 @@ router.get('/presence', verifySupabaseJwt, async (req, res) => {
   res.json(data);
 });
 
+// GET /api/v1/presence/notes?siteId=&date= — note di lavorazione per cantiere e data
+router.get('/presence/notes', verifySupabaseJwt, async (req, res) => {
+  const { siteId, date } = req.query;
+  if (!siteId || !date) {
+    return res.status(400).json({ error: 'siteId e date obbligatori (YYYY-MM-DD)' });
+  }
+  if (!DATE_RE.test(date)) {
+    return res.status(400).json({ error: 'date deve essere YYYY-MM-DD' });
+  }
+
+  const { data, error } = await supabase
+    .from('admin_audit_log')
+    .select('id, created_at, payload, user_id')
+    .eq('company_id', req.companyId)
+    .eq('target_id', siteId)
+    .eq('action', 'worker.exit_note')
+    .gte('created_at', `${date}T00:00:00.000Z`)
+    .lte('created_at', `${date}T23:59:59.999Z`)
+    .order('created_at', { ascending: true })
+    .limit(500);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  res.json(data.map(n => ({
+    id:           n.id,
+    created_at:   n.created_at,
+    worker_id:    n.payload?.worker_id   || n.user_id,
+    worker_name:  n.payload?.worker_name || null,
+    note:         n.payload?.note        || '',
+    worksite_id:  n.payload?.worksite_id || siteId
+  })));
+});
+
 module.exports = router;

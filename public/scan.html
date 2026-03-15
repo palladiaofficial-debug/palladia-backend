@@ -283,12 +283,6 @@
         <input id="input-name" type="text" placeholder="Mario Rossi" autocomplete="name">
       </div>
 
-      <div id="field-pin" class="field hidden">
-        <label for="input-pin">PIN cantiere</label>
-        <input id="input-pin" type="password" maxlength="20" placeholder="••••"
-               autocomplete="off" inputmode="numeric">
-      </div>
-
       <div id="field-error" class="hidden" style="font-size:13px;color:var(--red);margin-bottom:12px;"></div>
 
       <button class="btn btn-primary" id="btn-identify">Continua</button>
@@ -535,6 +529,78 @@
     if (data.warning === 'GPS_ACCURACY_MISSING') {
       toast('Precisione GPS non registrata — aggiorna la pagina per abilitarla', 'warn');
     }
+    // Mostra sezione note solo all'uscita
+    if (!isEntry) {
+      showNotesSection();
+    } else {
+      const existing = $('notes-section');
+      if (existing) existing.remove();
+    }
+  }
+
+  // ── Note uscita ────────────────────────────────────────────────────────────
+  function showNotesSection() {
+    const existing = $('notes-section');
+    if (existing) existing.remove();
+
+    const section = document.createElement('div');
+    section.id = 'notes-section';
+    section.className = 'w-full';
+    section.style.cssText = 'max-width:420px;margin-top:14px;';
+    section.innerHTML = `
+      <div class="card" style="padding:16px 20px;">
+        <p class="card-title" style="margin-bottom:10px;">Note lavorazione (opzionale)</p>
+        <textarea id="note-input"
+          placeholder="Es: Montaggio armatura pilastro P3, getto calcestruzzo…"
+          maxlength="500"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);
+                 border-radius:8px;color:var(--text);font-size:14px;padding:10px 12px;
+                 resize:vertical;min-height:80px;outline:none;font-family:inherit;
+                 -webkit-appearance:none;transition:border-color 0.15s;"
+          onfocus="this.style.borderColor='var(--accent)'"
+          onblur="this.style.borderColor='var(--border)'"></textarea>
+        <button class="btn btn-primary" id="btn-save-note" style="margin-top:10px;">Salva nota</button>
+        <p id="note-status" style="font-size:12px;color:var(--muted);text-align:center;margin-top:8px;display:none;"></p>
+      </div>`;
+
+    // Inserisce dopo result-card
+    const resultCard = $('result-card');
+    resultCard.parentNode.insertBefore(section, resultCard.nextSibling);
+
+    $('btn-save-note').addEventListener('click', async () => {
+      const noteText = $('note-input').value.trim();
+      if (!noteText) { toast('Scrivi una nota prima di salvare', 'warn'); return; }
+
+      const btn = $('btn-save-note');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span>Salvataggio…';
+
+      try {
+        const { status, body } = await apiFetch('POST', '/api/v1/scan/note', {
+          worksite_id:   WSITE_ID,
+          session_token: sessionToken,
+          note_text:     noteText
+        });
+
+        if (status === 200 && body.ok) {
+          $('note-status').textContent = '✓ Nota salvata';
+          $('note-status').style.color = 'var(--green)';
+          $('note-status').style.display = 'block';
+          btn.disabled = true;
+          btn.textContent = 'Nota salvata';
+          btn.style.opacity = '0.5';
+          $('note-input').disabled = true;
+        } else {
+          toast('Errore salvataggio nota — riprovare', 'error');
+          btn.disabled = false;
+          btn.textContent = 'Salva nota';
+        }
+      } catch (e) {
+        toast('Errore di rete', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Salva nota';
+      }
+    });
   }
 
   // ── Refresh prompt (compat window: gps_accuracy_m non inviato dal vecchio client) ──
@@ -556,9 +622,7 @@
     // Reset form
     $('input-cf').value   = '';
     $('input-name').value = '';
-    $('input-pin').value  = '';
     $('field-name').classList.add('hidden');
-    $('field-pin').classList.add('hidden');
     $('field-error').classList.add('hidden');
   });
 
@@ -568,22 +632,21 @@
     localStorage.removeItem(LS_KEY_TOK);
     localStorage.removeItem(LS_KEY_NAM);
     stopGps();
+    const ns = $('notes-section'); if (ns) ns.remove();
     showState('identify');
   }
 
   // ── Identify ──────────────────────────────────────────────────────────────
   let nameRequired = false;
-  let pinRequired  = false;
 
   $('btn-identify').addEventListener('click', doIdentify);
-  ['input-cf','input-name','input-pin'].forEach(id => {
+  ['input-cf','input-name'].forEach(id => {
     $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doIdentify(); });
   });
 
   async function doIdentify() {
     const cf   = $('input-cf').value.toUpperCase().trim();
     const name = $('input-name').value.trim();
-    const pin  = $('input-pin').value;
 
     if (!cf || cf.length !== 16) {
       showFieldError('Codice Fiscale deve essere di 16 caratteri');
@@ -600,7 +663,6 @@
       fiscal_code: cf
     };
     if (nameRequired) payload.full_name = name;
-    if (pinRequired || $('field-pin').classList.contains('hidden') === false) payload.pin_code = pin;
 
     try {
       const { status, body } = await apiFetch('POST', '/api/v1/scan/identify', payload);
@@ -615,22 +677,9 @@
       // Rivela campi progressivamente
       if (status === 400 && body.error === 'FULL_NAME_REQUIRED') {
         nameRequired = true;
-        pinRequired  = !!body.pin_required;
         $('field-name').classList.remove('hidden');
-        if (pinRequired) {
-          $('field-pin').classList.remove('hidden');
-          showFieldError('Lavoratore non trovato — inserire nome completo e PIN cantiere');
-        } else {
-          showFieldError('Lavoratore non trovato — inserire il nome completo per registrarsi');
-        }
+        showFieldError('Prima registrazione — inserire il nome completo');
         $('input-name').focus();
-        return;
-      }
-      if (status === 403 && body.error === 'INVALID_PIN') {
-        pinRequired = true;
-        $('field-pin').classList.remove('hidden');
-        showFieldError('PIN cantiere errato — riprovare');
-        $('input-pin').focus();
         return;
       }
       if (status === 403 && body.error === 'WORKER_INACTIVE') {

@@ -6,11 +6,13 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { signQrToken }       = require('./qr');
 
-const QR_TTL_SECS = parseInt(process.env.QR_TOKEN_TTL_SECS || '604800', 10);
+const QR_TTL_SECS_DEFAULT = parseInt(process.env.QR_TOKEN_TTL_SECS || String(30 * 86400), 10);
 
 // GET /api/v1/sites/:siteId/qr-pdf — genera PDF stampabile con QR code (JWT protetto)
 router.get('/sites/:siteId/qr-pdf', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
+  const ttlDays = Math.min(Math.max(parseInt(req.query.ttl_days || '0', 10) || 0, 1), 365);
+  const QR_TTL_SECS = ttlDays > 0 ? ttlDays * 86400 : QR_TTL_SECS_DEFAULT;
 
   // 1. Verifica ownership cantiere
   const { data: site, error: siteErr } = await supabase

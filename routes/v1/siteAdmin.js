@@ -2,7 +2,6 @@
 const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { hashPin }           = require('../../lib/pinHash');
 const { auditLog }          = require('../../lib/audit');
 
 // Tutti gli endpoint richiedono JWT + membership verificata
@@ -12,7 +11,7 @@ const { auditLog }          = require('../../lib/audit');
 router.get('/sites', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase
     .from('sites')
-    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m, pin_hash')
+    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m')
     .eq('company_id', req.companyId)
     .order('name');
 
@@ -28,7 +27,6 @@ router.get('/sites', verifySupabaseJwt, async (req, res) => {
     latitude:          s.latitude,
     longitude:         s.longitude,
     geofence_radius_m: s.geofence_radius_m,
-    has_pin:           !!s.pin_hash,
     has_geofence:      s.latitude != null && s.longitude != null
   })));
 });
@@ -89,52 +87,6 @@ router.patch('/sites/:siteId/coords', verifySupabaseJwt, async (req, res) => {
   res.json({ ok: true, site: data });
 });
 
-// ── PATCH /api/v1/sites/:siteId/pin ──────────────────────────────────────────
-// Imposta (o rimuove) il PIN di accesso al cantiere.
-// body.pin_code = stringa non vuota → imposta PIN (salvato come HMAC-SHA256)
-// body.pin_code = '' o null        → rimuove il PIN (cantiere senza PIN)
-router.patch('/sites/:siteId/pin', verifySupabaseJwt, async (req, res) => {
-  const { siteId }  = req.params;
-  const { pin_code } = req.body;
-
-  let pin_hash = null;
-  if (pin_code != null && String(pin_code).trim().length > 0) {
-    try {
-      pin_hash = await hashPin(String(pin_code));
-    } catch (e) {
-      return res.status(500).json({ error: 'PIN_HASH_ERROR', message: e.message });
-    }
-  }
-
-  const { data, error } = await supabase
-    .from('sites')
-    .update({ pin_hash })
-    .eq('id', siteId)
-    .eq('company_id', req.companyId)   // ownership check
-    .select('id, name')
-    .single();
-
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  if (!data)  return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
-
-  auditLog({
-    companyId:  req.companyId,
-    userId:     req.user?.id,
-    userRole:   req.userRole,
-    action:     pin_hash ? 'site.pin_set' : 'site.pin_removed',
-    targetType: 'site',
-    targetId:   siteId,
-    payload:    { has_pin: pin_hash !== null },
-    req
-  });
-
-  res.json({
-    ok:      true,
-    has_pin: pin_hash !== null,
-    site:    { id: data.id, name: data.name }
-  });
-});
-
 // ── POST /api/v1/sites — crea cantiere ───────────────────────────────────────
 router.post('/sites', verifySupabaseJwt, async (req, res) => {
   const { name, address, client, start_date, status } = req.body || {};
@@ -159,7 +111,7 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
       status:     siteStatus,
       company_id: req.companyId
     })
-    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m, pin_hash')
+    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m')
     .single();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
@@ -185,7 +137,6 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
     latitude:          data.latitude,
     longitude:         data.longitude,
     geofence_radius_m: data.geofence_radius_m,
-    has_pin:           !!data.pin_hash,
     has_geofence:      data.latitude != null && data.longitude != null
   });
 });
