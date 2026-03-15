@@ -360,20 +360,17 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     return res.status(403).json({ error: 'WORKER_NOT_AUTHORIZED_ON_SITE' });
   }
 
-  if (site.latitude == null || site.longitude == null) {
-    return res.status(422).json({
-      error:   'GEOFENCE_NOT_CONFIGURED',
-      message: 'Cantiere senza coordinate GPS: configurare lat/lon prima di abilitare le timbrature.'
-    });
-  }
-
-  const distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
-  if (distanceM > site.geofence_radius_m) {
-    return res.status(403).json({
-      error:         'OUTSIDE_GEOFENCE',
-      distance_m:    distanceM,
-      max_allowed_m: site.geofence_radius_m
-    });
+  // Se il cantiere non ha coordinate GPS la geofence è disabilitata (log senza validazione)
+  let distanceM = null;
+  if (site.latitude != null && site.longitude != null) {
+    distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
+    if (distanceM > site.geofence_radius_m) {
+      return res.status(403).json({
+        error:         'OUTSIDE_GEOFENCE',
+        distance_m:    distanceM,
+        max_allowed_m: site.geofence_radius_m
+      });
+    }
   }
 
   const ipAddress = (req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || '').slice(0, 45) || null;
