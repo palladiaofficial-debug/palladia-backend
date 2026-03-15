@@ -24,6 +24,20 @@ function isValidFiscalCode(cf) {
   return typeof cf === 'string' && /^[A-Z0-9]{16}$/i.test(cf.trim());
 }
 
+function parseFullName(fullName) {
+  const trimmed  = String(fullName).trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  const firstName = spaceIdx > -1 ? trimmed.slice(0, spaceIdx) : trimmed;
+  const lastName  = spaceIdx > -1 ? trimmed.slice(spaceIdx + 1).trim() || null : null;
+  return { first_name: firstName, last_name: lastName, full_name: trimmed };
+}
+
+function workerDisplayName(w) {
+  return w.full_name
+    || [w.first_name, w.last_name].filter(Boolean).join(' ')
+    || '';
+}
+
 function isValidCoords(lat, lon) {
   return Number.isFinite(lat) && Number.isFinite(lon)
       && lat >= -90  && lat <= 90
@@ -132,7 +146,7 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
   // Cerca worker per CF nella company del cantiere
   const { data: worker, error: wErr } = await supabase
     .from('workers')
-    .select('id, full_name, is_active')
+    .select('id, full_name, first_name, last_name, is_active')
     .eq('company_id', companyId)
     .eq('fiscal_code', fc)
     .maybeSingle();
@@ -151,10 +165,11 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       });
     }
 
+    const nameParts = parseFullName(full_name);
     const { data: newWorker, error: createErr } = await supabase
       .from('workers')
-      .insert([{ company_id: companyId, full_name: String(full_name).trim(), fiscal_code: fc }])
-      .select('id, full_name')
+      .insert([{ company_id: companyId, ...nameParts, fiscal_code: fc }])
+      .select('id, full_name, first_name, last_name')
       .single();
 
     if (createErr) {
@@ -162,17 +177,17 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       if (createErr.code === '23505') {
         return res.status(409).json({ error: 'WORKER_ALREADY_EXISTS' });
       }
-      return res.status(500).json({ error: 'WORKER_CREATE_ERROR', code: createErr.code, detail: createErr.message });
+      return res.status(500).json({ error: 'WORKER_CREATE_ERROR' });
     }
     workerId   = newWorker.id;
-    workerName = newWorker.full_name;
+    workerName = workerDisplayName(newWorker);
 
   } else {
     if (!worker.is_active) {
       return res.status(403).json({ error: 'WORKER_INACTIVE' });
     }
     workerId   = worker.id;
-    workerName = worker.full_name;
+    workerName = workerDisplayName(worker);
   }
 
   // Verifica o crea associazione worker ↔ cantiere (automatica, senza PIN)
@@ -455,7 +470,7 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
   // Recupera nome lavoratore per payload leggibile
   const { data: worker } = await supabase
     .from('workers')
-    .select('full_name')
+    .select('full_name, first_name, last_name')
     .eq('id', session.worker_id)
     .maybeSingle();
 
@@ -471,7 +486,7 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
       payload: {
         note:         text,
         worker_id:    session.worker_id,
-        worker_name:  worker?.full_name || null,
+        worker_name:  worker ? workerDisplayName(worker) : null,
         worksite_id,
         worksite_name: site.name,
         session_id:   session.id

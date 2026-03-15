@@ -9,6 +9,14 @@ function isValidFiscalCode(cf) {
   return typeof cf === 'string' && /^[A-Z0-9]{16}$/i.test(cf.trim());
 }
 
+function parseFullName(fullName) {
+  const trimmed  = String(fullName).trim();
+  const spaceIdx = trimmed.indexOf(' ');
+  const firstName = spaceIdx > -1 ? trimmed.slice(0, spaceIdx) : trimmed;
+  const lastName  = spaceIdx > -1 ? trimmed.slice(spaceIdx + 1).trim() || null : null;
+  return { first_name: firstName, last_name: lastName, full_name: trimmed };
+}
+
 // POST /api/v1/workers — crea lavoratore (PRIVATO)
 router.post('/workers', verifySupabaseJwt, async (req, res) => {
   const { full_name, fiscal_code } = req.body;
@@ -26,14 +34,15 @@ router.post('/workers', verifySupabaseJwt, async (req, res) => {
     return res.status(400).json({ error: 'INVALID_FISCAL_CODE' });
   }
 
+  const nameParts = parseFullName(full_name);
   const { data, error } = await supabase
     .from('workers')
     .insert([{
       company_id:  req.companyId,       // verificato da middleware
-      full_name:   String(full_name).trim(),
+      ...nameParts,
       fiscal_code: fiscal_code.toUpperCase().trim()
     }])
-    .select('id, full_name, fiscal_code, is_active, created_at')
+    .select('id, full_name, first_name, last_name, fiscal_code, is_active, created_at')
     .single();
 
   // Duplicate fiscal_code nella stessa company
