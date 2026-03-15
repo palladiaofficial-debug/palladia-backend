@@ -34,6 +34,7 @@ app.get('/api/config', (req, res) => {
 const ALLOWED_ORIGINS = [
   /^https:\/\/palladia[a-z0-9-]*\.vercel\.app$/,
   /^https:\/\/palladia[a-z0-9-]*\.lovable\.app$/,
+  'https://palladia-backend-production.up.railway.app',
   'http://localhost:5173',
   'http://localhost:3000',
 ];
