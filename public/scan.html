@@ -615,17 +615,21 @@
       // Rivela campi progressivamente
       if (status === 400 && body.error === 'FULL_NAME_REQUIRED') {
         nameRequired = true;
-        pinRequired  = true;
+        pinRequired  = !!body.pin_required;
         $('field-name').classList.remove('hidden');
-        $('field-pin').classList.remove('hidden');
-        showFieldError('Lavoratore non trovato — inserire nome completo e PIN cantiere');
+        if (pinRequired) {
+          $('field-pin').classList.remove('hidden');
+          showFieldError('Lavoratore non trovato — inserire nome completo e PIN cantiere');
+        } else {
+          showFieldError('Lavoratore non trovato — inserire il nome completo per registrarsi');
+        }
         $('input-name').focus();
         return;
       }
       if (status === 403 && body.error === 'INVALID_PIN') {
         pinRequired = true;
         $('field-pin').classList.remove('hidden');
-        showFieldError('PIN cantiere errato o richiesto');
+        showFieldError('PIN cantiere errato — riprovare');
         $('input-pin').focus();
         return;
       }

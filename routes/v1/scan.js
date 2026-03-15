@@ -189,8 +189,9 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     }
     if (!full_name || String(full_name).trim().length < 2) {
       return res.status(400).json({
-        error:   'FULL_NAME_REQUIRED',
-        message: 'Lavoratore non trovato. Inserire il nome completo per registrarsi.'
+        error:        'FULL_NAME_REQUIRED',
+        pin_required: pinRequired,
+        message:      'Lavoratore non trovato. Inserire il nome completo per registrarsi.'
       });
     }
 
