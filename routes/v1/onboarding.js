@@ -1,6 +1,7 @@
 'use strict';
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
+const { sendWelcomeEmail } = require('../../services/email');
 
 /**
  * verifyJwtOnly — verifica solo il JWT Supabase senza check company membership.
@@ -52,7 +53,7 @@ router.get('/me', verifyJwtOnly, async (req, res) => {
 
 // POST /api/v1/onboarding/setup — crea la prima company per l'utente autenticato
 router.post('/onboarding/setup', verifyJwtOnly, async (req, res) => {
-  const { company_name } = req.body || {};
+  const { company_name, full_name } = req.body || {};
 
   // Validazione
   if (
@@ -117,6 +118,16 @@ router.post('/onboarding/setup', verifyJwtOnly, async (req, res) => {
   }
 
   console.log(`[onboarding] company creata: ${company.id} (${cleanName}) per user ${req.user.id}`);
+
+  // Invia email di benvenuto (best-effort: non blocca la risposta)
+  if (req.user.email && process.env.RESEND_API_KEY) {
+    const displayName = (typeof full_name === 'string' && full_name.trim().length > 0)
+      ? full_name.trim()
+      : req.user.email;
+    sendWelcomeEmail({ to: req.user.email, name: displayName, companyName: cleanName })
+      .then(() => console.log(`[onboarding] welcome email inviata a: ${req.user.email}`))
+      .catch(e => console.error('[onboarding] welcome email error:', e.message));
+  }
 
   res.status(201).json({
     ok:           true,

@@ -2,7 +2,7 @@
 const crypto      = require('crypto');
 const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
-const { verifyPin, hashPin } = require('../../lib/pinHash');
+const { verifyPin } = require('../../lib/pinHash');
 const { scanLimiter, identifyLimiter } = require('../../middleware/rateLimit');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -125,7 +125,7 @@ router.get('/scan/worksites/:worksiteId', async (req, res) => {
 //   3. Worker sconosciuto                          → richiede PIN + full_name → crea worker + sessione
 //
 // SECURITY: company_id derivato SEMPRE dal cantiere in DB, mai dal body.
-// SECURITY: PIN confrontato con bcrypt (o HMAC-SHA256 legacy con auto-rehash).
+// SECURITY: PIN confrontato con bcrypt.
 router.post('/scan/identify', identifyLimiter, async (req, res) => {
   const { worksite_id, fiscal_code, full_name, pin_code } = req.body;
 
@@ -160,24 +160,14 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
   // company_id è derivato dal DB — il client non lo controlla
   const companyId = site.company_id;
 
-  // 3. Validazione PIN (bcrypt; HMAC-SHA256 legacy con auto-rehash)
+  // 3. Validazione PIN (bcrypt)
   const pinRequired = !!site.pin_hash;
   const pinProvided = pin_code != null && String(pin_code).length > 0;
 
-  // Helper locale: { valid, usedLegacy }
-  // usedLegacy=true → hash HMAC nel DB, auto-rehash in background dopo successo
   async function isPinValid() {
-    if (!pinRequired) return { valid: true,  usedLegacy: false };
-    if (!pinProvided) return { valid: false, usedLegacy: false };
+    if (!pinRequired) return true;
+    if (!pinProvided) return false;
     return verifyPin(pin_code, site.pin_hash);
-  }
-
-  // Schedula rehash bcrypt asincrono (best-effort, non blocca la risposta)
-  function scheduleRehash() {
-    hashPin(pin_code)
-      .then(newHash => supabase.from('sites').update({ pin_hash: newHash }).eq('id', worksite_id))
-      .then(({ error: e }) => { if (e) console.error('[pin] rehash update error:', e.message); })
-      .catch(e => console.error('[pin] rehash hash error:', e.message));
   }
 
   // 4. Cerca worker per CF nella company del cantiere
@@ -194,11 +184,9 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
 
   if (!worker) {
     // Worker sconosciuto → registrazione self-service (richiede PIN + nome)
-    const pinResult1 = await isPinValid();
-    if (!pinResult1.valid) {
+    if (!await isPinValid()) {
       return res.status(403).json({ error: 'INVALID_PIN' });
     }
-    if (pinResult1.usedLegacy) scheduleRehash();
     if (!full_name || String(full_name).trim().length < 2) {
       return res.status(400).json({
         error:   'FULL_NAME_REQUIRED',
@@ -242,11 +230,9 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
 
   if (!assoc) {
     // Worker non associato al cantiere → PIN obbligatorio
-    const pinResult2 = await isPinValid();
-    if (!pinResult2.valid) {
+    if (!await isPinValid()) {
       return res.status(403).json({ error: 'INVALID_PIN' });
     }
-    if (pinResult2.usedLegacy) scheduleRehash();
     const { error: assocErr } = await supabase
       .from('worksite_workers')
       .insert([{ company_id: companyId, site_id: worksite_id, worker_id: workerId, status: 'active' }]);

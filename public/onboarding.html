@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Configura la tua azienda — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --accent:  #3b82f6;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --red:     #ef4444;
+      --radius:  12px;
+    }
+    html, body {
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+    }
+    .logo {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      text-align: center;
+    }
+    .subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 32px;
+      text-align: center;
+    }
+    .card {
+      width: 100%;
+      max-width: 420px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 15px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus { border-color: var(--accent); }
+    input::placeholder { color: var(--muted); }
+    .btn {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 12px;
+      margin-top: 20px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+    .error-msg {
+      margin-top: 12px;
+      font-size: 13px;
+      color: var(--red);
+      text-align: center;
+      min-height: 18px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="logo">PALLADIA</div>
+  <h1>Configura la tua azienda</h1>
+  <p class="subtitle">Inserisci il nome della tua azienda per iniziare</p>
+
+  <div class="card">
+    <label for="company-name">Nome azienda</label>
+    <input
+      id="company-name"
+      type="text"
+      placeholder="Es. Costruzioni Rossi S.r.l."
+      maxlength="200"
+      autocomplete="organization"
+    >
+    <button class="btn" id="submit-btn">Crea azienda</button>
+    <div class="error-msg" id="error-msg"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script>
+    (async () => {
+      // 1. Carica config dal backend
+      let sb;
+      try {
+        const cfg = await fetch('/api/config').then(r => r.json());
+        if (!cfg.supabase_url || !cfg.supabase_anon_key) throw new Error('Config mancante');
+        sb = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key, {
+          auth: { persistSession: true, autoRefreshToken: true }
+        });
+      } catch (e) {
+        showError('Errore di configurazione: ' + e.message);
+        return;
+      }
+
+      // 2. Controlla sessione
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) {
+        window.location.href = '/admin';
+        return;
+      }
+
+      const btn      = document.getElementById('submit-btn');
+      const input    = document.getElementById('company-name');
+      const errorEl  = document.getElementById('error-msg');
+
+      function showError(msg) {
+        errorEl.textContent = msg || '';
+      }
+
+      function setLoading(on) {
+        btn.disabled = on;
+        btn.innerHTML = on
+          ? '<span class="spinner"></span>Creazione in corso...'
+          : 'Crea azienda';
+      }
+
+      btn.addEventListener('click', async () => {
+        showError('');
+        const name = input.value.trim();
+        if (name.length < 2) {
+          showError('Il nome azienda deve avere almeno 2 caratteri.');
+          return;
+        }
+        if (name.length > 200) {
+          showError('Il nome azienda non può superare 200 caratteri.');
+          return;
+        }
+
+        setLoading(true);
+        try {
+          const { data: { session: s } } = await sb.auth.getSession();
+          const token = s?.access_token;
+          if (!token) { window.location.href = '/admin'; return; }
+
+          const res  = await fetch('/api/v1/onboarding/setup', {
+            method:  'POST',
+            headers: {
+              'Content-Type':  'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ company_name: name })
+          });
+          const json = await res.json().catch(() => ({}));
+
+          if (res.status === 409 && json.error === 'ALREADY_HAS_COMPANY') {
+            window.location.href = '/admin';
+            return;
+          }
+          if (!res.ok) {
+            showError(json.message || json.error || 'Errore nella creazione azienda');
+            setLoading(false);
+            return;
+          }
+          // Successo
+          window.location.href = '/admin';
+        } catch (e) {
+          showError('Errore di rete: ' + e.message);
+          setLoading(false);
+        }
+      });
+
+      // Submit con Enter
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') btn.click();
+      });
+    })();
+  </script>
+</body>
+</html>

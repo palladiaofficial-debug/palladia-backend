@@ -1,0 +1,1502 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Admin — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f172a;
+      --surface:  #1e293b;
+      --surface2: #263248;
+      --border:   #334155;
+      --accent:   #3b82f6;
+      --green:    #22c55e;
+      --red:      #ef4444;
+      --amber:    #f59e0b;
+      --text:     #f1f5f9;
+      --muted:    #94a3b8;
+      --radius:   12px;
+      --sidebar-w: 240px;
+    }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    /* ── Screens ────────────────────────────────────────────────── */
+    .screen { display: none; }
+    .screen.active { display: flex; }
+
+    /* ── Screen Loading ─────────────────────────────────────────── */
+    #screen-loading {
+      height: 100vh;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner-sm {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 5px;
+    }
+
+    /* ── Screen Login ───────────────────────────────────────────── */
+    #screen-login {
+      height: 100vh;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      padding: 24px 16px;
+    }
+    .login-logo {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 10px;
+    }
+    .login-title { font-size: 22px; font-weight: 700; margin-bottom: 28px; }
+    .login-card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+    }
+    .form-group { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    input[type=text], input[type=email], input[type=password],
+    input[type=number], input[type=date], select, textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    input::placeholder, textarea::placeholder { color: var(--muted); }
+    select option { background: var(--surface); }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      padding: 9px 16px;
+      cursor: pointer;
+      transition: opacity 0.15s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-full { width: 100%; justify-content: center; padding: 11px; }
+    .btn-sm { font-size: 12px; padding: 6px 11px; border-radius: 6px; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .btn-ghost:hover { border-color: var(--text); color: var(--text); }
+    .btn-danger { background: var(--red); }
+    .error-msg {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--red);
+      min-height: 18px;
+      text-align: center;
+    }
+    .success-msg {
+      margin-top: 10px;
+      font-size: 13px;
+      color: var(--green);
+      min-height: 18px;
+      text-align: center;
+    }
+
+    /* ── Screen App ─────────────────────────────────────────────── */
+    #screen-app {
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* Navbar */
+    .navbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      height: 56px;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    .navbar-brand {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .navbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .navbar-email {
+      font-size: 12px;
+      color: var(--muted);
+      display: none;
+    }
+    @media (min-width: 640px) { .navbar-email { display: block; } }
+
+    /* App body (sidebar + main) */
+    .app-body {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: var(--sidebar-w);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      transition: transform 0.2s;
+    }
+    .sidebar-nav { padding: 12px 8px; }
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      color: var(--muted);
+      transition: background 0.1s, color 0.1s;
+      user-select: none;
+    }
+    .nav-item:hover { background: var(--surface2); color: var(--text); }
+    .nav-item.active { background: var(--surface2); color: var(--text); font-weight: 600; }
+    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+
+    @media (max-width: 767px) {
+      .sidebar { position: fixed; top: 56px; left: 0; bottom: 0; z-index: 200; transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.4); }
+      .hamburger { display: flex !important; }
+    }
+    .hamburger {
+      display: none;
+      flex-direction: column;
+      gap: 4px;
+      cursor: pointer;
+      padding: 4px;
+      margin-right: 8px;
+    }
+    .hamburger span {
+      display: block;
+      width: 20px; height: 2px;
+      background: var(--muted);
+      border-radius: 2px;
+    }
+    .sidebar-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 150;
+      background: rgba(0,0,0,0.4);
+    }
+    .sidebar-overlay.visible { display: block; }
+
+    /* Main */
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px 20px 40px;
+    }
+    .section { display: none; }
+    .section.active { display: block; }
+    .section-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    /* Cards grid */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+    .stat-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    /* Site card */
+    .site-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+    .site-name { font-size: 15px; font-weight: 700; }
+    .site-address { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+    .badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 20px;
+      border: 1px solid;
+    }
+    .badge-green { color: var(--green); border-color: var(--green); }
+    .badge-red   { color: var(--red);   border-color: var(--red); }
+    .badge-muted { color: var(--muted); border-color: var(--border); }
+    .site-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(51,65,85,0.5);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    .tag-entry { color: var(--green); font-weight: 600; }
+    .tag-exit  { color: var(--red);   font-weight: 600; }
+
+    /* Toolbar */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .toolbar select, .toolbar input { width: auto; min-width: 150px; }
+
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0; z-index: 500;
+      background: rgba(0,0,0,0.6);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      width: 100%;
+      max-width: 480px;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .modal-title {
+      font-size: 17px;
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 20px;
+    }
+    .modal-close-btn {
+      position: absolute;
+      top: 10px; right: 14px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 20px;
+      cursor: pointer;
+      line-height: 1;
+    }
+    .modal { position: relative; }
+
+    /* Copy box */
+    .copy-box {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .copy-box input { flex: 1; font-size: 12px; }
+    .copyable-url {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+      font-size: 12px;
+      color: var(--muted);
+      word-break: break-all;
+      margin-top: 12px;
+    }
+
+    /* Toast */
+    #toast-container {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      pointer-events: none;
+    }
+    .toast {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 16px;
+      font-size: 14px;
+      max-width: 320px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      animation: slideIn 0.2s ease;
+      pointer-events: auto;
+    }
+    .toast.success { border-left: 3px solid var(--green); }
+    .toast.error   { border-left: 3px solid var(--red); }
+    @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+    /* Separator */
+    .section-sep {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 28px 0;
+    }
+    .section-sub { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: var(--muted); }
+
+    /* Empty state */
+    .empty { text-align: center; padding: 48px 0; color: var(--muted); font-size: 14px; }
+
+    /* Responsive */
+    @media (max-width: 767px) {
+      .main { padding: 16px 12px 32px; }
+      .card-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Screen: Loading -->
+<div id="screen-loading" class="screen active">
+  <div class="spinner"></div>
+  <span style="color:var(--muted);font-size:14px">Caricamento...</span>
+</div>
+
+<!-- Screen: Login -->
+<div id="screen-login" class="screen">
+  <div class="login-logo">PALLADIA</div>
+  <div class="login-title">Accedi al pannello admin</div>
+  <div class="login-card">
+    <div class="form-group">
+      <label for="login-email">Email</label>
+      <input id="login-email" type="email" placeholder="nome@azienda.it" autocomplete="email">
+    </div>
+    <div class="form-group">
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button id="login-btn" class="btn btn-full">Accedi</button>
+    <div class="error-msg" id="login-error"></div>
+  </div>
+</div>
+
+<!-- Screen: App -->
+<div id="screen-app" class="screen">
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="hamburger" id="hamburger" onclick="toggleSidebar()">
+        <span></span><span></span><span></span>
+      </div>
+      <span class="navbar-brand">PALLADIA</span>
+    </div>
+    <div class="navbar-right">
+      <span class="navbar-email" id="navbar-email"></span>
+      <button class="btn btn-ghost btn-sm" onclick="doLogout()">Esci</button>
+    </div>
+  </nav>
+
+  <!-- App body -->
+  <div class="app-body">
+    <!-- Overlay mobile sidebar -->
+    <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <nav class="sidebar-nav">
+        <div class="nav-item active" onclick="showSection('overview')" data-sec="overview">
+          <span class="nav-icon">📊</span> Panoramica
+        </div>
+        <div class="nav-item" onclick="showSection('cantieri')" data-sec="cantieri">
+          <span class="nav-icon">🏗️</span> Cantieri
+        </div>
+        <div class="nav-item" onclick="showSection('lavoratori')" data-sec="lavoratori">
+          <span class="nav-icon">👷</span> Lavoratori
+        </div>
+        <div class="nav-item" onclick="showSection('presenze')" data-sec="presenze">
+          <span class="nav-icon">📋</span> Presenze
+        </div>
+        <div class="nav-item" onclick="showSection('report')" data-sec="report">
+          <span class="nav-icon">📄</span> Report
+        </div>
+      </nav>
+    </aside>
+
+    <!-- Main -->
+    <main class="main">
+
+      <!-- Panoramica -->
+      <div id="sec-overview" class="section active">
+        <div class="section-title">Panoramica</div>
+        <div class="card-grid">
+          <div class="card">
+            <div class="stat-label">Cantieri attivi</div>
+            <div class="stat-value" id="ov-sites">—</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">Lavoratori totali</div>
+            <div class="stat-value" id="ov-workers">—</div>
+          </div>
+          <div class="card">
+            <div class="stat-label">Timbrature oggi</div>
+            <div class="stat-value" id="ov-today">—</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cantieri -->
+      <div id="sec-cantieri" class="section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+          <div class="section-title" style="margin:0">Cantieri</div>
+          <button class="btn btn-sm" onclick="openModal('modal-new-site')">+ Nuovo cantiere</button>
+        </div>
+        <div class="card-grid" id="sites-list">
+          <div class="empty">Caricamento cantieri...</div>
+        </div>
+      </div>
+
+      <!-- Lavoratori -->
+      <div id="sec-lavoratori" class="section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+          <div class="section-title" style="margin:0">Lavoratori</div>
+          <button class="btn btn-sm" onclick="openModal('modal-new-worker')">+ Nuovo lavoratore</button>
+        </div>
+        <div class="toolbar">
+          <select id="workers-filter-site" onchange="loadWorkers()">
+            <option value="">Tutti i cantieri</option>
+          </select>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Nome</th>
+                  <th>Codice Fiscale</th>
+                  <th>Cantieri</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="workers-body">
+                <tr><td colspan="4" class="empty">Caricamento...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Presenze -->
+      <div id="sec-presenze" class="section">
+        <div class="section-title">Presenze</div>
+        <div class="toolbar">
+          <select id="pres-site">
+            <option value="">Seleziona cantiere</option>
+          </select>
+          <input type="date" id="pres-date">
+          <button class="btn btn-sm" onclick="loadPresenze()">Carica</button>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Lavoratore</th>
+                  <th>Codice Fiscale</th>
+                  <th>Evento</th>
+                  <th>Ora</th>
+                  <th>Distanza (m)</th>
+                  <th>GPS (m)</th>
+                </tr>
+              </thead>
+              <tbody id="pres-body">
+                <tr><td colspan="6" class="empty">Seleziona un cantiere e una data</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Report -->
+      <div id="sec-report" class="section">
+        <div class="section-title">Report</div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="toolbar" style="flex-wrap:wrap">
+            <select id="rep-site">
+              <option value="">Seleziona cantiere</option>
+            </select>
+            <div>
+              <label style="display:inline;margin-right:6px">Dal</label>
+              <input type="date" id="rep-from" style="width:auto">
+            </div>
+            <div>
+              <label style="display:inline;margin-right:6px">Al</label>
+              <input type="date" id="rep-to" style="width:auto">
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
+            <button class="btn btn-sm" onclick="downloadPresenzePdf()">Scarica PDF</button>
+            <button class="btn btn-sm btn-ghost" onclick="downloadPresenzeCsv()">Scarica CSV (riepilogo)</button>
+            <button class="btn btn-sm btn-ghost" onclick="checkMissingExits()">Verifica uscite mancanti</button>
+          </div>
+          <div id="rep-missing-result" class="success-msg"></div>
+        </div>
+
+        <hr class="section-sep">
+        <div class="section-sub">Accesso ispettore ASL</div>
+        <div class="card">
+          <div class="form-group">
+            <label>Cantiere</label>
+            <select id="asl-site">
+              <option value="">Seleziona cantiere</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:12px;flex-wrap:wrap">
+            <div class="form-group" style="flex:1;min-width:130px">
+              <label>Dal</label>
+              <input type="date" id="asl-from">
+            </div>
+            <div class="form-group" style="flex:1;min-width:130px">
+              <label>Al</label>
+              <input type="date" id="asl-to">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Etichetta (opzionale)</label>
+            <input type="text" id="asl-label" placeholder="Es. Verifica ASL Marzo 2026" maxlength="100">
+          </div>
+          <div class="form-group">
+            <label>Validità (giorni)</label>
+            <input type="number" id="asl-ttl" value="30" min="1" max="365">
+          </div>
+          <button class="btn btn-sm" onclick="generateAslLink()">Genera link ASL</button>
+          <div id="asl-link-box" style="display:none;margin-top:16px">
+            <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Link copiabile:</div>
+            <div class="copyable-url" id="asl-link-url"></div>
+            <button class="btn btn-sm btn-ghost" style="margin-top:8px" onclick="copyAslLink()">Copia link</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- ── Modals ────────────────────────────────────────────────────── -->
+
+<!-- Nuovo cantiere -->
+<div class="modal-overlay" id="modal-new-site">
+  <div class="modal">
+    <div class="modal-title">Nuovo cantiere</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-new-site')">✕</button>
+    <div class="form-group">
+      <label>Nome cantiere *</label>
+      <input type="text" id="ns-name" placeholder="Es. Cantiere Via Roma 12" maxlength="200">
+    </div>
+    <div class="form-group">
+      <label>Indirizzo</label>
+      <input type="text" id="ns-address" placeholder="Via Roma 12, 20100 Milano" maxlength="300">
+    </div>
+    <div class="error-msg" id="ns-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-new-site')">Annulla</button>
+      <button class="btn btn-sm" id="ns-btn" onclick="createSite()">Crea cantiere</button>
+    </div>
+  </div>
+</div>
+
+<!-- Configura GPS -->
+<div class="modal-overlay" id="modal-gps">
+  <div class="modal">
+    <div class="modal-title">Configura GPS</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-gps')">✕</button>
+    <input type="hidden" id="gps-site-id">
+    <div class="form-group">
+      <label>Latitudine</label>
+      <input type="text" id="gps-lat" placeholder="Es. 45.4654">
+    </div>
+    <div class="form-group">
+      <label>Longitudine</label>
+      <input type="text" id="gps-lon" placeholder="Es. 9.1859">
+    </div>
+    <div class="form-group">
+      <label>Raggio geofence (metri)</label>
+      <input type="number" id="gps-radius" value="120" min="10" max="50000">
+    </div>
+    <div class="error-msg" id="gps-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-gps')">Annulla</button>
+      <button class="btn btn-sm" id="gps-btn" onclick="saveGps()">Salva</button>
+    </div>
+  </div>
+</div>
+
+<!-- Configura PIN -->
+<div class="modal-overlay" id="modal-pin">
+  <div class="modal">
+    <div class="modal-title">PIN cantiere</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-pin')">✕</button>
+    <input type="hidden" id="pin-site-id">
+    <div class="form-group">
+      <label>PIN (lascia vuoto per rimuovere)</label>
+      <input type="text" id="pin-value" placeholder="Es. 1234" maxlength="20">
+    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:12px">
+      I lavoratori dovranno inserire questo PIN alla timbratura.
+    </div>
+    <div class="error-msg" id="pin-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-pin')">Annulla</button>
+      <button class="btn btn-sm" id="pin-btn" onclick="savePin()">Salva PIN</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nuovo lavoratore -->
+<div class="modal-overlay" id="modal-new-worker">
+  <div class="modal">
+    <div class="modal-title">Nuovo lavoratore</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-new-worker')">✕</button>
+    <div class="form-group">
+      <label>Nome completo *</label>
+      <input type="text" id="nw-name" placeholder="Mario Rossi" maxlength="200">
+    </div>
+    <div class="form-group">
+      <label>Codice Fiscale *</label>
+      <input type="text" id="nw-cf" placeholder="RSSMRO80A01H501Z" maxlength="16"
+             style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+    </div>
+    <div class="error-msg" id="nw-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-new-worker')">Annulla</button>
+      <button class="btn btn-sm" id="nw-btn" onclick="createWorker()">Crea lavoratore</button>
+    </div>
+  </div>
+</div>
+
+<!-- Assegna cantiere a lavoratore -->
+<div class="modal-overlay" id="modal-assign">
+  <div class="modal">
+    <div class="modal-title">Assegna cantiere</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-assign')">✕</button>
+    <input type="hidden" id="assign-worker-id">
+    <div class="form-group">
+      <label>Cantiere</label>
+      <select id="assign-site-sel"></select>
+    </div>
+    <div class="error-msg" id="assign-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-assign')">Annulla</button>
+      <button class="btn btn-sm" id="assign-btn" onclick="doAssign()">Assegna</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sessioni lavoratore -->
+<div class="modal-overlay" id="modal-sessions">
+  <div class="modal">
+    <div class="modal-title">Sessioni attive</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-sessions')">✕</button>
+    <div id="sessions-list">
+      <div class="empty">Caricamento...</div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete cantiere confirm -->
+<div class="modal-overlay" id="modal-del-site">
+  <div class="modal">
+    <div class="modal-title">Elimina cantiere</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-del-site')">✕</button>
+    <input type="hidden" id="del-site-id">
+    <p style="font-size:14px;color:var(--muted);margin-bottom:16px">
+      Sei sicuro di voler eliminare il cantiere <strong id="del-site-name"></strong>?
+      L'operazione è irreversibile.
+    </p>
+    <div class="error-msg" id="del-site-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-del-site')">Annulla</button>
+      <button class="btn btn-sm btn-danger" id="del-site-btn" onclick="doDeleteSite()">Elimina</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<!-- ── Scripts ───────────────────────────────────────────────────── -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+'use strict';
+
+// ── State ────────────────────────────────────────────────────────
+let sb = null;
+let _companyId = null;
+let _sites = [];
+let _workers = [];
+
+// ── Helpers ──────────────────────────────────────────────────────
+async function getJwt() {
+  const { data: { session } } = await sb.auth.getSession();
+  return session?.access_token || null;
+}
+
+async function api(method, path, body) {
+  const token = await getJwt();
+  if (!token) { showLogin(); return { status: 401, ok: false, body: {} }; }
+  const headers = {
+    'Content-Type':  'application/json',
+    'Authorization': `Bearer ${token}`
+  };
+  if (_companyId) headers['X-Company-Id'] = _companyId;
+  const r = await fetch(path, {
+    method,
+    headers,
+    body: body != null ? JSON.stringify(body) : undefined
+  });
+  const json = await r.json().catch(() => ({}));
+  if (r.status === 401) { await doLogout(); }
+  return { status: r.status, ok: r.ok, body: json };
+}
+
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+function setLoading(btnId, on, label) {
+  const btn = document.getElementById(btnId);
+  if (!btn) return;
+  btn.disabled = on;
+  btn.innerHTML = on ? `<span class="spinner-sm"></span>${label || '...'}` : (label || btn.dataset.label || btn.textContent);
+  if (!on && label) btn.dataset.label = label;
+}
+
+function openModal(id) {
+  document.getElementById(id).classList.add('open');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('sidebar-overlay').classList.toggle('visible');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('sidebar-overlay').classList.remove('visible');
+}
+
+function showSection(sec) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('sec-' + sec).classList.add('active');
+  document.querySelector(`[data-sec="${sec}"]`).classList.add('active');
+  closeSidebar();
+  if (sec === 'overview')   loadOverview();
+  if (sec === 'cantieri')   loadSites();
+  if (sec === 'lavoratori') loadWorkers();
+  if (sec === 'presenze')   populatePresenzeSiteSelect();
+  if (sec === 'report')     populateReportSelects();
+}
+
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ── Auth ─────────────────────────────────────────────────────────
+async function init() {
+  let cfg;
+  try {
+    cfg = await fetch('/api/config').then(r => r.json());
+    if (!cfg.supabase_url || !cfg.supabase_anon_key) throw new Error('Config mancante');
+  } catch (e) {
+    document.getElementById('screen-loading').innerHTML =
+      `<div style="color:var(--red);font-size:14px">Errore configurazione: ${e.message}</div>`;
+    return;
+  }
+
+  sb = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
+
+  sb.auth.onAuthStateChange((event, session) => {
+    if (event === 'SIGNED_IN'  && session) checkCompany(session);
+    if (event === 'SIGNED_OUT')            showLogin();
+  });
+
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) { checkCompany(session); }
+  else         { showLogin(); }
+}
+
+async function checkCompany(session) {
+  showScreen('screen-loading');
+  _companyId = null;
+
+  // 1. Scopri company_id tramite /api/v1/me (no X-Company-Id necessario)
+  let meRes;
+  try {
+    meRes = await fetch('/api/v1/me', {
+      headers: { 'Authorization': `Bearer ${session.access_token}` }
+    });
+  } catch (e) {
+    showScreen('screen-login');
+    document.getElementById('login-error').textContent = 'Errore di rete. Verifica la connessione.';
+    return;
+  }
+
+  if (meRes.status === 404) {
+    // Utente senza company → onboarding
+    window.location.href = '/onboarding';
+    return;
+  }
+  if (!meRes.ok) {
+    await doLogout();
+    return;
+  }
+
+  const me = await meRes.json();
+  _companyId = me.company_id;
+
+  // 2. Carica cantieri (ora _companyId è noto, api() lo usa nell'header)
+  const sitesRes = await api('GET', '/api/v1/sites');
+  _sites = sitesRes.ok && Array.isArray(sitesRes.body) ? sitesRes.body : [];
+
+  document.getElementById('navbar-email').textContent = session.user?.email || '';
+  showScreen('screen-app');
+  loadOverview();
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function showLogin() {
+  showScreen('screen-login');
+  document.getElementById('login-error').textContent = '';
+}
+
+async function doLogout() {
+  await sb.auth.signOut();
+  _companyId = null;
+  _sites = [];
+  _workers = [];
+  showLogin();
+}
+
+// ── Login ─────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const emailEl  = document.getElementById('login-email');
+  const passEl   = document.getElementById('login-password');
+  const loginBtn = document.getElementById('login-btn');
+  const errEl    = document.getElementById('login-error');
+
+  // Set default dates
+  document.getElementById('pres-date').value = today();
+  document.getElementById('pres-date').max   = today();
+  document.getElementById('rep-to').value    = today();
+  document.getElementById('rep-to').max      = today();
+  document.getElementById('rep-from').max    = today();
+  document.getElementById('asl-to').value    = today();
+
+  async function doLogin() {
+    errEl.textContent = '';
+    const email = emailEl.value.trim();
+    const pass  = passEl.value;
+    if (!email || !pass) { errEl.textContent = 'Email e password obbligatorie'; return; }
+    loginBtn.disabled = true;
+    loginBtn.innerHTML = '<span class="spinner-sm"></span>Accesso...';
+    const { error } = await sb.auth.signInWithPassword({ email, password: pass });
+    loginBtn.disabled = false;
+    loginBtn.textContent = 'Accedi';
+    if (error) {
+      if (error.message?.toLowerCase().includes('invalid login')) {
+        errEl.textContent = 'Email o password non corretti';
+      } else {
+        errEl.textContent = error.message || 'Errore di accesso';
+      }
+    }
+  }
+
+  loginBtn.addEventListener('click', doLogin);
+  passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
+
+  init();
+});
+
+// ── Overview ─────────────────────────────────────────────────────
+async function loadOverview() {
+  // Sites count
+  document.getElementById('ov-sites').textContent = _sites.length;
+
+  // Workers count
+  const wRes = await api('GET', '/api/v1/workers');
+  if (wRes.ok) {
+    const workers = Array.isArray(wRes.body) ? wRes.body : (wRes.body.workers || []);
+    document.getElementById('ov-workers').textContent = workers.length;
+    _workers = workers;
+  }
+
+  // Today punches
+  const dateStr = today();
+  let totalToday = 0;
+  const siteIds = _sites.map(s => s.id);
+  await Promise.all(siteIds.map(async (sid) => {
+    const r = await api('GET', `/api/v1/presence?siteId=${sid}&date=${dateStr}`);
+    if (r.ok) {
+      const rows = Array.isArray(r.body) ? r.body : (r.body.rows || []);
+      totalToday += rows.length;
+    }
+  }));
+  document.getElementById('ov-today').textContent = totalToday;
+}
+
+// ── Cantieri ─────────────────────────────────────────────────────
+async function loadSites() {
+  const { ok, body } = await api('GET', '/api/v1/sites');
+  if (!ok) { toast('Errore caricamento cantieri', 'error'); return; }
+  _sites = Array.isArray(body) ? body : [];
+  renderSites();
+}
+
+function renderSites() {
+  const el = document.getElementById('sites-list');
+  if (!_sites.length) {
+    el.innerHTML = '<div class="empty">Nessun cantiere. Crea il primo cantiere.</div>';
+    return;
+  }
+  el.innerHTML = _sites.map(s => `
+    <div class="card">
+      <div class="site-card-header">
+        <div class="site-name">${esc(s.name)}</div>
+      </div>
+      <div class="site-address">${s.address ? esc(s.address) : '<em style="color:var(--muted)">Indirizzo non impostato</em>'}</div>
+      <div class="badge-row">
+        ${s.has_geofence
+          ? `<span class="badge badge-green">GPS ✓</span>`
+          : `<span class="badge badge-muted">GPS ✗</span>`}
+        ${s.has_pin
+          ? `<span class="badge badge-green">PIN ✓</span>`
+          : `<span class="badge badge-muted">PIN ✗</span>`}
+      </div>
+      <div class="site-actions">
+        <button class="btn btn-sm btn-ghost" onclick="openGpsModal('${s.id}','${esc(s.latitude||'')}','${esc(s.longitude||'')}','${s.geofence_radius_m||120}')">Configura GPS</button>
+        <button class="btn btn-sm btn-ghost" onclick="openPinModal('${s.id}')">PIN</button>
+        <button class="btn btn-sm btn-ghost" onclick="downloadQrPdf('${s.id}','${esc(s.name)}')">Genera QR</button>
+        <button class="btn btn-sm btn-ghost" onclick="openAslModal('${s.id}','${esc(s.name)}')">ASL Link</button>
+        <button class="btn btn-sm btn-danger" onclick="openDeleteSite('${s.id}','${esc(s.name)}')">Elimina</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function createSite() {
+  const name    = document.getElementById('ns-name').value.trim();
+  const address = document.getElementById('ns-address').value.trim();
+  const errEl   = document.getElementById('ns-error');
+  errEl.textContent = '';
+  if (name.length < 2) { errEl.textContent = 'Nome obbligatorio (min 2 caratteri)'; return; }
+  setLoading('ns-btn', true, 'Creazione...');
+  const { ok, body } = await api('POST', '/api/v1/sites', { name, address: address || undefined });
+  setLoading('ns-btn', false, 'Crea cantiere');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Cantiere creato');
+  closeModal('modal-new-site');
+  document.getElementById('ns-name').value = '';
+  document.getElementById('ns-address').value = '';
+  await loadSites();
+}
+
+function openGpsModal(siteId, lat, lon, radius) {
+  document.getElementById('gps-site-id').value = siteId;
+  document.getElementById('gps-lat').value     = lat || '';
+  document.getElementById('gps-lon').value     = lon || '';
+  document.getElementById('gps-radius').value  = radius || 120;
+  document.getElementById('gps-error').textContent = '';
+  openModal('modal-gps');
+}
+
+async function saveGps() {
+  const siteId = document.getElementById('gps-site-id').value;
+  const lat    = parseFloat(document.getElementById('gps-lat').value);
+  const lon    = parseFloat(document.getElementById('gps-lon').value);
+  const radius = parseInt(document.getElementById('gps-radius').value, 10);
+  const errEl  = document.getElementById('gps-error');
+  errEl.textContent = '';
+  if (isNaN(lat) || isNaN(lon)) { errEl.textContent = 'Inserisci latitudine e longitudine valide'; return; }
+  setLoading('gps-btn', true, 'Salvataggio...');
+  const { ok, body } = await api('PATCH', `/api/v1/sites/${siteId}/coords`,
+    { latitude: lat, longitude: lon, geofence_radius_m: radius });
+  setLoading('gps-btn', false, 'Salva');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Coordinate salvate');
+  closeModal('modal-gps');
+  await loadSites();
+}
+
+function openPinModal(siteId) {
+  document.getElementById('pin-site-id').value = siteId;
+  document.getElementById('pin-value').value   = '';
+  document.getElementById('pin-error').textContent = '';
+  openModal('modal-pin');
+}
+
+async function savePin() {
+  const siteId   = document.getElementById('pin-site-id').value;
+  const pinCode  = document.getElementById('pin-value').value;
+  const errEl    = document.getElementById('pin-error');
+  errEl.textContent = '';
+  setLoading('pin-btn', true, 'Salvataggio...');
+  const { ok, body } = await api('PATCH', `/api/v1/sites/${siteId}/pin`, { pin_code: pinCode });
+  setLoading('pin-btn', false, 'Salva PIN');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast(pinCode ? 'PIN impostato' : 'PIN rimosso');
+  closeModal('modal-pin');
+  await loadSites();
+}
+
+async function downloadQrPdf(siteId, siteName) {
+  toast('Generazione PDF QR in corso...');
+  try {
+    const token = await getJwt();
+    const r = await fetch(`/api/v1/sites/${siteId}/qr-pdf`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'X-Company-Id':  _companyId
+      }
+    });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      toast(body.error || 'Errore generazione PDF', 'error');
+      return;
+    }
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `qr-${siteName.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.pdf`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('PDF QR scaricato');
+  } catch (e) {
+    toast('Errore: ' + e.message, 'error');
+  }
+}
+
+function openAslModal(siteId, siteName) {
+  // Popola select report ASL con il sito selezionato
+  showSection('report');
+  const sel = document.getElementById('asl-site');
+  sel.value = siteId;
+  document.getElementById('asl-link-box').style.display = 'none';
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+function openDeleteSite(siteId, siteName) {
+  document.getElementById('del-site-id').value     = siteId;
+  document.getElementById('del-site-name').textContent = siteName;
+  document.getElementById('del-site-error').textContent = '';
+  openModal('modal-del-site');
+}
+
+async function doDeleteSite() {
+  const siteId = document.getElementById('del-site-id').value;
+  const errEl  = document.getElementById('del-site-error');
+  errEl.textContent = '';
+  setLoading('del-site-btn', true, 'Eliminazione...');
+  const { ok, body } = await api('DELETE', `/api/v1/sites/${siteId}`);
+  setLoading('del-site-btn', false, 'Elimina');
+  if (!ok) {
+    if (body.error === 'SITE_HAS_LOGS') {
+      errEl.textContent = body.message || 'Il cantiere ha timbrature: impossibile eliminare';
+    } else {
+      errEl.textContent = body.message || body.error || 'Errore eliminazione';
+    }
+    return;
+  }
+  toast('Cantiere eliminato');
+  closeModal('modal-del-site');
+  await loadSites();
+}
+
+// ── Lavoratori ────────────────────────────────────────────────────
+async function loadWorkers() {
+  const filterSite = document.getElementById('workers-filter-site').value;
+  let url = '/api/v1/workers';
+  if (filterSite) url += `?siteId=${filterSite}`;
+  const { ok, body } = await api('GET', url);
+  if (!ok) { toast('Errore caricamento lavoratori', 'error'); return; }
+  _workers = Array.isArray(body) ? body : (body.workers || []);
+
+  // Popola filter dropdown
+  const sel = document.getElementById('workers-filter-site');
+  const curr = sel.value;
+  sel.innerHTML = '<option value="">Tutti i cantieri</option>' +
+    _sites.map(s => `<option value="${s.id}"${s.id===curr?' selected':''}>${esc(s.name)}</option>`).join('');
+
+  renderWorkers();
+}
+
+function renderWorkers() {
+  const tbody = document.getElementById('workers-body');
+  if (!_workers.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Nessun lavoratore</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _workers.map(w => `
+    <tr>
+      <td>${esc(w.full_name)}</td>
+      <td><code style="font-size:12px">${esc(w.fiscal_code || '')}</code></td>
+      <td><span style="color:var(--muted);font-size:12px">—</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-ghost" onclick="openAssignModal('${w.id}')">Assegna</button>
+        <button class="btn btn-sm btn-ghost" onclick="openSessionsModal('${w.id}','${esc(w.full_name)}')">Sessioni</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function createWorker() {
+  const name  = document.getElementById('nw-name').value.trim();
+  const cf    = document.getElementById('nw-cf').value.trim().toUpperCase();
+  const errEl = document.getElementById('nw-error');
+  errEl.textContent = '';
+  if (name.length < 2) { errEl.textContent = 'Nome obbligatorio (min 2 caratteri)'; return; }
+  if (!/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/.test(cf)) {
+    errEl.textContent = 'Codice fiscale non valido';
+    return;
+  }
+  setLoading('nw-btn', true, 'Creazione...');
+  const { ok, body } = await api('POST', '/api/v1/workers', { full_name: name, fiscal_code: cf });
+  setLoading('nw-btn', false, 'Crea lavoratore');
+  if (!ok) {
+    if (body.error === 'DUPLICATE_FISCAL_CODE') {
+      errEl.textContent = 'Codice fiscale già presente';
+    } else {
+      errEl.textContent = body.message || body.error || 'Errore';
+    }
+    return;
+  }
+  toast('Lavoratore creato');
+  closeModal('modal-new-worker');
+  document.getElementById('nw-name').value = '';
+  document.getElementById('nw-cf').value = '';
+  await loadWorkers();
+}
+
+function openAssignModal(workerId) {
+  document.getElementById('assign-worker-id').value = workerId;
+  document.getElementById('assign-error').textContent = '';
+  const sel = document.getElementById('assign-site-sel');
+  sel.innerHTML = _sites.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  openModal('modal-assign');
+}
+
+async function doAssign() {
+  const workerId = document.getElementById('assign-worker-id').value;
+  const siteId   = document.getElementById('assign-site-sel').value;
+  const errEl    = document.getElementById('assign-error');
+  errEl.textContent = '';
+  if (!siteId) { errEl.textContent = 'Seleziona un cantiere'; return; }
+  setLoading('assign-btn', true, 'Assegnazione...');
+  const { ok, body } = await api('POST', `/api/v1/sites/${siteId}/workers`, { worker_id: workerId });
+  setLoading('assign-btn', false, 'Assegna');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Lavoratore assegnato al cantiere');
+  closeModal('modal-assign');
+  await loadWorkers();
+}
+
+async function openSessionsModal(workerId, workerName) {
+  document.getElementById('sessions-list').innerHTML = '<div class="empty">Caricamento...</div>';
+  openModal('modal-sessions');
+  document.querySelector('#modal-sessions .modal-title').textContent = `Sessioni — ${workerName}`;
+  const { ok, body } = await api('GET', `/api/v1/workers/${workerId}/sessions`);
+  if (!ok) {
+    document.getElementById('sessions-list').innerHTML = '<div class="empty" style="color:var(--red)">Errore caricamento sessioni</div>';
+    return;
+  }
+  const sessions = Array.isArray(body) ? body : (body.sessions || []);
+  if (!sessions.length) {
+    document.getElementById('sessions-list').innerHTML = '<div class="empty">Nessuna sessione attiva</div>';
+    return;
+  }
+  document.getElementById('sessions-list').innerHTML = sessions.map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px">${new Date(s.created_at || s.expires_at).toLocaleString('it-IT')}</div>
+        <div style="font-size:11px;color:var(--muted)">Scade: ${new Date(s.expires_at).toLocaleString('it-IT')}</div>
+        ${s.revoked_at ? '<div style="font-size:11px;color:var(--red)">REVOCATA</div>' : ''}
+      </div>
+      ${!s.revoked_at ? `<button class="btn btn-sm btn-danger" onclick="revokeSession('${s.id}', this)">Revoca</button>` : ''}
+    </div>
+  `).join('');
+}
+
+async function revokeSession(sessionId, btn) {
+  btn.disabled = true;
+  btn.textContent = '...';
+  const { ok, body } = await api('DELETE', `/api/v1/sessions/${sessionId}`);
+  if (!ok) { toast(body.error || 'Errore revoca', 'error'); btn.disabled = false; btn.textContent = 'Revoca'; return; }
+  toast('Sessione revocata');
+  btn.textContent = 'Revocata';
+  btn.style.background = 'var(--muted)';
+}
+
+// ── Presenze ──────────────────────────────────────────────────────
+function populatePresenzeSiteSelect() {
+  const sel = document.getElementById('pres-site');
+  sel.innerHTML = '<option value="">Seleziona cantiere</option>' +
+    _sites.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+}
+
+async function loadPresenze() {
+  const siteId  = document.getElementById('pres-site').value;
+  const dateStr = document.getElementById('pres-date').value;
+  const tbody   = document.getElementById('pres-body');
+  if (!siteId) { toast('Seleziona un cantiere', 'error'); return; }
+  if (!dateStr) { toast('Seleziona una data', 'error'); return; }
+  tbody.innerHTML = '<tr><td colspan="6" class="empty">Caricamento...</td></tr>';
+  const { ok, body } = await api('GET', `/api/v1/presence?siteId=${siteId}&date=${dateStr}`);
+  if (!ok) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--red)">Errore: ${body.error || 'sconosciuto'}</td></tr>`;
+    return;
+  }
+  const rows = Array.isArray(body) ? body : (body.rows || []);
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty">Nessuna timbratura per questa data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const ts = r.timestamp_server ? new Date(r.timestamp_server).toLocaleTimeString('it-IT') : '—';
+    const isEntry = r.event_type === 'ENTRY';
+    return `<tr>
+      <td>${esc(r.worker?.full_name || r.full_name || '—')}</td>
+      <td><code style="font-size:11px">${esc(r.worker?.fiscal_code || r.fiscal_code || '—')}</code></td>
+      <td class="${isEntry ? 'tag-entry' : 'tag-exit'}">${isEntry ? 'ENTRATA' : 'USCITA'}</td>
+      <td>${ts}</td>
+      <td>${r.distance_m != null ? r.distance_m + ' m' : '—'}</td>
+      <td>${r.gps_accuracy_m != null ? r.gps_accuracy_m + ' m' : '—'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Report ────────────────────────────────────────────────────────
+function populateReportSelects() {
+  ['rep-site','asl-site'].forEach(id => {
+    const sel = document.getElementById(id);
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Seleziona cantiere</option>' +
+      _sites.map(s => `<option value="${s.id}"${s.id===cur?' selected':''}>${esc(s.name)}</option>`).join('');
+  });
+}
+
+async function downloadPresenzePdf() {
+  const siteId = document.getElementById('rep-site').value;
+  const from   = document.getElementById('rep-from').value;
+  const to     = document.getElementById('rep-to').value;
+  if (!siteId || !from || !to) { toast('Seleziona cantiere e date', 'error'); return; }
+  if (from > to) { toast('La data inizio deve essere prima della data fine', 'error'); return; }
+  toast('Generazione PDF...');
+  try {
+    const token = await getJwt();
+    const url   = `/api/v1/reports/sites/${siteId}/presenze?from=${from}&to=${to}`;
+    const r     = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId } });
+    if (!r.ok) {
+      const body = await r.json().catch(() => ({}));
+      toast(body.error || 'Errore download PDF', 'error'); return;
+    }
+    const blob = await r.blob();
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `presenze-${siteId}-${from}-${to}.pdf`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    toast('Errore: ' + e.message, 'error');
+  }
+}
+
+async function downloadPresenzeCsv() {
+  const siteId = document.getElementById('rep-site').value;
+  const from   = document.getElementById('rep-from').value;
+  const to     = document.getElementById('rep-to').value;
+  if (!siteId || !from || !to) { toast('Seleziona cantiere e date', 'error'); return; }
+  toast('Generazione CSV...');
+  try {
+    const token = await getJwt();
+    const url   = `/api/v1/reports/presence-range?siteId=${siteId}&from=${from}&to=${to}`;
+    const r     = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId } });
+    if (!r.ok) { const b = await r.json().catch(()=>({})); toast(b.error||'Errore CSV','error'); return; }
+    const blob = await r.blob();
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `riepilogo-${siteId}-${from}-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    toast('Errore: ' + e.message, 'error');
+  }
+}
+
+async function checkMissingExits() {
+  const resEl = document.getElementById('rep-missing-result');
+  resEl.textContent = 'Controllo in corso...';
+  resEl.style.color = 'var(--muted)';
+  const { ok, body } = await api('POST', '/api/v1/alerts/check-missing-exits', { date: today(), notify: false });
+  if (!ok) {
+    resEl.textContent = 'Errore: ' + (body.error || 'sconosciuto');
+    resEl.style.color = 'var(--red)';
+    return;
+  }
+  const count = body.missing_count ?? 0;
+  resEl.style.color = count > 0 ? 'var(--amber)' : 'var(--green)';
+  resEl.textContent = count > 0
+    ? `Trovate ${count} uscite mancanti`
+    : 'Nessuna uscita mancante trovata';
+}
+
+async function generateAslLink() {
+  const siteId  = document.getElementById('asl-site').value;
+  const from    = document.getElementById('asl-from').value;
+  const to      = document.getElementById('asl-to').value;
+  const label   = document.getElementById('asl-label').value.trim() || undefined;
+  const ttlDays = parseInt(document.getElementById('asl-ttl').value, 10) || 30;
+  if (!siteId || !from || !to) { toast('Seleziona cantiere e date', 'error'); return; }
+  const { ok, body } = await api('POST', `/api/v1/sites/${siteId}/asl-token`,
+    { from_date: from, to_date: to, label, ttl_days: ttlDays });
+  if (!ok) { toast(body.error || 'Errore generazione link', 'error'); return; }
+  const url = body.url || body.link || (window.location.origin + '/asl/' + body.token);
+  document.getElementById('asl-link-url').textContent = url;
+  document.getElementById('asl-link-box').style.display = 'block';
+  toast('Link ASL generato');
+}
+
+function copyAslLink() {
+  const url = document.getElementById('asl-link-url').textContent;
+  navigator.clipboard.writeText(url).then(() => toast('Link copiato')).catch(() => toast('Copia manuale: ' + url));
+}
+
+// ── Utility ───────────────────────────────────────────────────────
+function esc(str) {
+  return String(str ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Chiudi modal cliccando overlay
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.remove('open');
+  }
+});
+</script>
+</body>
+</html>

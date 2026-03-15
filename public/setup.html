@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Setup Cantiere — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --accent:  #3b82f6;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --amber:   #f59e0b;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --radius:  12px;
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 60px;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    .logo {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      text-align: center;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      text-align: center;
+      margin-bottom: 6px;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 36px;
+    }
+
+    /* ── Card ───────────────────────────────── */
+    .card {
+      width: 100%;
+      max-width: 520px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-bottom: 20px;
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-size: 10px;
+      background: var(--border);
+      color: var(--muted);
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+    .badge.required { background: rgba(239,68,68,.18); color: var(--red); }
+
+    /* ── Form ───────────────────────────────── */
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .hint {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+    input[type="text"], input[type="password"], input[type="number"],
+    select, textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 14px;
+      padding: 11px 13px;
+      outline: none;
+      transition: border-color 0.15s;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    input::placeholder, textarea::placeholder { color: var(--border); }
+    textarea { resize: vertical; min-height: 80px; }
+
+    .row { display: flex; gap: 12px; }
+    .row > .field { flex: 1; }
+
+    .field { margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+
+    /* ── Buttons ────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 11px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      -webkit-appearance: none;
+      white-space: nowrap;
+    }
+    .btn-full { display: flex; width: 100%; }
+    .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .btn-primary  { background: var(--accent); color: #fff; }
+    .btn-green    { background: var(--green);  color: #fff; }
+    .btn-ghost    { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+    .btn-red      { background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.35); color: var(--red); }
+
+    /* ── Status box ─────────────────────────── */
+    .status-box {
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-top: 14px;
+      word-break: break-all;
+    }
+    .status-box.ok    { background: rgba(34,197,94,.10); border: 1px solid rgba(34,197,94,.30); color: var(--green); }
+    .status-box.error { background: rgba(239,68,68,.10); border: 1px solid rgba(239,68,68,.30); color: var(--red); }
+    .status-box.info  { background: rgba(59,130,246,.10); border: 1px solid rgba(59,130,246,.30); color: #93c5fd; }
+
+    /* ── QR section ─────────────────────────── */
+    #qr-link {
+      word-break: break-all;
+      font-family: monospace;
+      font-size: 13px;
+      color: #93c5fd;
+    }
+
+    /* ── Spinner ────────────────────────────── */
+    .spin {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Divider ────────────────────────────── */
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 20px 0;
+    }
+
+    /* ── Site list ───────────────────────────── */
+    #site-list { list-style: none; }
+    #site-list li {
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      cursor: pointer;
+    }
+    #site-list li:last-child { border-bottom: none; }
+    #site-list li:hover .site-name { color: var(--accent); }
+    .site-name { font-weight: 600; font-size: 14px; }
+    .site-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .site-chips { display: flex; gap: 6px; flex-shrink: 0; }
+    .chip {
+      font-size: 10px;
+      font-weight: 700;
+      border-radius: 4px;
+      padding: 2px 6px;
+      text-transform: uppercase;
+    }
+    .chip.ok    { background: rgba(34,197,94,.15);  color: var(--green); }
+    .chip.miss  { background: rgba(239,68,68,.12);  color: var(--red);   }
+
+    .w-full { width: 100%; max-width: 520px; }
+  </style>
+</head>
+<body>
+
+  <p class="logo">Palladia — Tecnico</p>
+  <h1>Setup Cantiere</h1>
+  <p class="subtitle">Configura coordinate GPS e PIN per abilitare le timbrature badge</p>
+
+  <!-- ── SEZIONE 1: Autenticazione ─────────────────────────────────────────── -->
+  <div class="card w-full" id="auth-card">
+    <p class="card-title">1. Autenticazione <span class="badge required">Obbligatorio</span></p>
+
+    <div class="field">
+      <label>JWT (Bearer token Supabase)</label>
+      <textarea id="input-jwt" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9…" rows="3"></textarea>
+      <p class="hint">Copiare dal pannello Palladia (cookie di sessione o /api/auth/token)</p>
+    </div>
+
+    <div class="field">
+      <label>Company ID</label>
+      <input id="input-company" type="text" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+             autocomplete="off" spellcheck="false">
+    </div>
+
+    <div id="auth-status"></div>
+
+    <button class="btn btn-primary btn-full" id="btn-auth" style="margin-top:16px;">
+      Verifica e carica cantieri
+    </button>
+  </div>
+
+  <!-- ── SEZIONE 2: Selezione cantiere ─────────────────────────────────────── -->
+  <div class="card w-full" id="sites-card" style="display:none;">
+    <p class="card-title">2. Seleziona cantiere</p>
+    <ul id="site-list"><li style="color:var(--muted);font-size:13px;">Nessun cantiere trovato.</li></ul>
+  </div>
+
+  <!-- ── SEZIONE 3: Configurazione ─────────────────────────────────────────── -->
+  <div class="card w-full" id="config-card" style="display:none;">
+    <p class="card-title">3. Configurazione — <span id="selected-site-name" style="color:var(--text);text-transform:none;letter-spacing:0;">—</span></p>
+
+    <hr>
+
+    <!-- GPS -->
+    <p style="font-weight:700;margin-bottom:12px;">📍 Coordinate GPS</p>
+
+    <div class="row">
+      <div class="field">
+        <label>Latitudine</label>
+        <input id="input-lat" type="number" step="any" placeholder="45.4642">
+      </div>
+      <div class="field">
+        <label>Longitudine</label>
+        <input id="input-lon" type="number" step="any" placeholder="9.1900">
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Raggio geofence (metri)</label>
+      <input id="input-radius" type="number" min="10" max="50000" placeholder="100" value="100">
+      <p class="hint">Default 100m — usare 200-500m per cantieri grandi</p>
+    </div>
+
+    <button class="btn btn-ghost btn-full" id="btn-gps" style="margin-bottom:12px;">
+      📡 Rileva posizione GPS attuale
+    </button>
+
+    <button class="btn btn-primary btn-full" id="btn-save-coords">
+      Salva coordinate
+    </button>
+
+    <div id="coords-status"></div>
+
+    <hr>
+
+    <!-- PIN -->
+    <p style="font-weight:700;margin-bottom:12px;">🔑 PIN cantiere</p>
+
+    <div class="field">
+      <label>Nuovo PIN <span style="font-weight:400;color:var(--muted)">(lasciare vuoto per rimuovere)</span></label>
+      <input id="input-pin" type="text" maxlength="20" placeholder="1234"
+             autocomplete="off" inputmode="numeric">
+      <p class="hint">Il PIN viene salvato come HMAC-SHA256 — non recuperabile in chiaro</p>
+    </div>
+
+    <button class="btn btn-primary btn-full" id="btn-save-pin">
+      Salva PIN
+    </button>
+    <button class="btn btn-red btn-full" id="btn-remove-pin" style="margin-top:8px;">
+      Rimuovi PIN
+    </button>
+
+    <div id="pin-status"></div>
+
+    <hr>
+
+    <!-- QR link -->
+    <p style="font-weight:700;margin-bottom:12px;">🔗 Link scan badge</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">
+      URL da condividere o convertire in QR per gli operai:
+    </p>
+    <div id="qr-link-box" class="status-box info">
+      <a id="qr-link" href="#" target="_blank"></a>
+    </div>
+    <button class="btn btn-ghost" id="btn-copy-qr" style="margin-top:10px;">
+      Copia link
+    </button>
+  </div>
+
+  <script>
+  'use strict';
+
+  const API = '';  // stesso origin
+
+  // ── State ─────────────────────────────────────────────────────────────────
+  let jwt       = '';
+  let companyId = '';
+  let selectedSite = null;  // { id, name, ... }
+
+  // ── DOM refs ──────────────────────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  $('btn-auth').addEventListener('click', async () => {
+    jwt       = $('input-jwt').value.trim();
+    companyId = $('input-company').value.trim();
+
+    if (!jwt || !companyId) {
+      setStatus('auth-status', 'Compilare JWT e Company ID', 'error');
+      return;
+    }
+
+    setLoading('btn-auth', true);
+    try {
+      const { status, body } = await apiFetch('GET', '/api/v1/sites');
+      if (status === 200) {
+        setStatus('auth-status', `✓ ${body.length} cantier${body.length !== 1 ? 'i' : 'e'} trovato/i`, 'ok');
+        renderSiteList(body);
+        $('sites-card').style.display = '';
+      } else {
+        setStatus('auth-status', `Errore ${status}: ${body.error || JSON.stringify(body)}`, 'error');
+      }
+    } catch (e) {
+      setStatus('auth-status', 'Errore di rete: ' + e.message, 'error');
+    } finally {
+      setLoading('btn-auth', false);
+    }
+  });
+
+  // ── Site list ─────────────────────────────────────────────────────────────
+  function renderSiteList(sites) {
+    const ul = $('site-list');
+    if (!sites.length) {
+      ul.innerHTML = '<li style="color:var(--muted);font-size:13px;">Nessun cantiere trovato.</li>';
+      return;
+    }
+    ul.innerHTML = sites.map(s => `
+      <li data-id="${s.id}" data-lat="${s.latitude ?? ''}" data-lon="${s.longitude ?? ''}"
+          data-radius="${s.geofence_radius_m ?? 100}" data-name="${esc(s.name)}">
+        <div>
+          <div class="site-name">${esc(s.name)}</div>
+          <div class="site-meta">${esc(s.address || '—')}</div>
+        </div>
+        <div class="site-chips">
+          <span class="chip ${s.has_geofence ? 'ok' : 'miss'}">${s.has_geofence ? '📍 GPS' : '⚠ No GPS'}</span>
+          <span class="chip ${s.has_pin ? 'ok' : 'miss'}">${s.has_pin ? '🔑 PIN' : 'No PIN'}</span>
+        </div>
+      </li>`).join('');
+
+    ul.querySelectorAll('li[data-id]').forEach(li => {
+      li.addEventListener('click', () => selectSite({
+        id:                li.dataset.id,
+        name:              li.dataset.name,
+        latitude:          li.dataset.lat || null,
+        longitude:         li.dataset.lon || null,
+        geofence_radius_m: li.dataset.radius
+      }));
+    });
+  }
+
+  function selectSite(site) {
+    selectedSite = site;
+    $('selected-site-name').textContent = site.name;
+
+    // Pre-popola coordinate se esistenti
+    $('input-lat').value    = site.latitude  || '';
+    $('input-lon').value    = site.longitude || '';
+    $('input-radius').value = site.geofence_radius_m || 100;
+    $('input-pin').value    = '';
+
+    ['coords-status','pin-status'].forEach(id => { $(id).innerHTML = ''; });
+
+    // QR link
+    const scanUrl = `${location.origin}/scan/${site.id}`;
+    const link    = $('qr-link');
+    link.href         = scanUrl;
+    link.textContent  = scanUrl;
+
+    $('config-card').style.display = '';
+    $('config-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // ── GPS rileva posizione ──────────────────────────────────────────────────
+  $('btn-gps').addEventListener('click', () => {
+    if (!navigator.geolocation) {
+      setStatus('coords-status', 'GPS non disponibile su questo browser', 'error');
+      return;
+    }
+    const btn = $('btn-gps');
+    btn.disabled    = true;
+    btn.textContent = '📡 Rilevamento in corso…';
+
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        $('input-lat').value = pos.coords.latitude.toFixed(7);
+        $('input-lon').value = pos.coords.longitude.toFixed(7);
+        setStatus('coords-status',
+          `✓ Posizione rilevata — precisione ±${Math.round(pos.coords.accuracy)}m`, 'ok');
+        btn.disabled    = false;
+        btn.textContent = '📡 Rileva posizione GPS attuale';
+      },
+      err => {
+        const msgs = { 1: 'Permesso GPS negato', 2: 'GPS non disponibile', 3: 'Timeout GPS' };
+        setStatus('coords-status', msgs[err.code] || 'Errore GPS', 'error');
+        btn.disabled    = false;
+        btn.textContent = '📡 Rileva posizione GPS attuale';
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  });
+
+  // ── Salva coordinate ──────────────────────────────────────────────────────
+  $('btn-save-coords').addEventListener('click', async () => {
+    if (!selectedSite) return;
+
+    const lat    = parseFloat($('input-lat').value);
+    const lon    = parseFloat($('input-lon').value);
+    const radius = parseInt($('input-radius').value, 10);
+
+    if (isNaN(lat) || isNaN(lon)) {
+      setStatus('coords-status', 'Inserire latitudine e longitudine valide', 'error');
+      return;
+    }
+
+    setLoading('btn-save-coords', true);
+    try {
+      const { status, body } = await apiFetch('PATCH',
+        `/api/v1/sites/${selectedSite.id}/coords`,
+        { latitude: lat, longitude: lon, geofence_radius_m: radius });
+
+      if (status === 200) {
+        setStatus('coords-status',
+          `✓ Coordinate salvate — lat ${lat.toFixed(5)}, lon ${lon.toFixed(5)}, raggio ${radius}m`, 'ok');
+        selectedSite.latitude          = lat;
+        selectedSite.longitude         = lon;
+        selectedSite.geofence_radius_m = radius;
+      } else {
+        setStatus('coords-status', `Errore ${status}: ${body.error || JSON.stringify(body)}`, 'error');
+      }
+    } catch (e) {
+      setStatus('coords-status', 'Errore di rete: ' + e.message, 'error');
+    } finally {
+      setLoading('btn-save-coords', false);
+    }
+  });
+
+  // ── Salva PIN ─────────────────────────────────────────────────────────────
+  $('btn-save-pin').addEventListener('click', async () => savePin($('input-pin').value));
+  $('btn-remove-pin').addEventListener('click', async () => {
+    if (!confirm('Rimuovere il PIN dal cantiere? Chiunque potrà identificarsi senza PIN.')) return;
+    savePin('');
+  });
+
+  async function savePin(pin) {
+    if (!selectedSite) return;
+    setLoading('btn-save-pin', true);
+    setLoading('btn-remove-pin', true);
+    try {
+      const { status, body } = await apiFetch('PATCH',
+        `/api/v1/sites/${selectedSite.id}/pin`,
+        { pin_code: pin });
+
+      if (status === 200) {
+        setStatus('pin-status',
+          body.has_pin ? '✓ PIN salvato correttamente (hash HMAC-SHA256)' : '✓ PIN rimosso', 'ok');
+        $('input-pin').value = '';
+      } else {
+        setStatus('pin-status', `Errore ${status}: ${body.error || JSON.stringify(body)}`, 'error');
+      }
+    } catch (e) {
+      setStatus('pin-status', 'Errore di rete: ' + e.message, 'error');
+    } finally {
+      setLoading('btn-save-pin', false);
+      setLoading('btn-remove-pin', false);
+    }
+  }
+
+  // ── Copia QR link ─────────────────────────────────────────────────────────
+  $('btn-copy-qr').addEventListener('click', async () => {
+    const url = $('qr-link').href;
+    try {
+      await navigator.clipboard.writeText(url);
+      $('btn-copy-qr').textContent = '✓ Copiato!';
+      setTimeout(() => { $('btn-copy-qr').textContent = 'Copia link'; }, 2000);
+    } catch {
+      $('btn-copy-qr').textContent = 'Copia manualmente ↑';
+    }
+  });
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  async function apiFetch(method, path, body) {
+    if (!jwt || !companyId) throw new Error('Non autenticato');
+    const opts = {
+      method,
+      headers: {
+        'Content-Type':  'application/json',
+        'Authorization': `Bearer ${jwt}`,
+        'X-Company-Id':  companyId
+      }
+    };
+    if (body !== undefined) opts.body = JSON.stringify(body);
+    const r    = await fetch(`${API}${path}`, opts);
+    const json = await r.json().catch(() => ({}));
+    return { status: r.status, body: json };
+  }
+
+  function setStatus(containerId, msg, type) {
+    const el = $(containerId);
+    el.innerHTML = `<div class="status-box ${type}">${esc(msg)}</div>`;
+  }
+
+  function setLoading(btnId, loading) {
+    const btn = $(btnId);
+    btn.disabled = loading;
+    if (loading) {
+      btn.dataset.orig = btn.innerHTML;
+      btn.innerHTML    = '<span class="spin"></span> Attendere…';
+    } else {
+      btn.innerHTML    = btn.dataset.orig || btn.innerHTML;
+    }
+  }
+
+  function esc(str) {
+    return String(str ?? '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+  </script>
+</body>
+</html>

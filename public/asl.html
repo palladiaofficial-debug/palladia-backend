@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Registro Presenze — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --border:  #334155;
+      --accent:  #3b82f6;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --amber:   #f59e0b;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --radius:  12px;
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 16px 60px;
+    }
+
+    .logo {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.15em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 32px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 520px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      margin-bottom: 16px;
+    }
+
+    .card-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .site-name {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+
+    .site-address {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 4px;
+    }
+
+    .meta-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+    }
+
+    .meta-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 600;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .meta-value {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .badge-label {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: rgba(34,197,94,0.15);
+      color: var(--green);
+      border: 1px solid rgba(34,197,94,0.3);
+      border-radius: 6px;
+      padding: 3px 10px;
+      margin-top: 14px;
+    }
+
+    .badge-expired {
+      background: rgba(239,68,68,0.12);
+      color: var(--red);
+      border-color: rgba(239,68,68,0.3);
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      max-width: 520px;
+      padding: 15px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      text-align: center;
+      text-decoration: none;
+      margin-bottom: 10px;
+    }
+
+    .btn:active { transform: scale(0.98); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .spin {
+      display: inline-block;
+      width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      width: 100%;
+      max-width: 520px;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: var(--radius);
+      padding: 24px;
+      text-align: center;
+    }
+
+    .error-icon  { font-size: 36px; margin-bottom: 10px; }
+    .error-title { font-size: 18px; font-weight: 800; color: var(--red); margin-bottom: 6px; }
+    .error-sub   { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+    .progress-wrap {
+      width: 100%;
+      max-width: 520px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      display: none;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .progress-wrap.visible { display: flex; }
+
+    .hidden { display: none !important; }
+
+    .info-note {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.6;
+      margin-top: 8px;
+    }
+
+    .divider {
+      width: 100%;
+      max-width: 520px;
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 8px 0 16px;
+    }
+  </style>
+</head>
+<body>
+
+  <p class="logo">Palladia — Accesso Ispettore</p>
+
+  <!-- Loading -->
+  <div id="state-loading" style="width:100%;max-width:520px;text-align:center;padding:40px 0;">
+    <div class="spin" style="width:28px;height:28px;border-width:3px;display:inline-block;"></div>
+    <p style="margin-top:12px;font-size:13px;color:var(--muted);">Verifica accesso in corso…</p>
+  </div>
+
+  <!-- Error -->
+  <div id="state-error" class="error-box hidden">
+    <div class="error-icon">🔒</div>
+    <div class="error-title" id="err-title">Accesso non consentito</div>
+    <div class="error-sub"  id="err-sub">Il link non è valido, è scaduto o è stato revocato.</div>
+  </div>
+
+  <!-- Main content -->
+  <div id="state-main" class="hidden" style="width:100%;display:flex;flex-direction:column;align-items:center;">
+
+    <div class="card">
+      <div class="card-label">Cantiere</div>
+      <div class="site-name"    id="site-name">—</div>
+      <div class="site-address" id="site-address"></div>
+
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="meta-label">Dal</div>
+          <div class="meta-value" id="meta-from">—</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Al</div>
+          <div class="meta-value" id="meta-to">—</div>
+        </div>
+      </div>
+
+      <div id="meta-label-badge" class="badge-label">Link attivo</div>
+    </div>
+
+    <!-- Download in corso -->
+    <div class="progress-wrap" id="progress-pdf">
+      <div class="spin"></div>
+      <span style="font-size:14px;">Generazione PDF in corso — operazione che può richiedere qualche secondo…</span>
+    </div>
+    <div class="progress-wrap" id="progress-csv">
+      <div class="spin"></div>
+      <span style="font-size:14px;">Preparazione CSV in corso…</span>
+    </div>
+
+    <!-- Download buttons -->
+    <a id="btn-pdf" class="btn btn-primary" href="#" style="max-width:520px;">
+      Scarica Registro Presenze (PDF)
+    </a>
+    <a id="btn-csv" class="btn btn-ghost" href="#" style="max-width:520px;">
+      Scarica dati (CSV — Excel)
+    </a>
+
+    <hr class="divider">
+
+    <p class="info-note" id="expires-note"></p>
+    <p class="info-note" style="margin-top:6px;">
+      Il registro presenze è emesso in modalità <strong>append-only</strong> — i dati
+      non possono essere modificati o cancellati retroattivamente.
+      Valido ai fini di verifica D.Lgs.&nbsp;81/2008.
+    </p>
+
+  </div>
+
+  <script>
+  'use strict';
+
+  const $ = id => document.getElementById(id);
+
+  // Estrai token dal path: /asl/<token>
+  const pathParts = window.location.pathname.split('/');
+  const TOKEN     = pathParts[pathParts.length - 1];
+
+  function showError(title, sub) {
+    $('state-loading').classList.add('hidden');
+    $('state-main').classList.add('hidden');
+    $('state-error').classList.remove('hidden');
+    $('err-title').textContent = title;
+    $('err-sub').textContent   = sub;
+  }
+
+  function fmtDate(yyyymmdd) {
+    if (!yyyymmdd) return '—';
+    const [y, m, d] = yyyymmdd.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  async function loadInfo() {
+    if (!TOKEN || TOKEN.length !== 64) {
+      showError('Link non valido', 'Il link di accesso non è nel formato corretto.');
+      return;
+    }
+
+    let res, body;
+    try {
+      res  = await fetch(`/api/v1/asl/${TOKEN}?format=info`);
+      body = await res.json();
+    } catch (e) {
+      showError('Errore di rete', 'Impossibile raggiungere il server. Verificare la connessione.');
+      return;
+    }
+
+    if (!res.ok) {
+      const msgs = {
+        TOKEN_NOT_FOUND: 'Il link non esiste o è stato rimosso.',
+        TOKEN_REVOKED:   'Il link è stato revocato dall\'amministratore.',
+        TOKEN_EXPIRED:   'Il link è scaduto. Richiedere un nuovo link all\'azienda.',
+      };
+      showError('Accesso negato', msgs[body.error] || `Errore: ${body.error || res.status}`);
+      return;
+    }
+
+    // Popola UI
+    $('site-name').textContent    = body.site?.name    || '—';
+    $('site-address').textContent = body.site?.address || '';
+    $('meta-from').textContent    = fmtDate(body.from_date);
+    $('meta-to').textContent      = fmtDate(body.to_date);
+
+    const expiresAt = body.expires_at ? new Date(body.expires_at) : null;
+    const isExpired = expiresAt && expiresAt < new Date();
+    $('meta-label-badge').textContent = isExpired ? 'Link scaduto' : 'Link attivo';
+    if (isExpired) $('meta-label-badge').classList.add('badge-expired');
+
+    if (expiresAt) {
+      $('expires-note').textContent = isExpired
+        ? `Link scaduto il ${expiresAt.toLocaleDateString('it-IT', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Europe/Rome' })}`
+        : `Link valido fino al ${expiresAt.toLocaleDateString('it-IT', { day:'2-digit', month:'2-digit', year:'numeric', timeZone:'Europe/Rome' })}`;
+    }
+
+    // Configura bottoni download
+    const baseUrl = `/api/v1/asl/${TOKEN}`;
+    $('btn-pdf').href = baseUrl;
+    $('btn-csv').href = `${baseUrl}?format=csv`;
+
+    // Intercetta click per mostrare progresso
+    $('btn-pdf').addEventListener('click', e => {
+      e.preventDefault();
+      $('progress-pdf').classList.add('visible');
+      $('btn-pdf').style.opacity = '0.5';
+      $('btn-pdf').style.pointerEvents = 'none';
+
+      // Apri in nuova tab dopo breve ritardo (il browser gestisce il download)
+      const a = document.createElement('a');
+      a.href = baseUrl;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Nascondi progress dopo 15s
+      setTimeout(() => {
+        $('progress-pdf').classList.remove('visible');
+        $('btn-pdf').style.opacity = '';
+        $('btn-pdf').style.pointerEvents = '';
+      }, 15000);
+    });
+
+    $('btn-csv').addEventListener('click', e => {
+      e.preventDefault();
+      $('progress-csv').classList.add('visible');
+
+      const a = document.createElement('a');
+      a.href = `${baseUrl}?format=csv`;
+      a.download = '';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      setTimeout(() => { $('progress-csv').classList.remove('visible'); }, 5000);
+    });
+
+    // Mostra pagina
+    $('state-loading').classList.add('hidden');
+    $('state-main').classList.remove('hidden');
+    $('state-main').style.display = 'flex';
+  }
+
+  loadInfo();
+  </script>
+</body>
+</html>
