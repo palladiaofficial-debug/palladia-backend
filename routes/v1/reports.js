@@ -4,6 +4,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../../services/presenceReport');
+const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -337,6 +338,110 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Length', pdfBuffer.length);
   res.send(pdfBuffer);
+});
+
+// ── Worker Hours Report endpoints ─────────────────────────────────────────────
+// Parametri comuni: siteId (uuid), from (YYYY-MM-DD), to (YYYY-MM-DD), workerId? (uuid)
+// Max range: 366 giorni (export annuale)
+
+function validateHoursParams(req, res) {
+  const { siteId, from, to } = req.query;
+  if (!siteId || !from || !to) {
+    res.status(400).json({ error: 'siteId, from e to obbligatori (YYYY-MM-DD)' });
+    return null;
+  }
+  if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
+    res.status(400).json({ error: 'from e to devono essere YYYY-MM-DD' });
+    return null;
+  }
+  if (from > to) {
+    res.status(400).json({ error: 'from deve essere <= to' });
+    return null;
+  }
+  const daysDiff = (new Date(to) - new Date(from)) / 86_400_000;
+  if (daysDiff > 366) {
+    res.status(400).json({ error: 'Intervallo massimo 366 giorni' });
+    return null;
+  }
+  return { siteId, from, to, workerId: req.query.workerId || null };
+}
+
+// GET /api/v1/reports/worker-hours → JSON dati strutturati
+router.get('/reports/worker-hours', verifySupabaseJwt, async (req, res) => {
+  const params = validateHoursParams(req, res);
+  if (!params) return;
+
+  try {
+    const data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId);
+    res.json(data);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    console.error('[worker-hours] data error:', err.message);
+    res.status(500).json({ error: 'DATA_ERROR', detail: err.message });
+  }
+});
+
+// GET /api/v1/reports/worker-hours-pdf → PDF professionale (Puppeteer)
+router.get('/reports/worker-hours-pdf', verifySupabaseJwt, async (req, res) => {
+  const params = validateHoursParams(req, res);
+  if (!params) return;
+
+  let data;
+  try {
+    data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    console.error('[worker-hours-pdf] data error:', err.message);
+    return res.status(500).json({ error: 'DATA_ERROR', detail: err.message });
+  }
+
+  const html = generateWorkerHoursPdfHtml(data);
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await rendererPool.render(html, {
+      docTitle: `Report Ore — ${data.site.name}`,
+      rev:      1,
+    });
+  } catch (renderErr) {
+    console.error('[worker-hours-pdf] render error:', renderErr.message);
+    return res.status(500).json({ error: 'PDF_RENDER_ERROR' });
+  }
+
+  const filename = `ore-lavorate-${params.siteId}-${params.from}-${params.to}.pdf`;
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.send(pdfBuffer);
+});
+
+// GET /api/v1/reports/worker-hours-xlsx → Excel (.xlsx) — 3 fogli
+router.get('/reports/worker-hours-xlsx', verifySupabaseJwt, async (req, res) => {
+  const params = validateHoursParams(req, res);
+  if (!params) return;
+
+  let data;
+  try {
+    data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    console.error('[worker-hours-xlsx] data error:', err.message);
+    return res.status(500).json({ error: 'DATA_ERROR', detail: err.message });
+  }
+
+  let xlsxBuffer;
+  try {
+    xlsxBuffer = generateWorkerHoursXlsx(data);
+  } catch (xlsxErr) {
+    console.error('[worker-hours-xlsx] xlsx error:', xlsxErr.message);
+    return res.status(500).json({ error: 'XLSX_ERROR' });
+  }
+
+  const filename = `ore-lavorate-${params.siteId}-${params.from}-${params.to}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Length', xlsxBuffer.length);
+  res.send(xlsxBuffer);
 });
 
 module.exports = router;
