@@ -182,7 +182,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── GET /api/v1/reports/sites/:id/presenze?from=YYYY-MM-DD&to=YYYY-MM-DD ─────
-// Genera PDF "Registro Presenze Cantiere" — stile identico al POS PalladIA.
+// Genera PDF "Registro Presenze Cantiere" — stile identico al POS Palladia.
 // Protetto: JWT + company membership (verifySupabaseJwt popola req.companyId).
 // Il company_id è derivato SEMPRE dal JWT, mai dal client → sicurezza multi-tenant.
 router.get('/reports/sites/:id/presenze', verifySupabaseJwt, async (req, res) => {

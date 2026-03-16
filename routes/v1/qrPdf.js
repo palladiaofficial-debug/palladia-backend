@@ -60,102 +60,227 @@ router.get('/sites/:siteId/qr-pdf', verifySupabaseJwt, async (req, res) => {
     day: '2-digit', month: 'long', year: 'numeric'
   });
 
-  // 6. Costruisce HTML della pagina stampabile
+  // 6. Costruisce HTML della pagina stampabile A4
   const html = `<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: A4 portrait; margin: 20mm; }
+    @page { size: A4 portrait; margin: 22mm 20mm 20mm 20mm; }
     html, body {
       width: 210mm;
       font-family: Arial, Helvetica, sans-serif;
       background: #ffffff;
       color: #111827;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
     .page {
       width: 100%;
-      min-height: 257mm; /* 297 - 20 - 20 */
+      min-height: 255mm;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
       text-align: center;
       padding: 0;
     }
+
+    /* ── Top bar ── */
+    .topbar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #111827;
+      padding-bottom: 12px;
+      margin-bottom: 36px;
+    }
     .brand {
-      font-size: 10px;
+      font-size: 13px;
       font-weight: 700;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.22em;
+      color: #111827;
+      text-transform: uppercase;
+    }
+    .company-name {
+      font-size: 11px;
+      font-weight: 600;
+      color: #6b7280;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    /* ── Title block ── */
+    .section-label {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.2em;
       color: #9ca3af;
       text-transform: uppercase;
       margin-bottom: 8px;
     }
-    .company-name {
-      font-size: 15px;
-      font-weight: 600;
-      color: #374151;
-      margin-bottom: 32px;
-    }
     .site-name {
-      font-size: 28px;
+      font-size: 30px;
       font-weight: 700;
       color: #111827;
-      margin-bottom: 8px;
-      line-height: 1.2;
+      line-height: 1.15;
+      margin-bottom: 6px;
+      letter-spacing: -0.01em;
     }
     .site-address {
-      font-size: 14px;
+      font-size: 13px;
       color: #6b7280;
       margin-bottom: 40px;
     }
+
+    /* ── QR block ── */
     .qr-wrap {
       background: #ffffff;
-      border: 2px solid #e5e7eb;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 28px;
+      border: 2px solid #111827;
+      border-radius: 8px;
+      padding: 18px;
+      margin-bottom: 32px;
       display: inline-block;
     }
     .qr-wrap img {
       display: block;
-      width: 200px;
-      height: 200px;
+      width: 270px;
+      height: 270px;
     }
-    .cta {
-      font-size: 15px;
-      font-weight: 600;
+
+    /* ── Instruction ── */
+    .instruction-title {
+      font-size: 16px;
+      font-weight: 700;
       color: #111827;
       margin-bottom: 10px;
+      line-height: 1.3;
     }
-    .validity {
+    .instruction-sub {
       font-size: 12px;
-      color: #9ca3af;
-      margin-bottom: 48px;
+      color: #6b7280;
+      max-width: 340px;
+      margin: 0 auto 28px;
+      line-height: 1.5;
     }
-    .footer {
-      font-size: 10px;
-      color: #d1d5db;
-      border-top: 1px solid #f3f4f6;
-      padding-top: 12px;
-      width: 100%;
+
+    /* ── Steps row ── */
+    .steps {
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      gap: 0;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 36px;
+      width: 340px;
+    }
+    .step {
+      flex: 1;
+      padding: 10px 8px;
       text-align: center;
+      border-right: 1px solid #e5e7eb;
+    }
+    .step:last-child { border-right: none; }
+    .step-num {
+      font-size: 10px;
+      font-weight: 700;
+      color: #9ca3af;
+      display: block;
+      margin-bottom: 3px;
+    }
+    .step-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #374151;
+      line-height: 1.3;
+    }
+
+    /* ── Validity ── */
+    .validity {
+      font-size: 10px;
+      color: #9ca3af;
+      margin-bottom: 0;
+    }
+
+    /* ── Footer ── */
+    .footer {
+      margin-top: auto;
+      width: 100%;
+      padding-top: 14px;
+      border-top: 1px solid #e5e7eb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .footer-left {
+      font-size: 9px;
+      color: #d1d5db;
+      text-align: left;
+    }
+    .footer-right {
+      font-size: 9px;
+      color: #d1d5db;
+      text-align: right;
     }
   </style>
 </head>
 <body>
   <div class="page">
-    <div class="brand">PALLADIA</div>
-    <div class="company-name">${escapeHtml(companyName)}</div>
-    <div class="site-name">${escapeHtml(site.name)}</div>
-    ${site.address ? `<div class="site-address">${escapeHtml(site.address)}</div>` : '<div class="site-address">&nbsp;</div>'}
-    <div class="qr-wrap">
-      <img src="${qrDataUrl}" alt="QR Code timbratura" width="200" height="200">
+
+    <!-- Top bar -->
+    <div class="topbar">
+      <div class="brand">PALLADIA</div>
+      ${companyName ? `<div class="company-name">${escapeHtml(companyName)}</div>` : ''}
     </div>
-    <div class="cta">Inquadra il QR con il tuo smartphone per timbrare presenza</div>
-    <div class="validity">Valido fino al: ${expiresDate}</div>
-    <div class="footer">Registro Presenze Digitale &bull; D.Lgs. 81/2008</div>
+
+    <!-- Site title -->
+    <div class="section-label">Timbratura Presenze Cantiere</div>
+    <div class="site-name">${escapeHtml(site.name)}</div>
+    ${site.address
+      ? `<div class="site-address">${escapeHtml(site.address)}</div>`
+      : '<div style="margin-bottom:40px"></div>'
+    }
+
+    <!-- QR Code -->
+    <div class="qr-wrap">
+      <img src="${qrDataUrl}" alt="QR Code timbratura cantiere" width="270" height="270">
+    </div>
+
+    <!-- Instruction -->
+    <div class="instruction-title">Inquadra il QR con il telefono</div>
+    <div class="instruction-sub">
+      Inserisci il codice fiscale al primo accesso e registra entrata o uscita.
+      Nessuna app da installare — funziona dal browser dello smartphone.
+    </div>
+
+    <!-- Steps -->
+    <div class="steps">
+      <div class="step">
+        <span class="step-num">01</span>
+        <span class="step-label">Inquadra il QR</span>
+      </div>
+      <div class="step">
+        <span class="step-num">02</span>
+        <span class="step-label">Inserisci codice fiscale</span>
+      </div>
+      <div class="step">
+        <span class="step-num">03</span>
+        <span class="step-label">Timbra entrata / uscita</span>
+      </div>
+    </div>
+
+    <!-- Validity -->
+    <div class="validity">QR valido fino al ${expiresDate}</div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-left">Registro presenze digitale tramite Palladia &bull; D.Lgs. 81/2008</div>
+      <div class="footer-right">${escapeHtml(site.name)}</div>
+    </div>
+
   </div>
 </body>
 </html>`;

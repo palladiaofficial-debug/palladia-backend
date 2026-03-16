@@ -151,7 +151,7 @@ async function sendPasswordResetEmail({ to, resetLink }) {
   const body = `
     <h1 style="margin:0 0 8px;font-size:22px;color:#0f172a;">Reimposta la tua password</h1>
     <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">
-      Hai richiesto il reset della password per il tuo account PalladIA.<br />
+      Hai richiesto il reset della password per il tuo account Palladia.<br />
       Clicca il pulsante qui sotto per scegliere una nuova password.
       Il link è valido per <strong>60 minuti</strong>.
     </p>
@@ -164,7 +164,7 @@ async function sendPasswordResetEmail({ to, resetLink }) {
   return getResend().emails.send({
     from: FROM,
     to,
-    subject: 'Reimposta la tua password — PalladIA',
+    subject: 'Reimposta la tua password — Palladia',
     html: layout('Reimposta password', body),
   });
 }
@@ -248,7 +248,7 @@ async function sendMissingExitAlert({ companyId, date, missingList }) {
     </p>
     ${siteRows}
     <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;line-height:1.6;">
-      Questo alert viene generato automaticamente da PalladIA al termine della giornata lavorativa.
+      Questo alert viene generato automaticamente da Palladia al termine della giornata lavorativa.
       I dati di presenza sono registrati in modo append-only e non modificabili.
     </p>
   `;
@@ -256,7 +256,7 @@ async function sendMissingExitAlert({ companyId, date, missingList }) {
   return getResend().emails.send({
     from: FROM,
     to:   adminEmails,
-    subject: `PalladIA — ${missingList.length} uscite mancanti del ${dateDisplay}`,
+    subject: `Palladia — ${missingList.length} uscite mancanti del ${dateDisplay}`,
     html: layout(`Alert uscite mancanti — ${dateDisplay}`, body)
   });
 }

@@ -147,4 +147,43 @@ router.post('/sites/:siteId/workers', verifySupabaseJwt, async (req, res) => {
   res.status(201).json(data);
 });
 
+// DELETE /api/v1/sites/:siteId/workers/:workerId — rimuovi lavoratore dal cantiere (PRIVATO)
+router.delete('/sites/:siteId/workers/:workerId', verifySupabaseJwt, async (req, res) => {
+  const { siteId, workerId } = req.params;
+
+  // Verifica che il cantiere appartenga alla company dell'utente
+  const { data: site, error: siteErr } = await supabase
+    .from('sites')
+    .select('id')
+    .eq('id', siteId)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (siteErr || !site) {
+    return res.status(403).json({ error: 'Cantiere non trovato o non appartiene alla tua azienda' });
+  }
+
+  const { error } = await supabase
+    .from('worksite_workers')
+    .delete()
+    .eq('site_id', siteId)
+    .eq('worker_id', workerId)
+    .eq('company_id', req.companyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'worker.remove_from_site',
+    targetType: 'worker',
+    targetId:   workerId,
+    payload:    { site_id: siteId },
+    req
+  });
+
+  res.status(204).end();
+});
+
 module.exports = router;

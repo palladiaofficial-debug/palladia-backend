@@ -1,6 +1,6 @@
 # Palladia — Backend API
 
-REST API server for PalladIA, a digital attendance management platform for Italian construction sites.
+REST API server for Palladia, a digital attendance management platform for Italian construction sites.
 
 **Live:** `https://palladia-backend-production.up.railway.app`
 **Frontend repo:** [`palladiaofficial-debug/palladia`](https://github.com/palladiaofficial-debug/palladia)

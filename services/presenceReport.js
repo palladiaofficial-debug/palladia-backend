@@ -694,7 +694,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
       <div class="cover-badge">Registro Ufficiale Presenze</div>
       <div class="cover-title">Registro Presenze<br>Cantiere</div>
       <div class="cover-subtitle">
-        Generato automaticamente tramite sistema digitale geolocalizzato PalladIA.
+        Generato automaticamente tramite sistema digitale geolocalizzato Palladia.
         Ogni timbratura è verificata server-side con geofence GPS e registrata
         in database append-only (immutabile).
       </div>
@@ -788,7 +788,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
   <div class="section-title">Dichiarazione e note sul documento</div>
   <div class="declaration">
     <p>
-      Il presente registro è stato generato automaticamente dal sistema PalladIA con
+      Il presente registro è stato generato automaticamente dal sistema Palladia con
       tracciamento geolocalizzato e controllo di prossimità al cantiere. Ogni timbratura
       è verificata server-side mediante geofence GPS
       (raggio configurato: <strong>${site.geofence_radius_m != null ? site.geofence_radius_m + 'm' : 'non configurato'}</strong>)
@@ -823,7 +823,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
       Timezone     : Europe/Rome<br>
       Cantiere     : ${esc(site.name)} / ${site.id}<br>
       Impresa      : ${esc(company.name || '—')}<br>
-      Sistema      : PalladIA — Registro Digitale Presenze v1.0
+      Sistema      : Palladia — Registro Digitale Presenze v1.0
     </div>
   </div>
 

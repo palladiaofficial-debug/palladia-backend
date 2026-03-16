@@ -2,7 +2,7 @@
 /**
  * scripts/test_badge_flow.js
  *
- * End-to-end integration test for the full PalladIA badge flow.
+ * End-to-end integration test for the full Palladia badge flow.
  * Tests both the admin API (JWT-protected) and the public scan endpoints.
  *
  * Env required:
@@ -106,7 +106,7 @@ function genTestCF() {
 // ── Main ──────────────────────────────────────────────────────────────────────
 async function run() {
   console.log('\n' + '═'.repeat(60));
-  console.log(' PalladIA — Badge Flow End-to-End Test');
+  console.log(' Palladia — Badge Flow End-to-End Test');
   console.log(`  base:     ${BASE}`);
   console.log(`  worksite: ${WSITE_ID}`);
   console.log(`  delay:    ${EXIT_DELAY}ms between ENTRY and EXIT`);
