@@ -5,8 +5,9 @@ const { Resend } = require('resend');
 // Fallback sicuro per test: usa il dominio Resend (funziona sempre senza DNS).
 const FROM = process.env.RESEND_FROM || 'Palladia <onboarding@resend.dev>';
 
-// URL app — usato nei link delle email. Configura APP_BASE_URL su Railway.
-const APP_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+// URL frontend — usato nei link delle email (es. "Apri la dashboard").
+// Configura FRONTEND_URL su Railway. Es: https://palladia.net
+const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
 
 // Inizializzazione lazy: evita crash al boot se RESEND_API_KEY non è impostata.
 function getResend() {
