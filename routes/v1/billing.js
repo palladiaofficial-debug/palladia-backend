@@ -4,7 +4,9 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { getStripe, getPriceId } = require('../../services/stripe');
 
-const APP_URL = () => (process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
+// FRONTEND_URL = URL Vercel del frontend (per redirect Stripe)
+// APP_BASE_URL è usato da qr.js/asl.js per URL backend — NON usarlo qui.
+const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
 
 // ── GET /api/v1/billing/status ─────────────────────────────────────────────
 // Restituisce stato abbonamento corrente della company.
@@ -84,8 +86,8 @@ router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
     mode:                'subscription',
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${APP_URL()}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url:  `${APP_URL()}/paywall?canceled=true`,
+    success_url: `${FRONTEND_URL()}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url:  `${FRONTEND_URL()}/paywall?canceled=true`,
     client_reference_id: req.companyId,
     metadata: { company_id: req.companyId, plan },
     subscription_data: { metadata: { company_id: req.companyId, plan } },
@@ -129,7 +131,7 @@ router.post('/billing/portal', verifySupabaseJwt, async (req, res) => {
   try {
     const session = await stripe.billingPortal.sessions.create({
       customer:   company.stripe_customer_id,
-      return_url: `${APP_URL()}/account`,
+      return_url: `${FRONTEND_URL()}/account`,
     });
     res.json({ url: session.url });
   } catch (e) {
