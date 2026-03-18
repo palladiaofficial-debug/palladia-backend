@@ -26,6 +26,7 @@
     "puppeteer": "^24.37.5",
     "qrcode": "^1.5.4",
     "resend": "^6.9.3",
+    "stripe": "^20.4.1",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

@@ -54,6 +54,101 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id']
 }));
+// ── Stripe Webhook — DEVE stare prima di express.json() ────────────────────
+// Stripe invia il body come raw bytes; la verifica firma richiede il raw body.
+app.post('/api/webhooks/stripe',
+  require('express').raw({ type: 'application/json' }),
+  async (req, res) => {
+    const sig     = req.headers['stripe-signature'];
+    const secret  = process.env.STRIPE_WEBHOOK_SECRET;
+    const supabaseW = require('./lib/supabase');
+
+    if (!secret) {
+      console.warn('[stripe-webhook] STRIPE_WEBHOOK_SECRET non configurata — webhook ignorato');
+      return res.sendStatus(200);
+    }
+
+    let event;
+    try {
+      const { getStripe } = require('./services/stripe');
+      event = getStripe().webhooks.constructEvent(req.body, sig, secret);
+    } catch (e) {
+      console.error('[stripe-webhook] firma non valida:', e.message);
+      return res.status(400).send(`Webhook Error: ${e.message}`);
+    }
+
+    console.log(`[stripe-webhook] evento: ${event.type}`);
+
+    try {
+      if (event.type === 'checkout.session.completed') {
+        const session   = event.data.object;
+        const companyId = session.client_reference_id || session.metadata?.company_id;
+        const plan      = session.metadata?.plan || 'base';
+        if (companyId) {
+          await supabaseW.from('companies').update({
+            stripe_customer_id:     session.customer,
+            stripe_subscription_id: session.subscription,
+            subscription_status:    'active',
+            subscription_plan:      plan,
+          }).eq('id', companyId);
+          console.log(`[stripe-webhook] company ${companyId} attivata — piano ${plan}`);
+        }
+      }
+
+      if (event.type === 'customer.subscription.updated') {
+        const sub = event.data.object;
+        const { data: company } = await supabaseW
+          .from('companies')
+          .select('id')
+          .eq('stripe_subscription_id', sub.id)
+          .maybeSingle();
+        if (company) {
+          const statusMap = { active: 'active', past_due: 'past_due', canceled: 'canceled', unpaid: 'past_due' };
+          await supabaseW.from('companies').update({
+            subscription_status:             statusMap[sub.status] || sub.status,
+            subscription_current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+          }).eq('id', company.id);
+        }
+      }
+
+      if (event.type === 'customer.subscription.deleted') {
+        const sub = event.data.object;
+        const { data: company } = await supabaseW
+          .from('companies')
+          .select('id')
+          .eq('stripe_subscription_id', sub.id)
+          .maybeSingle();
+        if (company) {
+          await supabaseW.from('companies').update({
+            subscription_status:    'canceled',
+            stripe_subscription_id: null,
+          }).eq('id', company.id);
+          console.log(`[stripe-webhook] company ${company.id} abbonamento cancellato`);
+        }
+      }
+
+      if (event.type === 'invoice.payment_failed') {
+        const inv = event.data.object;
+        const { data: company } = await supabaseW
+          .from('companies')
+          .select('id')
+          .eq('stripe_customer_id', inv.customer)
+          .maybeSingle();
+        if (company) {
+          await supabaseW.from('companies')
+            .update({ subscription_status: 'past_due' })
+            .eq('id', company.id);
+          console.log(`[stripe-webhook] company ${company.id} pagamento fallito`);
+        }
+      }
+    } catch (e) {
+      console.error('[stripe-webhook] errore gestione evento:', e.message);
+    }
+
+    res.sendStatus(200);
+  }
+);
+
 app.use(express.json({ limit: '10mb' }));
 
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────

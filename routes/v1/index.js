@@ -19,6 +19,9 @@ router.use('/', require('./auditLog'));
 router.use('/', require('./qrPdf'));
 router.use('/', require('./onboarding'));
 
+// Billing / abbonamenti (JWT richiesto)
+router.use('/', require('./billing'));
+
 // Route pubbliche scan badge (no JWT — session token o signed QR link)
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
 router.use('/', require('./scan'));
