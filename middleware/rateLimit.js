@@ -20,7 +20,9 @@ const identifyLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => {
-    const ip  = req.ip || 'unknown';
+    const raw = req.ip || '';
+    // Normalizza IPv6-mapped IPv4 (::ffff:1.2.3.4) a plain IPv4
+    const ip  = raw.startsWith('::ffff:') ? raw.slice(7) : (raw || 'unknown');
     const wid = (req.body && req.body.worksite_id) || 'unknown';
     return `identify:${ip}:${wid}`;
   },
