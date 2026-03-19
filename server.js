@@ -1284,6 +1284,20 @@ app.get('/api/pdf-smoke', async (req, res) => {
   }
 });
 
+// ── App-level error handler — cattura tutto ciò che sfugge ai router ─────────
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('[app-error]', req.method, req.path, err.status, err.message, err.stack);
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({
+      error:  'APP_ERROR',
+      detail: err.message,
+      path:   req.path,
+      type:   err.type || err.name || 'unknown'
+    });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log('ROUTES OK: /api/ping, /api/pdf-diag, /api/pdf-smoke');
