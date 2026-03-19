@@ -53,6 +53,74 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   ? 'compat'
   : 'strict';
 
+// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (PUBBLICO, temporaneo) ──────
+// Testa ogni query DB usata da /scan/identify e restituisce quale step fallisce.
+// Chiamare con: GET /api/v1/scan/identify-diag?worksite_id=<uuid>
+router.get('/scan/identify-diag', async (req, res) => {
+  const { worksite_id } = req.query;
+  const results = {};
+
+  // Step 1: connessione Supabase + query sites
+  try {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('id, company_id')
+      .eq('id', worksite_id || '00000000-0000-0000-0000-000000000000')
+      .maybeSingle();
+    results.sites_query = error
+      ? { ok: false, code: error.code, msg: error.message }
+      : { ok: true, found: !!data, company_id: data?.company_id || null };
+  } catch (e) {
+    results.sites_query = { ok: false, exception: e.message };
+  }
+
+  // Step 2: query workers table (colonne usate da identify)
+  try {
+    const { data, error } = await supabase
+      .from('workers')
+      .select('id, full_name, is_active')
+      .eq('fiscal_code', 'DIAG0000DIAG0000')
+      .limit(1);
+    results.workers_query = error
+      ? { ok: false, code: error.code, msg: error.message }
+      : { ok: true, columns_ok: true };
+  } catch (e) {
+    results.workers_query = { ok: false, exception: e.message };
+  }
+
+  // Step 3: query worksite_workers table (colonne usate da identify)
+  try {
+    const { data, error } = await supabase
+      .from('worksite_workers')
+      .select('id, status')
+      .eq('site_id', '00000000-0000-0000-0000-000000000000')
+      .limit(1);
+    results.worksite_workers_query = error
+      ? { ok: false, code: error.code, msg: error.message }
+      : { ok: true, columns_ok: true };
+  } catch (e) {
+    results.worksite_workers_query = { ok: false, exception: e.message };
+  }
+
+  // Step 4: query worker_device_sessions table
+  try {
+    const { data, error } = await supabase
+      .from('worker_device_sessions')
+      .select('id')
+      .eq('token_hash', 'diag')
+      .limit(1);
+    results.sessions_query = error
+      ? { ok: false, code: error.code, msg: error.message }
+      : { ok: true, columns_ok: true };
+  } catch (e) {
+    results.sessions_query = { ok: false, exception: e.message };
+  }
+
+  // Stato generale
+  const allOk = Object.values(results).every(r => r.ok);
+  res.status(allOk ? 200 : 500).json({ all_ok: allOk, steps: results });
+});
+
 // ── GET /api/v1/scan/verify-qr — PUBBLICO ────────────────────────────────────
 router.get('/scan/verify-qr', async (req, res) => {
   const { site, t, exp } = req.query;
