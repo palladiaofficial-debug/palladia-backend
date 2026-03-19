@@ -158,6 +158,9 @@ app.use(express.json({ limit: '10mb' }));
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 
+// Favicon — evita 404 nei log
+app.get('/favicon.ico', (req, res) => res.status(204).end());
+
 // ── Frontend badge (pagine statiche) ────────────────────────────────────────
 // Serve i file in /public (scan.html, setup.html)
 // Le route SPA sono dichiarate PRIMA di express.static per sicurezza esplicita.

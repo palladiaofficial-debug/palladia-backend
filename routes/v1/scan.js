@@ -146,7 +146,7 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
   // Cerca worker per CF nella company del cantiere
   const { data: worker, error: wErr } = await supabase
     .from('workers')
-    .select('id, full_name, first_name, last_name, is_active')
+    .select('id, full_name, is_active')
     .eq('company_id', companyId)
     .eq('fiscal_code', fc)
     .maybeSingle();
@@ -168,8 +168,8 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     const nameParts = parseFullName(full_name);
     const { data: newWorker, error: createErr } = await supabase
       .from('workers')
-      .insert([{ company_id: companyId, ...nameParts, fiscal_code: fc }])
-      .select('id, full_name, first_name, last_name')
+      .insert([{ company_id: companyId, full_name: nameParts.full_name, fiscal_code: fc }])
+      .select('id, full_name')
       .single();
 
     if (createErr) {
@@ -467,7 +467,7 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
   // Recupera nome lavoratore per payload leggibile
   const { data: worker } = await supabase
     .from('workers')
-    .select('full_name, first_name, last_name')
+    .select('full_name')
     .eq('id', session.worker_id)
     .maybeSingle();
 
