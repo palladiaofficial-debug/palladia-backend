@@ -46,7 +46,7 @@ function isValidCoords(lat, lon) {
 
 const GPS_MAX_ACCURACY_M = (() => {
   const v = Number(process.env.GPS_MAX_ACCURACY_M);
-  return Number.isFinite(v) && v > 0 ? v : 80;
+  return Number.isFinite(v) && v > 0 ? v : 500;
 })();
 
 const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'compat'
