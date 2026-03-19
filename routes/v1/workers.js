@@ -39,10 +39,10 @@ router.post('/workers', verifySupabaseJwt, async (req, res) => {
     .from('workers')
     .insert([{
       company_id:  req.companyId,       // verificato da middleware
-      ...nameParts,
+      full_name:   nameParts.full_name,
       fiscal_code: fiscal_code.toUpperCase().trim()
     }])
-    .select('id, full_name, first_name, last_name, fiscal_code, is_active, created_at')
+    .select('id, full_name, fiscal_code, is_active, created_at')
     .single();
 
   // Duplicate fiscal_code nella stessa company

@@ -112,145 +112,183 @@ router.get('/scan/worksites/:worksiteId', async (req, res) => {
 // Nessun PIN richiesto: chiunque con il proprio CF può identificarsi.
 // La prima volta viene richiesto il nome completo per la registrazione.
 router.post('/scan/identify', identifyLimiter, async (req, res) => {
-  const { worksite_id, fiscal_code, full_name } = req.body;
+  try {
+    const { worksite_id, fiscal_code, full_name } = req.body || {};
 
-  if (!worksite_id || !fiscal_code) {
-    return res.status(400).json({
-      error:    'MISSING_FIELDS',
-      required: ['worksite_id', 'fiscal_code']
-    });
-  }
-  if (!isValidFiscalCode(fiscal_code)) {
-    return res.status(400).json({ error: 'INVALID_FISCAL_CODE' });
-  }
-  const fc = fiscal_code.toUpperCase().trim();
-
-  // Carica cantiere
-  const { data: site, error: siteErr } = await supabase
-    .from('sites')
-    .select('id, company_id')
-    .eq('id', worksite_id)
-    .maybeSingle();
-
-  if (siteErr) return res.status(500).json({ error: 'DB_ERROR' });
-  if (!site)   return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
-  if (!site.company_id) {
-    return res.status(503).json({
-      error:   'WORKSITE_NOT_CONFIGURED',
-      message: 'Cantiere non collegato a nessuna azienda. Contattare l\'amministratore.'
-    });
-  }
-
-  const companyId = site.company_id;
-
-  // Cerca worker per CF nella company del cantiere
-  const { data: worker, error: wErr } = await supabase
-    .from('workers')
-    .select('id, full_name, is_active')
-    .eq('company_id', companyId)
-    .eq('fiscal_code', fc)
-    .maybeSingle();
-
-  if (wErr) return res.status(500).json({ error: 'DB_ERROR' });
-
-  let workerId, workerName;
-
-  if (!worker) {
-    // Worker sconosciuto — prima registrazione: richiede nome completo
-    if (!full_name || String(full_name).trim().length < 2) {
+    if (!worksite_id || !fiscal_code) {
       return res.status(400).json({
-        error:        'FULL_NAME_REQUIRED',
-        pin_required: false,
-        message:      'Prima registrazione: inserire il nome completo.'
+        error:    'MISSING_FIELDS',
+        required: ['worksite_id', 'fiscal_code']
+      });
+    }
+    if (!isValidFiscalCode(fiscal_code)) {
+      return res.status(400).json({ error: 'INVALID_FISCAL_CODE' });
+    }
+    const fc = fiscal_code.toUpperCase().trim();
+
+    // Carica cantiere
+    const { data: site, error: siteErr } = await supabase
+      .from('sites')
+      .select('id, company_id')
+      .eq('id', worksite_id)
+      .maybeSingle();
+
+    if (siteErr) {
+      console.error('[identify] site query error:', siteErr.code, siteErr.message);
+      return res.status(500).json({ error: 'DB_ERROR', detail: 'site_query' });
+    }
+    if (!site)   return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
+    if (!site.company_id) {
+      return res.status(503).json({
+        error:   'WORKSITE_NOT_CONFIGURED',
+        message: 'Cantiere non collegato a nessuna azienda. Contattare l\'amministratore.'
       });
     }
 
-    const nameParts = parseFullName(full_name);
-    const { data: newWorker, error: createErr } = await supabase
+    const companyId = site.company_id;
+
+    // Cerca worker per CF nella company del cantiere
+    const { data: worker, error: wErr } = await supabase
       .from('workers')
-      .insert([{ company_id: companyId, full_name: nameParts.full_name, fiscal_code: fc }])
-      .select('id, full_name')
+      .select('id, full_name, is_active')
+      .eq('company_id', companyId)
+      .eq('fiscal_code', fc)
+      .maybeSingle();
+
+    if (wErr) {
+      console.error('[identify] worker query error:', wErr.code, wErr.message);
+      return res.status(500).json({ error: 'DB_ERROR', detail: 'worker_query' });
+    }
+
+    let workerId, workerName;
+
+    if (!worker) {
+      // Worker sconosciuto — prima registrazione: richiede nome completo
+      if (!full_name || String(full_name).trim().length < 2) {
+        return res.status(400).json({
+          error:        'FULL_NAME_REQUIRED',
+          pin_required: false,
+          message:      'Prima registrazione: inserire il nome completo.'
+        });
+      }
+
+      const nameParts = parseFullName(full_name);
+      const { data: newWorker, error: createErr } = await supabase
+        .from('workers')
+        .insert([{ company_id: companyId, full_name: nameParts.full_name, fiscal_code: fc }])
+        .select('id, full_name')
+        .single();
+
+      if (createErr) {
+        console.error('[identify] worker create error:', createErr.code, createErr.message);
+        if (createErr.code === '23505') {
+          // Race condition: worker creato da un'altra richiesta concorrente — ricarica
+          const { data: raceWorker, error: raceErr } = await supabase
+            .from('workers')
+            .select('id, full_name, is_active')
+            .eq('company_id', companyId)
+            .eq('fiscal_code', fc)
+            .maybeSingle();
+          if (raceErr || !raceWorker) return res.status(409).json({ error: 'WORKER_ALREADY_EXISTS' });
+          if (!raceWorker.is_active)  return res.status(403).json({ error: 'WORKER_INACTIVE' });
+          workerId   = raceWorker.id;
+          workerName = workerDisplayName(raceWorker);
+        } else {
+          return res.status(500).json({ error: 'WORKER_CREATE_ERROR' });
+        }
+      } else {
+        workerId   = newWorker.id;
+        workerName = workerDisplayName(newWorker);
+      }
+
+    } else {
+      if (!worker.is_active) {
+        return res.status(403).json({ error: 'WORKER_INACTIVE' });
+      }
+      workerId   = worker.id;
+      workerName = workerDisplayName(worker);
+    }
+
+    // Verifica o crea associazione worker ↔ cantiere (automatica, senza PIN)
+    const { data: assoc, error: assocSelErr } = await supabase
+      .from('worksite_workers')
+      .select('id, status')
+      .eq('site_id', worksite_id)
+      .eq('worker_id', workerId)
+      .maybeSingle();
+
+    if (assocSelErr) {
+      console.error('[identify] assoc select error:', assocSelErr.code, assocSelErr.message);
+      return res.status(500).json({ error: 'DB_ERROR', detail: 'assoc_query' });
+    }
+
+    if (!assoc) {
+      // Auto-associa il worker al cantiere
+      const { error: assocErr } = await supabase
+        .from('worksite_workers')
+        .insert([{ company_id: companyId, site_id: worksite_id, worker_id: workerId, status: 'active' }]);
+
+      if (assocErr) {
+        // 23505 = race condition: un'altra richiesta ha già inserito l'associazione — OK
+        if (assocErr.code !== '23505') {
+          console.error('[identify] assoc insert error:', assocErr.code, assocErr.message);
+          return res.status(500).json({ error: 'ASSOCIATION_ERROR' });
+        }
+      }
+
+    } else if (assoc.status !== 'active') {
+      return res.status(403).json({ error: 'WORKER_NOT_ACTIVE_ON_SITE' });
+    }
+
+    // Max 2 sessioni attive per worker — revoca la più vecchia se necessario
+    {
+      const now = new Date().toISOString();
+      const { data: activeSessions, error: sessListErr } = await supabase
+        .from('worker_device_sessions')
+        .select('id, created_at')
+        .eq('worker_id', workerId)
+        .is('revoked_at', null)
+        .gt('expires_at', now)
+        .order('created_at', { ascending: true });
+
+      if (!sessListErr && activeSessions && activeSessions.length >= 2) {
+        const oldest = activeSessions[0];
+        await supabase
+          .from('worker_device_sessions')
+          .update({ revoked_at: now })
+          .eq('id', oldest.id);
+      }
+    }
+
+    // Genera session token
+    const sessionToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash    = hashToken(sessionToken);
+
+    const { data: session, error: sessErr } = await supabase
+      .from('worker_device_sessions')
+      .insert([{ company_id: companyId, worker_id: workerId, token_hash: tokenHash }])
+      .select('id')
       .single();
 
-    if (createErr) {
-      console.error('[identify] worker create error:', createErr.code, createErr.message);
-      if (createErr.code === '23505') {
-        return res.status(409).json({ error: 'WORKER_ALREADY_EXISTS' });
-      }
-      return res.status(500).json({ error: 'WORKER_CREATE_ERROR' });
+    if (sessErr) {
+      console.error('[identify] session insert error:', sessErr.code, sessErr.message);
+      return res.status(500).json({ error: 'SESSION_CREATE_ERROR' });
     }
-    workerId   = newWorker.id;
-    workerName = workerDisplayName(newWorker);
 
-  } else {
-    if (!worker.is_active) {
-      return res.status(403).json({ error: 'WORKER_INACTIVE' });
-    }
-    workerId   = worker.id;
-    workerName = workerDisplayName(worker);
-  }
+    res.json({
+      session_token:   sessionToken,
+      worker_name:     workerName,
+      worker_id:       workerId,
+      session_id:      session.id,
+      expires_in_days: 60
+    });
 
-  // Verifica o crea associazione worker ↔ cantiere (automatica, senza PIN)
-  const { data: assoc, error: assocSelErr } = await supabase
-    .from('worksite_workers')
-    .select('id, status')
-    .eq('site_id', worksite_id)
-    .eq('worker_id', workerId)
-    .maybeSingle();
-
-  if (assocSelErr) return res.status(500).json({ error: 'DB_ERROR' });
-
-  if (!assoc) {
-    // Auto-associa il worker al cantiere
-    const { error: assocErr } = await supabase
-      .from('worksite_workers')
-      .insert([{ company_id: companyId, site_id: worksite_id, worker_id: workerId, status: 'active' }]);
-
-    if (assocErr) return res.status(500).json({ error: 'ASSOCIATION_ERROR' });
-
-  } else if (assoc.status !== 'active') {
-    return res.status(403).json({ error: 'WORKER_NOT_ACTIVE_ON_SITE' });
-  }
-
-  // Max 2 sessioni attive per worker — revoca la più vecchia se necessario
-  {
-    const now = new Date().toISOString();
-    const { data: activeSessions, error: sessListErr } = await supabase
-      .from('worker_device_sessions')
-      .select('id, created_at')
-      .eq('worker_id', workerId)
-      .is('revoked_at', null)
-      .gt('expires_at', now)
-      .order('created_at', { ascending: true });
-
-    if (!sessListErr && activeSessions && activeSessions.length >= 2) {
-      const oldest = activeSessions[0];
-      await supabase
-        .from('worker_device_sessions')
-        .update({ revoked_at: now })
-        .eq('id', oldest.id);
+  } catch (err) {
+    console.error('[identify] unexpected error:', err.message, err.stack);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'INTERNAL_ERROR' });
     }
   }
-
-  // Genera session token
-  const sessionToken = crypto.randomBytes(32).toString('hex');
-  const tokenHash    = hashToken(sessionToken);
-
-  const { data: session, error: sessErr } = await supabase
-    .from('worker_device_sessions')
-    .insert([{ company_id: companyId, worker_id: workerId, token_hash: tokenHash }])
-    .select('id')
-    .single();
-
-  if (sessErr) return res.status(500).json({ error: 'SESSION_CREATE_ERROR' });
-
-  res.json({
-    session_token:   sessionToken,
-    worker_name:     workerName,
-    worker_id:       workerId,
-    session_id:      session.id,
-    expires_in_days: 60
-  });
 });
 
 // ── POST /api/v1/scan/punch — PUBBLICO ────────────────────────────────────────
