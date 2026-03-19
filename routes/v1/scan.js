@@ -54,93 +54,97 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   : 'strict';
 
 // ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (PUBBLICO, temporaneo) ──────
+// Simula l'intero flusso identify con dati reali + cleanup automatico.
+// Uso: GET /api/v1/scan/identify-diag?worksite_id=<uuid-reale>
 router.get('/scan/identify-diag', async (req, res) => {
   const { worksite_id } = req.query;
-  const results = {};
+  const steps = {};
+  const cleanup = [];
 
-  // Step 0: verifica chiave Supabase usata (service_role bypassa RLS; anon key no)
+  // Step 0: service_role key
   const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-  results.supabase_key = {
-    service_role_key_present: svcKey.length > 0,
-    key_prefix: svcKey ? svcKey.slice(0, 12) + '…' : '(vuoto)'
-  };
+  steps.key = { service_role_present: svcKey.length > 0, prefix: svcKey ? svcKey.slice(0,12)+'…' : '(vuoto)' };
 
-  // Step 1: SELECT sites
-  try {
-    const { data, error } = await supabase
-      .from('sites')
-      .select('id, company_id')
-      .eq('id', worksite_id || '00000000-0000-0000-0000-000000000000')
-      .maybeSingle();
-    results.sites_select = error
-      ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true, found: !!data };
-  } catch (e) {
-    results.sites_select = { ok: false, exception: e.message };
+  if (!worksite_id) {
+    return res.status(400).json({ error: 'Passa ?worksite_id=<uuid> per il test completo', steps });
   }
 
-  // Step 2: SELECT workers
+  // Step 1: SELECT site reale
+  let companyId = null;
+  try {
+    const { data, error } = await supabase.from('sites').select('id, company_id').eq('id', worksite_id).maybeSingle();
+    if (error) { steps.site = { ok: false, code: error.code, msg: error.message }; }
+    else if (!data) { steps.site = { ok: false, msg: 'WORKSITE_NOT_FOUND' }; }
+    else if (!data.company_id) { steps.site = { ok: false, msg: 'WORKSITE_NOT_CONFIGURED' }; }
+    else { steps.site = { ok: true }; companyId = data.company_id; }
+  } catch (e) { steps.site = { ok: false, exception: e.message }; }
+
+  if (!companyId) {
+    return res.json({ all_ok: false, steps });
+  }
+
+  // Step 2: INSERT worker di test → poi DELETE
+  const testFc = 'DIAGTEST0DIAGTEST';
+  let testWorkerId = null;
   try {
     const { data, error } = await supabase
       .from('workers')
-      .select('id, full_name, is_active')
-      .eq('fiscal_code', 'DIAG0000DIAG0000')
-      .limit(1);
-    results.workers_select = error
-      ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true };
-  } catch (e) {
-    results.workers_select = { ok: false, exception: e.message };
-  }
-
-  // Step 3: SELECT worksite_workers
-  try {
-    const { data, error } = await supabase
-      .from('worksite_workers')
-      .select('id, status')
-      .eq('site_id', '00000000-0000-0000-0000-000000000000')
-      .limit(1);
-    results.worksite_workers_select = error
-      ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true };
-  } catch (e) {
-    results.worksite_workers_select = { ok: false, exception: e.message };
-  }
-
-  // Step 4: INSERT test su worker_device_sessions
-  // Con service_role: inserisce e restituisce 201; con anon key: 42501 RLS error
-  const diagHash = '_diag_test_' + Date.now();
-  let insertedId = null;
-  try {
-    const { data, error } = await supabase
-      .from('worker_device_sessions')
-      .insert([{
-        company_id:  '00000000-0000-0000-0000-000000000001',
-        worker_id:   '00000000-0000-0000-0000-000000000001',
-        token_hash:  diagHash
-      }])
-      .select('id')
-      .single();
-    if (error) {
-      results.sessions_insert = { ok: false, code: error.code, msg: error.message,
-        rls_blocked: error.code === '42501' };
+      .insert([{ company_id: companyId, full_name: '_diag_test_', fiscal_code: testFc }])
+      .select('id').single();
+    if (error && error.code === '23505') {
+      // già esiste da un test precedente — riusala
+      const { data: ex } = await supabase.from('workers').select('id').eq('company_id', companyId).eq('fiscal_code', testFc).maybeSingle();
+      testWorkerId = ex?.id || null;
+      steps.worker_insert = { ok: true, note: 'già esistente' };
+    } else if (error) {
+      steps.worker_insert = { ok: false, code: error.code, msg: error.message };
     } else {
-      insertedId = data?.id;
-      results.sessions_insert = { ok: true };
+      testWorkerId = data.id;
+      cleanup.push(() => supabase.from('workers').delete().eq('id', testWorkerId));
+      steps.worker_insert = { ok: true };
     }
-  } catch (e) {
-    results.sessions_insert = { ok: false, exception: e.message };
+  } catch (e) { steps.worker_insert = { ok: false, exception: e.message }; }
+
+  // Step 3: INSERT worksite_workers di test → poi DELETE
+  if (testWorkerId) {
+    try {
+      const { data, error } = await supabase
+        .from('worksite_workers')
+        .insert([{ company_id: companyId, site_id: worksite_id, worker_id: testWorkerId, status: 'active' }])
+        .select('id').single();
+      if (error && error.code === '23505') {
+        steps.worksite_workers_insert = { ok: true, note: 'già esistente' };
+      } else if (error) {
+        steps.worksite_workers_insert = { ok: false, code: error.code, msg: error.message };
+      } else {
+        cleanup.push(() => supabase.from('worksite_workers').delete().eq('id', data.id));
+        steps.worksite_workers_insert = { ok: true };
+      }
+    } catch (e) { steps.worksite_workers_insert = { ok: false, exception: e.message }; }
   }
 
-  // Cleanup: elimina la riga di test se inserita
-  if (insertedId) {
-    await supabase.from('worker_device_sessions').delete().eq('id', insertedId);
+  // Step 4: INSERT worker_device_sessions di test → poi DELETE
+  if (testWorkerId) {
+    const testHash = '_diag_' + Date.now();
+    try {
+      const { data, error } = await supabase
+        .from('worker_device_sessions')
+        .insert([{ company_id: companyId, worker_id: testWorkerId, token_hash: testHash }])
+        .select('id').single();
+      if (error) {
+        steps.session_insert = { ok: false, code: error.code, msg: error.message };
+      } else {
+        cleanup.push(() => supabase.from('worker_device_sessions').delete().eq('id', data.id));
+        steps.session_insert = { ok: true };
+      }
+    } catch (e) { steps.session_insert = { ok: false, exception: e.message }; }
   }
 
-  const allOk = Object.values(results)
-    .filter(r => typeof r.ok === 'boolean')
-    .every(r => r.ok);
-  res.status(allOk ? 200 : 500).json({ all_ok: allOk, steps: results });
+  // Cleanup — esegui in ordine inverso (sessions → worksite_workers → workers)
+  for (const fn of cleanup.reverse()) { try { await fn(); } catch (_) {} }
+
+  const allOk = Object.values(steps).filter(s => typeof s.ok === 'boolean').every(s => s.ok);
+  res.json({ all_ok: allOk, steps });
 });
 
 // ── GET /api/v1/scan/verify-qr — PUBBLICO ────────────────────────────────────
