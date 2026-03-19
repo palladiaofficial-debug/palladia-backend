@@ -26,4 +26,18 @@ router.use('/', require('./billing'));
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
 router.use('/', require('./scan'));
 
+// ── Error handler v1 — cattura qualsiasi errore non gestito nelle route ───────
+// Restituisce JSON invece dell'HTML di default di Express, con dettaglio errore.
+// eslint-disable-next-line no-unused-vars
+router.use((err, req, res, next) => {
+  console.error('[v1-error]', req.method, req.path, err.message, err.stack);
+  if (!res.headersSent) {
+    res.status(err.status || 500).json({
+      error:  'INTERNAL',
+      detail: err.message,
+      path:   req.path
+    });
+  }
+});
+
 module.exports = router;
