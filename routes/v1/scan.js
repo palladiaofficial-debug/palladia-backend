@@ -54,70 +54,92 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   : 'strict';
 
 // ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (PUBBLICO, temporaneo) ──────
-// Testa ogni query DB usata da /scan/identify e restituisce quale step fallisce.
-// Chiamare con: GET /api/v1/scan/identify-diag?worksite_id=<uuid>
 router.get('/scan/identify-diag', async (req, res) => {
   const { worksite_id } = req.query;
   const results = {};
 
-  // Step 1: connessione Supabase + query sites
+  // Step 0: verifica chiave Supabase usata (service_role bypassa RLS; anon key no)
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  results.supabase_key = {
+    service_role_key_present: svcKey.length > 0,
+    key_prefix: svcKey ? svcKey.slice(0, 12) + '…' : '(vuoto)'
+  };
+
+  // Step 1: SELECT sites
   try {
     const { data, error } = await supabase
       .from('sites')
       .select('id, company_id')
       .eq('id', worksite_id || '00000000-0000-0000-0000-000000000000')
       .maybeSingle();
-    results.sites_query = error
+    results.sites_select = error
       ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true, found: !!data, company_id: data?.company_id || null };
+      : { ok: true, found: !!data };
   } catch (e) {
-    results.sites_query = { ok: false, exception: e.message };
+    results.sites_select = { ok: false, exception: e.message };
   }
 
-  // Step 2: query workers table (colonne usate da identify)
+  // Step 2: SELECT workers
   try {
     const { data, error } = await supabase
       .from('workers')
       .select('id, full_name, is_active')
       .eq('fiscal_code', 'DIAG0000DIAG0000')
       .limit(1);
-    results.workers_query = error
+    results.workers_select = error
       ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true, columns_ok: true };
+      : { ok: true };
   } catch (e) {
-    results.workers_query = { ok: false, exception: e.message };
+    results.workers_select = { ok: false, exception: e.message };
   }
 
-  // Step 3: query worksite_workers table (colonne usate da identify)
+  // Step 3: SELECT worksite_workers
   try {
     const { data, error } = await supabase
       .from('worksite_workers')
       .select('id, status')
       .eq('site_id', '00000000-0000-0000-0000-000000000000')
       .limit(1);
-    results.worksite_workers_query = error
+    results.worksite_workers_select = error
       ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true, columns_ok: true };
+      : { ok: true };
   } catch (e) {
-    results.worksite_workers_query = { ok: false, exception: e.message };
+    results.worksite_workers_select = { ok: false, exception: e.message };
   }
 
-  // Step 4: query worker_device_sessions table
+  // Step 4: INSERT test su worker_device_sessions
+  // Con service_role: inserisce e restituisce 201; con anon key: 42501 RLS error
+  const diagHash = '_diag_test_' + Date.now();
+  let insertedId = null;
   try {
     const { data, error } = await supabase
       .from('worker_device_sessions')
+      .insert([{
+        company_id:  '00000000-0000-0000-0000-000000000001',
+        worker_id:   '00000000-0000-0000-0000-000000000001',
+        token_hash:  diagHash
+      }])
       .select('id')
-      .eq('token_hash', 'diag')
-      .limit(1);
-    results.sessions_query = error
-      ? { ok: false, code: error.code, msg: error.message }
-      : { ok: true, columns_ok: true };
+      .single();
+    if (error) {
+      results.sessions_insert = { ok: false, code: error.code, msg: error.message,
+        rls_blocked: error.code === '42501' };
+    } else {
+      insertedId = data?.id;
+      results.sessions_insert = { ok: true };
+    }
   } catch (e) {
-    results.sessions_query = { ok: false, exception: e.message };
+    results.sessions_insert = { ok: false, exception: e.message };
   }
 
-  // Stato generale
-  const allOk = Object.values(results).every(r => r.ok);
+  // Cleanup: elimina la riga di test se inserita
+  if (insertedId) {
+    await supabase.from('worker_device_sessions').delete().eq('id', insertedId);
+  }
+
+  const allOk = Object.values(results)
+    .filter(r => typeof r.ok === 'boolean')
+    .every(r => r.ok);
   res.status(allOk ? 200 : 500).json({ all_ok: allOk, steps: results });
 });
 
