@@ -53,9 +53,7 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   ? 'compat'
   : 'strict';
 
-// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (PUBBLICO, temporaneo) ──────
-// Simula l'intero flusso identify con dati reali + cleanup automatico.
-// Uso: GET /api/v1/scan/identify-diag?worksite_id=<uuid-reale>
+// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA ─────────────────────────────
 router.get('/scan/identify-diag', async (req, res) => {
   const { worksite_id } = req.query;
   const steps = {};

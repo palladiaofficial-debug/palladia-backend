@@ -1287,17 +1287,12 @@ app.get('/api/pdf-smoke', async (req, res) => {
   }
 });
 
-// ── App-level error handler — cattura tutto ciò che sfugge ai router ─────────
+// ── App-level error handler ───────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('[app-error]', req.method, req.path, err.status, err.message, err.stack);
+  console.error('[app-error]', req.method, req.path, err.message);
   if (!res.headersSent) {
-    res.status(err.status || 500).json({
-      error:  'APP_ERROR',
-      detail: err.message,
-      path:   req.path,
-      type:   err.type || err.name || 'unknown'
-    });
+    res.status(err.status || 500).json({ error: 'APP_ERROR', detail: err.message });
   }
 });
 
