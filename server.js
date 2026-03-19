@@ -35,13 +35,16 @@ const ALLOWED_ORIGINS = [
   // Dominio produzione
   'https://palladia.net',
   'https://www.palladia.net',
+  // Backend stesso (scan.html servita da Railway fa fetch allo stesso host)
+  process.env.APP_BASE_URL,
+  /^https:\/\/[a-z0-9-]+\.up\.railway\.app$/,
   // Preview Vercel e Lovable (match per prefisso)
   /^https:\/\/palladia[a-z0-9-]*\.vercel\.app$/,
   /^https:\/\/palladia[a-z0-9-]*\.lovable\.app$/,
   // Sviluppo locale
   'http://localhost:5173',
   'http://localhost:3000',
-];
+].filter(Boolean);
 
 app.use(cors({
   origin: (origin, callback) => {
