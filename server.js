@@ -90,7 +90,7 @@ app.post('/api/webhooks/stripe',
       if (event.type === 'checkout.session.completed') {
         const session   = event.data.object;
         const companyId = session.client_reference_id || session.metadata?.company_id;
-        const plan      = session.metadata?.plan || 'base';
+        const plan      = session.metadata?.plan || 'starter';
         if (companyId) {
           await supabaseW.from('companies').update({
             stripe_customer_id:     session.customer,
@@ -885,6 +885,9 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
 
     clearInterval(heartbeatTimer);
     heartbeatTimer = null;
+
+    // Emit AI risks content separately so the frontend can make it editable
+    sseWrite(res, `data: ${JSON.stringify({ type: 'risks', text: aiRisks })}\n\n`);
 
     sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento completo...' })}\n\n`);
 

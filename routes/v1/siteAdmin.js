@@ -3,6 +3,7 @@ const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { auditLog }          = require('../../lib/audit');
+const { getSiteLimit }      = require('../../services/stripe');
 
 // Tutti gli endpoint richiedono JWT + membership verificata
 // req.companyId è già stato verificato da verifySupabaseJwt
@@ -97,6 +98,44 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
       message: 'name è obbligatorio (min 2, max 200 caratteri)'
     });
   }
+
+  // ── Controllo limite cantieri per piano ──────────────────────────────────
+  const { data: company, error: compErr } = await supabase
+    .from('companies')
+    .select('subscription_plan, subscription_status, trial_ends_at')
+    .eq('id', req.companyId)
+    .single();
+
+  if (compErr || !company) {
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+
+  // Determina il piano effettivo (trial scaduto = trattato come trial)
+  const now = Date.now();
+  const trialExpired = company.subscription_status === 'trial' &&
+    company.trial_ends_at && new Date(company.trial_ends_at).getTime() < now;
+  const effectivePlan = trialExpired ? 'trial' : company.subscription_plan;
+  const siteLimit = getSiteLimit(effectivePlan);
+
+  if (siteLimit !== null) {
+    const { count, error: cntErr } = await supabase
+      .from('sites')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', req.companyId)
+      .neq('status', 'chiuso');
+
+    if (cntErr) return res.status(500).json({ error: 'DB_ERROR' });
+
+    if (count >= siteLimit) {
+      return res.status(403).json({
+        error:      'SITE_LIMIT_REACHED',
+        message:    `Il tuo piano (${effectivePlan}) consente massimo ${siteLimit} cantieri attivi. Archivia un cantiere o aggiorna il piano.`,
+        site_limit: siteLimit,
+        current:    count,
+      });
+    }
+  }
+  // ────────────────────────────────────────────────────────────────────────
 
   const allowedStatuses = ['attivo', 'sospeso', 'chiuso'];
   const siteStatus = allowedStatuses.includes(status) ? status : 'attivo';

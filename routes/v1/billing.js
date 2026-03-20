@@ -2,7 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { getStripe, getPriceId } = require('../../services/stripe');
+const { getStripe, getPriceId, getSiteLimit } = require('../../services/stripe');
 
 // FRONTEND_URL = URL Vercel del frontend (per redirect Stripe)
 // APP_BASE_URL è usato da qr.js/asl.js per URL backend — NON usarlo qui.
@@ -28,25 +28,29 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
     : null;
   const isExpired = data.subscription_status === 'trial' && trialEnd < now;
 
+  const effectiveStatus = isExpired ? 'trial_expired' : data.subscription_status;
+  const plan = data.subscription_plan;
+
   res.json({
-    status:           isExpired ? 'trial_expired' : data.subscription_status,
-    plan:             data.subscription_plan,
-    trial_ends_at:    data.trial_ends_at,
-    days_left:        daysLeft,
-    is_expired:       isExpired,
-    period_end:       data.subscription_current_period_end,
-    has_customer:     !!data.stripe_customer_id,
+    status:        effectiveStatus,
+    plan,
+    trial_ends_at: data.trial_ends_at,
+    days_left:     daysLeft,
+    is_expired:    isExpired,
+    period_end:    data.subscription_current_period_end,
+    has_customer:  !!data.stripe_customer_id,
+    site_limit:    getSiteLimit(effectiveStatus === 'trial_expired' ? 'trial' : plan),
   });
 });
 
 // ── POST /api/v1/billing/checkout ──────────────────────────────────────────
 // Crea una Stripe Checkout Session per il piano richiesto.
-// Body: { plan: 'base' | 'pro' }
+// Body: { plan: 'starter' | 'grow' | 'pro' }
 // Returns: { url }
 router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
   const { plan } = req.body || {};
-  if (!['base', 'pro'].includes(plan)) {
-    return res.status(400).json({ error: 'INVALID_PLAN', message: 'plan deve essere base o pro' });
+  if (!['starter', 'grow', 'pro'].includes(plan)) {
+    return res.status(400).json({ error: 'INVALID_PLAN', message: 'plan deve essere starter, grow o pro' });
   }
 
   let priceId;
