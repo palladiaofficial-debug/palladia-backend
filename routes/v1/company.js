@@ -4,7 +4,9 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
 // GET /api/v1/my-company — JWT only, NO X-Company-Id richiesto
-// Usato dal frontend per recuperare il company_id reale quando localStorage è stale
+// Header opzionale X-Hint-Company-Id: se fornito e valido per l'utente, lo preferisce.
+// Questo evita che un utente con più company (es. proprietario + membro invitato)
+// venga messo nella company sbagliata dopo un login.
 router.get('/my-company', async (req, res) => {
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
@@ -13,16 +15,39 @@ router.get('/my-company', async (req, res) => {
   const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
   if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
 
-  const { data: membership } = await supabase
+  const userId = authData.user.id;
+
+  // Se il client ha già un company_id in localStorage, validalo prima
+  const hint = req.headers['x-hint-company-id'];
+  if (hint) {
+    const { data: hinted } = await supabase
+      .from('company_users')
+      .select('company_id, role')
+      .eq('user_id', userId)
+      .eq('company_id', hint)
+      .maybeSingle();
+    if (hinted) {
+      return res.json({ company_id: hinted.company_id, role: hinted.role });
+    }
+    // hint non valido → continua con fallback
+  }
+
+  // Fallback: restituisce la prima company trovata ordinata per ruolo
+  // (owner > admin > tech > viewer) così il proprietario vede sempre la sua company
+  const { data: memberships } = await supabase
     .from('company_users')
     .select('company_id, role')
-    .eq('user_id', authData.user.id)
-    .limit(1)
-    .maybeSingle();
+    .eq('user_id', userId);
 
-  if (!membership) return res.status(404).json({ error: 'NO_COMPANY' });
+  if (!memberships || memberships.length === 0) {
+    return res.status(404).json({ error: 'NO_COMPANY' });
+  }
 
-  res.json({ company_id: membership.company_id, role: membership.role });
+  const ROLE_ORDER = { owner: 0, admin: 1, tech: 2, viewer: 3 };
+  memberships.sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+  const best = memberships[0];
+
+  res.json({ company_id: best.company_id, role: best.role });
 });
 
 // GET /api/v1/company — restituisce profilo azienda
