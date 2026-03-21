@@ -262,4 +262,63 @@ async function sendMissingExitAlert({ companyId, date, missingList }) {
   });
 }
 
-module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert };
+// ─── Email: Invito team ────────────────────────────────────────────────────
+
+/**
+ * @param {{ to: string, companyName: string, inviterName: string, role: string, inviteUrl: string }} opts
+ */
+async function sendInviteEmail({ to, companyName, inviterName, role, inviteUrl }) {
+  const ROLE_LABELS = { admin: 'Amministratore', tech: 'Tecnico', viewer: 'Solo lettura' };
+  const roleLabel = ROLE_LABELS[role] || role;
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Sei stato invitato su Palladia</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      <strong style="color:#1a1a1a;">${companyName}</strong> ti ha invitato a unirsi al team
+      come <strong style="color:#1a1a1a;">${roleLabel}</strong>.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:8px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Dettagli invito</p>
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;min-width:120px;">Azienda</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${companyName}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Ruolo assegnato</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${roleLabel}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Invitato da</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${companyName}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Scadenza</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">48 ore</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Accetta invito →', inviteUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Se non conosci ${companyName} o non ti aspettavi questo invito, ignora questa email.<br/>
+      Il link è valido per 48 ore e può essere usato una sola volta.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${companyName} ti ha invitato su Palladia`,
+    html: layout(`Invito team — ${companyName}`, body),
+  });
+}
+
+module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail };

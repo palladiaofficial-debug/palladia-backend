@@ -22,6 +22,9 @@ router.use('/', require('./onboarding'));
 // Company profile
 router.use('/', require('./company'));
 
+// Team invites
+router.use('/', require('./invites'));
+
 // Billing / abbonamenti (JWT richiesto)
 router.use('/', require('./billing'));
 
