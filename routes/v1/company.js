@@ -3,6 +3,28 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
+// GET /api/v1/my-company — JWT only, NO X-Company-Id richiesto
+// Usato dal frontend per recuperare il company_id reale quando localStorage è stale
+router.get('/my-company', async (req, res) => {
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const jwt = auth.slice(7);
+
+  const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const { data: membership } = await supabase
+    .from('company_users')
+    .select('company_id, role')
+    .eq('user_id', authData.user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (!membership) return res.status(404).json({ error: 'NO_COMPANY' });
+
+  res.json({ company_id: membership.company_id, role: membership.role });
+});
+
 // GET /api/v1/company — restituisce profilo azienda
 router.get('/company', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase
