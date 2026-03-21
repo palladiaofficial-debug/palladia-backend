@@ -49,6 +49,22 @@ function riskNumClass(val) {
   if (n <= 12) return 'risk-high';
   return 'risk-very-high';
 }
+// Format budget value with Italian thousand separators
+// Accepts "150000" → "150.000" or already-formatted "150.000,00" → unchanged
+function formatBudget(val) {
+  if (!val && val !== 0) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return parseInt(s, 10).toLocaleString('it-IT');
+  return s;
+}
+// Convert ISO date "2024-03-15" → "15/03/2024"; pass-through anything else
+function formatDate(val) {
+  if (!val) return null;
+  const m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return String(val);
+}
 
 // ── SIGN IMAGE LOADER (async) ─────────────────────────────────────────────────
 async function loadSignImage(imagePath) {
@@ -1032,8 +1048,8 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
         ${d.workType    ? `<div class="cover-info-row"><span class="cover-info-label">Natura dei lavori</span><span class="cover-info-val">${esc(d.workType)}</span></div>` : ''}
         ${d.client      ? `<div class="cover-info-row"><span class="cover-info-label">Committente</span><span class="cover-info-val">${esc(d.client)}</span></div>` : ''}
         ${siteName      ? `<div class="cover-info-row"><span class="cover-info-label">Cantiere</span><span class="cover-info-val">${esc(siteName)}</span></div>` : ''}
-        ${(d.startDate||d.endDate) ? `<div class="cover-info-row"><span class="cover-info-label">Periodo</span><span class="cover-info-val">${esc(d.startDate||'')}&#160;–&#160;${esc(d.endDate||'')}</span></div>` : ''}
-        ${d.budget      ? `<div class="cover-info-row"><span class="cover-info-label">Importo lavori</span><span class="cover-info-val">€&#160;${esc(String(d.budget))}</span></div>` : ''}
+        ${(d.startDate||d.endDate) ? `<div class="cover-info-row"><span class="cover-info-label">Periodo</span><span class="cover-info-val">${esc(formatDate(d.startDate)||'')}&#160;–&#160;${esc(formatDate(d.endDate)||'')}</span></div>` : ''}
+        ${d.budget      ? `<div class="cover-info-row"><span class="cover-info-label">Importo lavori</span><span class="cover-info-val">€&#160;${esc(formatBudget(d.budget))}</span></div>` : ''}
         <div class="cover-info-row"><span class="cover-info-label">Impresa</span><span class="cover-info-val">${esc(d.companyName||'[DA COMPILARE]')}</span></div>
       </div>
     </div>
@@ -1092,6 +1108,8 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
     <tr><td>Partita IVA</td><td>${v(d.companyVat)}</td></tr>
     <tr><td>Cantiere</td><td>${v(d.siteAddress)}</td></tr>
     <tr><td>Committente</td><td>${v(d.client)}</td></tr>
+    ${d.cfCommittente ? `<tr><td>Codice Fiscale Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
+    <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
     <tr><td>Natura dei lavori</td><td>${v(d.workType)}</td></tr>
     <tr><td>Revisione</td><td>${rev}</td></tr>
     <tr><td>Data di emissione</td><td>${oggi}</td></tr>
@@ -1106,10 +1124,12 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
   <tbody>
     <tr><td>Indirizzo cantiere</td><td>${v(d.siteAddress)}</td></tr>
     <tr><td>Committente</td><td>${v(d.client)}</td></tr>
+    ${d.cfCommittente ? `<tr><td>CF Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
+    <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
     <tr><td>Natura dei lavori</td><td>${v(d.workType)}</td></tr>
-    <tr><td>Importo lavori</td><td>EUR ${d.budget ? esc(String(d.budget)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
-    <tr><td>Data inizio prevista</td><td>${v(d.startDate)}</td></tr>
-    <tr><td>Data fine prevista</td><td>${v(d.endDate)}</td></tr>
+    <tr><td>Importo lavori</td><td>${d.budget ? `EUR&#160;${esc(formatBudget(d.budget))}` : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
+    <tr><td>Data inizio prevista</td><td>${d.startDate ? esc(formatDate(d.startDate)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
+    <tr><td>Data fine prevista</td><td>${d.endDate ? esc(formatDate(d.endDate)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
     <tr><td>Numero massimo operai</td><td>${esc(String(workersCount))}</td></tr>
   </tbody>
 </table>
@@ -1125,10 +1145,32 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
 </table>
 <div class="sub-title">2.3 Orario di lavoro</div>
 <ul>
-  <li>Orario ordinario: 08:00 – 12:00 / 13:00 – 17:00</li>
+  <li>Inizio turno: ${esc(d.inizioTurno || '08:00')}</li>
+  <li>Ore lavorative giornaliere: ${esc(d.oreLavorative || '8')} ore</li>
+  ${d.pausaPranzo ? `<li>Pausa pranzo: ${esc(d.pausaPranzo)}</li>` : '<li>Pausa pranzo: 1 ora</li>'}
   <li>Sabato: solo se autorizzato dal Coordinatore per l'Esecuzione</li>
-  <li>Lavoro notturno: non previsto (salvo autorizzazione specifica)</li>
-</ul>`;
+  <li>Lavoro notturno: ${d.turnoNotturno ? 'previsto' : 'non previsto (salvo autorizzazione specifica)'}</li>
+</ul>
+<div class="sub-title">2.4 Fasi di lavoro e cronoprogramma</div>
+${(d.fasi && d.fasi.length > 0)
+  ? `<table class="allow-break">
+  <thead><tr>
+    <th style="width:35%">Fase</th>
+    <th style="width:15%">Durata (gg)</th>
+    <th style="width:15%">Lavoratori</th>
+    <th style="width:35%">Lavorazioni previste</th>
+  </tr></thead>
+  <tbody>
+    ${d.fasi.map(f => `<tr>
+      <td>${esc(f.titolo || '')}</td>
+      <td>${esc(String(f.durata || ''))}</td>
+      <td>${esc(String(f.lavoratori || ''))}</td>
+      <td>${esc((f.lavorazioni || []).join(', '))}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>`
+  : '<p class="muted">Nessuna fase di lavoro inserita.</p>'
+}`;
 
   const s3 = `
 <div class="section-title">Sezione 3 — Soggetti con Compiti di Sicurezza</div>
@@ -1149,13 +1191,50 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
     <tr><td>Preposto/i</td><td>${v(d.preposto)}</td></tr>
   </tbody>
 </table>
-<div class="sub-title">3.2 Compiti e responsabilità</div>
+<div class="sub-title">3.2 Recapiti figure di sicurezza</div>
+<table class="allow-break">
+  <thead><tr>
+    <th style="width:28%">Ruolo</th>
+    <th style="width:28%">Nominativo</th>
+    <th style="width:22%">Telefono</th>
+    <th style="width:22%">Email</th>
+  </tr></thead>
+  <tbody>
+    <tr><td>CSE</td><td>${v(d.cse)}</td><td>${v(d.cseTel)}</td><td>${v(d.cseEmail)}</td></tr>
+    <tr><td>RSPP</td><td>${v(d.rspp)}</td><td>${v(d.rsppTel)}</td><td>${v(d.rsppEmail)}</td></tr>
+    <tr><td>RLS</td><td>${v(d.rls)}</td><td>${v(d.rlsTel)}</td><td>—</td></tr>
+    <tr><td>Medico Competente</td><td>${v(d.medico)}</td><td>${v(d.medicoTel)}</td><td>—</td></tr>
+    <tr><td>Addetto Primo Soccorso</td><td>${v(d.primoSoccorso)}</td><td>${v(d.primoSoccorsoTel)}</td><td>—</td></tr>
+    <tr><td>Addetto Antincendio</td><td>${v(d.antincendio)}</td><td>${v(d.antincendioTel)}</td><td>—</td></tr>
+  </tbody>
+</table>
+<div class="sub-title">3.3 Compiti e responsabilità</div>
 <p><strong>Datore di Lavoro:</strong> Responsabile dell'organizzazione della sicurezza in cantiere. Nomina le figure,
 fornisce i DPI, assicura la formazione (art. 17 D.lgs 81/2008).</p>
 <p><strong>RSPP:</strong> Collabora nella valutazione dei rischi, elaborazione delle misure preventive, scelta dei DPI e formazione.</p>
 <p><strong>RLS:</strong> Rappresenta i lavoratori per la sicurezza. Partecipa alle riunioni periodiche, può richiedere verifiche.</p>
 <p><strong>Medico Competente:</strong> Effettua la sorveglianza sanitaria, esprime i giudizi di idoneità.</p>
-<p><strong>Preposto:</strong> Sorveglia le attività lavorative, verifica il rispetto delle procedure di sicurezza (art. 19 D.lgs 81/2008).</p>`;
+<p><strong>Preposto:</strong> Sorveglia le attività lavorative, verifica il rispetto delle procedure di sicurezza (art. 19 D.lgs 81/2008).</p>
+<div class="sub-title">3.4 Imprese subappaltatrici</div>
+${(d.subappaltatori && d.subappaltatori.length > 0)
+  ? `<table class="allow-break">
+  <thead><tr>
+    <th style="width:32%">Ragione Sociale</th>
+    <th style="width:24%">P.IVA</th>
+    <th style="width:28%">Rappresentante Legale</th>
+    <th style="width:16%">Email</th>
+  </tr></thead>
+  <tbody>
+    ${d.subappaltatori.map(s => `<tr>
+      <td>${v(s.ragioneSociale)}</td>
+      <td>${v(s.partitaIva)}</td>
+      <td>${v(s.rappresentanteLegale)}</td>
+      <td>${v(s.email)}</td>
+    </tr>`).join('')}
+  </tbody>
+</table>`
+  : '<p class="muted">Nessuna impresa subappaltatrice.</p>'
+}`;
 
   const s4 = `
 <div class="section-title">Sezione 4 — Area di Cantiere e Organizzazione</div>
@@ -1188,7 +1267,23 @@ realizzata con pannelli metallici modulari su basi in calcestruzzo. Accessi cont
   <li>Deposito materiali: superficie piana e stabile, accatastamento sicuro</li>
   <li>Deposito sostanze pericolose: area dedicata, coperta, con bacino di contenimento</li>
   <li>Deposito rifiuti: area recintata con contenitori differenziati e cartellonistica</li>
-</ul>`;
+</ul>
+<div class="sub-title">4.6 Rischi specifici del cantiere</div>
+${(d.rischiSpecifici && d.rischiSpecifici.length > 0)
+  ? `<ul>${d.rischiSpecifici.map(r => `<li>${esc(r)}</li>`).join('')}</ul>`
+  : '<p class="muted">Nessun rischio specifico indicato.</p>'
+}
+<div class="sub-title">4.7 Opere provvisionali</div>
+${(d.opereProvvisionali && d.opereProvvisionali.length > 0)
+  ? `<ul>${d.opereProvvisionali.map(o => `<li>${esc(o)}</li>`).join('')}</ul>`
+  : '<p class="muted">Nessuna opera provvisionale indicata.</p>'
+}
+<div class="sub-title">4.8 Impianti di cantiere</div>
+${(d.impiantiCantiere && d.impiantiCantiere.length > 0)
+  ? `<ul>${d.impiantiCantiere.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
+  : '<p class="muted">Nessun impianto di cantiere indicato.</p>'
+}
+${d.noteAggiuntive ? `<div class="sub-title">4.9 Note e condizioni particolari</div><p>${esc(d.noteAggiuntive)}</p>` : ''}`;
 
   const s5 = `
 <div class="section-title">Sezione 5 — Lavorazioni, Rischi e Misure di Prevenzione</div>

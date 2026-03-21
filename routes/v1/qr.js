@@ -50,8 +50,10 @@ router.get('/sites/:siteId/qr-link', verifySupabaseJwt, async (req, res) => {
   if (siteErr) return res.status(500).json({ error: 'DB_ERROR' });
   if (!site)   return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
 
-  const ttlDays = Math.min(Math.max(parseInt(req.query.ttl_days || '0', 10) || 0, 1), 365);
-  const ttlSecs = ttlDays > 0 ? ttlDays * 86400 : QR_TTL_SECS;
+  const rawDays = parseInt(req.query.ttl_days, 10);
+  const ttlSecs = (!req.query.ttl_days || isNaN(rawDays) || rawDays <= 0)
+    ? QR_TTL_SECS
+    : Math.min(rawDays, 365) * 86400;
   const exp = Math.floor(Date.now() / 1000) + ttlSecs;
 
   let token;
@@ -72,7 +74,7 @@ router.get('/sites/:siteId/qr-link', verifySupabaseJwt, async (req, res) => {
     token,
     exp,
     expiresAt: new Date(exp * 1000).toISOString(),
-    ttlDays:   Math.round(ttlSecs / 86400)
+    ttlDays: Math.round(ttlSecs / 86400)
   });
 });
 

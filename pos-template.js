@@ -47,6 +47,22 @@ function buildSegnaleticaSection(signs) {
   return output;
 }
 
+// Format budget: "150000" → "150.000", "150.000,00" → unchanged
+function formatBudget(val) {
+  if (!val && val !== 0) return null;
+  const s = String(val).trim();
+  if (!s) return null;
+  if (/^\d+$/.test(s)) return parseInt(s, 10).toLocaleString('it-IT');
+  return s;
+}
+// Convert ISO date "2024-03-15" → "15/03/2024"
+function formatDate(val) {
+  if (!val) return null;
+  const m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return String(val);
+}
+
 function buildPosDocument(posData, revision, aiRisks, signs = []) {
   const d = posData || {};
   const rev = revision || 1;
@@ -88,6 +104,8 @@ Il POS contiene le informazioni relative alle specifiche attivita' lavorative de
 | Partita IVA | ${v(d.companyVat)} |
 | Cantiere | ${v(d.siteAddress)} |
 | Committente | ${v(d.client)} |
+${d.cfCommittente ? `| Codice Fiscale Committente | ${d.cfCommittente} |` : ''}
+| Tipo di appalto | ${d.tipoAppalto ? d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1) : '[DA COMPILARE]'} |
 | Natura dei lavori | ${v(d.workType)} |
 | Revisione | ${rev} |
 | Data di emissione | ${oggi} |
@@ -102,10 +120,12 @@ Il POS contiene le informazioni relative alle specifiche attivita' lavorative de
 |-------|--------|
 | Indirizzo cantiere | ${v(d.siteAddress)} |
 | Committente | ${v(d.client)} |
+${d.cfCommittente ? `| CF Committente | ${d.cfCommittente} |` : ''}
+| Tipo di appalto | ${d.tipoAppalto ? d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1) : '[DA COMPILARE]'} |
 | Natura dei lavori | ${v(d.workType)} |
-| Importo lavori | EUR ${d.budget || '[DA COMPILARE]'} |
-| Data inizio prevista | ${v(d.startDate)} |
-| Data fine prevista | ${v(d.endDate)} |
+| Importo lavori | EUR ${d.budget ? formatBudget(d.budget) : '[DA COMPILARE]'} |
+| Data inizio prevista | ${d.startDate ? formatDate(d.startDate) : '[DA COMPILARE]'} |
+| Data fine prevista | ${d.endDate ? formatDate(d.endDate) : '[DA COMPILARE]'} |
 | Numero massimo operai | ${workersCount} |
 
 ### 2.2 Elenco lavoratori impiegati in cantiere
@@ -115,12 +135,23 @@ Il POS contiene le informazioni relative alle specifiche attivita' lavorative de
 ${workersTable}
 
 ### 2.3 Orario di lavoro
-- Orario ordinario: 08:00 - 12:00 / 13:00 - 17:00
+- Inizio turno: ${d.inizioTurno || '08:00'}
+- Ore lavorative giornaliere: ${d.oreLavorative || '8'} ore
+- Pausa pranzo: ${d.pausaPranzo || '1 ora'}
 - Sabato: solo se autorizzato dal Coordinatore per l'Esecuzione
-- Lavoro notturno: non previsto (salvo autorizzazione specifica)
+- Lavoro notturno: ${d.turnoNotturno ? 'previsto' : 'non previsto (salvo autorizzazione specifica)'}
 
 ### 2.4 Turni di lavoro
-Non sono previsti turni di lavoro, salvo diverse disposizioni del Direttore dei Lavori o del CSE.
+${d.turnoNotturno ? 'E\' previsto turno notturno, previa autorizzazione del Direttore dei Lavori e del CSE.' : 'Non sono previsti turni di lavoro, salvo diverse disposizioni del Direttore dei Lavori o del CSE.'}
+
+### 2.5 Fasi di lavoro e cronoprogramma
+
+${(d.fasi && d.fasi.length > 0)
+  ? `| Fase | Durata (gg) | Lavoratori | Lavorazioni previste |
+|------|-------------|------------|----------------------|
+${d.fasi.map(f => `| ${f.titolo || ''} | ${f.durata || ''} | ${f.lavoratori || ''} | ${(f.lavorazioni || []).join(', ')} |`).join('\n')}`
+  : 'Nessuna fase di lavoro inserita.'
+}
 
 ---
 
@@ -142,7 +173,18 @@ Non sono previsti turni di lavoro, salvo diverse disposizioni del Direttore dei 
 | Direttore Tecnico di Cantiere | ${v(d.direttoreTecnico || d.responsabileLavori)} |
 | Preposto/i | ${v(d.preposto)} |
 
-### 3.2 Compiti e responsabilita'
+### 3.2 Recapiti figure di sicurezza
+
+| Ruolo | Nominativo | Telefono | Email |
+|-------|-----------|----------|-------|
+| CSE | ${v(d.cse)} | ${v(d.cseTel)} | ${v(d.cseEmail)} |
+| RSPP | ${v(d.rspp)} | ${v(d.rsppTel)} | ${v(d.rsppEmail)} |
+| RLS | ${v(d.rls)} | ${v(d.rlsTel)} | — |
+| Medico Competente | ${v(d.medico)} | ${v(d.medicoTel)} | — |
+| Addetto Primo Soccorso | ${v(d.primoSoccorso)} | ${v(d.primoSoccorsoTel)} | — |
+| Addetto Antincendio | ${v(d.antincendio)} | ${v(d.antincendioTel)} | — |
+
+### 3.3 Compiti e responsabilita'
 
 **Datore di Lavoro:** Responsabile dell'organizzazione e della gestione della sicurezza in cantiere. Nomina le figure della sicurezza, fornisce i DPI, assicura la formazione e l'informazione dei lavoratori.
 
@@ -157,6 +199,15 @@ Non sono previsti turni di lavoro, salvo diverse disposizioni del Direttore dei 
 **Addetto Antincendio:** Gestisce le emergenze incendio, conosce l'ubicazione e l'uso dei mezzi antincendio, coordina l'evacuazione.
 
 **Preposto:** Sorveglia l'attivita' lavorativa, verifica il rispetto delle procedure di sicurezza, segnala tempestivamente le situazioni di pericolo.
+
+### 3.4 Imprese subappaltatrici
+
+${(d.subappaltatori && d.subappaltatori.length > 0)
+  ? `| Ragione Sociale | P.IVA | Rappresentante Legale | Email |
+|-----------------|-------|----------------------|-------|
+${d.subappaltatori.map(s => `| ${v(s.ragioneSociale)} | ${v(s.partitaIva)} | ${v(s.rappresentanteLegale)} | ${v(s.email)} |`).join('\n')}`
+  : 'Nessuna impresa subappaltatrice.'
+}
 
 ---
 
@@ -199,6 +250,27 @@ L'area di cantiere sara' delimitata con recinzione perimetrale continua di altez
 ### 4.6 Gestione delle interferenze
 In caso di presenza contemporanea di piu' imprese o lavoratori autonomi, il CSE coordina le attivita' mediante riunioni di coordinamento. Le interferenze spaziali e temporali sono gestite attraverso il cronoprogramma dei lavori e specifiche procedure operative.
 
+### 4.7 Rischi specifici del cantiere
+
+${(d.rischiSpecifici && d.rischiSpecifici.length > 0)
+  ? d.rischiSpecifici.map(r => `- ${r}`).join('\n')
+  : 'Nessun rischio specifico indicato.'
+}
+
+### 4.8 Opere provvisionali
+
+${(d.opereProvvisionali && d.opereProvvisionali.length > 0)
+  ? d.opereProvvisionali.map(o => `- ${o}`).join('\n')
+  : 'Nessuna opera provvisionale indicata.'
+}
+
+### 4.9 Impianti di cantiere
+
+${(d.impiantiCantiere && d.impiantiCantiere.length > 0)
+  ? d.impiantiCantiere.map(i => `- ${i}`).join('\n')
+  : 'Nessun impianto di cantiere indicato.'
+}
+${d.noteAggiuntive ? `\n### 4.10 Note e condizioni particolari\n\n${d.noteAggiuntive}\n` : ''}
 ---
 
 ## SEZIONE 5 - LAVORAZIONI, RISCHI E MISURE DI PREVENZIONE
