@@ -77,21 +77,60 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
     return res.status(400).json({ error: 'from e to devono essere YYYY-MM-DD' });
   }
 
-  const { data, error } = await supabase
+  // 1. Carica i log di presenza (senza join embedded — più robusto)
+  const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
-    .select(`
-      id, event_type, timestamp_server,
-      worker:workers (id, full_name),
-      site:sites (id, name)
-    `)
+    .select('id, event_type, timestamp_server, worker_id, site_id')
     .eq('company_id', req.companyId)
     .gte('timestamp_server', `${fromDate}T00:00:00.000Z`)
     .lte('timestamp_server', `${toDate}T23:59:59.999Z`)
     .order('timestamp_server', { ascending: false })
     .limit(2000);
 
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(data);
+  if (logsErr) {
+    console.error('[presence/history] logs error:', logsErr.message);
+    return res.status(500).json({ error: logsErr.message });
+  }
+  if (!logs || logs.length === 0) return res.json([]);
+
+  // 2. Recupera worker e site in parallelo (solo quelli effettivamente presenti nei log)
+  const workerIds = [...new Set(logs.map(l => l.worker_id).filter(Boolean))];
+  const siteIds   = [...new Set(logs.map(l => l.site_id).filter(Boolean))];
+
+  const [workersRes, sitesRes] = await Promise.all([
+    supabase
+      .from('workers')
+      .select('id, full_name, first_name, last_name')
+      .in('id', workerIds),
+    supabase
+      .from('sites')
+      .select('id, name')
+      .in('id', siteIds),
+  ]);
+
+  // Mappa id → oggetto per lookup O(1)
+  const workerMap = {};
+  for (const w of workersRes.data || []) {
+    workerMap[w.id] = {
+      id:        w.id,
+      full_name: w.full_name || [w.first_name, w.last_name].filter(Boolean).join(' ') || '—',
+    };
+  }
+  const siteMap = {};
+  for (const s of sitesRes.data || []) {
+    siteMap[s.id] = { id: s.id, name: s.name || '—' };
+  }
+
+  // 3. Arricchisci i log con i dati di worker e site
+  const result = logs.map(l => ({
+    id:               l.id,
+    event_type:       l.event_type,
+    timestamp_server: l.timestamp_server,
+    worker:           workerMap[l.worker_id] || { id: l.worker_id, full_name: '—' },
+    site:             siteMap[l.site_id]     || { id: l.site_id,   name: '—'       },
+  }));
+
+  res.json(result);
 });
 
 module.exports = router;
