@@ -19,6 +19,9 @@ router.use('/', require('./auditLog'));
 router.use('/', require('./qrPdf'));
 router.use('/', require('./onboarding'));
 
+// Company profile
+router.use('/', require('./company'));
+
 // Billing / abbonamenti (JWT richiesto)
 router.use('/', require('./billing'));
 
