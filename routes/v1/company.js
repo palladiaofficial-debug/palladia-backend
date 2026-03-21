@@ -17,15 +17,7 @@ router.get('/company', verifySupabaseJwt, async (req, res) => {
 
 // PATCH /api/v1/company — aggiorna profilo azienda (solo owner/admin)
 router.patch('/company', verifySupabaseJwt, async (req, res) => {
-  // Verifica che l'utente sia owner o admin
-  const { data: member } = await supabase
-    .from('company_users')
-    .select('role')
-    .eq('company_id', req.companyId)
-    .eq('user_id', req.userId)
-    .maybeSingle();
-
-  if (!member || !['owner', 'admin'].includes(member.role)) {
+  if (!['owner', 'admin'].includes(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 
