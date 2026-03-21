@@ -86,16 +86,36 @@ router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
   try { stripe = getStripe(); }
   catch (e) { return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED', message: e.message }); }
 
+  const PLAN_DESCRIPTIONS = {
+    starter: 'Gestione digitale fino a 2 cantieri attivi. Badge QR, presenze, report PDF.',
+    grow:    'Gestione digitale fino a 6 cantieri attivi. Badge QR, presenze, report PDF, team illimitato.',
+    pro:     'Gestione digitale fino a 15 cantieri attivi. Tutto incluso, priorità supporto.',
+  };
+
   const sessionParams = {
     mode:                'subscription',
     payment_method_types: ['card'],
-    line_items: [{ price: priceId, quantity: 1 }],
+    locale:              'it',
+    line_items: [{
+      price:    priceId,
+      quantity: 1,
+    }],
     success_url: `${FRONTEND_URL()}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url:  `${FRONTEND_URL()}/paywall?canceled=true`,
     client_reference_id: req.companyId,
-    metadata: { company_id: req.companyId, plan },
-    subscription_data: { metadata: { company_id: req.companyId, plan } },
+    metadata:            { company_id: req.companyId, plan },
+    subscription_data: {
+      metadata:    { company_id: req.companyId, plan },
+      description: PLAN_DESCRIPTIONS[plan],
+    },
+    custom_text: {
+      submit: {
+        message: 'Confermando il pagamento attivi il tuo abbonamento Palladia. Puoi disdire in qualsiasi momento.',
+      },
+    },
     allow_promotion_codes: true,
+    billing_address_collection: 'auto',
+    tax_id_collection: { enabled: true },
   };
 
   if (company?.stripe_customer_id) {
