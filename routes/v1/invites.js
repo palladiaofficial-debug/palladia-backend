@@ -3,7 +3,6 @@ const crypto   = require('crypto');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { sendInviteEmail } = require('../../services/email');
 
 const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
 
@@ -95,14 +94,7 @@ router.post('/invites', verifySupabaseJwt, async (req, res) => {
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 
-  // Invia email (non blocca la risposta in caso di errore email)
   const inviteUrl = `${APP_URL}/invito/${token}`;
-  try {
-    await sendInviteEmail({ to: normalizedEmail, companyName, inviterName, role, inviteUrl });
-  } catch (emailErr) {
-    console.error('[invites] email send failed:', emailErr.message);
-    // L'invito è già salvato — non è un errore fatale
-  }
 
   res.status(201).json({
     id:         invite.id,
