@@ -186,4 +186,40 @@ router.delete('/sites/:siteId/workers/:workerId', verifySupabaseJwt, async (req,
   res.status(204).end();
 });
 
+// PATCH /api/v1/workers/:workerId — aggiorna lavoratore (es. disattiva)
+router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
+  const { workerId } = req.params;
+  const allowed = ['full_name', 'is_active'];
+  const updates = {};
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) updates[k] = req.body[k];
+  }
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ error: 'NO_FIELDS' });
+  }
+
+  const { data, error } = await supabase
+    .from('workers')
+    .update(updates)
+    .eq('id', workerId)
+    .eq('company_id', req.companyId)
+    .select('id, full_name, is_active')
+    .single();
+
+  if (error || !data) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'worker.update',
+    targetType: 'worker',
+    targetId:   workerId,
+    payload:    updates,
+    req
+  });
+
+  res.json(data);
+});
+
 module.exports = router;

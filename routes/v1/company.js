@@ -46,4 +46,27 @@ router.patch('/company', verifySupabaseJwt, async (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/v1/team-members — lista utenti della company con info auth
+router.get('/team-members', verifySupabaseJwt, async (req, res) => {
+  const { data: members, error } = await supabase
+    .from('company_users')
+    .select('user_id, role')
+    .eq('company_id', req.companyId);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const result = await Promise.all(members.map(async (m) => {
+    const { data: authData } = await supabase.auth.admin.getUserById(m.user_id);
+    const u = authData?.user;
+    return {
+      user_id: m.user_id,
+      role:    m.role,
+      email:   u?.email || '—',
+      name:    u?.user_metadata?.full_name || u?.email || '—',
+    };
+  }));
+
+  res.json(result);
+});
+
 module.exports = router;

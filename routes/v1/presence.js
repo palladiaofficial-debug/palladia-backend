@@ -68,4 +68,30 @@ router.get('/presence/notes', verifySupabaseJwt, async (req, res) => {
   })));
 });
 
+// GET /api/v1/presence/history?from=&to= — storico presenze azienda (tutti i cantieri)
+router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
+  const toDate   = req.query.to   || new Date().toISOString().split('T')[0];
+  const fromDate = req.query.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  if (!DATE_RE.test(fromDate) || !DATE_RE.test(toDate)) {
+    return res.status(400).json({ error: 'from e to devono essere YYYY-MM-DD' });
+  }
+
+  const { data, error } = await supabase
+    .from('presence_logs')
+    .select(`
+      id, event_type, timestamp_server,
+      worker:workers (id, full_name),
+      site:sites (id, name)
+    `)
+    .eq('company_id', req.companyId)
+    .gte('timestamp_server', `${fromDate}T00:00:00.000Z`)
+    .lte('timestamp_server', `${toDate}T23:59:59.999Z`)
+    .order('timestamp_server', { ascending: false })
+    .limit(2000);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
 module.exports = router;
