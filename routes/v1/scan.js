@@ -179,6 +179,8 @@ router.get('/scan/verify-qr', async (req, res) => {
 // ── GET /api/v1/scan/worksites/:worksiteId — PUBBLICO ─────────────────────────
 router.get('/scan/worksites/:worksiteId', async (req, res) => {
   const { worksiteId } = req.params;
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(worksiteId)) return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
 
   const { data: site, error } = await supabase
     .from('sites')
