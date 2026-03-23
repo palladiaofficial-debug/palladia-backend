@@ -667,7 +667,7 @@ th, td { max-width: 100% !important; overflow-wrap: anywhere !important; word-br
 thead { display: table-header-group; }
 tr    { break-inside: avoid; page-break-inside: avoid; }
 h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-after: avoid !important; }
-.summary-card, .anom-box, .declaration { break-inside: avoid !important; page-break-inside: avoid !important; }
+.summary-card, .anom-box, .declaration, .sig-section { break-inside: avoid !important; page-break-inside: avoid !important; }
 </style>
 </head>
 <body>
