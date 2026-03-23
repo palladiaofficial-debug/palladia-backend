@@ -468,7 +468,6 @@ function buildBadgePdfHtml({
     </div>
     <div class="badges-row">
       ${card}
-      ${card}
     </div>
   </div>
 </body>
