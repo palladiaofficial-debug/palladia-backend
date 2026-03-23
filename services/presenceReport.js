@@ -634,6 +634,17 @@ body {
   line-height: 1.65; margin-top: 8pt;
 }
 
+/* ── BLOCCO FIRME ───────────────────────────────────────────────────── */
+.sig-section { margin-top: 20pt; break-inside: avoid !important; page-break-inside: avoid !important; }
+.sig-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 8pt;
+}
+.sig-col { font-size: 8pt; color: #333; }
+.sig-role { font-size: 7pt; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8pt; color: #1B3A5C; margin-bottom: 12mm; }
+.sig-line { border-bottom: 0.5pt solid #333; margin-bottom: 4pt; }
+.sig-lbl  { font-size: 6.5pt; color: #888; }
+
 /* ── ANTI-TAGLIO ────────────────────────────────────────────────────── */
 h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
 tr    { break-inside: avoid; page-break-inside: avoid; }
@@ -785,6 +796,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
   ${anomSectionHtml}
 
   <!-- ══ DICHIARAZIONE ══════════════════════════════════════════════════ -->
+
   <div class="section-title">Dichiarazione e note sul documento</div>
   <div class="declaration">
     <p>
@@ -824,6 +836,27 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
       Cantiere     : ${esc(site.name)} / ${site.id}<br>
       Impresa      : ${esc(company.name || '—')}<br>
       Sistema      : Palladia — Registro Digitale Presenze v1.0
+    </div>
+  </div>
+
+  <!-- ══ FIRME ════════════════════════════════════════════════════════ -->
+  <div class="sig-section">
+    <div class="section-title">Attestazione e firme</div>
+    <div class="sig-grid">
+      <div class="sig-col">
+        <div class="sig-role">Datore di Lavoro / Rappresentante Legale</div>
+        <div class="sig-line"></div>
+        <div class="sig-lbl">Nome e cognome: _____________________________________</div>
+        <br>
+        <div class="sig-lbl">Data: _______________________&emsp;Firma: _____________________________________</div>
+      </div>
+      <div class="sig-col">
+        <div class="sig-role">R.S.P.P. — Responsabile Servizio Prevenzione e Protezione</div>
+        <div class="sig-line"></div>
+        <div class="sig-lbl">Nome e cognome: _____________________________________</div>
+        <br>
+        <div class="sig-lbl">Data: _______________________&emsp;Firma: _____________________________________</div>
+      </div>
     </div>
   </div>
 

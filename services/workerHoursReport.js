@@ -160,17 +160,23 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
         day_total_minutes: dayMin,
         day_total_str:     fmtDuration(dayMin),
         has_anomaly:       entries.some(e => e.anomaly),
+        is_overtime:       dayMin > 480, // > 8h
+        overtime_minutes:  Math.max(0, dayMin - 480),
       });
     }
 
+    const overtimeMinutes = days.reduce((s, d) => s + d.overtime_minutes, 0);
     workers.push({
-      id:              wId,
-      full_name:       getWorkerName(info),
-      fiscal_code:     info.fiscal_code || '',
-      total_days:      days.length,
-      total_minutes:   totalMinutes,
-      total_hours:     toDecimalHours(totalMinutes),
-      total_hours_str: fmtDuration(totalMinutes),
+      id:               wId,
+      full_name:        getWorkerName(info),
+      fiscal_code:      info.fiscal_code || '',
+      total_days:       days.length,
+      total_minutes:    totalMinutes,
+      total_hours:      toDecimalHours(totalMinutes),
+      total_hours_str:  fmtDuration(totalMinutes),
+      overtime_minutes: overtimeMinutes,
+      overtime_str:     overtimeMinutes > 0 ? fmtDuration(overtimeMinutes) : null,
+      overtime_days:    days.filter(d => d.is_overtime).length,
       days,
     });
   }
@@ -186,9 +192,11 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     period:    { from, to, formatted: `${fd}/${fm}/${fy} — ${td}/${tm}/${ty}` },
     workers,
     totals: {
-      workers_count:       workers.length,
-      grand_total_minutes: workers.reduce((s, w) => s + w.total_minutes, 0),
-      grand_total_str:     fmtDuration(workers.reduce((s, w) => s + w.total_minutes, 0)),
+      workers_count:         workers.length,
+      grand_total_minutes:   workers.reduce((s, w) => s + w.total_minutes, 0),
+      grand_total_str:       fmtDuration(workers.reduce((s, w) => s + w.total_minutes, 0)),
+      grand_overtime_minutes: workers.reduce((s, w) => s + w.overtime_minutes, 0),
+      grand_overtime_str:    (() => { const m = workers.reduce((s, w) => s + w.overtime_minutes, 0); return m > 0 ? fmtDuration(m) : null; })(),
     },
     generated_at: new Date().toISOString(),
   };
@@ -210,6 +218,7 @@ function generateWorkerHoursPdfHtml(data) {
       <td class="mono small">${esc(w.fiscal_code)}</td>
       <td class="center">${w.total_days}</td>
       <td class="right bold">${w.total_hours_str}</td>
+      <td class="right">${w.overtime_str ? `<span class="ot-badge">${w.overtime_str}</span>` : '<span class="small" style="color:#aaa;">—</span>'}</td>
     </tr>`).join('');
 
   const workerSections = workers.map(w => {
@@ -218,9 +227,11 @@ function generateWorkerHoursPdfHtml(data) {
       if (d.entries.length === 0) continue;
       for (let idx = 0; idx < d.entries.length; idx++) {
         const e   = d.entries[idx];
-        const cls = e.anomaly ? 'anom' : '';
+        const cls = e.anomaly ? 'anom' : (d.is_overtime && !e.anomaly ? 'ot-row' : '');
+        const otBadge = d.is_overtime && idx === 0 && !e.anomaly
+          ? `<span class="ot-badge">+${fmtDuration(d.overtime_minutes)} straord.</span>` : '';
         dayRows += `<tr class="${cls}">
-          <td>${idx === 0 ? `<strong>${d.weekday}</strong> ${d.date_formatted}` : ''}</td>
+          <td>${idx === 0 ? `<strong>${d.weekday}</strong> ${d.date_formatted}${otBadge}` : ''}</td>
           <td class="center">${e.entry_time || '—'}</td>
           <td class="center">${e.exit_time  || '—'}</td>
           <td class="right">${e.anomaly ? `<span class="anom-lbl">⚠ ${esc(e.anomaly)}</span>` : e.hours_str}</td>
@@ -334,6 +345,23 @@ function generateWorkerHoursPdfHtml(data) {
   .small  { font-size:8.5pt; }
   .mono   { font-family:monospace; font-size:8.5pt; letter-spacing:0.04em; }
 
+  /* ── Overtime highlight ── */
+  .ot-badge {
+    display:inline-block; background:#fef3c7; color:#92400e;
+    border:1px solid #f59e0b; border-radius:3pt;
+    font-size:7.5pt; font-weight:700; padding:0.5pt 4pt; margin-left:4pt;
+  }
+  .ot-row td { background:#fffbeb !important; }
+
+  /* ── Signature block ── */
+  .sig-section { margin-top:24pt; break-inside:avoid; page-break-inside:avoid; }
+  .sig-grid { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:10pt; }
+  .sig-col  { font-size:8pt; color:#333; }
+  .sig-role { font-size:7pt; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.7pt; color:#1a1a1a; margin-bottom:12mm; }
+  .sig-line { border-bottom:0.5pt solid #333; margin-bottom:4pt; }
+  .sig-lbl  { font-size:6.5pt; color:#888; }
+
   /* ── Footer note ── */
   .footer-note {
     margin-top:24pt; padding-top:8pt; border-top:1px solid #ddd;
@@ -373,10 +401,11 @@ function generateWorkerHoursPdfHtml(data) {
   <table class="stbl">
     <thead>
       <tr>
-        <th style="width:40%">Lavoratore</th>
-        <th style="width:30%">Codice Fiscale</th>
-        <th class="center" style="width:15%">Giorni</th>
+        <th style="width:35%">Lavoratore</th>
+        <th style="width:25%">Codice Fiscale</th>
+        <th class="center" style="width:10%">Giorni</th>
         <th class="right"  style="width:15%">Ore Totali</th>
+        <th class="right"  style="width:15%">Straordinari</th>
       </tr>
     </thead>
     <tbody>${summaryRows}</tbody>
@@ -385,6 +414,7 @@ function generateWorkerHoursPdfHtml(data) {
         <td colspan="2">TOTALE COMPLESSIVO</td>
         <td class="center">${workers.reduce((s, w) => s + w.total_days, 0)} giornate</td>
         <td class="right">${totals.grand_total_str}</td>
+        <td class="right">${totals.grand_overtime_str || '—'}</td>
       </tr>
     </tfoot>
   </table>
@@ -395,6 +425,27 @@ function generateWorkerHoursPdfHtml(data) {
 
   <div class="footer-note">
     Documento generato da Palladia · ${genStr} · Dati raccolti tramite badge digitale con verifica GPS
+  </div>
+
+  <!-- Firme -->
+  <div class="sig-section">
+    <div class="section-hdr" style="margin-top:20pt;">Attestazione e firme</div>
+    <div class="sig-grid">
+      <div class="sig-col">
+        <div class="sig-role">Datore di Lavoro / Rappresentante Legale</div>
+        <div class="sig-line"></div>
+        <div class="sig-lbl">Nome e cognome: _________________________________</div>
+        <br>
+        <div class="sig-lbl">Data: _____________________&emsp;Firma: _________________________________</div>
+      </div>
+      <div class="sig-col">
+        <div class="sig-role">Consulente del Lavoro / Responsabile Paghe</div>
+        <div class="sig-line"></div>
+        <div class="sig-lbl">Nome e cognome: _________________________________</div>
+        <br>
+        <div class="sig-lbl">Data: _____________________&emsp;Firma: _________________________________</div>
+      </div>
+    </div>
   </div>
 
 </div>
