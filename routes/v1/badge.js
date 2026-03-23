@@ -181,92 +181,90 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
 });
 
 // ── HTML builder per badge PDF ────────────────────────────────────────────────
-// Formato: 2 badge affiancati per foglio A4 — 85mm × ~110mm ciascuno
-// Dimensione tascabile, compatibile con portabadge/lanyards standard 9×13cm
+// Formato ISO ID-1: 85.6mm × 54mm (identico a patente / codice fiscale)
+// Fronte + retro sulla stessa pagina A4 — si ritaglia, si mette schiena a schiena, si plastifica
 
 function complianceDotInline(status) {
   const map = {
-    ok:       { color: '#22c55e', label: 'Valida'      },
-    expiring: { color: '#f59e0b', label: 'In scadenza' },
-    expired:  { color: '#ef4444', label: 'SCADUTA'     },
-    not_set:  { color: '#94a3b8', label: 'N/D'         },
+    ok:       { color: '#22c55e', label: 'Valida'       },
+    expiring: { color: '#f59e0b', label: 'In scadenza'  },
+    expired:  { color: '#ef4444', label: 'SCADUTA'      },
+    not_set:  { color: '#94a3b8', label: 'Non inserita' },
   };
-  const { color, label } = map[status] || map.not_set;
-  return { color, label };
+  return map[status] || map.not_set;
 }
 
 function buildBadgePdfHtml({
   worker, companyName, employerLabel, hireDateStr,
   safetyStatus, healthStatus, overall, qrDataUrl,
 }) {
+  // ── Fronte ────────────────────────────────────────────────────────────────
   const photoBlock = worker.photo_url
     ? `<img src="${esc(worker.photo_url)}" alt="" class="photo-img">`
-    : `<div class="photo-placeholder">
-         <span>&#128100;</span>
-         <small>Nessuna foto</small>
-       </div>`;
+    : `<div class="photo-placeholder"><span>&#128100;</span><small>Nessuna foto</small></div>`;
 
   const infoRows = [
-    worker.qualification ? `<div class="info-row"><span class="lbl">Qualifica</span><span class="val">${esc(worker.qualification)}</span></div>` : '',
-    worker.role          ? `<div class="info-row"><span class="lbl">Mansione</span><span class="val">${esc(worker.role)}</span></div>`          : '',
-    employerLabel        ? `<div class="info-row"><span class="lbl">Impresa</span><span class="val">${esc(employerLabel)}</span></div>`          : '',
-    hireDateStr          ? `<div class="info-row"><span class="lbl">Assunto il</span><span class="val">${esc(hireDateStr)}</span></div>`         : '',
+    worker.qualification ? `<div class="r"><span class="rl">Qualifica</span><span class="rv">${esc(worker.qualification)}</span></div>` : '',
+    worker.role          ? `<div class="r"><span class="rl">Mansione</span><span class="rv">${esc(worker.role)}</span></div>`           : '',
+    employerLabel        ? `<div class="r"><span class="rl">Impresa</span><span class="rv">${esc(employerLabel)}</span></div>`           : '',
+    hireDateStr          ? `<div class="r"><span class="rl">Assunto il</span><span class="rv">${esc(hireDateStr)}</span></div>`          : '',
   ].filter(Boolean).join('');
 
+  const front = `
+<div class="card" id="front">
+  <div class="ch">
+    <div><div class="brand">PALLADIA</div><div class="brand-sub">Badge Digitale Lavoratore</div></div>
+    ${buildOverallPill(overall)}
+  </div>
+  <div class="cb">
+    <div class="pc">${photoBlock}</div>
+    <div class="ic">
+      <div class="wname">${esc(worker.full_name)}</div>
+      ${infoRows}
+    </div>
+  </div>
+  <div class="cf">
+    <span class="ft">D.Lgs. 81/2008 · Palladia</span>
+    <span class="ft">${esc(companyName)}</span>
+  </div>
+</div>`;
+
+  // ── Retro ─────────────────────────────────────────────────────────────────
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
   const safety = complianceDotInline(safetyStatus);
   const health = complianceDotInline(healthStatus);
 
-  // Singola card — ripetuta 2× sulla pagina
-  const card = `
-<div class="badge-card">
-  <!-- Header -->
-  <div class="card-header">
-    <div>
-      <div class="brand-name">PALLADIA</div>
-      <div class="brand-sub">Badge Digitale Lavoratore</div>
-    </div>
-    ${buildOverallPill(overall)}
+  const back = `
+<div class="card" id="back">
+  <div class="ch">
+    <div class="brand">PALLADIA</div>
+    <div class="brand-sub">Verifica stato documenti</div>
   </div>
-
-  <!-- Foto + dati -->
-  <div class="card-body">
-    <div class="photo-col">${photoBlock}</div>
-    <div class="info-col">
-      <div class="worker-name">${esc(worker.full_name)}</div>
-      ${infoRows}
-    </div>
-  </div>
-
-  <!-- Compliance -->
-  <div class="compliance-bar">
-    <div class="comp-item">
-      <span class="comp-dot" style="background:${safety.color};"></span>
-      <span class="comp-lbl">Formazione</span>
-      <span class="comp-val" style="color:${safety.color};">${safety.label}</span>
-    </div>
-    <div class="comp-sep"></div>
-    <div class="comp-item">
-      <span class="comp-dot" style="background:${health.color};"></span>
-      <span class="comp-lbl">Idoneità</span>
-      <span class="comp-val" style="color:${health.color};">${health.label}</span>
-    </div>
-  </div>
-
-  <!-- QR + codice -->
-  <div class="qr-row">
-    <img src="${qrDataUrl}" alt="QR" class="qr-img">
-    <div class="qr-info">
-      <div class="code-lbl">Codice Univoco</div>
+  <div class="cb back-body">
+    <!-- Compliance sinistra -->
+    <div class="back-left">
+      <div class="comp-row">
+        <span class="cdot" style="background:${safety.color};"></span>
+        <span class="clbl">Formazione Sicurezza</span>
+        <span class="cval" style="color:${safety.color};">${safety.label}</span>
+      </div>
+      <div class="comp-row">
+        <span class="cdot" style="background:${health.color};"></span>
+        <span class="clbl">Idoneità Sanitaria</span>
+        <span class="cval" style="color:${health.color};">${health.label}</span>
+      </div>
+      <div class="sep"></div>
+      <div class="code-lbl">Codice univoco anticontraffazione</div>
       <div class="code-val">${esc(codeFormatted)}</div>
-      <div class="code-hint">Scansiona per verificare<br>stato in tempo reale</div>
+    </div>
+    <!-- QR destra -->
+    <div class="back-right">
+      <img src="${qrDataUrl}" alt="QR" class="qr-img">
+      <div class="qr-hint">Scansiona per<br>verificare online</div>
     </div>
   </div>
-
-  <!-- Footer -->
-  <div class="card-footer">
-    <span class="ft">D.Lgs. 81/2008</span>
-    <span class="ft">${esc(companyName)}</span>
+  <div class="cf">
+    <span class="ft">palladia.app · Badge anticontraffazione</span>
   </div>
 </div>`;
 
@@ -295,180 +293,197 @@ function buildBadgePdfHtml({
       display: flex;
       flex-direction: column;
       align-items: center;
+      gap: 0;
     }
 
-    /* Istruzione taglio */
-    .cut-hint {
-      font-size: 7.5px;
+    /* ── Istruzioni ── */
+    .hint {
+      font-size: 7px;
       color: #9ca3af;
       text-align: center;
-      margin-bottom: 5mm;
-      letter-spacing: 0.04em;
+      margin-bottom: 6mm;
+      letter-spacing: 0.03em;
+      line-height: 1.6;
     }
-    .cut-hint strong { color: #6b7280; }
+    .hint strong { color: #6b7280; }
 
-    /* Due badge affiancati */
-    .badges-row {
-      display: flex;
-      gap: 8mm;
-      justify-content: center;
+    /* ── Etichetta fronte/retro ── */
+    .face-label {
+      font-size: 7px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin-bottom: 2mm;
+      align-self: flex-start;
+      margin-left: calc(50% - 85.6mm / 2);
     }
 
-    /* ── Badge card 85mm × auto ── */
-    .badge-card {
-      width: 85mm;
+    .gap { height: 7mm; }
+
+    /* ── Card ISO ID-1: 85.6mm × 54mm ── */
+    .card {
+      width: 85.6mm;
+      height: 54mm;
       border: 1.5px dashed #cbd5e1;
-      border-radius: 5px;
+      border-radius: 4mm;
       overflow: hidden;
       background: #fff;
+      display: flex;
+      flex-direction: column;
     }
 
     /* Header */
-    .card-header {
+    .ch {
       background: #0f172a;
-      padding: 5px 9px;
+      padding: 4px 9px;
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-shrink: 0;
     }
-    .brand-name {
-      font-size: 8px;
+    .brand {
+      font-size: 7.5px;
       font-weight: 700;
       letter-spacing: 0.2em;
       color: #f8fafc;
       text-transform: uppercase;
     }
     .brand-sub {
-      font-size: 6px;
+      font-size: 5.5px;
       color: #94a3b8;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       margin-top: 1px;
     }
     .overall-pill {
-      font-size: 6.5px;
+      font-size: 6px;
       font-weight: 700;
       letter-spacing: 0.06em;
       text-transform: uppercase;
-      padding: 2px 6px;
+      padding: 2px 5px;
       border-radius: 20px;
       white-space: nowrap;
     }
 
-    /* Body: foto + info */
-    .card-body {
+    /* Body */
+    .cb {
+      flex: 1;
       display: flex;
-      gap: 8px;
-      padding: 8px 9px;
+      gap: 7px;
+      padding: 6px 9px;
+      overflow: hidden;
     }
-    .photo-col { flex-shrink: 0; }
+
+    /* Foto */
+    .pc { flex-shrink: 0; }
     .photo-img {
-      width: 28mm;
-      height: 36mm;
+      width: 20mm;
+      height: 26mm;
       object-fit: cover;
-      border-radius: 3px;
+      border-radius: 2px;
       border: 1px solid #e2e8f0;
       display: block;
     }
     .photo-placeholder {
-      width: 28mm;
-      height: 36mm;
-      border-radius: 3px;
+      width: 20mm;
+      height: 26mm;
+      border-radius: 2px;
       border: 1px solid #e2e8f0;
       background: #f1f5f9;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3px;
+      gap: 2px;
     }
-    .photo-placeholder span { font-size: 20px; color: #94a3b8; line-height: 1; }
-    .photo-placeholder small { font-size: 5.5px; color: #94a3b8; font-weight: 700;
-      letter-spacing: 0.08em; text-transform: uppercase; }
+    .photo-placeholder span { font-size: 16px; color: #94a3b8; line-height: 1; }
+    .photo-placeholder small { font-size: 5px; color: #94a3b8; font-weight: 700;
+      letter-spacing: 0.06em; text-transform: uppercase; }
 
-    .info-col { flex: 1; min-width: 0; }
-    .worker-name {
-      font-size: 10.5px;
+    /* Info */
+    .ic { flex: 1; min-width: 0; }
+    .wname {
+      font-size: 9.5px;
       font-weight: 700;
       color: #0f172a;
-      line-height: 1.25;
-      margin-bottom: 6px;
+      line-height: 1.2;
+      margin-bottom: 5px;
       word-break: break-word;
     }
-    .info-row {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 3px;
-      align-items: baseline;
-    }
-    .lbl {
-      font-size: 6px;
+    .r { display: flex; gap: 3px; margin-bottom: 2.5px; align-items: baseline; }
+    .rl {
+      font-size: 5.5px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
-      letter-spacing: 0.06em;
+      letter-spacing: 0.05em;
       flex-shrink: 0;
-      width: 44px;
+      width: 40px;
     }
-    .val {
-      font-size: 7px;
+    .rv {
+      font-size: 6.5px;
       color: #374151;
       font-weight: 500;
       word-break: break-word;
       flex: 1;
     }
 
-    /* Compliance */
-    .compliance-bar {
-      display: flex;
-      align-items: center;
-      padding: 5px 9px;
-      background: #f8fafc;
-      border-top: 1px solid #f1f5f9;
-      gap: 4px;
-    }
-    .comp-item { display: flex; align-items: center; gap: 4px; flex: 1; }
-    .comp-sep { width: 1px; height: 14px; background: #e2e8f0; flex-shrink: 0; }
-    .comp-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .comp-lbl { font-size: 5.5px; font-weight: 700; color: #94a3b8;
-      text-transform: uppercase; letter-spacing: 0.05em; }
-    .comp-val { font-size: 6.5px; font-weight: 700; }
-
-    /* QR row */
-    .qr-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 9px;
-      border-top: 1px solid #f1f5f9;
-    }
-    .qr-img { width: 24mm; height: 24mm; flex-shrink: 0; }
-    .qr-info { flex: 1; min-width: 0; }
-    .code-lbl { font-size: 5.5px; font-weight: 700; color: #94a3b8;
-      text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 2px; }
-    .code-val { font-family: 'Courier New', monospace; font-size: 7px;
-      font-weight: 700; color: #0f172a; word-break: break-all; margin-bottom: 3px; }
-    .code-hint { font-size: 6px; color: #94a3b8; line-height: 1.4; }
-
-    /* Footer */
-    .card-footer {
+    /* Footer card */
+    .cf {
       background: #f8fafc;
       border-top: 1px solid #e2e8f0;
-      padding: 3px 9px;
+      padding: 2.5px 9px;
       display: flex;
       justify-content: space-between;
+      flex-shrink: 0;
     }
-    .ft { font-size: 5.5px; color: #94a3b8; }
+    .ft { font-size: 5px; color: #94a3b8; }
+
+    /* ── Retro ── */
+    .back-body { gap: 8px; align-items: center; }
+
+    .back-left { flex: 1; min-width: 0; }
+    .comp-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-bottom: 5px;
+    }
+    .cdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .clbl { font-size: 6px; font-weight: 700; color: #64748b;
+      text-transform: uppercase; letter-spacing: 0.05em; flex: 1; }
+    .cval { font-size: 7px; font-weight: 700; white-space: nowrap; }
+
+    .sep { height: 1px; background: #f1f5f9; margin: 5px 0; }
+
+    .code-lbl { font-size: 5.5px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
+    .code-val { font-family: 'Courier New', monospace; font-size: 7px;
+      font-weight: 700; color: #0f172a; word-break: break-all; }
+
+    .back-right { flex-shrink: 0; text-align: center; }
+    .qr-img { width: 22mm; height: 22mm; display: block; }
+    .qr-hint { font-size: 5px; color: #94a3b8; line-height: 1.4;
+      text-align: center; margin-top: 2px; }
   </style>
 </head>
 <body>
   <div class="page">
-    <div class="cut-hint">
-      <strong>Stampare</strong> · Ritagliare lungo la linea tratteggiata · <strong>Plastificare</strong> · Consegnare al lavoratore
+
+    <div class="hint">
+      <strong>1. Stampare</strong> · <strong>2. Ritagliare</strong> entrambi i rettangoli ·
+      <strong>3. Incollare schiena a schiena</strong> (fronte fuori, retro fuori) · <strong>4. Plastificare</strong>
     </div>
-    <div class="badges-row">
-      ${card}
-    </div>
+
+    <div class="face-label">▲ Fronte</div>
+    ${front}
+
+    <div class="gap"></div>
+
+    <div class="face-label">▲ Retro</div>
+    ${back}
+
   </div>
 </body>
 </html>`;
