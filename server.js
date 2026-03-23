@@ -182,6 +182,9 @@ app.get('/onboarding', (req, res) => {
 app.get('/setup', (req, res) => {
   res.sendFile('setup.html', { root: __dirname + '/public' });
 });
+app.get('/badge/:code', (req, res) => {
+  res.sendFile('badge.html', { root: __dirname + '/public' });
+});
 app.get('/demo', (req, res) => {
   res.sendFile('demo.html', { root: __dirname + '/public' });
 });

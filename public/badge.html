@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Verifica Badge — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f172a;
+      --surface: #1e293b;
+      --surface2: #0f172a;
+      --border:  #334155;
+      --accent:  #3b82f6;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --amber:   #f59e0b;
+      --gray:    #64748b;
+      --text:    #f1f5f9;
+      --muted:   #94a3b8;
+      --radius:  14px;
+      --radius-sm: 8px;
+    }
+
+    html, body {
+      min-height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 32px 16px 64px;
+    }
+
+    /* ── Header brand ── */
+    .brand {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      color: var(--muted);
+      text-transform: uppercase;
+      margin-bottom: 32px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .brand-dot {
+      width: 5px;
+      height: 5px;
+      background: var(--accent);
+      border-radius: 50%;
+    }
+
+    /* ── Container principale ── */
+    .container {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Card generica ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    /* ── Stato loading / errore ── */
+    .state-card {
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .state-icon {
+      font-size: 40px;
+      margin-bottom: 16px;
+      display: block;
+    }
+    .state-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+    .state-sub {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .spinner {
+      width: 36px;
+      height: 36px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Banner status globale ── */
+    .status-banner {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 16px 20px;
+    }
+    .status-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .status-title {
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+    .status-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 1px;
+    }
+
+    /* Status colors */
+    .s-compliant     .status-icon { background: rgba(34,197,94,.15);  color: var(--green); }
+    .s-compliant     .status-title { color: var(--green); }
+    .s-expiring      .status-icon { background: rgba(245,158,11,.15); color: var(--amber); }
+    .s-expiring      .status-title { color: var(--amber); }
+    .s-non_compliant .status-icon { background: rgba(239,68,68,.15);  color: var(--red);   }
+    .s-non_compliant .status-title { color: var(--red); }
+    .s-incomplete    .status-icon { background: rgba(100,116,139,.15); color: var(--muted); }
+    .s-incomplete    .status-title { color: var(--muted); }
+    .s-inactive      .status-icon { background: rgba(30,41,59,.8);    color: var(--muted); }
+    .s-inactive      .status-title { color: var(--muted); }
+
+    /* ── Foto + identità ── */
+    .identity-card {
+      display: flex;
+      gap: 16px;
+      padding: 20px;
+      align-items: flex-start;
+    }
+    .worker-photo {
+      width: 80px;
+      height: 96px;
+      border-radius: 8px;
+      object-fit: cover;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--surface);
+    }
+    .photo-placeholder {
+      width: 80px;
+      height: 96px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      flex-shrink: 0;
+      background: #1e293b;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .photo-placeholder span {
+      font-size: 28px;
+      color: var(--muted);
+      line-height: 1;
+    }
+    .photo-placeholder small {
+      font-size: 9px;
+      color: var(--muted);
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+    .identity-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .worker-name {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.2;
+      margin-bottom: 6px;
+      word-break: break-word;
+    }
+    .worker-company {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      word-break: break-word;
+    }
+    .worker-employer {
+      font-size: 12px;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      background: rgba(255,255,255,0.04);
+      white-space: nowrap;
+    }
+    .tag.sub-auth {
+      border-color: rgba(59,130,246,0.4);
+      color: var(--accent);
+      background: rgba(59,130,246,0.08);
+    }
+
+    /* ── Campi dettaglio ── */
+    .fields-card {
+      padding: 4px 0;
+    }
+    .field-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 20px;
+      border-bottom: 1px solid rgba(51,65,85,0.5);
+    }
+    .field-row:last-child { border-bottom: none; }
+    .field-label {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+    .field-value {
+      font-size: 13px;
+      color: var(--text);
+      text-align: right;
+      word-break: break-word;
+    }
+
+    /* ── Compliance ── */
+    .compliance-card {
+      padding: 4px 0;
+    }
+    .compliance-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 13px 20px;
+      border-bottom: 1px solid rgba(51,65,85,0.5);
+    }
+    .compliance-row:last-child { border-bottom: none; }
+    .compliance-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .compliance-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 12px;
+      border-radius: 20px;
+    }
+    .compliance-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .cs-ok       { background: rgba(34,197,94,.12);  color: #22c55e; }
+    .cs-ok       .compliance-dot { background: #22c55e; }
+    .cs-expiring { background: rgba(245,158,11,.12); color: #f59e0b; }
+    .cs-expiring .compliance-dot { background: #f59e0b; }
+    .cs-expired  { background: rgba(239,68,68,.12);  color: #ef4444; }
+    .cs-expired  .compliance-dot { background: #ef4444; }
+    .cs-not_set  { background: rgba(100,116,139,.1); color: #94a3b8; }
+    .cs-not_set  .compliance-dot { background: #94a3b8; }
+
+    /* ── Codice badge ── */
+    .badge-code-card {
+      padding: 20px;
+    }
+    .badge-code-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .badge-code-value {
+      font-family: 'Courier New', Courier, monospace;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: 0.06em;
+      word-break: break-all;
+      margin-bottom: 8px;
+    }
+    .badge-code-hint {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ── Footer ── */
+    .page-footer {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 11px;
+      color: #475569;
+      line-height: 1.7;
+    }
+    .page-footer a {
+      color: #64748b;
+      text-decoration: none;
+    }
+    .timestamp {
+      margin-top: 6px;
+      font-size: 10px;
+      color: #334155;
+    }
+
+    /* ── Sezione label ── */
+    .section-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 0 4px;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="brand">
+    <span>PALLADIA</span>
+    <div class="brand-dot"></div>
+    <span>Verifica Badge Digitale</span>
+  </div>
+
+  <div class="container" id="container">
+    <!-- contenuto iniettato da JS -->
+    <div class="card state-card" id="loading-state">
+      <div class="spinner"></div>
+      <div class="state-title">Verifica in corso…</div>
+      <div class="state-sub">Recupero dati badge dall'archivio Palladia</div>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    Palladia · Registro Presenze Digitale · D.Lgs. 81/2008<br>
+    <div class="timestamp" id="ts"></div>
+  </div>
+
+  <script>
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    function esc(str) {
+      if (str == null) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function formatDate(iso) {
+      if (!iso) return null;
+      try {
+        return new Date(iso).toLocaleDateString('it-IT', {
+          day: '2-digit', month: 'long', year: 'numeric',
+        });
+      } catch { return iso; }
+    }
+
+    // Formatta badge_code con trattini: A3F7K2-09B1E8-D0C5F4
+    function formatCode(code) {
+      if (!code) return '';
+      return code.replace(/(.{6})/g, '$1-').replace(/-$/, '');
+    }
+
+    const STATUS_CONFIG = {
+      compliant:     { icon: '✓', title: 'Badge Conforme',     sub: 'Tutti i documenti sono validi e aggiornati' },
+      expiring:      { icon: '⚠', title: 'Documenti in Scadenza', sub: 'Uno o più documenti stanno per scadere' },
+      non_compliant: { icon: '✗', title: 'Documenti Scaduti',  sub: 'Uno o più documenti risultano scaduti'  },
+      incomplete:    { icon: '○', title: 'Dati Incompleti',    sub: 'Alcuni documenti non sono stati ancora inseriti' },
+      inactive:      { icon: '—', title: 'Lavoratore Inattivo', sub: 'Il badge è stato disattivato'           },
+    };
+
+    const COMPLIANCE_CONFIG = {
+      ok:       { cls: 'cs-ok',       label: 'Valida'          },
+      expiring: { cls: 'cs-expiring', label: 'In scadenza'     },
+      expired:  { cls: 'cs-expired',  label: 'Scaduta'         },
+      not_set:  { cls: 'cs-not_set',  label: 'Non impostata'   },
+    };
+
+    function complianceBadge(status) {
+      const { cls, label } = COMPLIANCE_CONFIG[status] || COMPLIANCE_CONFIG.not_set;
+      return `<span class="compliance-badge ${cls}">
+        <span class="compliance-dot"></span>${esc(label)}
+      </span>`;
+    }
+
+    // ── Estrai badge code dall'URL (/badge/XXXXXXXXXXXXXXXXXX) ───────────────
+    function getBadgeCodeFromUrl() {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      // Atteso: ['badge', 'XXXXXXXXXXXXXXXXXX']
+      const idx = parts.indexOf('badge');
+      return idx !== -1 ? (parts[idx + 1] || '') : '';
+    }
+
+    // ── Render errore ────────────────────────────────────────────────────────
+    function renderError(title, sub) {
+      document.getElementById('container').innerHTML = `
+        <div class="card state-card">
+          <span class="state-icon">⚠</span>
+          <div class="state-title">${esc(title)}</div>
+          <div class="state-sub">${esc(sub)}</div>
+        </div>`;
+    }
+
+    // ── Render badge dati ────────────────────────────────────────────────────
+    function renderBadge(d) {
+      const cfg    = STATUS_CONFIG[d.overall_status] || STATUS_CONFIG.inactive;
+      const cls    = 's-' + (d.overall_status || 'inactive');
+      const code   = formatCode(d.badge_code);
+
+      // Foto o placeholder
+      const photoHtml = d.photo_url
+        ? `<img src="${esc(d.photo_url)}" alt="Foto lavoratore" class="worker-photo">`
+        : `<div class="photo-placeholder">
+             <span>&#128100;</span>
+             <small>Nessuna foto</small>
+           </div>`;
+
+      // Impresa: employer_name se diverso da company_name
+      const showEmployer = d.employer_name && d.employer_name !== d.company_name;
+
+      // Tags: qualifica + mansione
+      const tags = [
+        d.qualification ? `<span class="tag">${esc(d.qualification)}</span>` : '',
+        d.role          ? `<span class="tag">${esc(d.role)}</span>`          : '',
+        d.subcontracting_auth
+          ? `<span class="tag sub-auth">Subappalto autorizzato</span>` : '',
+      ].filter(Boolean).join('');
+
+      // Righe dettaglio (solo quelle con valore)
+      const fieldRows = [
+        d.hire_date
+          ? `<div class="field-row">
+               <span class="field-label">Data assunzione</span>
+               <span class="field-value">${esc(formatDate(d.hire_date))}</span>
+             </div>`
+          : '',
+        d.company_name
+          ? `<div class="field-row">
+               <span class="field-label">Gestione presenze</span>
+               <span class="field-value">${esc(d.company_name)}</span>
+             </div>`
+          : '',
+        `<div class="field-row">
+           <span class="field-label">Stato</span>
+           <span class="field-value">${d.is_active ? 'Attivo' : 'Inattivo'}</span>
+         </div>`,
+      ].filter(Boolean).join('');
+
+      const html = `
+        <!-- Status banner -->
+        <div class="card">
+          <div class="status-banner ${cls}">
+            <div class="status-icon">${cfg.icon}</div>
+            <div>
+              <div class="status-title">${cfg.title}</div>
+              <div class="status-sub">${cfg.sub}</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Identità -->
+        <div class="card">
+          <div class="identity-card">
+            ${photoHtml}
+            <div class="identity-info">
+              <div class="worker-name">${esc(d.full_name)}</div>
+              ${d.company_name ? `<div class="worker-company">${esc(d.company_name)}</div>` : ''}
+              ${showEmployer   ? `<div class="worker-employer">Impresa: ${esc(d.employer_name)}</div>` : ''}
+              ${tags ? `<div class="tag-row">${tags}</div>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <!-- Dettagli -->
+        ${fieldRows ? `<div class="section-label">Dettagli</div><div class="card fields-card">${fieldRows}</div>` : ''}
+
+        <!-- Compliance documenti -->
+        <div class="section-label">Documenti di conformità</div>
+        <div class="card compliance-card">
+          <div class="compliance-row">
+            <span class="compliance-label">Formazione Sicurezza</span>
+            ${complianceBadge(d.safety_training_status)}
+          </div>
+          <div class="compliance-row">
+            <span class="compliance-label">Idoneità Sanitaria</span>
+            ${complianceBadge(d.health_fitness_status)}
+          </div>
+        </div>
+
+        <!-- Codice badge -->
+        <div class="section-label">Identificazione badge</div>
+        <div class="card badge-code-card">
+          <div class="badge-code-label">Codice univoco anticontraffazione</div>
+          <div class="badge-code-value">${esc(code)}</div>
+          <div class="badge-code-hint">
+            Codice generato da Palladia, univoco e non replicabile.<br>
+            Corrisponde al QR code stampato sul badge fisico.
+          </div>
+        </div>`;
+
+      document.getElementById('container').innerHTML = html;
+
+      // Timestamp verifica
+      const ts = document.getElementById('ts');
+      if (ts) {
+        ts.textContent = 'Verificato il ' + new Date().toLocaleString('it-IT', {
+          day: '2-digit', month: 'long', year: 'numeric',
+          hour: '2-digit', minute: '2-digit',
+        });
+      }
+    }
+
+    // ── Main ─────────────────────────────────────────────────────────────────
+    async function main() {
+      const code = getBadgeCodeFromUrl();
+
+      if (!code || !/^[A-Fa-f0-9]{18}$/.test(code)) {
+        renderError('Codice non valido', 'Il link a questo badge non è corretto o è stato modificato.');
+        return;
+      }
+
+      // L'API è sullo stesso host del server
+      const apiBase = window.location.origin;
+
+      let data;
+      try {
+        const resp = await fetch(`${apiBase}/api/v1/badge/${code}`, {
+          headers: { 'Accept': 'application/json' },
+        });
+
+        if (resp.status === 404) {
+          renderError('Badge non trovato', 'Il codice non corrisponde a nessun lavoratore nell\'archivio Palladia.');
+          return;
+        }
+        if (resp.status === 429) {
+          renderError('Troppe richieste', 'Hai effettuato troppe verifiche in poco tempo. Riprova tra un minuto.');
+          return;
+        }
+        if (!resp.ok) {
+          renderError('Errore del server', 'Impossibile verificare il badge in questo momento. Riprova più tardi.');
+          return;
+        }
+        data = await resp.json();
+      } catch (err) {
+        renderError('Errore di rete', 'Impossibile contattare il server Palladia. Verifica la connessione e riprova.');
+        return;
+      }
+
+      renderBadge(data);
+    }
+
+    main();
+  </script>
+</body>
+</html>
