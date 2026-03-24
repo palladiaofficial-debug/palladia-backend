@@ -103,6 +103,7 @@ router.post('/sites/:siteId/documents', verifySupabaseJwt,
 );
 
 // ── GET /api/v1/sites/:siteId/documents ──────────────────────────────────────
+// Restituisce file caricati (site_documents) + POS generati (pos_documents), unificati
 router.get('/sites/:siteId/documents', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
 
@@ -110,14 +111,35 @@ router.get('/sites/:siteId/documents', verifySupabaseJwt, async (req, res) => {
     .from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
 
-  const { data, error } = await supabase
-    .from('site_documents')
-    .select('id, name, category, file_size, mime_type, created_at')
-    .eq('site_id', siteId).eq('company_id', req.companyId)
-    .order('created_at', { ascending: false });
+  const [{ data: uploaded, error }, { data: posDocs }] = await Promise.all([
+    supabase.from('site_documents')
+      .select('id, name, category, file_size, mime_type, created_at')
+      .eq('site_id', siteId).eq('company_id', req.companyId)
+      .order('created_at', { ascending: false }),
+    supabase.from('pos_documents')
+      .select('id, revision, created_at')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json(data);
+
+  const posFormatted = (posDocs || []).map(p => ({
+    id:         `pos_${p.id}`,
+    pos_id:     p.id,
+    name:       `POS — Revisione ${p.revision}`,
+    category:   'pos',
+    file_size:  null,
+    mime_type:  'application/pdf',
+    created_at: p.created_at,
+    source:     'pos',
+  }));
+
+  const all = [...(uploaded || []).map(d => ({ ...d, source: 'upload' })), ...posFormatted]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  res.json(all);
 });
 
 // ── DELETE /api/v1/documents/:docId ──────────────────────────────────────────
@@ -167,14 +189,35 @@ router.get('/coordinator/:token/documents', coordinatorLimiter, async (req, res)
   const invite = await resolveCoordToken(req.params.token);
   if (!invite) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
-  const { data, error } = await supabase
-    .from('site_documents')
-    .select('id, name, category, file_size, mime_type, created_at')
-    .eq('site_id', invite.site_id).eq('company_id', invite.company_id)
-    .order('created_at', { ascending: false });
+  const [{ data: uploaded, error }, { data: posDocs }] = await Promise.all([
+    supabase.from('site_documents')
+      .select('id, name, category, file_size, mime_type, created_at')
+      .eq('site_id', invite.site_id).eq('company_id', invite.company_id)
+      .order('created_at', { ascending: false }),
+    supabase.from('pos_documents')
+      .select('id, revision, created_at')
+      .eq('site_id', invite.site_id)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json(data);
+
+  const posFormatted = (posDocs || []).map(p => ({
+    id:         `pos_${p.id}`,
+    pos_id:     p.id,
+    name:       `POS — Revisione ${p.revision}`,
+    category:   'pos',
+    file_size:  null,
+    mime_type:  'application/pdf',
+    created_at: p.created_at,
+    source:     'pos',
+  }));
+
+  const all = [...(uploaded || []).map(d => ({ ...d, source: 'upload' })), ...posFormatted]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  res.json(all);
 });
 
 // ── GET /api/v1/coordinator/:token/documents/:docId/download ─────────────────
@@ -196,6 +239,46 @@ router.get('/coordinator/:token/documents/:docId/download', coordinatorLimiter, 
   if (signErr || !signed) return res.status(500).json({ error: 'SIGNED_URL_ERROR' });
 
   res.json({ url: signed.signedUrl, name: doc.name });
+});
+
+// ── GET /api/v1/coordinator/:token/pos/:posId/pdf ────────────────────────────
+// Genera e invia il PDF del POS al coordinatore (token-gated, no JWT)
+router.get('/coordinator/:token/pos/:posId/pdf', coordinatorLimiter, async (req, res) => {
+  const invite = await resolveCoordToken(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
+
+  const { data: pos } = await supabase
+    .from('pos_documents')
+    .select('id, revision, content, pos_data')
+    .eq('id', req.params.posId)
+    .eq('site_id', invite.site_id)
+    .maybeSingle();
+  if (!pos) return res.status(404).json({ error: 'POS_NOT_FOUND' });
+
+  const { data: site } = await supabase
+    .from('sites').select('name').eq('id', invite.site_id).maybeSingle();
+  const siteName = (site?.name || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_');
+
+  try {
+    // Lazy require — stessi moduli usati in server.js
+    const { generatePosHtml } = require('../../pos-html-generator');
+    const { selectSigns }     = require('../../sign-selector');
+    const { rendererPool }    = require('../../pdf-renderer');
+
+    const signs     = selectSigns(pos.pos_data || {});
+    const html      = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    const pdfBuffer = await rendererPool.render(html, {
+      docTitle: `POS – ${site?.name || 'Cantiere'} – Rev. ${pos.revision}`,
+      revision: pos.revision,
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="POS-Rev${pos.revision}-${siteName}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (e) {
+    console.error('[documents] POS pdf for coordinator error:', e.message);
+    res.status(500).json({ error: 'PDF_GENERATION_ERROR' });
+  }
 });
 
 module.exports = router;

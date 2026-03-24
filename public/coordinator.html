@@ -531,7 +531,7 @@ function renderApp() {
             <span>${fmtDate(d.created_at)}</span>
           </div>
         </div>
-        <button class="btn-download" id="dlbtn-${esc(d.id)}" onclick="downloadDoc('${esc(d.id)}')">↓ Scarica</button>
+        <button class="btn-download" id="dlbtn-${esc(d.id)}" onclick="downloadDoc('${esc(d.id)}','${esc(d.source||'upload')}','${esc(d.pos_id||'')}')">↓ Scarica</button>
       </div>`).join('');
   }
   const documentsSection = docData.length > 0 ? `
@@ -621,10 +621,14 @@ async function submitNote() {
   }
 }
 
-async function downloadDoc(docId) {
+async function downloadDoc(docId, source, posId) {
   const btn = document.getElementById('dlbtn-' + docId);
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
   try {
+    if (source === 'pos' && posId) {
+      window.open(apiUrl(`/api/v1/coordinator/${token}/pos/${posId}/pdf`), '_blank', 'noopener,noreferrer');
+      return;
+    }
     const res = await fetch(apiUrl(`/api/v1/coordinator/${token}/documents/${docId}/download`));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const { url, name } = await res.json();
