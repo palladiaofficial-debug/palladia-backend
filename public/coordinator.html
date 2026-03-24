@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Portale CSE — Palladia</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --bg:        #0f0f0f;
+    --card:      #1a1a1a;
+    --card2:     #222222;
+    --border:    #2d2d2d;
+    --text:      #f0f0f0;
+    --muted:     #888;
+    --accent:    #ffffff;
+    --green:     #22c55e;
+    --yellow:    #f59e0b;
+    --red:       #ef4444;
+    --orange:    #f97316;
+    --blue:      #3b82f6;
+  }
+
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 15px; line-height: 1.5; }
+
+  /* ── Layout ── */
+  .container { max-width: 720px; margin: 0 auto; padding: 0 16px 120px; }
+
+  /* ── Header ── */
+  .top-bar { position: sticky; top: 0; z-index: 100; background: var(--bg);
+    border-bottom: 1px solid var(--border); padding: 14px 16px; display: flex;
+    align-items: center; justify-content: space-between; }
+  .top-bar .brand { font-size: 14px; font-weight: 800; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--accent); }
+  .top-bar .badge-cse { font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
+    text-transform: uppercase; color: var(--muted); background: var(--card);
+    border: 1px solid var(--border); padding: 3px 10px; border-radius: 20px; }
+
+  /* ── Site hero ── */
+  .site-hero { padding: 28px 0 20px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+  .site-hero .label { font-size: 11px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+  .site-hero h1 { margin: 0 0 4px; font-size: 24px; font-weight: 800; color: var(--accent); }
+  .site-hero .address { margin: 0 0 12px; font-size: 14px; color: var(--muted); }
+  .site-hero .meta-row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .site-hero .meta-pill { display: flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--muted); background: var(--card); border: 1px solid var(--border);
+    padding: 4px 12px; border-radius: 20px; }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+
+  /* ── Section titles ── */
+  .section-title { font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--muted); margin: 28px 0 12px; }
+
+  /* ── KPI grid ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 8px; }
+  .kpi-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 16px 14px; }
+  .kpi-card .kpi-val { font-size: 26px; font-weight: 800; color: var(--accent); line-height: 1; margin-bottom: 4px; }
+  .kpi-card .kpi-lbl { font-size: 11px; color: var(--muted); font-weight: 500; }
+
+  /* ── Compliance summary ── */
+  .compliance-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+  .comp-pill { border-radius: 10px; padding: 12px 10px; text-align: center; border: 1px solid transparent; }
+  .comp-pill .num  { font-size: 22px; font-weight: 800; line-height: 1; }
+  .comp-pill .lbl  { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .comp-compliant   { background: #052613; border-color: #166534; color: var(--green); }
+  .comp-expiring    { background: #1c1204; border-color: #854d0e; color: var(--yellow); }
+  .comp-noncompliant { background: #1c0505; border-color: #991b1b; color: var(--red); }
+  .comp-incomplete  { background: #141414; border-color: #374151; color: var(--muted); }
+
+  /* ── Worker list ── */
+  .worker-list { display: flex; flex-direction: column; gap: 8px; }
+  .worker-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; display: flex; align-items: flex-start; gap: 14px; }
+  .worker-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 800;
+    flex-shrink: 0; color: #fff; }
+  .worker-info { flex: 1; min-width: 0; }
+  .worker-name { font-size: 14px; font-weight: 700; color: var(--accent); white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .worker-sub  { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .worker-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .badge-tag { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 20px; border: 1px solid; }
+  .tag-ok       { background: #052613; border-color: #166534; color: var(--green); }
+  .tag-expiring { background: #1c1204; border-color: #854d0e; color: var(--yellow); }
+  .tag-expired  { background: #1c0505; border-color: #991b1b; color: var(--red); }
+  .tag-notset   { background: #141414; border-color: #374151; color: var(--muted); }
+  .tag-sub      { background: #0c1625; border-color: #1e3a5f; color: var(--blue); }
+
+  /* ── Presence timeline ── */
+  .day-row { display: grid; grid-template-columns: 90px 1fr; gap: 12px;
+    align-items: center; padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .day-row:last-child { border-bottom: none; }
+  .day-label { font-size: 12px; font-weight: 600; color: var(--muted); }
+  .day-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+  .presence-pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+    background: var(--card2); border: 1px solid var(--border); color: var(--text); }
+  .presence-pill.anomaly { background: #1c0505; border-color: #991b1b; color: var(--red); }
+
+  /* ── Notes ── */
+  .note-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 8px; }
+  .note-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .note-type-badge { font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 2px 9px; border-radius: 20px; }
+  .nt-observation { background: #1a1a2e; border: 1px solid #1e3a5f; color: #93c5fd; }
+  .nt-request     { background: #1c1204; border: 1px solid #854d0e; color: #fcd34d; }
+  .nt-approval    { background: #052613; border: 1px solid #166534; color: var(--green); }
+  .nt-warning     { background: #1c0505; border: 1px solid #991b1b; color: var(--red); }
+  .note-meta      { font-size: 12px; color: var(--muted); }
+  .note-content   { font-size: 14px; color: var(--text); line-height: 1.6; white-space: pre-wrap; }
+
+  /* ── Add note form ── */
+  .sticky-bar { position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+    background: var(--bg); border-top: 1px solid var(--border); padding: 12px 16px; }
+  .sticky-inner { max-width: 720px; margin: 0 auto; }
+  .note-form { display: flex; flex-direction: column; gap: 8px; }
+  .note-form textarea { width: 100%; background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 10px 14px; color: var(--text); font-size: 14px;
+    font-family: inherit; resize: none; outline: none; transition: border-color .2s; }
+  .note-form textarea:focus { border-color: #555; }
+  .note-form-row { display: flex; gap: 8px; align-items: center; }
+  .note-type-select { background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 12px; color: var(--text); font-size: 13px; font-weight: 600;
+    outline: none; cursor: pointer; flex: 1; }
+  .note-type-select option { background: var(--card); }
+  .btn-send { background: var(--accent); color: #000; border: none; border-radius: 8px;
+    padding: 9px 20px; font-size: 13px; font-weight: 800; cursor: pointer;
+    transition: opacity .2s; white-space: nowrap; }
+  .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-toggle { background: none; border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: var(--muted); transition: all .2s; width: 100%; }
+  .btn-toggle:hover { border-color: #555; color: var(--text); }
+
+  /* ── States ── */
+  .loading { display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 60vh; gap: 16px; color: var(--muted); }
+  .spinner { width: 36px; height: 36px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-state { text-align: center; padding: 48px 24px; }
+  .error-state .icon { font-size: 40px; margin-bottom: 16px; }
+  .error-state h2 { margin: 0 0 8px; font-size: 20px; color: var(--accent); }
+  .error-state p  { margin: 0; font-size: 14px; color: var(--muted); line-height: 1.6; }
+  .empty-state { text-align: center; padding: 32px 0; color: var(--muted); font-size: 13px; }
+
+  /* ── Coordinator info strip ── */
+  .coord-strip { background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 4px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px; }
+  .coord-strip .left { display: flex; flex-direction: column; gap: 2px; }
+  .coord-strip .name { font-size: 14px; font-weight: 700; color: var(--accent); }
+  .coord-strip .company { font-size: 12px; color: var(--muted); }
+  .expiry-pill { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px;
+    background: var(--card2); border: 1px solid var(--border); color: var(--muted);
+    white-space: nowrap; }
+
+  @media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .kpi-card .kpi-val { font-size: 22px; }
+    .compliance-bar { grid-template-columns: repeat(2, 1fr); }
+    .day-row { grid-template-columns: 76px 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <span class="brand">PALLADIA</span>
+  <span class="badge-cse">Portale CSE</span>
+</div>
+
+<div id="app">
+  <div class="loading" id="loadingState">
+    <div class="spinner"></div>
+    <span>Caricamento cantiere…</span>
+  </div>
+</div>
+
+<!-- Sticky note bar (hidden until loaded) -->
+<div class="sticky-bar" id="noteBar" style="display:none;">
+  <div class="sticky-inner">
+    <div id="noteFormCollapsed">
+      <button class="btn-toggle" onclick="expandNoteForm()">+ Aggiungi nota al cantiere</button>
+    </div>
+    <div id="noteFormExpanded" style="display:none;">
+      <div class="note-form">
+        <textarea id="noteContent" rows="3" placeholder="Scrivi un'osservazione, richiesta o avvertenza…" maxlength="2000"></textarea>
+        <div class="note-form-row">
+          <select id="noteType" class="note-type-select">
+            <option value="observation">Osservazione</option>
+            <option value="request">Richiesta</option>
+            <option value="approval">Approvazione</option>
+            <option value="warning">Avvertenza</option>
+          </select>
+          <button class="btn-send" id="sendNoteBtn" onclick="submitNote()">Invia</button>
+          <button class="btn-toggle" style="width:auto;padding:9px 14px;" onclick="collapseNoteForm()">✕</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Utils ────────────────────────────────────────────────────────────────────
+
+function getToken() {
+  const parts = window.location.pathname.split('/');
+  return parts[parts.length - 1] || parts[parts.length - 2];
+}
+
+function apiUrl(path) {
+  const base = window.location.hostname === 'localhost'
+    ? 'http://localhost:3000'
+    : window.location.origin.replace(/\/$/, '');
+  return base + path;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })
+    + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
+function avatarColor(name) {
+  const colors = ['#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#22c55e','#ef4444','#f97316'];
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffff;
+  return colors[h % colors.length];
+}
+
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+// ── State ────────────────────────────────────────────────────────────────────
+let token = getToken();
+let siteData = null;
+
+// ── Load ─────────────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    const res = await fetch(apiUrl(`/api/v1/coordinator/${token}`));
+    if (res.status === 404) { renderError('Link non valido o scaduto',
+      'Il link di accesso che hai usato non è più valido o è scaduto.<br/>Contatta l\'impresa per richiedere un nuovo invito.'); return; }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    siteData = await res.json();
+    renderApp();
+  } catch (e) {
+    renderError('Errore di connessione', 'Non è stato possibile caricare i dati del cantiere.<br/>Controlla la connessione e riprova.');
+  }
+}
+
+function renderError(title, msg) {
+  document.getElementById('app').innerHTML = `
+    <div class="container">
+      <div class="error-state">
+        <div class="icon">🔒</div>
+        <h2>${esc(title)}</h2>
+        <p>${msg}</p>
+      </div>
+    </div>`;
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function renderApp() {
+  const { site, invite, workers, compliance_stats, presence_summary, notes } = siteData;
+
+  const statusColors = { attivo: '#22c55e', sospeso: '#f59e0b', chiuso: '#6b7280', default: '#3b82f6' };
+  const dotColor = statusColors[site.status] || statusColors.default;
+  const statusLabel = { attivo: 'Attivo', sospeso: 'Sospeso', chiuso: 'Chiuso' }[site.status] || site.status;
+
+  // ── Site hero
+  const heroHtml = `
+    <div class="site-hero">
+      <p class="label">Cantiere</p>
+      <h1>${esc(site.name)}</h1>
+      <p class="address">${esc(site.address || '')}</p>
+      <div class="meta-row">
+        <div class="meta-pill">
+          <span class="status-dot" style="background:${dotColor};"></span>
+          ${esc(statusLabel)}
+        </div>
+        ${site.client ? `<div class="meta-pill">👤 ${esc(site.client)}</div>` : ''}
+        ${site.start_date ? `<div class="meta-pill">📅 Inizio ${fmtDate(site.start_date)}</div>` : ''}
+      </div>
+    </div>`;
+
+  // ── Coordinator strip
+  const coordHtml = `
+    <p class="section-title">Accesso come</p>
+    <div class="coord-strip">
+      <div class="left">
+        <span class="name">${esc(invite.coordinator_name)}</span>
+        ${invite.coordinator_company ? `<span class="company">${esc(invite.coordinator_company)}</span>` : ''}
+      </div>
+      <span class="expiry-pill">Scade ${fmtDate(invite.expires_at)}</span>
+    </div>`;
+
+  // ── KPI presenze
+  const ps = presence_summary;
+  const kpiHtml = `
+    <p class="section-title">Presenze — ultimi 7 giorni</p>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-val">${ps.total_entries}</div><div class="kpi-lbl">Ingressi totali</div></div>
+      <div class="kpi-card"><div class="kpi-val">${ps.days_with_presence}</div><div class="kpi-lbl">Giorni con presenze</div></div>
+      <div class="kpi-card"><div class="kpi-val">${workers.length}</div><div class="kpi-lbl">Maestranze</div></div>
+    </div>`;
+
+  // ── Presence timeline
+  let timelineRows = '';
+  if (ps.recent_days && ps.recent_days.length > 0) {
+    for (const d of ps.recent_days) {
+      const anomaly = d.anomalies > 0 ? `<span class="presence-pill anomaly">⚠ ${d.anomalies} uscite mancanti</span>` : '';
+      timelineRows += `
+        <div class="day-row">
+          <span class="day-label">${fmtDateShort(d.date)}</span>
+          <div class="day-stats">
+            <span class="presence-pill">${d.worker_count} lavoratori</span>
+            <span class="presence-pill">${d.entries} entrate</span>
+            <span class="presence-pill">${d.exits} uscite</span>
+            ${anomaly}
+          </div>
+        </div>`;
+    }
+  } else {
+    timelineRows = '<div class="empty-state">Nessuna presenza registrata nell\'ultimo periodo</div>';
+  }
+  const timelineHtml = `<div id="presenceTimeline">${timelineRows}</div>`;
+
+  // ── Compliance stats
+  const cs = compliance_stats || {};
+  const compHtml = `
+    <p class="section-title">Conformità documenti</p>
+    <div class="compliance-bar">
+      <div class="comp-pill comp-compliant">
+        <div class="num">${cs.compliant || 0}</div><div class="lbl">Conformi</div>
+      </div>
+      <div class="comp-pill comp-expiring">
+        <div class="num">${cs.expiring || 0}</div><div class="lbl">In scadenza</div>
+      </div>
+      <div class="comp-pill comp-noncompliant">
+        <div class="num">${cs.non_compliant || 0}</div><div class="lbl">Non conformi</div>
+      </div>
+      <div class="comp-pill comp-incomplete">
+        <div class="num">${cs.incomplete || 0}</div><div class="lbl">Incompleti</div>
+      </div>
+    </div>`;
+
+  // ── Workers
+  const workerCards = workers.map(w => {
+    const c = w.compliance;
+    const overallClass = { compliant: 'tag-ok', expiring: 'tag-expiring', non_compliant: 'tag-expired', incomplete: 'tag-notset' }[c.overall] || 'tag-notset';
+    const overallLabel = { compliant: 'Conforme', expiring: 'In scadenza', non_compliant: 'Non conforme', incomplete: 'Incompleto' }[c.overall] || c.overall;
+    const safetyLbl = { ok: 'Formazione OK', expiring: 'Formazione in scad.', expired: 'Formazione scaduta', not_set: 'Formazione nd' }[c.safety] || c.safety;
+    const healthLbl = { ok: 'Idoneità OK', expiring: 'Idoneità in scad.', expired: 'Idoneità scaduta', not_set: 'Idoneità nd' }[c.health] || c.health;
+    const safetyClass = { ok: 'tag-ok', expiring: 'tag-expiring', expired: 'tag-expired', not_set: 'tag-notset' }[c.safety] || 'tag-notset';
+    const healthClass = { ok: 'tag-ok', expiring: 'tag-expiring', expired: 'tag-expired', not_set: 'tag-notset' }[c.health] || 'tag-notset';
+    const subTag = w.subcontracting_auth ? `<span class="badge-tag tag-sub">Subappaltatore</span>` : '';
+    const av = avatarColor(w.full_name);
+    return `
+      <div class="worker-card">
+        <div class="worker-avatar" style="background:${av};">${initials(w.full_name)}</div>
+        <div class="worker-info">
+          <div class="worker-name">${esc(w.full_name)}</div>
+          <div class="worker-sub">
+            ${w.fiscal_code ? esc(w.fiscal_code) : ''}
+            ${w.role ? ' · ' + esc(w.role) : ''}
+            ${w.employer_name ? ' · ' + esc(w.employer_name) : ''}
+          </div>
+          <div class="worker-badges">
+            <span class="badge-tag ${overallClass}">${overallLabel}</span>
+            <span class="badge-tag ${safetyClass}">${safetyLbl}</span>
+            <span class="badge-tag ${healthClass}">${healthLbl}</span>
+            ${subTag}
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const workersHtml = workers.length > 0
+    ? `<div class="worker-list">${workerCards}</div>`
+    : `<div class="empty-state">Nessuna maestranza assegnata a questo cantiere</div>`;
+
+  // ── Notes
+  let notesHtml = '';
+  if (notes && notes.length > 0) {
+    notesHtml = notes.map(n => {
+      const typeClass = { observation: 'nt-observation', request: 'nt-request', approval: 'nt-approval', warning: 'nt-warning' }[n.note_type] || 'nt-observation';
+      const typeLabel = { observation: 'Osservazione', request: 'Richiesta', approval: 'Approvazione', warning: 'Avvertenza' }[n.note_type] || n.note_type;
+      return `
+        <div class="note-card">
+          <div class="note-header">
+            <span class="note-type-badge ${typeClass}">${typeLabel}</span>
+            <span class="note-meta">${esc(n.coordinator_name)} · ${fmtDateTime(n.created_at)}</span>
+          </div>
+          <div class="note-content">${esc(n.content)}</div>
+        </div>`;
+    }).join('');
+  } else {
+    notesHtml = '<div class="empty-state">Nessuna nota aggiunta</div>';
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="container">
+      ${heroHtml}
+      ${coordHtml}
+      ${kpiHtml}
+      ${timelineHtml}
+      ${compHtml}
+      <p class="section-title">Maestranze (${workers.length})</p>
+      ${workersHtml}
+      <p class="section-title" style="margin-top:32px;">Note del coordinatore</p>
+      <div id="notesList">${notesHtml}</div>
+      <div style="height:16px;"></div>
+    </div>`;
+
+  document.getElementById('noteBar').style.display = 'block';
+}
+
+// ── Note form ────────────────────────────────────────────────────────────────
+function expandNoteForm() {
+  document.getElementById('noteFormCollapsed').style.display = 'none';
+  document.getElementById('noteFormExpanded').style.display = 'block';
+  document.getElementById('noteContent').focus();
+}
+
+function collapseNoteForm() {
+  document.getElementById('noteFormExpanded').style.display = 'none';
+  document.getElementById('noteFormCollapsed').style.display = 'block';
+  document.getElementById('noteContent').value = '';
+}
+
+async function submitNote() {
+  const content   = document.getElementById('noteContent').value.trim();
+  const note_type = document.getElementById('noteType').value;
+  const btn       = document.getElementById('sendNoteBtn');
+
+  if (content.length < 3) { alert('Scrivi almeno 3 caratteri.'); return; }
+
+  btn.disabled = true;
+  btn.textContent = 'Invio…';
+
+  try {
+    const res = await fetch(apiUrl(`/api/v1/coordinator/${token}/notes`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note_type, content }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'HTTP ' + res.status);
+    }
+    const { note } = await res.json();
+
+    // Prepend nota alla lista
+    const listEl = document.getElementById('notesList');
+    const typeClass = { observation: 'nt-observation', request: 'nt-request', approval: 'nt-approval', warning: 'nt-warning' }[note.note_type] || 'nt-observation';
+    const typeLabel = { observation: 'Osservazione', request: 'Richiesta', approval: 'Approvazione', warning: 'Avvertenza' }[note.note_type] || note.note_type;
+
+    // Rimuovi "empty state" se presente
+    const emptyEl = listEl.querySelector('.empty-state');
+    if (emptyEl) emptyEl.remove();
+
+    const noteEl = document.createElement('div');
+    noteEl.className = 'note-card';
+    noteEl.innerHTML = `
+      <div class="note-header">
+        <span class="note-type-badge ${typeClass}">${typeLabel}</span>
+        <span class="note-meta">${esc(note.coordinator_name)} · Adesso</span>
+      </div>
+      <div class="note-content">${esc(note.content)}</div>`;
+    listEl.prepend(noteEl);
+
+    collapseNoteForm();
+    // Scroll to notes
+    listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    alert('Errore nell\'invio della nota: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Invia';
+  }
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+if (!token || token.length !== 64 || !/^[0-9a-f]+$/i.test(token)) {
+  renderError('Link non valido', 'Il link che hai aperto non è valido.<br/>Verifica di aver copiato correttamente l\'URL dall\'email.');
+} else {
+  loadData();
+}
+</script>
+</body>
+</html>

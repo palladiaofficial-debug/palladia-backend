@@ -48,4 +48,13 @@ const aslLimiter = rateLimit({
   message: { error: 'RATE_LIMIT_EXCEEDED' }
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter };
+// Rate limiter per endpoint pubblici coordinatore CSE
+const coordinatorLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter };

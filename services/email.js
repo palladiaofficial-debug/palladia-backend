@@ -321,4 +321,142 @@ async function sendInviteEmail({ to, companyName, inviterName, role, inviteUrl }
   });
 }
 
-module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail };
+// ─── Email: Invito Coordinatore CSE ───────────────────────────────────────────
+
+/**
+ * @param {{ to, coordinatorName, siteName, siteAddress, coordinatorCompany, accessUrl, expiresAt }} opts
+ */
+async function sendCoordinatorInviteEmail({ to, coordinatorName, siteName, siteAddress, coordinatorCompany, accessUrl, expiresAt }) {
+  const firstName = (coordinatorName || to).split(' ')[0];
+  const expDate   = new Date(expiresAt).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${esc(firstName)},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Hai ricevuto l'accesso al portale del coordinatore per il cantiere
+      <strong style="color:#1a1a1a;">${esc(siteName)}</strong>.
+      Potrai visualizzare i documenti, le maestranze e le presenze in tempo reale.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Dettagli cantiere</p>
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;min-width:130px;">Cantiere</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${esc(siteName)}</td>
+            </tr>
+            ${siteAddress ? `<tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Indirizzo</td>
+              <td style="padding:4px 0;font-size:13px;color:#1a1a1a;">${esc(siteAddress)}</td>
+            </tr>` : ''}
+            ${coordinatorCompany ? `<tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Tua società</td>
+              <td style="padding:4px 0;font-size:13px;color:#1a1a1a;">${esc(coordinatorCompany)}</td>
+            </tr>` : ''}
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Accesso valido fino al</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${expDate}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 8px;font-size:14px;color:#6b7280;line-height:1.6;">
+      Il link è personale e sicuro. Non è richiesto alcun account o download.
+    </p>
+
+    ${btn('Apri il portale CSE →', accessUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Hai ricevuto questo invito in qualità di Coordinatore della Sicurezza (CSE) ai sensi del D.Lgs.&nbsp;81/2008.
+      L'accesso è in sola lettura. Per revocare il tuo accesso, contatta l'impresa che ti ha invitato.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Accesso CSE — Cantiere ${siteName} su Palladia`,
+    html: layout(`Portale coordinatore — ${siteName}`, body),
+  });
+}
+
+// ─── Email: Alert nota coordinatore (all'impresa) ─────────────────────────────
+
+/**
+ * Invia email agli admin della company quando un coordinatore aggiunge una nota.
+ * @param {{ companyId, siteName, coordinatorName, noteType, content, siteUrl }} opts
+ */
+async function sendCoordinatorNoteAlert({ companyId, siteName, coordinatorName, noteType, content, siteUrl }) {
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Fetch admin users della company
+  const supabase = require('../lib/supabase');
+  const { data: adminUsers } = await supabase
+    .from('company_users').select('user_id, role')
+    .eq('company_id', companyId).in('role', ['owner', 'admin']);
+  if (!adminUsers || adminUsers.length === 0) return;
+
+  const adminEmails = [];
+  for (const { user_id } of adminUsers) {
+    try {
+      const { data: { user } } = await supabase.auth.admin.getUserById(user_id);
+      if (user?.email) adminEmails.push(user.email);
+    } catch { /* ignora */ }
+  }
+  if (adminEmails.length === 0) return;
+
+  const NOTE_LABELS = {
+    observation: 'Osservazione',
+    request:     'Richiesta',
+    approval:    'Approvazione',
+    warning:     'Avvertenza',
+  };
+  const noteLabel = NOTE_LABELS[noteType] || noteType;
+  const badgeColor = noteType === 'warning' ? '#ef4444' : noteType === 'approval' ? '#22c55e' : noteType === 'request' ? '#f59e0b' : '#6b7280';
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Nuova nota dal coordinatore</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Il coordinatore <strong style="color:#1a1a1a;">${esc(coordinatorName)}</strong>
+      ha aggiunto una nota sul cantiere <strong style="color:#1a1a1a;">${esc(siteName)}</strong>.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 10px;">
+            <span style="display:inline-block;padding:3px 10px;border-radius:20px;background:${badgeColor};color:#fff;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${noteLabel}</span>
+          </p>
+          <p style="margin:0;font-size:14px;color:#1a1a1a;line-height:1.7;white-space:pre-wrap;">${esc(content)}</p>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Apri il cantiere →', siteUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Puoi rispondere al coordinatore rientrando nel cantiere su Palladia. Le note sono visibili nella sezione Sicurezza.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to: adminEmails,
+    subject: `Palladia — Nota CSE su ${siteName}: ${noteLabel}`,
+    html: layout(`Nota coordinatore — ${siteName}`, body),
+  });
+}
+
+module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail, sendCoordinatorInviteEmail, sendCoordinatorNoteAlert };
