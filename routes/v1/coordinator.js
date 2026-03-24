@@ -249,7 +249,7 @@ async function resolveInvite(token) {
   }).eq('id', data.id).then(() => {});
   // Increment access_count via raw SQL non disponibile in supabase-js v2 senza RPC,
   // ma l'update di last_accessed_at è sufficiente per mostrare "ultimo accesso"
-  supabase.rpc('increment_coord_access', { p_invite_id: data.id }).catch(() => {});
+  supabase.rpc('increment_coord_access', { p_invite_id: data.id }).then(null, () => {});
 
   return data;
 }
