@@ -210,6 +210,31 @@
     .compliance-bar { grid-template-columns: repeat(2, 1fr); }
     .top-bar .site-name { display: none; }
   }
+
+  /* ── Documents ── */
+  .doc-list { display: flex; flex-direction: column; gap: 8px; }
+  .doc-row { background: #ffffff; border: 1px solid #e2e5ed; border-radius: 12px;
+    padding: 13px 16px; display: flex; align-items: center; gap: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .doc-icon { font-size: 18px; flex-shrink: 0; }
+  .doc-info { flex: 1; min-width: 0; }
+  .doc-name { font-size: 14px; font-weight: 600; color: #1a1a1a;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-meta { font-size: 12px; color: #6c7280; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .doc-cat  { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid; flex-shrink: 0; }
+  .cat-pos          { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .cat-psc          { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; }
+  .cat-notifica_asl { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+  .cat-durc         { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .cat-dvr          { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .cat-assicurazione{ background: #f0fdfa; border-color: #99f6e4; color: #0f766e; }
+  .cat-altro        { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; }
+  .btn-download { background: #f5f3ef; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer; color: #1a1a1a;
+    transition: all .15s; white-space: nowrap; flex-shrink: 0; }
+  .btn-download:hover { border-color: #aaa; }
+  .btn-download:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -305,15 +330,23 @@ function initials(name) {
 // ── State ────────────────────────────────────────────────────────────────────
 let token = getToken();
 let siteData = null;
+let docData = [];
 
 // ── Load ─────────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
-    const res = await fetch(apiUrl(`/api/v1/coordinator/${token}`));
-    if (res.status === 404) { renderError('Link non valido o scaduto',
-      'Il link di accesso che hai usato non è più valido o è scaduto.<br/>Contatta l\'impresa per richiedere un nuovo invito.'); return; }
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    siteData = await res.json();
+    const [mainRes, docsRes] = await Promise.all([
+      fetch(apiUrl(`/api/v1/coordinator/${token}`)),
+      fetch(apiUrl(`/api/v1/coordinator/${token}/documents`)),
+    ]);
+    if (mainRes.status === 404) {
+      renderError('Link non valido o scaduto',
+        'Il link di accesso che hai usato non è più valido o è scaduto.<br/>Contatta l\'impresa per richiedere un nuovo invito.');
+      return;
+    }
+    if (!mainRes.ok) throw new Error('HTTP ' + mainRes.status);
+    siteData = await mainRes.json();
+    docData  = docsRes.ok ? (await docsRes.json()) : [];
     renderApp();
   } catch (e) {
     renderError('Errore di connessione', 'Non è stato possibile caricare i dati del cantiere.<br/>Controlla la connessione e riprova.');
@@ -474,6 +507,37 @@ function renderApp() {
     notesHtml = '<div class="empty-state">Nessuna nota aggiunta</div>';
   }
 
+  // ── Documenti
+  const CATEGORY_LABELS_DOC = {
+    pos: 'POS', psc: 'PSC', notifica_asl: 'Notifica ASL',
+    durc: 'DURC', dvr: 'DVR', assicurazione: 'Assicurazione', altro: 'Altro',
+  };
+  function fmtSize(b) {
+    if (!b) return '';
+    if (b < 1024) return b + ' B';
+    if (b < 1048576) return Math.round(b / 1024) + ' KB';
+    return (b / 1048576).toFixed(1) + ' MB';
+  }
+  let docsHtml = '';
+  if (docData.length > 0) {
+    docsHtml = docData.map(d => `
+      <div class="doc-row">
+        <span class="doc-icon">📄</span>
+        <div class="doc-info">
+          <div class="doc-name">${esc(d.name)}</div>
+          <div class="doc-meta">
+            <span class="doc-cat cat-${esc(d.category)}">${esc(CATEGORY_LABELS_DOC[d.category] || d.category)}</span>
+            ${d.file_size ? `<span>${fmtSize(d.file_size)}</span>` : ''}
+            <span>${fmtDate(d.created_at)}</span>
+          </div>
+        </div>
+        <button class="btn-download" id="dlbtn-${esc(d.id)}" onclick="downloadDoc('${esc(d.id)}')">↓ Scarica</button>
+      </div>`).join('');
+  }
+  const documentsSection = docData.length > 0 ? `
+    <p class="section-title">Documenti di sicurezza (${docData.length})</p>
+    <div class="doc-list">${docsHtml}</div>` : '';
+
   document.getElementById('app').innerHTML = `
     <div class="container">
       ${heroHtml}
@@ -483,6 +547,7 @@ function renderApp() {
       ${compHtml}
       <p class="section-title">Maestranze (${workers.length})</p>
       ${workersHtml}
+      ${documentsSection}
       <p class="section-title" style="margin-top:32px;">Note del coordinatore</p>
       <div id="notesList">${notesHtml}</div>
       <div style="height:16px;"></div>
@@ -553,6 +618,26 @@ async function submitNote() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Invia';
+  }
+}
+
+async function downloadDoc(docId) {
+  const btn = document.getElementById('dlbtn-' + docId);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const res = await fetch(apiUrl(`/api/v1/coordinator/${token}/documents/${docId}/download`));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { url, name } = await res.json();
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.click();
+  } catch (e) {
+    alert('Impossibile scaricare il documento. Riprova.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↓ Scarica'; }
   }
 }
 

@@ -31,6 +31,9 @@ router.use('/', require('./billing'));
 // Badge digitale: verifica pubblica (no JWT) + PDF privato (JWT)
 router.use('/', require('./badge'));
 
+// Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
+router.use('/', require('./documents'));
+
 // Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
 router.use('/', require('./coordinator'));
 

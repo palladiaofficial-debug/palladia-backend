@@ -1305,6 +1305,22 @@ app.use((err, req, res, next) => {
   }
 });
 
+// Ensure Supabase Storage bucket exists (best-effort, non-blocking)
+const supabaseAdmin = require('./lib/supabase');
+supabaseAdmin.storage.createBucket('site-documents', {
+  public: false,
+  fileSizeLimit: 10485760, // 10 MB
+  allowedMimeTypes: ['application/pdf','image/jpeg','image/png','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+}).then(({ error }) => {
+  if (error && error.message && error.message.toLowerCase().includes('already exists')) {
+    console.log('[storage] Bucket site-documents: already exists ✓');
+  } else if (error) {
+    console.warn('[storage] Bucket creation warning:', error.message);
+  } else {
+    console.log('[storage] Bucket site-documents: created ✓');
+  }
+}).catch((e) => console.warn('[storage] Bucket init error:', e.message));
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log('ROUTES OK: /api/ping, /api/pdf-diag, /api/pdf-smoke');
