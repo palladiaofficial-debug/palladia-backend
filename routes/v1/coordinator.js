@@ -186,6 +186,40 @@ router.delete('/coordinator-invites/:inviteId', verifySupabaseJwt, async (req, r
   res.json({ ok: true });
 });
 
+// ── PATCH /api/v1/coordinator-invites/:inviteId/refresh-token ─────────────
+// Genera un nuovo token per un invito esistente (il vecchio URL diventa invalido)
+router.patch('/coordinator-invites/:inviteId/refresh-token', verifySupabaseJwt, async (req, res) => {
+  const { inviteId } = req.params;
+
+  const { data: invite, error } = await supabase
+    .from('site_coordinator_invites')
+    .select('id, site_id, coordinator_name, coordinator_email, is_active')
+    .eq('id', inviteId).eq('company_id', req.companyId).maybeSingle();
+
+  if (error || !invite) return res.status(404).json({ error: 'INVITE_NOT_FOUND' });
+
+  const rawToken  = generateToken();
+  const tokenHash = hashToken(rawToken);
+
+  const { error: updateErr } = await supabase
+    .from('site_coordinator_invites')
+    .update({ token_hash: tokenHash })
+    .eq('id', inviteId).eq('company_id', req.companyId);
+
+  if (updateErr) return res.status(500).json({ error: 'UPDATE_ERROR' });
+
+  const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const url = `${appBase}/coordinator/${rawToken}`;
+
+  auditLog({
+    companyId: req.companyId, userId: req.user?.id, userRole: req.userRole,
+    action: 'coordinator_invite.refresh_token', targetType: 'coordinator_invite',
+    targetId: inviteId, payload: { site_id: invite.site_id }, req,
+  });
+
+  res.json({ ok: true, url, coordinator_name: invite.coordinator_name });
+});
+
 // ── GET /api/v1/sites/:siteId/coordinator-notes ──────────────────────────────
 // Tutte le note ricevute dai coordinatori sul cantiere (lato impresa)
 router.get('/sites/:siteId/coordinator-notes', verifySupabaseJwt, async (req, res) => {
