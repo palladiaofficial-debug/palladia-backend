@@ -13,6 +13,42 @@ function getClient() {
   return _anthropic;
 }
 
+// ── Modelli ───────────────────────────────────────────────────────────────────
+const MODEL_HAIKU  = 'claude-haiku-4-5-20251001';   // query dati, KPI, presenze
+const MODEL_SONNET = 'claude-sonnet-4-6';            // normativa, sicurezza, analisi tecnica
+
+// ── Classificatore query (zero costo API — keyword matching) ─────────────────
+// Restituisce 'sonnet' se la query richiede ragionamento tecnico/normativo,
+// altrimenti 'haiku' per query dati operative.
+const SONNET_KEYWORDS = [
+  // normativa
+  'd.lgs','dlgs','decreto','normativ','legge','articolo','comma','allegato',
+  'sanzione','multa','violazione','reato','penale','responsabilit',
+  // sicurezza tecnica
+  'dpi','dvr','psc','pos','piano','rischio','valutazione','misur',
+  'ponteggio','trabattello','scala','lavori in quota','caduta','scavo','sbancamento',
+  'demolizion','esplosiv','fuoco','incendio','atex','spazio confinato',
+  'rumore','vibrazion','chimico','biologico','cancerogen','amianto',
+  'rspp','rls','cse','csp','preposto','datore','medico competen','sorveglianza sanitaria',
+  'formazione','corso','attestato','abilitazione','patente a punti',
+  'primo soccorso','evacuazione','antincendio',
+  // appalti / contratti
+  'soa','qualificazion','categoria og','categoria os','ati','rti','subappalto',
+  'durc','antimafia','white list','cam costruzioni',
+  'ccnl','contratto collettivo','inquadramento','mansione','retribuzion','tfr',
+  'sal','stato avanzamento','contabilità lavori','collaudo',
+  'codice dei contratti','d.lgs 36','appalto pubblico',
+  // analisi / consiglio
+  'come si fa','cosa prevede','cosa dice','è obbligatorio','sono obbligato',
+  'procedura','checklist','linee guida','best practice','consiglio','suggerisci',
+  'spiega','spiegami','differenza','confronto','quando scade','frequenza',
+];
+
+function classifyQuery(message) {
+  const lower = message.toLowerCase();
+  return SONNET_KEYWORDS.some(kw => lower.includes(kw)) ? MODEL_SONNET : MODEL_HAIKU;
+}
+
 // ── HTML escape (per template PDF) ───────────────────────────────────────────
 function esc(s) {
   if (s == null) return '—';
@@ -24,8 +60,9 @@ function esc(s) {
 }
 
 // ── System prompt principale ──────────────────────────────────────────────────
-const SYSTEM_PROMPT = `Sei Ladia, l'assistente IA integrato in Palladia — piattaforma italiana per la gestione professionale dei cantieri edili.
-Assisti tecnici, coordinatori della sicurezza (CSE/CSP), responsabili di cantiere e amministratori.
+const SYSTEM_PROMPT = `Sei Ladia, l'assistente IA di Palladia — la piattaforma italiana per la gestione professionale dei cantieri edili.
+
+Hai la competenza combinata di un ingegnere civile senior con 20+ anni di cantieri, un Coordinatore della Sicurezza (CSE/CSP) di alto livello, un esperto di diritto del lavoro e appalti pubblici italiani. Sei il punto di riferimento tecnico più affidabile nel settore edilizio italiano: preciso, autorevole, diretto. Citi sempre l'articolo e il decreto esatto. Non dici mai "dipende" senza spiegare da cosa dipende.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AMBITI DI COMPETENZA
@@ -33,25 +70,34 @@ AMBITI DI COMPETENZA
 ① DATI CANTIERE (usa i tool — dati reali dal database)
    Presenze in tempo reale, timbrature, lavoratori assegnati, cantieri attivi/chiusi, KPI, storico presenze.
 
-② SICUREZZA SUL LAVORO
-   D.Lgs. 81/2008 (T.U. Sicurezza) e decreti attuativi
-   DPI (categorie, scelta, manutenzione), DVR, PSC, POS
-   Lavori in quota (> 2m), ponteggi (D.M. 23/3/2000), scale, trabattelli
-   Scavi, sbancamenti, demolizioni — rischi e misure preventive
-   Rischio chimico, biologico, rumore (Titolo VIII), vibrazioni, campi EM
-   Primo soccorso (D.M. 388/2003), antincendio (D.M. 2/9/2021), evacuazione
-   ATEX (Dir. 2014/34/UE), spazi confinati (DPR 177/2011)
-   Segnaletica di sicurezza (D.Lgs. 81 allegato XXV–XXXII)
-   Sorveglianza sanitaria, idoneità lavoratori, cartella sanitaria
-   Figure della sicurezza: preposto, RSPP, RLS, MC, DdL — compiti e obblighi
-   Formazione obbligatoria: corsi, durate, aggiornamenti, registri
+② SICUREZZA SUL LAVORO — massima profondità tecnica
+   D.Lgs. 81/2008 (T.U. Sicurezza) e tutti i decreti attuativi — conosci ogni articolo
+   DPI Cat. I/II/III (D.Lgs. 81 Titolo III, Reg. UE 2016/425) — scelta, marcatura CE, manutenzione, sostituzione
+   DVR, PSC, POS — contenuti obbligatori, redazione, aggiornamento, sanzioni per omissione
+   Lavori in quota (art. 107-111 D.Lgs. 81) — obbligo > 2m, sistemi anticaduta, linee vita
+   Ponteggi (D.M. 23/3/2000, all. XXII D.Lgs. 81) — PIMUS, abilitazione montatori, calcolo di resistenza
+   Scavi e sbancamenti (art. 118-121) — armature, distanze, segnalazione
+   Demolizioni (art. 150-155) — piano demolizione, amianto (D.M. 06/09/1994), bonifica
+   Rischio chimico (Titolo IX D.Lgs. 81), biologico, cancerogeni — VLE, misure tecniche
+   Rumore (art. 180-198), vibrazioni (art. 199-205) — LEX, misurazioni, sorveglianza sanitaria
+   Primo soccorso (D.M. 388/2003) — classificazione aziende, presidi, formazione addetti
+   Antincendio (D.M. 2/9/2021) — categorie rischio, estintori, vie di esodo, segnaletica
+   ATEX (Dir. 2014/34/UE, D.Lgs. 81 Titolo XI) — classificazione zone, apparecchiature
+   Spazi confinati (DPR 177/2011) — qualificazione imprese, procedure operative
+   Figure della sicurezza: preposto (art. 19), RSPP (art. 31-32), RLS (art. 47-50), MC, DdL — obblighi, sanzioni penali e amministrative
+   Formazione: Accordo Stato-Regioni 21/12/2011, 22/2/2012 — durate, aggiornamenti, validità attestati
+   Patente a punti in edilizia (art. 27 D.Lgs. 81 come modificato dalla L. 56/2024) — punteggi, recupero, sospensione
 
 ③ NORMATIVA APPALTI E LAVORI EDILI
-   D.Lgs. 36/2023 (Codice dei Contratti Pubblici)
-   Subappalto, qualificazione SOA, categorie OG/OS, attestazioni
-   DURC, white list antimafia, CAM costruzioni (D.M. 23/6/2022)
-   CCNL Edilizia — inquadramenti, mansioni, retribuzioni base, TFR
-   Collaudi, SAL (Stato Avanzamento Lavori), contabilità lavori
+   D.Lgs. 36/2023 (Codice dei Contratti Pubblici) — soglie, procedure, qualificazione stazioni appaltanti
+   Subappalto (art. 119 D.Lgs. 36/2023) — limiti, obblighi, responsabilità solidale
+   SOA — categorie OG/OS, classifiche, attestazione, rinnovo quinquennale, verifica triennale
+   DURC — validità 120gg, cause ostative, regolarizzazione
+   Antimafia (D.Lgs. 159/2011) — white list, informativa prefettizia, comunicazione
+   CAM costruzioni (D.M. 23/6/2022) — criteri ambientali minimi, materiali riciclati
+   CCNL Edilizia (Industria e Artigianato) — inquadramenti A1-D3, mansioni, paga base, scatti anzianità, TFR, cassa edile
+   SAL, contabilità lavori, riserve — art. 120-121 D.Lgs. 36/2023
+   Collaudi: tecnico-amministrativo, statico (D.P.R. 380/2001), funzionale
 
 ④ ANALISI E GESTIONE
    Analisi presenze, ore lavorate, produttività, assenteismo
@@ -67,12 +113,14 @@ Risposta standard: "Sono specializzato nella gestione cantieri e sicurezza edile
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ISTRUZIONI OPERATIVE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Italiano sempre. Tono professionale, diretto, privo di fronzoli.
+- Italiano sempre. Tono professionale da esperto senior: diretto, assertivo, senza fronzoli.
+- Su domande normative: cita SEMPRE decreto + articolo specifico. Mai generici.
 - Dati reali: usa i tool. Non inventare MAI numeri, nomi o date.
 - Risposte brevi (max 5 righe) salvo analisi o elenchi completi richiesti.
 - Elenchi lavoratori: • Nome Cognome — 08:15
 - Quando trovi un cantiere per nome, usa il site_id nelle query successive.
 - Fuso orario: Europa/Roma.
+- Se la normativa è cambiata di recente, segnalalo e indica l'aggiornamento.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXPORT PDF / EXCEL — FUNZIONALITÀ INTEGRATA
@@ -455,10 +503,10 @@ async function runAgentLoop(client, messages, systemPrompt, tools, maxIter = 4) 
 }
 
 // ── Agentic loop con company_id (chat principale) ────────────────────────────
-async function runChatLoop(client, messages, companyId) {
+async function runChatLoop(client, messages, companyId, model) {
   let response = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
+    model,
+    max_tokens: model === MODEL_SONNET ? 2048 : 1024,
     system:     SYSTEM_PROMPT,
     tools:      TOOLS,
     messages,
@@ -485,8 +533,8 @@ async function runChatLoop(client, messages, companyId) {
     );
 
     response = await client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 1024,
+      model,
+      max_tokens: model === MODEL_SONNET ? 2048 : 1024,
       system:     SYSTEM_PROMPT,
       tools:      TOOLS,
       messages:   [...messages, ...extra],
@@ -836,7 +884,7 @@ router.post('/chat', verifySupabaseJwt, async (req, res) => {
   const messages = [...safeHistory, { role: 'user', content: message.trim() }];
 
   try {
-    const reply = await runChatLoop(getClient(), messages, req.companyId);
+    const reply = await runChatLoop(getClient(), messages, req.companyId, classifyQuery(message));
     res.json({ reply });
   } catch (err) {
     console.error('[chat] error:', err.message);
@@ -945,6 +993,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 
   try {
     const client = getClient();
+    const model  = classifyQuery(message);
 
     // Loop agentico con streaming — max 4 iterazioni
     for (let iter = 0; iter < 4 && !aborted; iter++) {
@@ -953,8 +1002,8 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 
       // Apre stream verso Anthropic
       const stream = client.messages.stream({
-        model:      'claude-haiku-4-5-20251001',
-        max_tokens: 1024,
+        model,
+        max_tokens: model === MODEL_SONNET ? 2048 : 1024,
         system:     SYSTEM_PROMPT,
         tools:      TOOLS,
         messages,
