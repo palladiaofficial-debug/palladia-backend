@@ -1,7 +1,7 @@
 const { Resend } = require('resend');
 
 // FROM configurabile via env — DEVE essere un dominio verificato in Resend.
-// Esempio Railway: RESEND_FROM=Palladia <noreply@palladia.it>
+// Esempio Railway: RESEND_FROM=Palladia <noreply@palladia.net>
 // Fallback sicuro per test: usa il dominio Resend (funziona sempre senza DNS).
 const FROM = process.env.RESEND_FROM || 'Palladia <onboarding@resend.dev>';
 
@@ -65,7 +65,7 @@ function layout(title, bodyHtml) {
               <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.8;">
                 Palladia &mdash; Gestione Cantieri e Sicurezza sul Lavoro<br/>
                 Hai ricevuto questa email perché hai creato un account su Palladia.<br/>
-                Se non sei stato tu, <a href="mailto:info@palladia.it" style="color:#6b7280;">contattaci</a>.
+                Se non sei stato tu, <a href="mailto:info@palladia.net" style="color:#6b7280;">contattaci</a>.
               </p>
             </td></tr>
           </table>
