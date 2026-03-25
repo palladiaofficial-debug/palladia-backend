@@ -57,4 +57,14 @@ const coordinatorLimiter = rateLimit({
   message: { error: 'RATE_LIMIT_EXCEEDED' }
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter };
+// Rate limiter per POST /api/v1/chat — assistente IA
+// Limite generoso ma protegge dai costi AI in caso di abuso
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'CHAT_RATE_LIMIT' }
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter };

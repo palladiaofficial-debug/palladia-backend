@@ -12,6 +12,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@fontsource/inter": "^5.2.8",
     "@supabase/supabase-js": "^2.95.3",
     "bcryptjs": "^2.4.3",

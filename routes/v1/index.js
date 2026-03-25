@@ -1,6 +1,6 @@
 'use strict';
 const router = require('express').Router();
-const { apiLimiter } = require('../../middleware/rateLimit');
+const { apiLimiter, chatLimiter } = require('../../middleware/rateLimit');
 
 // Rate limit globale su tutto /api/v1/
 router.use(apiLimiter);
@@ -39,6 +39,10 @@ router.use('/', require('./documents'));
 
 // Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
 router.use('/', require('./coordinator'));
+
+// Assistente IA Pal (JWT + rate limit dedicato anti-abuso costi AI)
+router.use('/chat', chatLimiter);
+router.use('/', require('./chat'));
 
 // Route pubbliche scan badge (no JWT — session token o signed QR link)
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
