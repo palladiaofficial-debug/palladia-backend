@@ -24,7 +24,7 @@ function esc(s) {
 }
 
 // ── System prompt principale ──────────────────────────────────────────────────
-const SYSTEM_PROMPT = `Sei Pal, l'assistente IA integrato in Palladia — piattaforma italiana per la gestione professionale dei cantieri edili.
+const SYSTEM_PROMPT = `Sei Ladia, l'assistente IA integrato in Palladia — piattaforma italiana per la gestione professionale dei cantieri edili.
 Assisti tecnici, coordinatori della sicurezza (CSE/CSP), responsabili di cantiere e amministratori.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
