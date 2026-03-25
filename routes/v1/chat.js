@@ -905,4 +905,120 @@ router.post('/chat/export', verifySupabaseJwt, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/chat/stream  — SSE streaming (text/event-stream)
+// Events: {type:'tool_start',names:[]} | {type:'text',delta:''} | {type:'done'} | {type:'error',message:''}
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
+  }
+
+  const { message, history = [] } = req.body;
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
+  }
+  if (message.length > 1000) {
+    return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
+  }
+
+  // SSE headers — disabilita buffering Nginx/Railway
+  res.set({
+    'Content-Type':      'text/event-stream',
+    'Cache-Control':     'no-cache, no-transform',
+    'Connection':        'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.flushHeaders();
+
+  const send = (data) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`); };
+
+  const safeHistory = (Array.isArray(history) ? history : [])
+    .slice(-6)
+    .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
+    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+
+  let messages = [...safeHistory, { role: 'user', content: message.trim() }];
+
+  let aborted = false;
+  req.on('close', () => { aborted = true; });
+
+  try {
+    const client = getClient();
+
+    // Loop agentico con streaming — max 4 iterazioni
+    for (let iter = 0; iter < 4 && !aborted; iter++) {
+      const collectedContent = [];
+      let stopReason = null;
+
+      // Apre stream verso Anthropic
+      const stream = client.messages.stream({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        system:     SYSTEM_PROMPT,
+        tools:      TOOLS,
+        messages,
+      });
+
+      // Itera eventi raw SSE
+      for await (const event of stream) {
+        if (aborted) break;
+
+        if (event.type === 'content_block_start') {
+          collectedContent.push({ ...event.content_block, _inputRaw: '' });
+
+        } else if (event.type === 'content_block_delta') {
+          const block = collectedContent[event.index];
+          if (!block) continue;
+          if (event.delta.type === 'text_delta') {
+            block.text = (block.text || '') + event.delta.text;
+            send({ type: 'text', delta: event.delta.text });
+          } else if (event.delta.type === 'input_json_delta') {
+            block._inputRaw += event.delta.partial_json;
+          }
+
+        } else if (event.type === 'message_delta') {
+          stopReason = event.delta.stop_reason;
+        }
+      }
+
+      if (aborted) break;
+      if (stopReason !== 'tool_use') break; // risposta testo — fine loop
+
+      // Parsa input JSON dei tool (arrivato come stringa parziale durante lo stream)
+      for (const block of collectedContent) {
+        if (block.type === 'tool_use') {
+          try { block.input = JSON.parse(block._inputRaw || '{}'); } catch { block.input = {}; }
+          delete block._inputRaw;
+        }
+      }
+
+      const toolBlocks = collectedContent.filter(b => b.type === 'tool_use');
+      send({ type: 'tool_start', names: toolBlocks.map(b => b.name) });
+
+      // Esegui tool in parallelo
+      const toolResults = await Promise.all(
+        toolBlocks.map(async (block) => ({
+          type:        'tool_result',
+          tool_use_id: block.id,
+          content:     JSON.stringify(await executeTool(block.name, block.input, req.companyId))
+        }))
+      );
+
+      messages = [
+        ...messages,
+        { role: 'assistant', content: collectedContent.map(b => { const c = { ...b }; delete c._inputRaw; return c; }) },
+        { role: 'user',      content: toolResults }
+      ];
+    }
+
+    if (!aborted) send({ type: 'done' });
+  } catch (err) {
+    console.error('[chat/stream] error:', err.message);
+    if (!aborted) send({ type: 'error', message: 'Si è verificato un errore. Riprova.' });
+  } finally {
+    res.end();
+  }
+});
+
 module.exports = router;
