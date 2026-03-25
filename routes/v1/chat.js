@@ -72,7 +72,17 @@ ISTRUZIONI OPERATIVE
 - Risposte brevi (max 5 righe) salvo analisi o elenchi completi richiesti.
 - Elenchi lavoratori: • Nome Cognome — 08:15
 - Quando trovi un cantiere per nome, usa il site_id nelle query successive.
-- Fuso orario: Europa/Roma.`;
+- Fuso orario: Europa/Roma.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GESTIONE RISULTATI DEI TOOL — CRITICO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Se present_count = 0 o lista vuota: di chiaramente "Nessun lavoratore presente" o "Nessuna timbratura oggi" — è un dato valido, non un errore.
+- Se total_punches_today = 0: significa che oggi nessuno ha timbrato ancora — comunicalo direttamente.
+- MAI usare frasi come "problema di connessione", "errore tecnico", "contatta l'amministratore", "vai nella sezione X".
+- MAI suggerire all'utente di cercare i dati altrove — tu SEI il sistema, sei la fonte.
+- Se un tool restituisce {error: "..."}: di semplicemente "Non riesco a recuperare questo dato al momento" e offri ciò che puoi.
+- Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."`;
 
 // ── System prompt per strutturazione report (export) ─────────────────────────
 const REPORT_SYSTEM_PROMPT = `Sei un formattatore di report aziendali professionali.
@@ -211,37 +221,55 @@ async function executeTool(toolName, toolInput, companyId) {
       }
 
       case 'get_presence_today': {
+        // Query senza join embedded — più robusta, non richiede FK definite in Supabase
         let q = supabase
           .from('presence_logs')
-          .select('worker_id, event_type, timestamp_server, worker:workers(full_name), site:sites(name)')
+          .select('worker_id, site_id, event_type, timestamp_server')
           .eq('company_id', companyId)
           .gte('timestamp_server', fromUtc)
           .order('timestamp_server', { ascending: false })
           .limit(1000);
         if (toolInput.site_id) q = q.eq('site_id', toolInput.site_id);
 
-        const { data, error } = await q;
+        const { data: logs, error } = await q;
         if (error) return { error: error.message };
 
-        const todayLogs = (data || []).filter(p => {
+        // Filtra oggi (fuso Roma)
+        const todayLogs = (logs || []).filter(p => {
           const d = new Date(p.timestamp_server).toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
           return d === todayRome;
         });
 
+        // Ultimo evento per lavoratore
         const lastByWorker = new Map();
         for (const p of todayLogs) {
           if (!lastByWorker.has(p.worker_id)) lastByWorker.set(p.worker_id, p);
         }
+        const presentEntries = [...lastByWorker.values()].filter(p => p.event_type === 'ENTRY');
 
-        const present = [...lastByWorker.values()]
-          .filter(p => p.event_type === 'ENTRY')
-          .map(p => ({
-            name:       p.worker?.full_name ?? '—',
-            site:       p.site?.name        ?? '—',
-            entry_time: new Date(p.timestamp_server).toLocaleTimeString('it-IT', {
-              hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
-            })
-          }));
+        // Nomi lavoratori e cantieri in query separate
+        const workerIds = presentEntries.map(p => p.worker_id);
+        const siteIds   = [...new Set(presentEntries.map(p => p.site_id))];
+
+        const [workersRes, sitesRes] = await Promise.all([
+          workerIds.length > 0
+            ? supabase.from('workers').select('id, full_name').in('id', workerIds)
+            : Promise.resolve({ data: [] }),
+          siteIds.length > 0
+            ? supabase.from('sites').select('id, name').in('id', siteIds)
+            : Promise.resolve({ data: [] }),
+        ]);
+
+        const workerMap = new Map((workersRes.data || []).map(w => [w.id, w.full_name]));
+        const siteMap   = new Map((sitesRes.data   || []).map(s => [s.id, s.name]));
+
+        const present = presentEntries.map(p => ({
+          name:       workerMap.get(p.worker_id) ?? '—',
+          site:       siteMap.get(p.site_id)     ?? '—',
+          entry_time: new Date(p.timestamp_server).toLocaleTimeString('it-IT', {
+            hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
+          })
+        }));
 
         return {
           date:                todayRome,
@@ -283,9 +311,10 @@ async function executeTool(toolName, toolInput, companyId) {
         const from = new Date(toolInput.from_date + 'T00:00:00+01:00').toISOString();
         const to   = new Date(toolInput.to_date   + 'T23:59:59+01:00').toISOString();
 
+        // Query senza join embedded
         let q = supabase
           .from('presence_logs')
-          .select('worker_id, event_type, timestamp_server, worker:workers(full_name), site:sites(name)')
+          .select('worker_id, site_id, event_type, timestamp_server')
           .eq('company_id', companyId)
           .gte('timestamp_server', from)
           .lte('timestamp_server', to)
@@ -293,22 +322,38 @@ async function executeTool(toolName, toolInput, companyId) {
           .limit(2000);
         if (toolInput.site_id) q = q.eq('site_id', toolInput.site_id);
 
-        const { data, error } = await q;
+        const { data: logs, error } = await q;
         if (error) return { error: error.message };
 
-        const logs    = data || [];
-        const entries = logs.filter(p => p.event_type === 'ENTRY').length;
-        const exits   = logs.filter(p => p.event_type === 'EXIT').length;
+        const allLogs = logs || [];
+        const entries = allLogs.filter(p => p.event_type === 'ENTRY').length;
+        const exits   = allLogs.filter(p => p.event_type === 'EXIT').length;
+
+        // Nomi lavoratori e cantieri in query separate
+        const workerIds = [...new Set(allLogs.map(p => p.worker_id))];
+        const siteIds   = [...new Set(allLogs.map(p => p.site_id))];
+
+        const [workersRes, sitesRes] = await Promise.all([
+          workerIds.length > 0
+            ? supabase.from('workers').select('id, full_name').in('id', workerIds)
+            : Promise.resolve({ data: [] }),
+          siteIds.length > 0
+            ? supabase.from('sites').select('id, name').in('id', siteIds)
+            : Promise.resolve({ data: [] }),
+        ]);
+
+        const workerMap = new Map((workersRes.data || []).map(w => [w.id, w.full_name]));
+        const siteMap   = new Map((sitesRes.data   || []).map(s => [s.id, s.name]));
 
         return {
           from: toolInput.from_date,
           to:   toolInput.to_date,
-          total_events: logs.length,
+          total_events: allLogs.length,
           entries,
           exits,
-          logs: logs.slice(-50).map(p => ({
-            worker: p.worker?.full_name,
-            site:   p.site?.name,
+          logs: allLogs.slice(-50).map(p => ({
+            worker: workerMap.get(p.worker_id) ?? '—',
+            site:   siteMap.get(p.site_id)     ?? '—',
             type:   p.event_type,
             time:   new Date(p.timestamp_server).toLocaleString('it-IT', { timeZone: 'Europe/Rome' })
           }))
@@ -319,6 +364,7 @@ async function executeTool(toolName, toolInput, companyId) {
         const [sitesRes, workersRes, presenceRes] = await Promise.all([
           supabase.from('sites').select('id, status').eq('company_id', companyId).limit(500),
           supabase.from('workers').select('id', { count: 'exact', head: true }).eq('company_id', companyId).eq('is_active', true),
+          // Solo campi scalari — no join embedded
           supabase.from('presence_logs').select('worker_id, event_type, timestamp_server')
             .eq('company_id', companyId).gte('timestamp_server', fromUtc)
             .order('timestamp_server', { ascending: false }).limit(1000)
