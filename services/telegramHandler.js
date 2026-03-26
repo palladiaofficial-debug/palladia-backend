@@ -183,22 +183,25 @@ async function linkAccount(chatId, chat, token) {
 // ── Selezione cantiere ───────────────────────────────────────
 
 async function showSiteSelector(chatId, tuUser) {
-  const { data: sites } = await supabase
+  const { data: sites, error: sitesErr } = await supabase
     .from('sites')
-    .select('id, name, site_name, address')
+    .select('id, name, site_name, address, status')
     .eq('company_id', tuUser.company_id)
-    .or('status.neq.chiuso,status.is.null')
     .order('created_at', { ascending: false })
     .limit(20);
 
-  if (!sites || sites.length === 0) {
+  console.log('[showSiteSelector] company_id:', tuUser.company_id, 'sites:', sites?.length, 'err:', sitesErr?.message);
+
+  const activeSites = (sites || []).filter(s => s.status !== 'chiuso');
+
+  if (activeSites.length === 0) {
     return tg.sendMessage(chatId,
       `⚠️ Nessun cantiere attivo trovato.\n` +
       `Crea un cantiere su <b>palladia.net</b> per continuare.`
     );
   }
 
-  const buttons = sites.map(s => ({
+  const buttons = activeSites.map(s => ({
     text: s.site_name || s.name || s.address || 'Cantiere senza nome',
     callbackData: `site:${s.id}`,
   }));
