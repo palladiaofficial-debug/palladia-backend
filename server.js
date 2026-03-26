@@ -158,6 +158,9 @@ app.post('/api/webhooks/stripe',
 
 app.use(express.json({ limit: '10mb' }));
 
+// ── Telegram Bot Webhook ─────────────────────────────────────────────────────
+app.use('/api/telegram', require('./routes/telegram'));
+
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 

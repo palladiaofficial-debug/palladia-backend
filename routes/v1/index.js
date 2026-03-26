@@ -44,6 +44,10 @@ router.use('/', require('./coordinator'));
 router.use('/chat', chatLimiter);
 router.use('/', require('./chat'));
 
+// Telegram Bot: link account (JWT) + note cantiere
+router.use('/', require('./telegram'));
+router.use('/', require('./siteNotes'));
+
 // Route pubbliche scan badge (no JWT — session token o signed QR link)
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
 router.use('/', require('./scan'));

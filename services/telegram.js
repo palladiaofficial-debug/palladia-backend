@@ -1,0 +1,132 @@
+'use strict';
+/**
+ * services/telegram.js
+ * Thin wrapper intorno a Telegram Bot API (REST, nessun SDK pesante).
+ * Usa native fetch (Node 18+).
+ */
+
+function botUrl(method) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error('TELEGRAM_BOT_TOKEN non configurato');
+  return `https://api.telegram.org/bot${token}/${method}`;
+}
+
+async function tgPost(method, body) {
+  const res = await fetch(botUrl(method), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!json.ok) {
+    const err = new Error(`Telegram API error [${method}]: ${json.description}`);
+    err.telegram_code = json.error_code;
+    throw err;
+  }
+  return json.result;
+}
+
+// ── Messaggi ────────────────────────────────────────────────
+
+/**
+ * Invia un messaggio testo. parseMode default 'HTML'.
+ * replyMarkup: optional InlineKeyboardMarkup o ReplyKeyboardMarkup
+ */
+async function sendMessage(chatId, text, { parseMode = 'HTML', replyMarkup } = {}) {
+  const body = {
+    chat_id: chatId,
+    text,
+    parse_mode: parseMode,
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  return tgPost('sendMessage', body);
+}
+
+/**
+ * Risponde a un callback_query (tap su inline keyboard).
+ * text: testo mostrato come toast (max 200 char).
+ */
+async function answerCallbackQuery(callbackQueryId, text = '') {
+  return tgPost('answerCallbackQuery', {
+    callback_query_id: callbackQueryId,
+    text,
+  });
+}
+
+// ── File e Media ─────────────────────────────────────────────
+
+/**
+ * Ritorna { file_id, file_unique_id, file_size, file_path }
+ * file_path è relativo, usarlo con downloadFile().
+ */
+async function getFile(fileId) {
+  return tgPost('getFile', { file_id: fileId });
+}
+
+/**
+ * Scarica un file da Telegram e ritorna un Buffer.
+ */
+async function downloadFile(filePath) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const url = `https://api.telegram.org/file/bot${token}/${filePath}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Telegram file download failed: ${res.status}`);
+  const arrayBuffer = await res.arrayBuffer();
+  return Buffer.from(arrayBuffer);
+}
+
+// ── Keyboard helpers ─────────────────────────────────────────
+
+/**
+ * Costruisce una InlineKeyboardMarkup a partire da un array di bottoni.
+ * buttons: [{text, callbackData}]
+ * columns: quante colonne per riga (default 2)
+ */
+function buildInlineKeyboard(buttons, columns = 2) {
+  const rows = [];
+  for (let i = 0; i < buttons.length; i += columns) {
+    rows.push(
+      buttons.slice(i, i + columns).map(b => ({
+        text: b.text,
+        callback_data: b.callbackData,
+      }))
+    );
+  }
+  return { inline_keyboard: rows };
+}
+
+// ── Webhook ──────────────────────────────────────────────────
+
+/**
+ * Registra il webhook su Telegram.
+ * url: URL pubblico del backend, es. https://palladia-backend-production.up.railway.app/api/telegram/webhook
+ * secretToken: stringa casuale per verificare che le richieste vengano da Telegram
+ */
+async function setWebhook(url, secretToken) {
+  return tgPost('setWebhook', {
+    url,
+    secret_token: secretToken,
+    allowed_updates: ['message', 'callback_query'],
+    drop_pending_updates: true,
+  });
+}
+
+async function deleteWebhook() {
+  return tgPost('deleteWebhook', { drop_pending_updates: true });
+}
+
+async function getWebhookInfo() {
+  return tgPost('getWebhookInfo', {});
+}
+
+module.exports = {
+  sendMessage,
+  answerCallbackQuery,
+  getFile,
+  downloadFile,
+  buildInlineKeyboard,
+  setWebhook,
+  deleteWebhook,
+  getWebhookInfo,
+};
