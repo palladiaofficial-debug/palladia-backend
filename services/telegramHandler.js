@@ -187,7 +187,7 @@ async function showSiteSelector(chatId, tuUser) {
     .from('sites')
     .select('id, name, site_name, address')
     .eq('company_id', tuUser.company_id)
-    .neq('status', 'chiuso')
+    .or('status.neq.chiuso,status.is.null')
     .order('created_at', { ascending: false })
     .limit(20);
 
