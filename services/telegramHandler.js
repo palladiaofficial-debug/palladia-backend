@@ -185,7 +185,7 @@ async function linkAccount(chatId, chat, token) {
 async function showSiteSelector(chatId, tuUser) {
   const { data: sites, error: sitesErr } = await supabase
     .from('sites')
-    .select('id, name, site_name, address, status')
+    .select('id, name, address, status')
     .eq('company_id', tuUser.company_id)
     .order('created_at', { ascending: false })
     .limit(20);
@@ -202,7 +202,7 @@ async function showSiteSelector(chatId, tuUser) {
   }
 
   const buttons = activeSites.map(s => ({
-    text: s.site_name || s.name || s.address || 'Cantiere senza nome',
+    text: s.name || s.address || 'Cantiere senza nome',
     callbackData: `site:${s.id}`,
   }));
 
@@ -237,7 +237,7 @@ async function setActiveSite(chatId, tuUser, siteId, callbackQueryId) {
   // Verifica che il cantiere appartenga alla company dell'utente
   const { data: site } = await supabase
     .from('sites')
-    .select('id, site_name, name, address')
+    .select('id, name, address')
     .eq('id', siteId)
     .eq('company_id', tuUser.company_id)
     .maybeSingle();
@@ -251,7 +251,7 @@ async function setActiveSite(chatId, tuUser, siteId, callbackQueryId) {
     .update({ active_site_id: siteId })
     .eq('id', tuUser.id);
 
-  const siteName = site.site_name || site.name || site.address || 'Cantiere';
+  const siteName = site.name || site.address || 'Cantiere';
   await tg.answerCallbackQuery(callbackQueryId, `✅ ${siteName}`);
   await tg.sendMessage(chatId,
     `✅ <b>Cantiere attivo: ${siteName}</b>\n\n` +
@@ -506,11 +506,11 @@ async function showRecentNotes(chatId, tuUser, text) {
 async function showStatus(chatId, tuUser) {
   // Cantiere attivo
   const siteInfo = tuUser.active_site_id
-    ? await supabase.from('sites').select('site_name, name, address').eq('id', tuUser.active_site_id).maybeSingle()
+    ? await supabase.from('sites').select('name, address').eq('id', tuUser.active_site_id).maybeSingle()
     : { data: null };
 
   const siteName = siteInfo.data
-    ? (siteInfo.data.site_name || siteInfo.data.name || siteInfo.data.address || 'senza nome')
+    ? (siteInfo.data.name || siteInfo.data.address || 'senza nome')
     : 'nessuno';
 
   // Conteggio note di oggi
@@ -580,7 +580,7 @@ async function requireActiveSite(chatId, tuUser) {
 
   const { data: site } = await supabase
     .from('sites')
-    .select('id, site_name, name, address')
+    .select('id, name, address')
     .eq('id', tuUser.active_site_id)
     .maybeSingle();
 
@@ -592,7 +592,7 @@ async function requireActiveSite(chatId, tuUser) {
 
   return {
     siteId:   site.id,
-    siteName: site.site_name || site.name || site.address || 'Cantiere',
+    siteName: site.name || site.address || 'Cantiere',
   };
 }
 
