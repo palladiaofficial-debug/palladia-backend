@@ -285,6 +285,27 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
 
   if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
 
+  // ── Estendi trial a 30 giorni se l'impresa è ancora in trial ─────────────
+  // Un professionista accreditato porta valore → l'impresa guadagna più tempo.
+  // Si estende solo se trial_ends_at < now + 30 giorni (nessun doppio bonus).
+  try {
+    const { data: co } = await supabase
+      .from('companies')
+      .select('subscription_status, trial_ends_at')
+      .eq('id', invite.company_id)
+      .maybeSingle();
+
+    if (co && co.subscription_status === 'trial') {
+      const thirtyDays = new Date(Date.now() + 30 * 86400000).toISOString();
+      if (!co.trial_ends_at || co.trial_ends_at < thirtyDays) {
+        await supabase
+          .from('companies')
+          .update({ trial_ends_at: thirtyDays })
+          .eq('id', invite.company_id);
+      }
+    }
+  } catch { /* non blocca la risposta */ }
+
   const [siteR, workersR, presenceR, notesR] = await Promise.all([
     supabase.from('sites')
       .select('id, name, address, status, client, start_date, companies(name)')
