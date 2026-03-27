@@ -36,45 +36,99 @@ async function resolveProSession(token) {
   return data || null;
 }
 
-// ── POST /api/v1/coordinator/pro/request ──────────────────────────────────────
-// Richiesta magic link — risponde sempre OK (security: non rivela se email esiste)
-router.post('/coordinator/pro/request', async (req, res) => {
-  const email = (req.body?.email || '').trim().toLowerCase();
+// ── POST /api/v1/coordinator/pro/register ─────────────────────────────────────
+// Registrazione autonoma professionista — funziona anche senza inviti esistenti.
+// Salva il profilo, genera sessione, invia magic link.
+// Body: { email, full_name, qualifica, azienda?, piva? }
+router.post('/coordinator/pro/register', async (req, res) => {
+  const email     = (req.body?.email     || '').trim().toLowerCase();
+  const fullName  = (req.body?.full_name || '').trim();
+  const qualifica = (req.body?.qualifica || 'Altro').trim();
+  const azienda   = (req.body?.azienda   || '').trim() || null;
+  const piva      = (req.body?.piva      || '').trim() || null;
+
   if (!email || !email.includes('@') || email.length > 320) {
     return res.status(400).json({ error: 'EMAIL_REQUIRED' });
   }
-  // Risposta immediata — il resto va in background
+  if (!fullName || fullName.length < 2) {
+    return res.status(400).json({ error: 'NAME_REQUIRED' });
+  }
+
+  const VALID_QUALIFICHE = ['CSE', 'CSP', 'Direttore Lavori', 'RUP', 'RSPP', 'Altro'];
+  const safeQualifica = VALID_QUALIFICHE.includes(qualifica) ? qualifica : 'Altro';
+
+  // Risposta immediata
   res.json({ ok: true });
 
   try {
-    const now = new Date().toISOString();
-    const { data: invites } = await supabase
-      .from('site_coordinator_invites')
-      .select('id, coordinator_name, coordinator_company')
-      .eq('coordinator_email', email)
-      .eq('is_active', true)
-      .gt('expires_at', now)
-      .limit(1);
+    // Salva/aggiorna profilo professionista
+    await supabase.from('coordinator_profiles').upsert({
+      email, full_name: fullName, qualifica: safeQualifica, azienda, piva,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'email' });
 
-    if (!invites || invites.length === 0) return;
-
-    const token = crypto.randomBytes(32).toString('hex');
+    // Genera sessione e invia magic link
+    const token     = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + PRO_TOKEN_TTL_DAYS * 86400000).toISOString();
 
     const { error: insertErr } = await supabase
       .from('coordinator_pro_sessions')
       .insert({ email, token_hash: hashToken(token), expires_at: expiresAt });
 
-    if (insertErr) {
-      console.error('[pro-request] insert error:', insertErr.message);
-      return;
-    }
+    if (insertErr) { console.error('[pro-register] insert error:', insertErr.message); return; }
 
     const { sendProMagicLinkEmail } = require('../../services/email');
     await sendProMagicLinkEmail({
       to: email,
-      coordinatorName: invites[0].coordinator_name,
-      coordinatorCompany: invites[0].coordinator_company,
+      coordinatorName: fullName,
+      coordinatorCompany: azienda,
+      accessUrl: `${appUrl()}/pro/accesso/${token}`,
+    });
+  } catch (e) {
+    console.error('[pro-register] background error:', e.message);
+  }
+});
+
+// ── POST /api/v1/coordinator/pro/request ──────────────────────────────────────
+// Richiesta magic link per email già registrata (login successivo).
+// Risponde sempre OK (security: non rivela se email esiste).
+router.post('/coordinator/pro/request', async (req, res) => {
+  const email = (req.body?.email || '').trim().toLowerCase();
+  if (!email || !email.includes('@') || email.length > 320) {
+    return res.status(400).json({ error: 'EMAIL_REQUIRED' });
+  }
+  res.json({ ok: true });
+
+  try {
+    // Cerca profilo esistente O inviti (per supportare anche il vecchio flusso)
+    const [profileResult, invitesResult] = await Promise.all([
+      supabase.from('coordinator_profiles').select('full_name, azienda').eq('email', email).maybeSingle(),
+      supabase.from('site_coordinator_invites')
+        .select('id, coordinator_name, coordinator_company')
+        .eq('coordinator_email', email).eq('is_active', true)
+        .gt('expires_at', new Date().toISOString()).limit(1),
+    ]);
+
+    const profile  = profileResult.data;
+    const invites  = invitesResult.data;
+    const name     = profile?.full_name || invites?.[0]?.coordinator_name;
+    const azienda  = profile?.azienda   || invites?.[0]?.coordinator_company;
+
+    // Genera sessione solo se esiste un profilo o un invito
+    if (!profile && (!invites || invites.length === 0)) return;
+
+    const token     = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + PRO_TOKEN_TTL_DAYS * 86400000).toISOString();
+
+    const { error: insertErr } = await supabase
+      .from('coordinator_pro_sessions')
+      .insert({ email, token_hash: hashToken(token), expires_at: expiresAt });
+
+    if (insertErr) { console.error('[pro-request] insert error:', insertErr.message); return; }
+
+    const { sendProMagicLinkEmail } = require('../../services/email');
+    await sendProMagicLinkEmail({
+      to: email, coordinatorName: name, coordinatorCompany: azienda,
       accessUrl: `${appUrl()}/pro/accesso/${token}`,
     });
   } catch (e) {

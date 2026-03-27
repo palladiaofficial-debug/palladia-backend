@@ -3,11 +3,12 @@
 /**
  * Stripe SDK — lazy init.
  * ENV richieste:
- *   STRIPE_SECRET_KEY       — chiave segreta Stripe (sk_live_... o sk_test_...)
- *   STRIPE_WEBHOOK_SECRET   — secret endpoint webhook (whsec_...)
- *   STRIPE_PRICE_STARTER    — Price ID piano STARTER €29/mese (price_...)
- *   STRIPE_PRICE_GROW       — Price ID piano GROW    €59/mese (price_...)
- *   STRIPE_PRICE_PRO        — Price ID piano PRO     €99/mese (price_...)
+ *   STRIPE_SECRET_KEY        — chiave segreta Stripe (sk_live_... o sk_test_...)
+ *   STRIPE_WEBHOOK_SECRET    — secret endpoint webhook (whsec_...)
+ *   STRIPE_PRICE_STARTER     — Price ID piano STARTER   €29/mese  (price_...)
+ *   STRIPE_PRICE_GROW        — Price ID piano GROW       €59/mese  (price_...)
+ *   STRIPE_PRICE_PRO         — Price ID piano PRO        €99/mese  (price_...)
+ *   STRIPE_PRICE_BUSINESS    — Price ID piano BUSINESS   €199/mese (price_...)
  *
  * Backward compat: STRIPE_PRICE_BASE viene usato come fallback per STARTER.
  */
@@ -23,22 +24,23 @@ function getStripe() {
 }
 
 const PLAN_PRICES = {
-  starter: () => process.env.STRIPE_PRICE_STARTER || process.env.STRIPE_PRICE_BASE,
-  grow:    () => process.env.STRIPE_PRICE_GROW,
-  pro:     () => process.env.STRIPE_PRICE_PRO,
+  starter:  () => process.env.STRIPE_PRICE_STARTER || process.env.STRIPE_PRICE_BASE,
+  grow:     () => process.env.STRIPE_PRICE_GROW,
+  pro:      () => process.env.STRIPE_PRICE_PRO,
+  business: () => process.env.STRIPE_PRICE_BUSINESS,
 };
 
 /**
  * Limite massimo di cantieri attivi (status != 'chiuso') per piano.
  * null = nessun limite (enterprise).
- * I piani 'base' e 'trial' sono trattati come starter per backward compat.
  */
 const PLAN_LIMITS = {
-  trial:      2,   // trial = stesso limite starter
-  starter:    2,
-  base:       2,   // backward compat
-  grow:       6,
-  pro:        15,
+  trial:      3,   // trial = stesso limite starter
+  starter:    3,
+  base:       3,   // backward compat
+  grow:       8,
+  pro:        20,
+  business:   50,
   enterprise: null,
 };
 

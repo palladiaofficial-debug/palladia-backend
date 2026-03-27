@@ -49,8 +49,8 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
 // Returns: { url }
 router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
   const { plan } = req.body || {};
-  if (!['starter', 'grow', 'pro'].includes(plan)) {
-    return res.status(400).json({ error: 'INVALID_PLAN', message: 'plan deve essere starter, grow o pro' });
+  if (!['starter', 'grow', 'pro', 'business'].includes(plan)) {
+    return res.status(400).json({ error: 'INVALID_PLAN', message: 'plan deve essere starter, grow, pro o business' });
   }
 
   let priceId;
