@@ -34,6 +34,9 @@ router.use('/', require('./billing'));
 // POS — lista documenti azienda (JWT richiesto)
 router.use('/', require('./pos'));
 
+// Portale Professionisti (CSE/CSP/DL/RUP) — accesso pubblico via magic link
+router.use('/', require('./coordinatorPro'));
+
 // Badge digitale: verifica pubblica (no JWT) + PDF privato (JWT)
 router.use('/', require('./badge'));
 

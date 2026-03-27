@@ -459,4 +459,51 @@ async function sendCoordinatorNoteAlert({ companyId, siteName, coordinatorName, 
   });
 }
 
-module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail, sendCoordinatorInviteEmail, sendCoordinatorNoteAlert };
+// ─── Email: Magic link Portale Professionisti ─────────────────────────────────
+
+/**
+ * @param {{ to, coordinatorName, coordinatorCompany, accessUrl }} opts
+ */
+async function sendProMagicLinkEmail({ to, coordinatorName, coordinatorCompany, accessUrl }) {
+  const firstName = (coordinatorName || to).split(' ')[0];
+
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${esc(firstName)},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Hai richiesto l'accesso al tuo <strong style="color:#1a1a1a;">Portale Professionisti</strong> su Palladia.
+      ${coordinatorCompany ? `<br/>Società: <strong style="color:#1a1a1a;">${esc(coordinatorCompany)}</strong>` : ''}
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;font-size:13px;color:#6b7280;line-height:1.6;">
+            Il link ti darà accesso a <strong style="color:#1a1a1a;">tutti i cantieri</strong> in cui sei registrato
+            come coordinatore o tecnico della sicurezza.<br/><br/>
+            È valido per <strong style="color:#1a1a1a;">365 giorni</strong> — trattalo come una password.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Accedi al portale →', accessUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Se non hai richiesto questo link, ignora questa email. Nessun account è stato creato e nessuna modifica è stata apportata.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: 'Accesso Portale Professionisti — Palladia',
+    html: layout('Portale Professionisti', body),
+  });
+}
+
+module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail, sendCoordinatorInviteEmail, sendCoordinatorNoteAlert, sendProMagicLinkEmail };
