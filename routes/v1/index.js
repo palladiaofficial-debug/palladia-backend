@@ -31,6 +31,9 @@ router.use('/', require('./invites'));
 // Billing / abbonamenti (JWT richiesto)
 router.use('/', require('./billing'));
 
+// POS — lista documenti azienda (JWT richiesto)
+router.use('/', require('./pos'));
+
 // Badge digitale: verifica pubblica (no JWT) + PDF privato (JWT)
 router.use('/', require('./badge'));
 
