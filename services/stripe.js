@@ -35,10 +35,10 @@ const PLAN_PRICES = {
  * null = nessun limite (enterprise).
  */
 const PLAN_LIMITS = {
-  trial:      3,   // trial = stesso limite starter
-  starter:    3,
-  base:       3,   // backward compat
-  grow:       8,
+  trial:      3,   // trial = limite ridotto per incentivare upgrade
+  starter:    5,
+  base:       5,   // backward compat
+  grow:       10,
   pro:        20,
   business:   50,
   enterprise: null,
