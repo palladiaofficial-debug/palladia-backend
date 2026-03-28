@@ -130,22 +130,35 @@ async function parseExcel(buffer) {
  * Claude a volte aggiunge testo prima/dopo il JSON — gestiamolo.
  */
 function extractJson(text) {
-  // Cerca il JSON nell'output (potrebbe avere testo intorno)
-  const start = text.indexOf('{');
-  const end   = text.lastIndexOf('}');
+  // Log primissimi 300 chars per debug Railway
+  console.log('[computoParser] Claude raw (first 300):', text.slice(0, 300));
 
-  if (start === -1 || end === -1) {
+  // Prova prima con markdown code fence (```json ... ```)
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const jsonStr = fenceMatch
+    ? fenceMatch[1].trim()
+    : (() => {
+        const start = text.indexOf('{');
+        const end   = text.lastIndexOf('}');
+        if (start === -1 || end === -1) return null;
+        return text.slice(start, end + 1);
+      })();
+
+  if (!jsonStr) {
+    console.warn('[computoParser] nessun JSON trovato. Full text:', text.slice(0, 800));
     throw new Error('Il documento non contiene dati di computo metrico riconoscibili.');
   }
 
   let parsed;
   try {
-    parsed = JSON.parse(text.slice(start, end + 1));
-  } catch {
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    console.warn('[computoParser] JSON.parse fallito:', e.message, '— jsonStr start:', jsonStr.slice(0, 200));
     throw new Error('Formato non parsabile. Verifica che il documento contenga un computo metrico valido.');
   }
 
   if (!parsed.voci || !Array.isArray(parsed.voci) || parsed.voci.length === 0) {
+    console.warn('[computoParser] voci vuote. parsed keys:', Object.keys(parsed));
     throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
   }
 
