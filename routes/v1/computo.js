@@ -6,6 +6,7 @@
  * POST   /api/v1/sites/:siteId/computo/parse     — AI parsing (no save, ritorna draft)
  * POST   /api/v1/sites/:siteId/computo           — salva computo (dopo revisione)
  * GET    /api/v1/sites/:siteId/computo           — recupera computo attivo con voci
+ * GET    /api/v1/sites/:siteId/computo/export.pdf — esporta SAL in PDF stile Palladia
  * PATCH  /api/v1/computo/voci/:voceId/sal        — aggiorna SAL% voce singola
  * DELETE /api/v1/sites/:siteId/computo/:id       — elimina computo
  */
@@ -15,6 +16,7 @@ const multer  = require('multer');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { parsePdf, parseExcel } = require('../../services/computoParser');
+const { generateComputoPdf } = require('../../services/computoPdfGenerator');
 
 // ── Multer: in-memory, max 25MB, PDF + Excel ──────────────────
 const upload = multer({
@@ -184,6 +186,68 @@ router.post('/sites/:siteId/computo', async (req, res) => {
     n_categorie:      voci.filter(v => v.tipo === 'categoria').length,
     n_voci:           vociRows.length,
   });
+});
+
+// ── GET /api/v1/sites/:siteId/computo/export.pdf ──────────────
+// Genera PDF "SAL — Stato Avanzamento Lavori" stile Palladia.
+
+router.get('/sites/:siteId/computo/export.pdf', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+
+  if (!isUuid(siteId)) return res.status(400).json({ error: 'INVALID_SITE_ID' });
+
+  // Carica computo
+  const { data: computo } = await supabase
+    .from('site_computo')
+    .select('id, nome, fonte, totale_contratto, created_at')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!computo) return res.status(404).json({ error: 'COMPUTO_NOT_FOUND' });
+
+  // Carica voci
+  const { data: voci } = await supabase
+    .from('site_computo_voci')
+    .select('id, parent_id, tipo, sort_order, codice, descrizione, unita_misura, quantita, prezzo_unitario, importo, sal_percentuale, sal_note')
+    .eq('computo_id', computo.id)
+    .order('sort_order', { ascending: true });
+
+  // Carica info cantiere e azienda per la cover
+  const { data: site } = await supabase
+    .from('sites')
+    .select('name, address')
+    .eq('id', siteId)
+    .maybeSingle();
+
+  const { data: company } = await supabase
+    .from('companies')
+    .select('name')
+    .eq('id', companyId)
+    .maybeSingle();
+
+  try {
+    const pdfBuffer = await generateComputoPdf({
+      computo,
+      voci: voci || [],
+      site,
+      company,
+    });
+
+    const safeName = (computo.nome || 'computo').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60);
+    res.set({
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': `attachment; filename="SAL_${safeName}.pdf"`,
+      'Content-Length':      pdfBuffer.length,
+    });
+    res.end(pdfBuffer);
+  } catch (err) {
+    console.error('[computo/export.pdf]', err.message);
+    res.status(500).json({ error: 'PDF_GENERATION_FAILED', detail: err.message });
+  }
 });
 
 // ── GET /api/v1/sites/:siteId/computo ─────────────────────────
