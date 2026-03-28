@@ -8,7 +8,8 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const xlsx      = require('xlsx');
 
-const MODEL = 'claude-sonnet-4-6';
+const MODEL      = 'claude-sonnet-4-6';
+const MAX_TOKENS = 16000; // max sicuro per Sonnet 4.6 — era 8192, troppo basso per computi grandi
 
 const SYSTEM_PROMPT = `Sei un esperto di computi metrici italiani nel settore delle costruzioni.
 Analizza il documento fornito (computo metrico, lista lavorazioni, capitolato, preventivo o contratto) e restituisci SOLO un JSON valido, senza markdown, senza spiegazioni.
@@ -61,7 +62,7 @@ async function parsePdf(buffer) {
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 8192,
+    max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages: [
       {
@@ -112,7 +113,7 @@ async function parseExcel(buffer) {
 
   const response = await client.messages.create({
     model: MODEL,
-    max_tokens: 8192,
+    max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages: [
       {
