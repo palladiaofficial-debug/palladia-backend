@@ -69,6 +69,7 @@ AMBITI DI COMPETENZA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ① DATI CANTIERE (usa i tool — dati reali dal database)
    Presenze in tempo reale, timbrature, lavoratori assegnati, cantieri attivi/chiusi, KPI, storico presenze.
+   Economia per cantiere: budget, costi sostenuti, ricavi, utile lordo, SAL%, rischio sforamento, proiezioni.
 
 ② SICUREZZA SUL LAVORO — massima profondità tecnica
    D.Lgs. 81/2008 (T.U. Sicurezza) e tutti i decreti attuativi — conosci ogni articolo
@@ -258,6 +259,20 @@ const TOOLS = [
       type: 'object',
       properties: {},
       required: []
+    }
+  },
+  {
+    name: 'get_economia',
+    description: 'Dati economici di un cantiere specifico: budget preventivo, totale costi sostenuti, totale ricavi, utile lordo, margine %, SAL%, rischio sforamento, proiezione budget, breakdown per categoria. Usa per qualsiasi domanda su: spese, costi, ricavi, guadagni, margini, situazione economica, budget, stato avanzamento lavori.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: {
+          type: 'string',
+          description: 'UUID del cantiere (obbligatorio). Se non lo conosci, chiamare prima get_sites per trovarlo.'
+        }
+      },
+      required: ['site_id']
     }
   }
 ];
@@ -450,6 +465,81 @@ async function executeTool(toolName, toolInput, companyId) {
           present_today: presentCount,
           punches_today: todayLogs.length
         };
+      }
+
+      case 'get_economia': {
+        const { site_id } = toolInput;
+        if (!site_id) return { error: 'site_id obbligatorio. Chiama prima get_sites per trovare il cantiere.' };
+
+        const [siteRes, vociRes] = await Promise.all([
+          supabase.from('sites')
+            .select('name, budget_totale, sal_percentuale')
+            .eq('id', site_id)
+            .eq('company_id', companyId)
+            .maybeSingle(),
+          supabase.from('site_economia_voci')
+            .select('tipo, categoria, voce, importo, data_competenza')
+            .eq('site_id', site_id)
+            .eq('company_id', companyId)
+            .order('data_competenza', { ascending: true })
+            .limit(500),
+        ]);
+
+        if (!siteRes.data) return { error: 'Cantiere non trovato o non autorizzato.' };
+
+        const site    = siteRes.data;
+        const allVoci = vociRes.data || [];
+        const costi   = allVoci.filter(v => v.tipo === 'costo');
+        const ricavi  = allVoci.filter(v => v.tipo === 'ricavo');
+        const totCosti  = costi.reduce((s, v)  => s + Number(v.importo), 0);
+        const totRicavi = ricavi.reduce((s, v) => s + Number(v.importo), 0);
+        const utile     = totRicavi - totCosti;
+
+        // Breakdown per categoria
+        const costiPerCat  = {};
+        const ricaviPerCat = {};
+        costi.forEach(v  => { costiPerCat[v.categoria]  = (costiPerCat[v.categoria]  || 0) + Number(v.importo); });
+        ricavi.forEach(v => { ricaviPerCat[v.categoria] = (ricaviPerCat[v.categoria] || 0) + Number(v.importo); });
+
+        // Velocità di spesa (ultimi 30 giorni)
+        const thirtyAgo   = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const recentSpend = costi.filter(v => v.data_competenza >= thirtyAgo).reduce((s, v) => s + Number(v.importo), 0);
+
+        const result = {
+          cantiere:           site.name,
+          sal_percentuale:    Number(site.sal_percentuale || 0),
+          totale_costi:       totCosti,
+          totale_ricavi:      totRicavi,
+          utile_lordo:        utile,
+          margine_percentuale: totRicavi > 0 ? Math.round((utile / totRicavi) * 100) : null,
+          n_voci_costi:       costi.length,
+          n_voci_ricavi:      ricavi.length,
+          costi_per_categoria:  costiPerCat,
+          ricavi_per_categoria: ricaviPerCat,
+          spesa_ultimi_30gg:  recentSpend,
+        };
+
+        if (site.budget_totale !== null && Number(site.budget_totale) > 0) {
+          const budget = Number(site.budget_totale);
+          result.budget_preventivo          = budget;
+          result.budget_consumato_pct       = Math.round((totCosti / budget) * 100);
+          result.budget_rimanente           = budget - totCosti;
+          const salDec   = Number(site.sal_percentuale || 0) / 100;
+          const spendDec = totCosti / budget;
+          if (spendDec > salDec + 0.10) {
+            result.alert_rischio = `SFORAMENTO: budget consumato al ${result.budget_consumato_pct}% con SAL al ${result.sal_percentuale}% — spesa superiore di ${Math.round((spendDec - salDec) * 100)} punti percentuali rispetto all'avanzamento.`;
+          } else if (spendDec > salDec + 0.05) {
+            result.attenzione = `Spesa leggermente anticipata rispetto al SAL (${result.budget_consumato_pct}% vs ${result.sal_percentuale}%). Monitorare.`;
+          }
+          // Proiezione: giorni al budget esaurito al ritmo attuale
+          if (recentSpend > 0) {
+            const dailyRate = recentSpend / 30;
+            const remaining = budget - totCosti;
+            if (remaining > 0) result.proiezione_giorni_al_budget_esaurito = Math.round(remaining / dailyRate);
+          }
+        }
+
+        return result;
       }
 
       default:

@@ -130,6 +130,9 @@ async function handleMessage(msg, tuUser) {
   if (text.startsWith('/aiuto') || text === '/help') return showHelp(chatId);
   if (text.startsWith('/nc ') || text === '/nc')     return handleNcCommand(msg, tuUser);
   if (text.startsWith('/presenze'))  return handlePresenzeCommand(msg, tuUser);
+  if (text.startsWith('/costo'))     return handleCostoCommand(msg, tuUser);
+  if (text.startsWith('/ricavo'))    return handleRicavoCommand(msg, tuUser);
+  if (text.startsWith('/sal ') || text === '/sal')   return handleSalCommand(msg, tuUser);
 
   // ── Media ────────────────────────────────────────────────
   if (msg.photo)    return handlePhoto(msg, tuUser);
@@ -565,6 +568,196 @@ async function handleVoice(msg, tuUser) {
   }
 }
 
+// ── Economia: /costo /ricavo /sal ────────────────────────────
+
+/** Formatta un importo in euro per Telegram (non HTML, solo testo) */
+function fmtEuroBot(n) {
+  return new Intl.NumberFormat('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 }).format(n);
+}
+
+/** Barra SAL testuale: █████░░░░░ */
+function buildSalBar(pct) {
+  const filled = Math.min(10, Math.round(pct / 10));
+  return '█'.repeat(filled) + '░'.repeat(10 - filled);
+}
+
+/** Classifica la categoria di un costo da parole chiave (no API call) */
+function classifyCostCategory(voce) {
+  const v = (voce || '').toLowerCase();
+  if (/cement|mattoni|laterizi|ferro|acciai|legname|calce|sabbia|ghiaia|piastrelle|intonaco|vernice|tubi|cavi|pannelli|isolante|guaina|cls|calcestruzzo|fornitura|acquisto materiali/.test(v)) return 'Materiali';
+  if (/operai|manodopera|squadra|lavoratori|ore|giornate|muratore|carpentiere|elettricista|idraulico|imbianchino|stipendi|salari|prestazione/.test(v)) return 'Manodopera';
+  if (/noleggio|nolo|escavatore|gru|ponteggio|macchina|mezzo|attrezzatura|macchinario|autocarro|pompa|betoniera/.test(v)) return 'Noli e macchinari';
+  if (/subappalto|sub-appalto|impresa|ditta|appaltatore|terzi/.test(v)) return 'Subappalti';
+  if (/assicurazione|visura|notaio|progetto|direzione lavori|utenze|spese generali|permesso|pratica|fidejussione|oneri/.test(v)) return 'Generali';
+  return 'Altro';
+}
+
+/** Classifica la categoria di un ricavo da parole chiave */
+function classifyRicavoCategory(voce) {
+  const v = (voce || '').toLowerCase();
+  if (/acconto|anticipo/.test(v)) return 'Acconto';
+  if (/sal|avanzamento|stato avanzamento/.test(v)) return 'SAL';
+  if (/saldo|finale|chiusura/.test(v)) return 'Saldo';
+  if (/extra|aggiuntivo|variante|perizia/.test(v)) return 'Extra';
+  return 'Altro';
+}
+
+async function handleCostoCommand(msg, tuUser) {
+  const chatId = msg.chat.id;
+  const parts  = msg.text.trim().split(/\s+/);
+
+  if (parts.length < 2) {
+    return sendMain(chatId,
+      `❌ Sintassi: <code>/costo importo descrizione</code>\n\n` +
+      `Esempi:\n` +
+      `<code>/costo 800 cemento 30 sacchi</code>\n` +
+      `<code>/costo 2500 noleggio escavatore</code>`
+    );
+  }
+
+  const importo = parseFloat(parts[1].replace(/[€\s]/g, '').replace(',', '.'));
+  if (isNaN(importo) || importo <= 0) {
+    return sendMain(chatId, `❌ Importo non valido. Es: <code>/costo 800 cemento</code>`);
+  }
+
+  const voce    = parts.slice(2).join(' ').trim() || 'Costo cantiere';
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  const categoria = classifyCostCategory(voce);
+
+  const { error } = await supabase.from('site_economia_voci').insert({
+    company_id:      tuUser.company_id,
+    site_id:         siteCtx.siteId,
+    tipo:            'costo',
+    categoria,
+    voce,
+    importo,
+    data_competenza: new Date().toISOString().slice(0, 10),
+    created_by:      tuUser.user_id,
+  });
+
+  if (error) {
+    console.error('[handleCostoCommand]', error.message);
+    return sendMain(chatId, `❌ Errore nel salvataggio. Riprova.`);
+  }
+
+  await sendMain(chatId,
+    `✅ <b>Costo registrato</b>\n\n` +
+    `💶 <b>${fmtEuroBot(importo)}</b>\n` +
+    `📝 ${voce}\n` +
+    `📂 Categoria: <i>${categoria}</i>\n` +
+    `🏗 Cantiere: <i>${siteCtx.siteName}</i>\n` +
+    `📅 ${new Date().toLocaleDateString('it-IT')}`
+  );
+}
+
+async function handleRicavoCommand(msg, tuUser) {
+  const chatId = msg.chat.id;
+  const parts  = msg.text.trim().split(/\s+/);
+
+  if (parts.length < 2) {
+    return sendMain(chatId,
+      `❌ Sintassi: <code>/ricavo importo descrizione</code>\n\n` +
+      `Esempi:\n` +
+      `<code>/ricavo 15000 SAL 1 approvato</code>\n` +
+      `<code>/ricavo 5000 acconto iniziale</code>`
+    );
+  }
+
+  const importo = parseFloat(parts[1].replace(/[€\s]/g, '').replace(',', '.'));
+  if (isNaN(importo) || importo <= 0) {
+    return sendMain(chatId, `❌ Importo non valido. Es: <code>/ricavo 15000 SAL 1</code>`);
+  }
+
+  const voce    = parts.slice(2).join(' ').trim() || 'Ricavo cantiere';
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  const categoria = classifyRicavoCategory(voce);
+
+  const { error } = await supabase.from('site_economia_voci').insert({
+    company_id:      tuUser.company_id,
+    site_id:         siteCtx.siteId,
+    tipo:            'ricavo',
+    categoria,
+    voce,
+    importo,
+    data_competenza: new Date().toISOString().slice(0, 10),
+    created_by:      tuUser.user_id,
+  });
+
+  if (error) {
+    console.error('[handleRicavoCommand]', error.message);
+    return sendMain(chatId, `❌ Errore nel salvataggio. Riprova.`);
+  }
+
+  await sendMain(chatId,
+    `✅ <b>Ricavo registrato</b>\n\n` +
+    `💰 <b>${fmtEuroBot(importo)}</b>\n` +
+    `📝 ${voce}\n` +
+    `📂 Categoria: <i>${categoria}</i>\n` +
+    `🏗 Cantiere: <i>${siteCtx.siteName}</i>\n` +
+    `📅 ${new Date().toLocaleDateString('it-IT')}`
+  );
+}
+
+async function handleSalCommand(msg, tuUser) {
+  const chatId = msg.chat.id;
+  const parts  = msg.text.trim().split(/\s+/);
+  const val    = parseFloat(parts[1]);
+
+  if (isNaN(val) || val < 0 || val > 100) {
+    return sendMain(chatId,
+      `❌ Sintassi: <code>/sal percentuale</code> (0-100)\n\n` +
+      `Es: <code>/sal 65</code> → avanzamento al 65%`
+    );
+  }
+
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  // Leggi anche il budget per dare feedback contestuale
+  const { data: site } = await supabase
+    .from('sites')
+    .select('budget_totale')
+    .eq('id', siteCtx.siteId)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from('sites')
+    .update({ sal_percentuale: val })
+    .eq('id', siteCtx.siteId)
+    .eq('company_id', tuUser.company_id);
+
+  if (error) return sendMain(chatId, `❌ Errore nel salvataggio. Riprova.`);
+
+  // Se c'è budget, calcola anche la spesa attuale per dare un rischio
+  let riskLine = '';
+  if (site?.budget_totale) {
+    const { data: voci } = await supabase
+      .from('site_economia_voci')
+      .select('importo')
+      .eq('site_id', siteCtx.siteId)
+      .eq('tipo', 'costo');
+    const totCosti  = (voci || []).reduce((s, v) => s + Number(v.importo), 0);
+    const budget    = Number(site.budget_totale);
+    const spendPct  = budget > 0 ? Math.round((totCosti / budget) * 100) : 0;
+    if (spendPct > val + 10) {
+      riskLine = `\n⚠️ <b>Attenzione</b>: budget consumato al ${spendPct}% ma SAL al ${val}% — rischio sforamento.`;
+    } else if (spendPct > 0) {
+      riskLine = `\n📊 Budget consumato: ${spendPct}% (${fmtEuroBot(totCosti)} di ${fmtEuroBot(budget)})`;
+    }
+  }
+
+  await sendMain(chatId,
+    `✅ <b>SAL aggiornato</b>\n\n` +
+    `🏗 <i>${siteCtx.siteName}</i>\n` +
+    `${buildSalBar(val)} <b>${val}%</b>` +
+    riskLine
+  );
+}
+
 /**
  * Trascrive un buffer audio OGG con Groq Whisper-large-v3 (gratuito).
  * Groq usa la stessa API di OpenAI — stesso modello, più veloce, tier free 7200 min/giorno.
@@ -728,29 +921,63 @@ async function showStatus(chatId, tuUser) {
     openNc = count || 0;
   }
 
+  // Dati economici del cantiere attivo
+  let ecoLine = '';
+  if (site?.id) {
+    const { data: voci } = await supabase
+      .from('site_economia_voci')
+      .select('tipo, importo')
+      .eq('site_id', site.id)
+      .eq('company_id', tuUser.company_id);
+    const { data: siteEco } = await supabase
+      .from('sites')
+      .select('budget_totale, sal_percentuale')
+      .eq('id', site.id)
+      .maybeSingle();
+
+    if (voci && voci.length > 0) {
+      const costi  = voci.filter(v => v.tipo === 'costo').reduce((s, v) => s + Number(v.importo), 0);
+      const ricavi = voci.filter(v => v.tipo === 'ricavo').reduce((s, v) => s + Number(v.importo), 0);
+      const utile  = ricavi - costi;
+      ecoLine = `\n💶 Costi: <b>${fmtEuroBot(costi)}</b>  |  💰 Ricavi: <b>${fmtEuroBot(ricavi)}</b>\n` +
+                `${utile >= 0 ? '✅' : '🔴'} Utile: <b>${fmtEuroBot(utile)}</b>`;
+      if (siteEco?.budget_totale) {
+        const budget   = Number(siteEco.budget_totale);
+        const spendPct = Math.round((costi / budget) * 100);
+        const sal      = Number(siteEco.sal_percentuale || 0);
+        ecoLine += `\n${buildSalBar(sal)} SAL <b>${sal}%</b> | Budget consumato: <b>${spendPct}%</b>`;
+        if (spendPct > sal + 10) ecoLine += `\n⚠️ <b>Rischio sforamento budget!</b>`;
+      }
+    }
+  }
+
   await sendMain(chatId,
-    `📊 <b>Stato attuale</b>\n\n` +
-    `📍 Cantiere attivo: <b>${siteName}</b>\n` +
+    `📊 <b>Stato cantiere</b>\n\n` +
+    `📍 <b>${siteName}</b>\n` +
     `📝 Note inviate oggi: <b>${notesToday || 0}</b>\n` +
-    (openNc > 0 ? `⚠️ NC aperte su questo cantiere: <b>${openNc}</b>\n` : '') +
-    `\nTocca <b>📍 Cantieri</b> per cambiare cantiere.`
+    (openNc > 0 ? `⚠️ NC aperte: <b>${openNc}</b>\n` : '') +
+    ecoLine +
+    `\n\nTocca <b>📍 Cantieri</b> per cambiare cantiere.`
   );
 }
 
 async function showHelp(chatId) {
   await sendMain(chatId,
     `👷 <b>Guida Palladia Bot</b>\n\n` +
-    `<b>Usa i bottoni in basso oppure invia direttamente:</b>\n\n` +
-    `📷 <b>Foto</b> → classificata dall'IA, allegata al cantiere\n` +
-    `🎙️ <b>Vocale</b> → trascritto e classificato automaticamente\n` +
-    `📎 <b>Documento</b> → PDF/Excel archiviato\n` +
-    `📝 <b>Testo libero</b> → nota classificata automaticamente\n\n` +
-    `<b>Segnalazioni rapide:</b>\n` +
+    `<b>Invia dal cantiere:</b>\n` +
+    `📷 Foto → allegata con timestamp\n` +
+    `🎙️ Vocale → trascritto dall'IA\n` +
+    `📎 Documento → PDF/Excel archiviato\n` +
+    `📝 Testo → nota classificata automaticamente\n\n` +
+    `<b>Cantiere & Sicurezza:</b>\n` +
     `<code>/nc testo</code> — non conformità urgente\n` +
     `<code>/presenze Mario, Luigi</code> — registra presenti\n\n` +
-    `<b>Categorie riconosciute dall'IA:</b>\n` +
-    `${Object.entries(CATEGORY_ICONS).map(([k,v]) => `${v} ${CATEGORY_LABELS[k]||k}`).join('  ')}\n\n` +
-    `Tutto finisce ordinato su <b>palladia.net</b> → tab Note del cantiere`
+    `<b>Economia cantiere:</b>\n` +
+    `<code>/costo 800 cemento portland</code> — registra spesa\n` +
+    `<code>/ricavo 15000 SAL 1 approvato</code> — registra incasso\n` +
+    `<code>/sal 65</code> — aggiorna avanzamento lavori al 65%\n\n` +
+    `<b>Stato:</b>\n` +
+    `<code>/stato</code> → riepilogo cantiere attivo + economia`
   );
 }
 
