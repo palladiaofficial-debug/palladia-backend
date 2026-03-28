@@ -57,6 +57,9 @@ router.use('/', require('./siteNotes'));
 // SAL — Stato Avanzamento Lavori: budget, costi, ricavi per cantiere
 router.use('/', require('./economia'));
 
+// Computo Metrico: import PDF/Excel, parsing AI, SAL% per voce
+router.use('/', require('./computo'));
+
 // Route pubbliche scan badge (no JWT — session token o signed QR link)
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
 router.use('/', require('./scan'));
