@@ -116,4 +116,89 @@ router.get('/team-members', verifySupabaseJwt, async (req, res) => {
   res.json(result);
 });
 
+// DELETE /api/v1/team-members/:userId — rimuove un membro dalla company
+// Solo owner/admin. Non si può rimuovere l'owner né se stessi.
+router.delete('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+
+  const { userId } = req.params;
+
+  if (userId === req.userId) {
+    return res.status(400).json({ error: 'CANNOT_REMOVE_SELF' });
+  }
+
+  const { data: target, error: fetchErr } = await supabase
+    .from('company_users')
+    .select('role')
+    .eq('company_id', req.companyId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (fetchErr || !target) {
+    return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+  }
+
+  if (target.role === 'owner') {
+    return res.status(400).json({ error: 'CANNOT_REMOVE_OWNER' });
+  }
+
+  // Solo owner può rimuovere un admin
+  if (target.role === 'admin' && req.userRole !== 'owner') {
+    return res.status(403).json({ error: 'ONLY_OWNER_CAN_REMOVE_ADMIN' });
+  }
+
+  const { error } = await supabase
+    .from('company_users')
+    .delete()
+    .eq('company_id', req.companyId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[team-members] delete error:', error.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+
+  res.json({ ok: true });
+});
+
+// PATCH /api/v1/team-members/:userId — modifica ruolo di un membro
+router.patch('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+
+  const { userId } = req.params;
+  const { role }   = req.body || {};
+
+  const allowedRoles = ['admin', 'tech', 'viewer'];
+  if (!allowedRoles.includes(role)) {
+    return res.status(400).json({ error: 'INVALID_ROLE', allowed: allowedRoles });
+  }
+
+  const { data: target } = await supabase
+    .from('company_users')
+    .select('role')
+    .eq('company_id', req.companyId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!target) return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+  if (target.role === 'owner') return res.status(400).json({ error: 'CANNOT_CHANGE_OWNER_ROLE' });
+  if (target.role === 'admin' && req.userRole !== 'owner') {
+    return res.status(403).json({ error: 'ONLY_OWNER_CAN_CHANGE_ADMIN_ROLE' });
+  }
+
+  const { error } = await supabase
+    .from('company_users')
+    .update({ role })
+    .eq('company_id', req.companyId)
+    .eq('user_id', userId);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  res.json({ ok: true, role });
+});
+
 module.exports = router;

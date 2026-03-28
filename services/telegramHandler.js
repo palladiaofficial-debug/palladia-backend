@@ -31,6 +31,7 @@ const tg             = require('./telegram');
 const { classifyMessage } = require('./telegramAI');
 const { logEvent }   = require('./telegramLog');
 const supabase       = require('../lib/supabase');
+const sharp          = require('sharp');
 const { notifyNonConformita, notifyIncidente } = require('./telegramNotifications');
 
 // ── Tastiera persistente principale ──────────────────────────
@@ -367,13 +368,16 @@ async function handleText(msg, tuUser) {
     siteCtx.siteId, ai.category
   );
 
-  // Notifiche push per categorie critiche
+  // Notifiche push solo per NC urgenti e incidenti — esclude il mittente
   const authorName = tuUser.telegram_first_name || tuUser.telegram_username;
   if (ai.category === 'incidente') {
-    notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || text, authorName).catch(() => {});
-  } else if (ai.category === 'non_conformita' && ai.urgency !== 'normale') {
-    notifyNonConformita(tuUser.company_id, siteCtx.siteName, ai.summary || text, authorName).catch(() => {});
+    notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || text, authorName,
+      tuUser.telegram_chat_id).catch(() => {});
+  } else if (ai.category === 'non_conformita') {
+    notifyNonConformita(tuUser.company_id, siteCtx.siteId, siteCtx.siteName,
+      ai.summary || text, authorName, ai.urgency, tuUser.telegram_chat_id).catch(() => {});
   }
+  // Tutte le altre categorie (nota, foto, verbale, presenza, documento): silenzioso
 }
 
 async function handlePhoto(msg, tuUser) {
@@ -542,12 +546,14 @@ async function handleVoice(msg, tuUser) {
       siteCtx.siteId, ai.category
     );
 
-    // Notifiche push per categorie critiche
+    // Notifiche push solo per NC urgenti e incidenti — esclude il mittente
     const authorName = tuUser.telegram_first_name || tuUser.telegram_username;
     if (ai.category === 'incidente') {
-      notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || transcription, authorName).catch(() => {});
-    } else if (ai.category === 'non_conformita' && ai.urgency !== 'normale') {
-      notifyNonConformita(tuUser.company_id, siteCtx.siteName, ai.summary || transcription, authorName).catch(() => {});
+      notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || transcription, authorName,
+        tuUser.telegram_chat_id).catch(() => {});
+    } else if (ai.category === 'non_conformita') {
+      notifyNonConformita(tuUser.company_id, siteCtx.siteId, siteCtx.siteName,
+        ai.summary || transcription, authorName, ai.urgency, tuUser.telegram_chat_id).catch(() => {});
     }
 
   } catch (err) {
@@ -619,9 +625,9 @@ async function handleNcCommand(msg, tuUser) {
     siteCtx.siteId, 'non_conformita'
   );
 
-  // Notifica gli altri utenti collegati della stessa company
-  notifyNonConformita(tuUser.company_id, siteCtx.siteName, text,
-    tuUser.telegram_first_name || tuUser.telegram_username
+  // /nc è intento esplicito → notifica sempre, senza cooldown, esclude il mittente
+  notifyNonConformita(tuUser.company_id, siteCtx.siteId, siteCtx.siteName, text,
+    tuUser.telegram_first_name || tuUser.telegram_username, 'critica', tuUser.telegram_chat_id
   ).catch(() => {});
 }
 
@@ -812,26 +818,44 @@ async function saveNote(tuUser, siteId, fields) {
 }
 
 /**
- * Scarica il file da Telegram e lo carica su Supabase Storage (bucket privato).
- * Ritorna il path relativo (es. "company/site/2026-03-26/abc123.jpg").
+ * Scarica il file da Telegram, comprime le immagini con sharp, carica su Supabase Storage.
+ * Le foto vengono ridotte a max 1280px e JPEG 82% → da 2-5MB a ~150-400KB.
+ * I documenti (PDF, Excel, ecc.) vengono caricati as-is.
  */
 async function uploadTelegramFile(fileId, companyId, siteId, ext) {
-  const fileInfo = await require('./telegram').getFile(fileId);
-  const buffer   = await require('./telegram').downloadFile(fileInfo.file_path);
+  const fileInfo = await tg.getFile(fileId);
+  let buffer     = await tg.downloadFile(fileInfo.file_path);
 
   const { randomBytes } = require('crypto');
   const uniqueId = randomBytes(8).toString('hex');
   const today    = new Date().toISOString().slice(0, 10);
-  const storagePath = `${companyId}/${siteId}/${today}/${uniqueId}.${ext}`;
 
-  const contentTypeMap = {
-    jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png',
-    gif: 'image/gif',  webp: 'image/webp',
-    pdf: 'application/pdf',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  };
-  const contentType = contentTypeMap[ext.toLowerCase()] || 'application/octet-stream';
+  const IMAGE_EXTS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif']);
+  const extLower   = ext.toLowerCase();
+  let finalExt     = extLower;
+  let contentType  = 'application/octet-stream';
+
+  if (IMAGE_EXTS.has(extLower)) {
+    // Comprimi: ridimensiona a max 1280px, converti in JPEG 82%
+    buffer      = await sharp(buffer)
+      .rotate()                          // rispetta l'orientamento EXIF
+      .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 82, progressive: true })
+      .toBuffer();
+    finalExt    = 'jpg';
+    contentType = 'image/jpeg';
+  } else {
+    const MIME_MAP = {
+      pdf:  'application/pdf',
+      xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      ogg:  'audio/ogg',
+      mp3:  'audio/mpeg',
+    };
+    contentType = MIME_MAP[extLower] || 'application/octet-stream';
+  }
+
+  const storagePath = `${companyId}/${siteId}/${today}/${uniqueId}.${finalExt}`;
 
   const { error } = await supabase.storage
     .from('site-media')

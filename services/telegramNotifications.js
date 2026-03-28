@@ -1,20 +1,36 @@
 'use strict';
 /**
  * services/telegramNotifications.js
- * Notifiche outbound: la piattaforma invia messaggi proattivi via Telegram
- * agli utenti di una company che hanno collegato il bot.
+ * Notifiche outbound verso gli utenti Telegram collegati.
  *
- * Uso tipico:
- *   const { notifyNonConformita } = require('./telegramNotifications');
- *   await notifyNonConformita(companyId, siteName, description, authorName);
+ * REGOLE ANTI-SPAM:
+ * - Le notifiche di NC/Incidente escludono sempre chi ha inviato il messaggio
+ * - NC con urgency 'alta': cooldown 30 min per cantiere (evita raffica di notifiche)
+ * - NC con urgency 'critica' e Incidenti: sempre immediati, nessun cooldown
+ * - Note normali, foto, documenti: mai notificate (silenzioso)
  */
 
 const tg       = require('./telegram');
 const supabase = require('../lib/supabase');
 
-// ── Helper: recupera chat IDs di tutti gli utenti collegati ──
+// ── Cooldown NC: max 1 notifica per cantiere ogni 30 minuti ──
+// In-memory: va bene per server single-instance (Railway)
+const NC_COOLDOWN_MS = 30 * 60 * 1000; // 30 minuti
+const ncLastNotified = new Map(); // key: `${companyId}:${siteId}` → timestamp
 
-async function getLinkedChatIds(companyId) {
+function isNcOnCooldown(companyId, siteId) {
+  const key  = `${companyId}:${siteId}`;
+  const last = ncLastNotified.get(key);
+  return last && (Date.now() - last) < NC_COOLDOWN_MS;
+}
+
+function setNcCooldown(companyId, siteId) {
+  ncLastNotified.set(`${companyId}:${siteId}`, Date.now());
+}
+
+// ── Helper: recupera chat IDs (esclude opzionalmente il mittente) ──
+
+async function getLinkedChatIds(companyId, excludeChatId = null) {
   const { data, error } = await supabase
     .from('telegram_users')
     .select('telegram_chat_id')
@@ -24,15 +40,22 @@ async function getLinkedChatIds(companyId) {
     console.error('[telegramNotifications] getLinkedChatIds error:', error.message);
     return [];
   }
-  return (data || []).map(u => u.telegram_chat_id);
+
+  return (data || [])
+    .map(u => u.telegram_chat_id)
+    .filter(id => id !== excludeChatId);
 }
 
-// ── Broadcast a tutti gli utenti collegati di una company ────
+// ── Broadcast base ────────────────────────────────────────────
 
-async function notifyCompany(companyId, text) {
+/**
+ * Invia un messaggio a tutti gli utenti collegati della company.
+ * excludeChatId: ometti il mittente originale (non notificare chi ha già inviato)
+ */
+async function notifyCompany(companyId, text, { excludeChatId = null } = {}) {
   if (!process.env.TELEGRAM_BOT_TOKEN) return { sent: 0, failed: 0, skipped: true };
 
-  const chatIds = await getLinkedChatIds(companyId);
+  const chatIds = await getLinkedChatIds(companyId, excludeChatId);
   if (!chatIds.length) return { sent: 0, failed: 0 };
 
   const results = await Promise.allSettled(
@@ -49,31 +72,54 @@ async function notifyCompany(companyId, text) {
 // ── Notifiche specifiche ──────────────────────────────────────
 
 /**
- * Notifica una Non Conformità appena segnalata (da web o da qualsiasi fonte).
+ * Notifica una Non Conformità.
+ * urgency 'critica' → sempre immediata
+ * urgency 'alta'    → cooldown 30 min per cantiere (anti-spam)
+ * urgency 'normale' → silenzioso, non notifica
+ *
+ * siteId è usato solo per il cooldown; siteName per il testo.
  */
-async function notifyNonConformita(companyId, siteName, description, authorName) {
+async function notifyNonConformita(companyId, siteId, siteName, description, authorName, urgency, excludeChatId) {
+  // Note normali: silenzio totale
+  if (urgency === 'normale') return { sent: 0, skipped: true };
+
+  // NC alta: rispetta il cooldown (anti-spam)
+  if (urgency !== 'critica' && isNcOnCooldown(companyId, siteId)) {
+    console.log(`[telegramNotifications] NC cooldown attivo per ${companyId}:${siteId} — skip`);
+    return { sent: 0, skipped: true };
+  }
+
   const text =
     `⚠️ <b>Non Conformità segnalata</b>\n\n` +
     `📍 <b>${siteName}</b>\n` +
     `📝 ${description}` +
     (authorName ? `\n👤 Segnalata da: ${authorName}` : '');
-  return notifyCompany(companyId, text);
+
+  const result = await notifyCompany(companyId, text, { excludeChatId });
+
+  // Segna cooldown solo per NC 'alta' (non 'critica')
+  if (urgency !== 'critica' && result.sent > 0) {
+    setNcCooldown(companyId, siteId);
+  }
+
+  return result;
 }
 
 /**
- * Notifica un incidente.
+ * Notifica un incidente — sempre immediato, nessun cooldown.
  */
-async function notifyIncidente(companyId, siteName, description, authorName) {
+async function notifyIncidente(companyId, siteName, description, authorName, excludeChatId) {
   const text =
     `🚨 <b>INCIDENTE segnalato</b>\n\n` +
     `📍 <b>${siteName}</b>\n` +
     `📝 ${description}` +
     (authorName ? `\n👤 Da: ${authorName}` : '');
-  return notifyCompany(companyId, text);
+  return notifyCompany(companyId, text, { excludeChatId });
 }
 
 /**
- * Notifica lavoratori con uscita mancante a fine giornata.
+ * Notifica uscite mancanti a fine giornata (cron 20:00).
+ * Inviata a tutti senza esclusioni (è un alert gestionale, non un evento real-time).
  */
 async function notifyMissingExits(companyId, siteName, workerNames) {
   if (!workerNames || !workerNames.length) return { sent: 0, failed: 0 };
@@ -87,22 +133,7 @@ async function notifyMissingExits(companyId, siteName, workerNames) {
 }
 
 /**
- * Riepilogo mattutino di un cantiere.
- */
-async function sendDailySummary(companyId, siteName, stats) {
-  const { workersExpected = 0, notesYesterday = 0, openNc = 0 } = stats || {};
-  const text =
-    `☀️ <b>Buongiorno — ${siteName}</b>\n\n` +
-    `📊 Riepilogo di ieri:\n` +
-    `👷 Lavoratori registrati: <b>${workersExpected}</b>\n` +
-    `📝 Note archiviate: <b>${notesYesterday}</b>\n` +
-    (openNc > 0 ? `⚠️ Non conformità aperte: <b>${openNc}</b>\n` : '') +
-    `\nHai una buona giornata di lavoro! 👷‍♂️`;
-  return notifyCompany(companyId, text);
-}
-
-/**
- * Messaggio generico a tutta la company.
+ * Messaggio personalizzato a tutta la company (broadcast manuale da owner/admin).
  */
 async function sendCustomNotification(companyId, text) {
   return notifyCompany(companyId, text);
@@ -113,6 +144,5 @@ module.exports = {
   notifyNonConformita,
   notifyIncidente,
   notifyMissingExits,
-  sendDailySummary,
   sendCustomNotification,
 };
