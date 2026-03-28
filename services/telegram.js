@@ -96,6 +96,26 @@ function buildInlineKeyboard(buttons, columns = 2) {
   return { inline_keyboard: rows };
 }
 
+/**
+ * Costruisce una ReplyKeyboardMarkup persistente (bottoni fissi sotto la tastiera).
+ * rows: array di array di stringhe, es. [['📍 Cantieri', '📋 Note'], ['📊 Stato', '❓ Aiuto']]
+ */
+function buildReplyKeyboard(rows, { persistent = true, resize = true, oneTime = false } = {}) {
+  return {
+    keyboard: rows.map(row => row.map(text => ({ text }))),
+    resize_keyboard: resize,
+    is_persistent: persistent,
+    one_time_keyboard: oneTime,
+  };
+}
+
+/**
+ * Rimuove la reply keyboard (torna alla tastiera standard).
+ */
+function removeReplyKeyboard() {
+  return { remove_keyboard: true };
+}
+
 // ── Webhook ──────────────────────────────────────────────────
 
 /**
@@ -126,6 +146,8 @@ module.exports = {
   getFile,
   downloadFile,
   buildInlineKeyboard,
+  buildReplyKeyboard,
+  removeReplyKeyboard,
   setWebhook,
   deleteWebhook,
   getWebhookInfo,

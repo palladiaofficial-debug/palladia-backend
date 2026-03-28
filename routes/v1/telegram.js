@@ -133,6 +133,36 @@ router.delete('/telegram/unlink', async (req, res) => {
   }
 });
 
+// ── Invia notifica via Telegram ───────────────────────────────
+
+/**
+ * POST /api/v1/telegram/notify
+ * Body: { message: string, site_id?: string }
+ * Invia un messaggio personalizzato a tutti gli utenti collegati della company.
+ * Solo owner/admin possono usarlo.
+ */
+router.post('/telegram/notify', async (req, res) => {
+  try {
+    const { userRole, companyId } = req;
+    if (!['owner', 'admin'].includes(userRole)) {
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+
+    const { message } = req.body || {};
+    if (!message || typeof message !== 'string' || message.trim().length < 3) {
+      return res.status(400).json({ error: 'INVALID_MESSAGE' });
+    }
+
+    const { notifyCompany } = require('../../services/telegramNotifications');
+    const result = await notifyCompany(companyId, message.slice(0, 2000));
+
+    res.json(result);
+  } catch (err) {
+    console.error('[telegram/notify]', err.message);
+    res.status(500).json({ error: 'INTERNAL', detail: err.message });
+  }
+});
+
 // ── Webhook info (debug, solo owner/admin) ───────────────────
 
 router.get('/telegram/setup', async (req, res) => {

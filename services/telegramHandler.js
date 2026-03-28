@@ -24,6 +24,22 @@ const tg             = require('./telegram');
 const { classifyMessage } = require('./telegramAI');
 const { logEvent }   = require('./telegramLog');
 const supabase       = require('../lib/supabase');
+const { notifyNonConformita, notifyIncidente } = require('./telegramNotifications');
+
+// ── Tastiera persistente principale ──────────────────────────
+
+const MAIN_KEYBOARD = tg.buildReplyKeyboard([
+  ['📍 Cantieri', '📋 Note recenti'],
+  ['📊 Stato',    '❓ Aiuto'],
+]);
+
+// Testi esatti dei bottoni della tastiera principale
+const KEYBOARD_BUTTON_TEXTS = new Set(['📍 Cantieri', '📋 Note recenti', '📊 Stato', '❓ Aiuto']);
+
+/** sendMessage con tastiera principale sempre allegata */
+function sendMain(chatId, text) {
+  return tg.sendMessage(chatId, text, { replyMarkup: MAIN_KEYBOARD });
+}
 
 // ── Entry point ──────────────────────────────────────────────
 
@@ -71,7 +87,13 @@ async function handleMessage(msg, tuUser) {
     return sendNotLinked(chatId);
   }
 
-  // Comandi autenticati
+  // ── Bottoni tastiera principale ──────────────────────────
+  if (text === '📍 Cantieri')   return showSiteSelector(chatId, tuUser);
+  if (text === '📋 Note recenti') return showRecentNotes(chatId, tuUser, '/note');
+  if (text === '📊 Stato')      return showStatus(chatId, tuUser);
+  if (text === '❓ Aiuto')      return showHelp(chatId);
+
+  // ── Comandi slash (compatibilità) ────────────────────────
   if (text.startsWith('/cantiere')) return showSiteSelector(chatId, tuUser);
   if (text.startsWith('/note'))     return showRecentNotes(chatId, tuUser, text);
   if (text.startsWith('/stato'))    return showStatus(chatId, tuUser);
@@ -79,12 +101,12 @@ async function handleMessage(msg, tuUser) {
   if (text.startsWith('/nc ') || text === '/nc')     return handleNcCommand(msg, tuUser);
   if (text.startsWith('/presenze')) return handlePresenzeCommand(msg, tuUser);
 
-  // Media
+  // ── Media ────────────────────────────────────────────────
   if (msg.photo)    return handlePhoto(msg, tuUser);
   if (msg.document) return handleDocument(msg, tuUser);
   if (msg.voice)    return handleVoice(msg, tuUser);
 
-  // Testo libero → classify + salva
+  // ── Testo libero → classify + salva ─────────────────────
   if (text) return handleText(msg, tuUser);
 }
 
@@ -167,13 +189,13 @@ async function linkAccount(chatId, chat, token) {
   await tg.sendMessage(chatId,
     `✅ <b>Account collegato con successo!</b>\n\n` +
     `Ciao <b>${firstName}</b>, sono il tuo assistente di cantiere.\n\n` +
-    `📱 Puoi inviarmi:\n` +
-    `• Note e verbali (testo libero)\n` +
-    `• Foto di cantiere\n` +
-    `• Documenti PDF\n` +
-    `• Segnalazioni di non conformità\n\n` +
-    `Classifico tutto automaticamente e lo trovi ordinato su Palladia.\n\n` +
-    `<b>Prima cosa: seleziona il cantiere su cui lavori oggi.</b>`
+    `📱 Inviami qualsiasi cosa dal cantiere:\n` +
+    `• Testo libero → classificato automaticamente dall'IA\n` +
+    `• Foto → allegate al cantiere\n` +
+    `• Documenti PDF/Excel → archiviati\n\n` +
+    `Usa i <b>bottoni in basso</b> o scrivi liberamente.\n\n` +
+    `<b>Prima cosa: seleziona il cantiere attivo.</b>`,
+    { replyMarkup: MAIN_KEYBOARD }
   );
 
   // Mostra selettore cantieri
@@ -253,7 +275,7 @@ async function setActiveSite(chatId, tuUser, siteId, callbackQueryId) {
 
   const siteName = site.name || site.address || 'Cantiere';
   await tg.answerCallbackQuery(callbackQueryId, `✅ ${siteName}`);
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `✅ <b>Cantiere attivo: ${siteName}</b>\n\n` +
     `Ora puoi inviarmi note, foto, documenti o segnalazioni.\n` +
     `Classifico tutto e lo trovi ordinato su Palladia.`
@@ -284,10 +306,18 @@ async function handleText(msg, tuUser) {
   const categoryLabel = CATEGORY_LABELS[ai.category] || ai.category;
   const urgencyTag    = ai.urgency === 'critica' ? ' 🔴' : ai.urgency === 'alta' ? ' 🟡' : '';
 
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `✅ <b>${categoryLabel}${urgencyTag}</b> salvata su <i>${siteCtx.siteName}</i>\n` +
     (ai.summary ? `\n📝 ${ai.summary}` : '')
   );
+
+  // Notifiche push per categorie critiche
+  const authorName = tuUser.telegram_first_name || tuUser.telegram_username;
+  if (ai.category === 'incidente') {
+    notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || text, authorName).catch(() => {});
+  } else if (ai.category === 'non_conformita' && ai.urgency !== 'normale') {
+    notifyNonConformita(tuUser.company_id, siteCtx.siteName, ai.summary || text, authorName).catch(() => {});
+  }
 }
 
 async function handlePhoto(msg, tuUser) {
@@ -334,7 +364,7 @@ async function handlePhoto(msg, tuUser) {
     contentPreview: caption || 'foto', mediaPath, status:'ok' });
 
   const urgencyTag = ai.urgency === 'critica' ? ' 🔴' : ai.urgency === 'alta' ? ' 🟡' : '';
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `✅ <b>Foto${urgencyTag}</b> salvata su <i>${siteCtx.siteName}</i>` +
     (caption ? `\n📝 ${caption.slice(0, 100)}` : '')
   );
@@ -384,7 +414,7 @@ async function handleDocument(msg, tuUser) {
     companyId: tuUser.company_id, siteId: siteCtx.siteId,
     contentPreview: `${filename} ${caption || ''}`.trim(), mediaPath, status:'ok' });
 
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `✅ <b>Documento</b> salvato su <i>${siteCtx.siteName}</i>\n` +
     `📎 ${filename}`
   );
@@ -429,10 +459,15 @@ async function handleNcCommand(msg, tuUser) {
     telegram_message_id: msg.message_id,
   });
 
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `🟡 <b>Non Conformità registrata</b> su <i>${siteCtx.siteName}</i>\n\n` +
     `📝 ${text}`
   );
+
+  // Notifica gli altri utenti collegati della stessa company
+  notifyNonConformita(tuUser.company_id, siteCtx.siteName, text,
+    tuUser.telegram_first_name || tuUser.telegram_username
+  ).catch(() => {});
 }
 
 async function handlePresenzeCommand(msg, tuUser) {
@@ -463,7 +498,7 @@ async function handlePresenzeCommand(msg, tuUser) {
     telegram_message_id: msg.message_id,
   });
 
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `✅ <b>Presenze registrate</b> su <i>${siteCtx.siteName}</i>\n` +
     `👷 ${names.length} lavoratore/i: ${names.join(', ')}`
   );
@@ -486,7 +521,7 @@ async function showRecentNotes(chatId, tuUser, text) {
     .limit(limit);
 
   if (!notes || notes.length === 0) {
-    return tg.sendMessage(chatId, `📋 Nessuna nota trovata per <i>${siteCtx.siteName}</i>.`);
+    return sendMain(chatId, `📋 Nessuna nota trovata per <i>${siteCtx.siteName}</i>.`);
   }
 
   const lines = notes.map(n => {
@@ -497,7 +532,7 @@ async function showRecentNotes(chatId, tuUser, text) {
     return `${urg}${ico} <b>${date}</b> — ${label}`;
   });
 
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `📋 <b>Ultime ${notes.length} note — ${siteCtx.siteName}</b>\n\n` +
     lines.join('\n')
   );
@@ -521,40 +556,38 @@ async function showStatus(chatId, tuUser) {
     .eq('company_id', tuUser.company_id)
     .gte('created_at', today.toISOString());
 
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `📊 <b>Stato attuale</b>\n\n` +
     `📍 Cantiere attivo: <b>${siteName}</b>\n` +
     `📝 Note inviate oggi: <b>${count || 0}</b>\n\n` +
-    `Digita /cantiere per cambiare cantiere.`
+    `Tocca <b>📍 Cantieri</b> per cambiare cantiere.`
   );
 }
 
 async function showHelp(chatId) {
-  await tg.sendMessage(chatId,
+  await sendMain(chatId,
     `👷 <b>Guida Palladia Bot</b>\n\n` +
-    `<b>Comandi rapidi:</b>\n` +
-    `/cantiere — seleziona cantiere attivo\n` +
-    `/nc <i>testo</i> — segnala non conformità\n` +
-    `/presenze <i>nomi</i> — registra presenze\n` +
-    `/note [n] — ultime n note (default 5)\n` +
-    `/stato — cantiere attivo + riepilogo\n\n` +
-    `<b>Invio libero:</b>\n` +
-    `📝 Testo → nota classificata automaticamente\n` +
-    `📷 Foto → allegata al cantiere\n` +
-    `📎 Documento → PDF/Excel salvato\n\n` +
-    `<b>Categorie riconosciute:</b>\n` +
+    `<b>Usa i bottoni in basso oppure scrivi liberamente:</b>\n\n` +
+    `📷 <b>Foto</b> → inviala direttamente, l'IA la classifica\n` +
+    `📎 <b>Documento</b> → PDF/Excel archiviato\n` +
+    `📝 <b>Testo libero</b> → nota classificata automaticamente\n\n` +
+    `<b>Segnalazioni rapide:</b>\n` +
+    `<code>/nc testo</code> → non conformità urgente\n` +
+    `<code>/presenze Mario, Luigi</code> → registra presenti\n\n` +
+    `<b>Categorie riconosciute dall'IA:</b>\n` +
     `${Object.entries(CATEGORY_ICONS).map(([k,v]) => `${v} ${CATEGORY_LABELS[k]||k}`).join('  ')}\n\n` +
-    `Tutto finisce ordinato su <b>palladia.net</b>`
+    `Tutto finisce ordinato su <b>palladia.net</b> → tab Note del cantiere`
   );
 }
 
 async function sendNotLinked(chatId) {
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'PalladiaBot';
   await tg.sendMessage(chatId,
-    `🔒 <b>Account non collegato.</b>\n\n` +
-    `Per usare Palladia Bot:\n` +
-    `1. Vai su <b>palladia.net → Account → Telegram</b>\n` +
-    `2. Copia il tuo codice personale\n` +
-    `3. Incollalo qui: <code>/start IL_TUO_CODICE</code>`
+    `🔒 <b>Account non ancora collegato.</b>\n\n` +
+    `Per collegare Palladia:\n` +
+    `1. Apri <b>palladia.net → Account → Telegram</b>\n` +
+    `2. Clicca <b>"Collega Telegram"</b> — si apre automaticamente\n\n` +
+    `In alternativa: <code>/start IL_TUO_CODICE</code>`
   );
 }
 
