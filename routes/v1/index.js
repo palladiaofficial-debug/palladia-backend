@@ -54,6 +54,9 @@ router.use('/', require('./chat'));
 router.use('/', require('./telegram'));
 router.use('/', require('./siteNotes'));
 
+// SAL — Stato Avanzamento Lavori: budget, costi, ricavi per cantiere
+router.use('/', require('./economia'));
+
 // Route pubbliche scan badge (no JWT — session token o signed QR link)
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
 router.use('/', require('./scan'));
