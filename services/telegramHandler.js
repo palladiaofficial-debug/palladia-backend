@@ -490,10 +490,10 @@ async function handleVoice(msg, tuUser) {
   if (!siteCtx) return;
 
   // Whisper non disponibile → avvisa ma non blocca
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.GROQ_API_KEY) {
     return sendMain(chatId,
       `🎙️ Vocale ricevuto, ma la trascrizione automatica non è attiva.\n\n` +
-      `Per abilitarla aggiungi <code>OPENAI_API_KEY</code> nelle variabili d'ambiente.\n` +
+      `Per abilitarla aggiungi <code>GROQ_API_KEY</code> nelle variabili d'ambiente (gratuita).\n` +
       `Nel frattempo puoi scrivere la nota come testo.`
     );
   }
@@ -560,25 +560,27 @@ async function handleVoice(msg, tuUser) {
 }
 
 /**
- * Chiama OpenAI Whisper per trascrivere un buffer audio OGG.
+ * Trascrive un buffer audio OGG con Groq Whisper-large-v3 (gratuito).
+ * Groq usa la stessa API di OpenAI — stesso modello, più veloce, tier free 7200 min/giorno.
  * Usa native fetch + FormData (Node 18+).
  */
 async function transcribeWithWhisper(audioBuffer) {
   const formData = new FormData();
   const blob     = new Blob([audioBuffer], { type: 'audio/ogg' });
   formData.append('file', blob, 'voice.ogg');
-  formData.append('model', 'whisper-1');
+  formData.append('model', 'whisper-large-v3');
   formData.append('language', 'it');
+  formData.append('response_format', 'json');
 
-  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+  const res = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
     method:  'POST',
-    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}` },
     body:    formData,
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Whisper API ${res.status}: ${errText.slice(0, 200)}`);
+    throw new Error(`Groq Whisper ${res.status}: ${errText.slice(0, 200)}`);
   }
 
   const json = await res.json();
