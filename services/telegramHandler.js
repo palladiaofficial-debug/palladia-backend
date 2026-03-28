@@ -7,17 +7,24 @@
  *   handleUpdate(update)
  *     ├─ message → handleMessage(msg, tuUser)
  *     │    ├─ /start TOKEN → linkAccount()
+ *     │    ├─ 📍 Cantieri  → showSiteSelector()
+ *     │    ├─ 📋 Note rec. → showRecentNotes()
+ *     │    ├─ 📊 Stato     → showStatus()
+ *     │    ├─ ❓ Aiuto     → showHelp()
  *     │    ├─ /cantiere    → showSiteSelector()
  *     │    ├─ /note [n]    → showRecentNotes()
  *     │    ├─ /stato       → showStatus()
  *     │    ├─ /aiuto       → showHelp()
- *     │    ├─ /nc testo    → saveNote(non_conformita, critica)
+ *     │    ├─ /nc testo    → saveNote(non_conformita, alta)
  *     │    ├─ /presenze    → saveNote(presenza)
  *     │    ├─ foto         → handlePhoto()
  *     │    ├─ documento    → handleDocument()
+ *     │    ├─ vocale       → handleVoice() → Whisper → classify → saveNote()
  *     │    └─ testo libero → handleText() → AI classify → saveNote()
  *     └─ callback_query → handleCallbackQuery()
- *          └─ site:UUID → setActiveSite()
+ *          ├─ site:UUID      → setActiveSite()
+ *          ├─ cmd:cantieri   → showSiteSelector()
+ *          └─ cmd:prompt_photo → chiedi foto
  */
 
 const tg             = require('./telegram');
@@ -33,12 +40,34 @@ const MAIN_KEYBOARD = tg.buildReplyKeyboard([
   ['📊 Stato',    '❓ Aiuto'],
 ]);
 
-// Testi esatti dei bottoni della tastiera principale
-const KEYBOARD_BUTTON_TEXTS = new Set(['📍 Cantieri', '📋 Note recenti', '📊 Stato', '❓ Aiuto']);
+/** URL frontend webapp (per i link "Vedi su Palladia") */
+const FRONTEND_URL = process.env.FRONTEND_URL || 'https://palladia.net';
 
-/** sendMessage con tastiera principale sempre allegata */
+/** Invia un messaggio mantenendo la reply keyboard principale */
 function sendMain(chatId, text) {
   return tg.sendMessage(chatId, text, { replyMarkup: MAIN_KEYBOARD });
+}
+
+/**
+ * Bottoni inline contestuali post-salvataggio.
+ * - "Vedi su Palladia" → link diretto al cantiere sul web
+ * - Per NC/Incidente: "Aggiungi foto" per documentare subito
+ * - Per il resto: "Cambia cantiere" per cambio rapido
+ */
+function buildActionButtons(siteId, category) {
+  const isUrgent = ['non_conformita', 'incidente'].includes(category);
+  const buttons = [
+    { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/cantieri/${siteId}` },
+    isUrgent
+      ? { text: '📸 Aggiungi foto NC', callbackData: 'cmd:prompt_photo' }
+      : { text: '📍 Cambia cantiere',  callbackData: 'cmd:cantieri' },
+  ];
+  return tg.buildInlineKeyboard(buttons, 2);
+}
+
+/** Conferma azione con bottoni inline contestuali (la reply keyboard resta dal precedente) */
+function sendAction(chatId, text, siteId, category) {
+  return tg.sendMessage(chatId, text, { replyMarkup: buildActionButtons(siteId, category) });
 }
 
 // ── Entry point ──────────────────────────────────────────────
@@ -88,18 +117,18 @@ async function handleMessage(msg, tuUser) {
   }
 
   // ── Bottoni tastiera principale ──────────────────────────
-  if (text === '📍 Cantieri')   return showSiteSelector(chatId, tuUser);
+  if (text === '📍 Cantieri')     return showSiteSelector(chatId, tuUser);
   if (text === '📋 Note recenti') return showRecentNotes(chatId, tuUser, '/note');
-  if (text === '📊 Stato')      return showStatus(chatId, tuUser);
-  if (text === '❓ Aiuto')      return showHelp(chatId);
+  if (text === '📊 Stato')        return showStatus(chatId, tuUser);
+  if (text === '❓ Aiuto')        return showHelp(chatId);
 
   // ── Comandi slash (compatibilità) ────────────────────────
-  if (text.startsWith('/cantiere')) return showSiteSelector(chatId, tuUser);
-  if (text.startsWith('/note'))     return showRecentNotes(chatId, tuUser, text);
-  if (text.startsWith('/stato'))    return showStatus(chatId, tuUser);
+  if (text.startsWith('/cantiere'))  return showSiteSelector(chatId, tuUser);
+  if (text.startsWith('/note'))      return showRecentNotes(chatId, tuUser, text);
+  if (text.startsWith('/stato'))     return showStatus(chatId, tuUser);
   if (text.startsWith('/aiuto') || text === '/help') return showHelp(chatId);
   if (text.startsWith('/nc ') || text === '/nc')     return handleNcCommand(msg, tuUser);
-  if (text.startsWith('/presenze')) return handlePresenzeCommand(msg, tuUser);
+  if (text.startsWith('/presenze'))  return handlePresenzeCommand(msg, tuUser);
 
   // ── Media ────────────────────────────────────────────────
   if (msg.photo)    return handlePhoto(msg, tuUser);
@@ -120,9 +149,9 @@ async function handleStart(msg, existingUser) {
 
   // Già collegato
   if (existingUser && !token) {
-    return tg.sendMessage(chatId,
+    return sendMain(chatId,
       `Ciao <b>${firstName}</b>! Sei già collegato a Palladia.\n\n` +
-      `Digita /aiuto per vedere i comandi disponibili.`
+      `Usa i bottoni in basso o scrivi /aiuto.`
     );
   }
 
@@ -135,9 +164,9 @@ async function handleStart(msg, existingUser) {
   await tg.sendMessage(chatId,
     `👷 <b>Benvenuto su Palladia Bot!</b>\n\n` +
     `Per collegare il tuo account:\n` +
-    `1. Vai su <b>Palladia → Account → Telegram</b>\n` +
-    `2. Copia il tuo codice di collegamento\n` +
-    `3. Incollalo qui: <code>/start IL_TUO_CODICE</code>`
+    `1. Vai su <b>palladia.net → Account → Telegram</b>\n` +
+    `2. Clicca <b>"Collega Telegram"</b> — si apre automaticamente\n\n` +
+    `In alternativa: <code>/start IL_TUO_CODICE</code>`
   );
 }
 
@@ -154,7 +183,7 @@ async function linkAccount(chatId, chat, token) {
   if (error || !tkn) {
     return tg.sendMessage(chatId,
       `❌ <b>Codice non valido o scaduto.</b>\n\n` +
-      `Genera un nuovo codice da <b>Palladia → Account → Telegram</b>.`
+      `Genera un nuovo codice da <b>palladia.net → Account → Telegram</b>.`
     );
   }
 
@@ -182,17 +211,18 @@ async function linkAccount(chatId, chat, token) {
     .update({ used_at: new Date().toISOString() })
     .eq('token', token);
 
-  // Recupera utente per mostrare il selettore cantieri
+  // Recupera utente per il selettore cantieri
   const tuUser = await getTelegramUser(chatId);
-
   const firstName = chat.first_name || 'tecnico';
+
   await tg.sendMessage(chatId,
     `✅ <b>Account collegato con successo!</b>\n\n` +
     `Ciao <b>${firstName}</b>, sono il tuo assistente di cantiere.\n\n` +
     `📱 Inviami qualsiasi cosa dal cantiere:\n` +
     `• Testo libero → classificato automaticamente dall'IA\n` +
     `• Foto → allegate al cantiere\n` +
-    `• Documenti PDF/Excel → archiviati\n\n` +
+    `• Documenti PDF/Excel → archiviati\n` +
+    `• 🎙️ Vocali → trascritti e classificati\n\n` +
     `Usa i <b>bottoni in basso</b> o scrivi liberamente.\n\n` +
     `<b>Prima cosa: seleziona il cantiere attivo.</b>`,
     { replyMarkup: MAIN_KEYBOARD }
@@ -242,6 +272,27 @@ async function handleCallbackQuery(cbq) {
   const chatId = cbq.message.chat.id;
   const data   = cbq.data || '';
 
+  // Bottone "Cambia cantiere"
+  if (data === 'cmd:cantieri') {
+    const tuUser = await getTelegramUser(chatId);
+    if (!tuUser) {
+      await tg.answerCallbackQuery(cbq.id, 'Account non collegato.');
+      return;
+    }
+    await tg.answerCallbackQuery(cbq.id, '');
+    return showSiteSelector(chatId, tuUser);
+  }
+
+  // Bottone "Aggiungi foto NC"
+  if (data === 'cmd:prompt_photo') {
+    await tg.answerCallbackQuery(cbq.id, '');
+    return tg.sendMessage(chatId,
+      `📸 Invia ora la foto del problema.\n` +
+      `Puoi aggiungere una didascalia per descriverla.`
+    );
+  }
+
+  // Selezione cantiere
   if (data.startsWith('site:')) {
     const siteId = data.slice(5);
     const tuUser = await getTelegramUser(chatId);
@@ -250,9 +301,13 @@ async function handleCallbackQuery(cbq) {
       return;
     }
     await setActiveSite(chatId, tuUser, siteId, cbq.id);
+    return;
   }
 
-  // note_page: (paginazione futura) — ignore per ora
+  // noop (bottone placeholder)
+  if (data === 'noop') {
+    await tg.answerCallbackQuery(cbq.id, '');
+  }
 }
 
 async function setActiveSite(chatId, tuUser, siteId, callbackQueryId) {
@@ -277,7 +332,7 @@ async function setActiveSite(chatId, tuUser, siteId, callbackQueryId) {
   await tg.answerCallbackQuery(callbackQueryId, `✅ ${siteName}`);
   await sendMain(chatId,
     `✅ <b>Cantiere attivo: ${siteName}</b>\n\n` +
-    `Ora puoi inviarmi note, foto, documenti o segnalazioni.\n` +
+    `Ora puoi inviarmi note, foto, documenti, vocali o segnalazioni.\n` +
     `Classifico tutto e lo trovi ordinato su Palladia.`
   );
 }
@@ -295,20 +350,21 @@ async function handleText(msg, tuUser) {
   const ai = await classifyMessage(text, siteCtx.siteName);
 
   await saveNote(tuUser, siteCtx.siteId, {
-    category:           ai.category,
-    content:            text,
-    ai_summary:         ai.summary,
-    ai_category:        ai.category,
-    urgency:            ai.urgency,
+    category:            ai.category,
+    content:             text,
+    ai_summary:          ai.summary,
+    ai_category:         ai.category,
+    urgency:             ai.urgency,
     telegram_message_id: msg.message_id,
   });
 
   const categoryLabel = CATEGORY_LABELS[ai.category] || ai.category;
   const urgencyTag    = ai.urgency === 'critica' ? ' 🔴' : ai.urgency === 'alta' ? ' 🟡' : '';
 
-  await sendMain(chatId,
+  await sendAction(chatId,
     `✅ <b>${categoryLabel}${urgencyTag}</b> salvata su <i>${siteCtx.siteName}</i>\n` +
-    (ai.summary ? `\n📝 ${ai.summary}` : '')
+    (ai.summary ? `\n📝 ${ai.summary}` : ''),
+    siteCtx.siteId, ai.category
   );
 
   // Notifiche push per categorie critiche
@@ -364,9 +420,10 @@ async function handlePhoto(msg, tuUser) {
     contentPreview: caption || 'foto', mediaPath, status:'ok' });
 
   const urgencyTag = ai.urgency === 'critica' ? ' 🔴' : ai.urgency === 'alta' ? ' 🟡' : '';
-  await sendMain(chatId,
+  await sendAction(chatId,
     `✅ <b>Foto${urgencyTag}</b> salvata su <i>${siteCtx.siteName}</i>` +
-    (caption ? `\n📝 ${caption.slice(0, 100)}` : '')
+    (caption ? `\n📝 ${caption.slice(0, 100)}` : ''),
+    siteCtx.siteId, finalCategory
   );
 }
 
@@ -414,23 +471,118 @@ async function handleDocument(msg, tuUser) {
     companyId: tuUser.company_id, siteId: siteCtx.siteId,
     contentPreview: `${filename} ${caption || ''}`.trim(), mediaPath, status:'ok' });
 
-  await sendMain(chatId,
+  await sendAction(chatId,
     `✅ <b>Documento</b> salvato su <i>${siteCtx.siteName}</i>\n` +
-    `📎 ${filename}`
+    `📎 ${filename}`,
+    siteCtx.siteId, finalCategory
   );
 }
 
+/**
+ * Gestione vocali: scarica il file OGG, trascrive con OpenAI Whisper,
+ * poi processa il testo come un messaggio normale (classify + saveNote).
+ * Richiede OPENAI_API_KEY nelle variabili d'ambiente.
+ */
 async function handleVoice(msg, tuUser) {
   const chatId = msg.chat.id;
-  // v1: non trascriviamo, salviamo solo il riferimento
+
   const siteCtx = await requireActiveSite(chatId, tuUser);
   if (!siteCtx) return;
 
-  await tg.sendMessage(chatId,
-    `🎙️ Messaggio vocale ricevuto.\n\n` +
-    `<i>La trascrizione automatica sarà disponibile nella prossima versione.</i>\n` +
-    `Se vuoi registrare questa nota, riscrivila come testo.`
-  );
+  // Whisper non disponibile → avvisa ma non blocca
+  if (!process.env.OPENAI_API_KEY) {
+    return sendMain(chatId,
+      `🎙️ Vocale ricevuto, ma la trascrizione automatica non è attiva.\n\n` +
+      `Per abilitarla aggiungi <code>OPENAI_API_KEY</code> nelle variabili d'ambiente.\n` +
+      `Nel frattempo puoi scrivere la nota come testo.`
+    );
+  }
+
+  await tg.sendMessage(chatId, `🎙️ Sto trascrivendo il vocale…`);
+
+  try {
+    // Download
+    const fileInfo = await tg.getFile(msg.voice.file_id);
+    const buffer   = await tg.downloadFile(fileInfo.file_path);
+
+    // Trascrizione Whisper
+    const transcription = await transcribeWithWhisper(buffer);
+
+    if (!transcription || transcription.trim().length < 3) {
+      return sendMain(chatId,
+        `🎙️ Non sono riuscito a capire il vocale.\n` +
+        `Riprova con una voce più chiara o scrivi il testo direttamente.`
+      );
+    }
+
+    // Classificazione AI (stesso flusso del testo)
+    const ai = await classifyMessage(transcription, siteCtx.siteName);
+
+    await saveNote(tuUser, siteCtx.siteId, {
+      category:            ai.category,
+      content:             transcription,
+      ai_summary:          ai.summary,
+      ai_category:         ai.category,
+      urgency:             ai.urgency,
+      telegram_message_id: msg.message_id,
+    });
+
+    logEvent({ direction:'inbound', messageType:'voice', chatId,
+      companyId: tuUser.company_id, siteId: siteCtx.siteId,
+      contentPreview: transcription.slice(0, 100), status:'ok' });
+
+    const categoryLabel = CATEGORY_LABELS[ai.category] || ai.category;
+    const urgencyTag    = ai.urgency === 'critica' ? ' 🔴' : ai.urgency === 'alta' ? ' 🟡' : '';
+
+    await sendAction(chatId,
+      `🎙️ <b>Vocale trascritto</b>\n` +
+      `<i>"${transcription.slice(0, 200)}${transcription.length > 200 ? '…' : ''}"</i>\n\n` +
+      `✅ <b>${categoryLabel}${urgencyTag}</b> salvata su <i>${siteCtx.siteName}</i>` +
+      (ai.summary ? `\n📌 ${ai.summary}` : ''),
+      siteCtx.siteId, ai.category
+    );
+
+    // Notifiche push per categorie critiche
+    const authorName = tuUser.telegram_first_name || tuUser.telegram_username;
+    if (ai.category === 'incidente') {
+      notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || transcription, authorName).catch(() => {});
+    } else if (ai.category === 'non_conformita' && ai.urgency !== 'normale') {
+      notifyNonConformita(tuUser.company_id, siteCtx.siteName, ai.summary || transcription, authorName).catch(() => {});
+    }
+
+  } catch (err) {
+    console.error('[handleVoice] error:', err.message);
+    return sendMain(chatId,
+      `❌ Errore nella trascrizione del vocale.\n` +
+      `Riprova o scrivi la nota come testo.`
+    );
+  }
+}
+
+/**
+ * Chiama OpenAI Whisper per trascrivere un buffer audio OGG.
+ * Usa native fetch + FormData (Node 18+).
+ */
+async function transcribeWithWhisper(audioBuffer) {
+  const formData = new FormData();
+  const blob     = new Blob([audioBuffer], { type: 'audio/ogg' });
+  formData.append('file', blob, 'voice.ogg');
+  formData.append('model', 'whisper-1');
+  formData.append('language', 'it');
+
+  const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body:    formData,
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Whisper API ${res.status}: ${errText.slice(0, 200)}`);
+  }
+
+  const json = await res.json();
+  return (json.text || '').trim();
 }
 
 // ── Comandi speciali ─────────────────────────────────────────
@@ -459,9 +611,10 @@ async function handleNcCommand(msg, tuUser) {
     telegram_message_id: msg.message_id,
   });
 
-  await sendMain(chatId,
+  await sendAction(chatId,
     `🟡 <b>Non Conformità registrata</b> su <i>${siteCtx.siteName}</i>\n\n` +
-    `📝 ${text}`
+    `📝 ${text}`,
+    siteCtx.siteId, 'non_conformita'
   );
 
   // Notifica gli altri utenti collegati della stessa company
@@ -492,15 +645,16 @@ async function handlePresenzeCommand(msg, tuUser) {
   await saveNote(tuUser, siteCtx.siteId, {
     category:            'presenza',
     content:             raw,
-    ai_summary:          `Presenti ${names.length} lavoratore/i: ${names.slice(0, 5).join(', ')}${names.length > 5 ? '...' : ''}`,
+    ai_summary:          `Presenti ${names.length} lavoratore/i: ${names.slice(0, 5).join(', ')}${names.length > 5 ? '…' : ''}`,
     ai_category:         'presenza',
     urgency:             'normale',
     telegram_message_id: msg.message_id,
   });
 
-  await sendMain(chatId,
+  await sendAction(chatId,
     `✅ <b>Presenze registrate</b> su <i>${siteCtx.siteName}</i>\n` +
-    `👷 ${names.length} lavoratore/i: ${names.join(', ')}`
+    `👷 ${names.length} lavoratore/i: ${names.join(', ')}`,
+    siteCtx.siteId, 'presenza'
   );
 }
 
@@ -541,39 +695,51 @@ async function showRecentNotes(chatId, tuUser, text) {
 async function showStatus(chatId, tuUser) {
   // Cantiere attivo
   const siteInfo = tuUser.active_site_id
-    ? await supabase.from('sites').select('name, address').eq('id', tuUser.active_site_id).maybeSingle()
+    ? await supabase.from('sites').select('id, name, address').eq('id', tuUser.active_site_id).maybeSingle()
     : { data: null };
 
-  const siteName = siteInfo.data
-    ? (siteInfo.data.name || siteInfo.data.address || 'senza nome')
-    : 'nessuno';
+  const site     = siteInfo.data;
+  const siteName = site ? (site.name || site.address || 'senza nome') : 'nessuno';
 
-  // Conteggio note di oggi
+  // Note di oggi
   const today = new Date(); today.setHours(0,0,0,0);
-  const { count } = await supabase
+  const { count: notesToday } = await supabase
     .from('site_notes')
     .select('id', { count: 'exact', head: true })
     .eq('company_id', tuUser.company_id)
     .gte('created_at', today.toISOString());
 
+  // NC aperte sul cantiere attivo
+  let openNc = 0;
+  if (site?.id) {
+    const { count } = await supabase
+      .from('site_notes')
+      .select('id', { count: 'exact', head: true })
+      .eq('site_id', site.id)
+      .eq('category', 'non_conformita');
+    openNc = count || 0;
+  }
+
   await sendMain(chatId,
     `📊 <b>Stato attuale</b>\n\n` +
     `📍 Cantiere attivo: <b>${siteName}</b>\n` +
-    `📝 Note inviate oggi: <b>${count || 0}</b>\n\n` +
-    `Tocca <b>📍 Cantieri</b> per cambiare cantiere.`
+    `📝 Note inviate oggi: <b>${notesToday || 0}</b>\n` +
+    (openNc > 0 ? `⚠️ NC aperte su questo cantiere: <b>${openNc}</b>\n` : '') +
+    `\nTocca <b>📍 Cantieri</b> per cambiare cantiere.`
   );
 }
 
 async function showHelp(chatId) {
   await sendMain(chatId,
     `👷 <b>Guida Palladia Bot</b>\n\n` +
-    `<b>Usa i bottoni in basso oppure scrivi liberamente:</b>\n\n` +
-    `📷 <b>Foto</b> → inviala direttamente, l'IA la classifica\n` +
+    `<b>Usa i bottoni in basso oppure invia direttamente:</b>\n\n` +
+    `📷 <b>Foto</b> → classificata dall'IA, allegata al cantiere\n` +
+    `🎙️ <b>Vocale</b> → trascritto e classificato automaticamente\n` +
     `📎 <b>Documento</b> → PDF/Excel archiviato\n` +
     `📝 <b>Testo libero</b> → nota classificata automaticamente\n\n` +
     `<b>Segnalazioni rapide:</b>\n` +
-    `<code>/nc testo</code> → non conformità urgente\n` +
-    `<code>/presenze Mario, Luigi</code> → registra presenti\n\n` +
+    `<code>/nc testo</code> — non conformità urgente\n` +
+    `<code>/presenze Mario, Luigi</code> — registra presenti\n\n` +
     `<b>Categorie riconosciute dall'IA:</b>\n` +
     `${Object.entries(CATEGORY_ICONS).map(([k,v]) => `${v} ${CATEGORY_LABELS[k]||k}`).join('  ')}\n\n` +
     `Tutto finisce ordinato su <b>palladia.net</b> → tab Note del cantiere`
@@ -581,7 +747,6 @@ async function showHelp(chatId) {
 }
 
 async function sendNotLinked(chatId) {
-  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'PalladiaBot';
   await tg.sendMessage(chatId,
     `🔒 <b>Account non ancora collegato.</b>\n\n` +
     `Per collegare Palladia:\n` +
@@ -605,7 +770,7 @@ async function getTelegramUser(chatId) {
 async function requireActiveSite(chatId, tuUser) {
   if (!tuUser.active_site_id) {
     await tg.sendMessage(chatId,
-      `📍 Nessun cantiere selezionato.\n\nUsa /cantiere per scegliere il cantiere attivo.`
+      `📍 Nessun cantiere selezionato.\n\nUsa 📍 Cantieri per scegliere il cantiere attivo.`
     );
     await showSiteSelector(chatId, tuUser);
     return null;
@@ -647,7 +812,6 @@ async function saveNote(tuUser, siteId, fields) {
 /**
  * Scarica il file da Telegram e lo carica su Supabase Storage (bucket privato).
  * Ritorna il path relativo (es. "company/site/2026-03-26/abc123.jpg").
- * NON ritorna un URL pubblico — usare signed URL per visualizzare.
  */
 async function uploadTelegramFile(fileId, companyId, siteId, ext) {
   const fileInfo = await require('./telegram').getFile(fileId);
@@ -673,7 +837,6 @@ async function uploadTelegramFile(fileId, companyId, siteId, ext) {
 
   if (error) throw new Error(`Storage upload error: ${error.message}`);
 
-  // Ritorna il PATH (non URL pubblico) — bucket è privato
   return { storagePath, sizeBytes: buffer.length };
 }
 

@@ -83,14 +83,19 @@ async function downloadFile(filePath) {
  * buttons: [{text, callbackData}]
  * columns: quante colonne per riga (default 2)
  */
+/**
+ * Costruisce una InlineKeyboardMarkup.
+ * buttons: [{ text, callbackData }] oppure [{ text, url }]
+ * columns: quante colonne per riga (default 2)
+ */
 function buildInlineKeyboard(buttons, columns = 2) {
   const rows = [];
   for (let i = 0; i < buttons.length; i += columns) {
     rows.push(
-      buttons.slice(i, i + columns).map(b => ({
-        text: b.text,
-        callback_data: b.callbackData,
-      }))
+      buttons.slice(i, i + columns).map(b => {
+        if (b.url) return { text: b.text, url: b.url };
+        return { text: b.text, callback_data: b.callbackData || 'noop' };
+      })
     );
   }
   return { inline_keyboard: rows };
