@@ -506,4 +506,42 @@ async function sendProMagicLinkEmail({ to, coordinatorName, coordinatorCompany, 
   });
 }
 
-module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail, sendCoordinatorInviteEmail, sendCoordinatorNoteAlert, sendProMagicLinkEmail };
+// ─── Email: Rimozione dal team ────────────────────────────────────────────────
+
+/**
+ * @param {{ to: string, companyName: string }} opts
+ */
+async function sendMemberRemovedEmail({ to, companyName }) {
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Accesso rimosso</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Il tuo accesso al team di <strong style="color:#1a1a1a;">${companyName}</strong> su Palladia
+      è stato rimosso dal proprietario dell'account.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.7;">
+            Non potrai più accedere ai dati, ai cantieri o ai documenti di <strong style="color:#1a1a1a;">${companyName}</strong>.<br/><br/>
+            Se ritieni si tratti di un errore, contatta direttamente il proprietario dell'account.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Il tuo account Palladia rimane attivo. Puoi continuare a usarlo con altre aziende che ti invitano.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Accesso rimosso — ${companyName} su Palladia`,
+    html: layout(`Accesso rimosso — ${companyName}`, body),
+  });
+}
+
+module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail, sendCoordinatorInviteEmail, sendCoordinatorNoteAlert, sendProMagicLinkEmail, sendMemberRemovedEmail };

@@ -2,6 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { sendMemberRemovedEmail } = require('../../services/email');
 
 // GET /api/v1/my-company — JWT only, NO X-Company-Id richiesto
 // Header opzionale X-Hint-Company-Id: se fornito e valido per l'utente, lo preferisce.
@@ -149,6 +150,10 @@ router.delete('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
     return res.status(403).json({ error: 'ONLY_OWNER_CAN_REMOVE_ADMIN' });
   }
 
+  // Recupera email del membro prima di eliminarlo
+  const { data: targetAuth } = await supabase.auth.admin.getUserById(userId);
+  const targetEmail = targetAuth?.user?.email;
+
   const { error } = await supabase
     .from('company_users')
     .delete()
@@ -158,6 +163,14 @@ router.delete('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
   if (error) {
     console.error('[team-members] delete error:', error.message);
     return res.status(500).json({ error: 'DB_ERROR' });
+  }
+
+  // Invia email di notifica (non bloccante)
+  if (targetEmail) {
+    const { data: company } = await supabase
+      .from('companies').select('name').eq('id', req.companyId).single();
+    sendMemberRemovedEmail({ to: targetEmail, companyName: company?.name || 'Palladia' })
+      .catch(err => console.error('[team-members] email error:', err.message));
   }
 
   res.json({ ok: true });
