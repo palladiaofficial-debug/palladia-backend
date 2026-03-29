@@ -138,6 +138,18 @@ Quindi quando un utente chiede "generami un PDF", "esporta in Excel", "voglio un
 - Non dire MAI che non puoi generare PDF o report — puoi farlo.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NAVIGAZIONE — navigate_to_page
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Usa navigate_to_page quando l'utente vuole accedere a una sezione specifica:
+- "vai al cantiere X" / "apri cantiere X" → chiama prima get_sites, poi navigate_to_page con /cantieri/UUID
+- "mostrami le presenze del cantiere X" → /cantieri/UUID?tab=0
+- "note e foto del cantiere X" → /cantieri/UUID?tab=4
+- "economia / costi del cantiere X" → /cantieri/UUID?tab=5
+- "lavoratori del cantiere X" → /cantieri/UUID?tab=2
+- "vai alla dashboard" → /dashboard
+- Dopo navigate_to_page, spiega brevemente cosa trova l'utente in quella sezione.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GESTIONE RISULTATI DEI TOOL — CRITICO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Se present_count = 0 o lista vuota: di chiaramente "Nessun lavoratore presente" o "Nessuna timbratura oggi" — è un dato valido, non un errore.
@@ -273,6 +285,24 @@ const TOOLS = [
         }
       },
       required: ['site_id']
+    }
+  },
+  {
+    name: 'navigate_to_page',
+    description: 'Naviga l\'utente a una pagina specifica della piattaforma. Usa quando l\'utente vuole vedere un cantiere, una sezione, o dice "vai a", "portami a", "apri", "mostrami". Chiama DOPO aver recuperato il site_id con get_sites se serve.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: 'Path della pagina. Esempi: /cantieri/UUID, /dashboard, /risorse, /cantieri/UUID?tab=0 (Presenze), /cantieri/UUID?tab=1 (Info), /cantieri/UUID?tab=2 (Maestranze), /cantieri/UUID?tab=3 (Documenti), /cantieri/UUID?tab=4 (Note e Foto), /cantieri/UUID?tab=5 (Economia)'
+        },
+        label: {
+          type: 'string',
+          description: 'Nome leggibile della destinazione es. "Cantiere Villa Rossi", "Presenze di oggi — Cantiere Bianchi", "Dashboard"'
+        }
+      },
+      required: ['path', 'label']
     }
   }
 ];
@@ -540,6 +570,12 @@ async function executeTool(toolName, toolInput, companyId) {
         }
 
         return result;
+      }
+
+      case 'navigate_to_page': {
+        const { path, label } = toolInput;
+        if (!path || !label) return { error: 'path e label obbligatori' };
+        return { navigated: true, path, label };
       }
 
       default:
@@ -1137,11 +1173,17 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 
       // Esegui tool in parallelo
       const toolResults = await Promise.all(
-        toolBlocks.map(async (block) => ({
-          type:        'tool_result',
-          tool_use_id: block.id,
-          content:     JSON.stringify(await executeTool(block.name, block.input, req.companyId))
-        }))
+        toolBlocks.map(async (block) => {
+          const result = await executeTool(block.name, block.input, req.companyId);
+          if (block.name === 'navigate_to_page' && result.navigated) {
+            send({ type: 'navigate', path: result.path, label: result.label });
+          }
+          return {
+            type:        'tool_result',
+            tool_use_id: block.id,
+            content:     JSON.stringify(result),
+          };
+        })
       );
 
       messages = [

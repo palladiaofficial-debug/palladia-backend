@@ -38,6 +38,7 @@ const { notifyNonConformita, notifyIncidente } = require('./telegramNotification
 
 const MAIN_KEYBOARD = tg.buildReplyKeyboard([
   ['📍 Cantieri', '📋 Note recenti'],
+  ['✅ OK',       '⚠️ Problema'],
   ['📊 Stato',    '❓ Aiuto'],
 ]);
 
@@ -58,7 +59,7 @@ function sendMain(chatId, text) {
 function buildActionButtons(siteId, category) {
   const isUrgent = ['non_conformita', 'incidente'].includes(category);
   const buttons = [
-    { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/cantieri/${siteId}` },
+    { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/cantieri/${siteId}?tab=4` },
     isUrgent
       ? { text: '📸 Aggiungi foto NC', callbackData: 'cmd:prompt_photo' }
       : { text: '📍 Cambia cantiere',  callbackData: 'cmd:cantieri' },
@@ -122,6 +123,8 @@ async function handleMessage(msg, tuUser) {
   if (text === '📋 Note recenti') return showRecentNotes(chatId, tuUser, '/note');
   if (text === '📊 Stato')        return showStatus(chatId, tuUser);
   if (text === '❓ Aiuto')        return showHelp(chatId);
+  if (text === '✅ OK')           return handleOkCommand(msg, tuUser);
+  if (text === '⚠️ Problema')    return handleProblemaCommand(msg, tuUser);
 
   // ── Comandi slash (compatibilità) ────────────────────────
   if (text.startsWith('/cantiere'))  return showSiteSelector(chatId, tuUser);
@@ -129,6 +132,8 @@ async function handleMessage(msg, tuUser) {
   if (text.startsWith('/stato'))     return showStatus(chatId, tuUser);
   if (text.startsWith('/aiuto') || text === '/help') return showHelp(chatId);
   if (text.startsWith('/nc ') || text === '/nc')     return handleNcCommand(msg, tuUser);
+  if (text.startsWith('/problema') || text === '/problema') return handleProblemaCommand(msg, tuUser);
+  if (text.startsWith('/ok'))                                return handleOkCommand(msg, tuUser);
   if (text.startsWith('/presenze'))  return handlePresenzeCommand(msg, tuUser);
   if (text.startsWith('/costo'))     return handleCostoCommand(msg, tuUser);
   if (text.startsWith('/ricavo'))    return handleRicavoCommand(msg, tuUser);
@@ -824,6 +829,71 @@ async function handleNcCommand(msg, tuUser) {
   ).catch(() => {});
 }
 
+async function handleProblemaCommand(msg, tuUser) {
+  const chatId = msg.chat.id;
+  const text   = (msg.text || '').replace(/^\/problema\s*/i, '').trim();
+
+  if (!text) {
+    return tg.sendMessage(chatId,
+      `⚠️ <b>Segnala Problema</b>\n\n` +
+      `Uso: <code>/problema descrizione del problema</code>\n\n` +
+      `Esempi:\n` +
+      `<code>/problema perdita d'acqua nel locale seminterrato</code>\n` +
+      `<code>/problema operaio senza DPI in zona scavi</code>`
+    );
+  }
+
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  await saveNote(tuUser, siteCtx.siteId, {
+    category:            'non_conformita',
+    content:             text,
+    ai_summary:          text.slice(0, 200),
+    ai_category:         'non_conformita',
+    urgency:             'alta',
+    telegram_message_id: msg.message_id,
+  });
+
+  await sendAction(chatId,
+    `🟡 <b>Problema segnalato</b> su <i>${siteCtx.siteName}</i>\n\n` +
+    `📝 ${text}\n\n` +
+    `Urgenza: <b>Alta</b> — visibile in piattaforma`,
+    siteCtx.siteId, 'non_conformita'
+  );
+
+  notifyNonConformita(tuUser.company_id, siteCtx.siteId, siteCtx.siteName, text,
+    tuUser.telegram_first_name || tuUser.telegram_username, 'alta', tuUser.telegram_chat_id
+  ).catch(() => {});
+}
+
+async function handleOkCommand(msg, tuUser) {
+  const chatId = msg.chat.id;
+  const extra  = (msg.text || '').replace(/^\/ok\s*/i, '').trim();
+  const content = extra || 'Controllo effettuato — tutto regolare';
+
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  const now = new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+
+  await saveNote(tuUser, siteCtx.siteId, {
+    category:            'nota',
+    content,
+    ai_summary:          `✅ ${content}`,
+    ai_category:         'nota',
+    urgency:             'normale',
+    telegram_message_id: msg.message_id,
+  });
+
+  await sendAction(chatId,
+    `✅ <b>Tutto OK</b> — <i>${siteCtx.siteName}</i>\n` +
+    `🕐 ${now}\n` +
+    (extra ? `📝 ${extra}` : `Registrato: tutto regolare`),
+    siteCtx.siteId, 'nota'
+  );
+}
+
 async function handlePresenzeCommand(msg, tuUser) {
   const chatId = msg.chat.id;
   const raw    = (msg.text || '').replace(/^\/presenze\s*/i, '').trim();
@@ -970,14 +1040,17 @@ async function showHelp(chatId) {
     `📎 Documento → PDF/Excel archiviato\n` +
     `📝 Testo → nota classificata automaticamente\n\n` +
     `<b>Cantiere & Sicurezza:</b>\n` +
-    `<code>/nc testo</code> — non conformità urgente\n` +
+    `<code>/ok [nota]</code> — tutto regolare, check positivo\n` +
+    `<code>/problema testo</code> — segnala problema urgente\n` +
+    `<code>/nc testo</code> — non conformità (D.Lgs. 81)\n` +
     `<code>/presenze Mario, Luigi</code> — registra presenti\n\n` +
     `<b>Economia cantiere:</b>\n` +
     `<code>/costo 800 cemento portland</code> — registra spesa\n` +
     `<code>/ricavo 15000 SAL 1 approvato</code> — registra incasso\n` +
     `<code>/sal 65</code> — aggiorna avanzamento lavori al 65%\n\n` +
     `<b>Stato:</b>\n` +
-    `<code>/stato</code> → riepilogo cantiere attivo + economia`
+    `<code>/stato</code> → riepilogo cantiere attivo + economia\n` +
+    `<code>/note [n]</code> → ultime n note del cantiere`
   );
 }
 
