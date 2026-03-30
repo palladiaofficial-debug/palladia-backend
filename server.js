@@ -228,8 +228,10 @@ app.use(express.json({ limit: '10mb' }));
 // Strict-Transport-Security, Referrer-Policy, ecc.
 // Content-Security-Policy disabilitato: l'API non serve HTML (tranne public/)
 app.use(helmet({
-  contentSecurityPolicy: false,  // API JSON — CSP non rilevante
-  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy:      false,  // API JSON — CSP non rilevante
+  crossOriginEmbedderPolicy:  false,
+  crossOriginResourcePolicy:  false,  // CRITICO: senza questo blocca tutte le fetch cross-origin
+  crossOriginOpenerPolicy:    false,
 }));
 
 // ── Compression (gzip) ────────────────────────────────────────────────────────
