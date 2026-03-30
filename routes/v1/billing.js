@@ -48,6 +48,10 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
 // Body: { plan: 'starter' | 'grow' | 'pro' }
 // Returns: { url }
 router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
+  if (req.userRole !== 'owner') {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo il proprietario può gestire l\'abbonamento.' });
+  }
+
   const { plan } = req.body || {};
   if (!['starter', 'grow', 'pro', 'business'].includes(plan)) {
     return res.status(400).json({ error: 'INVALID_PLAN', message: 'plan deve essere starter, grow, pro o business' });
@@ -118,6 +122,10 @@ router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
 // Crea una Stripe Customer Portal Session per gestire abbonamento.
 // Returns: { url }
 router.post('/billing/portal', verifySupabaseJwt, async (req, res) => {
+  if (req.userRole !== 'owner') {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo il proprietario può gestire l\'abbonamento.' });
+  }
+
   const { data: company } = await supabase
     .from('companies')
     .select('stripe_customer_id')

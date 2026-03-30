@@ -203,8 +203,8 @@ const TOOLS = [
       properties: {
         status: {
           type: 'string',
-          enum: ['attivo', 'chiuso', 'sospeso'],
-          description: 'Filtra per stato. Ometti per tutti.'
+          enum: ['attivo', 'sospeso', 'ultimato', 'chiuso'],
+          description: 'Filtra per stato. Ometti per tutti. Non include i cantieri eliminati.'
         }
       },
       required: []
@@ -320,6 +320,7 @@ async function executeTool(toolName, toolInput, companyId) {
           .from('sites')
           .select('id, name, status, address')
           .eq('company_id', companyId)
+          .neq('status', 'eliminato')
           .limit(100);
         if (toolInput.status) q = q.eq('status', toolInput.status);
         const { data, error } = await q;

@@ -544,4 +544,198 @@ async function sendMemberRemovedEmail({ to, companyName }) {
   });
 }
 
-module.exports = { sendWelcomeEmail, sendPasswordResetEmail, sendMissingExitAlert, sendInviteEmail, sendCoordinatorInviteEmail, sendCoordinatorNoteAlert, sendProMagicLinkEmail, sendMemberRemovedEmail };
+// ─── Email: Alert Non Conformità (all'impresa) ───────────────────────────────
+
+/**
+ * Invia email agli admin quando un coordinatore apre una non conformità.
+ * @param {{ companyId, siteName, coordinatorName, severity, category, title, siteUrl }} opts
+ */
+async function sendNonconformityAlert({ companyId, siteName, coordinatorName, severity, category, title, siteUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const supabase = require('../lib/supabase');
+  const { data: adminUsers } = await supabase
+    .from('company_users').select('user_id, role')
+    .eq('company_id', companyId).in('role', ['owner', 'admin', 'tech']);
+  if (!adminUsers?.length) return;
+
+  const adminEmails = [];
+  for (const { user_id } of adminUsers) {
+    try {
+      const { data: { user } } = await supabase.auth.admin.getUserById(user_id);
+      if (user?.email) adminEmails.push(user.email);
+    } catch { /* ignora */ }
+  }
+  if (!adminEmails.length) return;
+
+  const SEVERITY_LABEL = { bassa: 'Bassa', media: 'Media', alta: 'Alta', critica: 'Critica' };
+  const SEVERITY_COLOR = { bassa: '#6b7280', media: '#f59e0b', alta: '#f97316', critica: '#ef4444' };
+  const CATEGORY_LABEL = { sicurezza: 'Sicurezza', documentale: 'Documentale', operativa: 'Operativa', igiene: 'Igiene' };
+
+  const sevLabel  = SEVERITY_LABEL[severity]  || severity;
+  const sevColor  = SEVERITY_COLOR[severity]  || '#6b7280';
+  const catLabel  = CATEGORY_LABEL[category]  || category;
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Non conformità aperta</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Il coordinatore <strong style="color:#1a1a1a;">${esc(coordinatorName)}</strong>
+      ha aperto una non conformità sul cantiere <strong style="color:#1a1a1a;">${esc(siteName)}</strong>.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr><td style="padding:20px 24px;">
+        <p style="margin:0 0 10px;">
+          <span style="display:inline-block;padding:4px 12px;border-radius:20px;background:${sevColor};color:#fff;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${sevLabel}</span>
+          <span style="display:inline-block;margin-left:8px;padding:4px 12px;border-radius:20px;background:#f0f0ec;color:#6b7280;font-size:11px;font-weight:600;">${catLabel}</span>
+        </p>
+        <p style="margin:0;font-size:15px;font-weight:700;color:#1a1a1a;">${esc(title)}</p>
+      </td></tr>
+    </table>
+
+    ${btn('Gestisci la non conformità →', siteUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Aggiorna lo stato della non conformità dalla sezione Sicurezza del cantiere su Palladia.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   adminEmails,
+    subject: `Palladia — Non conformità ${sevLabel.toLowerCase()} su ${siteName}`,
+    html: layout(`Non conformità — ${siteName}`, body),
+  });
+}
+
+// ─── Email: Aggiornamento NC (al coordinatore) ────────────────────────────────
+
+/**
+ * Notifica il coordinatore quando l'impresa risolve una non conformità.
+ * @param {{ to, coordinatorName, siteName, ncTitle, newStatus, resolutionNotes, accessUrl }} opts
+ */
+async function sendNonconformityUpdate({ to, coordinatorName, siteName, ncTitle, newStatus, resolutionNotes, accessUrl }) {
+  const firstName = (coordinatorName || to).split(' ')[0];
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const STATUS_LABEL = { in_lavorazione: 'In lavorazione', risolta: 'Risolta' };
+  const STATUS_COLOR = { in_lavorazione: '#f59e0b', risolta: '#22c55e' };
+  const statusLabel  = STATUS_LABEL[newStatus]  || newStatus;
+  const statusColor  = STATUS_COLOR[newStatus]  || '#6b7280';
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${esc(firstName)},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      L'impresa ha aggiornato una non conformità sul cantiere
+      <strong style="color:#1a1a1a;">${esc(siteName)}</strong>.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr><td style="padding:20px 24px;">
+        <p style="margin:0 0 8px;">
+          <span style="display:inline-block;padding:4px 12px;border-radius:20px;background:${statusColor};color:#fff;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">${statusLabel}</span>
+        </p>
+        <p style="margin:0 0 10px;font-size:15px;font-weight:700;color:#1a1a1a;">${esc(ncTitle)}</p>
+        ${resolutionNotes ? `<p style="margin:0;font-size:13px;color:#374151;line-height:1.6;border-top:1px solid #e5e5e0;padding-top:10px;">${esc(resolutionNotes)}</p>` : ''}
+      </td></tr>
+    </table>
+
+    ${newStatus === 'risolta' ? `<p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+      Puoi ora verificare la risoluzione e chiudere definitivamente la non conformità dal portale.
+    </p>` : ''}
+
+    ${btn('Apri il portale →', accessUrl)}
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Palladia — NC ${statusLabel.toLowerCase()}: ${ncTitle.slice(0, 60)}`,
+    html: layout(`Aggiornamento Non Conformità`, body),
+  });
+}
+
+// ─── Email: Alert scadenze (al professionista) ────────────────────────────────
+
+/**
+ * Invia al professionista un riepilogo settimanale dei documenti in scadenza.
+ * @param {{ to, coordinatorName, sitesWithIssues: Array<{ siteName, workers }> }} opts
+ */
+async function sendExpiryAlertPro({ to, coordinatorName, sitesWithIssues }) {
+  const firstName = (coordinatorName || to).split(' ')[0];
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+
+  const totalWorkers = sitesWithIssues.reduce((acc, s) => acc + s.workers.length, 0);
+
+  const siteBlocks = sitesWithIssues.map(site => {
+    const workerRows = site.workers.map(w => {
+      const safetyColor = w.safety_status === 'expired' ? '#ef4444' : '#f59e0b';
+      const healthColor = w.health_status === 'expired' ? '#ef4444' : '#f59e0b';
+      return `<tr>
+        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${esc(w.name)}</td>
+        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+          ${w.safety_status ? `<span style="color:${safetyColor};font-weight:600;">${fmtDate(w.safety_expiry)}</span>` : '<span style="color:#9ca3af;">ok</span>'}
+        </td>
+        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+          ${w.health_status ? `<span style="color:${healthColor};font-weight:600;">${fmtDate(w.health_expiry)}</span>` : '<span style="color:#9ca3af;">ok</span>'}
+        </td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <p style="margin:20px 0 6px;font-size:13px;font-weight:700;color:#1a1a1a;">📍 ${esc(site.siteName)}</p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:8px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Form. Sicurezza</th>
+          <th style="padding:8px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Idoneità Medica</th>
+        </tr></thead>
+        <tbody>${workerRows}</tbody>
+      </table>`;
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${esc(firstName)},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Riepilogo settimanale: <strong style="color:#1a1a1a;">${totalWorkers} lavoratori</strong>
+      hanno documenti scaduti o in scadenza entro 30 giorni nei cantieri che coordini.
+    </p>
+
+    ${siteBlocks}
+
+    ${btn('Accedi al portale →', `${APP_URL}`)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Questo alert viene inviato ogni lunedì. Le date in arancione scadono entro 30 giorni; in rosso sono già scadute.
+      Sollecita l'impresa ad aggiornare i documenti.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Palladia — ${totalWorkers} documenti in scadenza nei tuoi cantieri`,
+    html: layout('Alert scadenze documenti', body),
+  });
+}
+
+module.exports = {
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendMissingExitAlert,
+  sendInviteEmail,
+  sendCoordinatorInviteEmail,
+  sendCoordinatorNoteAlert,
+  sendProMagicLinkEmail,
+  sendMemberRemovedEmail,
+  sendNonconformityAlert,
+  sendNonconformityUpdate,
+  sendExpiryAlertPro,
+};

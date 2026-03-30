@@ -293,6 +293,16 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
   const invite = await resolveInvite(req.params.token);
   if (!invite) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
+  // Registra visita (best-effort, non blocca)
+  supabase.from('coordinator_visits').insert({
+    invite_id:        invite.id,
+    company_id:       invite.company_id,
+    site_id:          invite.site_id,
+    coordinator_name: invite.coordinator_name,
+    coordinator_email: invite.coordinator_email || null,
+    accessed_via:     'cse',
+  }).then(null, () => {});
+
   // ── Dati cantiere ──────────────────────────────────────────────────────────
   const { data: site } = await supabase
     .from('sites')
@@ -384,19 +394,33 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     recent_days:          recentDays,
   };
 
-  // ── Note (tutte quelle del sito, per contesto completo) ───────────────────
-  const { data: notes } = await supabase
-    .from('site_coordinator_notes')
-    .select('id, note_type, content, coordinator_name, created_at')
-    .eq('site_id', invite.site_id)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  // ── Note + Non Conformità + Storico visite (in parallelo) ──────────────────
+  const [notesRes, ncRes, visitsRes] = await Promise.all([
+    supabase.from('site_coordinator_notes')
+      .select('id, note_type, content, coordinator_name, created_at')
+      .eq('site_id', invite.site_id)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase.from('site_nonconformities')
+      .select('id, title, category, severity, status, due_date, created_at')
+      .eq('invite_id', invite.id)
+      .order('created_at', { ascending: false })
+      .limit(50),
+    supabase.from('coordinator_visits')
+      .select('id, accessed_via, visited_at')
+      .eq('invite_id', invite.id)
+      .order('visited_at', { ascending: false })
+      .limit(20),
+  ]);
 
   // ── Compila stats globali compliance ──────────────────────────────────────
   const complianceStats = workers.reduce((acc, w) => {
     acc[w.compliance.overall] = (acc[w.compliance.overall] || 0) + 1;
     return acc;
   }, {});
+
+  const ncList    = ncRes.data    || [];
+  const openNcCount = ncList.filter(n => n.status === 'aperta' || n.status === 'in_lavorazione').length;
 
   res.json({
     site,
@@ -409,7 +433,10 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     workers_count:    workers.length,
     compliance_stats: complianceStats,
     presence_summary: presenceSummary,
-    notes:            notes || [],
+    notes:            notesRes.data  || [],
+    nonconformities:  ncList,
+    open_nc_count:    openNcCount,
+    visits:           visitsRes.data || [],
   });
 });
 

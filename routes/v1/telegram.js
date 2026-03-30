@@ -144,7 +144,7 @@ router.delete('/telegram/unlink', async (req, res) => {
 router.post('/telegram/notify', async (req, res) => {
   try {
     const { userRole, companyId } = req;
-    if (!['owner', 'admin'].includes(userRole)) {
+    if (!['owner', 'admin', 'tech'].includes(userRole)) {
       return res.status(403).json({ error: 'FORBIDDEN' });
     }
 
@@ -168,7 +168,7 @@ router.post('/telegram/notify', async (req, res) => {
 router.get('/telegram/setup', async (req, res) => {
   try {
     const { userRole } = req;
-    if (!['owner', 'admin'].includes(userRole)) {
+    if (!['owner', 'admin', 'tech'].includes(userRole)) {
       return res.status(403).json({ error: 'FORBIDDEN' });
     }
 

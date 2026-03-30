@@ -212,6 +212,20 @@ router.get('/coordinator/pro/:token', async (req, res) => {
     unread[n.site_id] = (unread[n.site_id] || 0) + 1;
   }
 
+  // Non conformità aperte per cantiere (raggruppa per invite_id → site_id)
+  const inviteIds = invites.map(i => i.id);
+  let openNcBySite = {};
+  if (inviteIds.length > 0) {
+    const { data: openNcData } = await supabase
+      .from('site_nonconformities')
+      .select('site_id')
+      .in('invite_id', inviteIds)
+      .in('status', ['aperta', 'in_lavorazione']);
+    for (const nc of openNcData || []) {
+      openNcBySite[nc.site_id] = (openNcBySite[nc.site_id] || 0) + 1;
+    }
+  }
+
   // Mappa inviti per site_id
   const inviteMap = {};
   for (const inv of invites) {
@@ -238,6 +252,7 @@ router.get('/coordinator/pro/:token', async (req, res) => {
       workers_count: ws.length,
       workers_on_site: onSite[site.id] || 0,
       unread_notes: unread[site.id] || 0,
+      open_nc: openNcBySite[site.id] || 0,
       compliance: { compliant, expiring, non_compliant: nonCompliant, total: ws.length },
       invite_id: inv?.id,
       invite_expires_at: inv?.expires_at,
@@ -250,6 +265,7 @@ router.get('/coordinator/pro/:token', async (req, res) => {
     total_workers: sites.reduce((s, d) => s + d.workers_count, 0),
     on_site_now:   sites.reduce((s, d) => s + d.workers_on_site, 0),
     unread_notes:  sites.reduce((s, d) => s + d.unread_notes, 0),
+    open_nc:       sites.reduce((s, d) => s + d.open_nc, 0),
     expiring_docs: sites.reduce((s, d) => s + d.compliance.expiring, 0),
     non_compliant: sites.reduce((s, d) => s + d.compliance.non_compliant, 0),
   };
@@ -285,6 +301,16 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
 
   if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
 
+  // Registra visita (best-effort)
+  supabase.from('coordinator_visits').insert({
+    invite_id:         invite.id,
+    company_id:        invite.company_id,
+    site_id:           siteId,
+    coordinator_name:  invite.coordinator_name,
+    coordinator_email: session.email,
+    accessed_via:      'pro',
+  }).then(null, () => {});
+
   // ── Estendi trial a 30 giorni se l'impresa è ancora in trial ─────────────
   // Un professionista accreditato porta valore → l'impresa guadagna più tempo.
   // Si estende solo se trial_ends_at < now + 30 giorni (nessun doppio bonus).
@@ -306,7 +332,7 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     }
   } catch { /* non blocca la risposta */ }
 
-  const [siteR, workersR, presenceR, notesR] = await Promise.all([
+  const [siteR, workersR, presenceR, notesR, ncR, visitsR] = await Promise.all([
     supabase.from('sites')
       .select('id, name, address, status, client, start_date, companies(name)')
       .eq('id', siteId).single(),
@@ -331,6 +357,18 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
       .eq('site_id', siteId)
       .order('created_at', { ascending: false })
       .limit(50),
+
+    supabase.from('site_nonconformities')
+      .select('id, title, category, severity, status, due_date, resolution_notes, created_at')
+      .eq('invite_id', invite.id)
+      .order('created_at', { ascending: false })
+      .limit(50),
+
+    supabase.from('coordinator_visits')
+      .select('id, accessed_via, visited_at')
+      .eq('invite_id', invite.id)
+      .order('visited_at', { ascending: false })
+      .limit(30),
   ]);
 
   if (siteR.error || !siteR.data) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
@@ -355,17 +393,23 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     }))
     .sort((a, b) => (b.on_site ? 1 : 0) - (a.on_site ? 1 : 0));
 
+  const ncList     = ncR.data    || [];
+  const openNcCount = ncList.filter(n => n.status === 'aperta' || n.status === 'in_lavorazione').length;
+
   res.json({
     site: { ...siteR.data, company_name: siteR.data.companies?.name || '—' },
     coordinator: {
-      name: invite.coordinator_name,
-      company: invite.coordinator_company,
+      name:       invite.coordinator_name,
+      company:    invite.coordinator_company,
       expires_at: invite.expires_at,
-      invite_id: invite.id,
+      invite_id:  invite.id,
     },
     workers,
-    on_site_count: onSiteIds.size,
-    notes: notesR.data || [],
+    on_site_count:   onSiteIds.size,
+    notes:           notesR.data  || [],
+    nonconformities: ncList,
+    open_nc_count:   openNcCount,
+    visits:          visitsR.data || [],
   });
 });
 

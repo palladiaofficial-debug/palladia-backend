@@ -9,8 +9,9 @@ const { generatePosHtml } = require('./pos-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
 const v1Router = require('./routes/v1');
-const { startMissingExitCron }  = require('./services/missingExitCron');
-const { startDailySummaryCron } = require('./services/dailySummaryCron');
+const { startMissingExitCron }   = require('./services/missingExitCron');
+const { startDailySummaryCron }  = require('./services/dailySummaryCron');
+const { startExpiryAlertCron }   = require('./services/expiryAlertCron');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -1334,5 +1335,6 @@ app.listen(PORT, '0.0.0.0', () => {
   if (process.env.NODE_ENV !== 'test') {
     startMissingExitCron();
     startDailySummaryCron();
+    startExpiryAlertCron();
   }
 });

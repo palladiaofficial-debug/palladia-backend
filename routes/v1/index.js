@@ -46,6 +46,12 @@ router.use('/', require('./documents'));
 // Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
 router.use('/', require('./coordinator'));
 
+// Non Conformità: aperte da coordinatori, gestite dall'impresa (JWT + token)
+router.use('/', require('./nonconformities'));
+
+// Verbale di Sopralluogo PDF (token — no JWT)
+router.use('/', require('./verbale'));
+
 // Assistente IA Pal (JWT + rate limit dedicato anti-abuso costi AI)
 router.use('/chat', chatLimiter);
 router.use('/', require('./chat'));

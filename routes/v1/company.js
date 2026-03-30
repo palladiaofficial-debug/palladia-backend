@@ -63,9 +63,9 @@ router.get('/company', verifySupabaseJwt, async (req, res) => {
   res.json(data);
 });
 
-// PATCH /api/v1/company — aggiorna profilo azienda (solo owner/admin)
+// PATCH /api/v1/company — aggiorna profilo azienda (owner/admin/tech)
 router.patch('/company', verifySupabaseJwt, async (req, res) => {
-  if (!['owner', 'admin'].includes(req.userRole)) {
+  if (!['owner', 'admin', 'tech'].includes(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 

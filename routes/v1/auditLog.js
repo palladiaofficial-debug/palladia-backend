@@ -7,7 +7,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
-const ALLOWED_ROLES = ['owner', 'admin'];
+const ALLOWED_ROLES = ['owner', 'admin', 'tech'];
 
 router.get('/audit-log', verifySupabaseJwt, async (req, res) => {
   if (!ALLOWED_ROLES.includes(req.userRole)) {

@@ -189,7 +189,7 @@ router.delete('/site-notes/:id', async (req, res) => {
 
     if (!note) return res.status(404).json({ error: 'NOT_FOUND' });
 
-    const canDelete = ['owner', 'admin'].includes(userRole) || note.author_id === req.user.id;
+    const canDelete = ['owner', 'admin', 'tech'].includes(userRole) || note.author_id === req.user.id;
     if (!canDelete) return res.status(403).json({ error: 'FORBIDDEN' });
 
     // Elimina file dallo storage se presente
