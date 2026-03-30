@@ -41,6 +41,74 @@ router.get('/sites', verifySupabaseJwt, async (req, res) => {
   })));
 });
 
+// ── GET /api/v1/sites/deleted — lista cantieri eliminati (cestino) ────────────
+router.get('/sites/deleted', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('sites')
+    .select('id, name, address, status, client, start_date')
+    .eq('company_id', req.companyId)
+    .eq('status', 'eliminato')
+    .order('name');
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  res.json(data.map(s => ({
+    id:        s.id,
+    name:      s.name,
+    address:   s.address ?? '',
+    status:    'eliminato',
+    client:    s.client,
+    startDate: s.start_date,
+  })));
+});
+
+// ── POST /api/v1/sites/:siteId/restore — ripristina cantiere eliminato ────────
+router.post('/sites/:siteId/restore', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+
+  const { data: site, error: siteErr } = await supabase
+    .from('sites')
+    .select('id, name, status')
+    .eq('id', siteId)
+    .eq('company_id', req.companyId)
+    .eq('status', 'eliminato')
+    .maybeSingle();
+
+  if (siteErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!site)   return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_NOT_DELETED' });
+
+  // Ripristina a 'chiuso' (stato neutro, non pesa sul limite piano)
+  const { data, error } = await supabase
+    .from('sites')
+    .update({ status: 'chiuso' })
+    .eq('id', siteId)
+    .eq('company_id', req.companyId)
+    .select('id, name, address, status, client, start_date')
+    .single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'site.restore',
+    targetType: 'site',
+    targetId:   siteId,
+    payload:    { name: site.name, restored_to: 'chiuso' },
+    req,
+  });
+
+  res.json({
+    id:        data.id,
+    name:      data.name,
+    address:   data.address ?? '',
+    status:    data.status,
+    client:    data.client,
+    startDate: data.start_date,
+  });
+});
+
 // ── PATCH /api/v1/sites/:siteId — aggiorna campi e/o stato del cantiere ───────
 router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   const { siteId }    = req.params;
