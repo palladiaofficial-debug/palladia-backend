@@ -1432,7 +1432,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 // Railway invia SIGTERM prima di ogni deploy o restart.
 // Chiudiamo il server HTTP (no nuove connessioni) e attendiamo le richieste in corso.
 // Puppeteer viene chiuso dopo per liberare la memoria di Chromium.
-const { rendererPool } = require('./pdf-renderer');
 process.on('SIGTERM', () => {
   console.log('[SIGTERM] ricevuto — avvio graceful shutdown...');
 
