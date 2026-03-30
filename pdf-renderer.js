@@ -27,6 +27,8 @@ const PDF_DEBUG = process.env.PDF_DEBUG === 'true';
 // Massimo render PDF simultanei — protegge dalla memoria di Chromium
 const MAX_CONCURRENT_PDF  = parseInt(process.env.MAX_CONCURRENT_PDF  || '2', 10);
 const PDF_QUEUE_TIMEOUT_MS = parseInt(process.env.PDF_QUEUE_TIMEOUT   || '120000', 10);
+// Se RSS supera questa soglia dopo un render → browser riavviato per liberare memoria
+const PDF_MEMORY_LIMIT_MB  = parseInt(process.env.PDF_MEMORY_LIMIT_MB || '450', 10);
 
 // ── HTML escape per i template Puppeteer ──────────────────────────────────────
 function escT(str) {
@@ -248,16 +250,26 @@ class PdfRendererPool {
 
     const browser = await this._getBrowser();
     const page    = await browser.newPage();
+    let pdf;
     try {
       await page.setViewport({ width: 794, height: 1123 });
       await page.setContent(html, { waitUntil: 'networkidle0', timeout: 30000 });
       await page.evaluateHandle('document.fonts.ready');
       if (PDF_DEBUG) await _debugOverflow(page);
-      return await page.pdf(makePdfOpts(opts));
+      pdf = await page.pdf(makePdfOpts(opts));
     } finally {
-      await page.close();
+      await page.close().catch(() => {});
       pdfSemaphore.release();
     }
+
+    // Memory watchdog: se RSS supera la soglia, riavvia il browser dopo la release
+    const rss = process.memoryUsage().rss / 1024 / 1024;
+    if (rss > PDF_MEMORY_LIMIT_MB) {
+      console.warn(`[Puppeteer] RSS ${Math.round(rss)}MB > ${PDF_MEMORY_LIMIT_MB}MB — riavvio browser per liberare memoria`);
+      this.close().catch(() => {});
+    }
+
+    return pdf;
   }
 
   async close() {

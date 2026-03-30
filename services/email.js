@@ -726,6 +726,84 @@ async function sendExpiryAlertPro({ to, coordinatorName, sitesWithIssues }) {
   });
 }
 
+// ── sendWorkerExpiryAlertCompany ─────────────────────────────────────────────
+// Alert giornaliero per owner/admin/tech dell'impresa:
+// lavoratori con documenti in scadenza entro 30 giorni.
+async function sendWorkerExpiryAlertCompany({ to, companyName, workers, dashboardUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function statusColor(status) {
+    return status === 'expired' ? '#ef4444' : '#f59e0b';
+  }
+  function statusLabel(days) {
+    if (days === null) return null;
+    if (days < 0)  return `scaduto ${Math.abs(days)}gg fa`;
+    if (days === 0) return 'scade oggi';
+    return `scade in ${days}gg`;
+  }
+
+  const expired  = workers.filter(w => w.safety_status === 'expired' || w.health_status === 'expired').length;
+  const expiring = workers.length - expired;
+
+  const rows = workers.map(w => {
+    const safetyLabel = w.safety_status ? statusLabel(w.safety_days) : null;
+    const healthLabel = w.health_status ? statusLabel(w.health_days) : null;
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:500;">${esc(w.name)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+        ${safetyLabel
+          ? `<span style="color:${statusColor(w.safety_status)};font-weight:600;">${fmtDate(w.safety_expiry)}</span><br><span style="font-size:10px;color:${statusColor(w.safety_status)};">${esc(safetyLabel)}</span>`
+          : '<span style="color:#9ca3af;">ok</span>'}
+      </td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+        ${healthLabel
+          ? `<span style="color:${statusColor(w.health_status)};font-weight:600;">${fmtDate(w.health_expiry)}</span><br><span style="font-size:10px;color:${statusColor(w.health_status)};">${esc(healthLabel)}</span>`
+          : '<span style="color:#9ca3af;">ok</span>'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const summaryParts = [];
+  if (expired  > 0) summaryParts.push(`<span style="color:#ef4444;font-weight:700;">${expired} scaduti</span>`);
+  if (expiring > 0) summaryParts.push(`<span style="color:#f59e0b;font-weight:700;">${expiring} in scadenza</span>`);
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Attenzione documenti lavoratori</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Per <strong style="color:#1a1a1a;">${esc(companyName)}</strong> risultano
+      ${summaryParts.join(' e ')} tra i tuoi lavoratori.
+      Aggiorna i documenti prima della scadenza per restare in conformità.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:24px;">
+      <thead><tr style="background:#f8fafc;">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+        <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Form. Sicurezza</th>
+        <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Idoneità Medica</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+
+    ${btn('Gestisci Lavoratori →', dashboardUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Questo alert viene inviato ogni mattina quando ci sono documenti scaduti o in scadenza entro 30 giorni.
+      Le date in arancione scadono a breve; in rosso sono già scadute.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   Array.isArray(to) ? to : [to],
+    subject: `Palladia — ${expired > 0 ? `${expired} documenti scaduti` : `${expiring} documenti in scadenza`} | ${esc(companyName)}`,
+    html:    layout('Documenti lavoratori in scadenza', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -738,4 +816,5 @@ module.exports = {
   sendNonconformityAlert,
   sendNonconformityUpdate,
   sendExpiryAlertPro,
+  sendWorkerExpiryAlertCompany,
 };

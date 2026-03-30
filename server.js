@@ -1,6 +1,10 @@
 require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
+// Sentry DEVE essere il primo require — cattura errori di tutti i moduli successivi
+const Sentry     = require('./lib/sentry');
+const express    = require('express');
+const cors       = require('cors');
+const helmet     = require('helmet');
+const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
 const { generatePdf } = require('./pdf-generator');
 const { buildPosDocument } = require('./pos-template');
@@ -9,21 +13,80 @@ const { generatePosHtml } = require('./pos-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
 const v1Router = require('./routes/v1');
-const { startMissingExitCron }   = require('./services/missingExitCron');
-const { startDailySummaryCron }  = require('./services/dailySummaryCron');
-const { startExpiryAlertCron }   = require('./services/expiryAlertCron');
+const { startMissingExitCron }      = require('./services/missingExitCron');
+const { startDailySummaryCron }     = require('./services/dailySummaryCron');
+const { startExpiryAlertCron }      = require('./services/expiryAlertCron');
+const { startWorkerExpiryCron }     = require('./services/workerExpiryCron');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
   console.error('[PROCESS] uncaughtException — kept alive:', err.message, err.stack);
+  Sentry.captureException(err);
 });
 process.on('unhandledRejection', (reason) => {
   console.error('[PROCESS] unhandledRejection — kept alive:', reason);
+  Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
 });
 
 const app = express();
 app.set('trust proxy', 1); // Railway/Nginx proxy — req.ip corretto per rate limit e logging
 const PORT = process.env.PORT || 3001;
+
+// ── Request timeout — evita che richieste bloccate tengano occupato il server ─
+// SSE/stream e PDF generazione gestiti separatamente (timeout più lungo / semaforo)
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '60000', 10);
+app.use((req, res, next) => {
+  const skip =
+    req.path.includes('/stream') ||
+    req.path.includes('/generate-pos') ||
+    req.path.includes('/computo') ||
+    req.path.includes('/pdf') ||
+    req.path.includes('/verbale') ||
+    req.path.includes('/asl');          // report PDF ASL può essere lungo
+  if (skip) return next();
+
+  const timer = setTimeout(() => {
+    if (!res.headersSent) {
+      console.warn('[timeout]', req.method, req.path, `— superato ${REQUEST_TIMEOUT_MS}ms`);
+      res.status(503).json({ error: 'REQUEST_TIMEOUT', message: 'Richiesta scaduta. Riprova.' });
+    }
+  }, REQUEST_TIMEOUT_MS);
+
+  res.on('finish', () => clearTimeout(timer));
+  res.on('close',  () => clearTimeout(timer));
+  next();
+});
+
+// ── Health check ─────────────────────────────────────────────────────────────
+// Railway usa questo endpoint per capire se il container è sano.
+// Configurare su Railway: Health Check Path = /api/health
+app.get('/api/health', async (req, res) => {
+  const mem    = process.memoryUsage();
+  const uptime = Math.round(process.uptime());
+
+  // Ping DB — verifica connettività Supabase
+  const supabaseHealth = require('./lib/supabase');
+  const { error: dbErr } = await supabaseHealth
+    .from('companies')
+    .select('id')
+    .limit(1)
+    .maybeSingle();
+
+  const status = dbErr ? 'degraded' : 'ok';
+
+  res.status(dbErr ? 503 : 200).json({
+    status,
+    uptime_s:   uptime,
+    memory: {
+      rss_mb:       Math.round(mem.rss        / 1024 / 1024),
+      heap_used_mb: Math.round(mem.heapUsed   / 1024 / 1024),
+      heap_total_mb:Math.round(mem.heapTotal  / 1024 / 1024),
+    },
+    db:        dbErr ? `error: ${dbErr.message}` : 'ok',
+    timestamp: new Date().toISOString(),
+    version:   process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
+  });
+});
 
 // GET /api/config — espone solo le chiavi pubbliche al frontend (no secret)
 app.get('/api/config', (req, res) => {
@@ -159,6 +222,26 @@ app.post('/api/webhooks/stripe',
 );
 
 app.use(express.json({ limit: '10mb' }));
+
+// ── Security headers (helmet) ─────────────────────────────────────────────────
+// Aggiunge automaticamente: X-Frame-Options, X-Content-Type-Options,
+// Strict-Transport-Security, Referrer-Policy, ecc.
+// Content-Security-Policy disabilitato: l'API non serve HTML (tranne public/)
+app.use(helmet({
+  contentSecurityPolicy: false,  // API JSON — CSP non rilevante
+  crossOriginEmbedderPolicy: false,
+}));
+
+// ── Compression (gzip) ────────────────────────────────────────────────────────
+// Riduce bandwidth del 60-80% sulle risposte JSON grandi (lista lavoratori, report, ecc.)
+// Skippa le risposte già compresse (PDF, immagini)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  threshold: 1024, // comprimi solo risposte > 1KB
+}));
 
 // ── Telegram Bot Webhook ─────────────────────────────────────────────────────
 app.use('/api/telegram', require('./routes/telegram'));
@@ -1305,6 +1388,10 @@ app.get('/api/pdf-smoke', async (req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   console.error('[app-error]', req.method, req.path, err.message);
+  // Invia a Sentry solo errori 5xx non previsti (non errori client 4xx)
+  if (!err.status || err.status >= 500) {
+    Sentry.captureException(err, { extra: { method: req.method, path: req.path } });
+  }
   if (!res.headersSent) {
     res.status(err.status || 500).json({ error: 'APP_ERROR', detail: err.message });
   }
@@ -1326,15 +1413,37 @@ supabaseAdmin.storage.createBucket('site-documents', {
   }
 }).catch((e) => console.warn('[storage] Bucket init error:', e.message));
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log('ROUTES OK: /api/ping, /api/pdf-diag, /api/pdf-smoke');
+  console.log('ROUTES OK: /api/ping, /api/health, /api/pdf-diag, /api/pdf-smoke');
 
-  // Avvia cron giornaliero uscite mancanti (20:00 Europe/Rome)
-  // Solo in produzione o se esplicitamente abilitato
+  // Avvia cron — solo in produzione o se esplicitamente abilitato
   if (process.env.NODE_ENV !== 'test') {
     startMissingExitCron();
     startDailySummaryCron();
     startExpiryAlertCron();
+    startWorkerExpiryCron();
   }
+});
+
+// ── Graceful shutdown (SIGTERM) ───────────────────────────────────────────────
+// Railway invia SIGTERM prima di ogni deploy o restart.
+// Chiudiamo il server HTTP (no nuove connessioni) e attendiamo le richieste in corso.
+// Puppeteer viene chiuso dopo per liberare la memoria di Chromium.
+const { rendererPool } = require('./pdf-renderer');
+process.on('SIGTERM', () => {
+  console.log('[SIGTERM] ricevuto — avvio graceful shutdown...');
+
+  server.close(async () => {
+    console.log('[SIGTERM] server HTTP chiuso — cleanup...');
+    try { await rendererPool.close(); } catch { /* ignore */ }
+    console.log('[SIGTERM] Puppeteer chiuso — processo terminato.');
+    process.exit(0);
+  });
+
+  // Se non riusciamo a chiudere entro 30s, forziamo l'uscita
+  setTimeout(() => {
+    console.error('[SIGTERM] force exit — timeout 30s superato');
+    process.exit(1);
+  }, 30000);
 });
