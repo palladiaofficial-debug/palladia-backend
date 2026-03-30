@@ -11,6 +11,11 @@
  *   - Laterali 0mm da Puppeteer: .doc { padding: 0 16mm } allinea body con H/F.
  *   - pageNumber / totalPages: iniettati da Chrome internamente (deterministici).
  *   - Nessun pdf-lib, nessun 2-pass manuale, nessuna stima da scrollHeight.
+ *
+ * Concorrenza:
+ *   - MAX_CONCURRENT_PDF (env, default 2) limita i render paralleli.
+ *   - Le richieste in eccesso vengono accodate invece di crashare per OOM.
+ *   - PDF_QUEUE_TIMEOUT (env, default 120s) — timeout per una richiesta in coda.
  */
 
 let puppeteer;
@@ -18,6 +23,10 @@ try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
 
 // PDF_DEBUG=true → report overflow (max 10 righe). Default false.
 const PDF_DEBUG = process.env.PDF_DEBUG === 'true';
+
+// Massimo render PDF simultanei — protegge dalla memoria di Chromium
+const MAX_CONCURRENT_PDF  = parseInt(process.env.MAX_CONCURRENT_PDF  || '2', 10);
+const PDF_QUEUE_TIMEOUT_MS = parseInt(process.env.PDF_QUEUE_TIMEOUT   || '120000', 10);
 
 // ── HTML escape per i template Puppeteer ──────────────────────────────────────
 function escT(str) {
@@ -130,9 +139,55 @@ async function _debugOverflow(page) {
   }
 }
 
+// ── Semaforo — limita render PDF simultanei ───────────────────────────────────
+class Semaphore {
+  constructor(max) {
+    this._max     = max;
+    this._running = 0;
+    this._queue   = [];
+  }
+
+  acquire() {
+    if (this._running < this._max) {
+      this._running++;
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      this._queue.push({ resolve, reject });
+    });
+  }
+
+  release() {
+    this._running--;
+    if (this._queue.length > 0) {
+      const next = this._queue.shift();
+      this._running++;
+      next.resolve();
+    }
+  }
+}
+
+const pdfSemaphore = new Semaphore(MAX_CONCURRENT_PDF);
+
 // ── renderHtmlToPdf (browser monouso) ─────────────────────────────────────────
 async function renderHtmlToPdf(html, opts = {}) {
   if (!puppeteer) throw new Error('Puppeteer non installato. Esegui: npm install puppeteer');
+
+  // Acquisisce il semaforo — se già MAX_CONCURRENT_PDF render in corso, aspetta
+  const timer = setTimeout(() => {}, PDF_QUEUE_TIMEOUT_MS); // keep-alive per debug
+  try {
+    await Promise.race([
+      pdfSemaphore.acquire(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('PDF_QUEUE_TIMEOUT')), PDF_QUEUE_TIMEOUT_MS)
+      ),
+    ]);
+    clearTimeout(timer);
+  } catch (e) {
+    clearTimeout(timer);
+    throw e;
+  }
+
   const browser = await puppeteer.launch({ headless: true, args: LAUNCH_ARGS });
   try {
     const page = await browser.newPage();
@@ -143,6 +198,7 @@ async function renderHtmlToPdf(html, opts = {}) {
     return await page.pdf(makePdfOpts(opts));
   } finally {
     await browser.close();
+    pdfSemaphore.release();
   }
 }
 
@@ -181,6 +237,15 @@ class PdfRendererPool {
 
   async render(html, opts = {}) {
     if (!puppeteer) throw new Error('Puppeteer non installato. Esegui: npm install puppeteer');
+
+    // Semaforo condiviso — anche le render via pool contano nel limite
+    await Promise.race([
+      pdfSemaphore.acquire(),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('PDF_QUEUE_TIMEOUT')), PDF_QUEUE_TIMEOUT_MS)
+      ),
+    ]);
+
     const browser = await this._getBrowser();
     const page    = await browser.newPage();
     try {
@@ -191,6 +256,7 @@ class PdfRendererPool {
       return await page.pdf(makePdfOpts(opts));
     } finally {
       await page.close();
+      pdfSemaphore.release();
     }
   }
 
@@ -203,4 +269,7 @@ class PdfRendererPool {
 }
 
 const rendererPool = new PdfRendererPool();
-module.exports = { renderHtmlToPdf, rendererPool };
+
+console.log(`[PDF] semaforo attivo — max ${MAX_CONCURRENT_PDF} render simultanei`);
+
+module.exports = { renderHtmlToPdf, rendererPool, pdfSemaphore };

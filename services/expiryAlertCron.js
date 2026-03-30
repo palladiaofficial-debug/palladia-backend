@@ -5,12 +5,15 @@
  * in scadenza nei cantieri che coordinano.
  *
  * Logica:
- * 1. Ogni lunedì alle 08:00 scansiona coordinator_pro_sessions attive.
+ * 1. Ogni lunedì alle 08:00 (Europe/Rome) scansiona coordinator_pro_sessions attive.
  * 2. Per ogni email unica, trova i cantieri accessibili (inviti attivi, non scaduti).
  * 3. Per ogni cantiere, controlla i lavoratori con documenti in scadenza (≤ 30 giorni).
  * 4. Se trova anomalie → invia email riepilogativa al professionista.
+ *
+ * Usa node-cron (già in produzione per missingExitCron) — persistente ai restart.
  */
 
+const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { sendExpiryAlertPro } = require('./email');
 
@@ -147,32 +150,22 @@ async function runExpiryAlerts() {
 }
 
 /**
- * Avvia il cron settimanale.
- * Usa setInterval con calcolo del prossimo lunedì alle 08:00.
+ * Avvia il cron settimanale con node-cron.
+ * Ogni lunedì alle 08:00 (Europe/Rome) — resistente ai restart.
  */
 function startExpiryAlertCron() {
-  function msToNextMonday8am() {
-    const now   = new Date();
-    const next  = new Date(now);
-    // Trova il prossimo lunedì
-    const day   = now.getDay(); // 0=dom, 1=lun, ..., 6=sab
-    const daysToMonday = day === 1 ? 7 : (1 - day + 7) % 7 || 7;
-    next.setDate(now.getDate() + daysToMonday);
-    next.setHours(8, 0, 0, 0);
-    return next - now;
-  }
+  // '0 8 * * 1' = ogni lunedì alle 08:00
+  cron.schedule('0 8 * * 1', async () => {
+    try {
+      await runExpiryAlerts();
+    } catch (e) {
+      console.error('[expiryAlert] errore cron:', e.message);
+    }
+  }, {
+    timezone: 'Europe/Rome',
+  });
 
-  function scheduleNext() {
-    const delay = msToNextMonday8am();
-    const nextRun = new Date(Date.now() + delay);
-    console.log(`[expiryAlert] prossima esecuzione: ${nextRun.toLocaleString('it-IT')}`);
-    setTimeout(async () => {
-      try { await runExpiryAlerts(); } catch (e) { console.error('[expiryAlert] errore cron:', e.message); }
-      scheduleNext(); // ri-schedula per la settimana successiva
-    }, delay);
-  }
-
-  scheduleNext();
+  console.log('[expiryAlert] scheduler attivo — esecuzione ogni lunedì alle 08:00 (Europe/Rome)');
 }
 
 module.exports = { startExpiryAlertCron, runExpiryAlerts };
