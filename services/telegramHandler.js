@@ -42,6 +42,11 @@ const MAIN_KEYBOARD = tg.buildReplyKeyboard([
   ['📊 Stato',    '❓ Aiuto'],
 ]);
 
+const COORDINATOR_KEYBOARD = tg.buildReplyKeyboard([
+  ['📍 Cantieri', '📊 Stato'],
+  ['❓ Aiuto'],
+]);
+
 /** URL frontend webapp (per i link "Vedi su Palladia") */
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://palladia.net';
 
@@ -80,8 +85,11 @@ async function handleUpdate(update) {
       const msg    = update.message;
       const chatId = msg.chat.id;
 
-      // Cerca utente collegato
-      const tuUser = await getTelegramUser(chatId);
+      // Cerca utente collegato (impresa) e coordinatore (paralleli)
+      const [tuUser, tuCoord] = await Promise.all([
+        getTelegramUser(chatId),
+        getTelegramCoordinator(chatId),
+      ]);
 
       // Aggiorna last_active_at (fire-and-forget)
       if (tuUser) {
@@ -91,7 +99,7 @@ async function handleUpdate(update) {
           .then(() => {});
       }
 
-      await handleMessage(msg, tuUser);
+      await handleMessage(msg, tuUser, tuCoord);
     }
 
     if (update.callback_query) {
@@ -104,13 +112,30 @@ async function handleUpdate(update) {
 
 // ── Gestione messaggi ────────────────────────────────────────
 
-async function handleMessage(msg, tuUser) {
+async function handleMessage(msg, tuUser, tuCoord) {
   const chatId = msg.chat.id;
   const text   = msg.text || '';
 
   // Comando /start (anche senza essere collegati)
   if (text.startsWith('/start')) {
-    return handleStart(msg, tuUser);
+    return handleStart(msg, tuUser, tuCoord);
+  }
+
+  // Comando /pro CODE — collegamento coordinatore via codice OTP
+  if (text.startsWith('/pro ') || text === '/pro') {
+    const code = text.slice(5).trim();
+    if (!code) {
+      return tg.sendMessage(chatId,
+        `🔗 Usa il comando così:\n<code>/pro IL_TUO_CODICE</code>\n\n` +
+        `Ottieni il codice da <b>palladia.net/pro → Collega Telegram</b>.`
+      );
+    }
+    return linkCoordinatorAccount(chatId, msg.chat, code);
+  }
+
+  // Coordinatore collegato — routing dedicato (ha precedenza su tuUser non collegato)
+  if (tuCoord) {
+    return handleCoordinatorMessage(msg, tuCoord);
   }
 
   // Utente non collegato → istruzioni link
@@ -150,13 +175,26 @@ async function handleMessage(msg, tuUser) {
 
 // ── /start ───────────────────────────────────────────────────
 
-async function handleStart(msg, existingUser) {
+async function handleStart(msg, existingUser, existingCoord) {
   const chatId    = msg.chat.id;
   const firstName = msg.chat.first_name || 'tecnico';
   const parts     = (msg.text || '').trim().split(/\s+/);
   const token     = parts[1] || null;
 
-  // Già collegato
+  // Token con prefisso "pro_" → collegamento coordinatore
+  if (token && token.startsWith('pro_')) {
+    return linkCoordinatorAccount(chatId, msg.chat, token.slice(4));
+  }
+
+  // Già collegato come coordinatore e nessun token impresa
+  if (existingCoord && !token) {
+    return tg.sendMessage(chatId,
+      `Ciao <b>${firstName}</b>! Sei collegato come professionista su Palladia.\n\n` +
+      `Scrivi /cantiere per scegliere il cantiere o inviami una nota.`
+    );
+  }
+
+  // Già collegato come utente impresa
   if (existingUser && !token) {
     return sendMain(chatId,
       `Ciao <b>${firstName}</b>! Sei già collegato a Palladia.\n\n` +
@@ -164,7 +202,7 @@ async function handleStart(msg, existingUser) {
     );
   }
 
-  // Token fornito → collegamento
+  // Token fornito → collegamento impresa
   if (token) {
     return linkAccount(chatId, msg.chat, token);
   }
@@ -172,10 +210,12 @@ async function handleStart(msg, existingUser) {
   // Nessun token → istruzioni
   await tg.sendMessage(chatId,
     `👷 <b>Benvenuto su Palladia Bot!</b>\n\n` +
-    `Per collegare il tuo account:\n` +
-    `1. Vai su <b>palladia.net → Account → Telegram</b>\n` +
-    `2. Clicca <b>"Collega Telegram"</b> — si apre automaticamente\n\n` +
-    `In alternativa: <code>/start IL_TUO_CODICE</code>`
+    `Sei un tecnico d'impresa?\n` +
+    `→ Vai su <b>palladia.net → Account → Telegram</b>\n\n` +
+    `Sei un coordinatore (CSE/CSP/DL/RUP)?\n` +
+    `→ Vai su <b>palladia.net/pro → Collega Telegram</b>\n\n` +
+    `In alternativa usa il tuo codice personale:\n` +
+    `<code>/start IL_TUO_CODICE</code>`
   );
 }
 
@@ -301,7 +341,7 @@ async function handleCallbackQuery(cbq) {
     );
   }
 
-  // Selezione cantiere
+  // Selezione cantiere (utente impresa)
   if (data.startsWith('site:')) {
     const siteId = data.slice(5);
     const tuUser = await getTelegramUser(chatId);
@@ -310,6 +350,18 @@ async function handleCallbackQuery(cbq) {
       return;
     }
     await setActiveSite(chatId, tuUser, siteId, cbq.id);
+    return;
+  }
+
+  // Selezione cantiere (coordinatore)
+  if (data.startsWith('coord_site:')) {
+    const siteId  = data.slice(11);
+    const tuCoord = await getTelegramCoordinator(chatId);
+    if (!tuCoord) {
+      await tg.answerCallbackQuery(cbq.id, 'Account coordinatore non collegato.');
+      return;
+    }
+    await setCoordinatorActiveSite(chatId, tuCoord, siteId, cbq.id);
     return;
   }
 
@@ -1189,5 +1241,341 @@ const CATEGORY_ICONS = {
   documento:      '📎',
   altro:          '📌',
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FLUSSO COORDINATORI PRO — Telegram
+// I coordinatori (CSE/CSP/DL/RUP) si collegano tramite codice OTP generato
+// dal Portale Professionisti (palladia.net/pro).
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function getTelegramCoordinator(chatId) {
+  const { data } = await supabase
+    .from('telegram_coordinator_links')
+    .select('*')
+    .eq('telegram_chat_id', chatId)
+    .maybeSingle();
+  return data || null;
+}
+
+async function linkCoordinatorAccount(chatId, chat, code) {
+  if (!code || code.length < 6) {
+    return tg.sendMessage(chatId,
+      `❌ <b>Codice non valido.</b>\n\n` +
+      `Vai su <b>palladia.net/pro</b>, entra nel portale e clicca <b>"Collega Telegram"</b> per generare un codice.`
+    );
+  }
+
+  const { data: codeRow } = await supabase
+    .from('telegram_coordinator_link_codes')
+    .select('email, expires_at, used_at')
+    .eq('code', code.toUpperCase())
+    .maybeSingle();
+
+  if (!codeRow || codeRow.used_at || new Date(codeRow.expires_at) < new Date()) {
+    return tg.sendMessage(chatId,
+      `❌ <b>Codice scaduto o non valido.</b>\n\n` +
+      `Torna su <b>palladia.net/pro</b> e genera un nuovo codice.`
+    );
+  }
+
+  const { error: upsertErr } = await supabase
+    .from('telegram_coordinator_links')
+    .upsert({
+      telegram_chat_id: chatId,
+      email:            codeRow.email,
+      telegram_username: chat.username  || null,
+      telegram_name:     chat.first_name || null,
+      last_active_at:    new Date().toISOString(),
+    }, { onConflict: 'telegram_chat_id' });
+
+  if (upsertErr) {
+    console.error('[linkCoordinator] upsert error:', upsertErr.message);
+    return tg.sendMessage(chatId, '❌ Errore interno. Riprova tra qualche minuto.');
+  }
+
+  await supabase
+    .from('telegram_coordinator_link_codes')
+    .update({ used_at: new Date().toISOString() })
+    .eq('code', code.toUpperCase());
+
+  const firstName = chat.first_name || 'coordinatore';
+  await tg.sendMessage(chatId,
+    `✅ <b>Portale Pro collegato!</b>\n\n` +
+    `Ciao <b>${firstName}</b>, sei collegato come professionista.\n\n` +
+    `Da qui puoi:\n` +
+    `• 📝 Inviare note e osservazioni\n` +
+    `• ⚠️ Segnalare non conformità con <b>/nc testo</b>\n` +
+    `• 📸 Scattare foto dal cantiere\n` +
+    `• 🎙️ Inviare vocali — li trascrivo io\n\n` +
+    `<b>Seleziona prima il cantiere su cui stai lavorando.</b>`,
+    { replyMarkup: COORDINATOR_KEYBOARD }
+  );
+
+  const tuCoord = await getTelegramCoordinator(chatId);
+  await showCoordinatorSiteSelector(chatId, tuCoord);
+}
+
+async function showCoordinatorSiteSelector(chatId, tuCoord) {
+  const { data: invites } = await supabase
+    .from('coordinator_invites')
+    .select('site_id, sites(id, name, address, status)')
+    .eq('coordinator_email', tuCoord.email)
+    .eq('is_active', true)
+    .gt('expires_at', new Date().toISOString())
+    .limit(20);
+
+  const sites = (invites || [])
+    .map(i => i.sites)
+    .filter(s => s && s.status !== 'chiuso' && s.status !== 'eliminato');
+
+  if (sites.length === 0) {
+    return tg.sendMessage(chatId,
+      `⚠️ <b>Nessun cantiere trovato.</b>\n\n` +
+      `Non risulti ancora invitato su nessun cantiere attivo.\n` +
+      `Chiedi all'impresa di inviarti l'accesso da <b>palladia.net</b>.`
+    );
+  }
+
+  const buttons = sites.map(s => ({
+    text: s.name || 'Cantiere',
+    callbackData: `coord_site:${s.id}`,
+  }));
+
+  await tg.sendMessage(chatId,
+    `📍 <b>Seleziona il cantiere attivo:</b>`,
+    { replyMarkup: tg.buildInlineKeyboard(buttons, 1) }
+  );
+}
+
+async function setCoordinatorActiveSite(chatId, tuCoord, siteId, callbackQueryId) {
+  const { data: invite } = await supabase
+    .from('coordinator_invites')
+    .select('id, sites(name)')
+    .eq('coordinator_email', tuCoord.email)
+    .eq('site_id', siteId)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!invite) {
+    await tg.answerCallbackQuery(callbackQueryId, 'Cantiere non trovato.');
+    return;
+  }
+
+  await supabase
+    .from('telegram_coordinator_links')
+    .update({ active_site_id: siteId })
+    .eq('telegram_chat_id', chatId);
+
+  const siteName = invite.sites?.name || 'Cantiere';
+  await tg.answerCallbackQuery(callbackQueryId, `✅ ${siteName}`);
+  await tg.sendMessage(chatId,
+    `✅ <b>Cantiere attivo: ${siteName}</b>\n\n` +
+    `Inviami note, foto, vocali o usa /nc per le non conformità.\n` +
+    `Per cambiare cantiere: /cantiere`,
+    { replyMarkup: COORDINATOR_KEYBOARD }
+  );
+}
+
+async function requireCoordinatorActiveSite(chatId, tuCoord) {
+  if (!tuCoord.active_site_id) {
+    await tg.sendMessage(chatId,
+      `⚠️ <b>Nessun cantiere selezionato.</b>\n\n` +
+      `Scrivi /cantiere per scegliere su quale cantiere stai lavorando.`
+    );
+    await showCoordinatorSiteSelector(chatId, tuCoord);
+    return null;
+  }
+
+  const { data: invite } = await supabase
+    .from('coordinator_invites')
+    .select('id, sites(id, name)')
+    .eq('coordinator_email', tuCoord.email)
+    .eq('site_id', tuCoord.active_site_id)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!invite) {
+    await tg.sendMessage(chatId, '⚠️ Cantiere non più valido. Selezionane uno nuovo.');
+    await supabase.from('telegram_coordinator_links').update({ active_site_id: null }).eq('telegram_chat_id', chatId);
+    await showCoordinatorSiteSelector(chatId, tuCoord);
+    return null;
+  }
+
+  return { inviteId: invite.id, siteId: tuCoord.active_site_id, siteName: invite.sites?.name || 'Cantiere' };
+}
+
+async function saveCoordinatorNote(tuCoord, siteCtx, noteType, content) {
+  const profile = await supabase
+    .from('coordinator_profiles')
+    .select('full_name, qualifica')
+    .eq('email', tuCoord.email)
+    .maybeSingle();
+
+  const coordName = profile.data?.full_name || tuCoord.email;
+
+  await supabase.from('site_coordinator_notes').insert({
+    invite_id:        siteCtx.inviteId,
+    note_type:        noteType,
+    content,
+    coordinator_name: coordName,
+    coordinator_qualifica: profile.data?.qualifica || null,
+  });
+}
+
+async function handleCoordinatorMessage(msg, tuCoord) {
+  const chatId = msg.chat.id;
+  const text   = msg.text || '';
+
+  // Aggiorna last_active_at
+  supabase.from('telegram_coordinator_links')
+    .update({ last_active_at: new Date().toISOString() })
+    .eq('telegram_chat_id', chatId)
+    .then(() => {});
+
+  // Comandi
+  if (text === '📍 Cantieri' || text.startsWith('/cantiere')) {
+    return showCoordinatorSiteSelector(chatId, tuCoord);
+  }
+  if (text === '📊 Stato' || text.startsWith('/stato')) {
+    const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+    if (!siteCtx) return;
+    return tg.sendMessage(chatId,
+      `📊 <b>Cantiere attivo:</b> ${siteCtx.siteName}\n` +
+      `Usa i bottoni o invia note, /nc, foto, vocali.`
+    );
+  }
+  if (text === '❓ Aiuto' || text.startsWith('/aiuto') || text === '/help') {
+    return tg.sendMessage(chatId,
+      `<b>Palladia Pro — Comandi coordinatore</b>\n\n` +
+      `<b>/nc testo</b> — segnala non conformità (urgenza alta)\n` +
+      `<b>/cantiere</b> — cambia cantiere attivo\n` +
+      `<b>Testo libero</b> → nota al cantiere\n` +
+      `<b>Foto</b> → documentazione fotografica\n` +
+      `<b>🎙️ Vocale</b> → trascritto e classificato\n\n` +
+      `Vedi tutti i tuoi cantieri su <b>palladia.net/pro</b>`,
+      { replyMarkup: COORDINATOR_KEYBOARD }
+    );
+  }
+
+  // /nc → non conformità urgente
+  if (text.startsWith('/nc ') || text === '/nc') {
+    const ncText = text.startsWith('/nc ') ? text.slice(4).trim() : '';
+    const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+    if (!siteCtx) return;
+
+    if (!ncText) {
+      return tg.sendMessage(chatId,
+        `⚠️ Descrivi la non conformità:\n<code>/nc descrizione del problema</code>`
+      );
+    }
+
+    await saveCoordinatorNote(tuCoord, siteCtx, 'warning', `⚠️ NC: ${ncText}`);
+
+    return tg.sendMessage(chatId,
+      `🚨 <b>Non conformità registrata</b>\n\n` +
+      `📍 ${siteCtx.siteName}\n` +
+      `📝 ${ncText}\n\n` +
+      `L'impresa riceverà una notifica.`,
+      { replyMarkup: tg.buildInlineKeyboard([
+        { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/pro` },
+        { text: '📸 Aggiungi foto', callbackData: 'cmd:prompt_photo' },
+      ], 2) }
+    );
+  }
+
+  // Foto
+  if (msg.photo) return handleCoordinatorPhoto(msg, tuCoord);
+
+  // Vocale
+  if (msg.voice) return handleCoordinatorVoice(msg, tuCoord);
+
+  // Testo libero → classificato e salvato come nota
+  if (text) {
+    const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+    if (!siteCtx) return;
+
+    const ai = await classifyMessage(text, siteCtx.siteName);
+    const noteType = ['non_conformita', 'incidente'].includes(ai.category) ? 'warning' : 'observation';
+
+    await saveCoordinatorNote(tuCoord, siteCtx, noteType, text);
+
+    const icon = CATEGORY_ICONS[ai.category] || '📝';
+    return tg.sendMessage(chatId,
+      `${icon} <b>${CATEGORY_LABELS[ai.category] || 'Nota'}</b> salvata\n` +
+      `📍 ${siteCtx.siteName}`,
+      { replyMarkup: tg.buildInlineKeyboard([
+        { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/pro` },
+      ], 1) }
+    );
+  }
+}
+
+async function handleCoordinatorPhoto(msg, tuCoord) {
+  const chatId  = msg.chat.id;
+  const caption = msg.caption || 'Foto dal cantiere';
+  const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+  if (!siteCtx) return;
+
+  try {
+    const photo    = msg.photo[msg.photo.length - 1];
+    const fileInfo = await tg.getFile(photo.file_id);
+    const buffer   = await tg.downloadFile(fileInfo.file_path);
+    const compressed = await sharp(buffer).jpeg({ quality: 80 }).resize(1600, 1600, { fit: 'inside', withoutEnlargement: true }).toBuffer();
+
+    const fileName = `coordinator/${tuCoord.email.replace('@', '_')}/${siteCtx.siteId}/${Date.now()}.jpg`;
+    const { data: uploaded } = await supabase.storage.from('site-media').upload(fileName, compressed, { contentType: 'image/jpeg', upsert: false });
+
+    let photoUrl = null;
+    if (uploaded) {
+      const { data: { publicUrl } } = supabase.storage.from('site-media').getPublicUrl(fileName);
+      photoUrl = publicUrl;
+    }
+
+    const content = photoUrl ? `${caption}\n📷 ${photoUrl}` : caption;
+    await saveCoordinatorNote(tuCoord, siteCtx, 'observation', content);
+
+    return tg.sendMessage(chatId,
+      `📸 <b>Foto salvata</b>\n📍 ${siteCtx.siteName}`,
+      { replyMarkup: tg.buildInlineKeyboard([{ text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/pro` }], 1) }
+    );
+  } catch (err) {
+    console.error('[coordinator photo]', err.message);
+    return tg.sendMessage(chatId, '❌ Errore salvataggio foto. Riprova.');
+  }
+}
+
+async function handleCoordinatorVoice(msg, tuCoord) {
+  const chatId  = msg.chat.id;
+  const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+  if (!siteCtx) return;
+
+  await tg.sendMessage(chatId, `🎙️ Trascrivo il vocale…`);
+
+  try {
+    const fileInfo  = await tg.getFile(msg.voice.file_id);
+    const buffer    = await tg.downloadFile(fileInfo.file_path);
+    const { transcribeOgg } = require('./telegramAI');
+    const transcript = await transcribeOgg(buffer);
+
+    if (!transcript) {
+      return tg.sendMessage(chatId, '❌ Non sono riuscito a trascrivere il vocale. Riprova o scrivi il messaggio.');
+    }
+
+    const ai = await classifyMessage(transcript, siteCtx.siteName);
+    const noteType = ['non_conformita', 'incidente'].includes(ai.category) ? 'warning' : 'observation';
+
+    await saveCoordinatorNote(tuCoord, siteCtx, noteType, `🎙️ ${transcript}`);
+
+    const icon = CATEGORY_ICONS[ai.category] || '📝';
+    return tg.sendMessage(chatId,
+      `${icon} <b>Vocale trascritto e salvato</b>\n` +
+      `📍 ${siteCtx.siteName}\n\n` +
+      `<i>"${transcript.slice(0, 200)}${transcript.length > 200 ? '…' : ''}"</i>`
+    );
+  } catch (err) {
+    console.error('[coordinator voice]', err.message);
+    return tg.sendMessage(chatId, '❌ Errore trascrizione. Scrivi il messaggio come testo.');
+  }
+}
 
 module.exports = { handleUpdate };

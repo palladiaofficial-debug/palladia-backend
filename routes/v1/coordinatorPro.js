@@ -472,4 +472,77 @@ router.post('/coordinator/pro/:token/site/:siteId/notes', async (req, res) => {
   res.json({ ok: true, note });
 });
 
+// ── POST /api/v1/coordinator/pro/:token/telegram-code ─────────────────────────
+// Genera un codice OTP (8 char, 15 min) per collegare Telegram al profilo Pro.
+// Il coordinatore invia il codice al bot con /pro CODICE.
+router.post('/coordinator/pro/:token/telegram-code', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'TOKEN_INVALID' });
+
+  const email = session.email;
+
+  // Elimina eventuali codici precedenti non usati per questa email
+  await supabase
+    .from('telegram_coordinator_link_codes')
+    .delete()
+    .eq('email', email)
+    .is('used_at', null);
+
+  // Genera codice 8 char uppercase alfanumerico (esclude O/0/I/1 per leggibilità)
+  const CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  const bytes = crypto.randomBytes(8);
+  for (let i = 0; i < 8; i++) code += CHARS[bytes[i] % CHARS.length];
+
+  const { error } = await supabase
+    .from('telegram_coordinator_link_codes')
+    .insert({ email, code });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME || 'PalladiaBot';
+  res.json({
+    code,
+    expires_in_minutes: 15,
+    telegram_link: `https://t.me/${botUsername}?start=pro_${code}`,
+    instructions: `Vai su Telegram e invia al bot: /pro ${code}`,
+  });
+});
+
+// ── GET /api/v1/coordinator/pro/:token/telegram-status ────────────────────────
+// Controlla se il coordinatore ha già collegato Telegram.
+router.get('/coordinator/pro/:token/telegram-status', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'TOKEN_INVALID' });
+
+  const { data } = await supabase
+    .from('telegram_coordinator_links')
+    .select('telegram_name, telegram_username, linked_at')
+    .eq('email', session.email)
+    .maybeSingle();
+
+  if (!data) return res.json({ linked: false });
+
+  res.json({
+    linked: true,
+    telegram_name: data.telegram_name,
+    telegram_username: data.telegram_username,
+    linked_at: data.linked_at,
+  });
+});
+
+// ── DELETE /api/v1/coordinator/pro/:token/telegram-unlink ─────────────────────
+// Scollega Telegram dal profilo Pro del coordinatore.
+router.delete('/coordinator/pro/:token/telegram-unlink', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'TOKEN_INVALID' });
+
+  await supabase
+    .from('telegram_coordinator_links')
+    .delete()
+    .eq('email', session.email);
+
+  res.json({ ok: true });
+});
+
 module.exports = router;

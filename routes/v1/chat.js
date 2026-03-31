@@ -105,6 +105,43 @@ AMBITI DI COMPETENZA
    Statistiche cantiere, reportistica operativa
    Pianificazione squadre, scadenze documentali, checklist sicurezza
 
+⑤ PREZZIARI REGIONALI E ANALISI PREZZI — competenza esclusiva
+   Hai accesso al Prezzario Regionale Liguria 2023 (e altre regioni disponibili).
+   Usa search_prezzario per trovare prezzi unitari di qualsiasi lavorazione.
+   Usa get_company_prezzi per i prezzi dei fornitori dell'azienda.
+
+   ANALISI DEI PREZZI — formula standard edilizia italiana:
+   ┌──────────────────────────────────────────────────────────┐
+   │  Costo Diretto = Materiali + Manodopera + Noli           │
+   │  Prezzo Netto  = Costo Diretto × (1 + Spese Generali)   │
+   │  Prezzo Offerta = Prezzo Netto × (1 + Utile)             │
+   │  Spese Generali: 13–15% (default 14%)                    │
+   │  Utile d'impresa: 8–12% (default 10%)                    │
+   └──────────────────────────────────────────────────────────┘
+
+   COME FARE UN'ANALISI PREZZI — procedura:
+   1. Identifica la lavorazione richiesta
+   2. Chiama search_prezzario per trovare voci di materiali, manodopera, noli
+   3. Se l'utente ha fornitori propri, chiama get_company_prezzi per i materiali
+   4. Componi la tabella analitica con i componenti
+   5. Applica SG e utile e presenta il prezzo finale
+   6. Cita SEMPRE la fonte: "Prezzario Regione Liguria 2023" + nota "prezzi indicativi, verificare con fornitori locali"
+
+   COME FARE UN COMPUTO ESTIMATIVO:
+   - Per ogni voce: quantità × prezzo_unitario = importo
+   - Raggruppa per categoria
+   - Totale parziali + totale generale
+   - Presenta in tabella con colonne: Voce | UM | Qta | Prezzo unit. | Importo
+   - Puoi aggiungere una riga per Spese Generali (14%) e Utile (10%)
+   - Offri sempre di esportare in PDF/Excel
+
+   REGOLE PREZZI:
+   - Non inventare MAI prezzi — usa SEMPRE i tool. Se la voce non si trova, dillo.
+   - Se cerchi "scavo" e trovi "scavo a sezione aperta 6,80 €/m³" — usa quello, citalo.
+   - Distingui: prezzo di prezzario (pubblico) vs prezzo fornitore aziendale (privato).
+   - Indica sempre l'anno del prezzario usato.
+   - Per regioni non disponibili: avvisa l'utente e usa Liguria come riferimento.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FUORI AMBITO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -303,6 +340,46 @@ const TOOLS = [
         }
       },
       required: ['path', 'label']
+    }
+  },
+  {
+    name: 'search_prezzario',
+    description: 'Cerca voci nel prezzario regionale per trovare prezzi unitari di lavorazioni, materiali, manodopera, noli. Usare SEMPRE per rispondere a domande su costi, analisi prezzi, computi estimativi. Non inventare mai prezzi — usare questo tool.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Descrizione della lavorazione o materiale da cercare. Es: "scavo a sezione aperta", "calcestruzzo C25/30", "muratura blocchi cls", "ponteggio tubolare", "intonaco civile"'
+        },
+        regione: {
+          type: 'string',
+          description: 'Regione italiana in minuscolo. Es: "liguria", "lombardia", "toscana". Default: "liguria"'
+        },
+        anno: {
+          type: 'integer',
+          description: 'Anno del prezzario. Ometti per usare l\'ultimo disponibile.'
+        },
+        limit: {
+          type: 'integer',
+          description: 'Numero massimo di risultati (default 5, max 15). Aumenta per analisi prezzi complesse.'
+        }
+      },
+      required: ['query']
+    }
+  },
+  {
+    name: 'get_company_prezzi',
+    description: 'Cerca prezzi fornitori inseriti dall\'azienda. Usare quando l\'utente menziona i propri fornitori o vuole usare prezzi personalizzati al posto del prezzario regionale. I prezzi aziendali hanno la priorità sui materiali.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Descrizione del materiale o articolo da cercare nei prezzi aziendali.'
+        }
+      },
+      required: ['query']
     }
   }
 ];
@@ -577,6 +654,88 @@ async function executeTool(toolName, toolInput, companyId) {
         const { path, label } = toolInput;
         if (!path || !label) return { error: 'path e label obbligatori' };
         return { navigated: true, path, label };
+      }
+
+      case 'search_prezzario': {
+        const { query, regione = 'liguria', anno, limit = 5 } = toolInput;
+        if (!query) return { error: 'query obbligatoria' };
+
+        const maxLimit = Math.min(parseInt(limit) || 5, 15);
+
+        // Determina anno: richiesto o l'ultimo disponibile per la regione
+        let targetAnno = anno ? parseInt(anno) : null;
+        if (!targetAnno) {
+          const { data: latest } = await supabase
+            .from('prezzario_voci')
+            .select('anno')
+            .eq('regione', regione.toLowerCase())
+            .order('anno', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          targetAnno = latest?.anno || null;
+        }
+
+        if (!targetAnno) {
+          return { error: `Nessun prezzario disponibile per la regione "${regione}". Regioni disponibili: liguria.` };
+        }
+
+        // Prova full-text search
+        let { data, error } = await supabase
+          .from('prezzario_voci')
+          .select('codice, categoria, sottocategoria, descrizione, um, prezzo, costo_mat, costo_mdo, costo_noli, note')
+          .eq('regione', regione.toLowerCase())
+          .eq('anno', targetAnno)
+          .textSearch('descrizione_tsv', query, { type: 'plain', config: 'italian' })
+          .limit(maxLimit);
+
+        // Fallback ILIKE se FTS non trova nulla (query corta o stop-word)
+        if (error || !data || data.length === 0) {
+          const fallback = await supabase
+            .from('prezzario_voci')
+            .select('codice, categoria, sottocategoria, descrizione, um, prezzo, costo_mat, costo_mdo, costo_noli, note')
+            .eq('regione', regione.toLowerCase())
+            .eq('anno', targetAnno)
+            .ilike('descrizione', `%${query}%`)
+            .limit(maxLimit);
+          data = fallback.data || [];
+        }
+
+        return {
+          fonte: `Prezzario Regione ${regione.charAt(0).toUpperCase() + regione.slice(1)} ${targetAnno}`,
+          nota: 'Prezzi in € IVA esclusa. Verificare con fornitori locali prima di applicare.',
+          voci: data,
+          n_risultati: data.length,
+        };
+      }
+
+      case 'get_company_prezzi': {
+        const { query } = toolInput;
+        if (!query) return { error: 'query obbligatoria' };
+
+        // Prova full-text search
+        let { data, error } = await supabase
+          .from('company_prezzi')
+          .select('descrizione, fornitore, um, prezzo, categoria, valid_from, valid_to, note')
+          .eq('company_id', companyId)
+          .textSearch('descrizione_tsv', query, { type: 'plain', config: 'italian' })
+          .limit(10);
+
+        // Fallback ILIKE
+        if (error || !data || data.length === 0) {
+          const fallback = await supabase
+            .from('company_prezzi')
+            .select('descrizione, fornitore, um, prezzo, categoria, valid_from, valid_to, note')
+            .eq('company_id', companyId)
+            .ilike('descrizione', `%${query}%`)
+            .limit(10);
+          data = fallback.data || [];
+        }
+
+        if (!data || data.length === 0) {
+          return { found: false, message: 'Nessun prezzo fornitore trovato per questa ricerca. L\'azienda non ha ancora inserito prezzi personalizzati per questa voce.' };
+        }
+
+        return { found: true, prezzi: data, n_risultati: data.length };
       }
 
       default:
