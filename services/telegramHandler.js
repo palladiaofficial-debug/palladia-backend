@@ -92,14 +92,6 @@ async function handleUpdate(update) {
         return;
       }
 
-      // /myid — comando temporaneo per scoprire il proprio chat ID
-      if ((msg.text || '').trim() === '/myid') {
-        await tg.sendMessage(chatId,
-          `🆔 Il tuo Telegram chat ID è:\n<code>${chatId}</code>\n\n` +
-          `Comunicalo all'amministratore per attivare il pannello owner.`
-        );
-        return;
-      }
 
       // Cerca utente collegato (impresa) e coordinatore (paralleli)
       const [tuUser, tuCoord] = await Promise.all([

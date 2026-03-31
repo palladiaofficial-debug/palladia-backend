@@ -48,9 +48,10 @@ function navButtons(refreshCallback) {
 
 async function handleOwnerMessage(msg) {
   const chatId = msg.chat.id;
-  const text   = (msg.text || '').trim();
 
-  // Qualsiasi messaggio → mostra il menu (tranne /myid che è gestito prima)
+  // Guard assoluto — doppio controllo anche se chiamato dall'handler esterno
+  if (!isOwner(chatId)) return;
+
   await tg.sendMessage(chatId,
     `<b>🛠 Palladia Owner Panel</b>\n\nCosa vuoi vedere?`,
     { replyMarkup: MAIN_MENU }
@@ -63,6 +64,12 @@ async function handleOwnerCallback(cbq) {
   const chatId    = cbq.message.chat.id;
   const messageId = cbq.message.message_id;
   const data      = cbq.data;
+
+  // Guard assoluto — verifica che sia l'owner sia sul messaggio che sul mittente del tap
+  if (!isOwner(cbq.from.id) || !isOwner(chatId)) {
+    await tg.answerCallbackQuery(cbq.id, '');
+    return;
+  }
 
   // Rispondi subito al tap (toglie il loading)
   await tg.answerCallbackQuery(cbq.id, '');
