@@ -985,16 +985,70 @@ function buildReportExcel(report) {
   return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
 }
 
+// ── Chat history helpers ──────────────────────────────────────────────────────
+
+async function createConversation(companyId, userId, contextType = 'azienda', contextId = null) {
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .insert({ company_id: companyId, user_id: userId, context_type: contextType, context_id: contextId || null })
+    .select('id')
+    .single();
+  if (error) throw new Error('DB_ERROR: ' + error.message);
+  return data.id;
+}
+
+async function loadHistory(conversationId, limit = 20) {
+  const { data, error } = await supabase
+    .from('chat_messages')
+    .select('role, content')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+  if (error || !data) return [];
+  return data.map(m => ({ role: m.role, content: m.content }));
+}
+
+async function saveMessages(conversationId, userContent, assistantContent) {
+  await supabase.from('chat_messages').insert([
+    { conversation_id: conversationId, role: 'user',      content: userContent },
+    { conversation_id: conversationId, role: 'assistant', content: assistantContent },
+  ]);
+}
+
+// Genera titolo automatico dal 1° messaggio (fire-and-forget)
+async function autoTitle(conversationId, firstUserMessage, client) {
+  try {
+    const { data: conv } = await supabase
+      .from('chat_conversations')
+      .select('title')
+      .eq('id', conversationId)
+      .single();
+    if (conv?.title && conv.title !== 'Nuova conversazione') return;
+
+    const resp = await client.messages.create({
+      model:      MODEL_HAIKU,
+      max_tokens: 32,
+      system:     'Genera un titolo brevissimo (max 40 caratteri, italiano) per questa conversazione. Solo il titolo, zero spiegazioni.',
+      messages:   [{ role: 'user', content: firstUserMessage.slice(0, 300) }],
+    });
+    const title = resp.content.find(b => b.type === 'text')?.text?.trim().slice(0, 60) || 'Chat';
+    await supabase.from('chat_conversations').update({ title }).eq('id', conversationId);
+  } catch { /* non critico */ }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/chat
-// Body: { message: string, history?: [{role, content}][] }
+// Body: { message, conversation_id?, context_type?, context_id?, history? }
+// Risposta: { reply, conversation_id }
+// Se conversation_id è omesso viene creata una nuova conversazione automaticamente.
+// history (legacy) è ancora accettato ma ignorato se conversation_id è presente.
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/chat', verifySupabaseJwt, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, history = [] } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [] } = req.body;
 
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
@@ -1003,16 +1057,52 @@ router.post('/chat', verifySupabaseJwt, async (req, res) => {
     return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
   }
 
-  const safeHistory = (Array.isArray(history) ? history : [])
-    .slice(-6)
-    .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
-    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
-
-  const messages = [...safeHistory, { role: 'user', content: message.trim() }];
-
   try {
-    const reply = await runChatLoop(getClient(), messages, req.companyId, classifyQuery(message));
-    res.json({ reply });
+    const client = getClient();
+    let convId = conversation_id || null;
+    let isNew  = false;
+
+    // Crea conversazione se non fornita
+    if (!convId) {
+      convId = await createConversation(req.companyId, req.user.id, context_type, context_id);
+      isNew = true;
+    } else {
+      // Verifica ownership
+      const { data: conv } = await supabase
+        .from('chat_conversations')
+        .select('id')
+        .eq('id', convId)
+        .eq('company_id', req.companyId)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+      if (!conv) return res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+    }
+
+    // Carica storico dal DB; fallback a history legacy solo se conversazione nuova
+    let dbHistory = [];
+    if (!isNew) {
+      dbHistory = await loadHistory(convId, 20);
+    } else if (Array.isArray(history) && history.length > 0) {
+      dbHistory = history
+        .slice(-6)
+        .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
+        .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+    }
+
+    const messages = [...dbHistory, { role: 'user', content: message.trim() }];
+    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message));
+
+    // Salva asincrono — non blocca la risposta
+    saveMessages(convId, message.trim(), reply).catch(e =>
+      console.error('[chat] saveMessages error:', e.message)
+    );
+
+    // Titolo auto al 1° scambio (isNew o 1ª coppia)
+    if (isNew) {
+      autoTitle(convId, message.trim(), client).catch(() => {});
+    }
+
+    res.json({ reply, conversation_id: convId });
   } catch (err) {
     console.error('[chat] error:', err.message);
     if (err.status === 401) return res.status(503).json({ error: 'AI_UNAVAILABLE' });
@@ -1082,14 +1172,16 @@ router.post('/chat/export', verifySupabaseJwt, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/chat/stream  — SSE streaming (text/event-stream)
-// Events: {type:'tool_start',names:[]} | {type:'text',delta:''} | {type:'done'} | {type:'error',message:''}
+// Body: { message, conversation_id?, context_type?, context_id?, history? }
+// Events: {type:'init',conversation_id} | {type:'tool_start',names:[]} |
+//         {type:'text',delta:''} | {type:'done'} | {type:'error',message:''}
 // ─────────────────────────────────────────────────────────────────────────────
 router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, history = [] } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [] } = req.body;
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
@@ -1108,12 +1200,47 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 
   const send = (data) => { if (!res.writableEnded) res.write(`data: ${JSON.stringify(data)}\n\n`); };
 
-  const safeHistory = (Array.isArray(history) ? history : [])
-    .slice(-6)
-    .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
-    .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+  // Risolvi/crea conversazione prima di iniziare lo stream
+  let convId = conversation_id || null;
+  let isNew  = false;
+  try {
+    if (!convId) {
+      convId = await createConversation(req.companyId, req.user.id, context_type, context_id);
+      isNew = true;
+    } else {
+      const { data: conv } = await supabase
+        .from('chat_conversations')
+        .select('id')
+        .eq('id', convId)
+        .eq('company_id', req.companyId)
+        .eq('user_id', req.user.id)
+        .maybeSingle();
+      if (!conv) {
+        send({ type: 'error', message: 'Conversazione non trovata.' });
+        return res.end();
+      }
+    }
+  } catch (e) {
+    send({ type: 'error', message: 'Errore DB.' });
+    return res.end();
+  }
 
-  let messages = [...safeHistory, { role: 'user', content: message.trim() }];
+  // Invia conversation_id al client subito
+  send({ type: 'init', conversation_id: convId });
+
+  // Carica storico
+  let dbHistory = [];
+  if (!isNew) {
+    dbHistory = await loadHistory(convId, 20).catch(() => []);
+  } else if (Array.isArray(history) && history.length > 0) {
+    dbHistory = history
+      .slice(-6)
+      .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
+      .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+  }
+
+  let messages = [...dbHistory, { role: 'user', content: message.trim() }];
+  let fullAssistantReply = ''; // colleziona testo completo per salvarlo
 
   let aborted = false;
   req.on('close', () => { aborted = true; });
@@ -1148,6 +1275,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
           if (!block) continue;
           if (event.delta.type === 'text_delta') {
             block.text = (block.text || '') + event.delta.text;
+            fullAssistantReply += event.delta.text;
             send({ type: 'text', delta: event.delta.text });
           } else if (event.delta.type === 'input_json_delta') {
             block._inputRaw += event.delta.partial_json;
@@ -1194,13 +1322,150 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       ];
     }
 
-    if (!aborted) send({ type: 'done' });
+    if (!aborted) {
+      send({ type: 'done' });
+      // Salva nel DB asincrono
+      if (fullAssistantReply) {
+        saveMessages(convId, message.trim(), fullAssistantReply).catch(e =>
+          console.error('[chat/stream] saveMessages error:', e.message)
+        );
+        if (isNew) {
+          autoTitle(convId, message.trim(), getClient()).catch(() => {});
+        }
+      }
+    }
   } catch (err) {
     console.error('[chat/stream] error:', err.message);
     if (!aborted) send({ type: 'error', message: 'Si è verificato un errore. Riprova.' });
   } finally {
     res.end();
   }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/chat/conversations
+// Lista conversazioni dell'utente per la company, ordinate per updated_at desc.
+// Query params: context_type? ('azienda'|'cantiere'), context_id? (site_id)
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/chat/conversations', verifySupabaseJwt, async (req, res) => {
+  const { context_type, context_id } = req.query;
+
+  let q = supabase
+    .from('chat_conversations')
+    .select('id, title, context_type, context_id, created_at, updated_at')
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id)
+    .order('updated_at', { ascending: false })
+    .limit(100);
+
+  if (context_type) q = q.eq('context_type', context_type);
+  if (context_id)   q = q.eq('context_id', context_id);
+
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  res.json(data || []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/chat/conversations
+// Crea una nuova conversazione vuota.
+// Body: { title?, context_type?, context_id? }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/chat/conversations', verifySupabaseJwt, async (req, res) => {
+  const { title, context_type = 'azienda', context_id } = req.body || {};
+
+  const allowedTypes = ['azienda', 'cantiere'];
+  if (!allowedTypes.includes(context_type)) {
+    return res.status(400).json({ error: 'INVALID_CONTEXT_TYPE' });
+  }
+
+  const insert = {
+    company_id:   req.companyId,
+    user_id:      req.user.id,
+    context_type,
+    context_id:   context_id || null,
+  };
+  if (title && typeof title === 'string') insert.title = title.trim().slice(0, 100);
+
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .insert(insert)
+    .select('id, title, context_type, context_id, created_at, updated_at')
+    .single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.status(201).json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/chat/conversations/:id
+// Dettaglio conversazione + tutti i messaggi.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/chat/conversations/:id', verifySupabaseJwt, async (req, res) => {
+  const { data: conv, error: convErr } = await supabase
+    .from('chat_conversations')
+    .select('id, title, context_type, context_id, created_at, updated_at')
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id)
+    .maybeSingle();
+
+  if (convErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!conv)   return res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+
+  const { data: msgs, error: msgsErr } = await supabase
+    .from('chat_messages')
+    .select('id, role, content, created_at')
+    .eq('conversation_id', conv.id)
+    .order('created_at', { ascending: true })
+    .limit(200);
+
+  if (msgsErr) return res.status(500).json({ error: 'DB_ERROR' });
+
+  res.json({ ...conv, messages: msgs || [] });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/v1/chat/conversations/:id/title
+// Rinomina una conversazione.
+// Body: { title: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/chat/conversations/:id/title', verifySupabaseJwt, async (req, res) => {
+  const { title } = req.body || {};
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'TITLE_REQUIRED' });
+  }
+
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .update({ title: title.trim().slice(0, 100) })
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id)
+    .select('id, title')
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data)  return res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+
+  res.json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/chat/conversations/:id
+// Elimina una conversazione e tutti i suoi messaggi (CASCADE nel DB).
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/chat/conversations/:id', verifySupabaseJwt, async (req, res) => {
+  const { error } = await supabase
+    .from('chat_conversations')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json({ ok: true });
 });
 
 module.exports = router;

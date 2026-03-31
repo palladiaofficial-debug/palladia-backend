@@ -51,6 +51,34 @@ router.get('/my-company', async (req, res) => {
   res.json({ company_id: best.company_id, role: best.role });
 });
 
+// GET /api/v1/my-companies — lista tutte le membership dell'utente con nome azienda
+// JWT only, NO X-Company-Id richiesto. Usato dal company switcher nel frontend.
+router.get('/my-companies', async (req, res) => {
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const jwt = auth.slice(7);
+
+  const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const { data: memberships, error: memberErr } = await supabase
+    .from('company_users')
+    .select('company_id, role, companies(name)')
+    .eq('user_id', authData.user.id);
+
+  if (memberErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!memberships || memberships.length === 0) return res.json([]);
+
+  const ROLE_ORDER = { owner: 0, admin: 1, tech: 2, viewer: 3 };
+  memberships.sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+
+  res.json(memberships.map(m => ({
+    company_id:   m.company_id,
+    company_name: m.companies?.name ?? '—',
+    role:         m.role,
+  })));
+});
+
 // GET /api/v1/company — restituisce profilo azienda
 router.get('/company', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase

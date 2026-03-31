@@ -31,23 +31,43 @@ async function verifyJwtOnly(req, res, next) {
   next();
 }
 
-// GET /api/v1/me — restituisce company_id e ruolo dell'utente autenticato (no company check)
-// Usato dal frontend admin.html per scoprire il company_id prima di qualsiasi altra chiamata.
+// GET /api/v1/me — restituisce tutte le membership dell'utente autenticato (no company check)
+// Usato dal frontend per scoprire il/i company_id prima di qualsiasi altra chiamata.
+// Se l'utente appartiene a più aziende (es. ha la sua + è stato invitato in un'altra)
+// restituisce l'array completo + il campo "primary" con la membership principale.
+// Compatibilità backward: include anche company_id e role di primo livello (prima membership).
 router.get('/me', verifyJwtOnly, async (req, res) => {
   const { data, error } = await supabase
     .from('company_users')
-    .select('company_id, role')
+    .select('company_id, role, companies(name)')
     .eq('user_id', req.user.id)
-    .maybeSingle();
+    .order('role', { ascending: false }); // owner > admin > tech > viewer
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  if (!data)  return res.status(404).json({ error: 'NO_COMPANY' });
+  if (error) {
+    console.error('[me] query error:', error.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+  if (!data || data.length === 0) {
+    return res.status(404).json({ error: 'NO_COMPANY' });
+  }
+
+  // Primary: preferisce il ruolo più alto, poi la prima riga
+  const primary = data[0];
+
+  const memberships = data.map(m => ({
+    company_id:   m.company_id,
+    company_name: m.companies?.name ?? null,
+    role:         m.role,
+  }));
 
   res.json({
     user_id:    req.user.id,
     email:      req.user.email,
-    company_id: data.company_id,
-    role:       data.role
+    // Campi backward-compat (singola company)
+    company_id: primary.company_id,
+    role:       primary.role,
+    // Multi-company
+    memberships,
   });
 });
 
