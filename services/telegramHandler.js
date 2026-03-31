@@ -33,6 +33,7 @@ const { logEvent }   = require('./telegramLog');
 const supabase       = require('../lib/supabase');
 const sharp          = require('sharp');
 const { notifyNonConformita, notifyIncidente } = require('./telegramNotifications');
+const { isOwner, handleOwnerMessage } = require('./telegramOwner');
 
 // ── Tastiera persistente principale ──────────────────────────
 
@@ -84,6 +85,12 @@ async function handleUpdate(update) {
     if (update.message) {
       const msg    = update.message;
       const chatId = msg.chat.id;
+
+      // Owner panel — ha la precedenza assoluta su qualsiasi altro routing
+      if (isOwner(chatId)) {
+        await handleOwnerMessage(msg);
+        return;
+      }
 
       // Cerca utente collegato (impresa) e coordinatore (paralleli)
       const [tuUser, tuCoord] = await Promise.all([
