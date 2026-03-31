@@ -145,8 +145,30 @@ async function getWebhookInfo() {
   return tgPost('getWebhookInfo', {});
 }
 
+/**
+ * Modifica un messaggio già inviato (usato per aggiornare i pannelli owner).
+ */
+async function editMessageText(chatId, messageId, text, { parseMode = 'HTML', replyMarkup } = {}) {
+  const body = {
+    chat_id:    chatId,
+    message_id: messageId,
+    text,
+    parse_mode: parseMode,
+    disable_web_page_preview: true,
+  };
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  try {
+    return await tgPost('editMessageText', body);
+  } catch (err) {
+    // Ignora "message is not modified" — non è un errore reale
+    if (err.telegram_code === 400) return null;
+    throw err;
+  }
+}
+
 module.exports = {
   sendMessage,
+  editMessageText,
   answerCallbackQuery,
   getFile,
   downloadFile,

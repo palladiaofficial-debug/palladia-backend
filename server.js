@@ -1,6 +1,7 @@
 require('dotenv').config();
 // Sentry DEVE essere il primo require — cattura errori di tutti i moduli successivi
-const Sentry     = require('./lib/sentry');
+const Sentry      = require('./lib/sentry');
+const errorBuffer = require('./lib/errorBuffer');
 const express    = require('express');
 const cors       = require('cors');
 const helmet     = require('helmet');
@@ -1393,6 +1394,7 @@ app.use((err, req, res, next) => {
   // Invia a Sentry solo errori 5xx non previsti (non errori client 4xx)
   if (!err.status || err.status >= 500) {
     Sentry.captureException(err, { extra: { method: req.method, path: req.path } });
+    errorBuffer.push(err, req);
   }
   if (!res.headersSent) {
     res.status(err.status || 500).json({ error: 'APP_ERROR', detail: err.message });

@@ -33,7 +33,7 @@ const { logEvent }   = require('./telegramLog');
 const supabase       = require('../lib/supabase');
 const sharp          = require('sharp');
 const { notifyNonConformita, notifyIncidente } = require('./telegramNotifications');
-const { isOwner, handleOwnerMessage } = require('./telegramOwner');
+const { isOwner, handleOwnerMessage, handleOwnerCallback } = require('./telegramOwner');
 
 // ── Tastiera persistente principale ──────────────────────────
 
@@ -119,7 +119,12 @@ async function handleUpdate(update) {
     }
 
     if (update.callback_query) {
-      await handleCallbackQuery(update.callback_query);
+      const cbq = update.callback_query;
+      if (isOwner(cbq.from.id) && (cbq.data || '').startsWith('owner:')) {
+        await handleOwnerCallback(cbq);
+        return;
+      }
+      await handleCallbackQuery(cbq);
     }
   } catch (err) {
     console.error('[telegramHandler] errore update:', err.message);
