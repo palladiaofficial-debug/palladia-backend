@@ -84,11 +84,8 @@ const LADIA_TOOL_DEFINITIONS = [
         },
         categoria: {
           type: 'string',
-          enum: [
-            'nota', 'avanzamento', 'sicurezza', 'qualita', 'amministrativa',
-            'meteo', 'forza_lavoro', 'materiali', 'attrezzature', 'subappalto', 'collaudo',
-          ],
-          description: 'Categoria della nota. Default: nota',
+          enum: ['nota', 'presenza', 'incidente', 'verbale', 'documento', 'altro'],
+          description: 'Categoria della nota: "nota" per aggiornamenti generali, "presenza" per presenze, "incidente" per incidenti, "verbale" per verbali, "documento" per documenti, "altro" per tutto il resto. Default: nota',
         },
       },
       required: ['testo'],

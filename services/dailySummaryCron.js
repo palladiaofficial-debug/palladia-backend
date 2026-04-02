@@ -191,15 +191,15 @@ async function buildCompanyBriefing(companyId) {
 
     // Meteo oggi + domani (solo se GPS disponibile)
     if (forecast?.length >= 2) {
-      const today    = forecast[0];
-      const tomorrow = forecast[1];
-      const icons    = [];
-      if (today.isRainy || today.precipProb >= 40)    icons.push(`oggi ${today.description} (${today.precipProb}%)`);
-      if (tomorrow.isRainy || tomorrow.precipProb >= 40) icons.push(`domani ${tomorrow.description} (${tomorrow.precipProb}%)`);
+      const fToday    = forecast[0];
+      const fTomorrow = forecast[1];
+      const icons     = [];
+      if (fToday.isRainy || fToday.precipProb >= 40)       icons.push(`oggi ${fToday.description} (${fToday.precipProb}%)`);
+      if (fTomorrow.isRainy || fTomorrow.precipProb >= 40) icons.push(`domani ${fTomorrow.description} (${fTomorrow.precipProb}%)`);
       if (icons.length) {
         meteoLines.push(`🌧️ <b>${name}</b>: ${icons.join(', ')}`);
-      } else if (today.tempMax !== null) {
-        meteoLines.push(`☀️ <b>${name}</b>: ${today.description} (${today.tempMin}–${today.tempMax}°C)`);
+      } else if (fToday.tempMax !== null) {
+        meteoLines.push(`☀️ <b>${name}</b>: ${fToday.description} (${fToday.tempMin}–${fToday.tempMax}°C)`);
       }
     }
 
