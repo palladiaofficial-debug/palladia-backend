@@ -13,6 +13,7 @@
 const supabase = require('../lib/supabase');
 const { getWeatherSummary } = require('./weatherService');
 const { LADIA_TOOL_DEFINITIONS, executeTool } = require('./ladiaTools');
+const { getTemplateIndex } = require('./ladiaDocumentProcessor');
 
 const SONNET_MODEL    = 'claude-sonnet-4-6';
 const MAX_HISTORY     = 20;   // messaggi mantenuti per sessione (10 scambi)
@@ -48,9 +49,15 @@ Hai accesso a questi strumenti per AGIRE direttamente (non solo rispondere):
 - <b>stato_cantiere</b>: riepilogo live di presenze, NC, budget
 - <b>crea_non_conformita</b>: registra una NC nel sistema
 - <b>aggiungi_nota</b>: salva una nota nel diario del cantiere
+- <b>cerca_template_documento</b>: cerca tra i PDF caricati dall'impresa (contratti, capitolati, POS, ecc.) per usarli come modello
 
 Usa i tool quando è utile, non sistematicamente. Preferisci rispondere dal contesto
 già caricato se l'informazione è già lì. Usa i tool solo per dati freschi o azioni.
+
+DOCUMENTI DI RIFERIMENTO:
+Quando l'utente chiede di redigere, adattare o replicare un documento, usa SEMPRE
+cerca_template_documento per trovare i modelli caricati dall'impresa e basati su quelli.
+Non inventare strutture contrattuali — usa i template reali dell'impresa.
 
 Data attuale: ${now}
 
@@ -140,6 +147,16 @@ SAL avanzamento: ${site.sal_percentuale ?? 0}%`;
   if (site.latitude && site.longitude) {
     const weatherSummary = await getWeatherSummary(site.latitude, site.longitude).catch(() => null);
     if (weatherSummary) ctx += `\n\nMeteo cantiere:\n${weatherSummary}`;
+  }
+
+  // ── Template documenti disponibili ──
+  const templates = await getTemplateIndex(companyId, 15).catch(() => []);
+  if (templates.length > 0) {
+    ctx += `\n\nDocumenti di riferimento caricati (${templates.length}) — usa cerca_template_documento per il contenuto:`;
+    templates.forEach(t => {
+      const d = new Date(t.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      ctx += `\n- [${t.id.slice(0, 8)}] ${t.original_filename} (${t.document_type}) — ${d}`;
+    });
   }
 
   // ── Lavoratori ──

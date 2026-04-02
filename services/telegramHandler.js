@@ -35,6 +35,7 @@ const supabase       = require('../lib/supabase');
 const sharp          = require('sharp');
 const { notifyNonConformita, notifyIncidente, notifyCompany } = require('./telegramNotifications');
 const { isOwner, handleOwnerMessage, handleOwnerCallback } = require('./telegramOwner');
+const { processLadiaPdf } = require('./ladiaDocumentProcessor');
 
 // ── Tastiere persistenti ──────────────────────────────────────
 
@@ -203,8 +204,11 @@ async function handleMessage(msg, tuUser, tuCoord) {
   if (text.startsWith('/sal ') || text === '/sal')   return handleSalCommand(msg, tuUser);
   if (text.startsWith('/ladia'))     return handleLadiaCommand(msg, tuUser);
 
-  // ── Ladia mode: testo libero → Ladia (i media restano come note) ──
+  // ── Ladia mode: testo → Ladia; PDF → elabora come template ──
   if (tuUser.ladia_mode && text) return handleLadiaMessage(msg, tuUser);
+  if (tuUser.ladia_mode && msg.document && msg.document.mime_type === 'application/pdf') {
+    return handleLadiaPdf(msg, tuUser);
+  }
 
   // ── Media ────────────────────────────────────────────────
   if (msg.photo)    return handlePhoto(msg, tuUser);
@@ -1226,6 +1230,102 @@ async function handleLadiaText(chatId, tuUser, question) {
     console.error('[handleLadiaText] error:', err.message);
     await sendLadia(chatId,
       `❌ Non riesco a rispondere in questo momento.\n\nRiprova tra qualche secondo.`
+    );
+  }
+}
+
+/**
+ * Gestione PDF inviato in modalità Ladia.
+ * Scarica il PDF, lo invia a Claude per analisi, salva come template di riferimento.
+ */
+async function handleLadiaPdf(msg, tuUser) {
+  const chatId   = msg.chat.id;
+  const doc      = msg.document;
+  const filename = doc.file_name || 'documento.pdf';
+  const caption  = msg.caption || '';
+
+  // Limite dimensione: Telegram permette 20MB max per bot
+  const MAX_PDF_MB = 20;
+  if (doc.file_size && doc.file_size > MAX_PDF_MB * 1024 * 1024) {
+    return sendLadia(chatId,
+      `❌ PDF troppo grande (${Math.round(doc.file_size / 1_000_000)}MB).\n\nLimite: ${MAX_PDF_MB}MB.`
+    );
+  }
+
+  await tg.sendMessage(chatId,
+    `📄 Ricevuto <b>${filename}</b>.\n🔍 Sto leggendo e analizzando il documento…`
+  );
+  tg.sendChatAction(chatId, 'upload_document').catch(() => {});
+
+  try {
+    // Download da Telegram
+    const fileInfo = await tg.getFile(doc.file_id);
+    const buffer   = await tg.downloadFile(fileInfo.file_path);
+
+    // Processa con Claude (analisi + storage + DB)
+    const template = await processLadiaPdf(
+      buffer,
+      tuUser.company_id,
+      chatId,
+      filename
+    );
+
+    // Prepara risposta con riassunto
+    const typeLabel = {
+      contratto: 'Contratto', capitolato: 'Capitolato', POS: 'POS',
+      PSC: 'PSC', computo: 'Computo metrico', fattura: 'Fattura',
+      verbale: 'Verbale', preventivo: 'Preventivo', lettera: 'Lettera',
+      relazione: 'Relazione', altro: 'Documento',
+    }[template.document_type] || 'Documento';
+
+    const sectionsPreview = template.key_sections?.length
+      ? `\n\n<b>Sezioni chiave trovate (${template.key_sections.length}):</b>\n` +
+        template.key_sections.slice(0, 5).map(s => `• ${s.titolo}`).join('\n')
+      : '';
+
+    const captionNote = caption
+      ? `\n\n💬 Nota: "${caption}"`
+      : '';
+
+    const reply =
+      `✅ <b>${typeLabel} archiviato nell'archivio Ladia.</b>\n\n` +
+      `📄 <b>${filename}</b>\n\n` +
+      `${template.summary}` +
+      sectionsPreview +
+      captionNote +
+      `\n\n<i>Ora puoi chiedermi di redigere documenti simili, adattarlo o estrarne sezioni specifiche.</i>`;
+
+    await sendLadia(chatId, reply);
+
+    // Informa Ladia del documento appena caricato (contestualizza la conversazione)
+    const followUp = caption
+      ? `Ho appena caricato un ${template.document_type}: "${filename}". ${caption}. Cosa devo farne?`
+      : `Ho appena caricato un ${template.document_type}: "${filename}". Cosa puoi farci?`;
+
+    // Trigger conversazione Ladia sul documento (dopo 1s per non sovrapporre)
+    setTimeout(async () => {
+      try {
+        const ladiaReply = await askLadia(
+          tuUser,
+          tuUser.active_site_id,
+          '', // siteName non critico qui
+          followUp
+        );
+        await sendLadia(chatId, ladiaReply);
+      } catch {
+        // Se Ladia non ha un cantiere attivo, non fa nulla — non è bloccante
+      }
+    }, 1200);
+
+  } catch (err) {
+    console.error('[handleLadiaPdf] error:', err.message);
+
+    // Distingui errori Anthropic da altri
+    const isApiErr = err.message.includes('Anthropic') || err.message.includes('Claude');
+    await sendLadia(chatId,
+      isApiErr
+        ? `❌ Errore nell'analisi del PDF.\n\nIl documento potrebbe essere protetto da password, scansionato come immagine (testo non estraibile) o danneggiato.\n\nProva con un PDF con testo selezionabile.`
+        : `❌ Errore nel processare il documento: ${err.message}`
     );
   }
 }

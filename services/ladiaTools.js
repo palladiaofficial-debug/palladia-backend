@@ -12,7 +12,8 @@
  */
 
 const supabase = require('../lib/supabase');
-const { getForecast } = require('./weatherService');
+const { getForecast }    = require('./weatherService');
+const { searchTemplates, getTemplateContent } = require('./ladiaDocumentProcessor');
 
 // ── Definizioni tool (formato Anthropic) ────────────────────────
 
@@ -85,10 +86,38 @@ const LADIA_TOOL_DEFINITIONS = [
         categoria: {
           type: 'string',
           enum: ['nota', 'presenza', 'incidente', 'verbale', 'documento', 'altro'],
-          description: 'Categoria della nota: "nota" per aggiornamenti generali, "presenza" per presenze, "incidente" per incidenti, "verbale" per verbali, "documento" per documenti, "altro" per tutto il resto. Default: nota',
+          description: 'Categoria della nota. Default: nota',
         },
       },
       required: ['testo'],
+    },
+  },
+  {
+    name: 'cerca_template_documento',
+    description:
+      'Cerca tra i documenti PDF caricati dall\'impresa (contratti, capitolati, POS, preventivi, ecc.). ' +
+      'Usalo quando l\'utente chiede di "scrivere un contratto come quello caricato", ' +
+      '"redigere un documento simile", "basati sul nostro capitolato" o qualsiasi richiesta ' +
+      'che richiede di replicare/adattare un documento già in archivio. ' +
+      'Restituisce il testo e le sezioni chiave del documento trovato.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        tipo: {
+          type: 'string',
+          enum: ['contratto', 'capitolato', 'POS', 'PSC', 'computo', 'fattura',
+                 'verbale', 'preventivo', 'lettera', 'relazione', 'altro', 'tutti'],
+          description: 'Tipo di documento da cercare. Usa "tutti" per cercare in tutti i tipi.',
+        },
+        query: {
+          type: 'string',
+          description: 'Parola chiave per cercare per contenuto o nome file (opzionale)',
+        },
+        template_id: {
+          type: 'string',
+          description: 'ID specifico del template da leggere (opzionale — usa se l\'utente ha già indicato quale documento)',
+        },
+      },
     },
   },
 ];
@@ -109,8 +138,9 @@ async function executeTool(toolName, input, ctx) {
       case 'lista_nc_aperte':      return await toolListaNc(ctx.companyId, ctx.siteId, input.urgenza || 'tutte');
       case 'stato_cantiere':       return await toolStatoCantiere(ctx.companyId, ctx.siteId);
       case 'crea_non_conformita':  return await toolCreaNc(ctx, input.descrizione, input.urgenza);
-      case 'aggiungi_nota':        return await toolAggiungiNota(ctx, input.testo, input.categoria || 'nota');
-      default:                     return `Tool "${toolName}" non riconosciuto.`;
+      case 'aggiungi_nota':            return await toolAggiungiNota(ctx, input.testo, input.categoria || 'nota');
+      case 'cerca_template_documento': return await toolCercaTemplate(ctx.companyId, input.tipo, input.query, input.template_id);
+      default:                         return `Tool "${toolName}" non riconosciuto.`;
     }
   } catch (err) {
     console.error(`[ladiaTools] ${toolName} error:`, err.message);
@@ -290,6 +320,56 @@ async function toolAggiungiNota(ctx, testo, categoria) {
 
   if (error) return `Errore nel salvare la nota: ${error.message}`;
   return `✅ Nota salvata nel diario del cantiere.`;
+}
+
+async function toolCercaTemplate(companyId, tipo, query, templateId) {
+  // Se viene fornito un ID specifico, carica il documento completo
+  if (templateId) {
+    const t = await getTemplateContent(companyId, templateId);
+    if (!t) return `Nessun documento trovato con ID ${templateId}.`;
+
+    let result = `📄 <b>${t.original_filename}</b> (${t.document_type})\n`;
+    result += `Caricato: ${new Date(t.created_at).toLocaleDateString('it-IT')}\n\n`;
+    result += `<b>Riassunto:</b> ${t.summary}\n\n`;
+
+    if (t.key_sections?.length) {
+      result += `<b>Sezioni chiave (${t.key_sections.length}):</b>\n`;
+      t.key_sections.slice(0, 8).forEach(s => {
+        result += `\n• <b>${s.titolo}</b>\n${(s.contenuto || '').slice(0, 400)}`;
+      });
+    }
+
+    if (t.extracted_text) {
+      result += `\n\n<b>Testo principale:</b>\n${t.extracted_text.slice(0, 8000)}`;
+    }
+
+    return result;
+  }
+
+  // Ricerca per tipo e/o query
+  const templates = await searchTemplates(companyId, tipo || 'tutti', query);
+
+  if (!templates.length) {
+    const msg = tipo && tipo !== 'tutti'
+      ? `Nessun documento di tipo "${tipo}" trovato.`
+      : `Nessun documento in archivio.`;
+    return msg + ` Invia un PDF a Ladia per caricarne uno.`;
+  }
+
+  // Se trovato uno solo → carica subito il contenuto completo
+  if (templates.length === 1) {
+    return toolCercaTemplate(companyId, null, null, templates[0].id);
+  }
+
+  // Più risultati → mostra lista e suggerisci di specificare
+  let result = `Trovati ${templates.length} documenti:\n`;
+  templates.forEach((t, i) => {
+    const d = new Date(t.created_at).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    result += `\n${i + 1}. <b>${t.original_filename}</b> (${t.document_type}) — ${d}\n   ${(t.summary || '').slice(0, 120)}`;
+  });
+  result += `\n\nSpecifica quale vuoi usare o richiedi per tipo (es. "usa il primo").`;
+
+  return result;
 }
 
 module.exports = { LADIA_TOOL_DEFINITIONS, executeTool };
