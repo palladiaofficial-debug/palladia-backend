@@ -5,6 +5,7 @@
  * Briefing mattutino: ogni giorno alle 07:30 (Europe/Rome).
  * Invia via Telegram solo le cose che richiedono attenzione reale oggi:
  *
+ *   ☀️/🌧️ Meteo dei cantieri attivi (se GPS disponibile)
  *   🚨 NC critiche aperte (azione immediata)
  *   ⚠️  NC alte aperte (da gestire)
  *   🔴  Documenti lavoratori scaduti o in scadenza ≤14gg
@@ -19,6 +20,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { notifyCompany } = require('./telegramNotifications');
+const { getForecast }   = require('./weatherService');
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -46,9 +48,9 @@ async function buildCompanyBriefing(companyId) {
 
   // Query parallele
   const [sitesRes, ncsRes, vociRes, expiringRes, worksiteRes] = await Promise.all([
-    // Cantieri attivi
+    // Cantieri attivi (incluse coordinate per meteo)
     supabase.from('sites')
-      .select('id, name, address, budget_totale, sal_percentuale')
+      .select('id, name, address, budget_totale, sal_percentuale, latitude, longitude')
       .eq('company_id', companyId)
       .neq('status', 'chiuso')
       .limit(30),
@@ -120,9 +122,25 @@ async function buildCompanyBriefing(companyId) {
     expiringBySite[ww.site_id].push(expiringMap.get(ww.worker_id));
   }
 
+  // ── Meteo per cantieri con GPS (in parallelo) ──
+  const weatherBySite = {};
+  await Promise.all(
+    sites
+      .filter(s => s.latitude && s.longitude)
+      .map(async s => {
+        try {
+          const forecast = await getForecast(s.latitude, s.longitude);
+          weatherBySite[s.id] = forecast;
+        } catch {
+          // meteo non disponibile per questo cantiere — continua senza
+        }
+      })
+  );
+
   // ── Costruisce le sezioni del messaggio ──
   const critical = []; // 🚨 cose urgenti oggi
   const warnings = []; // ⚠️ attenzione nelle prossime ore
+  const meteoLines = []; // 🌤️ meteo cantieri
 
   for (const site of sites) {
     const name     = site.name || site.address || 'Cantiere';
@@ -132,6 +150,7 @@ async function buildCompanyBriefing(companyId) {
     const sal      = Number(site.sal_percentuale || 0);
     const budget   = Number(site.budget_totale || 0);
     const workers  = expiringBySite[site.id] || [];
+    const forecast = weatherBySite[site.id];
 
     const siteCrit = [];
     const siteWarn = [];
@@ -170,17 +189,31 @@ async function buildCompanyBriefing(companyId) {
       }
     }
 
+    // Meteo oggi + domani (solo se GPS disponibile)
+    if (forecast?.length >= 2) {
+      const today    = forecast[0];
+      const tomorrow = forecast[1];
+      const icons    = [];
+      if (today.isRainy || today.precipProb >= 40)    icons.push(`oggi ${today.description} (${today.precipProb}%)`);
+      if (tomorrow.isRainy || tomorrow.precipProb >= 40) icons.push(`domani ${tomorrow.description} (${tomorrow.precipProb}%)`);
+      if (icons.length) {
+        meteoLines.push(`🌧️ <b>${name}</b>: ${icons.join(', ')}`);
+      } else if (today.tempMax !== null) {
+        meteoLines.push(`☀️ <b>${name}</b>: ${today.description} (${today.tempMin}–${today.tempMax}°C)`);
+      }
+    }
+
     if (siteCrit.length) critical.push({ name, lines: siteCrit });
     if (siteWarn.length) warnings.push({ name, lines: siteWarn });
   }
 
-  return { critical, warnings };
+  return { critical, warnings, meteoLines };
 }
 
 // ── Formattazione messaggio ────────────────────────────────────
 
 function buildMessage(briefing) {
-  const { critical, warnings } = briefing;
+  const { critical, warnings, meteoLines } = briefing;
 
   const todayIt = new Date().toLocaleDateString('it-IT', {
     timeZone: 'Europe/Rome',
@@ -189,17 +222,23 @@ function buildMessage(briefing) {
   const dayLabel = todayIt.charAt(0).toUpperCase() + todayIt.slice(1);
 
   if (!critical.length && !warnings.length) {
-    return (
-      `☀️ <b>Buongiorno! ${dayLabel}.</b>\n\n` +
-      `✅ Nessuna criticità aperta sui cantieri.\n` +
-      `Buona giornata! 👷‍♂️`
-    );
+    let msg = `☀️ <b>Buongiorno! ${dayLabel}.</b>\n\n` +
+              `✅ Nessuna criticità aperta sui cantieri.\n` +
+              `Buona giornata! 👷‍♂️`;
+    if (meteoLines?.length) {
+      msg += `\n\n🌤️ <b>Meteo cantieri:</b>\n` + meteoLines.join('\n');
+    }
+    return msg;
   }
 
   let msg = `☀️ <b>Buongiorno! ${dayLabel}.</b>\n`;
 
+  if (meteoLines?.length) {
+    msg += `\n🌤️ <b>Meteo:</b>\n` + meteoLines.join('\n');
+  }
+
   if (critical.length) {
-    msg += `\nRichiede attenzione <b>oggi</b>:\n`;
+    msg += `\n\nRichiede attenzione <b>oggi</b>:\n`;
     for (const { name, lines } of critical) {
       msg += `\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
     }
