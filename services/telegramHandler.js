@@ -147,8 +147,7 @@ async function handleUpdate(update) {
 
 async function handleMessage(msg, tuUser, tuCoord) {
   const chatId = msg.chat.id;
-  // Rimuove variation selectors emoji (U+FE0F/U+FE0E) che Telegram aggiunge ai bottoni
-  const text   = (msg.text || '').replace(/[\uFE0E\uFE0F]/g, '');
+  const text   = msg.text || '';
 
   // Comando /start (anche senza essere collegati)
   if (text.startsWith('/start')) {
@@ -1549,8 +1548,7 @@ async function saveCoordinatorNote(tuCoord, siteCtx, noteType, content) {
 
 async function handleCoordinatorMessage(msg, tuCoord) {
   const chatId = msg.chat.id;
-  // Rimuove variation selectors emoji (U+FE0F/U+FE0E) che Telegram aggiunge ai bottoni
-  const text   = (msg.text || '').replace(/[\uFE0E\uFE0F]/g, '');
+  const text   = msg.text || '';
 
   // Aggiorna last_active_at
   supabase.from('telegram_coordinator_links')
