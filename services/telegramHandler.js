@@ -29,24 +29,39 @@
 
 const tg             = require('./telegram');
 const { classifyMessage } = require('./telegramAI');
+const { askLadia, askLadiaCoordinator, resetLadiaHistory, coordUserId } = require('./telegramLadia');
 const { logEvent }   = require('./telegramLog');
 const supabase       = require('../lib/supabase');
 const sharp          = require('sharp');
-const { notifyNonConformita, notifyIncidente } = require('./telegramNotifications');
+const { notifyNonConformita, notifyIncidente, notifyCompany } = require('./telegramNotifications');
 const { isOwner, handleOwnerMessage, handleOwnerCallback } = require('./telegramOwner');
 
-// ── Tastiera persistente principale ──────────────────────────
+// ── Tastiere persistenti ──────────────────────────────────────
 
 const MAIN_KEYBOARD = tg.buildReplyKeyboard([
   ['📍 Cantieri', '📋 Note recenti'],
   ['✅ OK',       '⚠️ Problema'],
   ['📊 Stato',    '❓ Aiuto'],
+  ['🤖 Ladia'],
+]);
+
+// Tastiera modalità Ladia — testo libero va a Ladia, non al bot
+const LADIA_KEYBOARD = tg.buildReplyKeyboard([
+  ['⬅️ Menu', '🔄 Reset chat'],
 ]);
 
 const COORDINATOR_KEYBOARD = tg.buildReplyKeyboard([
   ['📍 Cantieri', '📊 Stato'],
-  ['❓ Aiuto'],
+  ['🤖 Ladia',    '❓ Aiuto'],
 ]);
+
+// Tastiera Ladia per coordinatori
+const COORDINATOR_LADIA_KEYBOARD = tg.buildReplyKeyboard([
+  ['⬅️ Menu', '🔄 Reset chat'],
+]);
+
+// ladia_mode coordinatori: in-memory (sufficiente — si ripristina con 1 tap)
+const coordLadiaMode = new Map(); // chatId → bool
 
 /** URL frontend webapp (per i link "Vedi su Palladia") */
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://palladia.net';
@@ -54,6 +69,11 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'https://palladia.net';
 /** Invia un messaggio mantenendo la reply keyboard principale */
 function sendMain(chatId, text) {
   return tg.sendMessage(chatId, text, { replyMarkup: MAIN_KEYBOARD });
+}
+
+/** Invia un messaggio mantenendo la reply keyboard di Ladia */
+function sendLadia(chatId, text) {
+  return tg.sendMessage(chatId, text, { replyMarkup: LADIA_KEYBOARD });
 }
 
 /**
@@ -86,8 +106,8 @@ async function handleUpdate(update) {
       const msg    = update.message;
       const chatId = msg.chat.id;
 
-      // Owner panel — ha la precedenza assoluta su qualsiasi altro routing
-      if (isOwner(chatId)) {
+      // Owner panel — accessibile SOLO via /panel; tutto il resto passa al routing normale
+      if (isOwner(chatId) && (msg.text || '').trim() === '/panel') {
         await handleOwnerMessage(msg);
         return;
       }
@@ -127,7 +147,8 @@ async function handleUpdate(update) {
 
 async function handleMessage(msg, tuUser, tuCoord) {
   const chatId = msg.chat.id;
-  const text   = msg.text || '';
+  // Rimuove variation selectors emoji (U+FE0F/U+FE0E) che Telegram aggiunge ai bottoni
+  const text   = (msg.text || '').replace(/[\uFE0E\uFE0F]/g, '');
 
   // Comando /start (anche senza essere collegati)
   if (text.startsWith('/start')) {
@@ -164,7 +185,12 @@ async function handleMessage(msg, tuUser, tuCoord) {
   if (text === '✅ OK')           return handleOkCommand(msg, tuUser);
   if (text === '⚠️ Problema')    return handleProblemaCommand(msg, tuUser);
 
-  // ── Comandi slash (compatibilità) ────────────────────────
+  // ── Bottoni Ladia ────────────────────────────────────────
+  if (text === '🤖 Ladia')       return handleLadiaButton(chatId, tuUser);
+  if (text === '⬅️ Menu')        return handleLadiaExit(chatId, tuUser);
+  if (text === '🔄 Reset chat')  return handleLadiaReset(chatId, tuUser);
+
+  // ── Comandi slash ────────────────────────────────────────
   if (text.startsWith('/cantiere'))  return showSiteSelector(chatId, tuUser);
   if (text.startsWith('/note'))      return showRecentNotes(chatId, tuUser, text);
   if (text.startsWith('/stato'))     return showStatus(chatId, tuUser);
@@ -176,6 +202,10 @@ async function handleMessage(msg, tuUser, tuCoord) {
   if (text.startsWith('/costo'))     return handleCostoCommand(msg, tuUser);
   if (text.startsWith('/ricavo'))    return handleRicavoCommand(msg, tuUser);
   if (text.startsWith('/sal ') || text === '/sal')   return handleSalCommand(msg, tuUser);
+  if (text.startsWith('/ladia'))     return handleLadiaCommand(msg, tuUser);
+
+  // ── Ladia mode: testo libero → Ladia (i media restano come note) ──
+  if (tuUser.ladia_mode && text) return handleLadiaMessage(msg, tuUser);
 
   // ── Media ────────────────────────────────────────────────
   if (msg.photo)    return handlePhoto(msg, tuUser);
@@ -398,8 +428,9 @@ async function setActiveSite(chatId, tuUser, siteId, callbackQueryId) {
     return;
   }
 
+  // Cambia cantiere e torna al menu normale (esce da ladia_mode se attivo)
   await supabase.from('telegram_users')
-    .update({ active_site_id: siteId })
+    .update({ active_site_id: siteId, ladia_mode: false })
     .eq('id', tuUser.id);
 
   const siteName = site.name || site.address || 'Cantiere';
@@ -1115,8 +1146,89 @@ async function showHelp(chatId) {
     `<code>/sal 65</code> — aggiorna avanzamento lavori al 65%\n\n` +
     `<b>Stato:</b>\n` +
     `<code>/stato</code> → riepilogo cantiere attivo + economia\n` +
-    `<code>/note [n]</code> → ultime n note del cantiere`
+    `<code>/note [n]</code> → ultime n note del cantiere\n\n` +
+    `<b>🤖 Assistente AI Ladia:</b>\n` +
+    `Premi <b>🤖 Ladia</b> per attivare l'assistente AI contestuale.\n` +
+    `Conosce tutto del tuo cantiere e risponde a domande tecniche,\n` +
+    `organizzative e gestionali. Solo su richiesta, non invadente.\n` +
+    `<code>/ladia [domanda]</code> — chiedi direttamente`
   );
+}
+
+// ── Ladia — assistente AI contestuale ───────────────────────
+
+async function handleLadiaButton(chatId, tuUser) {
+  // Attiva modalità Ladia
+  await supabase.from('telegram_users').update({ ladia_mode: true }).eq('id', tuUser.id);
+
+  if (!tuUser.active_site_id) {
+    return sendLadia(chatId,
+      `🤖 <b>Ciao! Sono Ladia, la tua assistente di cantiere.</b>\n\n` +
+      `Prima seleziona un <b>cantiere attivo</b> per darmi il contesto giusto.\n\n` +
+      `Torna al <b>⬅️ Menu</b> e usa 📍 Cantieri.`
+    );
+  }
+
+  await sendLadia(chatId,
+    `🤖 <b>Ciao! Sono Ladia.</b>\n\n` +
+    `Conosco tutto del tuo cantiere: lavoratori, note, economia, avanzamento.\n\n` +
+    `Chiedimi qualsiasi cosa:\n` +
+    `<i>"Hai già organizzato i preventivi con i subappaltatori?"</i>\n` +
+    `<i>"Che stratigrafia consigli per la pavimentazione?"</i>\n` +
+    `<i>"Cosa manca per chiudere il SAL?"</i>\n` +
+    `<i>"Quali DPI servono per questa fase?"</i>\n\n` +
+    `Scrivi pure — leggo tutto il contesto del cantiere prima di risponderti.\n` +
+    `Premi <b>⬅️ Menu</b> per tornare al bot normale.`
+  );
+}
+
+async function handleLadiaExit(chatId, tuUser) {
+  await supabase.from('telegram_users').update({ ladia_mode: false }).eq('id', tuUser.id);
+  await sendMain(chatId, `✅ Tornato al bot normale.`);
+}
+
+async function handleLadiaReset(chatId, tuUser) {
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  await resetLadiaHistory(tuUser.company_id, tuUser.user_id, siteCtx.siteId);
+  await sendLadia(chatId, `🔄 Conversazione azzerata. Riniziamo da capo!`);
+}
+
+async function handleLadiaCommand(msg, tuUser) {
+  const chatId   = msg.chat.id;
+  const question = (msg.text || '').replace(/^\/ladia\s*/i, '').trim();
+
+  if (!question) {
+    // Solo /ladia → attiva la modalità
+    return handleLadiaButton(chatId, tuUser);
+  }
+
+  // /ladia [domanda] → attiva la modalità e risponde subito
+  await supabase.from('telegram_users').update({ ladia_mode: true }).eq('id', tuUser.id);
+  return handleLadiaText(chatId, tuUser, question);
+}
+
+async function handleLadiaMessage(msg, tuUser) {
+  return handleLadiaText(msg.chat.id, tuUser, msg.text);
+}
+
+async function handleLadiaText(chatId, tuUser, question) {
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  // Typing indicator (best-effort)
+  tg.sendChatAction(chatId, 'typing').catch(() => {});
+
+  try {
+    const reply = await askLadia(tuUser, siteCtx.siteId, siteCtx.siteName, question);
+    await sendLadia(chatId, reply);
+  } catch (err) {
+    console.error('[handleLadiaText] error:', err.message);
+    await sendLadia(chatId,
+      `❌ Non riesco a rispondere in questo momento.\n\nRiprova tra qualche secondo.`
+    );
+  }
 }
 
 async function sendNotLinked(chatId) {
@@ -1330,7 +1442,7 @@ async function linkCoordinatorAccount(chatId, chat, code) {
 
 async function showCoordinatorSiteSelector(chatId, tuCoord) {
   const { data: invites } = await supabase
-    .from('coordinator_invites')
+    .from('site_coordinator_invites')
     .select('site_id, sites(id, name, address, status)')
     .eq('coordinator_email', tuCoord.email)
     .eq('is_active', true)
@@ -1362,7 +1474,7 @@ async function showCoordinatorSiteSelector(chatId, tuCoord) {
 
 async function setCoordinatorActiveSite(chatId, tuCoord, siteId, callbackQueryId) {
   const { data: invite } = await supabase
-    .from('coordinator_invites')
+    .from('site_coordinator_invites')
     .select('id, sites(name)')
     .eq('coordinator_email', tuCoord.email)
     .eq('site_id', siteId)
@@ -1400,7 +1512,7 @@ async function requireCoordinatorActiveSite(chatId, tuCoord) {
   }
 
   const { data: invite } = await supabase
-    .from('coordinator_invites')
+    .from('site_coordinator_invites')
     .select('id, sites(id, name)')
     .eq('coordinator_email', tuCoord.email)
     .eq('site_id', tuCoord.active_site_id)
@@ -1437,7 +1549,8 @@ async function saveCoordinatorNote(tuCoord, siteCtx, noteType, content) {
 
 async function handleCoordinatorMessage(msg, tuCoord) {
   const chatId = msg.chat.id;
-  const text   = msg.text || '';
+  // Rimuove variation selectors emoji (U+FE0F/U+FE0E) che Telegram aggiunge ai bottoni
+  const text   = (msg.text || '').replace(/[\uFE0E\uFE0F]/g, '');
 
   // Aggiorna last_active_at
   supabase.from('telegram_coordinator_links')
@@ -1445,34 +1558,49 @@ async function handleCoordinatorMessage(msg, tuCoord) {
     .eq('telegram_chat_id', chatId)
     .then(() => {});
 
-  // Comandi
+  // ── Navigazione ──────────────────────────────────────────
   if (text === '📍 Cantieri' || text.startsWith('/cantiere')) {
+    coordLadiaMode.set(chatId, false); // esci da Ladia al cambio cantiere
     return showCoordinatorSiteSelector(chatId, tuCoord);
   }
+
   if (text === '📊 Stato' || text.startsWith('/stato')) {
     const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
     if (!siteCtx) return;
     return tg.sendMessage(chatId,
       `📊 <b>Cantiere attivo:</b> ${siteCtx.siteName}\n` +
-      `Usa i bottoni o invia note, /nc, foto, vocali.`
-    );
-  }
-  if (text === '❓ Aiuto' || text.startsWith('/aiuto') || text === '/help') {
-    return tg.sendMessage(chatId,
-      `<b>Palladia Pro — Comandi coordinatore</b>\n\n` +
-      `<b>/nc testo</b> — segnala non conformità (urgenza alta)\n` +
-      `<b>/cantiere</b> — cambia cantiere attivo\n` +
-      `<b>Testo libero</b> → nota al cantiere\n` +
-      `<b>Foto</b> → documentazione fotografica\n` +
-      `<b>🎙️ Vocale</b> → trascritto e classificato\n\n` +
-      `Vedi tutti i tuoi cantieri su <b>palladia.net/pro</b>`,
+      `Usa i bottoni o invia note, /nc, foto, vocali.`,
       { replyMarkup: COORDINATOR_KEYBOARD }
     );
   }
 
-  // /nc → non conformità urgente
+  if (text === '❓ Aiuto' || text.startsWith('/aiuto') || text === '/help') {
+    return tg.sendMessage(chatId,
+      `<b>Palladia Pro — Guida coordinatore</b>\n\n` +
+      `<b>Dal cantiere:</b>\n` +
+      `📷 Foto → documentazione fotografica\n` +
+      `🎙️ Vocale → trascritto e salvato\n` +
+      `📝 Testo libero → nota classificata\n\n` +
+      `<b>Sicurezza:</b>\n` +
+      `<code>/nc testo</code> — non conformità (notifica impresa)\n\n` +
+      `<b>🤖 Ladia (AI sicurezza):</b>\n` +
+      `Premi <b>🤖 Ladia</b> — ti aiuta su D.Lgs. 81, DPI,\n` +
+      `PSC/POS, formazione, visite ispettive e molto altro.\n` +
+      `<code>/ladia domanda</code> — chiedi direttamente\n\n` +
+      `Vedi tutto su <b>palladia.net/pro</b>`,
+      { replyMarkup: COORDINATOR_KEYBOARD }
+    );
+  }
+
+  // ── Ladia ───────────────────────────────────────────────
+  if (text === '🤖 Ladia') return handleCoordLadiaButton(chatId, tuCoord);
+  if (text === '⬅️ Menu')   return handleCoordLadiaExit(chatId, tuCoord);
+  if (text === '🔄 Reset chat') return handleCoordLadiaReset(chatId, tuCoord);
+  if (text.startsWith('/ladia')) return handleCoordLadiaCommand(msg, tuCoord);
+
+  // ── Non Conformità ───────────────────────────────────────
   if (text.startsWith('/nc ') || text === '/nc') {
-    const ncText = text.startsWith('/nc ') ? text.slice(4).trim() : '';
+    const ncText  = text.startsWith('/nc ') ? text.slice(4).trim() : '';
     const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
     if (!siteCtx) return;
 
@@ -1484,11 +1612,26 @@ async function handleCoordinatorMessage(msg, tuCoord) {
 
     await saveCoordinatorNote(tuCoord, siteCtx, 'warning', `⚠️ NC: ${ncText}`);
 
+    // Notifica l'impresa — recupera company_id dal cantiere
+    const { data: siteData } = await supabase
+      .from('sites').select('company_id').eq('id', siteCtx.siteId).maybeSingle();
+
+    if (siteData?.company_id) {
+      const coordName = tuCoord.telegram_name || tuCoord.telegram_username || 'Coordinatore';
+      notifyCompany(siteData.company_id,
+        `🚨 <b>NC dal coordinatore</b>\n\n` +
+        `📍 <b>${siteCtx.siteName}</b>\n` +
+        `📝 ${ncText}\n` +
+        `👤 ${coordName}`,
+        { excludeChatId: null }
+      ).catch(() => {});
+    }
+
     return tg.sendMessage(chatId,
       `🚨 <b>Non conformità registrata</b>\n\n` +
       `📍 ${siteCtx.siteName}\n` +
       `📝 ${ncText}\n\n` +
-      `L'impresa riceverà una notifica.`,
+      `✅ Impresa notificata.`,
       { replyMarkup: tg.buildInlineKeyboard([
         { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/pro` },
         { text: '📸 Aggiungi foto', callbackData: 'cmd:prompt_photo' },
@@ -1496,29 +1639,106 @@ async function handleCoordinatorMessage(msg, tuCoord) {
     );
   }
 
-  // Foto
-  if (msg.photo) return handleCoordinatorPhoto(msg, tuCoord);
+  // ── Ladia mode: testo libero → Ladia ────────────────────
+  if (coordLadiaMode.get(chatId) && text) {
+    return handleCoordLadiaMessage(msg, tuCoord);
+  }
 
-  // Vocale
+  // ── Media ────────────────────────────────────────────────
+  if (msg.photo) return handleCoordinatorPhoto(msg, tuCoord);
   if (msg.voice) return handleCoordinatorVoice(msg, tuCoord);
 
-  // Testo libero → classificato e salvato come nota
+  // ── Testo libero → nota classificata ────────────────────
   if (text) {
     const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
     if (!siteCtx) return;
 
-    const ai = await classifyMessage(text, siteCtx.siteName);
+    const ai       = await classifyMessage(text, siteCtx.siteName);
     const noteType = ['non_conformita', 'incidente'].includes(ai.category) ? 'warning' : 'observation';
 
     await saveCoordinatorNote(tuCoord, siteCtx, noteType, text);
 
     const icon = CATEGORY_ICONS[ai.category] || '📝';
     return tg.sendMessage(chatId,
-      `${icon} <b>${CATEGORY_LABELS[ai.category] || 'Nota'}</b> salvata\n` +
-      `📍 ${siteCtx.siteName}`,
+      `${icon} <b>${CATEGORY_LABELS[ai.category] || 'Nota'}</b> salvata\n📍 ${siteCtx.siteName}`,
       { replyMarkup: tg.buildInlineKeyboard([
         { text: '👁 Vedi su Palladia', url: `${FRONTEND_URL}/pro` },
       ], 1) }
+    );
+  }
+}
+
+// ── Ladia per coordinatori ────────────────────────────────────
+
+async function handleCoordLadiaButton(chatId, tuCoord) {
+  coordLadiaMode.set(chatId, true);
+
+  if (!tuCoord.active_site_id) {
+    return tg.sendMessage(chatId,
+      `🤖 <b>Ciao! Sono Ladia, esperta di sicurezza cantieri.</b>\n\n` +
+      `Prima seleziona un cantiere attivo con 📍 Cantieri.`,
+      { replyMarkup: COORDINATOR_LADIA_KEYBOARD }
+    );
+  }
+
+  return tg.sendMessage(chatId,
+    `🤖 <b>Ciao! Sono Ladia, la tua consulente di sicurezza.</b>\n\n` +
+    `Conosco i lavoratori del cantiere e le loro scadenze.\n\n` +
+    `Chiedimi qualsiasi cosa su:\n` +
+    `<i>"Quali DPI servono per lavori in quota oggi?"</i>\n` +
+    `<i>"Il PSC va aggiornato se cambia la fase?"</i>\n` +
+    `<i>"Mario Rossi ha la formazione a norma?"</i>\n` +
+    `<i>"Cosa devo verbalizzare dopo la visita ASL?"</i>\n\n` +
+    `Premi <b>⬅️ Menu</b> per tornare al bot normale.`,
+    { replyMarkup: COORDINATOR_LADIA_KEYBOARD }
+  );
+}
+
+async function handleCoordLadiaExit(chatId, tuCoord) {
+  coordLadiaMode.set(chatId, false);
+  return tg.sendMessage(chatId, `✅ Tornato al bot normale.`, { replyMarkup: COORDINATOR_KEYBOARD });
+}
+
+async function handleCoordLadiaReset(chatId, tuCoord) {
+  const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+  if (!siteCtx) return;
+
+  const { data: site } = await supabase.from('sites').select('company_id').eq('id', siteCtx.siteId).maybeSingle();
+  if (site?.company_id) {
+    await resetLadiaHistory(site.company_id, coordUserId(chatId), siteCtx.siteId).catch(() => {});
+  }
+
+  return tg.sendMessage(chatId, `🔄 Conversazione azzerata. Riniziamo!`, { replyMarkup: COORDINATOR_LADIA_KEYBOARD });
+}
+
+async function handleCoordLadiaCommand(msg, tuCoord) {
+  const chatId   = msg.chat.id;
+  const question = (msg.text || '').replace(/^\/ladia\s*/i, '').trim();
+
+  if (!question) return handleCoordLadiaButton(chatId, tuCoord);
+
+  coordLadiaMode.set(chatId, true);
+  return handleCoordLadiaText(chatId, tuCoord, question);
+}
+
+async function handleCoordLadiaMessage(msg, tuCoord) {
+  return handleCoordLadiaText(msg.chat.id, tuCoord, msg.text);
+}
+
+async function handleCoordLadiaText(chatId, tuCoord, question) {
+  const siteCtx = await requireCoordinatorActiveSite(chatId, tuCoord);
+  if (!siteCtx) return;
+
+  tg.sendChatAction(chatId, 'typing').catch(() => {});
+
+  try {
+    const reply = await askLadiaCoordinator(tuCoord, siteCtx.siteId, siteCtx.siteName, question);
+    return tg.sendMessage(chatId, reply, { replyMarkup: COORDINATOR_LADIA_KEYBOARD });
+  } catch (err) {
+    console.error('[handleCoordLadiaText] error:', err.message);
+    return tg.sendMessage(chatId,
+      `❌ Non riesco a rispondere ora. Riprova tra qualche secondo.`,
+      { replyMarkup: COORDINATOR_LADIA_KEYBOARD }
     );
   }
 }

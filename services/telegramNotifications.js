@@ -46,6 +46,49 @@ async function getLinkedChatIds(companyId, excludeChatId = null) {
     .filter(id => id !== excludeChatId);
 }
 
+/**
+ * Recupera i chatId Telegram dei coordinatori collegati a un cantiere specifico.
+ * Usa site_coordinator_invites → email → telegram_coordinator_links.
+ */
+async function getCoordinatorChatIds(siteId, excludeChatId = null) {
+  // Trova le email dei coordinatori invitati e attivi su questo cantiere
+  const { data: invites } = await supabase
+    .from('site_coordinator_invites')
+    .select('coordinator_email')
+    .eq('site_id', siteId)
+    .eq('is_active', true);
+
+  if (!invites?.length) return [];
+
+  const emails = invites.map(i => i.coordinator_email);
+
+  // Trova i chatId Telegram di quei coordinatori
+  const { data: links } = await supabase
+    .from('telegram_coordinator_links')
+    .select('telegram_chat_id')
+    .in('email', emails);
+
+  return (links || [])
+    .map(l => l.telegram_chat_id)
+    .filter(id => id !== excludeChatId);
+}
+
+/**
+ * Invia un messaggio ai coordinatori Telegram collegati a un cantiere.
+ */
+async function notifyCoordinators(siteId, text, { excludeChatId = null } = {}) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return { sent: 0, failed: 0, skipped: true };
+
+  const chatIds = await getCoordinatorChatIds(siteId, excludeChatId);
+  if (!chatIds.length) return { sent: 0, failed: 0 };
+
+  const results = await Promise.allSettled(
+    chatIds.map(chatId => tg.sendMessage(chatId, text))
+  );
+  const failed = results.filter(r => r.status === 'rejected').length;
+  return { sent: chatIds.length - failed, failed };
+}
+
 // ── Broadcast base ────────────────────────────────────────────
 
 /**
@@ -89,20 +132,25 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
     return { sent: 0, skipped: true };
   }
 
+  const urgIcon = urgency === 'critica' ? '🚨' : '⚠️';
   const text =
-    `⚠️ <b>Non Conformità segnalata</b>\n\n` +
+    `${urgIcon} <b>Non Conformità segnalata</b>\n\n` +
     `📍 <b>${siteName}</b>\n` +
     `📝 ${description}` +
-    (authorName ? `\n👤 Segnalata da: ${authorName}` : '');
+    (authorName ? `\n👤 Da: ${authorName}` : '');
 
-  const result = await notifyCompany(companyId, text, { excludeChatId });
+  // Notifica impresa + coordinatori del cantiere in parallelo
+  const [companyResult] = await Promise.all([
+    notifyCompany(companyId, text, { excludeChatId }),
+    notifyCoordinators(siteId, text, { excludeChatId }).catch(() => {}),
+  ]);
 
   // Segna cooldown solo per NC 'alta' (non 'critica')
-  if (urgency !== 'critica' && result.sent > 0) {
+  if (urgency !== 'critica' && companyResult.sent > 0) {
     setNcCooldown(companyId, siteId);
   }
 
-  return result;
+  return companyResult;
 }
 
 /**
@@ -141,6 +189,7 @@ async function sendCustomNotification(companyId, text) {
 
 module.exports = {
   notifyCompany,
+  notifyCoordinators,
   notifyNonConformita,
   notifyIncidente,
   notifyMissingExits,

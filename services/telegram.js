@@ -146,6 +146,14 @@ async function getWebhookInfo() {
 }
 
 /**
+ * Invia un'azione "typing…" o simile nella chat.
+ * action: 'typing' | 'upload_photo' | 'upload_document' | ...
+ */
+async function sendChatAction(chatId, action = 'typing') {
+  return tgPost('sendChatAction', { chat_id: chatId, action });
+}
+
+/**
  * Modifica un messaggio già inviato (usato per aggiornare i pannelli owner).
  */
 async function editMessageText(chatId, messageId, text, { parseMode = 'HTML', replyMarkup } = {}) {
@@ -170,6 +178,7 @@ module.exports = {
   sendMessage,
   editMessageText,
   answerCallbackQuery,
+  sendChatAction,
   getFile,
   downloadFile,
   buildInlineKeyboard,

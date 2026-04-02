@@ -154,7 +154,7 @@ router.delete('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
 
   const { userId } = req.params;
 
-  if (userId === req.userId) {
+  if (userId === req.user.id) {
     return res.status(400).json({ error: 'CANNOT_REMOVE_SELF' });
   }
 
@@ -240,6 +240,104 @@ router.patch('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
   res.json({ ok: true, role });
+});
+
+// POST /api/v1/leave-company — l'utente lascia una company (non quella corrente obbligatoriamente)
+// Body: { company_id }  — JWT only, no X-Company-Id obbligatorio
+// Blocca se l'utente è l'unico owner rimasto
+router.post('/leave-company', async (req, res) => {
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const jwt = auth.slice(7);
+
+  const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const userId    = authData.user.id;
+  const companyId = req.body?.company_id;
+  if (!companyId) return res.status(400).json({ error: 'MISSING_COMPANY_ID' });
+
+  // Verifica membership
+  const { data: membership } = await supabase
+    .from('company_users')
+    .select('role')
+    .eq('company_id', companyId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!membership) return res.status(404).json({ error: 'NOT_A_MEMBER' });
+
+  // Se è owner, verifica che non sia l'unico owner
+  if (membership.role === 'owner') {
+    const { data: owners } = await supabase
+      .from('company_users')
+      .select('user_id')
+      .eq('company_id', companyId)
+      .eq('role', 'owner');
+    if (!owners || owners.length <= 1) {
+      return res.status(400).json({ error: 'SOLE_OWNER', message: 'Sei l\'unico proprietario. Trasferisci la proprietà prima di uscire, oppure elimina l\'azienda.' });
+    }
+  }
+
+  const { error } = await supabase
+    .from('company_users')
+    .delete()
+    .eq('company_id', companyId)
+    .eq('user_id', userId);
+
+  if (error) {
+    console.error('[leave-company] error:', error.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+
+  res.json({ ok: true });
+});
+
+// DELETE /api/v1/companies/:companyId — l'owner elimina una sua company vuota
+// JWT only. Blocca se la company ha cantieri attivi.
+router.delete('/companies/:companyId', async (req, res) => {
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const jwt = auth.slice(7);
+
+  const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const userId    = authData.user.id;
+  const { companyId } = req.params;
+
+  // Verifica che l'utente sia owner
+  const { data: membership } = await supabase
+    .from('company_users')
+    .select('role')
+    .eq('company_id', companyId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (!membership) return res.status(403).json({ error: 'FORBIDDEN' });
+  if (membership.role !== 'owner') return res.status(403).json({ error: 'OWNER_ONLY' });
+
+  // Blocca se ha cantieri (qualsiasi status)
+  const { count } = await supabase
+    .from('sites')
+    .select('id', { count: 'exact', head: true })
+    .eq('company_id', companyId);
+
+  if (count && count > 0) {
+    return res.status(400).json({ error: 'HAS_SITES', message: 'Non puoi eliminare un\'azienda con cantieri. Elimina prima i cantieri.' });
+  }
+
+  const { error } = await supabase
+    .from('companies')
+    .delete()
+    .eq('id', companyId);
+
+  if (error) {
+    console.error('[delete-company] error:', error.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+
+  res.json({ ok: true });
 });
 
 module.exports = router;

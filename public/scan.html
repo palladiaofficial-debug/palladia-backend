@@ -334,6 +334,28 @@
     </div>
   </div>
 
+  <!-- STATO: consenso privacy (mostrato solo la prima volta) -->
+  <div id="state-privacy" class="hidden w-full" style="display:flex;flex-direction:column;align-items:center;">
+    <div class="card fade-in">
+      <p class="card-label">Informativa Privacy</p>
+      <p style="font-size:14px;color:var(--muted);margin-bottom:14px;line-height:1.6;">
+        Per effettuare la timbratura vengono registrati i seguenti dati:
+      </p>
+      <ul style="font-size:14px;color:var(--muted);margin-bottom:14px;padding-left:18px;line-height:1.9;">
+        <li><b style="color:var(--text)">Codice Fiscale e nome</b> — identificazione lavoratore</li>
+        <li><b style="color:var(--text)">Posizione GPS</b> — verifica presenza in cantiere</li>
+        <li><b style="color:var(--text)">Orari di entrata/uscita</b> — registro presenze</li>
+      </ul>
+      <p style="font-size:12px;color:var(--subtle);margin-bottom:20px;line-height:1.6;border-top:1px solid var(--border);padding-top:14px;">
+        Titolare del trattamento: l'impresa proprietaria del cantiere.<br>
+        Base giuridica: obbligo contrattuale e normativo (D.Lgs. 81/2008).<br>
+        Trattamento ai sensi del Reg. UE 2016/679 (GDPR).
+        Il conferimento dei dati è necessario per l'accesso al cantiere.
+      </p>
+      <button class="btn btn-primary" id="btn-accept-privacy">Ho letto, prosegui</button>
+    </div>
+  </div>
+
   <!-- STATO: identificazione -->
   <div id="state-identify" class="hidden w-full" style="display:flex;flex-direction:column;align-items:center;">
     <div class="card fade-in">
@@ -364,8 +386,9 @@
   const QR_TOKEN = _qp.get('t');
   const QR_EXP   = _qp.get('exp');
   const HAS_QR   = !!(QR_TOKEN && QR_EXP);
-  const LS_KEY_TOK = `badge_tok_${WSITE_ID}`;
-  const LS_KEY_NAM = `badge_nam_${WSITE_ID}`;
+  const LS_KEY_TOK     = `badge_tok_${WSITE_ID}`;
+  const LS_KEY_NAM     = `badge_nam_${WSITE_ID}`;
+  const LS_KEY_PRIVACY = 'badge_privacy_ok'; // globale, non per-cantiere
 
   let sessionToken    = localStorage.getItem(LS_KEY_TOK) || null;
   let workerName      = localStorage.getItem(LS_KEY_NAM) || '';
@@ -382,7 +405,7 @@
   const $ = id => document.getElementById(id);
 
   function showState(name) {
-    ['loading','active','identify'].forEach(s => {
+    ['loading','active','identify','privacy'].forEach(s => {
       const el = $(`state-${s}`);
       el.classList.toggle('hidden', s !== name);
       if (s === name) el.style.display = name === 'loading' ? 'block' : 'flex';
@@ -700,6 +723,11 @@
   // ── Identify ──────────────────────────────────────────────────────────────
   let nameRequired = false;
 
+  $('btn-accept-privacy').addEventListener('click', () => {
+    localStorage.setItem(LS_KEY_PRIVACY, '1');
+    showState('identify');
+  });
+
   $('btn-identify').addEventListener('click', doIdentify);
   ['input-cf','input-name'].forEach(id => {
     $(id).addEventListener('keydown', e => { if (e.key === 'Enter') doIdentify(); });
@@ -782,6 +810,7 @@
     const ok = await loadSite();
     if (!ok) return;
     if (sessionToken) { activateSession(workerName || 'Lavoratore'); }
+    else if (!localStorage.getItem(LS_KEY_PRIVACY)) { showState('privacy'); }
     else              { showState('identify'); }
   })();
   </script>

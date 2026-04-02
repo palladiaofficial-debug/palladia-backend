@@ -635,7 +635,7 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
 // ── GET /api/v1/scan/punch-status — PUBBLICO ─────────────────────────────────
 // Restituisce l'ultimo evento del lavoratore su questo cantiere.
 // Usato dalla UI per mostrare il bottone contestuale (entrata/uscita/completato).
-router.get('/scan/punch-status', async (req, res) => {
+router.get('/scan/punch-status', scanLimiter, async (req, res) => {
   const { worksite_id, session_token } = req.query;
 
   if (!worksite_id || !session_token) {
