@@ -309,7 +309,62 @@ async function sendExpiryReminder(workerId, docType, companyId, chatId) {
   return { ok: true, sent };
 }
 
-// ── 5. Attiva Ladia mode ──────────────────────────────────────
+// ── 5. Avvisa squadra: allerta caldo ─────────────────────────
+
+/**
+ * Invia un messaggio di allerta caldo (D.Lgs. 81/2008) a tutti gli utenti della company.
+ * Esclude chi ha già ricevuto il trigger proattivo (chatId).
+ *
+ * @returns {{ ok: boolean, sent: number }}
+ */
+async function sendHeatNotification(siteId, companyId, chatId) {
+  const { data: site } = await supabase
+    .from('sites')
+    .select('name, address')
+    .eq('id', siteId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (!site) {
+    await logAction(chatId, companyId, siteId, 'heat_notify', { siteId }, 'error', 'cantiere non trovato');
+    return { ok: false, sent: 0 };
+  }
+
+  const siteName = site.name || site.address || 'Cantiere';
+
+  const { data: users } = await supabase
+    .from('telegram_users')
+    .select('telegram_chat_id')
+    .eq('company_id', companyId)
+    .neq('telegram_chat_id', chatId);
+
+  if (!users?.length) {
+    await logAction(chatId, companyId, siteId, 'heat_notify', { siteId }, 'skipped', 'nessun altro utente');
+    return { ok: true, sent: 0 };
+  }
+
+  const text =
+    `🌡️ <b>Allerta caldo — ${siteName}</b>\n\n` +
+    `Oggi sono previste temperature elevate (>33°C). Misure obbligatorie D.Lgs. 81/2008:\n` +
+    `• Acqua fresca e ombra sempre disponibili\n` +
+    `• Evitare lavori pesanti nelle ore 12:00–15:00\n` +
+    `• Sorvegliare i lavoratori per sintomi da calore\n\n` +
+    `— <i>Inviato da Ladia su conferma del responsabile</i>`;
+
+  const results = await Promise.allSettled(
+    users.map(u => tg.sendMessage(u.telegram_chat_id, text))
+  );
+
+  const sent   = results.filter(r => r.status === 'fulfilled').length;
+  const failed = results.length - sent;
+
+  if (failed) console.error(`[ladiaActions] heat_notify: ${failed} messaggi falliti su ${results.length}`);
+
+  await logAction(chatId, companyId, siteId, 'heat_notify', { siteId, sent }, 'ok');
+  return { ok: true, sent };
+}
+
+// ── 6. Attiva Ladia mode ──────────────────────────────────────
 
 /**
  * Imposta ladia_mode = true per l'utente, con cantiere attivo opzionale.
@@ -329,6 +384,7 @@ module.exports = {
   closeNc,
   registerMissingExits,
   sendRainNotification,
+  sendHeatNotification,
   sendExpiryReminder,
   openLadiaMode,
 };

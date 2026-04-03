@@ -553,6 +553,30 @@ async function handleActionCallback(cbq, chatId, data) {
         break;
       }
 
+      // ── Avvisa squadra: caldo estremo ────────────────────
+      case 'heat_notify': {
+        const res = await ladiaActions.sendHeatNotification(p1, company, chatId);
+        if (!res.ok) {
+          await tg.sendMessage(chatId,
+            `❌ <b>Ladia</b> — Errore nell'invio. Riprova tra poco.`);
+        } else if (res.sent === 0) {
+          await tg.sendMessage(chatId,
+            `✅ <b>Ladia</b> — Sei l'unico membro collegato. Avvisa la squadra direttamente.`);
+        } else {
+          await tg.sendMessage(chatId,
+            `✅ <b>Allerta caldo inviata a ${res.sent} member${res.sent > 1 ? 'i' : 'o'} del team.</b>\n` +
+            `Tutti sono stati avvisati delle misure obbligatorie D.Lgs. 81/2008.`);
+        }
+        break;
+      }
+
+      // ── Caldo: ho già gestito ─────────────────────────────
+      case 'heat_skip': {
+        await tg.sendMessage(chatId,
+          `👍 <b>Ladia</b> — Ottimo, grazie per aver già provveduto. Buona giornata al cantiere!`);
+        break;
+      }
+
       // ── Analisi budget con Ladia ──────────────────────────
       case 'budget_ladia': {
         const siteId = p1;

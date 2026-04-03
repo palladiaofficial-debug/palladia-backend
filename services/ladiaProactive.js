@@ -434,6 +434,140 @@ async function checkDocExpiry(entry) {
   }
 }
 
+// ── Trigger 6: Caldo estremo ──────────────────────────────────
+// Temperature > 33°C → obbligo D.Lgs. 81/2008 art. 28 misure microclima
+
+const HEAT_THRESHOLD_C = 33; // °C temperatura massima per triggare alert
+
+async function checkHeatWarning(entry) {
+  const { chatId, companyId, siteId, siteName, latitude, longitude } = entry;
+  if (!latitude || !longitude) return;
+
+  let forecast;
+  try {
+    forecast = await getForecast(latitude, longitude);
+  } catch {
+    return;
+  }
+
+  const today = forecast[0];
+  if (!today || today.tempMax === null || today.tempMax < HEAT_THRESHOLD_C) return;
+
+  const dateKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const key     = `heat_${siteId}_${dateKey}`;
+
+  if (await alreadySent(chatId, 'heat_alert', key)) return;
+
+  const text =
+    `🌡️ <b>Ladia — Allerta caldo</b>\n\n` +
+    `Oggi su <b>${siteName}</b> si prevede una temperatura massima di <b>${today.tempMax}°C</b>.\n\n` +
+    `⚠️ Oltre i 33°C scatta l'obbligo di misure aggiuntive (D.Lgs. 81/2008 art. 28):\n` +
+    `• Acqua e ombra sempre disponibili\n` +
+    `• Orari pesanti: evitare 12:00–15:00\n` +
+    `• Monitorare i lavoratori a rischio\n\n` +
+    `Vuoi che avvisi la squadra adesso?`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🔔 Avvisa la squadra',  callbackData: `act:heat_notify:${siteId}` },
+    { text: '✅ Ho già gestito',      callbackData: `act:heat_skip:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'heat_alert', key, companyId, siteId);
+  console.log(`[ladiaProactive] heat_alert → chat ${chatId} — ${siteName} (${today.tempMax}°C)`);
+}
+
+// ── Trigger 7: Zero presenze a metà mattina ────────────────────
+// Alle 10:00 (±30min), se un cantiere attivo ha 0 timbrature oggi → check-in silenzioso
+
+const MID_MORNING_HOUR = 10;
+
+async function checkMidMorningPresences(entry) {
+  const { chatId, companyId, siteId, siteName } = entry;
+
+  // Esegui solo nella finestra 09:30–10:30 (Europe/Rome)
+  const nowRome = new Date().toLocaleString('en-US', { timeZone: 'Europe/Rome' });
+  const hourRome = new Date(nowRome).getHours();
+  if (hourRome < 9 || hourRome >= 11) return;
+
+  const dateKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const key     = `midmorning_${siteId}_${dateKey}`;
+
+  if (await alreadySent(chatId, 'mid_morning', key)) return;
+
+  // Controlla presenze oggi per questo cantiere
+  const dayStart = `${dateKey}T00:00:00.000Z`;
+  const { count } = await supabase
+    .from('presence_logs')
+    .select('id', { count: 'exact', head: true })
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .eq('event_type', 'ENTRY')
+    .gte('timestamp_server', dayStart);
+
+  if (count > 0) return; // ci sono già presenze → tutto normale
+
+  const text =
+    `👀 <b>Ladia — Nessuna timbratura</b>\n\n` +
+    `Sono le ${MID_MORNING_HOUR}:00 e su <b>${siteName}</b> non ho ancora registrato presenze oggi.\n\n` +
+    `Cantiere fermo? Vuoi che prendo nota o aggiorni lo stato?`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '📝 Scrivi a Ladia',  callbackData: `act:open_ladia:${siteId}` },
+    { text: '✅ È tutto ok',       callbackData: `act:skip_inactive:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'mid_morning', key, companyId, siteId);
+  console.log(`[ladiaProactive] mid_morning_presences → chat ${chatId} — ${siteName} (0 presenze)`);
+}
+
+// ── Trigger 8: Pattern NC ripetute ────────────────────────────
+// 3+ NC aperte negli ultimi 30 giorni sullo stesso cantiere → "problema sistemico"
+
+const NC_PATTERN_THRESHOLD = 3;  // numero minimo NC per triggare
+const NC_PATTERN_DAYS      = 30; // finestra temporale in giorni
+
+async function checkRepeatedNcPattern(entry) {
+  const { chatId, companyId, siteId, siteName } = entry;
+
+  const cutoff = new Date(Date.now() - NC_PATTERN_DAYS * 86_400_000).toISOString();
+
+  const { count } = await supabase
+    .from('site_notes')
+    .select('id', { count: 'exact', head: true })
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .eq('category', 'non_conformita')
+    .is('resolved_at', null)
+    .gte('created_at', cutoff);
+
+  if ((count || 0) < NC_PATTERN_THRESHOLD) return;
+
+  // Dedup: una sola notifica per soglia (3, 5, 10...)
+  const bucket = count >= 10 ? '10plus' : count >= 5 ? '5plus' : '3plus';
+  const weekNum = Math.floor(Date.now() / (7 * 24 * 3_600_000));
+  const key = `nc_pattern_${siteId}_${bucket}_wk${weekNum}`;
+
+  if (await alreadySent(chatId, 'nc_pattern', key)) return;
+
+  const text =
+    `📈 <b>Ladia — Anomalia rilevata</b>\n\n` +
+    `Su <b>${siteName}</b> ho contato <b>${count} Non Conformità aperte</b> negli ultimi ${NC_PATTERN_DAYS} giorni.\n\n` +
+    `Questo schema suggerisce un problema sistemico, non episodico. ` +
+    `Potrebbe valere la pena fare un sopralluogo mirato o una riunione di cantiere.\n\n` +
+    `Vuoi che Ladia ti prepari un riepilogo completo delle NC aperte?`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🤖 Analisi NC con Ladia',  callbackData: `act:budget_ladia:${siteId}` },
+    { text: '✅ Ho già gestito',         callbackData: `act:skip_inactive:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'nc_pattern', key, companyId, siteId);
+  console.log(`[ladiaProactive] nc_pattern → chat ${chatId} — ${siteName} (${count} NC aperte)`);
+}
+
 // ── Job principale ────────────────────────────────────────────
 
 async function runProactiveEngine() {
@@ -454,10 +588,13 @@ async function runProactiveEngine() {
       // Tutti i trigger in parallelo per ogni utente+cantiere
       await Promise.all([
         checkRainAlert(entry),
+        checkHeatWarning(entry),
         checkNcStale(entry),
         checkBudgetAlert(entry),
         checkInactivity(entry),
         checkDocExpiry(entry),
+        checkMidMorningPresences(entry),
+        checkRepeatedNcPattern(entry),
       ]);
       processed++;
     } catch (err) {

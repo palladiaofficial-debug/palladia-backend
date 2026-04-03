@@ -40,14 +40,30 @@ function isWeekend() {
 
 // ── Logica per company ────────────────────────────────────────
 
+// Mappa azione → testo sintetico (mattino — passato prossimo, terza persona)
+const ACTION_LABELS_MORNING = {
+  reg_exits:     (p) => `registrat${(p.count ?? 0) > 1 ? 'e' : 'a'} ${p.count ?? '?'} uscit${(p.count ?? 0) > 1 ? 'e' : 'a'} mancant${(p.count ?? 0) > 1 ? 'i' : 'e'}`,
+  close_nc:      ()  => 'NC segnata come risolta',
+  rain_notify:   (p) => `alert pioggia inviato (${p.sent ?? '?'} dest.)`,
+  heat_notify:   (p) => `allerta caldo inviata (${p.sent ?? '?'} dest.)`,
+  expiry_remind: ()  => 'promemoria scadenza inviato',
+};
+
 async function buildCompanyBriefing(companyId) {
   // Data limite per scadenze (oggi + 14 giorni)
   const limitDate = new Date();
   limitDate.setDate(limitDate.getDate() + 14);
   const limitStr = limitDate.toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
 
+  // Ieri (per recap azioni Ladia)
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yDate     = yesterday.toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const yStart    = `${yDate}T00:00:00.000Z`;
+  const yEnd      = `${yDate}T23:59:59.999Z`;
+
   // Query parallele
-  const [sitesRes, ncsRes, vociRes, expiringRes, worksiteRes] = await Promise.all([
+  const [sitesRes, ncsRes, vociRes, expiringRes, worksiteRes, actRes, presBySiteRes] = await Promise.all([
     // Cantieri attivi (incluse coordinate per meteo)
     supabase.from('sites')
       .select('id, name, address, budget_totale, sal_percentuale, latitude, longitude')
@@ -82,13 +98,33 @@ async function buildCompanyBriefing(companyId) {
       .eq('company_id', companyId)
       .eq('status', 'active')
       .limit(1000),
+
+    // Azioni Ladia di ieri
+    supabase.from('ladia_action_log')
+      .select('action_type, action_params, site_id')
+      .eq('company_id', companyId)
+      .eq('result', 'ok')
+      .gte('executed_at', yStart)
+      .lte('executed_at', yEnd)
+      .limit(200),
+
+    // Presenze di ieri per cantiere (per recap worker)
+    supabase.from('presence_logs')
+      .select('site_id, worker_id')
+      .eq('company_id', companyId)
+      .eq('event_type', 'ENTRY')
+      .gte('timestamp_server', yStart)
+      .lte('timestamp_server', yEnd)
+      .limit(2000),
   ]);
 
-  const sites    = sitesRes.data  || [];
-  const ncs      = ncsRes.data    || [];
-  const voci     = vociRes.data   || [];
+  const sites    = sitesRes.data    || [];
+  const ncs      = ncsRes.data      || [];
+  const voci     = vociRes.data     || [];
   const expiring = expiringRes.data || [];
   const assigned = worksiteRes.data || [];
+  const ystActs  = actRes.data      || [];
+  const ystPres  = presBySiteRes.data || [];
 
   if (!sites.length) return null;
 
@@ -207,13 +243,53 @@ async function buildCompanyBriefing(companyId) {
     if (siteWarn.length) warnings.push({ name, lines: siteWarn });
   }
 
-  return { critical, warnings, meteoLines };
+  // ── Recap ieri (azioni Ladia + presenze) ──
+  const siteMap = new Map(sites.map(s => [s.id, s.name || s.address || 'Cantiere']));
+
+  // Presenze ieri per cantiere
+  const ystPresCount = {};
+  for (const p of ystPres) {
+    if (!ystPresCount[p.site_id]) ystPresCount[p.site_id] = new Set();
+    ystPresCount[p.site_id].add(p.worker_id);
+  }
+
+  // Azioni ieri per cantiere
+  const ystActsBySite = {};
+  for (const a of ystActs) {
+    const label = ACTION_LABELS_MORNING[a.action_type]?.(a.action_params || {});
+    if (!label) continue;
+    const key = a.site_id || '_global';
+    if (!ystActsBySite[key]) ystActsBySite[key] = [];
+    ystActsBySite[key].push(label);
+  }
+
+  // Costruisci linee recap ieri
+  const ystLines = [];
+  const ystSiteIds = new Set([
+    ...Object.keys(ystPresCount),
+    ...Object.keys(ystActsBySite).filter(k => k !== '_global'),
+  ]);
+  for (const sid of ystSiteIds) {
+    const name  = siteMap.get(sid) || 'Cantiere';
+    const parts = [];
+    const cnt   = ystPresCount[sid]?.size;
+    if (cnt)                   parts.push(`${cnt} presence${cnt > 1 ? '' : 'a'}`);
+    const acts = ystActsBySite[sid] || [];
+    for (const a of acts)      parts.push(`Ladia ha ${a}`);
+    if (parts.length) ystLines.push(`📍 <b>${name}</b>: ${parts.join(' · ')}`);
+  }
+  // Azioni globali (senza site_id)
+  for (const a of ystActsBySite['_global'] || []) {
+    ystLines.push(`• Ladia ha ${a}`);
+  }
+
+  return { critical, warnings, meteoLines, ystLines };
 }
 
 // ── Formattazione messaggio ────────────────────────────────────
 
 function buildMessage(briefing) {
-  const { critical, warnings, meteoLines } = briefing;
+  const { critical, warnings, meteoLines, ystLines } = briefing;
 
   const todayIt = new Date().toLocaleDateString('it-IT', {
     timeZone: 'Europe/Rome',
@@ -221,33 +297,32 @@ function buildMessage(briefing) {
   });
   const dayLabel = todayIt.charAt(0).toUpperCase() + todayIt.slice(1);
 
+  let msg = `☀️ <b>Buongiorno! ${dayLabel}.</b>\n`;
+
+  if (ystLines?.length) {
+    msg += `\n\n📋 <b>Ieri Ladia ha gestito:</b>\n${ystLines.join('\n')}`;
+  }
+
+  if (meteoLines?.length) {
+    msg += `\n\n🌤️ <b>Meteo oggi:</b>\n` + meteoLines.join('\n');
+  }
+
   if (!critical.length && !warnings.length) {
-    let msg = `☀️ <b>Buongiorno! ${dayLabel}.</b>\n\n` +
-              `✅ Nessuna criticità aperta sui cantieri.\n` +
-              `Buona giornata! 👷‍♂️`;
-    if (meteoLines?.length) {
-      msg += `\n\n🌤️ <b>Meteo cantieri:</b>\n` + meteoLines.join('\n');
-    }
+    msg += `\n\n✅ Nessuna criticità aperta — buona giornata! 👷‍♂️`;
     return msg;
   }
 
-  let msg = `☀️ <b>Buongiorno! ${dayLabel}.</b>\n`;
-
-  if (meteoLines?.length) {
-    msg += `\n🌤️ <b>Meteo:</b>\n` + meteoLines.join('\n');
-  }
-
   if (critical.length) {
-    msg += `\n\nRichiede attenzione <b>oggi</b>:\n`;
+    msg += `\n\n🚨 <b>Richiede attenzione oggi:</b>`;
     for (const { name, lines } of critical) {
-      msg += `\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
+      msg += `\n\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
     }
   }
 
   if (warnings.length) {
-    msg += `\n\nDa tenere d'occhio:\n`;
+    msg += `\n\n⚠️ <b>Da tenere d'occhio:</b>`;
     for (const { name, lines } of warnings) {
-      msg += `\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
+      msg += `\n\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
     }
   }
 
