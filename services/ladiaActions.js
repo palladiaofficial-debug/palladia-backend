@@ -153,6 +153,9 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
   // Segnaliamo chiaramente il metodo per il registro presenze
   const exitTime = new Date(`${date}T17:00:00.000Z`);
 
+  // chatId può essere null quando chiamato da cron (auto-execute senza utente)
+  const uaSource = chatId ? `ladia-telegram:${chatId}` : 'ladia-cron';
+
   const inserts = missingWorkerIds.map(workerId => ({
     company_id:       companyId,
     site_id:          siteId,
@@ -161,7 +164,7 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
     timestamp_server: exitTime.toISOString(),
     method:           'ladia_action',
     ip:               'ladia',
-    ua:               `ladia-telegram:${chatId}`,
+    ua:               uaSource,
   }));
 
   const { error: insErr } = await supabase

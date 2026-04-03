@@ -21,7 +21,9 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
-const { getForecast } = require('./weatherService');
+const { getForecast }            = require('./weatherService');
+const { generateNcProposal,
+        generateBudgetProposal } = require('./ladiaSmartProposal');
 
 // ── Costanti ──────────────────────────────────────────────────
 const RAIN_THRESHOLD    = 50;  // % probabilità pioggia per triggare alert
@@ -213,13 +215,27 @@ async function checkNcStale(entry) {
     const ageDays  = Math.floor(ageHours / 24);
     const ageLabel = ageDays >= 1 ? `${ageDays} giorn${ageDays > 1 ? 'i' : 'o'}` : `${ageHours}h`;
     const icon     = nc.urgency === 'critica' ? '🔴' : '🟠';
-    const text_nc  = (nc.ai_summary || nc.content || '').slice(0, 120);
 
-    const text =
-      `${icon} <b>Ladia — NC non risolta</b>\n\n` +
-      `Su <b>${siteName}</b> c'è una NC <b>${nc.urgency}</b> aperta da <b>${ageLabel}</b>:\n\n` +
-      `<i>${text_nc}</i>\n\n` +
-      `Vuoi che Ladia la segni come risolta?`;
+    // LIVELLO 2 — Smart proposal: Claude Haiku analizza il contesto specifico
+    // Ritorna null se fallisce → fallback al template
+    const smartProposal = await generateNcProposal(nc, siteName, ageLabel);
+
+    let text;
+    if (smartProposal) {
+      // Proposta contestualizzata generata da Claude
+      text =
+        `${icon} <b>Ladia — NC non risolta (${ageLabel})</b>\n\n` +
+        `${smartProposal}\n\n` +
+        `Come vuoi procedere?`;
+    } else {
+      // Fallback template
+      const text_nc = (nc.ai_summary || nc.content || '').slice(0, 120);
+      text =
+        `${icon} <b>Ladia — NC non risolta</b>\n\n` +
+        `Su <b>${siteName}</b>: NC <b>${nc.urgency}</b> aperta da <b>${ageLabel}</b>.\n` +
+        `<i>${text_nc}</i>\n\n` +
+        `Vuoi che la segni come risolta?`;
+    }
 
     const keyboard = tg.buildInlineKeyboard([
       { text: '✅ Segna risolta',   callbackData: `act:close_nc:${nc.id}` },
@@ -228,7 +244,7 @@ async function checkNcStale(entry) {
 
     await safeSend(chatId, text, { replyMarkup: keyboard });
     await markSent(chatId, 'nc_stale', key, companyId, siteId);
-    console.log(`[ladiaProactive] nc_stale → chat ${chatId} — ${siteName} (${ageLabel})`);
+    console.log(`[ladiaProactive] nc_stale → chat ${chatId} — ${siteName} (${ageLabel}, smart=${!!smartProposal})`);
   }
 }
 
@@ -259,17 +275,30 @@ async function checkBudgetAlert(entry) {
   if (await alreadySent(chatId, 'budget_alert', key)) return;
 
   const fmtEur = n => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', maximumFractionDigits: 0 });
-  const costiStr   = fmtEur(costi);
-  const budgetStr  = fmtEur(budgetTotale);
+  const costiStr  = fmtEur(costi);
+  const budgetStr = fmtEur(budgetTotale);
 
-  const text =
-    `📊 <b>Ladia — Allerta budget</b>\n\n` +
-    `<b>${siteName}</b> ha consumato il <b>${spendPct}%</b> del budget ` +
-    `(${costiStr} su ${budgetStr}) con SAL al <b>${salPct}%</b>.\n\n` +
-    `⚠️ Rischio sforamento. Vuoi che Ladia faccia un'analisi economica adesso?`;
+  // LIVELLO 2 — Smart proposal: Claude Haiku genera diagnosi + raccomandazione specifica
+  const smartProposal = await generateBudgetProposal(siteName, spendPct, salPct, costiStr, budgetStr);
+
+  let text;
+  if (smartProposal) {
+    // Proposta contestualizzata con diagnosi Claude
+    text =
+      `📊 <b>Ladia — Allerta budget ${spendPct}%</b>\n\n` +
+      `${smartProposal}\n\n` +
+      `Vuoi un'analisi completa adesso?`;
+  } else {
+    // Fallback template
+    text =
+      `📊 <b>Ladia — Allerta budget</b>\n\n` +
+      `<b>${siteName}</b>: ${spendPct}% budget consumato ` +
+      `(${costiStr} su ${budgetStr}), SAL ${salPct}%.\n\n` +
+      `⚠️ Rischio sforamento. Vuoi un'analisi completa?`;
+  }
 
   const keyboard = tg.buildInlineKeyboard([
-    { text: '🤖 Analizza con Ladia',  callbackData: `act:budget_ladia:${siteId}` },
+    { text: '🤖 Analisi completa con Ladia',  callbackData: `act:budget_ladia:${siteId}` },
   ], 1);
 
   await safeSend(chatId, text, { replyMarkup: keyboard });

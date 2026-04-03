@@ -231,6 +231,18 @@ async function sendCustomNotification(companyId, text) {
   return notifyCompany(companyId, text);
 }
 
+/**
+ * Notifica di conferma per azioni eseguite automaticamente da Ladia (Level 1).
+ * Non richiede conferma — informa solo che l'azione è già stata completata.
+ * Nessun bottone inline: l'azione è già fatta.
+ *
+ * @param {string} companyId
+ * @param {string} text  - testo HTML con il dettaglio dell'azione eseguita
+ */
+async function notifyAutoExec(companyId, text) {
+  return notifyCompany(companyId, text);
+}
+
 module.exports = {
   notifyCompany,
   notifyCoordinators,
@@ -238,5 +250,6 @@ module.exports = {
   notifyIncidente,
   notifyMissingExits,
   notifyMissingExitsWithAction,
+  notifyAutoExec,
   sendCustomNotification,
 };

@@ -2,20 +2,26 @@
 /**
  * services/missingExitCron.js
  *
- * Cron giornaliero che controlla le uscite mancanti per TUTTE le company attive
- * e invia un'email agli admin di ogni company che ha anomalie.
+ * Cron giornaliero (20:00 Rome) — gestione uscite mancanti.
  *
- * Orario: ogni giorno alle 20:00 ora italiana (Europe/Rome).
- * In produzione Railway usa UTC → le 20:00 Rome = 19:00 UTC (inverno) / 18:00 UTC (estate).
- * node-cron supporta timezone nativamente → usiamo quello.
+ * LIVELLO 1 — AUTO EXECUTE:
+ *   Ladia registra automaticamente le uscite senza richiedere conferma.
+ *   Invia poi una notifica: "Ho già sistemato X uscite su cantiere Y".
+ *   L'utente non deve fare nulla.
+ *
+ * Logica:
+ *   1. Trova tutti i lavoratori con ENTRY senza EXIT nel giorno corrente
+ *   2. Registra automaticamente EXIT alle 18:00 con method='ladia_action'
+ *   3. Invia email admin + Telegram di conferma (nessun bottone)
  *
  * Avvio: chiamare startMissingExitCron() da server.js al boot.
  */
 
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
-const { sendMissingExitAlert } = require('./email');
-const { notifyMissingExitsWithAction } = require('./telegramNotifications');
+const { sendMissingExitAlert }                = require('./email');
+const { notifyAutoExec }                      = require('./telegramNotifications');
+const { registerMissingExits }                = require('./ladiaActions');
 
 // ── Helper: trova uscite mancanti per una company in una data ─────────────────
 async function checkCompany(companyId, date) {
@@ -84,34 +90,60 @@ async function runMissingExitCheck() {
 
   console.log(`[cron] ${companyIds.length} company con timbrature oggi`);
 
-  let totalAlerts = 0;
+  let totalAutoFixed = 0;
+
   for (const companyId of companyIds) {
     try {
       const missing = await checkCompany(companyId, date);
-      if (missing.length > 0) {
-        // Email admin
-        await sendMissingExitAlert({ companyId, date, missingList: missing });
-        totalAlerts += missing.length;
-        console.log(`[cron] company ${companyId}: ${missing.length} uscite mancanti — email inviata`);
+      if (!missing.length) continue;
 
-        // Telegram: raggruppa per cantiere e notifica con bottone azione
-        const bySite = new Map();
-        for (const m of missing) {
-          const siteId = m.site_id;
-          const name   = m.site_name || m.site_address || 'Cantiere';
-          if (!bySite.has(siteId)) bySite.set(siteId, { siteName: name, workers: [] });
-          if (m.worker_name) bySite.get(siteId).workers.push(m.worker_name);
-        }
-        for (const [siteId, { siteName, workers }] of bySite.entries()) {
-          notifyMissingExitsWithAction(companyId, siteId, siteName, workers, date).catch(() => {});
-        }
+      totalAutoFixed += missing.length;
+
+      // Email admin (audit trail — manteniamo sempre)
+      await sendMissingExitAlert({ companyId, date, missingList: missing });
+      console.log(`[cron] company ${companyId}: ${missing.length} uscite mancanti — auto-fix avviato`);
+
+      // Raggruppa per cantiere
+      const bySite = new Map();
+      for (const m of missing) {
+        const siteId = m.site_id;
+        const name   = m.site_name || m.site_address || 'Cantiere';
+        if (!bySite.has(siteId)) bySite.set(siteId, { siteName: name, workerNames: [] });
+        if (m.worker_name) bySite.get(siteId).workerNames.push(m.worker_name);
       }
+
+      // LIVELLO 1 — AUTO EXECUTE per ogni cantiere
+      for (const [siteId, { siteName, workerNames }] of bySite.entries()) {
+        const result = await registerMissingExits(siteId, date, companyId, null);
+
+        if (!result.ok) {
+          // Fallback: non abbiamo potuto auto-eseguire — notifica classica
+          console.error(`[cron] auto-fix fallito per site ${siteId} — skip notifica`);
+          continue;
+        }
+
+        const count     = result.count;
+        const listLines = workerNames.slice(0, 8).map(n => `• ${n}`).join('\n');
+        const extra     = workerNames.length > 8 ? `\n…e altri ${workerNames.length - 8}` : '';
+
+        // Notifica di conferma: azione già eseguita, nessun bottone richiesto
+        const confirmText =
+          `✅ <b>Ladia — Uscite registrate automaticamente</b>\n\n` +
+          `Su <b>${siteName}</b> ho rilevato ${count} uscit${count > 1 ? 'e' : 'a'} mancant${count > 1 ? 'i' : 'e'} ` +
+          `e le ho registrate alle 18:00:\n\n${listLines}${extra}\n\n` +
+          `<i>Nessuna azione richiesta. I log sono marcati come </i><code>ladia_action</code><i> ` +
+          `nel registro presenze — verificabili su Palladia.</i>`;
+
+        await notifyAutoExec(companyId, confirmText).catch(() => {});
+        console.log(`[cron] auto-fix OK — site ${siteId}: ${count} uscite registrate, team notificato`);
+      }
+
     } catch (e) {
       console.error(`[cron] errore company ${companyId}:`, e.message);
     }
   }
 
-  console.log(`[cron] completato — ${totalAlerts} uscite mancanti totali`);
+  console.log(`[cron] completato — ${totalAutoFixed} uscite gestite automaticamente`);
 }
 
 // ── Registra il cron ──────────────────────────────────────────────────────────
