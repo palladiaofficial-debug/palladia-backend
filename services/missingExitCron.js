@@ -15,7 +15,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { sendMissingExitAlert } = require('./email');
-const { notifyMissingExits }   = require('./telegramNotifications');
+const { notifyMissingExitsWithAction } = require('./telegramNotifications');
 
 // ── Helper: trova uscite mancanti per una company in una data ─────────────────
 async function checkCompany(companyId, date) {
@@ -94,16 +94,16 @@ async function runMissingExitCheck() {
         totalAlerts += missing.length;
         console.log(`[cron] company ${companyId}: ${missing.length} uscite mancanti — email inviata`);
 
-        // Telegram: raggruppa per cantiere e notifica
+        // Telegram: raggruppa per cantiere e notifica con bottone azione
         const bySite = new Map();
         for (const m of missing) {
-          const key  = m.site_id;
-          const name = m.site_name || m.site_address || 'Cantiere';
-          if (!bySite.has(key)) bySite.set(key, { siteName: name, workers: [] });
-          if (m.worker_name) bySite.get(key).workers.push(m.worker_name);
+          const siteId = m.site_id;
+          const name   = m.site_name || m.site_address || 'Cantiere';
+          if (!bySite.has(siteId)) bySite.set(siteId, { siteName: name, workers: [] });
+          if (m.worker_name) bySite.get(siteId).workers.push(m.worker_name);
         }
-        for (const { siteName, workers } of bySite.values()) {
-          notifyMissingExits(companyId, siteName, workers).catch(() => {});
+        for (const [siteId, { siteName, workers }] of bySite.entries()) {
+          notifyMissingExitsWithAction(companyId, siteId, siteName, workers, date).catch(() => {});
         }
       }
     } catch (e) {

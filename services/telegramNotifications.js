@@ -167,7 +167,7 @@ async function notifyIncidente(companyId, siteName, description, authorName, exc
 
 /**
  * Notifica uscite mancanti a fine giornata (cron 20:00).
- * Inviata a tutti senza esclusioni (è un alert gestionale, non un evento real-time).
+ * Versione legacy senza bottoni — mantenuta per compatibilità.
  */
 async function notifyMissingExits(companyId, siteName, workerNames) {
   if (!workerNames || !workerNames.length) return { sent: 0, failed: 0 };
@@ -178,6 +178,50 @@ async function notifyMissingExits(companyId, siteName, workerNames) {
     `I seguenti lavoratori non hanno registrato l'uscita:\n${list}${extra}\n\n` +
     `Verifica su <b>palladia.net</b>`;
   return notifyCompany(companyId, text);
+}
+
+/**
+ * Notifica uscite mancanti con bottone azione (versione attiva — cron 20:00).
+ * Consente al tecnico di registrare le uscite con un singolo tap.
+ *
+ * @param {string} companyId
+ * @param {string} siteId      - necessario per il callback di azione
+ * @param {string} siteName
+ * @param {string[]} workerNames
+ * @param {string} date        - YYYY-MM-DD, necessario per il callback
+ */
+async function notifyMissingExitsWithAction(companyId, siteId, siteName, workerNames, date) {
+  if (!workerNames?.length) return { sent: 0, failed: 0 };
+  if (!process.env.TELEGRAM_BOT_TOKEN) return { sent: 0, failed: 0, skipped: true };
+
+  const list  = workerNames.slice(0, 10).map(n => `• ${n}`).join('\n');
+  const extra = workerNames.length > 10 ? `\n…e altri ${workerNames.length - 10}` : '';
+  const count = workerNames.length;
+
+  const text =
+    `🔔 <b>Uscite mancanti — ${siteName}</b>\n\n` +
+    `${count} lavorator${count > 1 ? 'i' : 'e'} senza uscita registrata:\n${list}${extra}\n\n` +
+    `Vuoi che Ladia registri le uscite alle 18:00?`;
+
+  // callback_data max 64 chars:
+  // "act:reg_exits:{uuid36}:{date10}" = 4+1+9+1+36+1+10 = 62 ✓
+  const keyboard = tg.buildInlineKeyboard([
+    { text: `✅ Registra uscite (${count})`,  callbackData: `act:reg_exits:${siteId}:${date}` },
+    { text: '❌ Ignora',                        callbackData: `act:skip_exits:${siteId}` },
+  ], 2);
+
+  const chatIds = await getLinkedChatIds(companyId, null);
+  if (!chatIds.length) return { sent: 0, failed: 0 };
+
+  const results = await Promise.allSettled(
+    chatIds.map(chatId => tg.sendMessage(chatId, text, { replyMarkup: keyboard }))
+  );
+
+  const failed = results.filter(r => r.status === 'rejected').length;
+  if (failed) {
+    console.error(`[telegramNotifications] notifyMissingExitsWithAction: ${failed}/${chatIds.length} falliti`);
+  }
+  return { sent: chatIds.length - failed, failed };
 }
 
 /**
@@ -193,5 +237,6 @@ module.exports = {
   notifyNonConformita,
   notifyIncidente,
   notifyMissingExits,
+  notifyMissingExitsWithAction,
   sendCustomNotification,
 };

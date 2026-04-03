@@ -137,9 +137,9 @@ async function fetchActiveSiteUsers() {
 
 // ── Invio sicuro (non blocca il cron se Telegram fallisce) ────
 
-async function safeSend(chatId, text) {
+async function safeSend(chatId, text, opts = {}) {
   try {
-    await tg.sendMessage(chatId, text);
+    await tg.sendMessage(chatId, text, opts);
   } catch (err) {
     console.error(`[ladiaProactive] sendMessage ${chatId} failed:`, err.message);
   }
@@ -171,10 +171,15 @@ async function checkRainAlert(entry) {
     `${icon} <b>Ladia — Allerta meteo</b>\n\n` +
     `Domani su <b>${siteName}</b> è prevista pioggia con probabilità ${tomorrow.precipProb}%` +
     (tomorrow.description ? ` (${tomorrow.description})` : '') + `.\n\n` +
-    `Se hai gettate, opere esterne o ponteggi, valuta uno spostamento.\n` +
-    `Scrivi a 🤖 <b>Ladia</b> per pianificare.`;
+    `Se hai gettate, opere esterne o ponteggi, valuta uno spostamento.\n\n` +
+    `Vuoi che avvisi subito tutta la squadra?`;
 
-  await safeSend(chatId, text);
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '📲 Avvisa la squadra',  callbackData: `act:rain_notify:${siteId}` },
+    { text: '❌ Gestisco io',         callbackData: `act:rain_skip:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'rain_alert', key, companyId, siteId);
   console.log(`[ladiaProactive] rain_alert → chat ${chatId} — ${siteName} (${tomorrow.precipProb}%)`);
 }
@@ -193,6 +198,7 @@ async function checkNcStale(entry) {
     .eq('site_id', siteId)
     .eq('category', 'non_conformita')
     .in('urgency', ['alta', 'critica'])
+    .is('resolved_at', null)           // non notificare NC già chiuse
     .lt('created_at', cutoff)
     .order('urgency', { ascending: false }) // critiche prima
     .limit(5);
@@ -213,9 +219,14 @@ async function checkNcStale(entry) {
       `${icon} <b>Ladia — NC non risolta</b>\n\n` +
       `Su <b>${siteName}</b> c'è una NC <b>${nc.urgency}</b> aperta da <b>${ageLabel}</b>:\n\n` +
       `<i>${text_nc}</i>\n\n` +
-      `Scrivi a 🤖 <b>Ladia</b> per gestirla.`;
+      `Vuoi che Ladia la segni come risolta?`;
 
-    await safeSend(chatId, text);
+    const keyboard = tg.buildInlineKeyboard([
+      { text: '✅ Segna risolta',   callbackData: `act:close_nc:${nc.id}` },
+      { text: '❌ Lascia aperta',   callbackData: `act:skip_nc:${nc.id}` },
+    ], 2);
+
+    await safeSend(chatId, text, { replyMarkup: keyboard });
     await markSent(chatId, 'nc_stale', key, companyId, siteId);
     console.log(`[ladiaProactive] nc_stale → chat ${chatId} — ${siteName} (${ageLabel})`);
   }
@@ -255,9 +266,13 @@ async function checkBudgetAlert(entry) {
     `📊 <b>Ladia — Allerta budget</b>\n\n` +
     `<b>${siteName}</b> ha consumato il <b>${spendPct}%</b> del budget ` +
     `(${costiStr} su ${budgetStr}) con SAL al <b>${salPct}%</b>.\n\n` +
-    `⚠️ Rischio sforamento. Scrivi a 🤖 <b>Ladia</b> per un'analisi economica.`;
+    `⚠️ Rischio sforamento. Vuoi che Ladia faccia un'analisi economica adesso?`;
 
-  await safeSend(chatId, text);
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🤖 Analizza con Ladia',  callbackData: `act:budget_ladia:${siteId}` },
+  ], 1);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'budget_alert', key, companyId, siteId);
   console.log(`[ladiaProactive] budget_alert → chat ${chatId} — ${siteName} (${spendPct}%)`);
 }
@@ -294,9 +309,14 @@ async function checkInactivity(entry) {
   const text =
     `👋 <b>Ladia — Check-in cantiere</b>\n\n` +
     `Non ricevo aggiornamenti da <b>${siteName}</b> da ${INACTIVITY_DAYS} giorni.\n\n` +
-    `Tutto ok? Scrivimi se hai bisogno di aiuto o vuoi registrare un aggiornamento. 🤖`;
+    `Tutto ok? Posso aiutarti a registrare un aggiornamento.`;
 
-  await safeSend(chatId, text);
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '📝 Scrivi a Ladia',  callbackData: `act:open_ladia:${siteId}` },
+    { text: '✅ Tutto ok',         callbackData: `act:skip_inactive:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'inactivity', key, companyId, siteId);
   console.log(`[ladiaProactive] inactivity → chat ${chatId} — ${siteName}`);
 }
@@ -347,9 +367,14 @@ async function checkDocExpiry(entry) {
           `${icon} <b>Ladia — Scadenza documenti</b>\n\n` +
           `<b>${w.full_name}</b> su <b>${siteName}</b>:\n` +
           `Formazione sicurezza ${label}.\n\n` +
-          `Aggiorna prima di mandarlo in cantiere (D.Lgs. 81/2008 art. 37).`;
+          `Vuoi che Ladia invii un promemoria a tutto il team?`;
 
-        await safeSend(chatId, text);
+        const keyboard = tg.buildInlineKeyboard([
+          { text: '📢 Invia promemoria',  callbackData: `act:expiry_remind:${w.id}:train` },
+          { text: '❌ Ignora',             callbackData: `act:expiry_skip:${w.id}:train` },
+        ], 2);
+
+        await safeSend(chatId, text, { replyMarkup: keyboard });
         await markSent(chatId, 'doc_expiry', key, companyId, siteId);
         console.log(`[ladiaProactive] doc_expiry(train) → chat ${chatId} — ${w.full_name}`);
       }
@@ -365,9 +390,14 @@ async function checkDocExpiry(entry) {
           `${icon} <b>Ladia — Scadenza documenti</b>\n\n` +
           `<b>${w.full_name}</b> su <b>${siteName}</b>:\n` +
           `Idoneità sanitaria ${label}.\n\n` +
-          `Aggiorna visita medica (art. 41 D.Lgs. 81/2008).`;
+          `Vuoi che Ladia invii un promemoria a tutto il team?`;
 
-        await safeSend(chatId, text);
+        const keyboard = tg.buildInlineKeyboard([
+          { text: '📢 Invia promemoria',  callbackData: `act:expiry_remind:${w.id}:fit` },
+          { text: '❌ Ignora',             callbackData: `act:expiry_skip:${w.id}:fit` },
+        ], 2);
+
+        await safeSend(chatId, text, { replyMarkup: keyboard });
         await markSent(chatId, 'doc_expiry', key, companyId, siteId);
         console.log(`[ladiaProactive] doc_expiry(fit) → chat ${chatId} — ${w.full_name}`);
       }

@@ -36,6 +36,7 @@ const sharp          = require('sharp');
 const { notifyNonConformita, notifyIncidente, notifyCompany } = require('./telegramNotifications');
 const { isOwner, handleOwnerMessage, handleOwnerCallback } = require('./telegramOwner');
 const { processLadiaPdf } = require('./ladiaDocumentProcessor');
+const ladiaActions   = require('./ladiaActions');
 
 // ── Tastiere persistenti ──────────────────────────────────────
 
@@ -367,6 +368,13 @@ async function handleCallbackQuery(cbq) {
   const chatId = cbq.message.chat.id;
   const data   = cbq.data || '';
 
+  // ── Azioni Ladia (act:*) ────────────────────────────────────
+  // Formato: act:{action}:{param1}[:{param2}]
+  // Sicurezza: company_id sempre letto dal DB via chatId
+  if (data.startsWith('act:')) {
+    return handleActionCallback(cbq, chatId, data);
+  }
+
   // Bottone "Cambia cantiere"
   if (data === 'cmd:cantieri') {
     const tuUser = await getTelegramUser(chatId);
@@ -414,6 +422,220 @@ async function handleCallbackQuery(cbq) {
   // noop (bottone placeholder)
   if (data === 'noop') {
     await tg.answerCallbackQuery(cbq.id, '');
+  }
+}
+
+// ── Gestore azioni Ladia (act:*) ─────────────────────────────
+
+/**
+ * Esegue un'azione Ladia confermata dal tecnico via tap su bottone inline.
+ *
+ * Flusso:
+ *   1. Verifica account collegato (getTelegramUser)
+ *   2. Risponde al callback SUBITO (toglie loading indicator)
+ *   3. Rimuove i bottoni dal messaggio originale (anti-doppio-tap)
+ *   4. Esegue l'azione nel servizio ladiaActions
+ *   5. Invia messaggio di conferma risultato
+ *
+ * Sicurezza: company_id sempre letto dal DB, mai dal payload del bottone.
+ */
+async function handleActionCallback(cbq, chatId, data) {
+  const parts  = data.split(':'); // ['act', 'close_nc', '{p1}', '{p2?}']
+  const action = parts[1];
+  const p1     = parts[2] || null;
+  const p2     = parts[3] || null;
+
+  const msgId = cbq.message?.message_id;
+
+  // Verifica account (source of truth per company_id)
+  const tuUser = await getTelegramUser(chatId);
+  if (!tuUser) {
+    await tg.answerCallbackQuery(cbq.id, '❌ Account non collegato. Usa /start per collegarlo.');
+    return;
+  }
+
+  // 1. Risposta immediata al tap (rimuove spinner)
+  await tg.answerCallbackQuery(cbq.id, '').catch(() => {});
+
+  // 2. Rimuovi bottoni dal messaggio originale subito (anti-doppio-tap)
+  if (msgId) {
+    await tg.editMessageReplyMarkup(chatId, msgId).catch(() => {});
+  }
+
+  const company = tuUser.company_id;
+
+  // 3. Esegui azione e rispondi
+  try {
+    switch (action) {
+
+      // ── Chiudi NC ──────────────────────────────────────────
+      case 'close_nc': {
+        const res = await ladiaActions.closeNc(p1, chatId, company);
+        if (res.alreadyResolved) {
+          await tg.sendMessage(chatId,
+            `✅ <b>Ladia</b> — Questa NC era già stata segnata come risolta.`);
+        } else if (res.ok) {
+          await tg.sendMessage(chatId,
+            `✅ <b>NC segnata come risolta.</b>\n` +
+            `Ottimo! Il problema è stato chiuso e tracciato nel sistema.\n` +
+            `Continua a monitorare il cantiere con 🤖 Ladia.`);
+        } else if (res.notFound) {
+          await tg.sendMessage(chatId,
+            `⚠️ <b>Ladia</b> — NC non trovata. Potrebbe essere già stata eliminata da Palladia.`);
+        } else {
+          await tg.sendMessage(chatId,
+            `❌ <b>Ladia</b> — Errore nella chiusura. Riprova aprendo Palladia.`);
+        }
+        break;
+      }
+
+      // ── Lascia NC aperta ──────────────────────────────────
+      case 'skip_nc': {
+        await tg.sendMessage(chatId,
+          `📋 <b>Ladia</b> — NC lasciata aperta.\n` +
+          `Ti ricorderò domani se non viene risolta.`);
+        break;
+      }
+
+      // ── Registra uscite mancanti ──────────────────────────
+      case 'reg_exits': {
+        if (!p1 || !p2) {
+          await tg.sendMessage(chatId, `❌ <b>Ladia</b> — Dati mancanti. Riprova da Palladia.`);
+          break;
+        }
+        const res = await ladiaActions.registerMissingExits(p1, p2, company, chatId);
+        if (!res.ok) {
+          await tg.sendMessage(chatId,
+            `❌ <b>Ladia</b> — Errore nella registrazione. Riprova da Palladia.`);
+        } else if (res.count === 0) {
+          await tg.sendMessage(chatId,
+            `✅ <b>Ladia</b> — Nessuna uscita mancante da registrare.\n` +
+            `Probabilmente qualcuno le ha già sistemate.`);
+        } else {
+          await tg.sendMessage(chatId,
+            `✅ <b>${res.count} uscit${res.count > 1 ? 'e registrate' : 'a registrata'} alle 18:00.</b>\n\n` +
+            `I log sono visibili nel registro presenze su Palladia.\n` +
+            `Le uscite sono marcate come <code>ladia_action</code> per distinguerle da quelle reali.`);
+        }
+        break;
+      }
+
+      // ── Ignora uscite mancanti ────────────────────────────
+      case 'skip_exits': {
+        await tg.sendMessage(chatId,
+          `📋 <b>Ladia</b> — Ok, le uscite restano non registrate.\n` +
+          `Ricordati di sistemarle manualmente se necessario.`);
+        break;
+      }
+
+      // ── Avvisa squadra: meteo ─────────────────────────────
+      case 'rain_notify': {
+        const res = await ladiaActions.sendRainNotification(p1, company, chatId);
+        if (!res.ok) {
+          await tg.sendMessage(chatId,
+            `❌ <b>Ladia</b> — Errore nell'invio. Riprova tra poco.`);
+        } else if (res.sent === 0) {
+          await tg.sendMessage(chatId,
+            `✅ <b>Ladia</b> — Sei l'unico membro del team collegato.\n` +
+            `Avvisa la squadra direttamente.`);
+        } else {
+          await tg.sendMessage(chatId,
+            `✅ <b>Allerta meteo inviata a ${res.sent} member${res.sent > 1 ? 'i' : 'o'} del team.</b>\n` +
+            `Tutti sono stati avvisati di verificare opere esterne e ponteggi.`);
+        }
+        break;
+      }
+
+      // ── Meteo: gestisco io ────────────────────────────────
+      case 'rain_skip': {
+        await tg.sendMessage(chatId,
+          `👍 <b>Ladia</b> — Perfetto, gestisci tu. Sono qui se hai bisogno.`);
+        break;
+      }
+
+      // ── Analisi budget con Ladia ──────────────────────────
+      case 'budget_ladia': {
+        const siteId = p1;
+        // Attiva ladia_mode e aggiorna cantiere attivo
+        await supabase.from('telegram_users')
+          .update({ active_site_id: siteId, ladia_mode: true })
+          .eq('telegram_chat_id', chatId);
+
+        // Indica typing e lancia analisi proattiva
+        await tg.sendChatAction(chatId, 'typing').catch(() => {});
+        await askLadia(
+          chatId,
+          'Fammi un\'analisi rapida della situazione economica di questo cantiere: ' +
+          'budget consumato, SAL attuale, rischio sforamento e cosa mi consigli per rientrare.',
+          tuUser
+        ).catch(async err => {
+          console.error('[handleActionCallback] budget_ladia askLadia error:', err.message);
+          await tg.sendMessage(chatId,
+            `🤖 <b>Ladia</b> è pronta per l'analisi economica.\n` +
+            `Scrivimi per iniziare.`,
+            { replyMarkup: LADIA_KEYBOARD }
+          ).catch(() => {});
+        });
+        break;
+      }
+
+      // ── Check-in inattività: apri Ladia ──────────────────
+      case 'open_ladia': {
+        const siteId = p1;
+        await ladiaActions.openLadiaMode(chatId, siteId);
+        await tg.sendMessage(chatId,
+          `🤖 <b>Ladia</b> è pronta.\n` +
+          `Dimmi com'è la situazione al cantiere o chiedimi quello che vuoi.`,
+          { replyMarkup: LADIA_KEYBOARD }
+        );
+        break;
+      }
+
+      // ── Check-in inattività: tutto ok ────────────────────
+      case 'skip_inactive': {
+        await tg.sendMessage(chatId,
+          `👍 <b>Ladia</b> — Perfetto. Ti tengo d'occhio e ti avviso se serve!`);
+        break;
+      }
+
+      // ── Invia promemoria scadenza documento ───────────────
+      case 'expiry_remind': {
+        const workerId = p1;
+        const docType  = p2; // 'train' | 'fit'
+        const res = await ladiaActions.sendExpiryReminder(workerId, docType, company, chatId);
+        if (res.ok && res.sent > 0) {
+          await tg.sendMessage(chatId,
+            `✅ <b>Promemoria inviato a ${res.sent} member${res.sent > 1 ? 'i' : 'o'} del team.</b>\n` +
+            `Tutti sono stati avvisati di aggiornare la documentazione.`);
+        } else if (res.ok && res.sent === 0) {
+          await tg.sendMessage(chatId,
+            `⚠️ <b>Ladia</b> — Nessun membro del team collegato a Telegram.\n` +
+            `Avvisa direttamente dall'app Palladia.`);
+        } else {
+          await tg.sendMessage(chatId,
+            `❌ <b>Ladia</b> — Errore nell'invio. Riprova o gestisci da Palladia.`);
+        }
+        break;
+      }
+
+      // ── Ignora scadenza documento ─────────────────────────
+      case 'expiry_skip': {
+        await tg.sendMessage(chatId,
+          `📋 <b>Ladia</b> — Ok, ignorato per oggi.\n` +
+          `Ti ricorderò domani se la scadenza è ancora imminente.`);
+        break;
+      }
+
+      default:
+        // Azione non riconosciuta — ignora silenziosamente
+        console.warn(`[handleActionCallback] azione sconosciuta: "${action}" da chat ${chatId}`);
+        break;
+    }
+  } catch (err) {
+    console.error(`[handleActionCallback] errore action="${action}" chat=${chatId}:`, err.message);
+    await tg.sendMessage(chatId,
+      `❌ <b>Ladia</b> — Si è verificato un errore. Riprova o usa Palladia direttamente.`
+    ).catch(() => {});
   }
 }
 

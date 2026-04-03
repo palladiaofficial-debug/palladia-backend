@@ -174,9 +174,29 @@ async function editMessageText(chatId, messageId, text, { parseMode = 'HTML', re
   }
 }
 
+/**
+ * Rimuove o sostituisce la inline keyboard di un messaggio esistente.
+ * Usato per disabilitare i bottoni dopo che l'utente ha già confermato un'azione.
+ * replyMarkup = null → rimuove tutti i bottoni (inline_keyboard vuoto).
+ */
+async function editMessageReplyMarkup(chatId, messageId, replyMarkup = null) {
+  try {
+    return await tgPost('editMessageReplyMarkup', {
+      chat_id:      chatId,
+      message_id:   messageId,
+      reply_markup: replyMarkup || { inline_keyboard: [] },
+    });
+  } catch (err) {
+    // Ignora "message is not modified" o messaggi troppo vecchi
+    if (err.telegram_code === 400) return null;
+    throw err;
+  }
+}
+
 module.exports = {
   sendMessage,
   editMessageText,
+  editMessageReplyMarkup,
   answerCallbackQuery,
   sendChatAction,
   getFile,
