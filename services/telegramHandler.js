@@ -1556,7 +1556,7 @@ async function handleImpostazioniCommand(chatId, tuUser) {
     { text: level === 'quiet'    ? '✅ Solo briefing' : '🤫 Solo briefing', callbackData: 'set:notif:quiet' },
     { text: level === 'balanced' ? '✅ Bilanciato'    : '⚖️ Bilanciato',    callbackData: 'set:notif:balanced' },
     { text: level === 'full'     ? '✅ Tutto'         : '🔔 Tutto',         callbackData: 'set:notif:full' },
-  ], 3);
+  ], 1);
 
   await tg.sendMessage(chatId, text, { replyMarkup: keyboard });
 }

@@ -101,11 +101,24 @@ async function getChatIdsForSite(companyId, siteId) {
  * @returns {Promise<Array<{chatId, companyId, siteId, siteName, siteAddress, latitude, longitude, budget_totale, sal_percentuale}>>}
  */
 async function fetchActiveSiteUsers() {
-  const { data: users, error } = await supabase
+  // Nota: notification_level e last_interaction_at richiedono migration 035.
+  // Se le colonne non esistono ancora, facciamo il fallback a una query sicura.
+  let users, error;
+  ({ data: users, error } = await supabase
     .from('telegram_users')
     .select('telegram_chat_id, company_id, active_site_id, notification_level, last_interaction_at')
     .not('active_site_id', 'is', null)
-    .limit(500);
+    .limit(500));
+
+  if (error) {
+    // Colonne non ancora presenti — fallback senza notification_level
+    console.warn('[ladiaProactive] fetchActiveSiteUsers fallback (migration 035 non eseguita?):', error.message);
+    ({ data: users, error } = await supabase
+      .from('telegram_users')
+      .select('telegram_chat_id, company_id, active_site_id')
+      .not('active_site_id', 'is', null)
+      .limit(500));
+  }
 
   if (error || !users?.length) return [];
 
