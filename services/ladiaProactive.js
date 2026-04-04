@@ -486,8 +486,7 @@ async function checkMidMorningPresences(entry) {
   const { chatId, companyId, siteId, siteName } = entry;
 
   // Esegui solo nella finestra 09:30–10:30 (Europe/Rome)
-  const nowRome = new Date().toLocaleString('en-US', { timeZone: 'Europe/Rome' });
-  const hourRome = new Date(nowRome).getHours();
+  const hourRome = parseInt(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', hour: 'numeric', hour12: false }).format(new Date()), 10);
   if (hourRome < 9 || hourRome >= 11) return;
 
   const dateKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
