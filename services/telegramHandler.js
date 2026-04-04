@@ -37,6 +37,7 @@ const { notifyNonConformita, notifyIncidente, notifyCompany } = require('./teleg
 const { isOwner, handleOwnerMessage, handleOwnerCallback } = require('./telegramOwner');
 const { processLadiaPdf } = require('./ladiaDocumentProcessor');
 const ladiaActions   = require('./ladiaActions');
+const { runComplianceChecks, buildComplianceMessage } = require('./complianceEngine');
 
 // ── Tastiere persistenti ──────────────────────────────────────
 
@@ -205,6 +206,7 @@ async function handleMessage(msg, tuUser, tuCoord) {
   if (text.startsWith('/sal ') || text === '/sal')   return handleSalCommand(msg, tuUser);
   if (text.startsWith('/ladia'))         return handleLadiaCommand(msg, tuUser);
   if (text.startsWith('/impostazioni')) return handleImpostazioniCommand(chatId, tuUser);
+  if (text.startsWith('/ispezione'))   return handleIspezioneCommand(chatId, tuUser);
 
   // ── Ladia mode: testo → Ladia; PDF → elabora come template ──
   if (tuUser.ladia_mode && text) return handleLadiaMessage(msg, tuUser);
@@ -681,6 +683,33 @@ async function handleActionCallback(cbq, chatId, data) {
       case 'expiry_skip_batch': {
         await tg.sendMessage(chatId,
           `📋 <b>Ladia</b> — Ok, visto. Ti ricordo se le scadenze si avvicinano ulteriormente.`);
+        break;
+      }
+
+      // ── Report conformità on-demand ───────────────────────
+      case 'compliance_report': {
+        const siteId = p1;
+        await tg.sendChatAction(chatId, 'typing').catch(() => {});
+        let report;
+        try {
+          report = await runComplianceChecks(siteId, company);
+        } catch (err) {
+          await tg.sendMessage(chatId,
+            `❌ <b>Ladia</b> — Errore nell'analisi. Riprova con <code>/ispezione</code>.`);
+          break;
+        }
+        const msg      = buildComplianceMessage(report);
+        const keyboard = tg.buildInlineKeyboard([
+          { text: '🤖 Chiedi a Ladia come risolvere', callbackData: `act:open_ladia:${siteId}` },
+        ], 1);
+        await tg.sendMessage(chatId, msg, { replyMarkup: keyboard });
+        break;
+      }
+
+      // ── Rischio conformità: ho già gestito ───────────────
+      case 'skip_compliance': {
+        await tg.sendMessage(chatId,
+          `👍 <b>Ladia</b> — Ok. Usa <code>/ispezione</code> se vuoi il report completo in qualsiasi momento.`);
         break;
       }
 
@@ -1464,7 +1493,8 @@ async function showHelp(chatId) {
     `organizzative e gestionali. Solo su richiesta, non invadente.\n` +
     `<code>/ladia [domanda]</code> — chiedi direttamente\n\n` +
     `<b>Impostazioni:</b>\n` +
-    `<code>/impostazioni</code> — gestisci le notifiche di Ladia`
+    `<code>/impostazioni</code> — gestisci le notifiche di Ladia\n` +
+    `<code>/ispezione</code> — report conformità cantiere (NC, documenti, diario)`
   );
 }
 
@@ -1529,6 +1559,32 @@ async function handleImpostazioniCommand(chatId, tuUser) {
   ], 3);
 
   await tg.sendMessage(chatId, text, { replyMarkup: keyboard });
+}
+
+async function handleIspezioneCommand(chatId, tuUser) {
+  const siteCtx = await requireActiveSite(chatId, tuUser);
+  if (!siteCtx) return;
+
+  await tg.sendMessage(chatId, `🛡️ <i>Analisi conformità in corso…</i>`);
+  tg.sendChatAction(chatId, 'typing').catch(() => {});
+
+  let report;
+  try {
+    report = await runComplianceChecks(siteCtx.siteId, tuUser.company_id);
+  } catch (err) {
+    console.error('[handleIspezioneCommand] error:', err.message);
+    await tg.sendMessage(chatId,
+      `❌ <b>Ladia</b> — Errore nell'analisi. Riprova tra qualche secondo.`
+    );
+    return;
+  }
+
+  const msg      = buildComplianceMessage(report);
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🤖 Chiedi a Ladia come risolvere', callbackData: `act:open_ladia:${siteCtx.siteId}` },
+  ], 1);
+
+  await tg.sendMessage(chatId, msg, { replyMarkup: keyboard });
 }
 
 async function handleLadiaReset(chatId, tuUser) {

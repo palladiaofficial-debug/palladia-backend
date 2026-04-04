@@ -24,6 +24,8 @@ const tg       = require('./telegram');
 const { getForecast }            = require('./weatherService');
 const { generateNcProposal,
         generateBudgetProposal } = require('./ladiaSmartProposal');
+const { runComplianceChecks,
+        buildComplianceMessage } = require('./complianceEngine');
 
 // ── Costanti ──────────────────────────────────────────────────
 const RAIN_THRESHOLD    = 50;  // % probabilità pioggia per triggare alert
@@ -583,6 +585,54 @@ async function applyFatigueIfNeeded(entry) {
   console.log(`[ladiaProactive] fatigue → chat ${entry.chatId} switched to quiet (${Math.floor(daysSince)}gg senza interazione)`);
 }
 
+// ── Trigger 9: Rischio conformità ─────────────────────────────
+// Scatta quando il compliance engine rileva 2+ problemi simultanei.
+// Dedup: una volta ogni 3 giorni per sito (non ogni 30min).
+
+async function checkComplianceRisk(entry) {
+  const { chatId, companyId, siteId } = entry;
+
+  // Dedup: una notifica ogni 3 giorni per sito
+  const today   = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const bucket  = Math.floor(new Date(today).getTime() / (3 * 86_400_000));
+  const key     = `compliance_${siteId}_b${bucket}`;
+
+  if (await alreadySent(chatId, 'compliance_risk', key)) return;
+
+  let report;
+  try {
+    report = await runComplianceChecks(siteId, companyId);
+  } catch (err) {
+    console.error(`[ladiaProactive] compliance check error: ${err.message}`);
+    return;
+  }
+
+  // Soglia: almeno 1 critico o 2+ warning
+  const { criticalCount, warnCount, checks, siteName } = report;
+  if (criticalCount === 0 && warnCount < 2) return;
+
+  const scoreIcon = criticalCount > 0 ? '🔴' : '🟡';
+  const riskItems = checks
+    .filter(c => c.status !== 'ok')
+    .map(c => `• ${c.detail.split('\n')[0]}`) // solo prima riga del detail
+    .join('\n');
+
+  const text =
+    `${scoreIcon} <b>Ladia — Rischio conformità</b> — ${siteName}\n\n` +
+    `Ho rilevato ${criticalCount + warnCount} element${criticalCount + warnCount > 1 ? 'i' : 'o'} ` +
+    `che potrebbero essere contestati in un'ispezione:\n${riskItems}\n\n` +
+    `Vuoi il report completo?`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🛡️ Report conformità',  callbackData: `act:compliance_report:${siteId}` },
+    { text: '❌ Ho già gestito',      callbackData: `act:skip_compliance:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'compliance_risk', key, companyId, siteId);
+  console.log(`[ladiaProactive] compliance_risk → chat ${chatId} — ${siteName} (crit=${criticalCount}, warn=${warnCount})`);
+}
+
 // ── Job principale ────────────────────────────────────────────
 
 async function runProactiveEngine() {
@@ -617,6 +667,7 @@ async function runProactiveEngine() {
         checkDocExpiry(entry),
         checkMidMorningPresences(entry),
         checkRepeatedNcPattern(entry),
+        checkComplianceRisk(entry),
       ]);
       processed++;
     } catch (err) {
