@@ -101,7 +101,7 @@ async function getChatIdsForSite(companyId, siteId) {
 async function fetchActiveSiteUsers() {
   const { data: users, error } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id, company_id, active_site_id')
+    .select('telegram_chat_id, company_id, active_site_id, notification_level, last_interaction_at')
     .not('active_site_id', 'is', null)
     .limit(500);
 
@@ -124,14 +124,16 @@ async function fetchActiveSiteUsers() {
       const site = siteMap.get(u.active_site_id);
       if (!site) return null;
       return {
-        chatId:        u.telegram_chat_id,
-        companyId:     u.company_id,
-        siteId:        site.id,
-        siteName:      site.name || site.address || 'Cantiere',
-        latitude:      site.latitude,
-        longitude:     site.longitude,
-        budgetTotale:  Number(site.budget_totale || 0),
-        salPct:        Number(site.sal_percentuale || 0),
+        chatId:              u.telegram_chat_id,
+        companyId:           u.company_id,
+        siteId:              site.id,
+        siteName:            site.name || site.address || 'Cantiere',
+        latitude:            site.latitude,
+        longitude:           site.longitude,
+        budgetTotale:        Number(site.budget_totale || 0),
+        salPct:              Number(site.sal_percentuale || 0),
+        notificationLevel:   u.notification_level || 'balanced',
+        lastInteractionAt:   u.last_interaction_at || null,
       };
     })
     .filter(Boolean);
@@ -200,52 +202,42 @@ async function checkNcStale(entry) {
     .eq('site_id', siteId)
     .eq('category', 'non_conformita')
     .in('urgency', ['alta', 'critica'])
-    .is('resolved_at', null)           // non notificare NC già chiuse
+    .is('resolved_at', null)
     .lt('created_at', cutoff)
-    .order('urgency', { ascending: false }) // critiche prima
+    .order('urgency', { ascending: false })
     .limit(5);
 
   if (!staleNcs?.length) return;
 
-  for (const nc of staleNcs) {
-    const key = `nc_stale_${nc.id}_${today}`;
-    if (await alreadySent(chatId, 'nc_stale', key)) continue;
+  // Aggregazione: UN solo messaggio per sito per giorno (non uno per NC)
+  const key = `nc_stale_batch_${siteId}_${today}`;
+  if (await alreadySent(chatId, 'nc_stale_batch', key)) return;
 
+  const hasCritica = staleNcs.some(nc => nc.urgency === 'critica');
+  const icon       = hasCritica ? '🔴' : '🟠';
+
+  const ncLines = staleNcs.map(nc => {
     const ageHours = Math.round((Date.now() - new Date(nc.created_at).getTime()) / 3_600_000);
     const ageDays  = Math.floor(ageHours / 24);
-    const ageLabel = ageDays >= 1 ? `${ageDays} giorn${ageDays > 1 ? 'i' : 'o'}` : `${ageHours}h`;
-    const icon     = nc.urgency === 'critica' ? '🔴' : '🟠';
+    const ageLabel = ageDays >= 1 ? `${ageDays}gg` : `${ageHours}h`;
+    const urgIcon  = nc.urgency === 'critica' ? '🔴' : '🟠';
+    const snippet  = (nc.ai_summary || nc.content || '').slice(0, 80);
+    return `${urgIcon} <b>${ageLabel}</b> — <i>${snippet}</i>`;
+  }).join('\n');
 
-    // LIVELLO 2 — Smart proposal: Claude Haiku analizza il contesto specifico
-    // Ritorna null se fallisce → fallback al template
-    const smartProposal = await generateNcProposal(nc, siteName, ageLabel);
+  const text =
+    `${icon} <b>Ladia — ${staleNcs.length} NC non risolte</b> su ${siteName}\n\n` +
+    `${ncLines}\n\n` +
+    `Parlane con Ladia per chiuderle o aggiornarle.`;
 
-    let text;
-    if (smartProposal) {
-      // Proposta contestualizzata generata da Claude
-      text =
-        `${icon} <b>Ladia — NC non risolta (${ageLabel})</b>\n\n` +
-        `${smartProposal}\n\n` +
-        `Come vuoi procedere?`;
-    } else {
-      // Fallback template
-      const text_nc = (nc.ai_summary || nc.content || '').slice(0, 120);
-      text =
-        `${icon} <b>Ladia — NC non risolta</b>\n\n` +
-        `Su <b>${siteName}</b>: NC <b>${nc.urgency}</b> aperta da <b>${ageLabel}</b>.\n` +
-        `<i>${text_nc}</i>\n\n` +
-        `Vuoi che la segni come risolta?`;
-    }
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🤖 Gestisci con Ladia', callbackData: `act:open_ladia:${siteId}` },
+    { text: '❌ Le vedo dopo',        callbackData: `act:skip_nc_batch:${siteId}` },
+  ], 2);
 
-    const keyboard = tg.buildInlineKeyboard([
-      { text: '✅ Segna risolta',   callbackData: `act:close_nc:${nc.id}` },
-      { text: '❌ Lascia aperta',   callbackData: `act:skip_nc:${nc.id}` },
-    ], 2);
-
-    await safeSend(chatId, text, { replyMarkup: keyboard });
-    await markSent(chatId, 'nc_stale', key, companyId, siteId);
-    console.log(`[ladiaProactive] nc_stale → chat ${chatId} — ${siteName} (${ageLabel}, smart=${!!smartProposal})`);
-  }
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'nc_stale_batch', key, companyId, siteId);
+  console.log(`[ladiaProactive] nc_stale_batch → chat ${chatId} — ${siteName} (${staleNcs.length} NC)`);
 }
 
 // ── Trigger 3: Budget alert ───────────────────────────────────
@@ -380,58 +372,48 @@ async function checkDocExpiry(entry) {
 
   if (!workers?.length) return;
 
+  // Aggregazione: UN solo messaggio per sito per giorno
+  const dateKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const batchKey = `expiry_batch_${siteId}_${dateKey}`;
+  if (await alreadySent(chatId, 'doc_expiry_batch', batchKey)) return;
+
+  const lines = [];
   for (const w of workers) {
     const trainDays = w.safety_training_expiry
       ? Math.round((new Date(w.safety_training_expiry) - today) / 86_400_000) : null;
     const fitDays   = w.health_fitness_expiry
       ? Math.round((new Date(w.health_fitness_expiry)  - today) / 86_400_000) : null;
 
-    // Formazione
     if (trainDays !== null && trainDays <= DOC_EXPIRY_DAYS) {
-      const key = `expiry_${w.id}_train_${w.safety_training_expiry}`;
-      if (!(await alreadySent(chatId, 'doc_expiry', key))) {
-        const icon = trainDays <= 0 ? '🔴' : trainDays <= 3 ? '🟠' : '🟡';
-        const label = trainDays <= 0 ? `SCADUTA ${Math.abs(trainDays)}gg fa` : `scade tra ${trainDays}gg`;
-        const text =
-          `${icon} <b>Ladia — Scadenza documenti</b>\n\n` +
-          `<b>${w.full_name}</b> su <b>${siteName}</b>:\n` +
-          `Formazione sicurezza ${label}.\n\n` +
-          `Vuoi che Ladia invii un promemoria a tutto il team?`;
-
-        const keyboard = tg.buildInlineKeyboard([
-          { text: '📢 Invia promemoria',  callbackData: `act:expiry_remind:${w.id}:train` },
-          { text: '❌ Ignora',             callbackData: `act:expiry_skip:${w.id}:train` },
-        ], 2);
-
-        await safeSend(chatId, text, { replyMarkup: keyboard });
-        await markSent(chatId, 'doc_expiry', key, companyId, siteId);
-        console.log(`[ladiaProactive] doc_expiry(train) → chat ${chatId} — ${w.full_name}`);
-      }
+      const icon  = trainDays <= 0 ? '🔴' : trainDays <= 3 ? '🟠' : '🟡';
+      const label = trainDays <= 0 ? `SCADUTA ${Math.abs(trainDays)}gg fa` : `tra ${trainDays}gg`;
+      lines.push(`${icon} <b>${w.full_name}</b> — Formazione ${label}`);
     }
-
-    // Idoneità sanitaria
     if (fitDays !== null && fitDays <= DOC_EXPIRY_DAYS) {
-      const key = `expiry_${w.id}_fit_${w.health_fitness_expiry}`;
-      if (!(await alreadySent(chatId, 'doc_expiry', key))) {
-        const icon = fitDays <= 0 ? '🔴' : fitDays <= 3 ? '🟠' : '🟡';
-        const label = fitDays <= 0 ? `SCADUTA ${Math.abs(fitDays)}gg fa` : `scade tra ${fitDays}gg`;
-        const text =
-          `${icon} <b>Ladia — Scadenza documenti</b>\n\n` +
-          `<b>${w.full_name}</b> su <b>${siteName}</b>:\n` +
-          `Idoneità sanitaria ${label}.\n\n` +
-          `Vuoi che Ladia invii un promemoria a tutto il team?`;
-
-        const keyboard = tg.buildInlineKeyboard([
-          { text: '📢 Invia promemoria',  callbackData: `act:expiry_remind:${w.id}:fit` },
-          { text: '❌ Ignora',             callbackData: `act:expiry_skip:${w.id}:fit` },
-        ], 2);
-
-        await safeSend(chatId, text, { replyMarkup: keyboard });
-        await markSent(chatId, 'doc_expiry', key, companyId, siteId);
-        console.log(`[ladiaProactive] doc_expiry(fit) → chat ${chatId} — ${w.full_name}`);
-      }
+      const icon  = fitDays <= 0 ? '🔴' : fitDays <= 3 ? '🟠' : '🟡';
+      const label = fitDays <= 0 ? `SCADUTA ${Math.abs(fitDays)}gg fa` : `tra ${fitDays}gg`;
+      lines.push(`${icon} <b>${w.full_name}</b> — Idoneità ${label}`);
     }
   }
+
+  if (!lines.length) return;
+
+  const hasCritica = lines.some(l => l.startsWith('🔴'));
+  const icon       = hasCritica ? '🔴' : lines.some(l => l.startsWith('🟠')) ? '🟠' : '🟡';
+
+  const text =
+    `${icon} <b>Ladia — Scadenze documenti</b> — ${siteName}\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `Vuoi che avvisi subito il team?`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '📢 Avvisa il team',  callbackData: `act:expiry_remind_batch:${siteId}` },
+    { text: '❌ Ho visto',         callbackData: `act:expiry_skip_batch:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'doc_expiry_batch', batchKey, companyId, siteId);
+  console.log(`[ladiaProactive] doc_expiry_batch → chat ${chatId} — ${siteName} (${lines.length} scadenze)`);
 }
 
 // ── Trigger 6: Caldo estremo ──────────────────────────────────
@@ -567,6 +549,40 @@ async function checkRepeatedNcPattern(entry) {
   console.log(`[ladiaProactive] nc_pattern → chat ${chatId} — ${siteName} (${count} NC aperte)`);
 }
 
+// ── Fatigue protection ────────────────────────────────────────
+// Se l'utente è in 'balanced' e non interagisce da FATIGUE_DAYS giorni,
+// passa automaticamente a 'quiet' e manda un messaggio gentile.
+
+const FATIGUE_DAYS = 3;
+
+async function applyFatigueIfNeeded(entry) {
+  if (entry.notificationLevel !== 'balanced') return;
+
+  const refDate = entry.lastInteractionAt
+    ? new Date(entry.lastInteractionAt)
+    : null;
+
+  // Se non ha mai interagito non forziamo il quiet — aspettiamo che premi almeno un bottone
+  if (!refDate) return;
+
+  const daysSince = (Date.now() - refDate.getTime()) / 86_400_000;
+  if (daysSince < FATIGUE_DAYS) return;
+
+  await supabase.from('telegram_users')
+    .update({ notification_level: 'quiet' })
+    .eq('telegram_chat_id', String(entry.chatId));
+
+  entry.notificationLevel = 'quiet'; // aggiorna per questo ciclo
+
+  await safeSend(entry.chatId,
+    `🔕 <b>Ladia</b> — Non ricevo tue risposte da ${Math.floor(daysSince)} giorni.\n\n` +
+    `Per non disturbarti, da ora ti mando solo il briefing mattutino e il resoconto serale.\n\n` +
+    `Scrivi <code>/impostazioni</code> per cambiare le notifiche quando vuoi.`
+  );
+
+  console.log(`[ladiaProactive] fatigue → chat ${entry.chatId} switched to quiet (${Math.floor(daysSince)}gg senza interazione)`);
+}
+
 // ── Job principale ────────────────────────────────────────────
 
 async function runProactiveEngine() {
@@ -579,11 +595,18 @@ async function runProactiveEngine() {
     return;
   }
 
-  // Raggruppa per siteId per evitare fetch duplicate di NC/budget
-  // (più utenti sullo stesso cantiere → stessi trigger, ma ognuno riceve il suo messaggio)
   let processed = 0;
   for (const entry of entries) {
     try {
+      // Controlla e applica fatigue prima dei trigger
+      await applyFatigueIfNeeded(entry);
+
+      // In modalità quiet: salta tutti i trigger (briefing arriva da dailySummaryCron)
+      if (entry.notificationLevel === 'quiet') {
+        processed++;
+        continue;
+      }
+
       // Tutti i trigger in parallelo per ogni utente+cantiere
       await Promise.all([
         checkRainAlert(entry),

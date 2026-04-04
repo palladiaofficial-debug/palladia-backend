@@ -203,7 +203,8 @@ async function handleMessage(msg, tuUser, tuCoord) {
   if (text.startsWith('/costo'))     return handleCostoCommand(msg, tuUser);
   if (text.startsWith('/ricavo'))    return handleRicavoCommand(msg, tuUser);
   if (text.startsWith('/sal ') || text === '/sal')   return handleSalCommand(msg, tuUser);
-  if (text.startsWith('/ladia'))     return handleLadiaCommand(msg, tuUser);
+  if (text.startsWith('/ladia'))         return handleLadiaCommand(msg, tuUser);
+  if (text.startsWith('/impostazioni')) return handleImpostazioniCommand(chatId, tuUser);
 
   // ── Ladia mode: testo → Ladia; PDF → elabora come template ──
   if (tuUser.ladia_mode && text) return handleLadiaMessage(msg, tuUser);
@@ -367,6 +368,41 @@ async function showSiteSelector(chatId, tuUser) {
 async function handleCallbackQuery(cbq) {
   const chatId = cbq.message.chat.id;
   const data   = cbq.data || '';
+
+  // ── Aggiorna last_interaction_at su ogni tap (fatigue tracking) ──
+  // Fire-and-forget: non blocca la risposta
+  supabase.from('telegram_users')
+    .update({ last_interaction_at: new Date().toISOString() })
+    .eq('telegram_chat_id', String(chatId))
+    .then(() => {}).catch(() => {});
+
+  // ── Impostazioni notifiche (set:notif:*) ────────────────────
+  if (data.startsWith('set:notif:')) {
+    const level = data.slice(10); // 'quiet' | 'balanced' | 'full'
+    if (!['quiet', 'balanced', 'full'].includes(level)) {
+      await tg.answerCallbackQuery(cbq.id, '');
+      return;
+    }
+    await tg.answerCallbackQuery(cbq.id, '').catch(() => {});
+    if (cbq.message?.message_id) {
+      await tg.editMessageReplyMarkup(chatId, cbq.message.message_id).catch(() => {});
+    }
+    await supabase.from('telegram_users')
+      .update({ notification_level: level })
+      .eq('telegram_chat_id', String(chatId));
+
+    const confirmLabel = { quiet: '🤫 Solo briefing', balanced: '⚖️ Bilanciato', full: '🔔 Tutto' }[level];
+    const confirmNote  = {
+      quiet:    'Riceverai solo il briefing mattutino e il resoconto serale.',
+      balanced: 'Riceverai alert aggregati per cantiere. Nessun messaggio ripetuto.',
+      full:     'Riceverai ogni alert appena succede qualcosa.',
+    }[level];
+    await tg.sendMessage(chatId,
+      `✅ <b>Notifiche impostate: ${confirmLabel}</b>\n\n${confirmNote}\n\n` +
+      `Scrivi <code>/impostazioni</code> per cambiare di nuovo.`
+    );
+    return;
+  }
 
   // ── Azioni Ladia (act:*) ────────────────────────────────────
   // Formato: act:{action}:{param1}[:{param2}]
@@ -619,6 +655,32 @@ async function handleActionCallback(cbq, chatId, data) {
       case 'skip_inactive': {
         await tg.sendMessage(chatId,
           `👍 <b>Ladia</b> — Perfetto. Ti tengo d'occhio e ti avviso se serve!`);
+        break;
+      }
+
+      // ── Batch NC: le vedo dopo ────────────────────────────
+      case 'skip_nc_batch': {
+        await tg.sendMessage(chatId,
+          `📋 <b>Ladia</b> — Ok, ci torno domani se non vengono risolte.`);
+        break;
+      }
+
+      // ── Batch scadenze: avvisa il team ────────────────────
+      case 'expiry_remind_batch': {
+        const siteId = p1;
+        // Apre Ladia con il contesto di scadenze aperto
+        await ladiaActions.openLadiaMode(chatId, siteId);
+        await tg.sendMessage(chatId,
+          `🤖 <b>Ladia</b> — Dimmi quali documenti vuoi che avvisi al team, o chiedimi un riepilogo.`,
+          { replyMarkup: LADIA_KEYBOARD }
+        );
+        break;
+      }
+
+      // ── Batch scadenze: ho visto ──────────────────────────
+      case 'expiry_skip_batch': {
+        await tg.sendMessage(chatId,
+          `📋 <b>Ladia</b> — Ok, visto. Ti ricordo se le scadenze si avvicinano ulteriormente.`);
         break;
       }
 
@@ -1400,7 +1462,9 @@ async function showHelp(chatId) {
     `Premi <b>🤖 Ladia</b> per attivare l'assistente AI contestuale.\n` +
     `Conosce tutto del tuo cantiere e risponde a domande tecniche,\n` +
     `organizzative e gestionali. Solo su richiesta, non invadente.\n` +
-    `<code>/ladia [domanda]</code> — chiedi direttamente`
+    `<code>/ladia [domanda]</code> — chiedi direttamente\n\n` +
+    `<b>Impostazioni:</b>\n` +
+    `<code>/impostazioni</code> — gestisci le notifiche di Ladia`
   );
 }
 
@@ -1434,6 +1498,37 @@ async function handleLadiaButton(chatId, tuUser) {
 async function handleLadiaExit(chatId, tuUser) {
   await supabase.from('telegram_users').update({ ladia_mode: false }).eq('id', tuUser.id);
   await sendMain(chatId, `✅ Tornato al bot normale.`);
+}
+
+async function handleImpostazioniCommand(chatId, tuUser) {
+  const level = tuUser.notification_level || 'balanced';
+  const labels = {
+    quiet:    '🤫 Solo briefing',
+    balanced: '⚖️ Bilanciato',
+    full:     '🔔 Tutto',
+  };
+  const descriptions = {
+    quiet:    'Solo il recap mattutino e serale. Nessun alert durante la giornata.',
+    balanced: 'Alert aggregati per cantiere (NC, budget, meteo, scadenze). Bilanciato.',
+    full:     'Massima reattività. Ogni evento ha il suo messaggio.',
+  };
+
+  const currentLabel = labels[level] || labels.balanced;
+  const currentDesc  = descriptions[level] || descriptions.balanced;
+
+  const text =
+    `⚙️ <b>Impostazioni Ladia</b>\n\n` +
+    `Notifiche attuali: <b>${currentLabel}</b>\n` +
+    `<i>${currentDesc}</i>\n\n` +
+    `Scegli il livello che preferisci:`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: level === 'quiet'    ? '✅ Solo briefing' : '🤫 Solo briefing', callbackData: 'set:notif:quiet' },
+    { text: level === 'balanced' ? '✅ Bilanciato'    : '⚖️ Bilanciato',    callbackData: 'set:notif:balanced' },
+    { text: level === 'full'     ? '✅ Tutto'         : '🔔 Tutto',         callbackData: 'set:notif:full' },
+  ], 3);
+
+  await tg.sendMessage(chatId, text, { replyMarkup: keyboard });
 }
 
 async function handleLadiaReset(chatId, tuUser) {
