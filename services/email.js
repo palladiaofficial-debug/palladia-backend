@@ -451,10 +451,13 @@ async function sendCoordinatorNoteAlert({ companyId, siteName, coordinatorName, 
     </p>
   `;
 
+  const isUrgent = noteType === 'warning' || noteType === 'request';
+  const subjectPrefix = isUrgent ? `[URGENTE] ` : '';
+
   return getResend().emails.send({
     from: FROM,
     to: adminEmails,
-    subject: `Palladia — Nota CSE su ${siteName}: ${noteLabel}`,
+    subject: `${subjectPrefix}Palladia — Nota CSE su ${siteName}: ${noteLabel}`,
     html: layout(`Nota coordinatore — ${siteName}`, body),
   });
 }

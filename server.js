@@ -282,6 +282,9 @@ app.get('/badge/:code', (req, res) => {
 app.get('/coordinator/:token', (req, res) => {
   res.sendFile('coordinator.html', { root: __dirname + '/public' });
 });
+app.get('/pro/accesso/:token', (req, res) => {
+  res.sendFile('pro.html', { root: __dirname + '/public' });
+});
 app.get('/demo', (req, res) => {
   res.sendFile('demo.html', { root: __dirname + '/public' });
 });

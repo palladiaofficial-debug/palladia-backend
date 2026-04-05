@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Portale Professionisti — Palladia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0; padding: 0;
+    background: #f5f3ef;
+    color: #1a1a1a;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .container { max-width: 720px; margin: 0 auto; padding: 0 16px 100px; }
+
+  /* ── Top bar ── */
+  .top-bar {
+    position: sticky; top: 0; z-index: 100;
+    background: #ffffff; border-bottom: 1px solid #e2e5ed;
+    padding: 14px 16px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .top-bar .brand-group { display: flex; align-items: center; gap: 8px; }
+  .top-bar .brand { font-size: 14px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #1a1a1a; }
+  .top-bar .brand-sub { font-size: 13px; font-weight: 500; color: #6c7280; }
+  .btn-back {
+    display: flex; align-items: center; gap: 6px;
+    background: none; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: #6c7280; transition: all .15s;
+  }
+  .btn-back:hover { border-color: #9ca3af; color: #1a1a1a; }
+
+  /* ── Section title ── */
+  .section-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; color: #6c7280; margin: 28px 0 10px;
+  }
+
+  /* ── Hero / Profile strip ── */
+  .hero { padding: 28px 0 20px; border-bottom: 1px solid #e2e5ed; margin-bottom: 24px; }
+  .hero .label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6c7280; margin: 0 0 6px; }
+  .hero h1 { margin: 0 0 4px; font-size: 24px; font-weight: 800; color: #1a1a1a; }
+  .hero .sub { margin: 0 0 12px; font-size: 14px; color: #6c7280; }
+  .hero .meta-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .meta-pill {
+    display: flex; align-items: center; gap: 6px; font-size: 12px;
+    color: #6c7280; background: #ffffff; border: 1px solid #e2e5ed;
+    padding: 4px 12px; border-radius: 999px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ── KPI grid ── */
+  .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 8px; }
+  .kpi-card {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 12px;
+    padding: 16px 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .kpi-card .kpi-val { font-size: 26px; font-weight: 800; color: #1a1a1a; line-height: 1; margin-bottom: 4px; }
+  .kpi-card .kpi-lbl { font-size: 11px; color: #6c7280; font-weight: 500; }
+  .kpi-card.kpi-alert .kpi-val { color: #dc2626; }
+
+  /* ── Site cards ── */
+  .site-list { display: flex; flex-direction: column; gap: 10px; }
+  .site-card {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 14px;
+    padding: 16px 18px; cursor: pointer; transition: all .15s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08); position: relative;
+  }
+  .site-card:hover { border-color: #9ca3af; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+  .site-card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .site-card-name { font-size: 16px; font-weight: 700; color: #1a1a1a; }
+  .site-card-company { font-size: 12px; color: #6c7280; margin-top: 2px; }
+  .site-card-address { font-size: 12px; color: #9ca3af; }
+  .site-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 10px; }
+  .site-badge {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 999px; border: 1px solid;
+  }
+  .site-badge.active  { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
+  .site-badge.paused  { background: #fffbeb; border-color: #fde68a; color: #d97706; }
+  .site-badge.closed  { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; }
+  .site-badge.alert   { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+  .site-badge.info    { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
+  .site-badge.warn    { background: #fffbeb; border-color: #fde68a; color: #d97706; }
+  .site-badge.neutral { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; }
+  .unread-dot {
+    position: absolute; top: 14px; right: 16px;
+    background: #dc2626; color: #fff; border-radius: 999px;
+    font-size: 10px; font-weight: 700; padding: 2px 7px;
+    min-width: 20px; text-align: center;
+  }
+  .arrow-right { color: #9ca3af; font-size: 18px; align-self: center; flex-shrink: 0; }
+
+  /* ── Worker list ── */
+  .worker-list { display: flex; flex-direction: column; gap: 8px; }
+  .worker-card {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 12px;
+    padding: 14px 16px; display: flex; align-items: flex-start; gap: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .worker-avatar {
+    width: 38px; height: 38px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 13px; font-weight: 800;
+    flex-shrink: 0; color: #fff;
+  }
+  .worker-info { flex: 1; min-width: 0; }
+  .worker-name { font-size: 14px; font-weight: 700; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .worker-sub  { font-size: 12px; color: #6c7280; margin-top: 2px; }
+  .worker-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+  .badge-tag {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid;
+  }
+  .tag-ok       { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
+  .tag-expiring { background: #fffbeb; border-color: #fde68a; color: #d97706; }
+  .tag-expired  { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+  .tag-notset   { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; }
+  .tag-onsite   { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
+
+  /* ── Compliance bar ── */
+  .compliance-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 8px; }
+  .comp-pill { border-radius: 8px; padding: 12px 10px; text-align: center; border: 1px solid transparent; }
+  .comp-pill .num  { font-size: 22px; font-weight: 800; line-height: 1; }
+  .comp-pill .lbl  { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px; }
+  .comp-compliant    { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
+  .comp-expiring     { background: #fffbeb; border-color: #fde68a; color: #d97706; }
+  .comp-noncompliant { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+  .comp-incomplete   { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; }
+
+  /* ── Presence timeline ── */
+  .day-row {
+    display: grid; grid-template-columns: 76px 1fr; gap: 12px;
+    align-items: center; padding: 10px 0; border-bottom: 1px solid #e2e5ed;
+  }
+  .day-row:last-child { border-bottom: none; }
+  .day-label { font-size: 12px; font-weight: 600; color: #6c7280; }
+  .day-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+  .presence-pill {
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    background: #f9fafb; border: 1px solid #e5e7eb; color: #1a1a1a;
+  }
+  .presence-pill.anomaly { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+
+  /* ── Notes ── */
+  .note-card {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .note-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .note-type-badge {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em;
+    text-transform: uppercase; padding: 2px 9px; border-radius: 999px; border: 1px solid;
+  }
+  .nt-observation { background: #eff6ff; border-color: #bfdbfe; color: #2563eb; }
+  .nt-request     { background: #fffbeb; border-color: #fde68a; color: #d97706; }
+  .nt-approval    { background: #f0fdf4; border-color: #bbf7d0; color: #16a34a; }
+  .nt-warning     { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
+  .note-meta      { font-size: 12px; color: #6c7280; }
+  .note-content   { font-size: 14px; color: #1a1a1a; line-height: 1.6; white-space: pre-wrap; }
+
+  /* ── Documents ── */
+  .doc-list { display: flex; flex-direction: column; gap: 8px; }
+  .doc-row {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 12px;
+    padding: 13px 16px; display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .doc-icon { font-size: 18px; flex-shrink: 0; }
+  .doc-info { flex: 1; min-width: 0; }
+  .doc-name { font-size: 14px; font-weight: 600; color: #1a1a1a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .doc-meta { font-size: 12px; color: #6c7280; margin-top: 2px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .doc-cat  {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; border: 1px solid; flex-shrink: 0;
+  }
+  .cat-pos           { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
+  .cat-psc           { background: #f5f3ff; border-color: #ddd6fe; color: #6d28d9; }
+  .cat-notifica_asl  { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+  .cat-durc          { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
+  .cat-dvr           { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .cat-assicurazione { background: #f0fdfa; border-color: #99f6e4; color: #0f766e; }
+  .cat-altro         { background: #f9fafb; border-color: #e5e7eb; color: #6b7280; }
+  .doc-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .btn-download {
+    background: #f5f3ef; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: #1a1a1a;
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn-download:hover { border-color: #aaa; }
+  .btn-download:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-ask {
+    background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px;
+    padding: 7px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: #d97706;
+    transition: all .15s; white-space: nowrap;
+  }
+  .btn-ask:hover { background: #fef3c7; border-color: #f59e0b; }
+
+  /* ── Sticky note bar ── */
+  .sticky-bar {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+    background: #ffffff; border-top: 1px solid #e2e5ed; padding: 12px 16px;
+    box-shadow: 0 -1px 4px rgba(0,0,0,0.06);
+  }
+  .sticky-inner { max-width: 720px; margin: 0 auto; }
+  .note-form { display: flex; flex-direction: column; gap: 8px; }
+  .note-form textarea {
+    width: 100%; background: #ffffff; border: 1px solid #e2e5ed;
+    border-radius: 10px; padding: 10px 14px; color: #1a1a1a; font-size: 14px;
+    font-family: inherit; resize: none; outline: none; transition: border-color .2s;
+  }
+  .note-form textarea:focus { border-color: #9ca3af; }
+  .note-form-row { display: flex; gap: 8px; align-items: center; }
+  .note-type-select {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 8px 12px; color: #1a1a1a; font-size: 13px; font-weight: 600;
+    outline: none; cursor: pointer; flex: 1;
+  }
+  .btn-send {
+    background: #000000; color: #ffffff; border: none; border-radius: 8px;
+    padding: 9px 20px; font-size: 13px; font-weight: 700; cursor: pointer;
+    transition: opacity .2s; white-space: nowrap;
+  }
+  .btn-send:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-dismiss {
+    background: none; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 9px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: #6c7280; transition: all .2s;
+  }
+  .btn-dismiss:hover { border-color: #9ca3af; color: #1a1a1a; }
+  .btn-toggle {
+    background: none; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 9px 16px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: #1a1a1a; transition: all .2s; width: 100%;
+  }
+  .btn-toggle:hover { border-color: #9ca3af; background: #f9fafb; }
+
+  /* ── Site detail hero ── */
+  .site-hero { padding: 24px 0 18px; border-bottom: 1px solid #e2e5ed; margin-bottom: 22px; }
+  .site-hero .label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #6c7280; margin: 0 0 6px; }
+  .site-hero h1 { margin: 0 0 4px; font-size: 22px; font-weight: 800; color: #1a1a1a; }
+  .site-hero .address { margin: 0 0 12px; font-size: 14px; color: #6c7280; }
+  .site-hero .meta-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ── Coord strip ── */
+  .coord-strip {
+    background: #ffffff; border: 1px solid #e2e5ed; border-radius: 12px;
+    padding: 14px 16px; margin-bottom: 4px; display: flex; align-items: center;
+    justify-content: space-between; gap: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .coord-strip .left { display: flex; flex-direction: column; gap: 2px; }
+  .coord-strip .name { font-size: 14px; font-weight: 700; color: #1a1a1a; }
+  .coord-strip .company { font-size: 12px; color: #6c7280; }
+  .expiry-pill {
+    font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    background: #f9fafb; border: 1px solid #e5e7eb; color: #6b7280; white-space: nowrap;
+  }
+
+  /* ── States ── */
+  .loading {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 60vh; gap: 16px; color: #6c7280;
+  }
+  .spinner {
+    width: 36px; height: 36px; border: 3px solid #e2e5ed;
+    border-top-color: #1a1a1a; border-radius: 50%; animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-state { text-align: center; padding: 48px 24px; }
+  .error-state .icon { font-size: 40px; margin-bottom: 16px; }
+  .error-state h2 { margin: 0 0 8px; font-size: 20px; font-weight: 700; }
+  .error-state p { margin: 0; font-size: 14px; color: #6c7280; line-height: 1.6; }
+  .empty-state { text-align: center; padding: 32px 0; color: #6c7280; font-size: 13px; }
+
+  @media (max-width: 480px) {
+    .kpi-grid { grid-template-columns: repeat(3, 1fr); gap: 7px; }
+    .kpi-card .kpi-val { font-size: 22px; }
+    .compliance-bar { grid-template-columns: repeat(2, 1fr); }
+    .doc-actions { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar" id="topBar">
+  <div class="brand-group">
+    <span class="brand">PALLADIA</span>
+    <span class="brand-sub" id="topBarSub">· Portale Professionisti</span>
+  </div>
+  <button class="btn-back" id="btnBack" style="display:none;" onclick="showDashboard()">← Tutti i cantieri</button>
+</div>
+
+<div id="app">
+  <div class="loading" id="loadingState">
+    <div class="spinner"></div>
+    <span>Caricamento…</span>
+  </div>
+</div>
+
+<div class="sticky-bar" id="noteBar" style="display:none;">
+  <div class="sticky-inner">
+    <div id="noteFormCollapsed">
+      <button class="btn-toggle" onclick="expandNoteForm()">+ Aggiungi nota</button>
+    </div>
+    <div id="noteFormExpanded" style="display:none;">
+      <div class="note-form">
+        <textarea id="noteContent" rows="3" placeholder="Scrivi un'osservazione, richiesta o avvertenza…" maxlength="2000"></textarea>
+        <div class="note-form-row">
+          <select id="noteType" class="note-type-select">
+            <option value="observation">Osservazione</option>
+            <option value="request">Richiesta</option>
+            <option value="approval">Approvazione</option>
+            <option value="warning">Avvertenza</option>
+          </select>
+          <button class="btn-send" id="sendNoteBtn" onclick="submitNote()">Invia</button>
+          <button class="btn-dismiss" onclick="collapseNoteForm()">✕</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Utils ─────────────────────────────────────────────────────────────────────
+function getProToken() {
+  const parts = window.location.pathname.split('/');
+  // /pro/accesso/TOKEN → parts = ['','pro','accesso','TOKEN']
+  return parts[3] || '';
+}
+
+function apiUrl(path) {
+  const base = window.location.hostname === 'localhost'
+    ? 'http://localhost:3000'
+    : window.location.origin.replace(/\/$/, '');
+  return base + path;
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function fmtDateShort(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleDateString('it-IT', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+function fmtDateTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short' })
+    + ' ' + d.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+}
+
+function avatarColor(name) {
+  const colors = ['#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f59e0b','#22c55e','#ef4444','#f97316'];
+  let h = 0;
+  for (let i = 0; i < (name||'').length; i++) h = (h * 31 + name.charCodeAt(i)) & 0xffffff;
+  return colors[h % colors.length];
+}
+
+function initials(name) {
+  return (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+}
+
+function fmtSize(b) {
+  if (!b) return '';
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return Math.round(b / 1024) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const proToken = getProToken();
+let currentView = 'dashboard'; // 'dashboard' | 'site'
+let currentSiteId = null;
+let dashboardData = null;
+let siteData = null;
+let siteDocData = [];
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showDashboard() {
+  currentView = 'dashboard';
+  currentSiteId = null;
+  document.getElementById('btnBack').style.display = 'none';
+  document.getElementById('topBarSub').textContent = '· Portale Professionisti';
+  document.getElementById('noteBar').style.display = 'none';
+  if (dashboardData) {
+    renderDashboard(dashboardData);
+  } else {
+    loadDashboard();
+  }
+}
+
+function openSite(siteId) {
+  currentView = 'site';
+  currentSiteId = siteId;
+  document.getElementById('btnBack').style.display = 'flex';
+  document.getElementById('topBarSub').textContent = '· Portale CSE';
+  document.getElementById('app').innerHTML = `
+    <div class="loading"><div class="spinner"></div><span>Caricamento cantiere…</span></div>`;
+  loadSite(siteId);
+}
+
+// ── Load: dashboard ───────────────────────────────────────────────────────────
+async function loadDashboard() {
+  document.getElementById('app').innerHTML = `
+    <div class="loading"><div class="spinner"></div><span>Caricamento cantieri…</span></div>`;
+  try {
+    const res = await fetch(apiUrl(`/api/v1/coordinator/pro/${proToken}`));
+    if (res.status === 401) {
+      renderError('Accesso non valido', 'Il link che hai aperto non è valido o è scaduto.<br/>Richiedi un nuovo link al team Palladia.');
+      return;
+    }
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    dashboardData = await res.json();
+    renderDashboard(dashboardData);
+  } catch (e) {
+    renderError('Errore di connessione', 'Non è stato possibile caricare i dati.<br/>Controlla la connessione e riprova.');
+  }
+}
+
+// ── Load: site detail ─────────────────────────────────────────────────────────
+async function loadSite(siteId) {
+  try {
+    const [siteRes, docsRes] = await Promise.all([
+      fetch(apiUrl(`/api/v1/coordinator/pro/${proToken}/site/${siteId}`)),
+      fetch(apiUrl(`/api/v1/coordinator/pro/${proToken}/site/${siteId}/documents`)),
+    ]);
+    if (siteRes.status === 401 || siteRes.status === 403) {
+      renderError('Accesso negato', 'Non hai accesso a questo cantiere o il tuo accesso è scaduto.');
+      return;
+    }
+    if (!siteRes.ok) throw new Error('HTTP ' + siteRes.status);
+    siteData    = await siteRes.json();
+    siteDocData = docsRes.ok ? (await docsRes.json()) : [];
+    renderSite();
+  } catch (e) {
+    renderError('Errore di connessione', 'Non è stato possibile caricare i dati del cantiere.<br/>Riprova.');
+  }
+}
+
+// ── Render: error ─────────────────────────────────────────────────────────────
+function renderError(title, msg) {
+  document.getElementById('noteBar').style.display = 'none';
+  document.getElementById('app').innerHTML = `
+    <div class="container">
+      <div class="error-state">
+        <div class="icon">🔒</div>
+        <h2>${esc(title)}</h2>
+        <p>${msg}</p>
+      </div>
+    </div>`;
+}
+
+// ── Render: dashboard ─────────────────────────────────────────────────────────
+function renderDashboard(data) {
+  const { coordinator, sites, stats } = data;
+
+  const heroHtml = `
+    <div class="hero">
+      <p class="label">Portale Professionisti</p>
+      <h1>${esc(coordinator.name || coordinator.email)}</h1>
+      <p class="sub">${esc(coordinator.company || coordinator.email)}</p>
+      <div class="meta-row">
+        <div class="meta-pill">🏗 ${stats.total_sites} cantier${stats.total_sites === 1 ? 'e' : 'i'}</div>
+        ${stats.on_site_now > 0 ? `<div class="meta-pill">👷 ${stats.on_site_now} in cantiere ora</div>` : ''}
+        ${stats.unread_notes > 0 ? `<div class="meta-pill" style="color:#d97706;">💬 ${stats.unread_notes} note non lette</div>` : ''}
+      </div>
+    </div>`;
+
+  const kpiHtml = `
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-val">${stats.active_sites}</div>
+        <div class="kpi-lbl">Cantieri attivi</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">${stats.total_workers}</div>
+        <div class="kpi-lbl">Maestranze totali</div>
+      </div>
+      <div class="kpi-card${stats.non_compliant > 0 ? ' kpi-alert' : ''}">
+        <div class="kpi-val">${stats.non_compliant}</div>
+        <div class="kpi-lbl">Non conformi</div>
+      </div>
+    </div>`;
+
+  const statusLabel = { attivo: 'Attivo', sospeso: 'Sospeso', chiuso: 'Chiuso' };
+  const statusClass = { attivo: 'active', sospeso: 'paused', chiuso: 'closed' };
+
+  const siteCards = sites.map(s => {
+    const unreadDot = s.unread_notes > 0
+      ? `<div class="unread-dot">${s.unread_notes} nuov${s.unread_notes === 1 ? 'a' : 'e'}</div>`
+      : '';
+    const ncBadge = s.open_nc > 0
+      ? `<span class="site-badge alert">⚠ ${s.open_nc} NC aperte</span>` : '';
+    const ncAlert = s.compliance.non_compliant > 0
+      ? `<span class="site-badge alert">${s.compliance.non_compliant} non conform${s.compliance.non_compliant === 1 ? 'e' : 'i'}</span>` : '';
+    const expiring = s.compliance.expiring > 0
+      ? `<span class="site-badge warn">${s.compliance.expiring} in scadenza</span>` : '';
+    const onSite = s.workers_on_site > 0
+      ? `<span class="site-badge info">👷 ${s.workers_on_site} in cantiere</span>` : '';
+
+    return `
+      <div class="site-card" onclick="openSite('${esc(s.id)}')">
+        ${unreadDot}
+        <div class="site-card-header">
+          <div>
+            <div class="site-card-name">${esc(s.name)}</div>
+            <div class="site-card-company">${esc(s.company_name)}</div>
+            <div class="site-card-address">${esc(s.address)}</div>
+          </div>
+          <span class="arrow-right">›</span>
+        </div>
+        <div class="site-badges">
+          <span class="site-badge ${statusClass[s.status] || 'neutral'}">${statusLabel[s.status] || s.status}</span>
+          <span class="site-badge neutral">${s.workers_count} maestranze</span>
+          ${onSite}${ncAlert}${expiring}${ncBadge}
+        </div>
+      </div>`;
+  }).join('');
+
+  const siteListHtml = sites.length > 0
+    ? `<div class="site-list">${siteCards}</div>`
+    : `<div class="empty-state">Nessun cantiere assegnato al tuo profilo.<br/>Chiedi all'impresa di inviarti un accesso.</div>`;
+
+  document.getElementById('app').innerHTML = `
+    <div class="container">
+      ${heroHtml}
+      ${kpiHtml}
+      <p class="section-title">I tuoi cantieri (${sites.length})</p>
+      ${siteListHtml}
+      <div style="height:16px;"></div>
+    </div>`;
+}
+
+// ── Render: site detail ───────────────────────────────────────────────────────
+function renderSite() {
+  const { site, coordinator, workers, notes } = siteData;
+  const ps = siteData.presence_summary || { total_entries: 0, days_with_presence: 0, recent_days: [] };
+
+  const statusColors = { attivo: '#16a34a', sospeso: '#d97706', chiuso: '#6b7280' };
+  const dotColor = statusColors[site.status] || '#2563eb';
+  const statusLabel = { attivo: 'Attivo', sospeso: 'Sospeso', chiuso: 'Chiuso' }[site.status] || site.status;
+
+  // Hero
+  const heroHtml = `
+    <div class="site-hero">
+      <p class="label">Cantiere</p>
+      <h1>${esc(site.name)}</h1>
+      <p class="address">${esc(site.address || site.company_name || '')}</p>
+      <div class="meta-row">
+        <div class="meta-pill"><span class="status-dot" style="background:${dotColor};"></span>${esc(statusLabel)}</div>
+        ${site.client ? `<div class="meta-pill">👤 ${esc(site.client)}</div>` : ''}
+        ${site.start_date ? `<div class="meta-pill">📅 Inizio ${fmtDate(site.start_date)}</div>` : ''}
+        ${siteData.on_site_count > 0 ? `<div class="meta-pill" style="color:#2563eb;">👷 ${siteData.on_site_count} in cantiere ora</div>` : ''}
+      </div>
+    </div>`;
+
+  // Coord strip
+  const coordHtml = `
+    <p class="section-title">Accesso come</p>
+    <div class="coord-strip">
+      <div class="left">
+        <span class="name">${esc(coordinator.name)}</span>
+        ${coordinator.company ? `<span class="company">${esc(coordinator.company)}</span>` : ''}
+      </div>
+      <span class="expiry-pill">Scade ${fmtDate(coordinator.expires_at)}</span>
+    </div>`;
+
+  // KPI presenze 7 giorni
+  let timelineRows = '';
+  if (ps.recent_days && ps.recent_days.length > 0) {
+    for (const d of ps.recent_days) {
+      const anomaly = d.anomalies > 0 ? `<span class="presence-pill anomaly">⚠ ${d.anomalies} uscite mancanti</span>` : '';
+      timelineRows += `
+        <div class="day-row">
+          <span class="day-label">${fmtDateShort(d.date)}</span>
+          <div class="day-stats">
+            <span class="presence-pill">${d.worker_count} lavoratori</span>
+            <span class="presence-pill">${d.entries} entrate</span>
+            <span class="presence-pill">${d.exits} uscite</span>
+            ${anomaly}
+          </div>
+        </div>`;
+    }
+  } else {
+    timelineRows = '<div class="empty-state">Nessuna presenza registrata nell\'ultimo periodo</div>';
+  }
+
+  const kpiHtml = `
+    <p class="section-title">Presenze — ultimi 7 giorni</p>
+    <div class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-val">${ps.total_entries}</div><div class="kpi-lbl">Ingressi totali</div></div>
+      <div class="kpi-card"><div class="kpi-val">${ps.days_with_presence}</div><div class="kpi-lbl">Giorni con presenze</div></div>
+      <div class="kpi-card"><div class="kpi-val">${workers.length}</div><div class="kpi-lbl">Maestranze</div></div>
+    </div>
+    <div id="presenceTimeline">${timelineRows}</div>`;
+
+  // Compliance
+  const cs = workers.reduce((acc, w) => {
+    const s = w.compliance?.safety || 'not_set';
+    const h = w.compliance?.health || 'not_set';
+    if (s === 'expired' || h === 'expired') acc.non_compliant++;
+    else if (s === 'expiring' || h === 'expiring') acc.expiring++;
+    else if (s === 'not_set' || h === 'not_set') acc.incomplete++;
+    else acc.compliant++;
+    return acc;
+  }, { compliant: 0, expiring: 0, non_compliant: 0, incomplete: 0 });
+
+  const compHtml = `
+    <p class="section-title">Conformità documenti</p>
+    <div class="compliance-bar">
+      <div class="comp-pill comp-compliant"><div class="num">${cs.compliant}</div><div class="lbl">Conformi</div></div>
+      <div class="comp-pill comp-expiring"><div class="num">${cs.expiring}</div><div class="lbl">In scadenza</div></div>
+      <div class="comp-pill comp-noncompliant"><div class="num">${cs.non_compliant}</div><div class="lbl">Non conformi</div></div>
+      <div class="comp-pill comp-incomplete"><div class="num">${cs.incomplete}</div><div class="lbl">Incompleti</div></div>
+    </div>`;
+
+  // Workers
+  const workerCards = workers.map(w => {
+    const c = w.compliance || {};
+    const safetyLbl  = { ok:'Formazione OK', expiring:'Formazione in scad.', expired:'Formazione scaduta', not_set:'Formazione nd' }[c.safety] || c.safety || 'nd';
+    const healthLbl  = { ok:'Idoneità OK',   expiring:'Idoneità in scad.',   expired:'Idoneità scaduta',   not_set:'Idoneità nd'   }[c.health] || c.health || 'nd';
+    const safetyClass= { ok:'tag-ok', expiring:'tag-expiring', expired:'tag-expired', not_set:'tag-notset' }[c.safety] || 'tag-notset';
+    const healthClass= { ok:'tag-ok', expiring:'tag-expiring', expired:'tag-expired', not_set:'tag-notset' }[c.health] || 'tag-notset';
+    const av = avatarColor(w.full_name);
+    const onSiteTag = w.on_site ? `<span class="badge-tag tag-onsite">In cantiere</span>` : '';
+    return `
+      <div class="worker-card">
+        <div class="worker-avatar" style="background:${av};">${initials(w.full_name)}</div>
+        <div class="worker-info">
+          <div class="worker-name">${esc(w.full_name)}</div>
+          <div class="worker-sub">
+            ${w.fiscal_code ? esc(w.fiscal_code) : ''}
+            ${w.role ? ' · ' + esc(w.role) : ''}
+            ${w.employer_name ? ' · ' + esc(w.employer_name) : ''}
+          </div>
+          <div class="worker-badges">
+            ${onSiteTag}
+            <span class="badge-tag ${safetyClass}">${safetyLbl}</span>
+            <span class="badge-tag ${healthClass}">${healthLbl}</span>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const workersHtml = workers.length > 0
+    ? `<div class="worker-list">${workerCards}</div>`
+    : `<div class="empty-state">Nessuna maestranza assegnata a questo cantiere</div>`;
+
+  // Documents
+  const CATEGORY_LABELS = {
+    pos:'POS', psc:'PSC', notifica_asl:'Notifica ASL',
+    durc:'DURC', dvr:'DVR', assicurazione:'Assicurazione', altro:'Altro',
+  };
+  let docsHtml = '';
+  if (siteDocData.length > 0) {
+    docsHtml = siteDocData.map((d, idx) => {
+      const docLabel = CATEGORY_LABELS[d.category] || d.category;
+      return `
+        <div class="doc-row">
+          <span class="doc-icon">📄</span>
+          <div class="doc-info">
+            <div class="doc-name">${esc(d.name)}</div>
+            <div class="doc-meta">
+              <span class="doc-cat cat-${esc(d.category)}">${esc(docLabel)}</span>
+              ${d.file_size ? `<span>${fmtSize(d.file_size)}</span>` : ''}
+              <span>${fmtDate(d.created_at)}</span>
+            </div>
+          </div>
+          <div class="doc-actions">
+            <button class="btn-download" id="dlbtn-${idx}"
+              onclick="downloadDoc('${esc(d.id)}','${esc(d.source||'upload')}','${esc(d.pos_id||'')}',${idx})">
+              ↓ Scarica
+            </button>
+            <button class="btn-ask"
+              onclick="askAboutDoc('${esc(d.name).replace(/'/g,'\\\'')}')"
+              title="Chiedi informazioni su questo documento">
+              ? Richiesta
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+  const documentsSection = siteDocData.length > 0 ? `
+    <p class="section-title">Documenti di sicurezza (${siteDocData.length})</p>
+    <div class="doc-list">${docsHtml}</div>` : '';
+
+  // Notes
+  let notesHtml = '';
+  if (notes && notes.length > 0) {
+    notesHtml = notes.map(n => {
+      const typeClass = { observation:'nt-observation', request:'nt-request', approval:'nt-approval', warning:'nt-warning' }[n.note_type] || 'nt-observation';
+      const typeLabel = { observation:'Osservazione', request:'Richiesta', approval:'Approvazione', warning:'Avvertenza' }[n.note_type] || n.note_type;
+      return `
+        <div class="note-card">
+          <div class="note-header">
+            <span class="note-type-badge ${typeClass}">${typeLabel}</span>
+            <span class="note-meta">${esc(n.coordinator_name)} · ${fmtDateTime(n.created_at)}</span>
+          </div>
+          <div class="note-content">${esc(n.content)}</div>
+        </div>`;
+    }).join('');
+  } else {
+    notesHtml = '<div class="empty-state">Nessuna nota aggiunta</div>';
+  }
+
+  document.getElementById('app').innerHTML = `
+    <div class="container">
+      ${heroHtml}
+      ${coordHtml}
+      ${kpiHtml}
+      ${compHtml}
+      <p class="section-title">Maestranze (${workers.length})</p>
+      ${workersHtml}
+      ${documentsSection}
+      <p class="section-title" style="margin-top:32px;">Note del coordinatore</p>
+      <div id="notesList">${notesHtml}</div>
+      <div style="height:16px;"></div>
+    </div>`;
+
+  document.getElementById('noteBar').style.display = 'block';
+}
+
+// ── Documents: download ───────────────────────────────────────────────────────
+async function downloadDoc(docId, source, posId, btnIdx) {
+  const btn = document.getElementById('dlbtn-' + btnIdx);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    if (source === 'pos' && posId) {
+      window.open(apiUrl(`/api/v1/coordinator/pro/${proToken}/site/${currentSiteId}/pos/${posId}/pdf`), '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const res = await fetch(apiUrl(`/api/v1/coordinator/pro/${proToken}/site/${currentSiteId}/documents/${docId}/download`));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const { url, name } = await res.json();
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    a.click();
+  } catch (e) {
+    alert('Impossibile scaricare il documento. Riprova.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '↓ Scarica'; }
+  }
+}
+
+// ── Documents: richiesta ──────────────────────────────────────────────────────
+function askAboutDoc(docName) {
+  expandNoteForm();
+  document.getElementById('noteType').value = 'request';
+  const ta = document.getElementById('noteContent');
+  if (!ta.value) {
+    ta.value = `[Doc: ${docName}]\n\n`;
+    // posiziona cursore alla fine
+    setTimeout(() => { ta.selectionStart = ta.selectionEnd = ta.value.length; ta.focus(); }, 50);
+  } else {
+    ta.focus();
+  }
+}
+
+// ── Note form ─────────────────────────────────────────────────────────────────
+function expandNoteForm() {
+  document.getElementById('noteFormCollapsed').style.display = 'none';
+  document.getElementById('noteFormExpanded').style.display = 'block';
+  document.getElementById('noteContent').focus();
+}
+
+function collapseNoteForm() {
+  document.getElementById('noteFormExpanded').style.display = 'none';
+  document.getElementById('noteFormCollapsed').style.display = 'block';
+  document.getElementById('noteContent').value = '';
+}
+
+async function submitNote() {
+  const content   = document.getElementById('noteContent').value.trim();
+  const note_type = document.getElementById('noteType').value;
+  const btn       = document.getElementById('sendNoteBtn');
+  if (content.length < 3) { alert('Scrivi almeno 3 caratteri.'); return; }
+
+  btn.disabled = true; btn.textContent = 'Invio…';
+  try {
+    const res = await fetch(apiUrl(`/api/v1/coordinator/pro/${proToken}/site/${currentSiteId}/notes`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note_type, content }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'HTTP ' + res.status);
+    }
+    const { note } = await res.json();
+
+    const listEl = document.getElementById('notesList');
+    const typeClass = { observation:'nt-observation', request:'nt-request', approval:'nt-approval', warning:'nt-warning' }[note.note_type] || 'nt-observation';
+    const typeLabel = { observation:'Osservazione', request:'Richiesta', approval:'Approvazione', warning:'Avvertenza' }[note.note_type] || note.note_type;
+
+    const emptyEl = listEl.querySelector('.empty-state');
+    if (emptyEl) emptyEl.remove();
+
+    const noteEl = document.createElement('div');
+    noteEl.className = 'note-card';
+    noteEl.innerHTML = `
+      <div class="note-header">
+        <span class="note-type-badge ${typeClass}">${typeLabel}</span>
+        <span class="note-meta">${esc(note.coordinator_name)} · Adesso</span>
+      </div>
+      <div class="note-content">${esc(note.content)}</div>`;
+    listEl.prepend(noteEl);
+
+    collapseNoteForm();
+    listEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    alert('Errore nell\'invio della nota: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Invia';
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+if (!proToken || proToken.length !== 64 || !/^[0-9a-f]+$/i.test(proToken)) {
+  document.getElementById('app').innerHTML = `
+    <div class="container">
+      <div class="error-state">
+        <div class="icon">🔒</div>
+        <h2>Link non valido</h2>
+        <p>Il link che hai aperto non è valido.<br/>Verifica di aver copiato correttamente l'URL dall'email.</p>
+      </div>
+    </div>`;
+} else {
+  loadDashboard();
+}
+</script>
+</body>
+</html>

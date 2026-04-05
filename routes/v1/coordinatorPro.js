@@ -349,8 +349,9 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     supabase.from('presence_logs')
       .select('worker_id, event_type, timestamp_server')
       .eq('site_id', siteId)
-      .gte('timestamp_server', new Date(Date.now() - 30 * 3600000).toISOString())
-      .order('timestamp_server', { ascending: false }),
+      .gte('timestamp_server', new Date(Date.now() - 7 * 86400000).toISOString())
+      .order('timestamp_server', { ascending: false })
+      .limit(1000),
 
     supabase.from('site_coordinator_notes')
       .select('id, note_type, content, coordinator_name, is_read, created_at')
@@ -373,14 +374,40 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
 
   if (siteR.error || !siteR.data) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
-  // Chi è in cantiere adesso
+  // Chi è in cantiere adesso + presenze 7 giorni
+  const allLogs = presenceR.data || [];
   const lastEvt = {};
-  for (const log of presenceR.data || []) {
+  for (const log of allLogs) {
     if (!lastEvt[log.worker_id]) lastEvt[log.worker_id] = log.event_type;
   }
   const onSiteIds = new Set(
     Object.entries(lastEvt).filter(([, t]) => t === 'ENTRY').map(([id]) => id)
   );
+
+  // Aggregazione 7 giorni
+  const dayMap = new Map();
+  for (const log of allLogs) {
+    const day = log.timestamp_server.split('T')[0];
+    if (!dayMap.has(day)) dayMap.set(day, { entries: 0, exits: 0, workers: new Set() });
+    const d = dayMap.get(day);
+    if (log.event_type === 'ENTRY') d.entries++;
+    else d.exits++;
+    if (log.worker_id) d.workers.add(log.worker_id);
+  }
+  const totalEntries7d = allLogs.filter(l => l.event_type === 'ENTRY').length;
+  const presenceSummary = {
+    total_entries:      totalEntries7d,
+    days_with_presence: dayMap.size,
+    recent_days: Array.from(dayMap.entries())
+      .sort((a, b) => b[0].localeCompare(a[0]))
+      .map(([date, d]) => ({
+        date,
+        worker_count: d.workers.size,
+        entries: d.entries,
+        exits: d.exits,
+        anomalies: d.entries - d.exits > 0 ? d.entries - d.exits : 0,
+      })),
+  };
 
   const workers = (workersR.data || [])
     .map(({ worker: w }) => ({
@@ -405,11 +432,12 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
       invite_id:  invite.id,
     },
     workers,
-    on_site_count:   onSiteIds.size,
-    notes:           notesR.data  || [],
-    nonconformities: ncList,
-    open_nc_count:   openNcCount,
-    visits:          visitsR.data || [],
+    on_site_count:    onSiteIds.size,
+    presence_summary: presenceSummary,
+    notes:            notesR.data  || [],
+    nonconformities:  ncList,
+    open_nc_count:    openNcCount,
+    visits:           visitsR.data || [],
   });
 });
 
@@ -543,6 +571,121 @@ router.delete('/coordinator/pro/:token/telegram-unlink', async (req, res) => {
     .eq('email', session.email);
 
   res.json({ ok: true });
+});
+
+// ── GET /api/v1/coordinator/pro/:token/site/:siteId/documents ────────────────
+router.get('/coordinator/pro/:token/site/:siteId/documents', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
+  const { siteId } = req.params;
+  const now = new Date().toISOString();
+
+  const { data: invite } = await supabase
+    .from('site_coordinator_invites')
+    .select('id, company_id')
+    .eq('coordinator_email', session.email)
+    .eq('site_id', siteId)
+    .eq('is_active', true)
+    .gt('expires_at', now)
+    .maybeSingle();
+  if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
+
+  const [{ data: uploaded, error }, { data: posDocs }] = await Promise.all([
+    supabase.from('site_documents')
+      .select('id, name, category, file_size, mime_type, created_at')
+      .eq('site_id', siteId).eq('company_id', invite.company_id)
+      .order('created_at', { ascending: false }),
+    supabase.from('pos_documents')
+      .select('id, revision, created_at')
+      .eq('site_id', siteId)
+      .order('created_at', { ascending: false })
+      .limit(20),
+  ]);
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const posFormatted = (posDocs || []).map(p => ({
+    id: `pos_${p.id}`, pos_id: p.id,
+    name: `POS — Revisione ${p.revision}`, category: 'pos',
+    file_size: null, mime_type: 'application/pdf', created_at: p.created_at, source: 'pos',
+  }));
+  const all = [...(uploaded || []).map(d => ({ ...d, source: 'upload' })), ...posFormatted]
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  res.json(all);
+});
+
+// ── GET /api/v1/coordinator/pro/:token/site/:siteId/documents/:docId/download ─
+router.get('/coordinator/pro/:token/site/:siteId/documents/:docId/download', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
+  const { siteId, docId } = req.params;
+  const now = new Date().toISOString();
+
+  const { data: invite } = await supabase
+    .from('site_coordinator_invites')
+    .select('id, company_id')
+    .eq('coordinator_email', session.email)
+    .eq('site_id', siteId)
+    .eq('is_active', true)
+    .gt('expires_at', now)
+    .maybeSingle();
+  if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
+
+  const { data: doc } = await supabase
+    .from('site_documents')
+    .select('id, file_path, name, mime_type')
+    .eq('id', docId).eq('site_id', siteId).eq('company_id', invite.company_id)
+    .maybeSingle();
+  if (!doc) return res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+
+  const { data: signed, error: signErr } = await supabase.storage
+    .from('site-documents').createSignedUrl(doc.file_path, 1800);
+  if (signErr || !signed) return res.status(500).json({ error: 'SIGNED_URL_ERROR' });
+  res.json({ url: signed.signedUrl, name: doc.name });
+});
+
+// ── GET /api/v1/coordinator/pro/:token/site/:siteId/pos/:posId/pdf ───────────
+router.get('/coordinator/pro/:token/site/:siteId/pos/:posId/pdf', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
+  const { siteId, posId } = req.params;
+  const now = new Date().toISOString();
+
+  const { data: invite } = await supabase
+    .from('site_coordinator_invites')
+    .select('id, company_id')
+    .eq('coordinator_email', session.email)
+    .eq('site_id', siteId)
+    .eq('is_active', true)
+    .gt('expires_at', now)
+    .maybeSingle();
+  if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
+
+  const { data: pos } = await supabase
+    .from('pos_documents')
+    .select('id, revision, content, pos_data')
+    .eq('id', posId).eq('site_id', siteId).maybeSingle();
+  if (!pos) return res.status(404).json({ error: 'POS_NOT_FOUND' });
+
+  const { data: site } = await supabase.from('sites').select('name').eq('id', siteId).maybeSingle();
+  const siteName = (site?.name || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_');
+
+  try {
+    const { generatePosHtml } = require('../../pos-html-generator');
+    const { selectSigns }     = require('../../sign-selector');
+    const { rendererPool }    = require('../../pdf-renderer');
+    const signs     = selectSigns(pos.pos_data || {});
+    const html      = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
+    const pdfBuffer = await rendererPool.render(html, {
+      docTitle: `POS – ${site?.name || 'Cantiere'} – Rev. ${pos.revision}`,
+      revision: pos.revision,
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="POS-Rev${pos.revision}-${siteName}.pdf"`);
+    res.send(pdfBuffer);
+  } catch (e) {
+    console.error('[coordinatorPro] POS pdf error:', e.message);
+    res.status(500).json({ error: 'PDF_GENERATION_ERROR' });
+  }
 });
 
 module.exports = router;
