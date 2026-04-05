@@ -427,6 +427,7 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     invite: {
       coordinator_name:    invite.coordinator_name,
       coordinator_company: invite.coordinator_company || null,
+      coordinator_email:   invite.coordinator_email   || null,
       expires_at:          invite.expires_at,
     },
     workers,

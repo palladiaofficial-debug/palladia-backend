@@ -35,6 +35,22 @@
   .top-bar .brand { font-size: 14px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: #1a1a1a; }
   .top-bar .brand-sub { font-size: 13px; font-weight: 500; color: #6c7280; }
   .top-bar .site-name { font-size: 13px; font-weight: 600; color: #6c7280; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .btn-back-dashboard {
+    display: flex; align-items: center; gap: 5px;
+    background: none; border: 1px solid #e2e5ed; border-radius: 8px;
+    padding: 7px 13px; font-size: 13px; font-weight: 600; cursor: pointer;
+    color: #6c7280; transition: all .15s; white-space: nowrap;
+  }
+  .btn-back-dashboard:hover { border-color: #9ca3af; color: #1a1a1a; }
+  /* ── Magic link toast ── */
+  .toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+    background: #1a1a1a; color: #fff; border-radius: 10px;
+    padding: 12px 20px; font-size: 13px; font-weight: 600;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.25); z-index: 999;
+    display: none; white-space: nowrap;
+  }
+  .toast.show { display: block; }
 
   /* ── Site hero ── */
   .site-hero { padding: 28px 0 20px; border-bottom: 1px solid #e2e5ed; margin-bottom: 24px; }
@@ -244,8 +260,11 @@
     <span class="brand">PALLADIA</span>
     <span class="brand-sub">· Portale CSE</span>
   </div>
-  <span class="site-name" id="topBarSiteName"></span>
+  <button class="btn-back-dashboard" id="btnDashboard" style="display:none;" onclick="requestDashboardLink()">
+    ← Tutti i cantieri
+  </button>
 </div>
+<div class="toast" id="toast"></div>
 
 <div id="app">
   <div class="loading" id="loadingState">
@@ -331,6 +350,7 @@ function initials(name) {
 let token = getToken();
 let siteData = null;
 let docData = [];
+let coordinatorEmail = null;
 
 // ── Load ─────────────────────────────────────────────────────────────────────
 async function loadData() {
@@ -347,6 +367,11 @@ async function loadData() {
     if (!mainRes.ok) throw new Error('HTTP ' + mainRes.status);
     siteData = await mainRes.json();
     docData  = docsRes.ok ? (await docsRes.json()) : [];
+    coordinatorEmail = siteData.invite?.coordinator_email || null;
+    // Mostra bottone dashboard solo se il professionista ha un'email (può ricevere magic link)
+    if (coordinatorEmail) {
+      document.getElementById('btnDashboard').style.display = 'flex';
+    }
     renderApp();
   } catch (e) {
     renderError('Errore di connessione', 'Non è stato possibile caricare i dati del cantiere.<br/>Controlla la connessione e riprova.');
@@ -642,6 +667,34 @@ async function downloadDoc(docId, source, posId) {
     alert('Impossibile scaricare il documento. Riprova.');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = '↓ Scarica'; }
+  }
+}
+
+// ── Dashboard link (magic link per portale Pro) ───────────────────────────────
+function showToast(msg, duration) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), duration || 4000);
+}
+
+async function requestDashboardLink() {
+  if (!coordinatorEmail) return;
+  const btn = document.getElementById('btnDashboard');
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    await fetch(apiUrl('/api/v1/coordinator/pro/request'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: coordinatorEmail }),
+    });
+    showToast('📧 Link inviato! Controlla la tua email per accedere a tutti i cantieri.', 6000);
+  } catch {
+    showToast('Errore nell\'invio. Riprova tra qualche secondo.', 4000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '← Tutti i cantieri';
   }
 }
 
