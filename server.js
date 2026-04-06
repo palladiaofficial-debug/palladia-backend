@@ -889,6 +889,9 @@ app.post('/api/generate-pos-template', async (req, res) => {
     const fullText = buildPosDocument(posData, revision, aiRisks, signs);
 
     // Step 3: Save to Supabase
+    // NOTA: salviamo aiRisks (non fullText) — il template HTML viene rigenerato al volo
+    // da pos_data. Se salvassimo fullText (intero markdown), pdf-html lo passerebbe come
+    // aiRisks e tutta la sezione 5 conterrebbe l'intero documento invece dei soli rischi.
     let posId = null;
     if (siteId) {
       const { data: saved, error: saveError } = await supabase
@@ -896,7 +899,7 @@ app.post('/api/generate-pos-template', async (req, res) => {
         .insert([{
           site_id: siteId,
           revision,
-          content: fullText,
+          content: aiRisks,
           pos_data: posData,
           created_by: posData.createdBy || null
         }])
@@ -911,7 +914,7 @@ app.post('/api/generate-pos-template', async (req, res) => {
     }
 
     res.json({
-      content: fullText,
+      content: aiRisks,
       posData,
       revision,
       posId,
@@ -1006,6 +1009,9 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     console.log('[template-stream] chunks sent');
 
     // Save to Supabase
+    // NOTA: salviamo aiRisks (non fullText) — il template HTML viene rigenerato al volo
+    // da pos_data. Se salvassimo fullText (intero markdown), pdf-html lo passerebbe come
+    // aiRisks e tutta la sezione 5 conterrebbe l'intero documento invece dei soli rischi.
     let posId = null;
     if (siteId) {
       try {
@@ -1014,7 +1020,7 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
           .insert([{
             site_id: siteId,
             revision,
-            content: fullText,
+            content: aiRisks,
             pos_data: posData,
             created_by: posData.createdBy || null
           }])
