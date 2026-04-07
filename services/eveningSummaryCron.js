@@ -159,7 +159,7 @@ async function buildEveningSummary(companyId) {
     if (ntCount > 0) parts.push(`${ntCount} nota${ntCount > 1 ? 'e' : ''}`);
 
     if (parts.length > 0) {
-      siteLines.push(`📍 <b>${name}</b>: ${parts.join(' · ')}`);
+      siteLines.push(`<b>${name}</b>: ${parts.join(' · ')}`);
     }
 
     for (const a of siteActs) {
@@ -169,8 +169,7 @@ async function buildEveningSummary(companyId) {
     // Meteo domani
     const fcTom = weatherTomorrow[siteId];
     if (fcTom) {
-      const icon = fcTom.precipProb >= 50 ? '🌧️' : fcTom.precipProb >= 30 ? '🌦️' : '☀️';
-      tomorrowLines.push(`${icon} <b>${name}</b>: ${fcTom.description}${fcTom.tempMax ? ` (${fcTom.tempMin}–${fcTom.tempMax}°C)` : ''}`);
+      tomorrowLines.push(`<b>${name}</b>: ${fcTom.description}${fcTom.tempMax ? ` (${fcTom.tempMin}–${fcTom.tempMax}°C)` : ''}`);
     }
   }
 
@@ -181,25 +180,23 @@ async function buildEveningSummary(companyId) {
 
   // ── Componi il messaggio ──────────────────────────────────
 
-  let msg = `🌙 <b>Palladia — ${dayLabel}</b>\n`;
+  let msg = `<b>Palladia — ${dayLabel}</b>\n`;
 
   if (siteLines.length) {
-    msg += `\n👷 <b>Cantieri oggi:</b>\n${siteLines.join('\n')}`;
+    msg += `\n<b>Cantieri oggi:</b>\n${siteLines.join('\n')}`;
   }
 
   if (ladiaLines.length) {
-    msg += `\n\n🤖 <b>Cosa ho fatto per te:</b>\n${ladiaLines.join('\n')}`;
-  } else if (presences.length) {
-    msg += `\n\n🤖 Nessuna azione automatica necessaria oggi — tutto sotto controllo.`;
+    msg += `\n\n<b>Azioni Ladia:</b>\n${ladiaLines.join('\n')}`;
   }
 
   if (tomorrowLines.length) {
-    msg += `\n\n🔭 <b>Domani:</b>\n${tomorrowLines.join('\n')}`;
+    msg += `\n\n<b>Meteo domani:</b>\n${tomorrowLines.join('\n')}`;
   }
 
   const totalActions = ladiaLines.length;
   const totalPresences = Object.values(presCountBySite).reduce((s, set) => s + set.size, 0);
-  msg += `\n\n<i>A domani mattina con il briefing. Ho monitorato ${totalPresences} presenz${totalPresences !== 1 ? 'e' : 'a'} e gestito ${totalActions} azione${totalActions !== 1 ? 'i' : 'e'} oggi.</i>`;
+  msg += `\n\n<i>${totalPresences} presenz${totalPresences !== 1 ? 'e' : 'a'} monitorate, ${totalActions} azione${totalActions !== 1 ? 'i' : 'e'} eseguite.</i>`;
 
   return msg;
 }

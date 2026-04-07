@@ -199,7 +199,7 @@ async function buildCompanyBriefing(companyId) {
     if (budget > 0 && costi > 0) {
       const spendPct = Math.round((costi / budget) * 100);
       if (spendPct > sal + 10) {
-        siteWarn.push(`📊 Budget consumato ${spendPct}% · SAL ${sal}% — rischio sforamento`);
+        siteWarn.push(`Budget consumato ${spendPct}% · SAL ${sal}% — rischio sforamento`);
       }
     }
 
@@ -210,18 +210,18 @@ async function buildCompanyBriefing(companyId) {
 
       if (trainDays !== null) {
         if (trainDays <= 0)
-          siteCrit.push(`🔴 ${w.full_name}: formazione sicurezza SCADUTA (${Math.abs(trainDays)}gg fa)`);
+          siteCrit.push(`${w.full_name}: formazione sicurezza SCADUTA (${Math.abs(trainDays)}gg fa)`);
         else if (trainDays <= 7)
-          siteWarn.push(`📅 ${w.full_name}: formazione scade tra ${trainDays}gg`);
+          siteWarn.push(`${w.full_name}: formazione scade tra ${trainDays}gg`);
         else if (trainDays <= 14)
-          siteWarn.push(`📅 ${w.full_name}: formazione scade tra ${trainDays}gg`);
+          siteWarn.push(`${w.full_name}: formazione scade tra ${trainDays}gg`);
       }
 
       if (fitDays !== null) {
         if (fitDays <= 0)
-          siteCrit.push(`🔴 ${w.full_name}: idoneità sanitaria SCADUTA (${Math.abs(fitDays)}gg fa)`);
+          siteCrit.push(`${w.full_name}: idoneità sanitaria SCADUTA (${Math.abs(fitDays)}gg fa)`);
         else if (fitDays <= 14)
-          siteWarn.push(`📅 ${w.full_name}: visita medica tra ${fitDays}gg`);
+          siteWarn.push(`${w.full_name}: visita medica tra ${fitDays}gg`);
       }
     }
 
@@ -233,9 +233,9 @@ async function buildCompanyBriefing(companyId) {
       if (fToday.isRainy || fToday.precipProb >= 40)       icons.push(`oggi ${fToday.description} (${fToday.precipProb}%)`);
       if (fTomorrow.isRainy || fTomorrow.precipProb >= 40) icons.push(`domani ${fTomorrow.description} (${fTomorrow.precipProb}%)`);
       if (icons.length) {
-        meteoLines.push(`🌧️ <b>${name}</b>: ${icons.join(', ')}`);
+        meteoLines.push(`<b>${name}</b>: ${icons.join(', ')}`);
       } else if (fToday.tempMax !== null) {
-        meteoLines.push(`☀️ <b>${name}</b>: ${fToday.description} (${fToday.tempMin}–${fToday.tempMax}°C)`);
+        meteoLines.push(`<b>${name}</b>: ${fToday.description} (${fToday.tempMin}–${fToday.tempMax}°C)`);
       }
     }
 
@@ -276,7 +276,7 @@ async function buildCompanyBriefing(companyId) {
     if (cnt)                   parts.push(`${cnt} presence${cnt > 1 ? '' : 'a'}`);
     const acts = ystActsBySite[sid] || [];
     for (const a of acts)      parts.push(`Ladia ha ${a}`);
-    if (parts.length) ystLines.push(`📍 <b>${name}</b>: ${parts.join(' · ')}`);
+    if (parts.length) ystLines.push(`<b>${name}</b>: ${parts.join(' · ')}`);
   }
   // Azioni globali (senza site_id)
   for (const a of ystActsBySite['_global'] || []) {
@@ -297,32 +297,32 @@ function buildMessage(briefing) {
   });
   const dayLabel = todayIt.charAt(0).toUpperCase() + todayIt.slice(1);
 
-  let msg = `☀️ <b>Buongiorno! ${dayLabel}.</b>\n`;
+  let msg = `<b>Buongiorno — ${dayLabel}</b>\n`;
 
   if (ystLines?.length) {
-    msg += `\n\n📋 <b>Ieri Ladia ha gestito:</b>\n${ystLines.join('\n')}`;
+    msg += `\n<b>Ieri:</b>\n${ystLines.join('\n')}`;
   }
 
   if (meteoLines?.length) {
-    msg += `\n\n🌤️ <b>Meteo oggi:</b>\n` + meteoLines.join('\n');
+    msg += `\n\n<b>Meteo:</b>\n` + meteoLines.join('\n');
   }
 
   if (!critical.length && !warnings.length) {
-    msg += `\n\n✅ Nessuna criticità aperta — buona giornata! 👷‍♂️`;
+    msg += `\n\n✅ Nessuna criticità aperta.`;
     return msg;
   }
 
   if (critical.length) {
     msg += `\n\n🚨 <b>Richiede attenzione oggi:</b>`;
     for (const { name, lines } of critical) {
-      msg += `\n\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
+      msg += `\n\n<b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
     }
   }
 
   if (warnings.length) {
     msg += `\n\n⚠️ <b>Da tenere d'occhio:</b>`;
     for (const { name, lines } of warnings) {
-      msg += `\n\n📍 <b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
+      msg += `\n\n<b>${name}</b>\n` + lines.map(l => `  ${l}`).join('\n');
     }
   }
 

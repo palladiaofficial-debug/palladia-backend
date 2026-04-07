@@ -112,30 +112,41 @@ async function runMissingExitCheck() {
         if (m.worker_name) bySite.get(siteId).workerNames.push(m.worker_name);
       }
 
-      // LIVELLO 1 — AUTO EXECUTE per ogni cantiere
+      // LIVELLO 1 — AUTO EXECUTE per ogni cantiere, poi notifica unica aggregata
+      const fixedSites = [];
+
       for (const [siteId, { siteName, workerNames }] of bySite.entries()) {
         const result = await registerMissingExits(siteId, date, companyId, null);
 
         if (!result.ok) {
-          // Fallback: non abbiamo potuto auto-eseguire — notifica classica
-          console.error(`[cron] auto-fix fallito per site ${siteId} — skip notifica`);
+          console.error(`[cron] auto-fix fallito per site ${siteId} — skip`);
           continue;
         }
 
-        const count     = result.count;
-        const listLines = workerNames.slice(0, 8).map(n => `• ${n}`).join('\n');
-        const extra     = workerNames.length > 8 ? `\n…e altri ${workerNames.length - 8}` : '';
+        fixedSites.push({ siteName, workerNames, count: result.count });
+        console.log(`[cron] auto-fix OK — site ${siteId}: ${result.count} uscite registrate`);
+      }
 
-        // Notifica di conferma: azione già eseguita, nessun bottone richiesto
-        const confirmText =
-          `✅ <b>Ladia — Uscite registrate automaticamente</b>\n\n` +
-          `Su <b>${siteName}</b> ho rilevato ${count} uscit${count > 1 ? 'e' : 'a'} mancant${count > 1 ? 'i' : 'e'} ` +
-          `e le ho registrate alle 18:00:\n\n${listLines}${extra}\n\n` +
-          `<i>Nessuna azione richiesta. I log sono marcati come </i><code>ladia_action</code><i> ` +
-          `nel registro presenze — verificabili su Palladia.</i>`;
+      // Notifica unica per tutta la company (un solo messaggio con tutti i cantieri)
+      if (fixedSites.length > 0) {
+        const totalCount = fixedSites.reduce((s, x) => s + x.count, 0);
+
+        let confirmText =
+          `✅ <b>Uscite registrate automaticamente</b>\n\n` +
+          `Ho chiuso ${totalCount} uscit${totalCount > 1 ? 'e' : 'a'} mancant${totalCount > 1 ? 'i' : 'a'} ` +
+          `su ${fixedSites.length} cantier${fixedSites.length > 1 ? 'i' : 'e'}:\n`;
+
+        for (const { siteName, workerNames, count } of fixedSites) {
+          confirmText += `\n<b>${siteName}</b> (${count}):\n`;
+          confirmText += workerNames.slice(0, 6).map(n => `• ${n}`).join('\n');
+          if (workerNames.length > 6) confirmText += `\n…e altri ${workerNames.length - 6}`;
+          confirmText += '\n';
+        }
+
+        confirmText += `\n<i>Log marcati come ladia_action — verificabili su Palladia.</i>`;
 
         await notifyAutoExec(companyId, confirmText).catch(() => {});
-        console.log(`[cron] auto-fix OK — site ${siteId}: ${count} uscite registrate, team notificato`);
+        console.log(`[cron] notifica aggregata inviata — ${totalCount} uscite su ${fixedSites.length} cantieri`);
       }
 
     } catch (e) {
