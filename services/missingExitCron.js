@@ -20,7 +20,8 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { sendMissingExitAlert }                = require('./email');
-const { notifyAutoExec }                      = require('./telegramNotifications');
+const { getCompanyTelegramUsers }             = require('./telegramNotifications');
+const tg                                      = require('./telegram');
 const { registerMissingExits }                = require('./ladiaActions');
 
 // ── Helper: trova uscite mancanti per una company in una data ─────────────────
@@ -123,30 +124,42 @@ async function runMissingExitCheck() {
           continue;
         }
 
-        fixedSites.push({ siteName, workerNames, count: result.count });
+        fixedSites.push({ siteId, siteName, workerNames, count: result.count });
         console.log(`[cron] auto-fix OK — site ${siteId}: ${result.count} uscite registrate`);
       }
 
-      // Notifica unica per tutta la company (un solo messaggio con tutti i cantieri)
+      // Notifica per-utente: ognuno vede solo i cantieri che gli competono
       if (fixedSites.length > 0) {
-        const totalCount = fixedSites.reduce((s, x) => s + x.count, 0);
+        const tgUsers = await getCompanyTelegramUsers(companyId);
+        const fixedSiteIds = new Set(fixedSites.map(x => x.siteId));
 
-        let confirmText =
-          `✅ <b>Uscite registrate automaticamente</b>\n\n` +
-          `Ho chiuso ${totalCount} uscit${totalCount > 1 ? 'e' : 'a'} mancant${totalCount > 1 ? 'i' : 'a'} ` +
-          `su ${fixedSites.length} cantier${fixedSites.length > 1 ? 'i' : 'e'}:\n`;
+        for (const { chatId, allowedSiteIds } of tgUsers) {
+          // Filtra i cantieri visibili a questo utente
+          const userSites = allowedSiteIds === null
+            ? fixedSites
+            : fixedSites.filter(x => allowedSiteIds.includes(x.siteId));
 
-        for (const { siteName, workerNames, count } of fixedSites) {
-          confirmText += `\n<b>${siteName}</b> (${count}):\n`;
-          confirmText += workerNames.slice(0, 6).map(n => `• ${n}`).join('\n');
-          if (workerNames.length > 6) confirmText += `\n…e altri ${workerNames.length - 6}`;
-          confirmText += '\n';
+          if (!userSites.length) continue;
+
+          const totalCount = userSites.reduce((s, x) => s + x.count, 0);
+          let confirmText =
+            `✅ <b>Uscite registrate automaticamente</b>\n\n` +
+            `Ho chiuso ${totalCount} uscit${totalCount > 1 ? 'e' : 'a'} mancant${totalCount > 1 ? 'i' : 'a'} ` +
+            `su ${userSites.length} cantier${userSites.length > 1 ? 'i' : 'e'}:\n`;
+
+          for (const { siteName, workerNames, count } of userSites) {
+            confirmText += `\n<b>${siteName}</b> (${count}):\n`;
+            confirmText += workerNames.slice(0, 6).map(n => `• ${n}`).join('\n');
+            if (workerNames.length > 6) confirmText += `\n…e altri ${workerNames.length - 6}`;
+            confirmText += '\n';
+          }
+          confirmText += `\n<i>Log marcati come ladia_action — verificabili su Palladia.</i>`;
+
+          await tg.sendMessage(chatId, confirmText).catch(() => {});
         }
 
-        confirmText += `\n<i>Log marcati come ladia_action — verificabili su Palladia.</i>`;
-
-        await notifyAutoExec(companyId, confirmText).catch(() => {});
-        console.log(`[cron] notifica aggregata inviata — ${totalCount} uscite su ${fixedSites.length} cantieri`);
+        const totalCount = fixedSites.reduce((s, x) => s + x.count, 0);
+        console.log(`[cron] notifiche per-utente inviate — ${totalCount} uscite su ${fixedSites.length} cantieri`);
       }
 
     } catch (e) {

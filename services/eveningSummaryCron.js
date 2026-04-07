@@ -21,7 +21,8 @@
 
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
-const { notifyAutoExec } = require('./telegramNotifications');
+const tg       = require('./telegram');
+const { getCompanyTelegramUsers } = require('./telegramNotifications');
 const { getForecast }    = require('./weatherService');
 
 // ── Mappa azione → testo umano (prima persona) ──────────────
@@ -159,43 +160,66 @@ async function buildEveningSummary(companyId) {
     if (ntCount > 0) parts.push(`${ntCount} nota${ntCount > 1 ? 'e' : ''}`);
 
     if (parts.length > 0) {
-      siteLines.push(`<b>${name}</b>: ${parts.join(' · ')}`);
+      siteLines.push({ siteId, text: `<b>${name}</b>: ${parts.join(' · ')}` });
     }
 
     for (const a of siteActs) {
-      ladiaLines.push(`• Ho ${a} — <b>${name}</b>`);
+      ladiaLines.push({ siteId, text: `• Ho ${a} — <b>${name}</b>` });
     }
 
     // Meteo domani
     const fcTom = weatherTomorrow[siteId];
     if (fcTom) {
-      tomorrowLines.push(`<b>${name}</b>: ${fcTom.description}${fcTom.tempMax ? ` (${fcTom.tempMin}–${fcTom.tempMax}°C)` : ''}`);
+      tomorrowLines.push({ siteId, text: `<b>${name}</b>: ${fcTom.description}${fcTom.tempMax ? ` (${fcTom.tempMin}–${fcTom.tempMax}°C)` : ''}` });
     }
   }
 
-  // Azioni globali (senza site_id)
+  // Azioni globali (senza site_id) — sempre incluse
   for (const a of actionsBySite['_global'] || []) {
-    ladiaLines.push(`• Ho ${a}`);
+    ladiaLines.push({ siteId: '_global', text: `• Ho ${a}` });
   }
 
-  // ── Componi il messaggio ──────────────────────────────────
+  return { siteLines, ladiaLines, tomorrowLines, presCountBySite };
+}
+
+// ── Filtro per-utente ────────────────────────────────────────
+
+function filterEveningForUser(data, allowedSiteIds) {
+  if (!allowedSiteIds) return data; // owner/admin: tutto
+  const allowed = new Set(allowedSiteIds);
+  return {
+    siteLines:    data.siteLines.filter(x => allowed.has(x.siteId)),
+    ladiaLines:   data.ladiaLines.filter(x => x.siteId === '_global' || allowed.has(x.siteId)),
+    tomorrowLines: data.tomorrowLines.filter(x => allowed.has(x.siteId)),
+    presCountBySite: Object.fromEntries(
+      Object.entries(data.presCountBySite).filter(([sid]) => allowed.has(sid))
+    ),
+  };
+}
+
+// ── Componi messaggio serale ─────────────────────────────────
+
+function buildEveningMessage(data, dayLabel) {
+  const { siteLines, ladiaLines, tomorrowLines, presCountBySite } = data;
+
+  if (!siteLines.length && !ladiaLines.length) return null; // niente da dire
 
   let msg = `<b>Palladia — ${dayLabel}</b>\n`;
 
   if (siteLines.length) {
-    msg += `\n<b>Cantieri oggi:</b>\n${siteLines.join('\n')}`;
+    msg += `\n<b>Cantieri oggi:</b>\n${siteLines.map(x => x.text).join('\n')}`;
   }
 
   if (ladiaLines.length) {
-    msg += `\n\n<b>Azioni Ladia:</b>\n${ladiaLines.join('\n')}`;
+    msg += `\n\n<b>Azioni Ladia:</b>\n${ladiaLines.map(x => x.text).join('\n')}`;
   }
 
   if (tomorrowLines.length) {
-    msg += `\n\n<b>Meteo domani:</b>\n${tomorrowLines.join('\n')}`;
+    msg += `\n\n<b>Meteo domani:</b>\n${tomorrowLines.map(x => x.text).join('\n')}`;
   }
 
-  const totalActions = ladiaLines.length;
-  const totalPresences = Object.values(presCountBySite).reduce((s, set) => s + set.size, 0);
+  const totalPresences = Object.values(presCountBySite).reduce((s, set) => s + (set.size || 0), 0);
+  const totalActions   = ladiaLines.filter(x => x.siteId !== '_global').length;
   msg += `\n\n<i>${totalPresences} presenz${totalPresences !== 1 ? 'e' : 'a'} monitorate, ${totalActions} azione${totalActions !== 1 ? 'i' : 'e'} eseguite.</i>`;
 
   return msg;
@@ -206,7 +230,7 @@ async function buildEveningSummary(companyId) {
 async function runEveningSummary() {
   console.log('[eveningSummary] avvio resoconto serale');
 
-  const { data: tuUsers, error } = await supabase
+  const { data: tuRows, error } = await supabase
     .from('telegram_users')
     .select('company_id')
     .limit(1000);
@@ -216,26 +240,44 @@ async function runEveningSummary() {
     return;
   }
 
-  const companyIds = [...new Set((tuUsers || []).map(u => u.company_id))];
+  const companyIds = [...new Set((tuRows || []).map(u => u.company_id))];
   if (!companyIds.length) {
     console.log('[eveningSummary] nessun utente Telegram — skip');
     return;
   }
 
-  let sent = 0;
+  const todayIt = new Date().toLocaleDateString('it-IT', {
+    timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long',
+  });
+  const dayLabel = todayIt.charAt(0).toUpperCase() + todayIt.slice(1);
+
+  let totalSent = 0;
   for (const companyId of companyIds) {
     try {
-      const msg = await buildEveningSummary(companyId);
-      if (!msg) continue; // niente da raccontare oggi
+      const [rawData, tgUsers] = await Promise.all([
+        buildEveningSummary(companyId),
+        getCompanyTelegramUsers(companyId),
+      ]);
+      if (!rawData || !tgUsers.length) continue;
 
-      await notifyAutoExec(companyId, msg);
-      sent++;
+      for (const { chatId, allowedSiteIds } of tgUsers) {
+        const filtered = filterEveningForUser(rawData, allowedSiteIds);
+        const msg = buildEveningMessage(filtered, dayLabel);
+        if (!msg) continue;
+
+        await tg.sendMessage(chatId, msg).catch(e =>
+          console.error(`[eveningSummary] errore invio a ${chatId}:`, e.message)
+        );
+        totalSent++;
+      }
+
+      console.log(`[eveningSummary] company ${companyId}: inviati a ${tgUsers.length} utenti`);
     } catch (e) {
       console.error(`[eveningSummary] errore company ${companyId}:`, e.message);
     }
   }
 
-  console.log(`[eveningSummary] completato — ${sent} company notificate`);
+  console.log(`[eveningSummary] completato — ${totalSent} messaggi inviati`);
 }
 
 // ── Registra il cron ──────────────────────────────────────────

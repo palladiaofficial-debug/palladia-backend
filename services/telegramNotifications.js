@@ -47,6 +47,72 @@ async function getLinkedChatIds(companyId, excludeChatId = null) {
 }
 
 /**
+ * Ritorna tutti gli utenti Telegram di una company con i loro cantieri consentiti.
+ * - owner/admin → allowedSiteIds = null  (= tutti i cantieri)
+ * - tech/viewer → allowedSiteIds = [...] (solo i cantieri assegnati via user_site_assignments)
+ *
+ * @returns {Promise<Array<{chatId: bigint, userId: string, allowedSiteIds: string[]|null}>>}
+ */
+async function getCompanyTelegramUsers(companyId) {
+  const [tuRes, cuRes] = await Promise.all([
+    supabase.from('telegram_users')
+      .select('telegram_chat_id, user_id')
+      .eq('company_id', companyId),
+    supabase.from('company_users')
+      .select('user_id, role')
+      .eq('company_id', companyId),
+  ]);
+
+  const tuUsers = tuRes.data || [];
+  if (!tuUsers.length) return [];
+
+  const roleMap = new Map((cuRes.data || []).map(c => [c.user_id, c.role]));
+
+  // Utenti che richiedono filtro per cantiere
+  const techUserIds = tuUsers
+    .filter(u => { const r = roleMap.get(u.user_id); return r === 'tech' || r === 'viewer'; })
+    .map(u => u.user_id);
+
+  // Fetch assegnazioni solo per tech/viewer (batch unico)
+  const assignmentsByUser = new Map();
+  if (techUserIds.length) {
+    const { data: assignments } = await supabase
+      .from('user_site_assignments')
+      .select('user_id, site_id')
+      .eq('company_id', companyId)
+      .in('user_id', techUserIds);
+
+    for (const a of assignments || []) {
+      if (!assignmentsByUser.has(a.user_id)) assignmentsByUser.set(a.user_id, []);
+      assignmentsByUser.get(a.user_id).push(a.site_id);
+    }
+  }
+
+  return tuUsers.map(u => {
+    const role    = roleMap.get(u.user_id) || 'tech';
+    const isAdmin = role === 'owner' || role === 'admin';
+    return {
+      chatId:          u.telegram_chat_id,
+      userId:          u.user_id,
+      allowedSiteIds:  isAdmin ? null : (assignmentsByUser.get(u.user_id) || []),
+    };
+  });
+}
+
+/**
+ * Ritorna i chat ID degli utenti abilitati a ricevere notifiche per un cantiere specifico.
+ * owner/admin → sempre inclusi
+ * tech/viewer → solo se hanno quel siteId nelle loro assegnazioni
+ */
+async function getLinkedChatIdsForSite(companyId, siteId, excludeChatId = null) {
+  const users = await getCompanyTelegramUsers(companyId);
+  return users
+    .filter(u => u.allowedSiteIds === null || u.allowedSiteIds.includes(siteId))
+    .map(u => u.chatId)
+    .filter(id => id !== excludeChatId);
+}
+
+/**
  * Recupera i chatId Telegram dei coordinatori collegati a un cantiere specifico.
  * Usa site_coordinator_invites → email → telegram_coordinator_links.
  */
@@ -134,14 +200,13 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
 
   const urgIcon = urgency === 'critica' ? '🚨' : '⚠️';
   const text =
-    `${urgIcon} <b>Non Conformità segnalata</b>\n\n` +
-    `📍 <b>${siteName}</b>\n` +
-    `📝 ${description}` +
-    (authorName ? `\n👤 Da: ${authorName}` : '');
+    `${urgIcon} <b>Non Conformità — ${siteName}</b>\n\n` +
+    `${description}` +
+    (authorName ? `\nDa: ${authorName}` : '');
 
-  // Notifica impresa + coordinatori del cantiere in parallelo
+  // Notifica solo utenti assegnati a questo cantiere + coordinatori
   const [companyResult] = await Promise.all([
-    notifyCompany(companyId, text, { excludeChatId }),
+    notifySiteTeam(companyId, siteId, text, { excludeChatId }),
     notifyCoordinators(siteId, text, { excludeChatId }).catch(() => {}),
   ]);
 
@@ -156,13 +221,12 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
 /**
  * Notifica un incidente — sempre immediato, nessun cooldown.
  */
-async function notifyIncidente(companyId, siteName, description, authorName, excludeChatId) {
+async function notifyIncidente(companyId, siteId, siteName, description, authorName, excludeChatId) {
   const text =
-    `🚨 <b>INCIDENTE segnalato</b>\n\n` +
-    `📍 <b>${siteName}</b>\n` +
-    `📝 ${description}` +
-    (authorName ? `\n👤 Da: ${authorName}` : '');
-  return notifyCompany(companyId, text, { excludeChatId });
+    `🚨 <b>INCIDENTE — ${siteName}</b>\n\n` +
+    `${description}` +
+    (authorName ? `\nDa: ${authorName}` : '');
+  return notifySiteTeam(companyId, siteId, text, { excludeChatId });
 }
 
 /**
@@ -225,6 +289,24 @@ async function notifyMissingExitsWithAction(companyId, siteId, siteName, workerN
 }
 
 /**
+ * Invia un testo agli utenti abilitati a ricevere notifiche per un cantiere specifico.
+ * Sostituisce notifyCompany() per tutti gli alert puntuali (NC, incidente, uscite).
+ */
+async function notifySiteTeam(companyId, siteId, text, { excludeChatId = null } = {}) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return { sent: 0, failed: 0, skipped: true };
+
+  const chatIds = await getLinkedChatIdsForSite(companyId, siteId, excludeChatId);
+  if (!chatIds.length) return { sent: 0, failed: 0 };
+
+  const results = await Promise.allSettled(chatIds.map(chatId => tg.sendMessage(chatId, text)));
+  const failed = results.filter(r => r.status === 'rejected').length;
+  if (failed) {
+    console.error(`[telegramNotifications] notifySiteTeam: ${failed}/${chatIds.length} falliti (site ${siteId})`);
+  }
+  return { sent: chatIds.length - failed, failed };
+}
+
+/**
  * Messaggio personalizzato a tutta la company (broadcast manuale da owner/admin).
  */
 async function sendCustomNotification(companyId, text) {
@@ -251,5 +333,8 @@ module.exports = {
   notifyMissingExits,
   notifyMissingExitsWithAction,
   notifyAutoExec,
+  notifySiteTeam,
   sendCustomNotification,
+  getCompanyTelegramUsers,
+  getLinkedChatIdsForSite,
 };

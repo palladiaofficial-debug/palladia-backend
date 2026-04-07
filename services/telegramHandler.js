@@ -207,6 +207,7 @@ async function handleMessage(msg, tuUser, tuCoord) {
   if (text.startsWith('/ladia'))         return handleLadiaCommand(msg, tuUser);
   if (text.startsWith('/impostazioni')) return handleImpostazioniCommand(chatId, tuUser);
   if (text.startsWith('/ispezione'))   return handleIspezioneCommand(chatId, tuUser);
+  if (text.startsWith('/i_miei_cantieri') || text === 'I miei cantieri') return handleMyCantieri(chatId, tuUser);
 
   // ── Ladia mode: testo → Ladia; PDF → elabora come template ──
   if (tuUser.ladia_mode && text) return handleLadiaMessage(msg, tuUser);
@@ -377,6 +378,16 @@ async function handleCallbackQuery(cbq) {
     .update({ last_interaction_at: new Date().toISOString() })
     .eq('telegram_chat_id', String(chatId))
     .then(() => {}).catch(() => {});
+
+  // ── Toggle assegnazione cantiere (sites:toggle:UUID) ────────
+  if (data.startsWith('sites:toggle:')) {
+    const siteId = data.slice(13);
+    const tuUser = await getTelegramUser(chatId);
+    if (!tuUser) { await tg.answerCallbackQuery(cbq.id, 'Account non collegato.'); return; }
+    await tg.answerCallbackQuery(cbq.id, '').catch(() => {});
+    await handleSiteToggle(chatId, tuUser, siteId, cbq.message?.message_id);
+    return;
+  }
 
   // ── Impostazioni notifiche (set:notif:*) ────────────────────
   if (data.startsWith('set:notif:')) {
@@ -815,7 +826,7 @@ async function handleText(msg, tuUser) {
   // Notifiche push solo per NC urgenti e incidenti — esclude il mittente
   const authorName = tuUser.telegram_first_name || tuUser.telegram_username;
   if (ai.category === 'incidente') {
-    notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || text, authorName,
+    notifyIncidente(tuUser.company_id, siteCtx.siteId, siteCtx.siteName, ai.summary || text, authorName,
       tuUser.telegram_chat_id).catch(() => {});
   } else if (ai.category === 'non_conformita') {
     notifyNonConformita(tuUser.company_id, siteCtx.siteId, siteCtx.siteName,
@@ -993,7 +1004,7 @@ async function handleVoice(msg, tuUser) {
     // Notifiche push solo per NC urgenti e incidenti — esclude il mittente
     const authorName = tuUser.telegram_first_name || tuUser.telegram_username;
     if (ai.category === 'incidente') {
-      notifyIncidente(tuUser.company_id, siteCtx.siteName, ai.summary || transcription, authorName,
+      notifyIncidente(tuUser.company_id, siteCtx.siteId, siteCtx.siteName, ai.summary || transcription, authorName,
         tuUser.telegram_chat_id).catch(() => {});
     } else if (ai.category === 'non_conformita') {
       notifyNonConformita(tuUser.company_id, siteCtx.siteId, siteCtx.siteName,
@@ -2303,6 +2314,130 @@ async function handleCoordinatorVoice(msg, tuCoord) {
   } catch (err) {
     console.error('[coordinator voice]', err.message);
     return tg.sendMessage(chatId, '❌ Errore trascrizione. Scrivi il messaggio come testo.');
+  }
+}
+
+// ── I miei cantieri ──────────────────────────────────────────
+
+/**
+ * Mostra la lista di cantieri della company con checkmark ✅/☐ in base alle assegnazioni.
+ * owner/admin: ricevono un messaggio informativo (vedono tutto).
+ * tech/viewer: vedono la lista con toggle tap-per-tap.
+ */
+async function handleMyCantieri(chatId, tuUser) {
+  // Verifica ruolo
+  const { data: cu } = await supabase
+    .from('company_users')
+    .select('role')
+    .eq('company_id', tuUser.company_id)
+    .eq('user_id', tuUser.user_id)
+    .single();
+
+  const role = cu?.role || 'tech';
+
+  if (role === 'owner' || role === 'admin') {
+    return tg.sendMessage(chatId,
+      `<b>I tuoi cantieri</b>\n\n` +
+      `Sei ${role === 'owner' ? 'titolare' : 'admin'}: ricevi automaticamente le notifiche di <b>tutti i cantieri</b> dell'impresa.\n\n` +
+      `Non è necessario configurare nulla.`
+    );
+  }
+
+  // Fetch cantieri attivi e assegnazioni correnti
+  const [sitesRes, assignRes] = await Promise.all([
+    supabase.from('sites')
+      .select('id, name, address')
+      .eq('company_id', tuUser.company_id)
+      .neq('status', 'chiuso')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase.from('user_site_assignments')
+      .select('site_id')
+      .eq('company_id', tuUser.company_id)
+      .eq('user_id', tuUser.user_id),
+  ]);
+
+  const sites    = sitesRes.data || [];
+  const assigned = new Set((assignRes.data || []).map(a => a.site_id));
+
+  if (!sites.length) {
+    return tg.sendMessage(chatId,
+      `Nessun cantiere attivo trovato. Creane uno su <b>palladia.net</b>.`
+    );
+  }
+
+  const buttons = sites.map(s => ({
+    text:         (assigned.has(s.id) ? '✅ ' : '☐ ') + (s.name || s.address || 'Cantiere'),
+    callbackData: `sites:toggle:${s.id}`,
+  }));
+
+  const assignedCount = assigned.size;
+  const header = assignedCount === 0
+    ? `<b>I miei cantieri</b>\n\nNessun cantiere selezionato — non riceverai notifiche.\nTocca per attivare:`
+    : `<b>I miei cantieri</b>\n\n${assignedCount} su ${sites.length} selezionat${assignedCount > 1 ? 'i' : 'o'}.\nTocca per attivare/disattivare:`;
+
+  await tg.sendMessage(chatId, header, { replyMarkup: tg.buildInlineKeyboard(buttons, 1) });
+}
+
+/**
+ * Toggle un singolo cantiere nell'assegnazione dell'utente.
+ * Se era assegnato → rimuove. Se non era assegnato → aggiunge.
+ * Poi aggiorna il messaggio inline con i nuovi checkmark.
+ */
+async function handleSiteToggle(chatId, tuUser, siteId, messageId) {
+  // Cerca assegnazione esistente
+  const { data: existing } = await supabase
+    .from('user_site_assignments')
+    .select('id')
+    .eq('company_id', tuUser.company_id)
+    .eq('user_id', tuUser.user_id)
+    .eq('site_id', siteId)
+    .single();
+
+  if (existing) {
+    await supabase.from('user_site_assignments')
+      .delete()
+      .eq('id', existing.id);
+  } else {
+    await supabase.from('user_site_assignments')
+      .insert({ company_id: tuUser.company_id, user_id: tuUser.user_id, site_id: siteId });
+  }
+
+  // Rigenera keyboard aggiornata
+  const [sitesRes, assignRes] = await Promise.all([
+    supabase.from('sites')
+      .select('id, name, address')
+      .eq('company_id', tuUser.company_id)
+      .neq('status', 'chiuso')
+      .order('created_at', { ascending: false })
+      .limit(20),
+    supabase.from('user_site_assignments')
+      .select('site_id')
+      .eq('company_id', tuUser.company_id)
+      .eq('user_id', tuUser.user_id),
+  ]);
+
+  const sites    = sitesRes.data || [];
+  const assigned = new Set((assignRes.data || []).map(a => a.site_id));
+
+  const buttons = sites.map(s => ({
+    text:         (assigned.has(s.id) ? '✅ ' : '☐ ') + (s.name || s.address || 'Cantiere'),
+    callbackData: `sites:toggle:${s.id}`,
+  }));
+
+  const assignedCount = assigned.size;
+  const header = assignedCount === 0
+    ? `<b>I miei cantieri</b>\n\nNessun cantiere selezionato — non riceverai notifiche.\nTocca per attivare:`
+    : `<b>I miei cantieri</b>\n\n${assignedCount} su ${sites.length} selezionat${assignedCount > 1 ? 'i' : 'o'}.\nTocca per attivare/disattivare:`;
+
+  if (messageId) {
+    await tg.editMessageText(chatId, messageId, header, { replyMarkup: tg.buildInlineKeyboard(buttons, 1) })
+      .catch(() => {
+        // fallback: invia nuovo messaggio
+        return tg.sendMessage(chatId, header, { replyMarkup: tg.buildInlineKeyboard(buttons, 1) });
+      });
+  } else {
+    await tg.sendMessage(chatId, header, { replyMarkup: tg.buildInlineKeyboard(buttons, 1) });
   }
 }
 

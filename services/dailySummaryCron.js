@@ -19,7 +19,8 @@
 
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
-const { notifyCompany } = require('./telegramNotifications');
+const tg       = require('./telegram');
+const { getCompanyTelegramUsers } = require('./telegramNotifications');
 const { getForecast }   = require('./weatherService');
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -233,14 +234,14 @@ async function buildCompanyBriefing(companyId) {
       if (fToday.isRainy || fToday.precipProb >= 40)       icons.push(`oggi ${fToday.description} (${fToday.precipProb}%)`);
       if (fTomorrow.isRainy || fTomorrow.precipProb >= 40) icons.push(`domani ${fTomorrow.description} (${fTomorrow.precipProb}%)`);
       if (icons.length) {
-        meteoLines.push(`<b>${name}</b>: ${icons.join(', ')}`);
+        meteoLines.push({ siteId: site.id, text: `<b>${name}</b>: ${icons.join(', ')}` });
       } else if (fToday.tempMax !== null) {
-        meteoLines.push(`<b>${name}</b>: ${fToday.description} (${fToday.tempMin}–${fToday.tempMax}°C)`);
+        meteoLines.push({ siteId: site.id, text: `<b>${name}</b>: ${fToday.description} (${fToday.tempMin}–${fToday.tempMax}°C)` });
       }
     }
 
-    if (siteCrit.length) critical.push({ name, lines: siteCrit });
-    if (siteWarn.length) warnings.push({ name, lines: siteWarn });
+    if (siteCrit.length) critical.push({ siteId: site.id, name, lines: siteCrit });
+    if (siteWarn.length) warnings.push({ siteId: site.id, name, lines: siteWarn });
   }
 
   // ── Recap ieri (azioni Ladia + presenze) ──
@@ -263,7 +264,7 @@ async function buildCompanyBriefing(companyId) {
     ystActsBySite[key].push(label);
   }
 
-  // Costruisci linee recap ieri
+  // Costruisci linee recap ieri (con siteId per filtro per-utente)
   const ystLines = [];
   const ystSiteIds = new Set([
     ...Object.keys(ystPresCount),
@@ -276,14 +277,32 @@ async function buildCompanyBriefing(companyId) {
     if (cnt)                   parts.push(`${cnt} presence${cnt > 1 ? '' : 'a'}`);
     const acts = ystActsBySite[sid] || [];
     for (const a of acts)      parts.push(`Ladia ha ${a}`);
-    if (parts.length) ystLines.push(`<b>${name}</b>: ${parts.join(' · ')}`);
+    if (parts.length) ystLines.push({ siteId: sid, text: `<b>${name}</b>: ${parts.join(' · ')}` });
   }
-  // Azioni globali (senza site_id)
+  // Azioni globali (senza site_id) — sempre incluse
   for (const a of ystActsBySite['_global'] || []) {
-    ystLines.push(`• Ladia ha ${a}`);
+    ystLines.push({ siteId: '_global', text: `• Ladia ha ${a}` });
   }
 
   return { critical, warnings, meteoLines, ystLines };
+}
+
+// ── Filtro per-utente ─────────────────────────────────────────
+
+/**
+ * Filtra il briefing grezzo ai soli cantieri consentiti per un utente.
+ * @param {object} briefing  — output di buildCompanyBriefing()
+ * @param {string[]|null} allowedSiteIds — null = tutti; [] = nessuno
+ */
+function filterBriefingForUser(briefing, allowedSiteIds) {
+  if (!allowedSiteIds) return briefing; // owner/admin: tutto
+  const allowed = new Set(allowedSiteIds);
+  return {
+    critical:   briefing.critical.filter(x => allowed.has(x.siteId)),
+    warnings:   briefing.warnings.filter(x => allowed.has(x.siteId)),
+    meteoLines: briefing.meteoLines.filter(x => allowed.has(x.siteId)),
+    ystLines:   briefing.ystLines.filter(x => x.siteId === '_global' || allowed.has(x.siteId)),
+  };
 }
 
 // ── Formattazione messaggio ────────────────────────────────────
@@ -300,11 +319,11 @@ function buildMessage(briefing) {
   let msg = `<b>Buongiorno — ${dayLabel}</b>\n`;
 
   if (ystLines?.length) {
-    msg += `\n<b>Ieri:</b>\n${ystLines.join('\n')}`;
+    msg += `\n<b>Ieri:</b>\n${ystLines.map(x => x.text).join('\n')}`;
   }
 
   if (meteoLines?.length) {
-    msg += `\n\n<b>Meteo:</b>\n` + meteoLines.join('\n');
+    msg += `\n\n<b>Meteo:</b>\n` + meteoLines.map(x => x.text).join('\n');
   }
 
   if (!critical.length && !warnings.length) {
@@ -335,7 +354,7 @@ async function runDailySummary() {
   const weekend = isWeekend();
   console.log(`[dailySummary] avvio briefing mattutino${weekend ? ' (weekend)' : ''}`);
 
-  const { data: tuUsers, error } = await supabase
+  const { data: tuRows, error } = await supabase
     .from('telegram_users')
     .select('company_id')
     .limit(1000);
@@ -345,31 +364,48 @@ async function runDailySummary() {
     return;
   }
 
-  const companyIds = [...new Set((tuUsers || []).map(u => u.company_id))];
+  const companyIds = [...new Set((tuRows || []).map(u => u.company_id))];
   if (!companyIds.length) {
     console.log('[dailySummary] nessun utente Telegram — skip');
     return;
   }
 
+  let totalSent = 0;
   for (const companyId of companyIds) {
     try {
-      const briefing = await buildCompanyBriefing(companyId);
-      if (!briefing) continue;
+      // 1. Fetch briefing grezzo (tutti i cantieri) e utenti Telegram con i loro permessi
+      const [rawBriefing, tgUsers] = await Promise.all([
+        buildCompanyBriefing(companyId),
+        getCompanyTelegramUsers(companyId),
+      ]);
+      if (!rawBriefing || !tgUsers.length) continue;
 
-      // Nel weekend invia solo se ci sono critici
-      if (weekend && !briefing.critical.length) continue;
+      // 2. Per ogni utente invia solo i cantieri che gli competono
+      for (const { chatId, allowedSiteIds } of tgUsers) {
+        const briefing = filterBriefingForUser(rawBriefing, allowedSiteIds);
 
-      const msg = buildMessage(briefing);
-      await notifyCompany(companyId, msg);
+        // Nessun dato per i cantieri di questo utente → skip
+        const hasContent = briefing.critical.length || briefing.warnings.length ||
+                           briefing.meteoLines.length || briefing.ystLines.length;
+        if (!hasContent) continue;
 
-      const tot = briefing.critical.length + briefing.warnings.length;
-      console.log(`[dailySummary] company ${companyId}: ${tot} cantieri con segnalazioni`);
+        // Nel weekend invia solo se ci sono critici tra i suoi cantieri
+        if (weekend && !briefing.critical.length) continue;
+
+        const msg = buildMessage(briefing);
+        await tg.sendMessage(chatId, msg).catch(e =>
+          console.error(`[dailySummary] errore invio a ${chatId}:`, e.message)
+        );
+        totalSent++;
+      }
+
+      console.log(`[dailySummary] company ${companyId}: inviati a ${tgUsers.length} utenti`);
     } catch (e) {
       console.error(`[dailySummary] errore company ${companyId}:`, e.message);
     }
   }
 
-  console.log('[dailySummary] completato');
+  console.log(`[dailySummary] completato — ${totalSent} messaggi inviati`);
 }
 
 // ── Registra il cron ──────────────────────────────────────────
