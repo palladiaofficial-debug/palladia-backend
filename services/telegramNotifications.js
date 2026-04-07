@@ -76,11 +76,17 @@ async function getCompanyTelegramUsers(companyId) {
   // Fetch assegnazioni solo per tech/viewer (batch unico)
   const assignmentsByUser = new Map();
   if (techUserIds.length) {
-    const { data: assignments } = await supabase
+    const { data: assignments, error: assignErr } = await supabase
       .from('user_site_assignments')
       .select('user_id, site_id')
       .eq('company_id', companyId)
       .in('user_id', techUserIds);
+
+    if (assignErr) {
+      // Tabella non ancora migrata — fallback: tutti vedono tutti i cantieri (comportamento pre-036)
+      console.warn('[getCompanyTelegramUsers] user_site_assignments non disponibile — fallback all-sites:', assignErr.message);
+      return tuUsers.map(u => ({ chatId: u.telegram_chat_id, userId: u.user_id, allowedSiteIds: null }));
+    }
 
     for (const a of assignments || []) {
       if (!assignmentsByUser.has(a.user_id)) assignmentsByUser.set(a.user_id, []);

@@ -129,11 +129,6 @@ async function buildEveningSummary(companyId) {
 
   // ── Costruisci sezioni messaggio ──────────────────────────
 
-  const todayIt = new Date().toLocaleDateString('it-IT', {
-    timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long',
-  });
-  const dayLabel = todayIt.charAt(0).toUpperCase() + todayIt.slice(1);
-
   const siteLines      = [];
   const ladiaLines     = [];
   const tomorrowLines  = [];

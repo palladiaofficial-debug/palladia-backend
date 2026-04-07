@@ -131,7 +131,6 @@ async function runMissingExitCheck() {
       // Notifica per-utente: ognuno vede solo i cantieri che gli competono
       if (fixedSites.length > 0) {
         const tgUsers = await getCompanyTelegramUsers(companyId);
-        const fixedSiteIds = new Set(fixedSites.map(x => x.siteId));
 
         for (const { chatId, allowedSiteIds } of tgUsers) {
           // Filtra i cantieri visibili a questo utente
