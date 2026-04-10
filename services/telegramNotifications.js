@@ -56,7 +56,7 @@ async function getLinkedChatIds(companyId, excludeChatId = null) {
 async function getCompanyTelegramUsers(companyId) {
   const [tuRes, cuRes] = await Promise.all([
     supabase.from('telegram_users')
-      .select('telegram_chat_id, user_id')
+      .select('telegram_chat_id, user_id, notification_level')
       .eq('company_id', companyId),
     supabase.from('company_users')
       .select('user_id, role')
@@ -98,9 +98,10 @@ async function getCompanyTelegramUsers(companyId) {
     const role    = roleMap.get(u.user_id) || 'tech';
     const isAdmin = role === 'owner' || role === 'admin';
     return {
-      chatId:          u.telegram_chat_id,
-      userId:          u.user_id,
-      allowedSiteIds:  isAdmin ? null : (assignmentsByUser.get(u.user_id) || []),
+      chatId:            u.telegram_chat_id,
+      userId:            u.user_id,
+      notificationLevel: u.notification_level || 'balanced',
+      allowedSiteIds:    isAdmin ? null : (assignmentsByUser.get(u.user_id) || []),
     };
   });
 }
@@ -313,6 +314,66 @@ async function notifySiteTeam(companyId, siteId, text, { excludeChatId = null } 
 }
 
 /**
+ * Notifica timbratura (ENTRY/EXIT) — inviata fire-and-forget da scan.js dopo punch_atomic.
+ *
+ * Livelli:
+ *  quiet    → nessuna notifica timbratura
+ *  balanced → solo ENTRY (default se non impostato)
+ *  full     → ENTRY + EXIT
+ *
+ * @param {string} companyId
+ * @param {string} siteId
+ * @param {string} siteName
+ * @param {string} workerName
+ * @param {'ENTRY'|'EXIT'} eventType
+ * @param {string} timestampServer  - ISO string
+ */
+async function notifyPunch(companyId, siteId, siteName, workerName, eventType, timestampServer) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+
+  let users;
+  try {
+    users = await getCompanyTelegramUsers(companyId);
+  } catch (e) {
+    console.error('[notifyPunch] getCompanyTelegramUsers error:', e.message);
+    return;
+  }
+
+  if (!users.length) return;
+
+  // Orario locale (Europe/Rome) — solo HH:MM
+  let timeStr;
+  try {
+    timeStr = new Date(timestampServer).toLocaleTimeString('it-IT', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
+    });
+  } catch {
+    timeStr = timestampServer ? timestampServer.slice(11, 16) : '';
+  }
+
+  const isEntry = eventType === 'ENTRY';
+  const icon    = isEntry ? '👷' : '🚪';
+  const label   = isEntry ? 'entrata' : 'uscita';
+  const text    = `${icon} <b>${workerName}</b> — ${label}\n📍 ${siteName} · ${timeStr}`;
+
+  const sends = [];
+  for (const u of users) {
+    // Filtra per cantiere assegnato
+    if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) continue;
+
+    const level = u.notificationLevel || 'balanced';
+    if (level === 'quiet') continue;
+    if (level === 'balanced' && !isEntry) continue; // balanced → solo ENTRY
+
+    sends.push(tg.sendMessage(u.chatId, text).catch(e => {
+      console.error('[notifyPunch] sendMessage error:', e.message);
+    }));
+  }
+
+  if (sends.length) await Promise.allSettled(sends);
+}
+
+/**
  * Messaggio personalizzato a tutta la company (broadcast manuale da owner/admin).
  */
 async function sendCustomNotification(companyId, text) {
@@ -339,6 +400,7 @@ module.exports = {
   notifyMissingExits,
   notifyMissingExitsWithAction,
   notifyAutoExec,
+  notifyPunch,
   notifySiteTeam,
   sendCustomNotification,
   getCompanyTelegramUsers,

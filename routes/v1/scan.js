@@ -3,6 +3,7 @@ const crypto      = require('crypto');
 const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter } = require('../../middleware/rateLimit');
+const { notifyPunch } = require('../../services/telegramNotifications');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -449,7 +450,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
 
   const { data: session, error: sessErr } = await supabase
     .from('worker_device_sessions')
-    .select('id, worker_id, company_id, expires_at, revoked_at')
+    .select('id, worker_id, company_id, expires_at, revoked_at, worker:workers(full_name)')
     .eq('token_hash', tokenHash)
     .maybeSingle();
 
@@ -460,7 +461,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
 
   const { data: site, error: siteErr } = await supabase
     .from('sites')
-    .select('id, company_id, latitude, longitude, geofence_radius_m')
+    .select('id, name, company_id, latitude, longitude, geofence_radius_m')
     .eq('id', worksite_id)
     .maybeSingle();
 
@@ -552,6 +553,16 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     gps_accuracy_m:     Math.round(accuracyM),
     gps_accuracy_m_raw: accuracyM
   });
+
+  // ── Telegram punch notification (fire-and-forget) ─────────────────────────
+  notifyPunch(
+    site.company_id,
+    worksite_id,
+    site.name,
+    session.worker?.full_name || session.worker_id,
+    eventType,
+    tsServer
+  ).catch(e => console.error('[punch] notifyPunch error:', e.message));
 });
 
 // ── POST /api/v1/scan/note — PUBBLICO ─────────────────────────────────────────
