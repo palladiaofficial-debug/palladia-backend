@@ -4,6 +4,43 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
 /**
+ * GET /api/v1/pos/:id
+ * Restituisce un singolo POS (pos_data + content) per la modalità modifica.
+ */
+router.get('/pos/:id', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+  const { id } = req.params;
+
+  const { data: doc, error } = await supabase
+    .from('pos_documents')
+    .select('id, site_id, revision, created_at, pos_data, content')
+    .eq('id', id)
+    .single();
+
+  if (error || !doc) return res.status(404).json({ error: 'POS non trovato' });
+
+  // Verifica ownership: se site_id presente, controlla che appartenga all'azienda
+  if (doc.site_id) {
+    const { data: site } = await supabase
+      .from('sites')
+      .select('id')
+      .eq('id', doc.site_id)
+      .eq('company_id', companyId)
+      .single();
+    if (!site) return res.status(403).json({ error: 'Accesso negato' });
+  }
+
+  res.json({
+    id:         doc.id,
+    site_id:    doc.site_id,
+    revision:   doc.revision,
+    created_at: doc.created_at,
+    pos_data:   doc.pos_data,
+    content:    doc.content,
+  });
+});
+
+/**
  * GET /api/v1/pos
  * Lista tutti i POS dell'azienda, con info cantiere.
  * Richiede JWT + company membership.

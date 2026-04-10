@@ -1008,34 +1008,32 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     }
     console.log('[template-stream] chunks sent');
 
-    // Save to Supabase
+    // Save to Supabase — sempre, siteId opzionale (null se non associato a cantiere)
     // NOTA: salviamo aiRisks (non fullText) — il template HTML viene rigenerato al volo
     // da pos_data. Se salvassimo fullText (intero markdown), pdf-html lo passerebbe come
     // aiRisks e tutta la sezione 5 conterrebbe l'intero documento invece dei soli rischi.
     let posId = null;
-    if (siteId) {
-      try {
-        const { data: saved, error: saveError } = await supabase
-          .from('pos_documents')
-          .insert([{
-            site_id: siteId,
-            revision,
-            content: aiRisks,
-            pos_data: posData,
-            created_by: posData.createdBy || null
-          }])
-          .select()
-          .single();
+    try {
+      const { data: saved, error: saveError } = await supabase
+        .from('pos_documents')
+        .insert([{
+          site_id: siteId || null,
+          revision,
+          content: aiRisks,
+          pos_data: posData,
+          created_by: posData.createdBy || null
+        }])
+        .select()
+        .single();
 
-        if (saveError) {
-          console.error('[template-stream] Supabase save error:', saveError.message);
-        } else {
-          posId = saved?.id || null;
-          console.log('[template-stream] saved posId:', posId);
-        }
-      } catch (dbErr) {
-        console.error('[template-stream] Supabase exception:', dbErr.message);
+      if (saveError) {
+        console.error('[template-stream] Supabase save error:', saveError.message);
+      } else {
+        posId = saved?.id || null;
+        console.log('[template-stream] saved posId:', posId, 'siteId:', siteId || 'none');
       }
+    } catch (dbErr) {
+      console.error('[template-stream] Supabase exception:', dbErr.message);
     }
 
     sseWrite(res, `data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template' })}\n\n`);
