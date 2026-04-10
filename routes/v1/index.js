@@ -25,6 +25,9 @@ router.use('/', require('./company'));
 // Subappaltatori: CRUD completo (JWT richiesto)
 router.use('/', require('./subcontractors'));
 
+// Mezzi & Attrezzature: CRUD completo (JWT richiesto)
+router.use('/', require('./equipment'));
+
 // Team invites
 router.use('/', require('./invites'));
 

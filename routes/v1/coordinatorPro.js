@@ -332,7 +332,7 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     }
   } catch { /* non blocca la risposta */ }
 
-  const [siteR, workersR, presenceR, notesR, ncR, visitsR] = await Promise.all([
+  const [siteR, workersR, presenceR, notesR, ncR, visitsR, subsR, equipR] = await Promise.all([
     supabase.from('sites')
       .select('id, name, address, status, client, start_date, companies(name)')
       .eq('id', siteId).single(),
@@ -370,6 +370,20 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
       .eq('invite_id', invite.id)
       .order('visited_at', { ascending: false })
       .limit(30),
+
+    // Subappaltatori dell'azienda
+    supabase.from('subcontractors')
+      .select('id, company_name, piva, contact_person, phone, email, legal_address, status, durc_expiry, insurance_expiry, soa_expiry')
+      .eq('company_id', invite.company_id)
+      .eq('is_archived', false)
+      .order('company_name'),
+
+    // Mezzi & Attrezzature dell'azienda
+    supabase.from('equipment')
+      .select('id, type, model, plate_or_serial, ownership, inspection_date, insurance_expiry, maintenance_date, notes')
+      .eq('company_id', invite.company_id)
+      .eq('is_active', true)
+      .order('type'),
   ]);
 
   if (siteR.error || !siteR.data) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
@@ -420,8 +434,25 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     }))
     .sort((a, b) => (b.on_site ? 1 : 0) - (a.on_site ? 1 : 0));
 
-  const ncList     = ncR.data    || [];
+  const ncList      = ncR.data    || [];
   const openNcCount = ncList.filter(n => n.status === 'aperta' || n.status === 'in_lavorazione').length;
+
+  // Calcola status mezzi
+  const today = new Date().toISOString().slice(0, 10);
+  const in30  = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const TYPE_ICONS = { 'Escavatore': '🚜', 'Gru': '🏗️', 'Ponteggio': '🧱', 'Autocarro': '🚛', 'Betoniera': '🔄', 'Altro': '🔧' };
+
+  const equipment = (equipR.data || []).map(e => {
+    const dates = [e.inspection_date, e.insurance_expiry, e.maintenance_date].filter(Boolean);
+    const status = dates.some(d => d < today) ? 'expired'
+      : dates.some(d => d >= today && d <= in30) ? 'expiring' : 'ok';
+    return {
+      id: e.id, type: e.type, model: e.model || '', icon: TYPE_ICONS[e.type] || '🔧',
+      plateOrSerial: e.plate_or_serial || '', ownership: e.ownership, status,
+      maintenance: { inspection: e.inspection_date, insurance: e.insurance_expiry, scheduled: e.maintenance_date },
+      notes: e.notes,
+    };
+  });
 
   res.json({
     site: { ...siteR.data, company_name: siteR.data.companies?.name || '—' },
@@ -438,6 +469,8 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     nonconformities:  ncList,
     open_nc_count:    openNcCount,
     visits:           visitsR.data || [],
+    subcontractors:   subsR.data   || [],
+    equipment,
   });
 });
 
