@@ -46,7 +46,8 @@ router.get('/pos/:id', verifySupabaseJwt, async (req, res) => {
  * Richiede JWT + company membership.
  */
 router.get('/pos', verifySupabaseJwt, async (req, res) => {
-  const companyId = req.companyId;
+  const companyId     = req.companyId;
+  const filterSiteId  = req.query.siteId || null;
 
   // Recupera i cantieri dell'azienda
   const { data: sites, error: sitesErr } = await supabase
@@ -58,7 +59,12 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
 
   if (!sites || sites.length === 0) return res.json([]);
 
-  const siteIds = sites.map(s => s.id);
+  const siteIds = filterSiteId
+    ? sites.filter(s => s.id === filterSiteId).map(s => s.id)
+    : sites.map(s => s.id);
+
+  if (!siteIds.length) return res.json([]);
+
   const siteMap = Object.fromEntries(sites.map(s => [s.id, s.name]));
 
   // Recupera i POS collegati ai cantieri dell'azienda
