@@ -14,6 +14,7 @@ const supabase = require('../lib/supabase');
 const { getWeatherSummary } = require('./weatherService');
 const { LADIA_TOOL_DEFINITIONS, executeTool } = require('./ladiaTools');
 const { getTemplateIndex } = require('./ladiaDocumentProcessor');
+const { buildEnrichedContext } = require('./ladiaEngine');
 
 const SONNET_MODEL    = 'claude-sonnet-4-6';
 const MAX_HISTORY     = 20;   // messaggi mantenuti per sessione (10 scambi)
@@ -48,8 +49,13 @@ Hai accesso a questi strumenti per AGIRE direttamente (non solo rispondere):
 - <b>lista_nc_aperte</b>: elenca NC aperte filtrate per urgenza
 - <b>stato_cantiere</b>: riepilogo live di presenze, NC, budget
 - <b>crea_non_conformita</b>: registra una NC nel sistema
-- <b>aggiungi_nota</b>: salva una nota nel diario del cantiere
 - <b>cerca_template_documento</b>: cerca tra i PDF caricati dall'impresa (contratti, capitolati, POS, ecc.) per usarli come modello
+
+REGOLA CRITICA SULLE NOTE:
+NON salvare mai note automaticamente. Se l'utente fa una domanda generica ("com'è la situazione?",
+"cosa devo fare oggi?") rispondi con informazioni — NON usare aggiungi_nota.
+Salva una nota SOLO se l'utente dice esplicitamente "salva questa nota", "registra che...",
+"aggiungi al diario...". In caso di dubbio, chiedi conferma prima di salvare.
 
 Usa i tool quando è utile, non sistematicamente. Preferisci rispondere dal contesto
 già caricato se l'informazione è già lì. Usa i tool solo per dati freschi o azioni.
@@ -377,8 +383,16 @@ async function callClaudeWithTools(systemPrompt, messages, toolCtx) {
  * @returns {Promise<string>} risposta HTML per Telegram
  */
 async function askLadia(tuUser, siteId, siteName, userMessage) {
+  // Usa il contesto arricchito (fasi, costi, capitolato) se Ladia è attiva sul cantiere
+  const { data: ladiaCfg } = await supabase.from('ladia_site_config')
+    .select('is_active').eq('site_id', siteId).maybeSingle();
+
+  const contextFn = ladiaCfg?.is_active
+    ? () => buildEnrichedContext(tuUser.company_id, siteId)
+    : () => buildSiteContext(tuUser.company_id, siteId);
+
   const [siteContext, convId] = await Promise.all([
-    buildSiteContext(tuUser.company_id, siteId),
+    contextFn(),
     getOrCreateConversation(tuUser.company_id, tuUser.user_id, siteId, siteName),
   ]);
 

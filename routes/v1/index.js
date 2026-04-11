@@ -69,6 +69,12 @@ router.use('/', require('./economia'));
 // Computo Metrico: import PDF/Excel, parsing AI, SAL% per voce
 router.use('/', require('./computo'));
 
+// Ladia In Cantiere: attivazione, capitolato, fasi, costi
+router.use('/', require('./ladiaConfig'));
+router.use('/', require('./capitolato'));
+router.use('/', require('./sitePhases'));
+router.use('/', require('./siteCosts'));
+
 // Prezzario regionale + prezzi fornitori azienda
 router.use('/', require('./prezzario'));
 

@@ -21,6 +21,7 @@ const { startExpiryAlertCron }      = require('./services/expiryAlertCron');
 const { startWorkerExpiryCron }     = require('./services/workerExpiryCron');
 const { startLadiaProactiveCron }   = require('./services/ladiaProactive');
 const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
+const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -1440,6 +1441,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startWorkerExpiryCron();
     startLadiaProactiveCron();
     startWeeklyValueCron();
+    startLadiaLiveCron();
   }
 });
 
