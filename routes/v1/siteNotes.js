@@ -173,6 +173,50 @@ router.get('/site-notes/:id/media', async (req, res) => {
   }
 });
 
+// ── Modifica nota ────────────────────────────────────────────
+
+router.patch('/site-notes/:id', async (req, res) => {
+  try {
+    const { companyId, userRole } = req;
+    const { id }                  = req.params;
+    const { content, category, urgency } = req.body;
+
+    const { data: note } = await supabase
+      .from('site_notes')
+      .select('id, author_id')
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!note) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const canEdit = ['owner', 'admin', 'tech'].includes(userRole) || note.author_id === req.user.id;
+    if (!canEdit) return res.status(403).json({ error: 'FORBIDDEN' });
+
+    const updates = {};
+    if (content  !== undefined) updates.content  = content;
+    if (category !== undefined) updates.category = category;
+    if (urgency  !== undefined) updates.urgency  = urgency;
+
+    if (Object.keys(updates).length === 0)
+      return res.status(400).json({ error: 'NOTHING_TO_UPDATE' });
+
+    const { data: updated, error } = await supabase
+      .from('site_notes')
+      .update(updates)
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .select()
+      .maybeSingle();
+
+    if (error) throw error;
+    res.json(updated);
+  } catch (err) {
+    console.error('[site-notes PATCH]', err.message);
+    res.status(500).json({ error: 'INTERNAL', detail: err.message });
+  }
+});
+
 // ── Elimina nota ─────────────────────────────────────────────
 
 router.delete('/site-notes/:id', async (req, res) => {
