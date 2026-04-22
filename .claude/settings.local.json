@@ -115,7 +115,8 @@
       "Bash(find /c/Users/ricka/Desktop/palladia-backend -type f -name *telegram* -o -name *bot* -o -name *ladia*)",
       "Bash(identify \"C:/Users/ricka/Desktop/PALLADIA/palladia-main/palladia-main/public/apple-touch-icon.png\")",
       "Bash(cat services/telegramNotifications.js)",
-      "Bash(ls services/telegram*)"
+      "Bash(ls services/telegram*)",
+      "Bash(git config *)"
     ]
   }
 }
