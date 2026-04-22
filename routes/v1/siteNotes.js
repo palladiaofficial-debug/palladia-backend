@@ -173,6 +173,56 @@ router.get('/site-notes/:id/media', async (req, res) => {
   }
 });
 
+// ── Promemoria via Telegram ──────────────────────────────────
+
+router.post('/site-notes/:id/reminder', async (req, res) => {
+  try {
+    const { companyId } = req;
+    const { id }        = req.params;
+    const minutes       = parseInt(req.body?.minutes);
+
+    if (!minutes || minutes < 1 || minutes > 1440)
+      return res.status(400).json({ error: 'INVALID_MINUTES', detail: 'minutes deve essere 1-1440' });
+
+    const { data: note } = await supabase
+      .from('site_notes')
+      .select('id, content, ai_summary')
+      .eq('id', id)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!note) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const { data: tgUser } = await supabase
+      .from('telegram_users')
+      .select('telegram_chat_id')
+      .eq('user_id', req.user.id)
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    if (!tgUser) return res.status(409).json({ error: 'TELEGRAM_NOT_LINKED' });
+
+    const sendAt   = new Date(Date.now() + minutes * 60 * 1000).toISOString();
+    const noteText = note.ai_summary || note.content || 'Nota cantiere';
+
+    const { error } = await supabase.from('site_note_reminders').insert({
+      company_id: companyId,
+      note_id:    id,
+      user_id:    req.user.id,
+      chat_id:    tgUser.telegram_chat_id,
+      note_text:  noteText,
+      send_at:    sendAt,
+    });
+
+    if (error) throw error;
+
+    res.json({ scheduled: true, send_at: sendAt, minutes });
+  } catch (err) {
+    console.error('[site-notes POST reminder]', err.message);
+    res.status(500).json({ error: 'INTERNAL', detail: err.message });
+  }
+});
+
 // ── Modifica nota ────────────────────────────────────────────
 
 router.patch('/site-notes/:id', async (req, res) => {
