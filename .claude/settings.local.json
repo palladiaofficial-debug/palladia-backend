@@ -110,7 +110,12 @@
       "Bash(TELEGRAM_BOT_TOKEN=\"8554158225:AAEr3jodXewgBCnuh71lId6g_hATbgBArJY\" TELEGRAM_WEBHOOK_SECRET=\"3b1e1a270364918e9882165a23237f1e25690a53e1e24e82438f30bf63aa94da\" APP_BASE_URL=\"https://palladia-backend-production.up.railway.app\" node scripts/setup-telegram-webhook.js)",
       "Bash(find C:UsersrickaDesktopPALLADIApalladia-mainpalladia-main -maxdepth 1 -name .env* -o -name vite.config.* -o -name tsconfig.json)",
       "Bash(find C:UsersrickaDesktoppalladia-backend -type f \\\\\\(-name *telegram* -o -name *bot* \\\\\\))",
-      "Bash(grep '\"\"node\"\"' package.json)"
+      "Bash(grep '\"\"node\"\"' package.json)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); msgs=[u for u in d.get\\(''''result'''',[]\\) if ''''message'''' in u]; print\\(''''\\\\n''''.join\\([fchat_id: {m[''''message''''][''''chat''''][''''id'''']} | from: {m[''''message''''][''''chat''''].get\\(''''first_name'''',''''''''\\)} {m[''''message''''][''''chat''''].get\\(''''username'''',''''''''\\)} for m in msgs[-5:]]\\)\\)\")",
+      "Bash(find /c/Users/ricka/Desktop/palladia-backend -type f -name *telegram* -o -name *bot* -o -name *ladia*)",
+      "Bash(identify \"C:/Users/ricka/Desktop/PALLADIA/palladia-main/palladia-main/public/apple-touch-icon.png\")",
+      "Bash(cat services/telegramNotifications.js)",
+      "Bash(ls services/telegram*)"
     ]
   }
 }

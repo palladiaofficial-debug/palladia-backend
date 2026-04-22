@@ -111,7 +111,7 @@ router.get('/sites/:siteId/documents', verifySupabaseJwt, async (req, res) => {
     .from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
 
-  const [{ data: uploaded, error }, { data: posDocs }] = await Promise.all([
+  const [{ data: uploaded, error }, { data: posDocs }, { data: companyDocs }] = await Promise.all([
     supabase.from('site_documents')
       .select('id, name, category, file_size, mime_type, created_at')
       .eq('site_id', siteId).eq('company_id', req.companyId)
@@ -121,6 +121,10 @@ router.get('/sites/:siteId/documents', verifySupabaseJwt, async (req, res) => {
       .eq('site_id', siteId)
       .order('created_at', { ascending: false })
       .limit(20),
+    supabase.from('company_documents')
+      .select('id, name, category, file_size, mime_type, created_at')
+      .eq('company_id', req.companyId)
+      .order('created_at', { ascending: false }),
   ]);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
@@ -136,8 +140,11 @@ router.get('/sites/:siteId/documents', verifySupabaseJwt, async (req, res) => {
     source:     'pos',
   }));
 
-  const all = [...(uploaded || []).map(d => ({ ...d, source: 'upload' })), ...posFormatted]
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const all = [
+    ...(uploaded    || []).map(d => ({ ...d, source: 'upload'  })),
+    ...posFormatted,
+    ...(companyDocs || []).map(d => ({ ...d, source: 'company' })),
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   res.json(all);
 });

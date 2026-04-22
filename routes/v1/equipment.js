@@ -150,4 +150,62 @@ router.delete('/equipment/:id', verifySupabaseJwt, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Assegnazione mezzi a cantiere ─────────────────────────────────────────────
+
+router.get('/sites/:siteId/equipment', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { data: site } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
+  if (!site) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { data, error } = await supabase
+    .from('site_equipment')
+    .select('id, equipment_id, assigned_at, equipment:equipment_id(type, model, plate_or_serial, ownership, inspection_date, insurance_expiry, maintenance_date, is_active)')
+    .eq('site_id', siteId)
+    .eq('company_id', req.companyId)
+    .order('assigned_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = (data || [])
+    .filter(r => r.equipment?.is_active !== false)
+    .map(r => ({
+      id:           r.id,
+      equipment_id: r.equipment_id,
+      assigned_at:  r.assigned_at,
+      type:         r.equipment?.type        || '',
+      model:        r.equipment?.model       || '',
+      icon:         TYPE_ICONS[r.equipment?.type] || '🔧',
+      plateOrSerial: r.equipment?.plate_or_serial || '',
+      ownership:    r.equipment?.ownership   || '',
+      status:       calcStatus(r.equipment   || {}),
+    }));
+
+  res.json(result);
+});
+
+router.post('/sites/:siteId/equipment', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { equipment_id } = req.body;
+  if (!equipment_id) return res.status(400).json({ error: 'EQUIPMENT_ID_REQUIRED' });
+
+  const { data: site } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
+  if (!site) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { error } = await supabase.from('site_equipment').insert([{
+    company_id: req.companyId, site_id: siteId, equipment_id,
+  }]);
+  if (error?.code === '23505') return res.status(409).json({ error: 'ALREADY_ASSIGNED' });
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ ok: true });
+});
+
+router.delete('/sites/:siteId/equipment/:assignId', verifySupabaseJwt, async (req, res) => {
+  const { siteId, assignId } = req.params;
+  const { error } = await supabase
+    .from('site_equipment').delete()
+    .eq('id', assignId).eq('site_id', siteId).eq('company_id', req.companyId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 module.exports = router;

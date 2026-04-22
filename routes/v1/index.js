@@ -46,6 +46,9 @@ router.use('/', require('./badge'));
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
+// Documenti aziendali: libreria centralizzata (JWT)
+router.use('/', require('./companyDocuments'));
+
 // Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
 router.use('/', require('./coordinator'));
 

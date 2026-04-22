@@ -149,4 +149,63 @@ router.delete('/subcontractors/:id', verifySupabaseJwt, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Assegnazione subappaltatori a cantiere ─────────────────────────────────────
+
+router.get('/sites/:siteId/subcontractors', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { data: site } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
+  if (!site) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { data, error } = await supabase
+    .from('site_subcontractors')
+    .select('id, subcontractor_id, role, assigned_at, subcontractor:subcontractor_id(company_name, piva, contact_person, phone, email, durc_expiry, insurance_expiry, soa_expiry, is_active)')
+    .eq('site_id', siteId)
+    .eq('company_id', req.companyId)
+    .order('assigned_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+
+  const result = (data || [])
+    .filter(r => r.subcontractor?.is_active !== false)
+    .map(r => ({
+      id:               r.id,
+      subcontractor_id: r.subcontractor_id,
+      role:             r.role,
+      assigned_at:      r.assigned_at,
+      company_name:     r.subcontractor?.company_name || '',
+      piva:             r.subcontractor?.piva         || '',
+      contact_person:   r.subcontractor?.contact_person || '',
+      phone:            r.subcontractor?.phone        || '',
+      email:            r.subcontractor?.email        || '',
+      status:           computeStatus(r.subcontractor || {}),
+    }));
+
+  res.json(result);
+});
+
+router.post('/sites/:siteId/subcontractors', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { subcontractor_id, role } = req.body;
+  if (!subcontractor_id) return res.status(400).json({ error: 'SUBCONTRACTOR_ID_REQUIRED' });
+
+  const { data: site } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
+  if (!site) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { error } = await supabase.from('site_subcontractors').insert([{
+    company_id: req.companyId, site_id: siteId, subcontractor_id, role: role || null,
+  }]);
+  if (error?.code === '23505') return res.status(409).json({ error: 'ALREADY_ASSIGNED' });
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ ok: true });
+});
+
+router.delete('/sites/:siteId/subcontractors/:assignId', verifySupabaseJwt, async (req, res) => {
+  const { siteId, assignId } = req.params;
+  const { error } = await supabase
+    .from('site_subcontractors').delete()
+    .eq('id', assignId).eq('site_id', siteId).eq('company_id', req.companyId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 module.exports = router;
