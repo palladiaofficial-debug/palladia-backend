@@ -171,12 +171,15 @@ router.get('/invites/accept/:token', async (req, res) => {
     return res.status(410).json({ error: 'INVITE_EXPIRED', message: 'Questo invito è scaduto.' });
   }
 
-  // Recupera nome company
-  const { data: company } = await supabase
-    .from('companies')
-    .select('name')
-    .eq('id', invite.company_id)
-    .single();
+  // Recupera nome company + controlla se la email ha già un account Palladia
+  const [{ data: company }, { data: existingUsers }] = await Promise.all([
+    supabase.from('companies').select('name').eq('id', invite.company_id).single(),
+    supabase.auth.admin.listUsers({ perPage: 1000 }),
+  ]);
+
+  const hasAccount = existingUsers?.users?.some(
+    u => u.email?.toLowerCase() === invite.email.toLowerCase()
+  ) ?? false;
 
   res.json({
     valid:        true,
@@ -184,6 +187,7 @@ router.get('/invites/accept/:token', async (req, res) => {
     role:         invite.role,
     company_name: company?.name || '—',
     expires_at:   invite.expires_at,
+    has_account:  hasAccount,
   });
 });
 
