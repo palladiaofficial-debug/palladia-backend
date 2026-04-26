@@ -3,715 +3,1114 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Portale Verifiche Sicurezza — Palladia</title>
+  <title>Portale Coordinatore — Palladia</title>
   <style>
-    :root {
-      --bg:           #0d0f18;
-      --surface:      #13162a;
-      --surface2:     #1c2038;
-      --surface3:     #242848;
-      --border:       #2a2f4e;
-      --border-light: #363c5c;
-      --text:         #dce4f5;
-      --text-muted:   #8892b0;
-      --text-dim:     #4a5278;
-      --accent:       #3b82f6;
-      --accent-dim:   #1e3a6e;
-      --green-bg:     #052912;
-      --green-border: #166534;
-      --green-text:   #4ade80;
-      --yellow-bg:    #1a1000;
-      --yellow-border:#78350f;
-      --yellow-text:  #fbbf24;
-      --red-bg:       #1a0505;
-      --red-border:   #7f1d1d;
-      --red-text:     #f87171;
-      --gray-bg:      #111420;
-      --gray-border:  #2a2f4e;
-      --gray-text:    #6b7280;
-      --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-      --radius: 8px;
-      --radius-sm: 5px;
-    }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { font-size: 15px; }
-    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; line-height: 1.6; }
+    :root {
+      --bg:       #080c18;
+      --surface:  #0f1422;
+      --card:     #161c2e;
+      --card2:    #1d2438;
+      --border:   #262d44;
+      --border2:  #2e3856;
+      --text:     #e2e8f0;
+      --dim:      #8892a4;
+      --dimmer:   #535f74;
+      --green:    #10b981;
+      --green-bg: rgba(16,185,129,.1);
+      --yellow:   #f59e0b;
+      --yellow-bg:rgba(245,158,11,.1);
+      --red:      #ef4444;
+      --red-bg:   rgba(239,68,68,.1);
+      --gray:     #64748b;
+      --gray-bg:  rgba(100,116,139,.1);
+      --blue:     #3b82f6;
+      --blue-bg:  rgba(59,130,246,.1);
+      --r:        10px;
+      --r-sm:     6px;
+    }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size: 14px; line-height: 1.6; min-height: 100vh; }
+    .view { display: none; }
+    .view.active { display: block; }
 
-    .page { max-width: 720px; margin: 0 auto; padding: 0 16px 80px; }
-
-    /* Header */
-    .site-header { border-bottom: 1px solid var(--border); padding: 20px 0 16px; margin-bottom: 24px; }
-    .site-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .brand { font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--text-muted); }
-    .portal-label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; }
-    .site-name { font-size: 22px; font-weight: 700; color: var(--text); line-height: 1.2; }
-    .site-address { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
-    .coordinator-info { display: flex; gap: 16px; margin-top: 12px; flex-wrap: wrap; }
-    .coordinator-info span { font-size: 12px; color: var(--text-muted); }
-    .coordinator-info strong { color: var(--text); font-weight: 600; }
-
-    /* Cards */
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 14px; }
-    .card-title { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-muted); margin-bottom: 14px; }
-
-    /* Status Block */
-    .status-card { border-radius: var(--radius); padding: 22px 20px; margin-bottom: 14px; border: 1px solid; }
-    .status-card.conforme     { background: var(--green-bg);  border-color: var(--green-border); }
-    .status-card.attenzione   { background: var(--yellow-bg); border-color: var(--yellow-border); }
-    .status-card.critico      { background: var(--red-bg);    border-color: var(--red-border); }
-    .status-card.insufficiente{ background: var(--gray-bg);   border-color: var(--gray-border); }
-    .status-indicator { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
-    .status-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-    .conforme   .status-dot { background: var(--green-text);  box-shadow: 0 0 8px var(--green-text); }
-    .attenzione .status-dot { background: var(--yellow-text); box-shadow: 0 0 8px var(--yellow-text); }
-    .critico    .status-dot { background: var(--red-text);    box-shadow: 0 0 8px var(--red-text); }
-    .insufficiente .status-dot { background: var(--gray-text); }
-    .status-level { font-size: 18px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
-    .conforme   .status-level { color: var(--green-text); }
-    .attenzione .status-level { color: var(--yellow-text); }
-    .critico    .status-level { color: var(--red-text); }
-    .insufficiente .status-level { color: var(--gray-text); }
-    .status-label { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
-    .conforme   .status-label { color: var(--green-text); }
-    .attenzione .status-label { color: var(--yellow-text); }
-    .critico    .status-label { color: var(--red-text); }
-    .insufficiente .status-label { color: var(--gray-text); }
-    .status-reasons { list-style: none; margin-top: 8px; }
-    .status-reasons li { font-size: 13px; color: var(--text-muted); padding: 2px 0; }
-    .status-reasons li::before { content: '— '; color: var(--text-dim); }
-    .status-last-check { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
-
-    /* Issues */
-    .issue-item { display: flex; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
-    .issue-item:last-child { border-bottom: none; padding-bottom: 0; }
-    .issue-item:first-child { padding-top: 0; }
-    .issue-severity { flex-shrink: 0; width: 6px; border-radius: 3px; background: var(--border); }
-    .issue-severity.critica { background: var(--red-text); }
-    .issue-severity.alta    { background: #f97316; }
-    .issue-severity.media   { background: var(--yellow-text); }
-    .issue-severity.bassa   { background: #60a5fa; }
-    .issue-body { flex: 1; min-width: 0; }
-    .issue-title { font-size: 13px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .issue-meta { display: flex; gap: 8px; margin-top: 3px; flex-wrap: wrap; align-items: center; }
-    .issue-meta span { font-size: 11px; color: var(--text-muted); }
-    .badge { display: inline-block; font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
-    .badge-critica { background: var(--red-bg);    color: var(--red-text);    border: 1px solid var(--red-border); }
-    .badge-alta    { background: #1a0a00;           color: #f97316;            border: 1px solid #7c2d12; }
-    .badge-media   { background: var(--yellow-bg);  color: var(--yellow-text); border: 1px solid var(--yellow-border); }
-    .badge-bassa   { background: var(--accent-dim); color: #93c5fd;            border: 1px solid #1e40af; }
-    .badge-nc      { background: var(--surface2);   color: var(--text-muted);  border: 1px solid var(--border); }
-
-    /* Presenze */
-    .presence-summary { display: flex; gap: 20px; margin-bottom: 14px; flex-wrap: wrap; }
-    .presence-stat { text-align: center; }
-    .presence-stat-num { font-size: 28px; font-weight: 700; line-height: 1; color: var(--text); }
-    .presence-stat-num.alert { color: var(--yellow-text); }
-    .presence-stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-    .worker-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
-    .worker-row:last-child { border-bottom: none; }
-    .worker-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .worker-status-dot.in_cantiere { background: var(--green-text); }
-    .worker-status-dot.uscito      { background: var(--text-dim); }
-    .worker-name { flex: 1; color: var(--text); }
-    .worker-time { font-size: 11px; color: var(--text-muted); }
-
-    /* Documents */
-    .doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-bottom: 12px; }
-    .doc-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 10px 8px; text-align: center; }
-    .doc-item-name { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-    .doc-item-count { font-size: 20px; font-weight: 700; color: var(--text); margin-top: 4px; }
-    .doc-missing { padding: 8px 12px; background: var(--yellow-bg); border: 1px solid var(--yellow-border); border-radius: var(--radius-sm); font-size: 12px; color: var(--yellow-text); }
-
-    /* Actions */
-    .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .action-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 16px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; text-align: center; color: var(--text); font-family: var(--font); transition: border-color 0.15s, background 0.15s; }
-    .action-btn:hover { border-color: var(--accent); background: var(--surface2); }
-    .action-btn.primary { grid-column: 1 / -1; background: var(--accent-dim); border-color: var(--accent); flex-direction: row; justify-content: center; gap: 10px; }
-    .action-btn.primary:hover { background: #1d3a6e; }
-    .action-btn-icon { font-size: 20px; line-height: 1; }
-    .action-btn-label { font-size: 12px; font-weight: 600; color: var(--text); }
-    .action-btn.primary .action-btn-label { font-size: 14px; font-weight: 700; color: #93c5fd; }
-    .action-btn-desc { font-size: 11px; color: var(--text-muted); line-height: 1.3; }
-
-    /* Timeline */
-    .timeline { position: relative; padding-left: 20px; }
-    .timeline::before { content: ''; position: absolute; left: 6px; top: 6px; bottom: 0; width: 1px; background: var(--border); }
-    .timeline-item { position: relative; padding-bottom: 20px; }
-    .timeline-item::before { content: ''; position: absolute; left: -17px; top: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--surface); border: 2px solid var(--border); }
-    .timeline-item.verifica::before   { border-color: var(--accent); background: var(--accent); }
-    .timeline-item.nc_aperta::before  { border-color: var(--red-text); background: var(--red-bg); }
-    .timeline-item.nc_risolta::before { border-color: var(--green-text); background: var(--green-bg); }
-    .timeline-item.nc_chiusa::before  { border-color: var(--green-text); background: var(--green-text); }
-    .timeline-item.nota::before       { border-color: var(--text-dim); }
-    .timeline-date { font-size: 11px; color: var(--text-dim); margin-bottom: 2px; }
-    .timeline-type { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 2px; }
-    .timeline-title { font-size: 13px; color: var(--text); }
-    .timeline-verif-box { margin-top: 6px; padding: 8px 10px; background: var(--surface2); border-radius: var(--radius-sm); font-size: 12px; }
-    .status-pill { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .status-pill.conforme     { background: var(--green-bg);  color: var(--green-text);  border: 1px solid var(--green-border); }
-    .status-pill.attenzione   { background: var(--yellow-bg); color: var(--yellow-text); border: 1px solid var(--yellow-border); }
-    .status-pill.critico      { background: var(--red-bg);    color: var(--red-text);    border: 1px solid var(--red-border); }
-    .status-pill.dati_insufficienti { background: var(--gray-bg); color: var(--gray-text); border: 1px solid var(--gray-border); }
-    .timeline-note { font-size: 12px; color: var(--text-muted); margin-top: 4px; font-style: italic; }
-
-    /* Collapsible */
-    .section-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; user-select: none; }
-    .section-header .toggle-icon { font-size: 11px; color: var(--text-dim); transition: transform 0.15s; }
-    .section-header.collapsed .toggle-icon { transform: rotate(-90deg); }
-
-    /* Empty */
-    .empty { text-align: center; padding: 20px 0; color: var(--text-dim); font-size: 13px; }
-
-    /* Divider */
-    .divider { height: 1px; background: var(--border); margin: 6px 0 14px; }
-
-    /* Loader */
-    .loader { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 14px; color: var(--text-muted); font-size: 14px; }
-    .spinner { width: 32px; height: 32px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    /* ── Loading ─────────────────────────────────────────────── */
+    #view-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .8s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .load-text { color: var(--dim); font-size: 13px; }
 
-    /* Error */
-    .error-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 60vh; gap: 12px; text-align: center; padding: 32px; }
-    .error-icon { font-size: 40px; }
-    .error-title { font-size: 18px; font-weight: 700; color: var(--text); }
-    .error-desc  { font-size: 14px; color: var(--text-muted); max-width: 340px; }
+    /* ── Error ───────────────────────────────────────────────── */
+    #view-error { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 12px; padding: 24px; text-align: center; }
+    .err-icon { font-size: 48px; }
+    .err-title { font-size: 18px; font-weight: 600; color: var(--red); }
+    .err-msg { color: var(--dim); max-width: 360px; }
 
-    /* Modals */
-    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: flex-end; justify-content: center; }
-    .modal-overlay.open { display: flex; }
-    .modal { background: var(--surface); border: 1px solid var(--border-light); border-radius: var(--radius) var(--radius) 0 0; padding: 24px 20px 32px; width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
-    @media (min-width: 520px) { .modal-overlay { align-items: center; } .modal { border-radius: var(--radius); } }
-    .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 18px; color: var(--text); }
-    .form-group { margin-bottom: 14px; }
-    .form-label { display: block; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px; }
-    .form-input, .form-textarea, .form-select { width: 100%; background: var(--surface2); border: 1px solid var(--border-light); border-radius: var(--radius-sm); color: var(--text); font-family: var(--font); font-size: 14px; padding: 10px 12px; outline: none; transition: border-color 0.15s; }
-    .form-input:focus, .form-textarea:focus, .form-select:focus { border-color: var(--accent); }
-    .form-textarea { min-height: 90px; resize: vertical; }
-    .form-select option { background: var(--surface2); }
-    .modal-status-preview { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: var(--radius-sm); margin-bottom: 16px; border: 1px solid; }
-    .modal-status-preview.conforme   { background: var(--green-bg);  border-color: var(--green-border); }
-    .modal-status-preview.attenzione { background: var(--yellow-bg); border-color: var(--yellow-border); }
-    .modal-status-preview.critico    { background: var(--red-bg);    border-color: var(--red-border); }
-    .modal-status-preview.insufficiente { background: var(--gray-bg); border-color: var(--gray-border); }
-    .btn-row { display: flex; gap: 10px; margin-top: 18px; }
-    .btn { flex: 1; padding: 12px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface2); color: var(--text); font-size: 14px; font-weight: 600; cursor: pointer; font-family: var(--font); transition: background 0.15s; }
-    .btn:hover { background: var(--surface3); }
-    .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .btn.primary:hover { background: #2563eb; }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .form-error { font-size: 12px; color: var(--red-text); margin-top: 6px; }
+    /* ── Layout ──────────────────────────────────────────────── */
+    .page-header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 14px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 10; }
+    .logo-mark { width: 28px; height: 28px; background: var(--blue); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+    .page-header-title { font-size: 15px; font-weight: 600; }
+    .page-header-sub { font-size: 12px; color: var(--dim); }
+    .back-btn { background: none; border: 1px solid var(--border); color: var(--dim); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 6px; transition: color .15s, border-color .15s; margin-right: auto; }
+    .back-btn:hover { color: var(--text); border-color: var(--border2); }
 
-    /* Toast */
-    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--surface3); border: 1px solid var(--border-light); color: var(--text); padding: 10px 20px; border-radius: 6px; font-size: 13px; z-index: 200; display: none; white-space: nowrap; }
-    .toast.show { display: block; }
-    .toast.success { border-color: var(--green-border); color: var(--green-text); }
-    .toast.error   { border-color: var(--red-border);   color: var(--red-text); }
+    main { max-width: 860px; margin: 0 auto; padding: 20px 16px 60px; }
 
-    /* Disclaimer */
-    .disclaimer { margin-top: 40px; padding: 16px 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); font-size: 11px; color: var(--text-dim); line-height: 1.6; }
-    .disclaimer strong { color: var(--text-muted); }
+    /* ── Cards ───────────────────────────────────────────────── */
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; }
+    .card + .card { margin-top: 12px; }
+    .card-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin-bottom: 12px; }
+
+    /* ── Site Picker ─────────────────────────────────────────── */
+    .picker-intro { padding: 20px 0 8px; }
+    .picker-intro h1 { font-size: 20px; font-weight: 700; }
+    .picker-intro p { color: var(--dim); margin-top: 4px; font-size: 13px; }
+    .sites-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin-top: 16px; }
+    .site-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; cursor: pointer; transition: border-color .15s, background .15s; }
+    .site-card:hover { border-color: var(--blue); background: var(--card2); }
+    .site-card-name { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+    .site-card-addr { font-size: 12px; color: var(--dim); margin-bottom: 12px; }
+    .site-card-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    .badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+    .badge-green  { background: var(--green-bg);  color: var(--green); }
+    .badge-yellow { background: var(--yellow-bg); color: var(--yellow); }
+    .badge-red    { background: var(--red-bg);    color: var(--red); }
+    .badge-gray   { background: var(--gray-bg);   color: var(--gray); }
+    .badge-blue   { background: var(--blue-bg);   color: var(--blue); }
+    .site-card-kpis { display: flex; gap: 16px; }
+    .kpi { display: flex; flex-direction: column; }
+    .kpi-val { font-size: 18px; font-weight: 700; }
+    .kpi-lbl { font-size: 11px; color: var(--dim); }
+
+    /* ── Safety Status Card ──────────────────────────────────── */
+    .status-card { border-radius: var(--r); padding: 20px; border: 1px solid transparent; margin-bottom: 12px; }
+    .status-card.conforme          { background: var(--green-bg);  border-color: rgba(16,185,129,.25); }
+    .status-card.attenzione        { background: var(--yellow-bg); border-color: rgba(245,158,11,.25); }
+    .status-card.critico           { background: var(--red-bg);    border-color: rgba(239,68,68,.25); }
+    .status-card.dati_insufficienti{ background: var(--gray-bg);   border-color: rgba(100,116,139,.25); }
+    .status-level { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+    .status-card.conforme           .status-level { color: var(--green); }
+    .status-card.attenzione         .status-level { color: var(--yellow); }
+    .status-card.critico            .status-level { color: var(--red); }
+    .status-card.dati_insufficienti .status-level { color: var(--gray); }
+    .status-label { font-size: 20px; font-weight: 700; margin: 4px 0 8px; }
+    .status-reasons { list-style: none; display: flex; flex-direction: column; gap: 4px; }
+    .status-reasons li { font-size: 13px; color: var(--dim); display: flex; gap: 6px; }
+    .status-reasons li::before { content: '•'; }
+    .status-kpis { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+    .status-kpi { text-align: center; }
+    .status-kpi .val { font-size: 22px; font-weight: 700; }
+    .status-kpi .lbl { font-size: 11px; color: var(--dim); }
+
+    /* ── Collapsible Sections ────────────────────────────────── */
+    .section { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; margin-bottom: 12px; }
+    .section-header { padding: 13px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none; }
+    .section-header:hover { background: var(--card2); }
+    .section-icon { font-size: 16px; }
+    .section-title { font-weight: 600; font-size: 14px; flex: 1; }
+    .section-count { font-size: 12px; color: var(--dim); }
+    .section-chevron { color: var(--dimmer); font-size: 12px; transition: transform .2s; }
+    .section.open .section-chevron { transform: rotate(180deg); }
+    .section-body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--border); }
+    .section.open .section-body { display: block; }
+
+    /* ── Issues ──────────────────────────────────────────────── */
+    .issue-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+    .issue-item { background: var(--card2); border-radius: var(--r-sm); padding: 10px 12px; display: flex; gap: 10px; align-items: flex-start; }
+    .issue-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .issue-dot.nc    { background: var(--red); }
+    .issue-dot.nc.media { background: var(--yellow); }
+    .issue-dot.nc.bassa { background: var(--gray); }
+    .issue-dot.worker{ background: var(--yellow); }
+    .issue-text { flex: 1; }
+    .issue-main { font-size: 13px; font-weight: 500; }
+    .issue-sub  { font-size: 12px; color: var(--dim); margin-top: 2px; }
+
+    /* ── Presences ───────────────────────────────────────────── */
+    .presence-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 12px; }
+    .presence-kpi  { background: var(--card2); border-radius: var(--r-sm); padding: 10px; text-align: center; }
+    .presence-kpi .val { font-size: 22px; font-weight: 700; }
+    .presence-kpi .lbl { font-size: 11px; color: var(--dim); }
+    .worker-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .worker-row  { background: var(--card2); border-radius: var(--r-sm); padding: 8px 12px; display: flex; align-items: center; gap: 10px; }
+    .worker-dot  { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex-shrink: 0; }
+    .worker-dot.absent { background: var(--dimmer); }
+    .worker-name { flex: 1; font-size: 13px; }
+    .worker-tag  { font-size: 11px; padding: 2px 7px; border-radius: 10px; }
+    .tag-ok     { background: var(--green-bg);  color: var(--green); }
+    .tag-exp    { background: var(--yellow-bg); color: var(--yellow); }
+    .tag-bad    { background: var(--red-bg);    color: var(--red); }
+    .tag-gray   { background: var(--gray-bg);   color: var(--gray); }
+
+    /* ── Documents ───────────────────────────────────────────── */
+    .doc-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .doc-row  { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--card2); border-radius: var(--r-sm); }
+    .doc-icon { font-size: 16px; }
+    .doc-name { flex: 1; font-size: 13px; }
+    .doc-status { font-size: 11px; font-weight: 600; }
+
+    /* ── Actions ─────────────────────────────────────────────── */
+    .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .action-btn { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; cursor: pointer; text-align: left; transition: border-color .15s, background .15s; color: var(--text); }
+    .action-btn:hover { border-color: var(--border2); background: var(--card2); }
+    .action-btn.primary { border-color: rgba(59,130,246,.4); }
+    .action-btn.primary:hover { border-color: var(--blue); background: var(--blue-bg); }
+    .action-btn.danger  { border-color: rgba(239,68,68,.3); }
+    .action-btn.danger:hover  { border-color: var(--red); background: var(--red-bg); }
+    .action-icon { font-size: 20px; margin-bottom: 6px; }
+    .action-label { font-size: 13px; font-weight: 600; }
+    .action-desc { font-size: 11px; color: var(--dim); margin-top: 2px; }
+
+    /* ── Timeline ────────────────────────────────────────────── */
+    .timeline { display: flex; flex-direction: column; gap: 0; margin-top: 12px; }
+    .tl-item { display: flex; gap: 14px; padding-bottom: 16px; position: relative; }
+    .tl-item:last-child { padding-bottom: 0; }
+    .tl-left { display: flex; flex-direction: column; align-items: center; }
+    .tl-dot  { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; margin-top: 4px; }
+    .tl-dot.verif  { background: var(--blue); }
+    .tl-dot.nc     { background: var(--red); }
+    .tl-dot.note   { background: var(--yellow); }
+    .tl-line { flex: 1; width: 1px; background: var(--border); margin-top: 4px; }
+    .tl-item:last-child .tl-line { display: none; }
+    .tl-content { flex: 1; }
+    .tl-header  { display: flex; gap: 8px; align-items: baseline; }
+    .tl-type    { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .tl-type.verif { color: var(--blue); }
+    .tl-type.nc    { color: var(--red); }
+    .tl-type.note  { color: var(--yellow); }
+    .tl-date { font-size: 11px; color: var(--dimmer); }
+    .tl-title { font-size: 13px; font-weight: 500; margin-top: 2px; }
+    .tl-detail{ font-size: 12px; color: var(--dim); margin-top: 2px; }
+    .tl-load-more { text-align: center; margin-top: 8px; }
+    .btn-link { background: none; border: none; color: var(--blue); cursor: pointer; font-size: 13px; text-decoration: underline; }
+
+    /* ── Modals ──────────────────────────────────────────────── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); z-index: 50; display: flex; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.hidden { display: none; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+    .modal-head { padding: 18px 20px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .modal-head h2 { font-size: 16px; font-weight: 700; }
+    .modal-close { background: none; border: none; color: var(--dim); cursor: pointer; font-size: 20px; line-height: 1; }
+    .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .form-group { display: flex; flex-direction: column; gap: 5px; }
+    .form-label { font-size: 12px; font-weight: 600; color: var(--dim); }
+    .form-input, .form-select, .form-textarea {
+      background: var(--card2); border: 1px solid var(--border); border-radius: var(--r-sm);
+      color: var(--text); padding: 9px 12px; font-size: 13px; font-family: inherit;
+      transition: border-color .15s;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--blue); }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .form-select option { background: var(--card2); }
+    .modal-foot { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+    .btn { padding: 9px 18px; border-radius: var(--r-sm); font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: opacity .15s; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover:not(:disabled) { opacity: .85; }
+    .btn-cancel  { background: var(--card2); color: var(--text); border: 1px solid var(--border); }
+    .btn-cancel:hover { border-color: var(--border2); }
+    .btn-danger  { background: var(--red); color: #fff; }
+    .btn-danger:hover:not(:disabled) { opacity: .85; }
+    .err-inline { font-size: 12px; color: var(--red); padding: 8px 12px; background: var(--red-bg); border-radius: var(--r-sm); }
+
+    /* ── Empty state ─────────────────────────────────────────── */
+    .empty { text-align: center; padding: 32px; color: var(--dim); font-size: 13px; }
+    .empty-icon { font-size: 36px; margin-bottom: 8px; }
+
+    /* ── Site header detail ──────────────────────────────────── */
+    .site-header { margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+    .site-name   { font-size: 22px; font-weight: 700; }
+    .site-meta   { color: var(--dim); font-size: 13px; margin-top: 4px; }
+    .coord-info  { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .coord-name  { font-size: 13px; color: var(--dim); }
+
+    /* ── Footer ──────────────────────────────────────────────── */
+    footer { text-align: center; color: var(--dimmer); font-size: 11px; padding: 24px 16px; border-top: 1px solid var(--border); margin-top: 32px; line-height: 1.7; }
+
+    @media (max-width: 480px) {
+      .presence-grid { grid-template-columns: repeat(2,1fr); }
+      .status-kpis   { gap: 12px; }
+      .actions-grid  { grid-template-columns: 1fr 1fr; }
+    }
   </style>
 </head>
 <body>
 
-<div id="app">
-  <div class="loader"><div class="spinner"></div><span>Caricamento portale sicurezza…</span></div>
+<!-- Loading -->
+<div id="view-loading" class="view active">
+  <div class="spinner"></div>
+  <div class="load-text">Caricamento portale…</div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- Error -->
+<div id="view-error" class="view">
+  <div class="err-icon">⚠️</div>
+  <div class="err-title" id="err-title">Accesso non valido</div>
+  <div class="err-msg" id="err-msg">Il link non è valido o è scaduto. Contatta l'impresa per ricevere un nuovo invito.</div>
+</div>
 
-<!-- Modal: Conferma Verifica -->
-<div class="modal-overlay" id="modal-verifica">
-  <div class="modal">
-    <div class="modal-title">Conferma verifica cantiere</div>
-    <div id="verifica-status-preview"></div>
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px">
-      Il sistema acquisirà uno snapshot dello stato documentale, delle non conformità e delle presenze attuali.
-      Il record è immutabile e costituisce traccia della verifica effettuata.
-    </p>
-    <div class="form-group">
-      <label class="form-label">Nota (opzionale)</label>
-      <textarea class="form-textarea" id="verifica-note" placeholder="Osservazioni, condizioni rilevate, elementi controllati…"></textarea>
+<!-- Site Picker (multi) -->
+<div id="view-picker" class="view">
+  <div class="page-header">
+    <div class="logo-mark">P</div>
+    <div>
+      <div class="page-header-title">Portale Coordinatore</div>
+      <div class="page-header-sub" id="picker-coord-name">—</div>
     </div>
-    <div class="btn-row">
-      <button class="btn" onclick="closeModal('modal-verifica')">Annulla</button>
-      <button class="btn primary" id="btn-verifica" onclick="submitVerifica()">Conferma e registra</button>
+  </div>
+  <main>
+    <div class="picker-intro">
+      <h1>I tuoi cantieri</h1>
+      <p>Seleziona un cantiere per accedere al portale di verifica sicurezza.</p>
+    </div>
+    <div class="sites-grid" id="sites-grid"></div>
+  </main>
+</div>
+
+<!-- Site Detail (single) -->
+<div id="view-detail" class="view">
+  <div class="page-header">
+    <button class="back-btn hidden" id="back-btn" onclick="backToPicker()">&#8592; Cantieri</button>
+    <div class="logo-mark">P</div>
+    <div>
+      <div class="page-header-title" id="detail-site-name">Cantiere</div>
+      <div class="page-header-sub" id="detail-coord-name">—</div>
+    </div>
+  </div>
+  <main>
+    <div class="site-header">
+      <div class="site-name" id="sh-name">—</div>
+      <div class="site-meta" id="sh-meta">—</div>
+      <div class="coord-info">
+        <span class="coord-name" id="sh-coord">—</span>
+        <span id="sh-expire-badge"></span>
+      </div>
+    </div>
+
+    <!-- Safety status -->
+    <div class="status-card dati_insufficienti" id="safety-card">
+      <div class="status-level" id="sc-level">—</div>
+      <div class="status-label" id="sc-label">Caricamento…</div>
+      <ul class="status-reasons" id="sc-reasons"></ul>
+      <div class="status-kpis">
+        <div class="status-kpi"><div class="val" id="kpi-nc">—</div><div class="lbl">NC aperte</div></div>
+        <div class="status-kpi"><div class="val" id="kpi-crit">—</div><div class="lbl">NC critiche</div></div>
+        <div class="status-kpi"><div class="val" id="kpi-noncmp">—</div><div class="lbl">Non conformi</div></div>
+        <div class="status-kpi"><div class="val" id="kpi-onsite">—</div><div class="lbl">In cantiere oggi</div></div>
+      </div>
+    </div>
+
+    <!-- Actions -->
+    <div class="actions-grid">
+      <button class="action-btn primary" onclick="openModal('modal-verif')">
+        <div class="action-icon">✅</div>
+        <div class="action-label">Conferma verifica</div>
+        <div class="action-desc">Registra sopralluogo formale</div>
+      </button>
+      <button class="action-btn danger" onclick="openModal('modal-nc')">
+        <div class="action-icon">⚠️</div>
+        <div class="action-label">Segnala non conformità</div>
+        <div class="action-desc">Apri rilievo formale</div>
+      </button>
+      <button class="action-btn" onclick="openModal('modal-note')">
+        <div class="action-icon">📝</div>
+        <div class="action-label">Aggiungi nota</div>
+        <div class="action-desc">Comunicazione all'impresa</div>
+      </button>
+      <button class="action-btn" onclick="exportCsv()">
+        <div class="action-icon">📥</div>
+        <div class="action-label">Esporta CSV</div>
+        <div class="action-desc">Storico verifiche e NC</div>
+      </button>
+    </div>
+
+    <!-- Issues attive -->
+    <div class="section" id="sec-issues">
+      <div class="section-header" onclick="toggleSection('sec-issues')">
+        <span class="section-icon">🔴</span>
+        <span class="section-title">Problemi attivi</span>
+        <span class="section-count" id="issues-count">0</span>
+        <span class="section-chevron">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="issue-list" id="issue-list">
+          <div class="empty"><div class="empty-icon">✅</div>Nessun problema attivo</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Presenze oggi -->
+    <div class="section open" id="sec-presences">
+      <div class="section-header" onclick="toggleSection('sec-presences')">
+        <span class="section-icon">👷</span>
+        <span class="section-title">Presenze oggi</span>
+        <span class="section-count" id="presences-count">—</span>
+        <span class="section-chevron">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="presence-grid">
+          <div class="presence-kpi"><div class="val" id="p-present">—</div><div class="lbl">In cantiere</div></div>
+          <div class="presence-kpi"><div class="val" id="p-missing">—</div><div class="lbl">Uscite mancanti</div></div>
+          <div class="presence-kpi"><div class="val" id="p-total">—</div><div class="lbl">Lavoratori totali</div></div>
+        </div>
+        <div class="worker-list" id="worker-list"></div>
+      </div>
+    </div>
+
+    <!-- Documenti -->
+    <div class="section" id="sec-docs">
+      <div class="section-header" onclick="toggleSection('sec-docs')">
+        <span class="section-icon">📁</span>
+        <span class="section-title">Documenti di sicurezza</span>
+        <span class="section-count" id="docs-count">—</span>
+        <span class="section-chevron">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="doc-list" id="doc-list"></div>
+      </div>
+    </div>
+
+    <!-- Timeline -->
+    <div class="section open" id="sec-timeline">
+      <div class="section-header" onclick="toggleSection('sec-timeline')">
+        <span class="section-icon">📋</span>
+        <span class="section-title">Timeline attività</span>
+        <span class="section-count" id="timeline-count">—</span>
+        <span class="section-chevron">▼</span>
+      </div>
+      <div class="section-body">
+        <div class="timeline" id="timeline-list"></div>
+        <div class="tl-load-more" id="tl-load-more" style="display:none">
+          <button class="btn-link" onclick="loadFullTimeline()">Carica tutta la timeline</button>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Portale Verifiche Sicurezza — Palladia<br>
+      Le informazioni qui riportate sono riservate e destinate esclusivamente al coordinatore per la sicurezza autorizzato.<br>
+      L'accesso non autorizzato è vietato ai sensi del D.Lgs. 81/2008 e del Reg. UE 2016/679 (GDPR).
+    </footer>
+  </main>
+</div>
+
+<!-- Modal: Conferma verifica -->
+<div class="modal-overlay hidden" id="modal-verif">
+  <div class="modal">
+    <div class="modal-head">
+      <h2>Conferma verifica cantiere</h2>
+      <button class="modal-close" onclick="closeModal('modal-verif')">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--dim)">Stai registrando un sopralluogo formale. Il record sarà immutabile e incluso nel registro delle verifiche.</p>
+      <div id="verif-status-preview" style="padding:12px;border-radius:var(--r-sm);font-size:13px;"></div>
+      <div class="form-group">
+        <label class="form-label">Nota (opzionale)</label>
+        <textarea class="form-textarea" id="verif-note" placeholder="Osservazioni aggiuntive…"></textarea>
+      </div>
+      <div id="verif-err" class="err-inline" style="display:none"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-cancel" onclick="closeModal('modal-verif')">Annulla</button>
+      <button class="btn btn-primary" id="btn-verif-submit" onclick="submitVerif()">Conferma sopralluogo</button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Segnala NC -->
-<div class="modal-overlay" id="modal-nc">
+<!-- Modal: Non conformità -->
+<div class="modal-overlay hidden" id="modal-nc">
   <div class="modal">
-    <div class="modal-title">Segnala non conformità</div>
-    <div class="form-group">
-      <label class="form-label">Titolo *</label>
-      <input class="form-input" id="nc-title" type="text" placeholder="Descrizione sintetica del problema" maxlength="300">
-      <div class="form-error" id="nc-title-err" style="display:none"></div>
+    <div class="modal-head">
+      <h2>Segnala non conformità</h2>
+      <button class="modal-close" onclick="closeModal('modal-nc')">×</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">Descrizione *</label>
-      <textarea class="form-textarea" id="nc-desc" placeholder="Descrivere in dettaglio la non conformità rilevata" maxlength="3000"></textarea>
-      <div class="form-error" id="nc-desc-err" style="display:none"></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+    <div class="modal-body">
       <div class="form-group">
-        <label class="form-label">Gravità</label>
-        <select class="form-select" id="nc-severity">
-          <option value="media">Media</option>
-          <option value="bassa">Bassa</option>
-          <option value="alta">Alta</option>
-          <option value="critica">Critica</option>
-        </select>
+        <label class="form-label">Titolo *</label>
+        <input class="form-input" id="nc-title" placeholder="Descrizione breve della non conformità" maxlength="300">
       </div>
       <div class="form-group">
-        <label class="form-label">Categoria</label>
-        <select class="form-select" id="nc-category">
-          <option value="sicurezza">Sicurezza</option>
-          <option value="documentale">Documentale</option>
-          <option value="operativa">Operativa</option>
-          <option value="igiene">Igiene</option>
-        </select>
+        <label class="form-label">Descrizione *</label>
+        <textarea class="form-textarea" id="nc-desc" placeholder="Dettagli, evidenze, riferimenti normativi…" maxlength="3000"></textarea>
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="form-group">
+          <label class="form-label">Categoria *</label>
+          <select class="form-select" id="nc-category">
+            <option value="sicurezza">Sicurezza</option>
+            <option value="documentale">Documentale</option>
+            <option value="operativa">Operativa</option>
+            <option value="igiene">Igiene</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Gravità *</label>
+          <select class="form-select" id="nc-severity">
+            <option value="bassa">Bassa</option>
+            <option value="media">Media</option>
+            <option value="alta">Alta</option>
+            <option value="critica">Critica</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Scadenza richiesta</label>
+        <input class="form-input" id="nc-due" type="date">
+      </div>
+      <div id="nc-err" class="err-inline" style="display:none"></div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Scadenza risoluzione (opzionale)</label>
-      <input class="form-input" id="nc-due" type="date">
-    </div>
-    <div class="btn-row">
-      <button class="btn" onclick="closeModal('modal-nc')">Annulla</button>
-      <button class="btn primary" id="btn-nc" onclick="submitNC()">Segnala NC</button>
+    <div class="modal-foot">
+      <button class="btn btn-cancel" onclick="closeModal('modal-nc')">Annulla</button>
+      <button class="btn btn-danger" id="btn-nc-submit" onclick="submitNc()">Segnala NC</button>
     </div>
   </div>
 </div>
 
-<!-- Modal: Aggiungi Nota -->
-<div class="modal-overlay" id="modal-nota">
+<!-- Modal: Nota -->
+<div class="modal-overlay hidden" id="modal-note">
   <div class="modal">
-    <div class="modal-title">Aggiungi nota di verifica</div>
-    <div class="form-group">
-      <label class="form-label">Tipo</label>
-      <select class="form-select" id="nota-type">
-        <option value="observation">Osservazione</option>
-        <option value="request">Richiesta</option>
-        <option value="approval">Approvazione</option>
-        <option value="warning">Avvertenza</option>
-      </select>
+    <div class="modal-head">
+      <h2>Aggiungi nota</h2>
+      <button class="modal-close" onclick="closeModal('modal-note')">×</button>
     </div>
-    <div class="form-group">
-      <label class="form-label">Contenuto *</label>
-      <textarea class="form-textarea" id="nota-content" placeholder="Testo della nota (min. 3 caratteri)" maxlength="2000"></textarea>
-      <div class="form-error" id="nota-err" style="display:none"></div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Tipo</label>
+        <select class="form-select" id="note-type">
+          <option value="observation">Osservazione</option>
+          <option value="request">Richiesta</option>
+          <option value="approval">Approvazione</option>
+          <option value="warning">Avvertenza</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contenuto *</label>
+        <textarea class="form-textarea" id="note-content" placeholder="Testo della nota per l'impresa…" maxlength="2000" style="min-height:120px"></textarea>
+      </div>
+      <div id="note-err" class="err-inline" style="display:none"></div>
     </div>
-    <div class="btn-row">
-      <button class="btn" onclick="closeModal('modal-nota')">Annulla</button>
-      <button class="btn primary" id="btn-nota" onclick="submitNota()">Salva nota</button>
+    <div class="modal-foot">
+      <button class="btn btn-cancel" onclick="closeModal('modal-note')">Annulla</button>
+      <button class="btn btn-primary" id="btn-note-submit" onclick="submitNote()">Invia nota</button>
     </div>
   </div>
 </div>
 
 <script>
-'use strict';
+// ─── State ────────────────────────────────────────────────────────────────────
+let _token    = '';
+let _siteId   = '';
+let _mode     = '';          // 'single' | 'multi' | 'empty'
+let _authType = '';          // 'pro' | 'cse'
+let _data     = null;        // full site data (single mode)
+let _multiData = null;       // { coordinator, sites } (multi mode)
+let _timelineLoaded = false;
 
-const token = (window.location.pathname.match(/\/coordinator\/([0-9a-f]{64})/i)||[])[1];
-const API   = window.location.origin;
+// ─── Init ─────────────────────────────────────────────────────────────────────
+function extractToken() {
+  const path = window.location.pathname;
+  // /coordinator/accesso/:token  OR  /coordinator/:token
+  const m = path.match(/\/coordinator\/(?:accesso\/)?([0-9a-f]{64})/i);
+  return m ? m[1] : null;
+}
 
-let siteData      = null;
-let verifications = [];
+async function init() {
+  _token = extractToken();
+  if (!_token) return showError('Link non valido', 'Il link non contiene un token valido. Richiedi un nuovo invito all\'impresa.');
 
+  try {
+    const res = await fetch(`/api/v1/coordinator/portal/${_token}`);
+    if (res.status === 404) return showError('Link scaduto o non valido', 'Il link è scaduto o è già stato revocato. Contatta l\'impresa per un nuovo invito.');
+    if (!res.ok) return showError('Errore di rete', 'Impossibile connettersi al server. Riprova tra qualche istante.');
+
+    const data = await res.json();
+    _mode     = data.mode;
+    _authType = data.auth_type;
+
+    if (_mode === 'empty') return showError('Nessun cantiere assegnato', 'Non hai ancora cantieri attivi assegnati. Contatta l\'impresa per ricevere un invito.');
+
+    if (_mode === 'multi') {
+      _multiData = data;
+      renderPicker(data);
+    } else {
+      _data   = data;
+      _siteId = data.site.id;
+      renderDetail(data, false);
+    }
+  } catch (e) {
+    showError('Errore di connessione', 'Impossibile contattare il server. Verifica la connessione e riprova.');
+  }
+}
+
+// ─── Views ────────────────────────────────────────────────────────────────────
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+function showError(title, msg) {
+  document.getElementById('err-title').textContent = title;
+  document.getElementById('err-msg').textContent   = msg;
+  showView('view-error');
+}
+
+// ─── Site Picker ──────────────────────────────────────────────────────────────
+function renderPicker(data) {
+  const coord = data.coordinator;
+  document.getElementById('picker-coord-name').textContent =
+    [coord.name, coord.company].filter(Boolean).join(' — ') || coord.email || '—';
+
+  const grid = document.getElementById('sites-grid');
+  grid.innerHTML = '';
+  (data.sites || []).forEach(site => {
+    const card = document.createElement('div');
+    card.className = 'site-card';
+    card.onclick   = () => loadSiteDetail(site.id);
+
+    const statusBadge = siteStatusBadge(site.status);
+    const ncBadge = site.open_nc > 0
+      ? `<span class="badge badge-red">${site.open_nc} NC</span>` : '';
+    const noteBadge = site.unread_notes > 0
+      ? `<span class="badge badge-yellow">${site.unread_notes} note</span>` : '';
+
+    const cmp = site.compliance;
+    const compliancePct = cmp.total > 0
+      ? Math.round((cmp.compliant / cmp.total) * 100) : null;
+
+    card.innerHTML = `
+      <div class="site-card-name">${esc(site.name)}</div>
+      <div class="site-card-addr">${esc(site.address)} · ${esc(site.company_name)}</div>
+      <div class="site-card-meta">
+        ${statusBadge}
+        ${ncBadge}
+        ${noteBadge}
+      </div>
+      <div class="site-card-kpis">
+        <div class="kpi"><div class="kpi-val">${site.workers_count}</div><div class="kpi-lbl">Lavoratori</div></div>
+        <div class="kpi"><div class="kpi-val">${site.workers_on_site}</div><div class="kpi-lbl">In cantiere</div></div>
+        ${compliancePct !== null ? `<div class="kpi"><div class="kpi-val">${compliancePct}%</div><div class="kpi-lbl">Conformi</div></div>` : ''}
+      </div>
+    `;
+    grid.appendChild(card);
+  });
+
+  showView('view-picker');
+}
+
+async function loadSiteDetail(siteId) {
+  showView('view-loading');
+  try {
+    const res  = await fetch(`/api/v1/coordinator/portal/${_token}/site/${siteId}`);
+    if (!res.ok) return showError('Errore', 'Impossibile caricare i dati del cantiere.');
+    const data = await res.json();
+    _data   = data;
+    _siteId = siteId;
+    renderDetail(data, true);
+  } catch {
+    showError('Errore di connessione', 'Impossibile contattare il server. Riprova.');
+  }
+}
+
+function backToPicker() {
+  _data   = null;
+  _siteId = '';
+  _timelineLoaded = false;
+  renderPicker(_multiData);
+}
+
+// ─── Site Detail ──────────────────────────────────────────────────────────────
+function renderDetail(data, showBack) {
+  const { site, coordinator, safety_status, active_issues,
+          today_presences, document_status, workers,
+          nonconformities, recent_verifications, notes } = data;
+
+  // Header
+  document.getElementById('detail-site-name').textContent = site.name;
+  document.getElementById('detail-coord-name').textContent =
+    [coordinator.name, coordinator.company].filter(Boolean).join(' — ') || '—';
+  document.getElementById('sh-name').textContent = site.name;
+  document.getElementById('sh-meta').textContent =
+    [site.address, site.client, site.company_name].filter(Boolean).join(' · ');
+  document.getElementById('sh-coord').textContent =
+    'Coordinatore: ' + [coordinator.name, coordinator.company].filter(Boolean).join(' — ');
+
+  const expDate = new Date(coordinator.expires_at);
+  const daysLeft = Math.round((expDate - Date.now()) / 86400000);
+  const expBadge = document.getElementById('sh-expire-badge');
+  if (daysLeft <= 7) {
+    expBadge.innerHTML = `<span class="badge badge-red">Scade tra ${daysLeft}g</span>`;
+  } else {
+    expBadge.innerHTML = `<span class="badge badge-gray">Accesso valido fino al ${expDate.toLocaleDateString('it-IT')}</span>`;
+  }
+
+  if (showBack) {
+    document.getElementById('back-btn').classList.remove('hidden');
+  } else {
+    document.getElementById('back-btn').classList.add('hidden');
+  }
+
+  // Safety status
+  renderSafetyCard(safety_status, data.on_site_count);
+
+  // Presences
+  renderPresences(today_presences, workers, data.workers_count);
+
+  // Documents
+  renderDocuments(document_status);
+
+  // Issues
+  renderIssues(active_issues || []);
+
+  // Timeline (preview: mix di verifiche, NC, note)
+  renderTimelinePreview(recent_verifications || [], nonconformities || [], notes || []);
+
+  // Update verif modal preview
+  updateVerifPreview(safety_status);
+
+  showView('view-detail');
+}
+
+// ─── Safety Card ──────────────────────────────────────────────────────────────
+function renderSafetyCard(ss, onSiteCount) {
+  const card = document.getElementById('safety-card');
+  card.className = `status-card ${ss.level}`;
+
+  const LABELS = {
+    conforme:           '✅ Cantiere Conforme',
+    attenzione:         '⚠️ Attenzione Richiesta',
+    critico:            '🔴 Situazione Critica',
+    dati_insufficienti: '⬜ Dati Insufficienti',
+  };
+  const LEVEL_LABELS = {
+    conforme:           'CONFORME',
+    attenzione:         'ATTENZIONE',
+    critico:            'CRITICO',
+    dati_insufficienti: 'DATI INSUFFICIENTI',
+  };
+
+  document.getElementById('sc-level').textContent = LEVEL_LABELS[ss.level] || ss.level.toUpperCase();
+  document.getElementById('sc-label').textContent = ss.label || LABELS[ss.level] || ss.level;
+
+  const ul = document.getElementById('sc-reasons');
+  ul.innerHTML = '';
+  (ss.reasons || []).forEach(r => {
+    const li = document.createElement('li');
+    li.textContent = r;
+    ul.appendChild(li);
+  });
+
+  document.getElementById('kpi-nc').textContent     = ss.open_nc_count ?? '—';
+  document.getElementById('kpi-crit').textContent   = ss.critical_nc_count ?? '—';
+  document.getElementById('kpi-noncmp').textContent = ss.non_compliant_workers ?? '—';
+  document.getElementById('kpi-onsite').textContent = onSiteCount ?? '—';
+}
+
+// ─── Presences ────────────────────────────────────────────────────────────────
+function renderPresences(tp, workers, totalWorkers) {
+  document.getElementById('p-present').textContent = tp.present_count ?? 0;
+  document.getElementById('p-missing').textContent = (tp.missing_exits || []).length;
+  document.getElementById('p-total').textContent   = totalWorkers ?? 0;
+  document.getElementById('presences-count').textContent = `${tp.present_count ?? 0} presenti`;
+
+  const list = document.getElementById('worker-list');
+  list.innerHTML = '';
+
+  if (!workers || workers.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">👷</div>Nessun lavoratore assegnato</div>';
+    return;
+  }
+
+  const missingSet = new Set((tp.missing_exits || []).map(w => w.worker_id || w.id));
+
+  workers.slice(0, 20).forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'worker-row';
+    const onSite = w.on_site;
+    const cmp    = w.compliance?.overall || 'compliant';
+    const cmpTag = cmpBadge(cmp);
+
+    row.innerHTML = `
+      <div class="worker-dot${onSite ? '' : ' absent'}"></div>
+      <div class="worker-name">${esc(w.full_name)}${w.role ? ` <span style="color:var(--dim);font-size:11px">(${esc(w.role)})</span>` : ''}</div>
+      ${onSite ? '<span class="worker-tag tag-ok">in cantiere</span>' : ''}
+      ${missingSet.has(w.id) ? '<span class="worker-tag tag-exp">uscita mancante</span>' : ''}
+      ${cmp !== 'compliant' ? cmpTag : ''}
+    `;
+    list.appendChild(row);
+  });
+
+  if (workers.length > 20) {
+    const more = document.createElement('div');
+    more.className = 'empty';
+    more.textContent = `+ altri ${workers.length - 20} lavoratori`;
+    list.appendChild(more);
+  }
+}
+
+function cmpBadge(overall) {
+  const map = {
+    non_compliant: '<span class="worker-tag tag-bad">non conforme</span>',
+    expiring:      '<span class="worker-tag tag-exp">in scadenza</span>',
+    incomplete:    '<span class="worker-tag tag-gray">dati mancanti</span>',
+    compliant:     '',
+  };
+  return map[overall] || '';
+}
+
+// ─── Documents ────────────────────────────────────────────────────────────────
+function renderDocuments(ds) {
+  if (!ds) return;
+  const list = document.getElementById('doc-list');
+  list.innerHTML = '';
+
+  const ICONS = { pos:'📄', psc:'📋', notifica_asl:'📬', durc:'💼', dvr:'🛡️' };
+  const NAMES = {
+    pos:'Piano Operativo di Sicurezza',
+    psc:'Piano di Sicurezza e Coordinamento',
+    notifica_asl:'Notifica ASL',
+    durc:'DURC',
+    dvr:'Documento Valutazione Rischi',
+  };
+
+  let ok = 0, warn = 0;
+
+  (ds.categories || []).forEach(cat => {
+    const row = document.createElement('div');
+    row.className = 'doc-row';
+    const statusColor = cat.present ? 'var(--green)' : 'var(--red)';
+    const statusText  = cat.present ? 'Presente' : 'Mancante';
+    if (cat.present) ok++; else warn++;
+    row.innerHTML = `
+      <span class="doc-icon">${ICONS[cat.key] || '📁'}</span>
+      <span class="doc-name">${NAMES[cat.key] || cat.key}</span>
+      <span class="doc-status" style="color:${statusColor}">${statusText}</span>
+    `;
+    list.appendChild(row);
+  });
+
+  document.getElementById('docs-count').textContent = `${ok}/${(ds.categories||[]).length} presenti`;
+}
+
+// ─── Issues ───────────────────────────────────────────────────────────────────
+function renderIssues(issues) {
+  const list  = document.getElementById('issue-list');
+  const count = document.getElementById('issues-count');
+  list.innerHTML = '';
+  count.textContent = issues.length + ' attivi';
+
+  if (issues.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✅</div>Nessun problema attivo</div>';
+    return;
+  }
+
+  const sec = document.getElementById('sec-issues');
+  sec.classList.add('open');
+
+  issues.slice(0, 10).forEach(issue => {
+    const item = document.createElement('div');
+    item.className = 'issue-item';
+    const dotClass = issue.type === 'nc'
+      ? `nc ${issue.severity || ''}`
+      : 'worker';
+
+    item.innerHTML = `
+      <div class="issue-dot ${dotClass}"></div>
+      <div class="issue-text">
+        <div class="issue-main">${esc(issue.title || issue.label || '—')}</div>
+        <div class="issue-sub">${esc(issue.subtitle || issue.description || '')}</div>
+      </div>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ─── Timeline ─────────────────────────────────────────────────────────────────
+function renderTimelinePreview(verifs, ncs, notes) {
+  // Merge e ordina per data
+  const items = [
+    ...verifs.map(v => ({ ...v, _type: 'verif' })),
+    ...ncs.map(n => ({ ...n, _type: 'nc' })),
+    ...notes.map(n => ({ ...n, _type: 'note' })),
+  ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 15);
+
+  renderTimelineItems(items);
+  document.getElementById('timeline-count').textContent = `${items.length} eventi`;
+
+  const total = verifs.length + ncs.length + notes.length;
+  const loadMore = document.getElementById('tl-load-more');
+  if (total > 15 && !_timelineLoaded) {
+    loadMore.style.display = 'block';
+  } else {
+    loadMore.style.display = 'none';
+  }
+}
+
+function renderTimelineItems(items) {
+  const list = document.getElementById('timeline-list');
+  list.innerHTML = '';
+
+  if (items.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div>Nessuna attività registrata</div>';
+    return;
+  }
+
+  const SEV_COLOR = { critica:'var(--red)', alta:'var(--red)', media:'var(--yellow)', bassa:'var(--gray)' };
+  const SEV_LABEL = { critica:'Critica', alta:'Alta', media:'Media', bassa:'Bassa' };
+  const NOTE_TYPE_LABEL = { observation:'Osservazione', request:'Richiesta', approval:'Approvazione', warning:'Avvertenza' };
+  const SS_LABEL = { conforme:'Conforme', attenzione:'Attenzione', critico:'Critico', dati_insufficienti:'Dati insufficienti' };
+
+  items.forEach(item => {
+    const el   = document.createElement('div');
+    el.className = 'tl-item';
+    const type = item._type || item.type;
+    const date = fmtDate(item.created_at);
+
+    let dotCls, typeLabel, title, detail;
+    if (type === 'verif' || type === 'verification') {
+      dotCls    = 'verif';
+      typeLabel = 'Verifica';
+      title     = `Sopralluogo — ${SS_LABEL[item.safety_status] || item.safety_status || '—'}`;
+      const parts = [];
+      if (item.open_nc_count) parts.push(`${item.open_nc_count} NC aperte`);
+      if (item.critical_nc_count) parts.push(`${item.critical_nc_count} critiche`);
+      if (item.workers_present_today != null) parts.push(`${item.workers_present_today} presenti`);
+      if (item.note) parts.push(item.note.slice(0, 80));
+      detail = parts.join(' · ');
+    } else if (type === 'nc' || type === 'nonconformity') {
+      dotCls    = 'nc';
+      typeLabel = `NC — ${SEV_LABEL[item.severity] || item.severity || ''}`;
+      title     = item.title || '—';
+      const statusLabel = { aperta:'Aperta', in_lavorazione:'In lavorazione', risolta:'Risolta', chiusa:'Chiusa' };
+      detail = [item.category, statusLabel[item.status] || item.status].filter(Boolean).join(' · ');
+    } else {
+      dotCls    = 'note';
+      typeLabel = NOTE_TYPE_LABEL[item.note_type] || 'Nota';
+      title     = (item.content || '').slice(0, 100);
+      detail    = item.coordinator_name || '';
+    }
+
+    el.innerHTML = `
+      <div class="tl-left">
+        <div class="tl-dot ${dotCls}"></div>
+        <div class="tl-line"></div>
+      </div>
+      <div class="tl-content">
+        <div class="tl-header">
+          <span class="tl-type ${dotCls}">${esc(typeLabel)}</span>
+          <span class="tl-date">${date}</span>
+        </div>
+        <div class="tl-title">${esc(title)}</div>
+        ${detail ? `<div class="tl-detail">${esc(detail)}</div>` : ''}
+      </div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+async function loadFullTimeline() {
+  if (!_siteId) return;
+  document.getElementById('tl-load-more').innerHTML = '<div class="load-text">Caricamento…</div>';
+  try {
+    const res = await fetch(`/api/v1/coordinator/portal/${_token}/site/${_siteId}/timeline`);
+    if (!res.ok) throw new Error();
+    const { timeline } = await res.json();
+    _timelineLoaded = true;
+    renderTimelineItems(timeline.map(ev => ({ ...ev, _type: ev.type })));
+    document.getElementById('tl-load-more').style.display = 'none';
+    document.getElementById('timeline-count').textContent = `${timeline.length} eventi`;
+  } catch {
+    document.getElementById('tl-load-more').innerHTML =
+      '<button class="btn-link" onclick="loadFullTimeline()">Riprova</button>';
+  }
+}
+
+// ─── Modals ───────────────────────────────────────────────────────────────────
+function openModal(id) {
+  document.getElementById(id).classList.remove('hidden');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+  // Reset errors
+  const err = document.getElementById(id.replace('modal-', '') + '-err') ||
+              document.getElementById(id + '-err');
+  if (err) err.style.display = 'none';
+}
+
+function updateVerifPreview(ss) {
+  const p = document.getElementById('verif-status-preview');
+  if (!ss) return;
+  const colors = { conforme:'var(--green-bg)', attenzione:'var(--yellow-bg)', critico:'var(--red-bg)', dati_insufficienti:'var(--gray-bg)' };
+  const textC  = { conforme:'var(--green)', attenzione:'var(--yellow)', critico:'var(--red)', dati_insufficienti:'var(--gray)' };
+  p.style.background = colors[ss.level] || '';
+  p.style.color      = textC[ss.level] || '';
+  p.innerHTML = `<strong>Stato attuale:</strong> ${esc(ss.label || ss.level)} · ${ss.open_nc_count} NC aperte · ${ss.non_compliant_workers} non conformi`;
+}
+
+async function submitVerif() {
+  const btn  = document.getElementById('btn-verif-submit');
+  const err  = document.getElementById('verif-err');
+  const note = document.getElementById('verif-note').value.trim();
+  btn.disabled = true;
+  err.style.display = 'none';
+  try {
+    const res = await fetch(`/api/v1/coordinator/portal/${_token}/site/${_siteId}/verifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: note || null }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.error || 'Errore');
+    closeModal('modal-verif');
+    document.getElementById('verif-note').value = '';
+    // Aggiorna safety card con nuovo stato
+    if (body.safety_status) renderSafetyCard(body.safety_status, _data?.on_site_count);
+    // Aggiungi in cima alla timeline
+    if (body.verification) {
+      prependTimelineItem({ ...body.verification, _type: 'verif' });
+    }
+  } catch (e) {
+    err.textContent = e.message || 'Errore durante la registrazione.';
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitNc() {
+  const btn  = document.getElementById('btn-nc-submit');
+  const err  = document.getElementById('nc-err');
+  const title = document.getElementById('nc-title').value.trim();
+  const desc  = document.getElementById('nc-desc').value.trim();
+  const cat   = document.getElementById('nc-category').value;
+  const sev   = document.getElementById('nc-severity').value;
+  const due   = document.getElementById('nc-due').value;
+  err.style.display = 'none';
+
+  if (!title || title.length < 3) { err.textContent = 'Il titolo è obbligatorio (min 3 caratteri).'; err.style.display = 'block'; return; }
+  if (!desc  || desc.length  < 3) { err.textContent = 'La descrizione è obbligatoria (min 3 caratteri).'; err.style.display = 'block'; return; }
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/v1/coordinator/portal/${_token}/site/${_siteId}/nonconformities`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, description: desc, category: cat, severity: sev, due_date: due || null }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || body.error || 'Errore');
+    closeModal('modal-nc');
+    ['nc-title','nc-desc','nc-due'].forEach(id => { document.getElementById(id).value = ''; });
+    if (body.nonconformity) prependTimelineItem({ ...body.nonconformity, _type: 'nc' });
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function submitNote() {
+  const btn     = document.getElementById('btn-note-submit');
+  const err     = document.getElementById('note-err');
+  const type    = document.getElementById('note-type').value;
+  const content = document.getElementById('note-content').value.trim();
+  err.style.display = 'none';
+
+  if (!content || content.length < 3) { err.textContent = 'Il contenuto è obbligatorio (min 3 caratteri).'; err.style.display = 'block'; return; }
+
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/v1/coordinator/portal/${_token}/site/${_siteId}/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note_type: type, content }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.message || body.error || 'Errore');
+    closeModal('modal-note');
+    document.getElementById('note-content').value = '';
+    if (body.note) prependTimelineItem({ ...body.note, _type: 'note' });
+  } catch (e) {
+    err.textContent = e.message;
+    err.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function prependTimelineItem(item) {
+  const list = document.getElementById('timeline-list');
+  // Rimuovi empty state se presente
+  const empty = list.querySelector('.empty');
+  if (empty) empty.remove();
+
+  const tmp = document.createElement('div');
+  renderTimelineItems([item]);
+  const newEl = document.getElementById('timeline-list').firstChild;
+  if (newEl) list.prepend(newEl.cloneNode(true));
+  renderTimelineItems([item, ...getRenderedItems()].slice(0, 15));
+}
+
+function getRenderedItems() {
+  // Restituisce gli item già resi — usato internamente per mantener la lista aggiornata
+  return [];
+}
+
+// ─── CSV Export ───────────────────────────────────────────────────────────────
+function exportCsv() {
+  if (!_data) return;
+  const { site, nonconformities, recent_verifications } = _data;
+
+  let csv = 'Tipo,Data,Titolo,Dettaglio,Gravità,Stato\n';
+
+  (recent_verifications || []).forEach(v => {
+    csv += `Verifica,${v.created_at.slice(0,10)},"Sopralluogo formale","${v.note || ''}","",${v.safety_status}\n`;
+  });
+  (nonconformities || []).forEach(n => {
+    csv += `NC,${n.created_at.slice(0,10)},"${(n.title||'').replace(/"/g,'""')}","${(n.description||'').replace(/"/g,'""').slice(0,100)}",${n.severity},${n.status}\n`;
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href     = url;
+  a.download = `verifica_${(site?.name||'cantiere').replace(/\s+/g,'_')}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ─── Collapsible ──────────────────────────────────────────────────────────────
+function toggleSection(id) {
+  document.getElementById(id).classList.toggle('open');
+}
+
+// ─── Utils ────────────────────────────────────────────────────────────────────
 function esc(s) {
-  return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 function fmtDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
+  return new Date(iso).toLocaleString('it-IT', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
-function fmtDateTime(iso) {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'})+' '+d.toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-}
-function fmtTime(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-}
-function showToast(msg, type) {
-  const el = document.getElementById('toast');
-  el.textContent = msg; el.className = 'toast show '+(type||'');
-  setTimeout(()=>{ el.className='toast'; }, 3200);
-}
-function openModal(id)  { document.getElementById(id).classList.add('open');    document.body.style.overflow='hidden'; }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); document.body.style.overflow=''; }
-function toggleSection(hdr, bodyId) {
-  const body = document.getElementById(bodyId);
-  if (!body) return;
-  const c = hdr.classList.toggle('collapsed');
-  body.style.display = c ? 'none' : '';
-}
-
-async function apiFetch(path, opts) {
-  const r = await fetch(API+path, { headers:{'Content-Type':'application/json'}, ...(opts||{}) });
-  const b = await r.json();
-  if (!r.ok) throw Object.assign(new Error(b.error||'Errore'),{status:r.status});
-  return b;
-}
-
-async function load() {
-  if (!token) { renderError('Link non valido','Questo link di accesso non è valido.'); return; }
-  try {
-    const [data, verifs] = await Promise.all([
-      apiFetch(`/api/v1/coordinator/${token}`),
-      apiFetch(`/api/v1/coordinator/${token}/verifications`),
-    ]);
-    siteData = data;
-    verifications = verifs;
-    render();
-  } catch(e) {
-    if (e.status===404) renderError('Link scaduto o non valido','Questo link di accesso è scaduto o è stato revocato. Richiedilo di nuovo all\'impresa.');
-    else renderError('Errore di caricamento','Impossibile caricare i dati. Riprova tra qualche istante.');
-  }
-}
-
-function render() {
-  const { site, invite, safety_status, active_issues, today_presences, document_status } = siteData;
-  document.title = esc(site.name)+' — Portale Verifiche Palladia';
-  document.getElementById('app').innerHTML =
-    renderHeader(site, invite) +
-    '<div class="page">' +
-    renderStatusCard(safety_status) +
-    renderActiveIssues(active_issues||[]) +
-    renderTodayPresences(today_presences) +
-    renderDocuments(document_status) +
-    renderActions(safety_status) +
-    renderTimeline() +
-    renderDisclaimer() +
-    '</div>';
-}
-
-function renderHeader(site, invite) {
-  const exp = new Date(invite.expires_at);
-  const expStr = exp.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
-  const expiring = (exp - Date.now()) < 14*86400000;
-  return `<div class="page"><div class="site-header">
-    <div class="site-header-top"><span class="brand">Palladia</span><span class="portal-label">Portale Verifiche Sicurezza</span></div>
-    <div class="site-name">${esc(site.name)}</div>
-    ${site.address ? `<div class="site-address">${esc(site.address)}</div>` : ''}
-    <div class="coordinator-info">
-      <span>Coordinatore: <strong>${esc(invite.coordinator_name)}</strong></span>
-      ${invite.coordinator_company ? `<span>Azienda: <strong>${esc(invite.coordinator_company)}</strong></span>` : ''}
-      <span style="${expiring?'color:var(--yellow-text)':''}">Accesso valido fino: <strong>${expStr}</strong></span>
-    </div>
-  </div></div>`;
-}
-
-function renderStatusCard(ss) {
-  if (!ss) ss = { level:'dati_insufficienti', label:'Dati insufficienti', reasons:['Dati non disponibili.'] };
-  const cls = ss.level === 'dati_insufficienti' ? 'insufficiente' : ss.level;
-  const icons = { conforme:'●', attenzione:'▲', critico:'■', dati_insufficienti:'○' };
-  const icon  = icons[ss.level] || '○';
-  const lastV = verifications[0];
-  const lastStr = lastV ? `Ultima verifica registrata: ${fmtDateTime(lastV.created_at)}` : 'Nessuna verifica formale registrata';
-  return `
-    <div class="card-title">Stato sicurezza cantiere</div>
-    <div class="status-card ${cls}">
-      <div class="status-indicator">
-        <div class="status-dot"></div>
-        <div class="status-level">${icon} ${ss.level.replace('_',' ').toUpperCase()}</div>
-      </div>
-      <div class="status-label">${esc(ss.label)}</div>
-      ${ss.reasons&&ss.reasons.length ? `<ul class="status-reasons">${ss.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>` : ''}
-      <div class="status-last-check">${lastStr}</div>
-    </div>`;
-}
-
-function renderActiveIssues(issues) {
-  const sevL = {critica:'Critica',alta:'Alta',media:'Media',bassa:'Bassa'};
-  const catL = {sicurezza:'Sicurezza',documentale:'Documentale',operativa:'Operativa',igiene:'Igiene'};
-  if (!issues.length) return `<div class="card"><div class="card-title">Problemi attivi</div><div class="empty">Nessun problema attivo rilevato nei dati registrati</div></div>`;
-  return `
-    <div class="card">
-      <div class="section-header" onclick="toggleSection(this,'issues-body')">
-        <div class="card-title" style="margin-bottom:0">Problemi attivi <span style="color:var(--red-text)">(${issues.length})</span></div>
-        <span class="toggle-icon">▼</span>
-      </div>
-      <div id="issues-body" style="margin-top:14px">
-        ${issues.map(i => {
-          if (i.type==='nc') return `
-            <div class="issue-item">
-              <div class="issue-severity ${i.severity}"></div>
-              <div class="issue-body">
-                <div class="issue-title">${esc(i.title)}</div>
-                <div class="issue-meta">
-                  <span class="badge badge-${i.severity}">${sevL[i.severity]||i.severity}</span>
-                  <span class="badge badge-nc">${catL[i.category]||i.category}</span>
-                  <span>${i.age_days===0?'Oggi':i.age_days+' giorni fa'}</span>
-                  <span style="color:var(--text-dim)">${esc(i.status.replace('_',' '))}</span>
-                </div>
-              </div>
-            </div>`;
-          return `
-            <div class="issue-item">
-              <div class="issue-severity ${i.severity}"></div>
-              <div class="issue-body">
-                <div class="issue-title">${esc(i.title)}</div>
-                <div class="issue-meta">
-                  <span class="badge badge-${i.severity}">${sevL[i.severity]||i.severity}</span>
-                  ${(i.workers||[]).slice(0,3).map(w=>`<span>${esc(w.name)}</span>`).join('')}
-                </div>
-              </div>
-            </div>`;
-        }).join('')}
-      </div>
-    </div>`;
-}
-
-function renderTodayPresences(tp) {
-  if (!tp) return '';
-  const today = new Date().toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});
-  return `
-    <div class="card">
-      <div class="section-header" onclick="toggleSection(this,'pres-body')">
-        <div class="card-title" style="margin-bottom:0">Presenze di oggi</div>
-        <span class="toggle-icon">▼</span>
-      </div>
-      <div id="pres-body" style="margin-top:14px">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;text-transform:capitalize">${today}</div>
-        <div class="presence-summary">
-          <div class="presence-stat">
-            <div class="presence-stat-num">${tp.present_count}</div>
-            <div class="presence-stat-label">In cantiere ora</div>
-          </div>
-          <div class="presence-stat">
-            <div class="presence-stat-num">${tp.workers_today}</div>
-            <div class="presence-stat-label">Passaggi oggi</div>
-          </div>
-          ${tp.missing_exits_count>0 ? `
-            <div class="presence-stat">
-              <div class="presence-stat-num alert">${tp.missing_exits_count}</div>
-              <div class="presence-stat-label">Uscite mancanti</div>
-            </div>` : ''}
-        </div>
-        ${tp.workers&&tp.workers.length ? `
-          <div class="divider"></div>
-          ${tp.workers.map(w=>`
-            <div class="worker-row">
-              <div class="worker-status-dot ${w.status}"></div>
-              <div class="worker-name">${esc(w.name)}</div>
-              <div class="worker-time">
-                ${w.entry_time?'Entrata '+fmtTime(w.entry_time):''}
-                ${w.exit_time?' · Uscita '+fmtTime(w.exit_time):''}
-                ${!w.exit_time&&w.entry_time?'<span style="color:var(--green-text)"> · presente</span>':''}
-              </div>
-            </div>`).join('')}` :
-          '<div class="empty">Nessuna presenza registrata oggi</div>'}
-      </div>
-    </div>`;
-}
-
-function renderDocuments(ds) {
-  if (!ds) return '';
-  const catN = {pos:'POS',psc:'PSC',notifica_asl:'Notifica ASL',durc:'DURC',dvr:'DVR',assicurazione:'Assicurazione',altro:'Altro'};
-  const entries = Object.entries(ds.by_category||{});
-  return `
-    <div class="card">
-      <div class="section-header" onclick="toggleSection(this,'docs-body')">
-        <div class="card-title" style="margin-bottom:0">Documenti caricati</div>
-        <span class="toggle-icon">▼</span>
-      </div>
-      <div id="docs-body" style="margin-top:14px">
-        <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px">${ds.total_count} documento${ds.total_count!==1?'i':''} in piattaforma</div>
-        ${entries.length ? `<div class="doc-grid">${entries.map(([c,n])=>`<div class="doc-item"><div class="doc-item-name">${esc(catN[c]||c)}</div><div class="doc-item-count">${n}</div></div>`).join('')}</div>` : ''}
-        ${ds.missing_required&&ds.missing_required.length ? `<div class="doc-missing">Categorie non presenti: <strong>${ds.missing_required.map(c=>catN[c]||c).join(', ')}</strong></div>` : ''}
-        ${!entries.length ? '<div class="empty">Nessun documento caricato</div>' : ''}
-        <div style="font-size:11px;color:var(--text-dim);margin-top:10px">La scadenza documentale non è tracciata automaticamente — verificare i documenti originali per le date di validità.</div>
-      </div>
-    </div>`;
-}
-
-function renderActions(ss) {
-  const pillC = {conforme:'var(--green-text)',attenzione:'var(--yellow-text)',critico:'var(--red-text)',dati_insufficienti:'var(--gray-text)'};
-  const pill = ss ? `<span style="color:${pillC[ss.level]||'var(--gray-text)'}">● ${esc(ss.label)}</span>` : '';
-  return `
-    <div class="card-title">Azioni</div>
-    <div class="actions-grid">
-      <button class="action-btn primary" onclick="prepareVerifica()">
-        <span class="action-btn-icon">✓</span>
-        <div><div class="action-btn-label">Conferma verifica cantiere</div><div style="font-size:11px;color:#93c5fd;margin-top:2px">${pill}</div></div>
-      </button>
-      <button class="action-btn" onclick="openModal('modal-nc')">
-        <span class="action-btn-icon">⚠</span>
-        <div class="action-btn-label">Segnala non conformità</div>
-        <div class="action-btn-desc">Apri una NC formale</div>
-      </button>
-      <button class="action-btn" onclick="openModal('modal-nota')">
-        <span class="action-btn-icon">📋</span>
-        <div class="action-btn-label">Aggiungi nota verifica</div>
-        <div class="action-btn-desc">Osservazione o richiesta</div>
-      </button>
-      <button class="action-btn" onclick="exportReport()">
-        <span class="action-btn-icon">↓</span>
-        <div class="action-btn-label">Scarica registro</div>
-        <div class="action-btn-desc">CSV verifiche e NC</div>
-      </button>
-    </div>`;
-}
-
-function renderTimeline() {
-  const events = buildLocalTimeline();
-  if (!events.length) return `<div class="card"><div class="card-title">Storico verifiche</div><div class="empty">Nessuna attività registrata.<br>Effettua la prima verifica formale con il pulsante qui sopra.</div></div>`;
-  const typeL = {verifica:'Verifica effettuata',nc_aperta:'Non conformità aperta',nc_risolta:'NC risolta dall\'impresa',nc_chiusa:'NC chiusa',nota:'Nota aggiunta'};
-  const pillMap = {
-    conforme:`<span class="status-pill conforme">Conforme</span>`,
-    attenzione:`<span class="status-pill attenzione">Attenzione</span>`,
-    critico:`<span class="status-pill critico">Critico</span>`,
-    dati_insufficienti:`<span class="status-pill dati_insufficienti">Dati insuf.</span>`
+function siteStatusBadge(status) {
+  const map = {
+    attivo:     '<span class="badge badge-green">Attivo</span>',
+    'in corso': '<span class="badge badge-blue">In corso</span>',
+    pianificato:'<span class="badge badge-gray">Pianificato</span>',
+    sospeso:    '<span class="badge badge-yellow">Sospeso</span>',
+    chiuso:     '<span class="badge badge-gray">Chiuso</span>',
   };
-  return `
-    <div class="card">
-      <div class="card-title">Storico verifiche e attività</div>
-      <div class="timeline">
-        ${events.map(ev=>`
-          <div class="timeline-item ${ev.type}">
-            <div class="timeline-date">${fmtDateTime(ev.date)}</div>
-            <div class="timeline-type">${typeL[ev.type]||ev.type}</div>
-            ${ev.type==='verifica' ? `
-              <div class="timeline-verif-box">
-                ${pillMap[ev.safety_status]||''}
-                <span style="font-size:11px;color:var(--text-muted);margin-left:8px">NC aperte: ${ev.meta.open_nc} · Non conformi: ${ev.meta.non_compliant} · Presenti: ${ev.meta.present_today}</span>
-                ${ev.note ? `<div class="timeline-note">"${esc(ev.note)}"</div>` : ''}
-              </div>` : ''}
-            ${ev.type!=='verifica' ? `<div class="timeline-title">${esc(ev.title)}</div>` : ''}
-          </div>`).join('')}
-      </div>
-    </div>`;
+  return map[status] || `<span class="badge badge-gray">${esc(status || '—')}</span>`;
 }
 
-function buildLocalTimeline() {
-  const evs = [];
-  const slabel = {conforme:'Situazione regolare',attenzione:'Elementi da verificare',critico:'Situazione critica',dati_insufficienti:'Dati insufficienti'};
-  for (const v of verifications) evs.push({type:'verifica',id:v.id,safety_status:v.safety_status,note:v.note,meta:{open_nc:v.open_nc_count||0,non_compliant:v.non_compliant_workers||0,present_today:v.workers_present_today||0},date:v.created_at});
-  for (const n of (siteData.nonconformities||[])) {
-    evs.push({type:'nc_aperta',id:n.id,title:n.title,severity:n.severity,date:n.created_at});
-    if (n.resolved_at) evs.push({type:'nc_risolta',id:n.id+'_r',title:n.title,date:n.resolved_at});
-    if (n.closed_by_coordinator_at) evs.push({type:'nc_chiusa',id:n.id+'_c',title:n.title,date:n.closed_by_coordinator_at});
-  }
-  for (const n of (siteData.notes||[])) evs.push({type:'nota',id:n.id,title:n.content.slice(0,100),date:n.created_at});
-  return evs.sort((a,b)=>new Date(b.date)-new Date(a.date));
-}
-
-function renderDisclaimer() {
-  return `<div class="disclaimer"><strong>Nota informativa.</strong> Palladia è uno strumento digitale di supporto alla gestione e alla tracciabilità del cantiere. Le informazioni visualizzate riflettono i dati inseriti in piattaforma. La responsabilità delle verifiche, delle valutazioni tecniche e del rispetto della normativa vigente rimane in capo ai soggetti obbligati secondo legge. L'utilizzo di questo strumento non sostituisce le verifiche in loco né gli obblighi previsti dalla normativa.</div>`;
-}
-
-function renderError(title, desc) {
-  document.getElementById('app').innerHTML = `<div class="page"><div class="error-screen"><div class="error-icon">🔒</div><div class="error-title">${esc(title)}</div><div class="error-desc">${esc(desc)}</div></div></div>`;
-}
-
-function prepareVerifica() {
-  const ss = siteData?.safety_status;
-  const cls = !ss ? 'insufficiente' : ss.level==='dati_insufficienti' ? 'insufficiente' : ss.level;
-  const pillC = {conforme:'var(--green-text)',attenzione:'var(--yellow-text)',critico:'var(--red-text)',insufficiente:'var(--gray-text)'};
-  document.getElementById('verifica-status-preview').innerHTML = `
-    <div class="modal-status-preview ${cls}">
-      <div style="flex:1">
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${pillC[cls]||'var(--gray-text)'}">
-          ${esc(ss?.label||'Stato sconosciuto')}
-        </div>
-        <div style="font-size:12px;color:var(--text-muted);margin-top:4px">Lo stato attuale sarà acquisito come snapshot della verifica</div>
-      </div>
-    </div>`;
-  document.getElementById('verifica-note').value = '';
-  openModal('modal-verifica');
-}
-
-async function submitVerifica() {
-  const btn = document.getElementById('btn-verifica');
-  btn.disabled=true; btn.textContent='Registrazione…';
-  try {
-    const note = document.getElementById('verifica-note').value.trim();
-    const res  = await apiFetch(`/api/v1/coordinator/${token}/verifications`,{method:'POST',body:JSON.stringify({note:note||undefined})});
-    verifications.unshift(res.verification);
-    if (res.safety_status) siteData.safety_status = res.safety_status;
-    closeModal('modal-verifica');
-    showToast('Verifica registrata','success');
-    render();
-  } catch(e) { showToast('Errore nel salvataggio. Riprova.','error'); }
-  finally { btn.disabled=false; btn.textContent='Conferma e registra'; }
-}
-
-async function submitNC() {
-  const title = document.getElementById('nc-title').value.trim();
-  const desc  = document.getElementById('nc-desc').value.trim();
-  document.getElementById('nc-title-err').style.display='none';
-  document.getElementById('nc-desc-err').style.display='none';
-  let ok = true;
-  if (!title||title.length<3) { document.getElementById('nc-title-err').textContent='Titolo: minimo 3 caratteri'; document.getElementById('nc-title-err').style.display='block'; ok=false; }
-  if (!desc||desc.length<3)   { document.getElementById('nc-desc-err').textContent='Descrizione: minimo 3 caratteri'; document.getElementById('nc-desc-err').style.display='block'; ok=false; }
-  if (!ok) return;
-  const btn = document.getElementById('btn-nc');
-  btn.disabled=true; btn.textContent='Invio…';
-  try {
-    const payload = {title,description:desc,severity:document.getElementById('nc-severity').value,category:document.getElementById('nc-category').value};
-    const due = document.getElementById('nc-due').value;
-    if (due) payload.due_date = due;
-    const res = await apiFetch(`/api/v1/coordinator/${token}/nonconformities`,{method:'POST',body:JSON.stringify(payload)});
-    if (!siteData.nonconformities) siteData.nonconformities=[];
-    siteData.nonconformities.unshift(res.nonconformity);
-    siteData.active_issues = rebuildActiveIssues();
-    closeModal('modal-nc');
-    showToast('Non conformità segnalata','success');
-    document.getElementById('nc-title').value='';
-    document.getElementById('nc-desc').value='';
-    document.getElementById('nc-due').value='';
-    render();
-  } catch(e) { showToast('Errore nell\'invio. Riprova.','error'); }
-  finally { btn.disabled=false; btn.textContent='Segnala NC'; }
-}
-
-async function submitNota() {
-  const content = document.getElementById('nota-content').value.trim();
-  document.getElementById('nota-err').style.display='none';
-  if (!content||content.length<3) { document.getElementById('nota-err').textContent='Minimo 3 caratteri'; document.getElementById('nota-err').style.display='block'; return; }
-  const btn = document.getElementById('btn-nota');
-  btn.disabled=true; btn.textContent='Salvataggio…';
-  try {
-    const res = await apiFetch(`/api/v1/coordinator/${token}/notes`,{method:'POST',body:JSON.stringify({note_type:document.getElementById('nota-type').value,content})});
-    if (!siteData.notes) siteData.notes=[];
-    siteData.notes.unshift(res.note);
-    closeModal('modal-nota');
-    showToast('Nota salvata','success');
-    document.getElementById('nota-content').value='';
-    render();
-  } catch(e) { showToast('Errore nel salvataggio. Riprova.','error'); }
-  finally { btn.disabled=false; btn.textContent='Salva nota'; }
-}
-
-function rebuildActiveIssues() {
-  const so = {critica:0,alta:1,media:2,bassa:3};
-  const nc = (siteData.nonconformities||[]).filter(n=>n.status==='aperta'||n.status==='in_lavorazione').sort((a,b)=>(so[a.severity]??9)-(so[b.severity]??9));
-  return nc.slice(0,6).map(n=>({type:'nc',id:n.id,title:n.title,severity:n.severity,category:n.category,status:n.status,age_days:Math.floor((Date.now()-new Date(n.created_at))/86400000),date:n.created_at.split('T')[0]}));
-}
-
-function exportReport() {
-  if (!siteData) return;
-  const rows=[['Data','Tipo','Stato/Gravità','Descrizione']];
-  for (const v of verifications) rows.push([fmtDateTime(v.created_at),'Verifica',v.safety_status,v.note||'']);
-  for (const n of (siteData.nonconformities||[])) rows.push([fmtDate(n.created_at),'NC',n.severity,n.title+' — '+n.status]);
-  for (const n of (siteData.notes||[])) rows.push([fmtDateTime(n.created_at),'Nota',n.note_type,n.content.slice(0,200)]);
-  const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const blob = new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
-  const url  = URL.createObjectURL(blob);
-  const a    = document.createElement('a');
-  a.href=url; a.download='verifiche_'+(siteData.site?.name||'cantiere').replace(/[^a-zA-Z0-9]/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.csv';
-  a.click(); URL.revokeObjectURL(url);
-  showToast('Report scaricato','success');
-}
-
-document.querySelectorAll('.modal-overlay').forEach(o=>{
-  o.addEventListener('click',e=>{ if(e.target===o){ o.classList.remove('open'); document.body.style.overflow=''; } });
+// Close modal on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay) overlay.classList.add('hidden');
+  });
 });
 
-load();
+// ─── Boot ────────────────────────────────────────────────────────────────────
+init();
 </script>
 </body>
 </html>

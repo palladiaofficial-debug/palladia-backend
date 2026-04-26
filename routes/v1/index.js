@@ -49,6 +49,9 @@ router.use('/', require('./documents'));
 // Documenti aziendali: libreria centralizzata (JWT)
 router.use('/', require('./companyDocuments'));
 
+// Portale coordinatore unificato (Pro + CSE) — DEVE stare PRIMA di coordinator
+router.use('/', require('./coordinatorPortal'));
+
 // Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
 router.use('/', require('./coordinator'));
 

@@ -18,7 +18,11 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { coordinatorLimiter }   = require('../../middleware/rateLimit');
 const { auditLog }             = require('../../lib/audit');
-const { sendCoordinatorInviteEmail, sendCoordinatorNoteAlert } = require('../../services/email');
+const {
+  sendCoordinatorInviteEmail,
+  sendCoordinatorNoteAlert,
+  sendProMagicLinkEmail,
+} = require('../../services/email');
 const {
   computeSafetyStatus,
   buildActiveIssues,
@@ -95,23 +99,59 @@ router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, async (req,
   if (insertErr) return res.status(500).json({ error: 'INVITE_CREATE_ERROR' });
 
   const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const url = `${appBase}/coordinator/${rawToken}`;
+  const cseUrl  = `${appBase}/coordinator/${rawToken}`;
+  let   portalUrl = cseUrl; // default per inviti senza email
 
-  // Email al coordinatore se ha fornito l'email
   if (coordinator_email) {
-    try {
-      await sendCoordinatorInviteEmail({
-        to:                  coordinator_email,
-        coordinatorName:     invite.coordinator_name,
-        siteName:            site.name,
-        siteAddress:         site.address || '',
-        coordinatorCompany:  invite.coordinator_company || '',
-        accessUrl:           url,
-        expiresAt:           expiresAt,
+    // Crea sessione Pro + upsert profilo coordinatore → magic link portale unificato
+    const proRawToken  = generateToken();
+    const proTokenHash = hashToken(proRawToken);
+
+    const { error: proErr } = await supabase
+      .from('coordinator_pro_sessions')
+      .insert({
+        email:      String(coordinator_email).trim().toLowerCase(),
+        token_hash: proTokenHash,
+        expires_at: expiresAt,
       });
-    } catch (emailErr) {
-      console.warn('[coordinator] email send failed:', emailErr.message);
-      // Non blocca — il link è già creato
+
+    if (!proErr) {
+      // Upsert profilo (best-effort, non blocca)
+      supabase.from('coordinator_profiles').upsert({
+        email:      String(coordinator_email).trim().toLowerCase(),
+        full_name:  String(coordinator_name).trim().slice(0, 200),
+        azienda:    coordinator_company ? String(coordinator_company).trim().slice(0, 200) : null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'email' }).then(() => {});
+
+      portalUrl = `${appBase}/coordinator/accesso/${proRawToken}`;
+
+      try {
+        await sendProMagicLinkEmail({
+          to:                 coordinator_email,
+          coordinatorName:    invite.coordinator_name,
+          coordinatorCompany: invite.coordinator_company || '',
+          accessUrl:          portalUrl,
+        });
+      } catch (emailErr) {
+        console.warn('[coordinator] pro email failed:', emailErr.message);
+      }
+    } else {
+      // Fallback al vecchio link CSE
+      console.warn('[coordinator] pro session insert failed, fallback to CSE email:', proErr.message);
+      try {
+        await sendCoordinatorInviteEmail({
+          to:                 coordinator_email,
+          coordinatorName:    invite.coordinator_name,
+          siteName:           site.name,
+          siteAddress:        site.address || '',
+          coordinatorCompany: invite.coordinator_company || '',
+          accessUrl:          cseUrl,
+          expiresAt,
+        });
+      } catch (emailErr) {
+        console.warn('[coordinator] cse email failed:', emailErr.message);
+      }
     }
   }
 
@@ -127,9 +167,10 @@ router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, async (req,
   });
 
   res.status(201).json({
-    ok:         true,
-    invite_id:  invite.id,
-    url,
+    ok:          true,
+    invite_id:   invite.id,
+    url:         portalUrl,   // URL inviato per email (Pro magic link se email presente)
+    cse_url:     cseUrl,      // Link CSE diretto (compatibilità)
     coordinator_name:    invite.coordinator_name,
     coordinator_email:   invite.coordinator_email,
     coordinator_company: invite.coordinator_company,
@@ -215,7 +256,23 @@ router.patch('/coordinator-invites/:inviteId/refresh-token', verifySupabaseJwt, 
   if (updateErr) return res.status(500).json({ error: 'UPDATE_ERROR' });
 
   const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const url = `${appBase}/coordinator/${rawToken}`;
+  const cseUrl  = `${appBase}/coordinator/${rawToken}`;
+  let   portalUrl = cseUrl;
+
+  // Se l'invito ha email, ricrea anche la sessione Pro
+  if (invite.coordinator_email) {
+    const proRaw   = generateToken();
+    const proHash  = hashToken(proRaw);
+    const newExpAt = new Date(Date.now() + COORD_TTL_DAYS_DEFAULT * 86_400_000).toISOString();
+    const { error: proErr } = await supabase
+      .from('coordinator_pro_sessions')
+      .insert({
+        email:      invite.coordinator_email.trim().toLowerCase(),
+        token_hash: proHash,
+        expires_at: newExpAt,
+      });
+    if (!proErr) portalUrl = `${appBase}/coordinator/accesso/${proRaw}`;
+  }
 
   auditLog({
     companyId: req.companyId, userId: req.user?.id, userRole: req.userRole,
@@ -223,7 +280,7 @@ router.patch('/coordinator-invites/:inviteId/refresh-token', verifySupabaseJwt, 
     targetId: inviteId, payload: { site_id: invite.site_id }, req,
   });
 
-  res.json({ ok: true, url, coordinator_name: invite.coordinator_name });
+  res.json({ ok: true, url: portalUrl, cse_url: cseUrl, coordinator_name: invite.coordinator_name });
 });
 
 // ── GET /api/v1/sites/:siteId/coordinator-notes ──────────────────────────────
