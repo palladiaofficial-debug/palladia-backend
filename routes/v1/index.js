@@ -55,6 +55,9 @@ router.use('/', require('./coordinator'));
 // Non Conformità: aperte da coordinatori, gestite dall'impresa (JWT + token)
 router.use('/', require('./nonconformities'));
 
+// Verifiche coordinatore: registro immutabile + timeline (JWT + token)
+router.use('/', require('./coordinatorVerifications'));
+
 // Verbale di Sopralluogo PDF (token — no JWT)
 router.use('/', require('./verbale'));
 

@@ -8,7 +8,7 @@
 //   PATCH  /api/v1/coordinator-notes/:noteId/read           — segna come letta
 //
 // Endpoint pubblici (token nel path) — accesso coordinatore:
-//   GET    /api/v1/coordinator/:token                       — dati cantiere read-only
+//   GET    /api/v1/coordinator/:token                       — dati cantiere (portale sicurezza)
 //   GET    /api/v1/coordinator/:token/notes                 — note del coordinatore
 //   POST   /api/v1/coordinator/:token/notes                 — aggiunge nota
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,6 +19,12 @@ const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { coordinatorLimiter }   = require('../../middleware/rateLimit');
 const { auditLog }             = require('../../lib/audit');
 const { sendCoordinatorInviteEmail, sendCoordinatorNoteAlert } = require('../../services/email');
+const {
+  computeSafetyStatus,
+  buildActiveIssues,
+  getTodayPresences,
+  getDocumentStatus,
+} = require('../../lib/coordinatorUtils');
 
 const COORD_TTL_DAYS_DEFAULT = 90;
 
@@ -394,8 +400,8 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     recent_days:          recentDays,
   };
 
-  // ── Note + Non Conformità + Storico visite (in parallelo) ──────────────────
-  const [notesRes, ncRes, visitsRes] = await Promise.all([
+  // ── Note + Non Conformità + Storico visite + Verifiche (in parallelo) ──────
+  const [notesRes, ncRes, visitsRes, verifRes] = await Promise.all([
     supabase.from('site_coordinator_notes')
       .select('id, note_type, content, coordinator_name, created_at')
       .eq('site_id', invite.site_id)
@@ -411,16 +417,33 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
       .eq('invite_id', invite.id)
       .order('visited_at', { ascending: false })
       .limit(20),
+    supabase.from('coordinator_verifications')
+      .select('id, safety_status, open_nc_count, note, created_at')
+      .eq('invite_id', invite.id)
+      .order('created_at', { ascending: false })
+      .limit(5),
   ]);
 
-  // ── Compila stats globali compliance ──────────────────────────────────────
+  // ── Calcoli arricchiti ────────────────────────────────────────────────────
   const complianceStats = workers.reduce((acc, w) => {
     acc[w.compliance.overall] = (acc[w.compliance.overall] || 0) + 1;
     return acc;
   }, {});
 
-  const ncList    = ncRes.data    || [];
+  const ncList      = ncRes.data    || [];
   const openNcCount = ncList.filter(n => n.status === 'aperta' || n.status === 'in_lavorazione').length;
+
+  // Stato sicurezza calcolato
+  const safetyStatus = computeSafetyStatus(workers, ncList);
+
+  // Issues attivi prioritizzati
+  const activeIssues = buildActiveIssues(workers, ncList);
+
+  // Presenze di oggi
+  const todayPresences = await getTodayPresences(invite.site_id, invite.company_id, workers);
+
+  // Stato documenti
+  const documentStatus = await getDocumentStatus(invite.site_id, invite.company_id);
 
   res.json({
     site,
@@ -430,6 +453,15 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
       coordinator_email:   invite.coordinator_email   || null,
       expires_at:          invite.expires_at,
     },
+    // ── Stato sicurezza (sezione principale portale) ──────────────────────
+    safety_status:  safetyStatus,
+    // ── Problemi attivi prioritizzati ─────────────────────────────────────
+    active_issues:  activeIssues,
+    // ── Presenze di oggi ──────────────────────────────────────────────────
+    today_presences: todayPresences,
+    // ── Documenti e scadenze ──────────────────────────────────────────────
+    document_status: documentStatus,
+    // ── Dati completi (compatibilità retroattiva) ─────────────────────────
     workers,
     workers_count:    workers.length,
     compliance_stats: complianceStats,
@@ -437,7 +469,8 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     notes:            notesRes.data  || [],
     nonconformities:  ncList,
     open_nc_count:    openNcCount,
-    visits:           visitsRes.data || [],
+    visits:           visitsRes.data  || [],
+    recent_verifications: verifRes.data || [],
   });
 });
 

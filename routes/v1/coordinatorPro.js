@@ -2,6 +2,11 @@
 const crypto = require('crypto');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
+const {
+  computeSafetyStatus,
+  buildActiveIssues,
+  getDocumentStatus,
+} = require('../../lib/coordinatorUtils');
 
 const PRO_TOKEN_TTL_DAYS = 365;
 
@@ -437,6 +442,11 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
   const ncList      = ncR.data    || [];
   const openNcCount = ncList.filter(n => n.status === 'aperta' || n.status === 'in_lavorazione').length;
 
+  // Stato sicurezza calcolato + issues attivi
+  const safetyStatus  = computeSafetyStatus(workers, ncList);
+  const activeIssues  = buildActiveIssues(workers, ncList);
+  const documentStatus = await getDocumentStatus(siteId, invite.company_id);
+
   // Calcola status mezzi
   const today = new Date().toISOString().slice(0, 10);
   const in30  = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
@@ -462,6 +472,11 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
       expires_at: invite.expires_at,
       invite_id:  invite.id,
     },
+    // ── Portale sicurezza ─────────────────────────────────────────────────
+    safety_status:   safetyStatus,
+    active_issues:   activeIssues,
+    document_status: documentStatus,
+    // ── Dati completi ─────────────────────────────────────────────────────
     workers,
     on_site_count:    onSiteIds.size,
     presence_summary: presenceSummary,
