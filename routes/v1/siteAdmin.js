@@ -20,7 +20,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 router.get('/sites', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase
     .from('sites')
-    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m')
+    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m')
     .eq('company_id', req.companyId)
     .neq('status', 'eliminato')
     .order('name');
@@ -34,6 +34,7 @@ router.get('/sites', verifySupabaseJwt, async (req, res) => {
     status:            s.status ?? 'attivo',
     client:            s.client,
     startDate:         s.start_date,
+    endDate:           s.end_date,
     latitude:          s.latitude,
     longitude:         s.longitude,
     geofence_radius_m: s.geofence_radius_m,
@@ -112,7 +113,7 @@ router.post('/sites/:siteId/restore', verifySupabaseJwt, async (req, res) => {
 // ── PATCH /api/v1/sites/:siteId — aggiorna campi e/o stato del cantiere ───────
 router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   const { siteId }    = req.params;
-  const { name, address, client, start_date, status } = req.body || {};
+  const { name, address, client, start_date, end_date, status } = req.body || {};
 
   // Verifica ownership + non eliminato
   const { data: site, error: siteErr } = await supabase
@@ -138,6 +139,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   if (address    !== undefined) updates.address    = address    ? String(address).trim()    : null;
   if (client     !== undefined) updates.client     = client     ? String(client).trim()     : null;
   if (start_date !== undefined) updates.start_date = start_date || null;
+  if (end_date   !== undefined) updates.end_date   = end_date   || null;
 
   if (status !== undefined) {
     if (!ALLOWED_STATUSES.includes(status)) {
@@ -197,7 +199,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     .update(updates)
     .eq('id', siteId)
     .eq('company_id', req.companyId)
-    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m')
+    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m')
     .single();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
@@ -220,6 +222,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     status:            data.status,
     client:            data.client,
     startDate:         data.start_date,
+    endDate:           data.end_date,
     latitude:          data.latitude,
     longitude:         data.longitude,
     geofence_radius_m: data.geofence_radius_m,
@@ -283,7 +286,7 @@ router.patch('/sites/:siteId/coords', verifySupabaseJwt, async (req, res) => {
 
 // ── POST /api/v1/sites — crea cantiere ───────────────────────────────────────
 router.post('/sites', verifySupabaseJwt, async (req, res) => {
-  const { name, address, client, start_date, status } = req.body || {};
+  const { name, address, client, start_date, end_date, status } = req.body || {};
 
   if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 200) {
     return res.status(400).json({
@@ -335,10 +338,11 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
       address:    address ? String(address).trim() : null,
       client:     client  ? String(client).trim()  : null,
       start_date: start_date || null,
+      end_date:   end_date   || null,
       status:     siteStatus,
       company_id: req.companyId
     })
-    .select('id, name, address, status, client, start_date, latitude, longitude, geofence_radius_m')
+    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m')
     .single();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
@@ -361,6 +365,7 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
     status:            data.status,
     client:            data.client,
     startDate:         data.start_date,
+    endDate:           data.end_date,
     latitude:          data.latitude,
     longitude:         data.longitude,
     geofence_radius_m: data.geofence_radius_m,

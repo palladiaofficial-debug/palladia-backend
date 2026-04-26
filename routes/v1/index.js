@@ -7,6 +7,7 @@ router.use(apiLimiter);
 
 // Route private (JWT + company membership)
 router.use('/', require('./dashboard'));
+router.use('/', require('./sitesOverview'));
 router.use('/', require('./siteAdmin'));
 router.use('/', require('./workers'));
 router.use('/', require('./sessions'));
