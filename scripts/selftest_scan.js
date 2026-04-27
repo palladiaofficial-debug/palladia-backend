@@ -390,6 +390,150 @@ async function run() {
     check('token malformato → 400',             t10d.status === 400,                          t10d);
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 11 — Badge punch-context: codice valido → lavoratore + sito
+  // Usa il lavoratore worker C creato nel test 5 (ha badge_code nel DB).
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\nTest 11 — GET /api/v1/badge/:code/punch-context (badge lavoratore)');
+
+  // Recupera badge_code del worker C dal DB
+  const { data: workerCRow } = await supabase
+    .from('workers')
+    .select('id, badge_code')
+    .eq('fiscal_code', cfC)
+    .maybeSingle();
+
+  let badgeCodeC = workerCRow?.badge_code || null;
+
+  if (!badgeCodeC) {
+    fail('badge_code worker C non trovato (prerequisito test 11)');
+  } else {
+    const t11 = await httpGet(`/api/v1/badge/${badgeCodeC}/punch-context`);
+    check('status 200',                        t11.status === 200,                                    t11);
+    check('worker_name presente',              typeof t11.body.worker_name === 'string',              t11.body);
+    check('worker_initial presente',           typeof t11.body.worker_initial === 'string',           t11.body);
+    check('sites è un array',                  Array.isArray(t11.body.sites),                         t11.body);
+    check('max_gps_accuracy_m presente',       typeof t11.body.max_gps_accuracy_m === 'number',       t11.body);
+    check('nessun fiscal_code esposto',        !JSON.stringify(t11.body).includes('fiscal_code'),      t11.body);
+    check('nessun company_id esposto',         !('company_id' in t11.body),                           t11.body);
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 12 — Badge punch ENTRY via badge_code (worker_self_punch)
+  // Usa le coordinate esatte del cantiere per passare la geofence.
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\nTest 12 — POST /api/v1/badge/:code/punch ENTRY (worker_self_punch)');
+
+  if (!badgeCodeC) {
+    fail('badge_code worker C non disponibile (prerequisito test 12)');
+  } else {
+    // Aspetta >60s non è pratico — usiamo un secondo worker con badge fresco
+    const cfD = genTestCF();
+    await httpPost('/api/v1/scan/identify', {
+      worksite_id: WSITE_ID,
+      fiscal_code: cfD,
+      full_name:   'Test Worker Delta'
+    });
+
+    const { data: workerDRow } = await supabase
+      .from('workers')
+      .select('badge_code')
+      .eq('fiscal_code', cfD)
+      .maybeSingle();
+
+    const badgeCodeD = workerDRow?.badge_code || null;
+
+    if (!badgeCodeD) {
+      fail('badge_code worker D non trovato');
+    } else {
+      const t12 = await httpPost(`/api/v1/badge/${badgeCodeD}/punch`, {
+        site_id:        WSITE_ID,
+        latitude:       site.latitude,
+        longitude:      site.longitude,
+        gps_accuracy_m: Math.min(12.3, serverMaxAcc - 1),
+      });
+      check('status 200',                    t12.status === 200,                                      t12);
+      check('event_type = ENTRY',            t12.body.event_type === 'ENTRY',                         t12.body);
+      check('timestamp_server presente',     typeof t12.body.timestamp_server === 'string',           t12.body);
+      check('worker_name presente',          typeof t12.body.worker_name === 'string',                t12.body);
+      check('site_name presente',            typeof t12.body.site_name === 'string',                  t12.body);
+
+      // Verifica che method = worker_self_punch nel DB
+      const { data: punchLog } = await supabase
+        .from('presence_logs')
+        .select('method, event_type')
+        .eq('worker_id', workerDRow?.id ?? '')
+        .order('timestamp_server', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!punchLog) {
+        fail('log punch non trovato nel DB (test 12)');
+      } else {
+        check('method = worker_self_punch nel DB', punchLog.method === 'worker_self_punch',             punchLog);
+        check('event_type = ENTRY nel DB',         punchLog.event_type === 'ENTRY',                    punchLog);
+      }
+
+      // Subito dopo: rate limit
+      const t12b = await httpPost(`/api/v1/badge/${badgeCodeD}/punch`, {
+        site_id: WSITE_ID, latitude: site.latitude, longitude: site.longitude, gps_accuracy_m: 12.3
+      });
+      check('punch doppio → 429 PUNCH_TOO_SOON', t12b.status === 429,                                 t12b);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 13 — Badge revocato (worker inattivo) → punch bloccato
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\nTest 13 — Badge revocato: punch bloccato (403 BADGE_REVOKED)');
+
+  if (!badgeCodeC) {
+    fail('badge_code worker C non disponibile (prerequisito test 13)');
+  } else {
+    // Disattiva worker C direttamente nel DB (simula revoca badge)
+    if (workerCRow) {
+      await supabase.from('workers').update({ is_active: false }).eq('id', workerCRow.id);
+    }
+
+    const t13 = await httpPost(`/api/v1/badge/${badgeCodeC}/punch`, {
+      site_id:        WSITE_ID,
+      latitude:       site.latitude,
+      longitude:      site.longitude,
+      gps_accuracy_m: 12.3,
+    });
+    check('status 403',                        t13.status === 403,                                    t13);
+    check('error = BADGE_REVOKED',             t13.body.error === 'BADGE_REVOKED',                    t13.body);
+
+    // Ripristina worker C (cleanup)
+    if (workerCRow) {
+      await supabase.from('workers').update({ is_active: true }).eq('id', workerCRow.id);
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 14 — Codice badge inesistente → 404
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\nTest 14 — Badge inesistente → 404 BADGE_NOT_FOUND');
+
+  const fakeBadge = crypto.randomBytes(9).toString('hex').toUpperCase();
+  const t14 = await httpGet(`/api/v1/badge/${fakeBadge}/punch-context`);
+  check('status 404',                        t14.status === 404,                                      t14);
+  check('error = BADGE_NOT_FOUND',           t14.body.error === 'BADGE_NOT_FOUND',                    t14.body);
+
+  // Test 14b: codice malformato → 400
+  const t14b = await httpGet('/api/v1/badge/BADCODE/punch-context');
+  check('codice malformato → 400',           t14b.status === 400,                                     t14b);
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // TEST 15 — Flusso QR cantiere esistente ancora funzionante (backwards compat)
+  // ──────────────────────────────────────────────────────────────────────────
+  console.log('\nTest 15 — Flusso QR cantiere ancora funzionante (backwards compat)');
+
+  const t15 = await httpGet(`/api/v1/scan/worksites/${WSITE_ID}`);
+  check('GET /scan/worksites → 200',         t15.status === 200,                                      t15);
+  check('site.name presente',                typeof t15.body.name === 'string',                       t15.body);
+  check('has_geofence booleano',             typeof t15.body.has_geofence === 'boolean',              t15.body);
+
   // ── Riepilogo ─────────────────────────────────────────────────────────────
   const total = passed + failed;
   console.log(`\n${'═'.repeat(60)}`);

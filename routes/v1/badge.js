@@ -130,9 +130,9 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!worker) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
-  // URL verifica pubblica
+  // URL timbratura lavoratore (flusso primario — badge-punch.html)
   const appBase  = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const badgeUrl = `${appBase}/badge/${worker.badge_code}`;
+  const badgeUrl = `${appBase}/timbratura/${worker.badge_code}`;
 
   let qrDataUrl;
   try {
@@ -260,7 +260,7 @@ function buildBadgePdfHtml({
     <!-- QR destra -->
     <div class="back-right">
       <img src="${qrDataUrl}" alt="QR" class="qr-img">
-      <div class="qr-hint">Scansiona per<br>verificare online</div>
+      <div class="qr-hint">Scansiona per<br>timbrare entrata/uscita</div>
     </div>
   </div>
   <div class="cf">

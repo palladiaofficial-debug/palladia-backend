@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Timbratura — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0f172a;
+      --surface:  #1e293b;
+      --border:   #334155;
+      --text:     #f1f5f9;
+      --muted:    #94a3b8;
+      --green:    #22c55e;
+      --green-dk: #16a34a;
+      --red:      #ef4444;
+      --red-dk:   #dc2626;
+      --amber:    #f59e0b;
+      --blue:     #3b82f6;
+      --radius:   16px;
+    }
+
+    html, body {
+      min-height: 100%;
+      min-height: 100dvh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 17px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 0 16px 48px;
+      min-height: 100dvh;
+    }
+
+    /* ── Brand header ── */
+    .topbar {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px 0 8px;
+    }
+    .brand {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── Container ── */
+    .wrap {
+      width: 100%;
+      max-width: 480px;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 12px;
+    }
+
+    /* ── Card generica ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+    }
+
+    /* ── Lavoratore badge ── */
+    .worker-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 18px 20px;
+    }
+    .avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      background: var(--blue);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .avatar-photo {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .worker-info { flex: 1; min-width: 0; }
+    .worker-name {
+      font-size: 19px;
+      font-weight: 700;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .worker-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
+
+    /* ── Cantiere info ── */
+    .site-card {
+      padding: 16px 20px;
+    }
+    .site-label {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .site-name {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+    .site-address { font-size: 13px; color: var(--muted); }
+
+    /* ── Bottone punch — IL BOTTONE ── */
+    .punch-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      width: 100%;
+      min-height: 80px;
+      border: none;
+      border-radius: var(--radius);
+      font-family: inherit;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: opacity 0.12s, transform 0.1s;
+      -webkit-appearance: none;
+      text-transform: uppercase;
+    }
+    .punch-btn:active  { transform: scale(0.97); opacity: 0.9; }
+    .punch-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .punch-btn.entry {
+      background: var(--green);
+      color: #fff;
+    }
+    .punch-btn.exit {
+      background: var(--red);
+      color: #fff;
+    }
+    .punch-icon { font-size: 28px; line-height: 1; }
+
+    /* ── GPS status ── */
+    .gps-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 4px 0;
+      min-height: 28px;
+    }
+    .gps-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .gps-dot.ok    { background: var(--green); }
+    .gps-dot.warn  { background: var(--amber); animation: blink 1.2s infinite; }
+    .gps-dot.error { background: var(--red); }
+    .gps-dot.wait  { background: var(--muted); }
+    .gps-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .gps-text.ok    { color: var(--green); }
+    .gps-text.warn  { color: var(--amber); }
+    .gps-text.error { color: var(--red); }
+
+    @keyframes blink { 50% { opacity: 0.3; } }
+
+    /* ── Hint ── */
+    .hint-text {
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .hint-help {
+      text-align: center;
+      font-size: 12px;
+      color: #475569;
+      margin-top: 4px;
+    }
+
+    /* ── Schermata selezione cantiere ── */
+    .site-select-label {
+      font-size: 15px;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+    .site-select-sub {
+      font-size: 13px;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 16px;
+    }
+    .site-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      width: 100%;
+      padding: 18px 20px;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+      text-align: left;
+      margin-bottom: 8px;
+    }
+    .site-btn:hover  { border-color: var(--blue); background: rgba(59,130,246,.06); }
+    .site-btn:active { transform: scale(0.98); }
+    .site-btn-name { font-size: 17px; font-weight: 700; color: var(--text); }
+    .site-btn-addr { font-size: 13px; color: var(--muted); }
+    .site-btn-dist { font-size: 12px; color: var(--green); font-weight: 600; margin-top: 2px; }
+
+    /* ── Stato successo ── */
+    .success-wrap {
+      text-align: center;
+      padding: 32px 20px 24px;
+    }
+    .success-icon { font-size: 56px; line-height: 1; margin-bottom: 16px; display: block; }
+    .success-title { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
+    .success-sub   { font-size: 15px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
+    .success-close { font-size: 13px; color: #475569; }
+
+    /* ── Errore ── */
+    .error-wrap {
+      text-align: center;
+      padding: 40px 20px;
+    }
+    .error-icon  { font-size: 40px; display: block; margin-bottom: 14px; }
+    .error-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .error-sub   { font-size: 14px; color: var(--muted); line-height: 1.6; }
+
+    /* ── Loading ── */
+    .spinner {
+      display: block;
+      width: 40px;
+      height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-wrap {
+      text-align: center;
+      padding: 56px 20px;
+    }
+    .loading-text { font-size: 14px; color: var(--muted); margin-top: 16px; }
+
+    /* ── Spinner nel bottone ── */
+    .btn-spinner {
+      display: inline-block;
+      width: 22px;
+      height: 22px;
+      border: 2px solid rgba(255,255,255,.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+    }
+
+    .hidden { display: none !important; }
+
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in { animation: fadeUp 0.3s ease-out both; }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">Palladia</div>
+  </div>
+
+  <div class="wrap" id="wrap">
+    <!-- Contenuto iniettato da JS -->
+    <div class="card loading-wrap">
+      <span class="spinner"></span>
+      <div class="loading-text">Lettura badge in corso…</div>
+    </div>
+  </div>
+
+  <script>
+  'use strict';
+
+  // ── Config ────────────────────────────────────────────────────────────────────
+  const API = '';
+
+  // Estrai badge code dall'URL: /timbratura/{badge_code}
+  function getBadgeCode() {
+    const parts = window.location.pathname.split('/').filter(Boolean);
+    const idx   = parts.indexOf('timbratura');
+    return idx !== -1 ? (parts[idx + 1] || '') : '';
+  }
+
+  const BADGE_CODE = getBadgeCode();
+
+  // ── State ─────────────────────────────────────────────────────────────────────
+  let workerData  = null;   // risposta punch-context
+  let selectedSite = null;  // {site_id, site_name, address, next_action, …}
+  let gpsCoords   = null;   // {latitude, longitude, accuracy}
+  let gpsStatus   = 'wait'; // 'wait' | 'ok' | 'warn' | 'error'
+  let gpsText     = 'In attesa del GPS…';
+  let gpsWatcher  = null;
+  let maxAccuracyM = 500;
+  let punching    = false;
+
+  const wrap = document.getElementById('wrap');
+
+  // ── Helpers ───────────────────────────────────────────────────────────────────
+  function esc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function fmtTime(iso) {
+    try {
+      return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    } catch { return ''; }
+  }
+
+  async function apiFetch(method, path, body) {
+    const opts = { method, headers: { 'Content-Type': 'application/json' } };
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(API + path, opts);
+    const json = await r.json().catch(() => ({}));
+    return { status: r.status, body: json };
+  }
+
+  // ── GPS ───────────────────────────────────────────────────────────────────────
+  function startGps() {
+    if (!navigator.geolocation) {
+      gpsStatus = 'error';
+      gpsText   = 'GPS non disponibile su questo dispositivo';
+      updateGpsRow();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const acc = pos.coords.accuracy;
+        gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: acc };
+        if (acc > maxAccuracyM) {
+          gpsStatus = 'warn';
+          gpsText   = `Segnale GPS debole (±${Math.round(acc)}m) — spostati all'aperto`;
+        } else {
+          gpsStatus = 'ok';
+          gpsText   = `Posizione rilevata (±${Math.round(acc)}m)`;
+        }
+        updateGpsRow();
+        if (!punching) updatePunchButton();
+      },
+      err => {
+        gpsCoords = null;
+        if (err.code === 1) {
+          gpsStatus = 'error';
+          gpsText   = 'Posizione non disponibile. Attiva la geolocalizzazione.';
+        } else {
+          gpsStatus = 'warn';
+          gpsText   = 'Segnale GPS assente — spostati all\'aperto';
+        }
+        updateGpsRow();
+        if (!punching) updatePunchButton();
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 8000 }
+    );
+  }
+
+  function stopGps() {
+    if (gpsWatcher !== null) {
+      navigator.geolocation.clearWatch(gpsWatcher);
+      gpsWatcher = null;
+    }
+  }
+
+  function updateGpsRow() {
+    const el = document.getElementById('gps-row');
+    if (!el) return;
+    el.innerHTML = `
+      <span class="gps-dot ${gpsStatus}"></span>
+      <span class="gps-text ${gpsStatus}">${esc(gpsText)}</span>`;
+  }
+
+  function updatePunchButton() {
+    const btn = document.getElementById('punch-btn');
+    if (!btn || punching) return;
+    const needsGps = !gpsCoords;
+    btn.disabled = needsGps;
+  }
+
+  // ── Render: errore ─────────────────────────────────────────────────────────────
+  const ERROR_COPY = {
+    BADGE_NOT_FOUND:              { icon: '🚫', title: 'Badge non valido',        sub: 'Avvisa il responsabile.' },
+    BADGE_REVOKED:                { icon: '🔒', title: 'Badge disattivato',       sub: 'Avvisa il responsabile.' },
+    INVALID_BADGE_CODE:           { icon: '🚫', title: 'Codice non valido',       sub: 'Il QR potrebbe essere danneggiato. Avvisa il responsabile.' },
+    WORKER_NOT_AUTHORIZED_ON_SITE:{ icon: '⛔', title: 'Non autorizzato',         sub: 'Non risulti assegnato a questo cantiere. Avvisa il responsabile.' },
+    COMPANY_MISMATCH:             { icon: '⛔', title: 'Cantiere non valido',     sub: 'Avvisa il responsabile.' },
+    NO_SITES:                     { icon: '📍', title: 'Nessun cantiere trovato', sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
+    GPS_REQUIRED:                 { icon: '📡', title: 'Posizione richiesta',     sub: 'Attiva la geolocalizzazione per registrare la presenza.' },
+    OUTSIDE_GEOFENCE:             { icon: '📍', title: 'Sei troppo lontano',      sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
+    PUNCH_TOO_SOON:               { icon: '⏳', title: 'Timbratura già registrata', sub: 'Hai già timbrato di recente. Riprova tra qualche minuto.' },
+    SERVER_ERROR:                 { icon: '⚠️', title: 'Errore temporaneo',       sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
+    NETWORK_ERROR:                { icon: '📶', title: 'Nessuna connessione',      sub: 'Controlla la connessione a internet e riprova.' },
+  };
+
+  function renderError(code, extraSub) {
+    const cfg = ERROR_COPY[code] || ERROR_COPY.SERVER_ERROR;
+    const sub = extraSub ? `${cfg.sub}<br>${extraSub}` : cfg.sub;
+    wrap.innerHTML = `
+      <div class="card error-wrap fade-in">
+        <span class="error-icon">${cfg.icon}</span>
+        <div class="error-title">${cfg.title}</div>
+        <div class="error-sub">${sub}</div>
+      </div>
+      <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
+  }
+
+  // ── Render: selezione cantiere ─────────────────────────────────────────────────
+  function renderSiteSelection() {
+    const sites = workerData.sites;
+
+    const siteButtons = sites.map(s => {
+      const nextLabel = s.next_action === 'EXIT' ? 'Sei in cantiere' : 'Sei fuori cantiere';
+      const distStr   = s.distance_m != null ? ` · ${s.distance_m}m` : '';
+      return `
+        <button class="site-btn" onclick="selectSite('${esc(s.site_id)}')">
+          <span class="site-btn-name">${esc(s.site_name)}</span>
+          ${s.address ? `<span class="site-btn-addr">${esc(s.address)}</span>` : ''}
+          <span class="site-btn-dist">${esc(nextLabel)}${esc(distStr)}</span>
+        </button>`;
+    }).join('');
+
+    wrap.innerHTML = `
+      <div class="card worker-card fade-in">
+        ${workerData.photo_url
+          ? `<img src="${esc(workerData.photo_url)}" class="avatar-photo" alt="">`
+          : `<div class="avatar">${esc(workerData.worker_initial)}</div>`}
+        <div class="worker-info">
+          <div class="worker-name">${esc(workerData.worker_name)}</div>
+          <div class="worker-sub">Scegli il cantiere</div>
+        </div>
+      </div>
+
+      <div class="card fade-in" style="padding:20px;">
+        <div class="site-select-label">Dove stai lavorando?</div>
+        <div class="site-select-sub">Seleziona il cantiere per timbrare la presenza.</div>
+        ${siteButtons}
+      </div>
+
+      <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
+  }
+
+  // ── Render: schermata punch ────────────────────────────────────────────────────
+  function renderPunchScreen() {
+    const s           = selectedSite;
+    const isExit      = s.next_action === 'EXIT';
+    const btnClass    = isExit ? 'exit' : 'entry';
+    const btnIcon     = isExit ? '⏹' : '▶';
+    const btnLabel    = isExit ? 'REGISTRA USCITA' : 'REGISTRA ENTRATA';
+    const statusLabel = isExit ? 'In cantiere' : 'Fuori cantiere';
+
+    wrap.innerHTML = `
+      <div class="card worker-card fade-in">
+        ${workerData.photo_url
+          ? `<img src="${esc(workerData.photo_url)}" class="avatar-photo" alt="">`
+          : `<div class="avatar">${esc(workerData.worker_initial)}</div>`}
+        <div class="worker-info">
+          <div class="worker-name">${esc(workerData.worker_name)}</div>
+          <div class="worker-sub" id="status-sub">${esc(statusLabel)}</div>
+        </div>
+      </div>
+
+      <div class="card site-card fade-in">
+        <div class="site-label">Cantiere</div>
+        <div class="site-name">${esc(s.site_name)}</div>
+        ${s.address ? `<div class="site-address">${esc(s.address)}</div>` : ''}
+      </div>
+
+      <div class="fade-in" style="display:flex;flex-direction:column;gap:8px;">
+        <button class="punch-btn ${btnClass}" id="punch-btn" disabled onclick="doPunch()">
+          <span class="punch-icon" id="btn-icon">${btnIcon}</span>
+          <span id="btn-label">${btnLabel}</span>
+        </button>
+
+        <div class="gps-row" id="gps-row">
+          <span class="gps-dot wait"></span>
+          <span class="gps-text">In attesa del GPS…</span>
+        </div>
+      </div>
+
+      <div class="hint-text fade-in">
+        Premi il pulsante quando entri o esci dal cantiere.
+      </div>
+      <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
+
+    // Avvia GPS dopo aver reso il DOM
+    startGps();
+  }
+
+  // ── Render: successo ───────────────────────────────────────────────────────────
+  function renderSuccess(eventType, tsServer, siteName) {
+    stopGps();
+    const isEntry   = eventType === 'ENTRY';
+    const icon      = isEntry ? '✅' : '⏹️';
+    const titleText = isEntry ? 'Entrata registrata' : 'Uscita registrata';
+    const color     = isEntry ? '#22c55e' : '#ef4444';
+
+    wrap.innerHTML = `
+      <div class="card success-wrap fade-in">
+        <span class="success-icon">${icon}</span>
+        <div class="success-title" style="color:${color};">${esc(titleText)}</div>
+        <div class="success-sub">
+          ${esc(siteName)}<br>
+          ${fmtTime(tsServer)}
+        </div>
+        <div class="success-close">Presenza registrata. Puoi chiudere questa pagina.</div>
+      </div>`;
+  }
+
+  // ── Selezione cantiere da lista ────────────────────────────────────────────────
+  function selectSite(siteId) {
+    const site = workerData.sites.find(s => s.site_id === siteId);
+    if (!site) return;
+    selectedSite = site;
+    renderPunchScreen();
+  }
+
+  // ── Punch ─────────────────────────────────────────────────────────────────────
+  async function doPunch() {
+    if (punching) return;
+    if (!gpsCoords) {
+      alert('Attiva la posizione per registrare la presenza.');
+      return;
+    }
+
+    punching = true;
+    const btn   = document.getElementById('punch-btn');
+    const label = document.getElementById('btn-label');
+    const icon  = document.getElementById('btn-icon');
+
+    if (btn)   { btn.disabled = true; }
+    if (icon)  { icon.innerHTML = '<span class="btn-spinner"></span>'; }
+    if (label) { label.textContent = 'Registrazione…'; }
+
+    try {
+      const { status, body } = await apiFetch('POST', `/api/v1/badge/${BADGE_CODE}/punch`, {
+        site_id:        selectedSite.site_id,
+        latitude:       gpsCoords.latitude,
+        longitude:      gpsCoords.longitude,
+        gps_accuracy_m: gpsCoords.accuracy,
+      });
+
+      if (status === 200) {
+        renderSuccess(body.event_type, body.timestamp_server, body.site_name || selectedSite.site_name);
+        return;
+      }
+
+      // Errori gestiti
+      if (status === 429 && body.error === 'PUNCH_TOO_SOON') {
+        renderError('PUNCH_TOO_SOON');
+        return;
+      }
+      if (status === 403 && body.error === 'OUTSIDE_GEOFENCE') {
+        renderError('OUTSIDE_GEOFENCE');
+        return;
+      }
+      if (status === 422 && body.error === 'GPS_ACCURACY_TOO_LOW') {
+        renderError('GPS_REQUIRED', 'Spostati all\'aperto per migliorare il segnale.');
+        return;
+      }
+      if (status === 403 && body.error === 'BADGE_REVOKED') {
+        renderError('BADGE_REVOKED');
+        return;
+      }
+      if (status === 404 && body.error === 'BADGE_NOT_FOUND') {
+        renderError('BADGE_NOT_FOUND');
+        return;
+      }
+      if (status === 403 && body.error === 'WORKER_NOT_AUTHORIZED_ON_SITE') {
+        renderError('WORKER_NOT_AUTHORIZED_ON_SITE');
+        return;
+      }
+
+      renderError('SERVER_ERROR');
+
+    } catch (e) {
+      renderError('NETWORK_ERROR');
+    } finally {
+      punching = false;
+    }
+  }
+
+  // ── Main ─────────────────────────────────────────────────────────────────────
+  async function main() {
+    if (!BADGE_CODE || !/^[A-Fa-f0-9]{18}$/i.test(BADGE_CODE)) {
+      renderError('INVALID_BADGE_CODE');
+      return;
+    }
+
+    // Fetch punch-context (senza GPS inizialmente, più veloce)
+    let res;
+    try {
+      res = await apiFetch('GET', `/api/v1/badge/${BADGE_CODE}/punch-context`);
+    } catch (e) {
+      renderError('NETWORK_ERROR');
+      return;
+    }
+
+    const { status, body } = res;
+
+    if (status === 404) { renderError('BADGE_NOT_FOUND');  return; }
+    if (status === 403) { renderError('BADGE_REVOKED');    return; }
+    if (status === 400) { renderError('INVALID_BADGE_CODE'); return; }
+    if (status !== 200) { renderError('SERVER_ERROR');     return; }
+
+    workerData    = body;
+    maxAccuracyM  = body.max_gps_accuracy_m || 500;
+
+    if (!body.sites || body.sites.length === 0) {
+      renderError('NO_SITES');
+      return;
+    }
+
+    // Auto-select cantiere
+    if (body.auto_selected_site_id) {
+      selectedSite = body.sites.find(s => s.site_id === body.auto_selected_site_id);
+      if (selectedSite) {
+        renderPunchScreen();
+        return;
+      }
+    }
+
+    // Nessun auto-select → mostra selezione
+    renderSiteSelection();
+  }
+
+  main();
+  </script>
+</body>
+</html>

@@ -281,6 +281,10 @@ app.get('/setup', (req, res) => {
 app.get('/badge/:code', (req, res) => {
   res.sendFile('badge.html', { root: __dirname + '/public' });
 });
+// Timbratura via badge personale lavoratore (nuovo flusso primario)
+app.get('/timbratura/:code', (req, res) => {
+  res.sendFile('badge-punch.html', { root: __dirname + '/public' });
+});
 app.get('/coordinator/accesso/:token', (req, res) => {
   res.sendFile('coordinator.html', { root: __dirname + '/public' });
 });

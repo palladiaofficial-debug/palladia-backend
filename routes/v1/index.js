@@ -92,6 +92,14 @@ router.use('/', require('./prezzario'));
 // Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
 router.use('/', require('./scan'));
 
+// Badge Punch: timbratura via badge personale lavoratore
+// GET  /api/v1/badge/:code/punch-context  — pubblico
+// POST /api/v1/badge/:code/punch          — pubblico
+// POST /api/v1/badge/:code/revoke         — JWT
+// POST /api/v1/badge/:code/regenerate     — JWT
+// POST /api/v1/badge/capocantiere-punch   — JWT
+router.use('/', require('./badgePunch'));
+
 // ── Error handler v1 ─────────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 router.use((err, req, res, next) => {
