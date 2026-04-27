@@ -106,16 +106,19 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     .map(a => a.site)
     .filter(s => s && s.status !== 'chiuso');
 
-  // Per ogni cantiere: distanza GPS + ultimo evento
-  const siteData = await Promise.all(activeSites.map(async (site) => {
+  // Per ogni cantiere: distanza GPS + ultimo evento (query in parallelo)
+  let siteData;
+  try {
+  siteData = await Promise.all(activeSites.map(async (site) => {
     let distanceM   = null;
     let inGeofence  = false;
 
     if (hasGps && site.latitude != null && site.longitude != null) {
       distanceM  = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
-      inGeofence = distanceM <= (site.geofence_radius_m || 150);
-    } else if (hasGps && site.latitude == null) {
-      // Cantiere senza geofence: conta come "in geofence" per auto-select
+      // Se geofence_radius_m è null il cantiere non ha enforcement → sempre "in geofence"
+      inGeofence = site.geofence_radius_m == null || distanceM <= site.geofence_radius_m;
+    } else if (hasGps) {
+      // Cantiere senza coordinate GPS → nessun check possibile → includi nell'auto-select
       inGeofence = true;
     }
 
@@ -144,6 +147,10 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
       next_action:       nextAction,
     };
   }));
+  } catch (e) {
+    console.error('[badge-punch-context] parallel query error:', e.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
 
   // Auto-select logic:
   // 1. Un solo cantiere in geofence → auto-select
@@ -175,6 +182,7 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
 // Registra ENTRY/EXIT tramite badge personale del lavoratore.
 // Nessun session token: il badge_code è la prova di identità.
 router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
+  try {
   const { code }                                    = req.params;
   const { site_id, latitude, longitude, gps_accuracy_m } = req.body;
 
@@ -283,8 +291,8 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     return res.status(500).json({ error: 'LOG_WRITE_ERROR' });
   }
 
-  if (!punchResult.ok) {
-    if (punchResult.error === 'PUNCH_TOO_SOON') {
+  if (!punchResult || !punchResult.ok) {
+    if (punchResult?.error === 'PUNCH_TOO_SOON') {
       return res.status(429).json({
         error:            'PUNCH_TOO_SOON',
         retry_after_secs: punchResult.retry_after_secs,
@@ -314,6 +322,11 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     eventType,
     tsServer
   ).catch(e => console.error('[badge-punch] notifyPunch error:', e.message));
+
+  } catch (err) {
+    console.error('[badge-punch] unexpected error:', err.message, err.stack);
+    if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
 });
 
 // ── POST /api/v1/badge/:code/revoke — JWT ────────────────────────────────────
@@ -442,8 +455,14 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
   }
 
   // Distanza GPS (solo per log — il capocantiere si muove, non blocchiamo)
-  let distanceM   = null;
-  let accuracyM   = gps_accuracy_m ? Number(gps_accuracy_m) : null;
+  let distanceM = null;
+  const accuracyM = gps_accuracy_m && Number.isFinite(Number(gps_accuracy_m)) && Number(gps_accuracy_m) > 0
+    ? Number(gps_accuracy_m) : null;
+
+  // Se il capocantiere non ha GPS, usa le coordinate del cantiere come proxy
+  // (è fisicamente sul posto, distance_m = 0 per indicare "presunto sul sito")
+  const punchLat = validGps ? lat  : (site.latitude  ?? 0);
+  const punchLon = validGps ? lon  : (site.longitude ?? 0);
 
   if (validGps && site.latitude != null && site.longitude != null) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
@@ -457,10 +476,10 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
     p_worker_id:  worker.id,
     p_company_id: worker.company_id,
     p_session_id: null,
-    p_lat:        validGps ? lat  : 0,
-    p_lon:        validGps ? lon  : 0,
+    p_lat:        punchLat,
+    p_lon:        punchLon,
     p_distance_m: distanceM,
-    p_accuracy_m: Number.isFinite(accuracyM) && accuracyM > 0 ? accuracyM : null,
+    p_accuracy_m: accuracyM,
     p_ip:         ipAddress,
     p_ua:         userAgent,
     p_method:     'capocantiere_action',
@@ -471,8 +490,8 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
     return res.status(500).json({ error: 'LOG_WRITE_ERROR' });
   }
 
-  if (!punchResult.ok) {
-    if (punchResult.error === 'PUNCH_TOO_SOON') {
+  if (!punchResult || !punchResult.ok) {
+    if (punchResult?.error === 'PUNCH_TOO_SOON') {
       return res.status(429).json({
         error:            'PUNCH_TOO_SOON',
         retry_after_secs: punchResult.retry_after_secs,

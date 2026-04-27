@@ -334,14 +334,15 @@
   const BADGE_CODE = getBadgeCode();
 
   // ── State ─────────────────────────────────────────────────────────────────────
-  let workerData  = null;   // risposta punch-context
-  let selectedSite = null;  // {site_id, site_name, address, next_action, …}
-  let gpsCoords   = null;   // {latitude, longitude, accuracy}
-  let gpsStatus   = 'wait'; // 'wait' | 'ok' | 'warn' | 'error'
-  let gpsText     = 'In attesa del GPS…';
-  let gpsWatcher  = null;
+  let workerData   = null;   // risposta punch-context
+  let selectedSite = null;   // {site_id, site_name, address, next_action, …}
+  let gpsCoords    = null;   // {latitude, longitude, accuracy} — migliore lettura finora
+  let gpsStatus    = 'wait'; // 'wait' | 'ok' | 'warn' | 'error'
+  let gpsText      = 'In attesa del GPS…';
+  let gpsWatcher   = null;
   let maxAccuracyM = 500;
-  let punching    = false;
+  let punching     = false;
+  let gpsAttempts  = 0;      // contatore letture GPS ricevute
 
   const wrap = document.getElementById('wrap');
 
@@ -370,6 +371,11 @@
   }
 
   // ── GPS ───────────────────────────────────────────────────────────────────────
+  // Usa watchPosition (non getCurrentPosition) per ricevere letture continue.
+  // Su iOS/Android la prima lettura è spesso da antenna cellulare (>500m).
+  // Le letture successive migliorano progressivamente man mano che il chip GPS si aggancia.
+  // Teniamo sempre la lettura con la precisione migliore ricevuta finora.
+
   function startGps() {
     if (!navigator.geolocation) {
       gpsStatus = 'error';
@@ -377,33 +383,52 @@
       updateGpsRow();
       return;
     }
-    navigator.geolocation.getCurrentPosition(
+
+    gpsWatcher = navigator.geolocation.watchPosition(
       pos => {
+        gpsAttempts++;
         const acc = pos.coords.accuracy;
-        gpsCoords = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: acc };
-        if (acc > maxAccuracyM) {
-          gpsStatus = 'warn';
-          gpsText   = `Segnale GPS debole (±${Math.round(acc)}m) — spostati all'aperto`;
-        } else {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        // Teniamo solo la lettura migliore (accuracy più bassa = più precisa)
+        if (!gpsCoords || acc < gpsCoords.accuracy) {
+          gpsCoords = { latitude: lat, longitude: lon, accuracy: acc };
+        }
+
+        if (acc <= maxAccuracyM) {
           gpsStatus = 'ok';
           gpsText   = `Posizione rilevata (±${Math.round(acc)}m)`;
+        } else if (gpsAttempts <= 2) {
+          // Prime letture: di solito da cella, aspettiamo miglioramento
+          gpsStatus = 'wait';
+          gpsText   = `GPS in acquisizione… (±${Math.round(acc)}m)`;
+        } else {
+          gpsStatus = 'warn';
+          gpsText   = `Segnale GPS debole (±${Math.round(acc)}m) — spostati all'aperto`;
         }
+
         updateGpsRow();
         if (!punching) updatePunchButton();
       },
       err => {
-        gpsCoords = null;
         if (err.code === 1) {
+          // PERMISSION_DENIED — definitivo, smetti di provare
           gpsStatus = 'error';
-          gpsText   = 'Posizione non disponibile. Attiva la geolocalizzazione.';
+          gpsText   = 'Posizione non disponibile. Attiva la geolocalizzazione nelle impostazioni.';
+          gpsCoords = null;
+          stopGps();
         } else {
-          gpsStatus = 'warn';
-          gpsText   = 'Segnale GPS assente — spostati all\'aperto';
+          // POSITION_UNAVAILABLE o TIMEOUT — temporaneo, continua a watchare
+          if (!gpsCoords) {
+            gpsStatus = 'warn';
+            gpsText   = 'GPS lento — spostati all\'aperto oppure premi il pulsante per riprovare';
+          }
         }
         updateGpsRow();
         if (!punching) updatePunchButton();
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 8000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
     );
   }
 
@@ -425,8 +450,23 @@
   function updatePunchButton() {
     const btn = document.getElementById('punch-btn');
     if (!btn || punching) return;
-    const needsGps = !gpsCoords;
-    btn.disabled = needsGps;
+
+    if (!gpsCoords) {
+      // GPS non ancora disponibile — bottone disabilitato con spiegazione
+      btn.disabled = true;
+      const lbl = document.getElementById('btn-label');
+      if (lbl) lbl.textContent = 'In attesa del GPS…';
+    } else {
+      // GPS disponibile — bottone attivo con label corretta
+      btn.disabled = false;
+      const s = selectedSite;
+      if (s) {
+        const lbl = document.getElementById('btn-label');
+        const ico = document.getElementById('btn-icon');
+        if (lbl) lbl.textContent = s.next_action === 'EXIT' ? 'REGISTRA USCITA' : 'REGISTRA ENTRATA';
+        if (ico) ico.textContent = s.next_action === 'EXIT' ? '⏹' : '▶';
+      }
+    }
   }
 
   // ── Render: errore ─────────────────────────────────────────────────────────────
@@ -517,10 +557,13 @@
         ${s.address ? `<div class="site-address">${esc(s.address)}</div>` : ''}
       </div>
 
+      <!-- result-card: usato per messaggi GPS retry e successo inline -->
+      <div id="result-card" class="hidden"></div>
+
       <div class="fade-in" style="display:flex;flex-direction:column;gap:8px;">
         <button class="punch-btn ${btnClass}" id="punch-btn" disabled onclick="doPunch()">
-          <span class="punch-icon" id="btn-icon">${btnIcon}</span>
-          <span id="btn-label">${btnLabel}</span>
+          <span class="punch-icon" id="btn-icon">⏳</span>
+          <span id="btn-label">In attesa del GPS…</span>
         </button>
 
         <div class="gps-row" id="gps-row">
@@ -534,7 +577,7 @@
       </div>
       <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
 
-    // Avvia GPS dopo aver reso il DOM
+    // Avvia GPS — i callback aggiorneranno bottone e riga GPS via updatePunchButton/updateGpsRow
     startGps();
   }
 
@@ -558,6 +601,46 @@
       </div>`;
   }
 
+  // ── GPS scarso: mostra avviso con retry ma non blocca definitivamente ─────────
+  function showGpsRetry() {
+    const resultCard = document.getElementById('result-card');
+    if (!resultCard) return;
+
+    resultCard.className = '';
+    resultCard.style.cssText = 'background:#1c1009;border:1.5px solid #92400e;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;';
+    resultCard.innerHTML = `
+      <div style="font-size:28px;margin-bottom:10px;">📡</div>
+      <div style="font-size:17px;font-weight:700;color:#f59e0b;margin-bottom:6px;">GPS non abbastanza preciso</div>
+      <div style="font-size:14px;color:#94a3b8;margin-bottom:16px;line-height:1.5;">
+        Spostati all'aperto, aspetta qualche secondo e riprova.
+      </div>
+      <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:#f59e0b;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;">
+        Riprova
+      </button>`;
+    resultCard.classList.remove('hidden');
+  }
+
+  function retryAfterGps() {
+    const resultCard = document.getElementById('result-card');
+    if (resultCard) {
+      resultCard.classList.add('hidden');
+      resultCard.style.cssText = '';
+    }
+    // Ripristina bottone
+    const btn = document.getElementById('punch-btn');
+    if (btn) {
+      btn.disabled = !gpsCoords;
+      const lbl = document.getElementById('btn-label');
+      if (lbl && selectedSite) {
+        lbl.textContent = selectedSite.next_action === 'EXIT' ? 'REGISTRA USCITA' : 'REGISTRA ENTRATA';
+      }
+      const ico = document.getElementById('btn-icon');
+      if (ico && selectedSite) {
+        ico.textContent = selectedSite.next_action === 'EXIT' ? '⏹' : '▶';
+      }
+    }
+  }
+
   // ── Selezione cantiere da lista ────────────────────────────────────────────────
   function selectSite(siteId) {
     const site = workerData.sites.find(s => s.site_id === siteId);
@@ -570,7 +653,10 @@
   async function doPunch() {
     if (punching) return;
     if (!gpsCoords) {
-      alert('Attiva la posizione per registrare la presenza.');
+      // GPS non disponibile — mostra il messaggio nella riga GPS, non un alert
+      gpsStatus = 'error';
+      gpsText   = 'Posizione non disponibile. Attiva la geolocalizzazione.';
+      updateGpsRow();
       return;
     }
 
@@ -598,7 +684,9 @@
 
       // Errori gestiti
       if (status === 429 && body.error === 'PUNCH_TOO_SOON') {
-        renderError('PUNCH_TOO_SOON');
+        const mins = body.retry_after_secs ? Math.ceil(body.retry_after_secs / 60) : 1;
+        renderError('PUNCH_TOO_SOON',
+          mins > 0 ? `Riprova tra ${mins} minut${mins === 1 ? 'o' : 'i'}.` : null);
         return;
       }
       if (status === 403 && body.error === 'OUTSIDE_GEOFENCE') {
@@ -606,7 +694,12 @@
         return;
       }
       if (status === 422 && body.error === 'GPS_ACCURACY_TOO_LOW') {
-        renderError('GPS_REQUIRED', 'Spostati all\'aperto per migliorare il segnale.');
+        // Non è un errore permanente — mostra retry, non dead-end
+        showGpsRetry();
+        return;
+      }
+      if (status === 422 && body.error === 'GPS_REQUIRED') {
+        renderError('GPS_REQUIRED');
         return;
       }
       if (status === 403 && body.error === 'BADGE_REVOKED') {
@@ -628,6 +721,13 @@
       renderError('NETWORK_ERROR');
     } finally {
       punching = false;
+      // Ripristina icona se non siamo andati a successo/errore permanente
+      const ico2 = document.getElementById('btn-icon');
+      if (ico2 && ico2.querySelector('.btn-spinner')) {
+        ico2.textContent = selectedSite?.next_action === 'EXIT' ? '⏹' : '▶';
+      }
+      // Ripristina label e stato bottone
+      updatePunchButton();
     }
   }
 
