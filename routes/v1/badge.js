@@ -209,28 +209,6 @@ function parseDobFromCf(cf) {
   } catch { return null; }
 }
 
-// SVG decorativo per il fronte — linee ondulate topografiche
-function buildDecoSvg() {
-  const W = 100, H = 162; // proporzioni colonna destra
-  const paths = [];
-  const N = 18;
-  for (let i = 0; i < N; i++) {
-    const t   = i / (N - 1);
-    const amp = 7 * Math.sin(Math.PI * t);           // ampiezza onda, picco al centro
-    const y0  = H * (1.05 - t * 0.95);               // Y sul bordo sinistro
-    const y4  = y0 - 58 * t;                          // Y sul bordo destro
-    const cp1x = 22,  cp1y = y0 - 10 * t - amp;
-    const cp2x = 50,  cp2y = (y0 + y4) / 2 + amp;
-    const cp3x = 78,  cp3y = y4 + 10 * (1 - t) - amp * 0.4;
-    paths.push(
-      `<path d="M0,${y0.toFixed(1)} C${cp1x},${cp1y.toFixed(1)} ${cp2x},${cp2y.toFixed(1)} ${(cp2x+cp3x)/2},${((cp2y+cp3y)/2).toFixed(1)} S${cp3x},${cp3y.toFixed(1)} ${W},${y4.toFixed(1)}"/>`
-    );
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">`
-    + `<rect width="${W}" height="${H}" fill="#f1f5f9"/>`
-    + `<g fill="none" stroke="#0f172a" stroke-width="1.15" opacity="0.88">${paths.join('')}</g>`
-    + `</svg>`;
-}
 
 function buildBadgePdfHtml({
   worker, companyName, employerLabel, hireDateStr, dobStr,
@@ -240,27 +218,27 @@ function buildBadgePdfHtml({
   const cfUpper = worker.fiscal_code ? worker.fiscal_code.toUpperCase() : null;
 
   // ── FRONTE ────────────────────────────────────────────────────────────────
-  // Ispirato all'esempio: 2 colonne, no header scuro, bianco puro
-  // Sinistra: brand (top) + QR grande (center) + nome + dati (bottom)
-  // Destra:   elemento grafico decorativo (full-height)
+  // Sinistra: "TIMBRATURA" + QR + divider + nome/dati (tutto centrato)
+  // Destra:   foto lavoratore proporzionata, centrata
+  const photoHtml = worker.photo_url
+    ? `<img src="${esc(worker.photo_url)}" alt="Foto" class="f-photo-img">`
+    : `<div class="f-photo-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
+
   const front = `
 <div class="card" id="front">
   <div class="front-body">
 
-    <!-- Colonna sinistra: brand + QR + dati lavoratore -->
     <div class="f-left">
-      <div class="f-brand">PALLADIA<span class="f-brand-dot">&#183;</span></div>
+      <div class="f-timb-label">TIMBRATURA</div>
       <img src="${qrTimbrataUrl}" alt="QR timbratura" class="f-qr">
-      <div class="f-info">
-        <div class="f-name">${esc(worker.full_name)}</div>
-        ${dobStr      ? `<div class="f-field"><span class="f-lbl">Nato il</span> ${esc(dobStr)}</div>`         : ''}
-        ${cfUpper     ? `<div class="f-field f-cf">${esc(cfUpper)}</div>`                                      : ''}
-        ${hireDateStr ? `<div class="f-field"><span class="f-lbl">Assunto il</span> ${esc(hireDateStr)}</div>` : ''}
-      </div>
+      <div class="f-divider"></div>
+      <div class="f-name">${esc(worker.full_name)}</div>
+      ${dobStr      ? `<div class="f-field"><span class="f-lbl">Nato il&nbsp;</span>${esc(dobStr)}</div>`      : ''}
+      ${cfUpper     ? `<div class="f-field f-cf">${esc(cfUpper)}</div>`                                        : ''}
+      ${hireDateStr ? `<div class="f-field"><span class="f-lbl">Assunto il&nbsp;</span>${esc(hireDateStr)}</div>` : ''}
     </div>
 
-    <!-- Colonna destra: grafica decorativa -->
-    <div class="f-right">${buildDecoSvg()}</div>
+    <div class="f-right">${photoHtml}</div>
 
   </div>
 </div>`;
@@ -359,83 +337,98 @@ function buildBadgePdfHtml({
       display: flex;
     }
 
-    /* Colonna sinistra (60%) */
+    /* Colonna sinistra (58%) — tutto centrato */
     .f-left {
-      width: 57%;
+      width: 58%;
       height: 100%;
       display: flex;
       flex-direction: column;
-      padding: 6px 5px 5px 7px;
+      align-items: center;
+      justify-content: center;
+      padding: 5px 4px 5px 6px;
+      gap: 2px;
     }
-    .f-brand {
-      font-size: 8px;
+    .f-timb-label {
+      font-size: 6px;
       font-weight: 900;
-      letter-spacing: 0.18em;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
-      color: #0f172a;
-      margin-bottom: 3px;
+      color: #1d4ed8;
       flex-shrink: 0;
-    }
-    .f-brand-dot {
-      color: #2563eb;
-      font-size: 11px;
-      margin-left: 1px;
-      vertical-align: middle;
     }
     .f-qr {
-      width: 22mm;
-      height: 22mm;
+      width: 20mm;
+      height: 20mm;
       display: block;
       flex-shrink: 0;
-      margin-bottom: 4px;
     }
-    .f-info {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: flex-end;
+    .f-divider {
+      width: 75%;
+      height: 0.6px;
+      background: #e2e8f0;
+      flex-shrink: 0;
+      margin: 1px 0;
     }
     .f-name {
-      font-size: 8.5px;
+      font-size: 7.5px;
       font-weight: 800;
-      color: #2563eb;
+      color: #0f172a;
       line-height: 1.2;
-      margin-bottom: 2px;
+      text-align: center;
       word-break: break-word;
+      flex-shrink: 0;
     }
     .f-field {
-      font-size: 5.5px;
+      font-size: 5px;
       color: #374151;
       line-height: 1.5;
+      text-align: center;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      max-width: 100%;
+      flex-shrink: 0;
     }
     .f-lbl {
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
-      font-size: 4.5px;
+      font-size: 4px;
       letter-spacing: 0.05em;
     }
     .f-cf {
       font-family: 'Courier New', monospace;
-      font-size: 5px;
+      font-size: 4.8px;
       color: #1e293b;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.05em;
     }
 
-    /* Colonna destra (40%) — grafica decorativa */
+    /* Colonna destra (42%) — foto lavoratore */
     .f-right {
       flex: 1;
       height: 100%;
-      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 6px 6px 3px;
+      background: #f8fafc;
     }
-    .f-right svg {
-      display: block;
+    .f-photo-img {
       width: 100%;
-      height: 100%;
+      height: auto;
+      max-height: 42mm;
+      object-fit: cover;
+      border-radius: 2mm;
+      display: block;
+    }
+    .f-photo-placeholder {
+      width: 100%;
+      height: 40mm;
+      background: #e2e8f0;
+      border-radius: 2mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
 
     /* ════════════════════════════════
