@@ -44,6 +44,14 @@ router.use('/', require('./coordinatorPro'));
 // Badge digitale: verifica pubblica (no JWT) + PDF privato (JWT)
 router.use('/', require('./badge'));
 
+// Route pubbliche scan badge (no JWT — session token o signed QR link)
+// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
+router.use('/', require('./scan'));
+
+// Badge Punch: timbratura via badge personale lavoratore (endpoint pubblici)
+// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
+router.use('/', require('./badgePunch'));
+
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
@@ -88,17 +96,6 @@ router.use('/', require('./siteCosts'));
 // Prezzario regionale + prezzi fornitori azienda
 router.use('/', require('./prezzario'));
 
-// Route pubbliche scan badge (no JWT — session token o signed QR link)
-// Le route /api/v1/scan/* e /api/v1/asl/:token (accesso pubblico) sono qui sotto
-router.use('/', require('./scan'));
-
-// Badge Punch: timbratura via badge personale lavoratore
-// GET  /api/v1/badge/:code/punch-context  — pubblico
-// POST /api/v1/badge/:code/punch          — pubblico
-// POST /api/v1/badge/:code/revoke         — JWT
-// POST /api/v1/badge/:code/regenerate     — JWT
-// POST /api/v1/badge/capocantiere-punch   — JWT
-router.use('/', require('./badgePunch'));
 
 // ── Error handler v1 ─────────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
