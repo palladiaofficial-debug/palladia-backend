@@ -19,7 +19,19 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const BUCKET   = 'site-documents'; // stesso bucket, path diverso
 const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 
-const CATEGORIES = ['durc', 'visura', 'dvr', 'iso', 'soa', 'assicurazione', 'f24', 'altro'];
+const CATEGORIES = [
+  'durc',           // Documento Unico di Regolarità Contributiva
+  'visura',         // Visura Camerale
+  'dvr',            // Documento di Valutazione dei Rischi
+  'iso',            // Certificazione ISO
+  'soa',            // Attestazione SOA (qualificazione appalti pubblici)
+  'assicurazione',  // Polizze RCT/RCO
+  'f24',            // Modelli F24
+  'polizza',        // Polizza Fideiussoria (garanzie per appalti)
+  'duvri',          // Documento Unico Valutazione Rischi da Interferenze
+  'formazione',     // Piani, registri e attestati di formazione
+  'altro',
+];
 
 const upload = multer({
   storage: multer.memoryStorage(),
