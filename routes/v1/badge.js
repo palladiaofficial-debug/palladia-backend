@@ -209,92 +209,90 @@ function parseDobFromCf(cf) {
   } catch { return null; }
 }
 
+// SVG decorativo per il fronte — linee ondulate topografiche
+function buildDecoSvg() {
+  const W = 100, H = 162; // proporzioni colonna destra
+  const paths = [];
+  const N = 18;
+  for (let i = 0; i < N; i++) {
+    const t   = i / (N - 1);
+    const amp = 7 * Math.sin(Math.PI * t);           // ampiezza onda, picco al centro
+    const y0  = H * (1.05 - t * 0.95);               // Y sul bordo sinistro
+    const y4  = y0 - 58 * t;                          // Y sul bordo destro
+    const cp1x = 22,  cp1y = y0 - 10 * t - amp;
+    const cp2x = 50,  cp2y = (y0 + y4) / 2 + amp;
+    const cp3x = 78,  cp3y = y4 + 10 * (1 - t) - amp * 0.4;
+    paths.push(
+      `<path d="M0,${y0.toFixed(1)} C${cp1x},${cp1y.toFixed(1)} ${cp2x},${cp2y.toFixed(1)} ${(cp2x+cp3x)/2},${((cp2y+cp3y)/2).toFixed(1)} S${cp3x},${cp3y.toFixed(1)} ${W},${y4.toFixed(1)}"/>`
+    );
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice" width="100%" height="100%">`
+    + `<rect width="${W}" height="${H}" fill="#f1f5f9"/>`
+    + `<g fill="none" stroke="#0f172a" stroke-width="1.15" opacity="0.88">${paths.join('')}</g>`
+    + `</svg>`;
+}
+
 function buildBadgePdfHtml({
   worker, companyName, employerLabel, hireDateStr, dobStr,
   qrTimbrataUrl, qrVerifyDataUrl,
 }) {
-  const photoBlock = worker.photo_url
-    ? `<img src="${esc(worker.photo_url)}" alt="" class="photo-img">`
-    : `<div class="photo-placeholder">&#128100;</div>`;
-
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
   const cfUpper = worker.fiscal_code ? worker.fiscal_code.toUpperCase() : null;
 
   // ── FRONTE ────────────────────────────────────────────────────────────────
-  // Layout: header scuro | body (foto piena altezza + colonna dati + QR timbratura) | footer
+  // Ispirato all'esempio: 2 colonne, no header scuro, bianco puro
+  // Sinistra: brand (top) + QR grande (center) + nome + dati (bottom)
+  // Destra:   elemento grafico decorativo (full-height)
   const front = `
 <div class="card" id="front">
+  <div class="front-body">
 
-  <div class="ch">
-    <div class="brand">PALLADIA</div>
-    <div class="ch-sep"></div>
-    <div class="ch-right">
-      <div class="company-name">${esc(employerLabel || companyName)}</div>
-      <div class="brand-sub">Badge Digitale Lavoratore &middot; D.Lgs. 81/2008</div>
-    </div>
-  </div>
-
-  <div class="body">
-
-    <!-- Foto: piena altezza, allineata al top -->
-    <div class="photo-col">${photoBlock}</div>
-
-    <div class="divider-v"></div>
-
-    <!-- Dati anagrafici (top) + QR timbratura (bottom) -->
-    <div class="data-col">
-
-      <div class="data-top">
-        <div class="wname">${esc(worker.full_name)}</div>
-        ${dobStr   ? `<div class="field"><span class="fl">Data di nascita</span><span class="fv">${esc(dobStr)}</span></div>` : ''}
-        ${cfUpper  ? `<div class="field"><span class="fl">Codice Fiscale</span><span class="fv fv-cf">${esc(cfUpper)}</span></div>` : ''}
-        ${hireDateStr ? `<div class="field"><span class="fl">Data di assunzione</span><span class="fv">${esc(hireDateStr)}</span></div>` : ''}
+    <!-- Colonna sinistra: brand + QR + dati lavoratore -->
+    <div class="f-left">
+      <div class="f-brand">PALLADIA<span class="f-brand-dot">&#183;</span></div>
+      <img src="${qrTimbrataUrl}" alt="QR timbratura" class="f-qr">
+      <div class="f-info">
+        <div class="f-name">${esc(worker.full_name)}</div>
+        ${dobStr      ? `<div class="f-field"><span class="f-lbl">Nato il</span> ${esc(dobStr)}</div>`         : ''}
+        ${cfUpper     ? `<div class="f-field f-cf">${esc(cfUpper)}</div>`                                      : ''}
+        ${hireDateStr ? `<div class="f-field"><span class="f-lbl">Assunto il</span> ${esc(hireDateStr)}</div>` : ''}
       </div>
-
-      <div class="timb-row">
-        <div class="timb-label">TIMBRATURA</div>
-        <img src="${qrTimbrataUrl}" alt="QR timbratura" class="qr-timb">
-      </div>
-
     </div>
 
-  </div>
+    <!-- Colonna destra: grafica decorativa -->
+    <div class="f-right">${buildDecoSvg()}</div>
 
-  <div class="footer">
-    <span class="ft">palladia.app</span>
-    <span class="ft">${esc(companyName)}</span>
   </div>
-
 </div>`;
 
   // ── RETRO ─────────────────────────────────────────────────────────────────
-  // Layout: header scuro | QR centrato + scritta VERIFICA | footer
   const back = `
 <div class="card" id="back">
+  <div class="back-card">
 
-  <div class="ch">
-    <div class="brand">PALLADIA</div>
-    <div class="ch-sep"></div>
-    <div class="ch-right">
-      <div class="company-name">Verifica Identità</div>
-      <div class="brand-sub">Scansiona per accedere ai dati completi</div>
+    <div class="ch">
+      <div class="brand">PALLADIA</div>
+      <div class="ch-right">
+        <div class="company-name">Verifica Identit&agrave;</div>
+        <div class="brand-sub">Scansiona per accedere ai dati completi</div>
+      </div>
     </div>
-  </div>
 
-  <div class="body body-center">
-    <div class="verifica-label">VERIFICA</div>
-    <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-back">
-    <div class="code-block">
-      <div class="code-lbl">Codice anticontraffazione</div>
-      <div class="code-val">${esc(codeFormatted)}</div>
+    <div class="body-center">
+      <div class="verifica-label">VERIFICA</div>
+      <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-back">
+      <div class="code-block">
+        <div class="code-lbl">Codice anticontraffazione</div>
+        <div class="code-val">${esc(codeFormatted)}</div>
+      </div>
     </div>
-  </div>
 
-  <div class="footer">
-    <span class="ft">palladia.app &middot; Verifica identit&agrave; e documenti</span>
-    <span class="ft">${esc(companyName)}</span>
-  </div>
+    <div class="footer">
+      <span class="ft">palladia.app &middot; Verifica identit&agrave; e documenti</span>
+      <span class="ft">${esc(companyName)}</span>
+    </div>
 
+  </div>
 </div>`;
 
   // ── HTML completo ─────────────────────────────────────────────────────────
@@ -350,17 +348,110 @@ function buildBadgePdfHtml({
       border-radius: 4mm;
       overflow: hidden;
       background: #fff;
+    }
+
+    /* ════════════════════════════════════
+       FRONTE — due colonne, sfondo bianco
+       ════════════════════════════════════ */
+    .front-body {
+      width: 100%;
+      height: 100%;
+      display: flex;
+    }
+
+    /* Colonna sinistra (60%) */
+    .f-left {
+      width: 57%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      padding: 6px 5px 5px 7px;
+    }
+    .f-brand {
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #0f172a;
+      margin-bottom: 3px;
+      flex-shrink: 0;
+    }
+    .f-brand-dot {
+      color: #2563eb;
+      font-size: 11px;
+      margin-left: 1px;
+      vertical-align: middle;
+    }
+    .f-qr {
+      width: 22mm;
+      height: 22mm;
+      display: block;
+      flex-shrink: 0;
+      margin-bottom: 4px;
+    }
+    .f-info {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+    }
+    .f-name {
+      font-size: 8.5px;
+      font-weight: 800;
+      color: #2563eb;
+      line-height: 1.2;
+      margin-bottom: 2px;
+      word-break: break-word;
+    }
+    .f-field {
+      font-size: 5.5px;
+      color: #374151;
+      line-height: 1.5;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .f-lbl {
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      font-size: 4.5px;
+      letter-spacing: 0.05em;
+    }
+    .f-cf {
+      font-family: 'Courier New', monospace;
+      font-size: 5px;
+      color: #1e293b;
+      letter-spacing: 0.04em;
+    }
+
+    /* Colonna destra (40%) — grafica decorativa */
+    .f-right {
+      flex: 1;
+      height: 100%;
+      overflow: hidden;
+    }
+    .f-right svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ════════════════════════════════
+       RETRO — header scuro + QR centrato
+       ════════════════════════════════ */
+    .back-card {
+      width: 100%;
+      height: 100%;
       display: flex;
       flex-direction: column;
     }
-
-    /* ── Header scuro ── */
     .ch {
       background: #0f172a;
       padding: 3.5px 8px;
       display: flex;
       align-items: center;
-      gap: 0;
       flex-shrink: 0;
     }
     .brand {
@@ -371,15 +462,9 @@ function buildBadgePdfHtml({
       text-transform: uppercase;
       flex-shrink: 0;
       padding-right: 7px;
+      border-right: 1px solid #1e293b;
     }
-    .ch-sep {
-      width: 1px;
-      height: 10px;
-      background: #1e293b;
-      flex-shrink: 0;
-      margin-right: 7px;
-    }
-    .ch-right { flex: 1; min-width: 0; }
+    .ch-right { flex: 1; min-width: 0; padding-left: 7px; }
     .company-name {
       font-size: 7.5px;
       font-weight: 700;
@@ -387,7 +472,6 @@ function buildBadgePdfHtml({
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      line-height: 1.3;
     }
     .brand-sub {
       font-size: 3.5px;
@@ -396,131 +480,9 @@ function buildBadgePdfHtml({
       text-transform: uppercase;
       margin-top: 1px;
     }
-
-    /* ── Body ── */
-    .body {
-      flex: 1;
-      display: flex;
-      overflow: hidden;
-    }
-
-    /* ── Foto ── */
-    .photo-col {
-      flex-shrink: 0;
-      width: 19mm;
-      align-self: stretch;
-      padding: 5px 0 5px 7px;
-    }
-    .photo-img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 2px;
-      border: 1px solid #e2e8f0;
-      display: block;
-    }
-    .photo-placeholder {
-      width: 100%;
-      height: 100%;
-      border-radius: 2px;
-      border: 1px solid #e8edf2;
-      background: #f8fafc;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 20px;
-      color: #cbd5e1;
-    }
-
-    /* ── Separatore verticale ── */
-    .divider-v {
-      width: 1px;
-      background: #f1f5f9;
-      margin: 5px 6px;
-      flex-shrink: 0;
-    }
-
-    /* ── Colonna dati ── */
-    .data-col {
-      flex: 1;
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      padding: 5px 7px 5px 0;
-    }
-    .data-top {
-      flex: 1;
-    }
-    .wname {
-      font-size: 8.5px;
-      font-weight: 800;
-      color: #0f172a;
-      line-height: 1.25;
-      margin-bottom: 4px;
-      word-break: break-word;
-    }
-    .field {
-      display: flex;
-      flex-direction: column;
-      margin-bottom: 3.5px;
-    }
-    .fl {
-      font-size: 3.8px;
-      font-weight: 700;
-      color: #94a3b8;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      line-height: 1;
-      margin-bottom: 1px;
-    }
-    .fv {
-      font-size: 6px;
-      color: #1e293b;
-      font-weight: 600;
-      line-height: 1.2;
-    }
-    .fv-cf {
-      font-family: 'Courier New', monospace;
-      font-size: 5.5px;
-      letter-spacing: 0.05em;
-    }
-
-    /* ── QR timbratura (fondo colonna dati) ── */
-    .timb-row {
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: 3px;
-      border-top: 0.75px solid #e8edf2;
-      margin-top: 2px;
-    }
-    .timb-label {
-      font-size: 6px;
-      font-weight: 900;
-      letter-spacing: 0.18em;
-      text-transform: uppercase;
-      color: #0f172a;
-    }
-    .qr-timb {
-      width: 13mm;
-      height: 13mm;
-      display: block;
-    }
-
-    /* ── Footer card ── */
-    .footer {
-      background: #f8fafc;
-      border-top: 1px solid #e8edf2;
-      padding: 2px 8px;
-      display: flex;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-    .ft { font-size: 4px; color: #94a3b8; }
-
-    /* ── RETRO: body centrato ── */
     .body-center {
+      flex: 1;
+      display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
@@ -551,6 +513,15 @@ function buildBadgePdfHtml({
       color: #0f172a;
       letter-spacing: 0.04em;
     }
+    .footer {
+      background: #f8fafc;
+      border-top: 1px solid #e8edf2;
+      padding: 2px 8px;
+      display: flex;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .ft { font-size: 4px; color: #94a3b8; }
   </style>
 </head>
 <body>
