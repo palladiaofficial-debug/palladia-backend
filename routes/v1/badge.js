@@ -120,7 +120,7 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   const { data: worker, error } = await supabase
     .from('workers')
     .select(`
-      id, full_name, photo_url, fiscal_code, hire_date,
+      id, full_name, photo_url, fiscal_code, hire_date, birth_place,
       employer_name, badge_code, is_active, created_at,
       company:companies ( name )
     `)
@@ -153,10 +153,12 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
     ? new Date(worker.hire_date).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })
     : null;
 
-  const dobStr = parseDobFromCf(worker.fiscal_code);
+  const dobStr    = parseDobFromCf(worker.fiscal_code);
+  const sexStr    = parseSexFromCf(worker.fiscal_code);
+  const birthPlace = worker.birth_place || null;
 
   const html = buildBadgePdfHtml({
-    worker, companyName, employerLabel, hireDateStr, dobStr,
+    worker, companyName, employerLabel, hireDateStr, dobStr, sexStr, birthPlace,
     qrTimbrataUrl, qrVerifyDataUrl,
   });
 
@@ -209,23 +211,43 @@ function parseDobFromCf(cf) {
   } catch { return null; }
 }
 
+// Deriva sesso dal codice fiscale: giorno > 40 → Femmina
+function parseSexFromCf(cf) {
+  if (!cf || cf.length < 11) return null;
+  try {
+    const day = parseInt(cf.substring(9, 11), 10);
+    if (isNaN(day)) return null;
+    return day > 40 ? 'F' : 'M';
+  } catch { return null; }
+}
+
 
 function buildBadgePdfHtml({
-  worker, companyName, employerLabel, hireDateStr, dobStr,
+  worker, companyName, employerLabel, hireDateStr, dobStr, sexStr, birthPlace,
   qrTimbrataUrl, qrVerifyDataUrl,
 }) {
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
   const cfUpper = worker.fiscal_code ? worker.fiscal_code.toUpperCase() : null;
+  const sexLabel = sexStr === 'M' ? 'Maschio' : sexStr === 'F' ? 'Femmina' : null;
 
   // ── FRONTE ────────────────────────────────────────────────────────────────
-  // Sinistra: "TIMBRATURA" + QR + divider + nome/dati (tutto centrato)
-  // Destra:   foto lavoratore proporzionata, centrata
+  // Header: barra blu scuro (brand + azienda)
+  // Corpo:  sinistra = TIMBRATURA + QR + dati identità; destra = foto
   const photoHtml = worker.photo_url
     ? `<img src="${esc(worker.photo_url)}" alt="Foto" class="f-photo-img">`
-    : `<div class="f-photo-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
+    : `<div class="f-photo-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
 
   const front = `
 <div class="card" id="front">
+
+  <div class="fh">
+    <div class="fh-brand">PALLADIA</div>
+    <div class="fh-right">
+      <div class="fh-company">${esc(companyName)}</div>
+      <div class="fh-sub">Badge di Cantiere</div>
+    </div>
+  </div>
+
   <div class="front-body">
 
     <div class="f-left">
@@ -233,9 +255,10 @@ function buildBadgePdfHtml({
       <img src="${qrTimbrataUrl}" alt="QR timbratura" class="f-qr">
       <div class="f-divider"></div>
       <div class="f-name">${esc(worker.full_name)}</div>
-      ${dobStr      ? `<div class="f-field"><span class="f-lbl">Nato il&nbsp;</span>${esc(dobStr)}</div>`      : ''}
-      ${cfUpper     ? `<div class="f-field f-cf">${esc(cfUpper)}</div>`                                        : ''}
-      ${hireDateStr ? `<div class="f-field"><span class="f-lbl">Assunto il&nbsp;</span>${esc(hireDateStr)}</div>` : ''}
+      ${dobStr      ? `<div class="f-field"><span class="f-lbl">Nato il&nbsp;</span>${esc(dobStr)}</div>`         : ''}
+      ${birthPlace  ? `<div class="f-field"><span class="f-lbl">Luogo&nbsp;</span>${esc(birthPlace)}</div>`       : ''}
+      ${sexLabel    ? `<div class="f-field"><span class="f-lbl">Sesso&nbsp;</span>${esc(sexLabel)}</div>`          : ''}
+      ${cfUpper     ? `<div class="f-field f-cf">${esc(cfUpper)}</div>`                                           : ''}
     </div>
 
     <div class="f-right">${photoHtml}</div>
@@ -326,15 +349,54 @@ function buildBadgePdfHtml({
       border-radius: 4mm;
       overflow: hidden;
       background: #fff;
+      display: flex;
+      flex-direction: column;
     }
 
     /* ════════════════════════════════════
-       FRONTE — due colonne, sfondo bianco
+       FRONTE — header blu + due colonne
        ════════════════════════════════════ */
+
+    /* Header blu scuro — identico al retro */
+    .fh {
+      background: #0f172a;
+      padding: 3.5px 8px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .fh-brand {
+      font-size: 5.5px;
+      font-weight: 900;
+      letter-spacing: 0.25em;
+      color: #94a3b8;
+      text-transform: uppercase;
+      flex-shrink: 0;
+      padding-right: 7px;
+      border-right: 1px solid #1e293b;
+    }
+    .fh-right { flex: 1; min-width: 0; padding-left: 7px; }
+    .fh-company {
+      font-size: 7px;
+      font-weight: 700;
+      color: #e2e8f0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fh-sub {
+      font-size: 3.5px;
+      color: #64748b;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+
     .front-body {
       width: 100%;
-      height: 100%;
+      flex: 1;
       display: flex;
+      min-height: 0;
     }
 
     /* Colonna sinistra (58%) — tutto centrato */
