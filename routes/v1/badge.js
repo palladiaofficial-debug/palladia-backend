@@ -96,6 +96,9 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     full_name:    worker.full_name,
     photo_url:    worker.photo_url    || null,
     company_name: worker.company?.name || null,
+    safety_training_expiry: worker.safety_training_expiry || null,
+    health_fitness_expiry:  worker.health_fitness_expiry  || null,
+    issued_at:    worker.created_at   || null,
     // employer_name può essere diverso da company_name per i subappaltatori
     employer_name:       worker.employer_name    || null,
     qualification:       worker.qualification    || null,
@@ -210,59 +213,55 @@ function buildBadgePdfHtml({
   const safety = complianceDotInline(safetyStatus);
   const health = complianceDotInline(healthStatus);
 
-  // ── FRONTE: identità + QR TIMBRATURA ─────────────────────────────────────
+  // ── FRONTE: identità lavoratore + QR TIMBRATURA ──────────────────────────
   const front = `
 <div class="card" id="front">
   <div class="ch">
-    <div>
-      <div class="brand">PALLADIA</div>
-      <div class="brand-sub">Badge Digitale Lavoratore</div>
+    <div class="brand">PALLADIA</div>
+    <div class="ch-right">
+      <div class="company-name">${esc(employerLabel || companyName)}</div>
+      <div class="brand-sub">Badge Digitale · D.Lgs. 81/2008</div>
     </div>
-    ${buildOverallPill(overall)}
   </div>
   <div class="cb">
 
-    <!-- Colonna sinistra: foto + dati identità -->
     <div class="identity-col">
       <div class="pc">${photoBlock}</div>
       <div class="ic">
         <div class="wname">${esc(worker.full_name)}</div>
         ${worker.qualification ? `<div class="r"><span class="rl">Qualifica</span><span class="rv">${esc(worker.qualification)}</span></div>` : ''}
         ${worker.role          ? `<div class="r"><span class="rl">Mansione</span><span class="rv">${esc(worker.role)}</span></div>`           : ''}
-        ${employerLabel        ? `<div class="r"><span class="rl">Impresa</span><span class="rv">${esc(employerLabel)}</span></div>`           : ''}
         ${hireDateStr          ? `<div class="r"><span class="rl">Dal</span><span class="rv">${esc(hireDateStr)}</span></div>`                 : ''}
       </div>
     </div>
 
-    <!-- Colonna destra: QR TIMBRATURA -->
     <div class="qr-col">
       <div class="qr-label-top">TIMBRATURA</div>
       <img src="${qrDataUrl}" alt="QR timbratura" class="qr-main">
-      <div class="qr-label-sub">Scansiona per timbrare</div>
+      <div class="qr-label-sub">Scansiona per<br>timbrare</div>
     </div>
 
   </div>
   <div class="cf">
-    <span class="ft">D.Lgs. 81/2008 · Palladia</span>
-    <span class="ft">${esc(companyName)}</span>
+    <span class="ft">palladia.app</span>
+    <span class="ft">${esc(codeFormatted)}</span>
   </div>
 </div>`;
 
-  // ── RETRO: compliance + QR VERIFICA ──────────────────────────────────────
+  // ── RETRO: stato documenti + QR VERIFICA ─────────────────────────────────
   const back = `
 <div class="card" id="back">
   <div class="ch">
-    <div>
-      <div class="brand">PALLADIA</div>
-      <div class="brand-sub">Verifica Identità Lavoratore</div>
+    <div class="brand">PALLADIA</div>
+    <div class="ch-right">
+      <div class="company-name">${esc(worker.full_name)}</div>
+      <div class="brand-sub">Verifica Documenti Sicurezza</div>
     </div>
-    <div class="code-chip">${esc(codeFormatted)}</div>
   </div>
   <div class="cb">
 
-    <!-- Colonna sinistra: stato documenti -->
     <div class="compliance-col">
-      <div class="comp-title">Stato Documenti</div>
+      <div class="comp-title">Documenti D.Lgs. 81/2008</div>
       <div class="comp-row">
         <span class="cdot" style="background:${safety.color};"></span>
         <div>
@@ -277,18 +276,20 @@ function buildBadgePdfHtml({
           <div class="cval" style="color:${health.color};">${health.label}</div>
         </div>
       </div>
+      <div class="sep"></div>
+      <div class="code-lbl">Codice anticontraffazione</div>
+      <div class="code-val">${esc(codeFormatted)}</div>
     </div>
 
-    <!-- Colonna destra: QR VERIFICA -->
     <div class="qr-col">
       <div class="qr-label-top verifica">VERIFICA</div>
       <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-main">
-      <div class="qr-label-sub">Scansiona per verificare</div>
+      <div class="qr-label-sub">Scansiona per<br>dati completi</div>
     </div>
 
   </div>
   <div class="cf">
-    <span class="ft">palladia.app · Scansiona il QR per verificare l'identità</span>
+    <span class="ft">palladia.app · Verifica identità e documenti</span>
   </div>
 </div>`;
 
@@ -359,40 +360,37 @@ function buildBadgePdfHtml({
       padding: 4px 8px;
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 8px;
       flex-shrink: 0;
     }
     .brand {
-      font-size: 7.5px;
-      font-weight: 700;
-      letter-spacing: 0.2em;
-      color: #f8fafc;
+      font-size: 6.5px;
+      font-weight: 900;
+      letter-spacing: 0.22em;
+      color: #94a3b8;
       text-transform: uppercase;
+      flex-shrink: 0;
+      border-right: 1px solid #334155;
+      padding-right: 8px;
+    }
+    .ch-right {
+      flex: 1;
+      min-width: 0;
+    }
+    .company-name {
+      font-size: 8px;
+      font-weight: 700;
+      color: #f8fafc;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     .brand-sub {
-      font-size: 4.5px;
-      color: #94a3b8;
+      font-size: 4px;
+      color: #64748b;
       letter-spacing: 0.06em;
       text-transform: uppercase;
       margin-top: 1px;
-    }
-    .overall-pill {
-      font-size: 5.5px;
-      font-weight: 700;
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding: 2px 5px;
-      border-radius: 20px;
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-    .code-chip {
-      font-family: 'Courier New', monospace;
-      font-size: 5px;
-      font-weight: 700;
-      color: #94a3b8;
-      letter-spacing: 0.04em;
-      flex-shrink: 0;
     }
 
     /* Body */
@@ -486,27 +484,32 @@ function buildBadgePdfHtml({
       display: flex;
       flex-direction: column;
       justify-content: center;
-      gap: 5px;
-      padding: 6px 6px 6px 8px;
+      gap: 4px;
+      padding: 5px 6px 5px 8px;
       border-right: 1px solid #e2e8f0;
     }
     .comp-title {
-      font-size: 5px;
+      font-size: 4.5px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      margin-bottom: 1px;
+      margin-bottom: 2px;
     }
     .comp-row {
       display: flex;
       align-items: center;
       gap: 5px;
     }
-    .cdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .cdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .clbl { font-size: 5px; font-weight: 700; color: #64748b;
       text-transform: uppercase; letter-spacing: 0.04em; }
-    .cval { font-size: 6.5px; font-weight: 700; }
+    .cval { font-size: 7px; font-weight: 700; }
+    .sep { height: 1px; background: #e2e8f0; margin: 3px 0; }
+    .code-lbl { font-size: 4.5px; font-weight: 700; color: #94a3b8;
+      text-transform: uppercase; letter-spacing: 0.08em; }
+    .code-val { font-family: 'Courier New', monospace; font-size: 5.5px;
+      font-weight: 700; color: #0f172a; word-break: break-all; margin-top: 1px; }
 
     /* Footer card */
     .cf {
