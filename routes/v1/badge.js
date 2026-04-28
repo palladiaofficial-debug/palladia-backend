@@ -120,10 +120,8 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   const { data: worker, error } = await supabase
     .from('workers')
     .select(`
-      id, full_name, photo_url, hire_date, qualification, role,
-      employer_name, subcontracting_auth,
-      safety_training_expiry, health_fitness_expiry,
-      badge_code, is_active, created_at,
+      id, full_name, photo_url, fiscal_code, hire_date,
+      employer_name, badge_code, is_active, created_at,
       company:companies ( name )
     `)
     .eq('id', workerId)
@@ -133,39 +131,28 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!worker) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
-  const appBase      = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const badgeUrl     = `${appBase}/timbratura/${worker.badge_code}`;   // QR timbratura
-  const verifyUrl    = `${appBase}/badge/${worker.badge_code}`;        // QR verifica enti
+  const appBase   = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const verifyUrl = `${appBase}/badge/${worker.badge_code}`;
 
-  let qrDataUrl, qrVerifyDataUrl;
+  let qrVerifyDataUrl;
   try {
-    [qrDataUrl, qrVerifyDataUrl] = await Promise.all([
-      QRCode.toDataURL(badgeUrl,  { width: 220, margin: 1 }),
-      QRCode.toDataURL(verifyUrl, { width: 160, margin: 1 }),
-    ]);
+    qrVerifyDataUrl = await QRCode.toDataURL(verifyUrl, { width: 260, margin: 1 });
   } catch (e) {
     return res.status(500).json({ error: 'QR_GENERATION_FAILED', message: e.message });
   }
 
-  const safetyStatus = complianceStatus(worker.safety_training_expiry);
-  const healthStatus  = complianceStatus(worker.health_fitness_expiry);
-  const overall       = overallStatus(worker);
-
-  const companyName    = worker.company?.name || '';
-  const employerLabel  = (worker.employer_name && worker.employer_name !== companyName)
-    ? worker.employer_name
-    : companyName;
+  const companyName = worker.company?.name || '';
+  const employerLabel = (worker.employer_name && worker.employer_name !== companyName)
+    ? worker.employer_name : companyName;
 
   const hireDateStr = worker.hire_date
-    ? new Date(worker.hire_date).toLocaleDateString('it-IT', {
-        day: '2-digit', month: 'long', year: 'numeric',
-      })
+    ? new Date(worker.hire_date).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })
     : null;
 
+  const dobStr = parseDobFromCf(worker.fiscal_code);
+
   const html = buildBadgePdfHtml({
-    worker, companyName, employerLabel, hireDateStr,
-    safetyStatus, healthStatus, overall,
-    qrDataUrl, qrVerifyDataUrl, badgeUrl,
+    worker, companyName, employerLabel, hireDateStr, dobStr, qrVerifyDataUrl,
   });
 
   let pdfBuffer;
@@ -200,96 +187,79 @@ function complianceDotInline(status) {
   return map[status] || map.not_set;
 }
 
+// Estrae data di nascita dal codice fiscale italiano (encoding standard)
+function parseDobFromCf(cf) {
+  if (!cf || cf.length < 11) return null;
+  try {
+    const MONTHS = { A:1,B:2,C:3,D:4,E:5,H:6,L:7,M:8,P:9,R:10,S:11,T:12 };
+    const yy    = parseInt(cf.substring(6, 8), 10);
+    const month = MONTHS[cf.charAt(8).toUpperCase()];
+    let   day   = parseInt(cf.substring(9, 11), 10);
+    if (!month || isNaN(day) || isNaN(yy)) return null;
+    if (day > 40) day -= 40;
+    const currentYY = new Date().getFullYear() % 100;
+    const fullYear  = yy > currentYY ? 1900 + yy : 2000 + yy;
+    return new Date(fullYear, month - 1, day)
+      .toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  } catch { return null; }
+}
+
 function buildBadgePdfHtml({
-  worker, companyName, employerLabel, hireDateStr,
-  safetyStatus, healthStatus, overall, qrDataUrl, qrVerifyDataUrl,
+  worker, companyName, employerLabel, hireDateStr, dobStr, qrVerifyDataUrl,
 }) {
   // ── Helpers locali ────────────────────────────────────────────────────────
   const photoBlock = worker.photo_url
     ? `<img src="${esc(worker.photo_url)}" alt="" class="photo-img">`
-    : `<div class="photo-placeholder"><span>&#128100;</span></div>`;
+    : `<div class="photo-placeholder">&#128100;</div>`;
 
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
-  const safety = complianceDotInline(safetyStatus);
-  const health = complianceDotInline(healthStatus);
 
-  // ── FRONTE: identità lavoratore + QR TIMBRATURA ──────────────────────────
+  // ── FRONTE: dati anagrafici ───────────────────────────────────────────────
   const front = `
 <div class="card" id="front">
   <div class="ch">
     <div class="brand">PALLADIA</div>
     <div class="ch-right">
       <div class="company-name">${esc(employerLabel || companyName)}</div>
-      <div class="brand-sub">Badge Digitale · D.Lgs. 81/2008</div>
+      <div class="brand-sub">Badge Lavoratore · D.Lgs. 81/2008</div>
     </div>
   </div>
   <div class="cb">
-
-    <div class="identity-col">
-      <div class="pc">${photoBlock}</div>
-      <div class="ic">
-        <div class="wname">${esc(worker.full_name)}</div>
-        ${worker.qualification ? `<div class="r"><span class="rl">Qualifica</span><span class="rv">${esc(worker.qualification)}</span></div>` : ''}
-        ${worker.role          ? `<div class="r"><span class="rl">Mansione</span><span class="rv">${esc(worker.role)}</span></div>`           : ''}
-        ${hireDateStr          ? `<div class="r"><span class="rl">Dal</span><span class="rv">${esc(hireDateStr)}</span></div>`                 : ''}
-      </div>
+    <div class="pc">${photoBlock}</div>
+    <div class="ic">
+      <div class="wname">${esc(worker.full_name)}</div>
+      ${dobStr      ? `<div class="r"><span class="rl">Nato il</span><span class="rv">${esc(dobStr)}</span></div>`      : ''}
+      ${worker.fiscal_code ? `<div class="r"><span class="rl">Cod. Fiscale</span><span class="rv cf-val">${esc(worker.fiscal_code.toUpperCase())}</span></div>` : ''}
+      ${hireDateStr ? `<div class="r"><span class="rl">Assunto il</span><span class="rv">${esc(hireDateStr)}</span></div>` : ''}
     </div>
-
-    <div class="qr-col">
-      <div class="qr-label-top">TIMBRATURA</div>
-      <img src="${qrDataUrl}" alt="QR timbratura" class="qr-main">
-      <div class="qr-label-sub">Scansiona per<br>timbrare</div>
-    </div>
-
   </div>
   <div class="cf">
     <span class="ft">palladia.app</span>
-    <span class="ft">${esc(codeFormatted)}</span>
+    <span class="ft">D.Lgs. 81/2008</span>
   </div>
 </div>`;
 
-  // ── RETRO: stato documenti + QR VERIFICA ─────────────────────────────────
+  // ── RETRO: codice anticontraffazione + QR VERIFICA centrato ──────────────
   const back = `
 <div class="card" id="back">
   <div class="ch">
     <div class="brand">PALLADIA</div>
     <div class="ch-right">
-      <div class="company-name">${esc(worker.full_name)}</div>
-      <div class="brand-sub">Verifica Documenti Sicurezza</div>
+      <div class="company-name">Verifica Identità</div>
+      <div class="brand-sub">Scansiona per accedere ai dati completi</div>
     </div>
   </div>
-  <div class="cb">
-
-    <div class="compliance-col">
-      <div class="comp-title">Documenti D.Lgs. 81/2008</div>
-      <div class="comp-row">
-        <span class="cdot" style="background:${safety.color};"></span>
-        <div>
-          <div class="clbl">Formazione Sicurezza</div>
-          <div class="cval" style="color:${safety.color};">${safety.label}</div>
-        </div>
-      </div>
-      <div class="comp-row">
-        <span class="cdot" style="background:${health.color};"></span>
-        <div>
-          <div class="clbl">Idoneità Sanitaria</div>
-          <div class="cval" style="color:${health.color};">${health.label}</div>
-        </div>
-      </div>
-      <div class="sep"></div>
+  <div class="cb cb-center">
+    <div class="verifica-label">VERIFICA</div>
+    <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-back">
+    <div class="code-block">
       <div class="code-lbl">Codice anticontraffazione</div>
       <div class="code-val">${esc(codeFormatted)}</div>
     </div>
-
-    <div class="qr-col">
-      <div class="qr-label-top verifica">VERIFICA</div>
-      <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-main">
-      <div class="qr-label-sub">Scansiona per<br>dati completi</div>
-    </div>
-
   </div>
   <div class="cf">
-    <span class="ft">palladia.app · Verifica identità e documenti</span>
+    <span class="ft">palladia.app</span>
+    <span class="ft">${esc(companyName)}</span>
   </div>
 </div>`;
 
@@ -354,162 +324,144 @@ function buildBadgePdfHtml({
       flex-direction: column;
     }
 
-    /* Header */
+    /* ── Header ── */
     .ch {
       background: #0f172a;
-      padding: 4px 8px;
+      padding: 4px 9px;
       display: flex;
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
     }
     .brand {
-      font-size: 6.5px;
+      font-size: 6px;
       font-weight: 900;
-      letter-spacing: 0.22em;
-      color: #94a3b8;
+      letter-spacing: 0.24em;
+      color: #64748b;
       text-transform: uppercase;
       flex-shrink: 0;
-      border-right: 1px solid #334155;
+      border-right: 1px solid #1e293b;
       padding-right: 8px;
+      line-height: 1;
     }
-    .ch-right {
-      flex: 1;
-      min-width: 0;
-    }
+    .ch-right { flex: 1; min-width: 0; }
     .company-name {
       font-size: 8px;
       font-weight: 700;
-      color: #f8fafc;
+      color: #f1f5f9;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
+      line-height: 1.2;
     }
     .brand-sub {
-      font-size: 4px;
-      color: #64748b;
-      letter-spacing: 0.06em;
+      font-size: 3.8px;
+      color: #475569;
+      letter-spacing: 0.05em;
       text-transform: uppercase;
-      margin-top: 1px;
+      margin-top: 1.5px;
     }
 
-    /* Body */
+    /* ── Body ── */
     .cb {
       flex: 1;
       display: flex;
-      gap: 0;
+      gap: 7px;
+      padding: 7px 9px;
       overflow: hidden;
     }
 
-    /* ── FRONTE — colonna identità (sinistra) ── */
-    .identity-col {
-      flex: 1;
-      display: flex;
-      gap: 6px;
-      padding: 6px 6px 6px 8px;
-      min-width: 0;
-      border-right: 1px solid #e2e8f0;
-    }
+    /* ── FRONTE — foto ── */
     .pc { flex-shrink: 0; }
     .photo-img {
-      width: 16mm;
-      height: 22mm;
+      width: 18mm;
+      height: 25mm;
       object-fit: cover;
       border-radius: 2px;
       border: 1px solid #e2e8f0;
       display: block;
     }
     .photo-placeholder {
-      width: 16mm;
-      height: 22mm;
+      width: 18mm;
+      height: 25mm;
       border-radius: 2px;
       border: 1px solid #e2e8f0;
-      background: #f1f5f9;
+      background: #f8fafc;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 18px;
-      color: #94a3b8;
+      font-size: 22px;
+      color: #cbd5e1;
     }
-    .ic { flex: 1; min-width: 0; }
+
+    /* ── FRONTE — dati anagrafici ── */
+    .ic { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
     .wname {
-      font-size: 8px;
-      font-weight: 700;
+      font-size: 9px;
+      font-weight: 800;
       color: #0f172a;
-      line-height: 1.2;
-      margin-bottom: 4px;
+      line-height: 1.25;
+      margin-bottom: 6px;
       word-break: break-word;
     }
-    .r { display: flex; flex-direction: column; margin-bottom: 3px; }
-    .rl { font-size: 4.5px; font-weight: 700; color: #94a3b8;
-      text-transform: uppercase; letter-spacing: 0.06em; }
-    .rv { font-size: 6px; color: #374151; font-weight: 500; word-break: break-word; }
+    .r { display: flex; flex-direction: column; margin-bottom: 4px; }
+    .rl {
+      font-size: 4px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      line-height: 1;
+      margin-bottom: 1px;
+    }
+    .rv {
+      font-size: 6.5px;
+      color: #1e293b;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+    .cf-val {
+      font-family: 'Courier New', monospace;
+      font-size: 6px;
+      letter-spacing: 0.04em;
+    }
 
-    /* ── FRONTE/RETRO — colonna QR (destra) ── */
-    .qr-col {
-      width: 26mm;
-      flex-shrink: 0;
-      display: flex;
+    /* ── RETRO — layout centrato ── */
+    .cb-center {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2px;
-      padding: 5px 4px;
-      background: #f8fafc;
+      gap: 4px;
+      padding: 6px 9px 5px;
     }
-    .qr-main {
-      width: 19mm;
-      height: 19mm;
+    .verifica-label {
+      font-size: 9px;
+      font-weight: 900;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: #1d4ed8;
+    }
+    .qr-back {
+      width: 24mm;
+      height: 24mm;
       display: block;
     }
-    .qr-label-top {
-      font-size: 8px;
-      font-weight: 900;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      color: #0f172a;
-      text-align: center;
-    }
-    .qr-label-top.verifica { color: #1d4ed8; }
-    .qr-label-sub {
+    .code-block { text-align: center; }
+    .code-lbl {
       font-size: 4px;
-      color: #94a3b8;
-      text-align: center;
-      line-height: 1.3;
-    }
-
-    /* ── RETRO — colonna compliance (sinistra) ── */
-    .compliance-col {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 4px;
-      padding: 5px 6px 5px 8px;
-      border-right: 1px solid #e2e8f0;
-    }
-    .comp-title {
-      font-size: 4.5px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      margin-bottom: 2px;
+      margin-bottom: 1.5px;
     }
-    .comp-row {
-      display: flex;
-      align-items: center;
-      gap: 5px;
+    .code-val {
+      font-family: 'Courier New', monospace;
+      font-size: 6px;
+      font-weight: 700;
+      color: #0f172a;
+      letter-spacing: 0.04em;
     }
-    .cdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .clbl { font-size: 5px; font-weight: 700; color: #64748b;
-      text-transform: uppercase; letter-spacing: 0.04em; }
-    .cval { font-size: 7px; font-weight: 700; }
-    .sep { height: 1px; background: #e2e8f0; margin: 3px 0; }
-    .code-lbl { font-size: 4.5px; font-weight: 700; color: #94a3b8;
-      text-transform: uppercase; letter-spacing: 0.08em; }
-    .code-val { font-family: 'Courier New', monospace; font-size: 5.5px;
-      font-weight: 700; color: #0f172a; word-break: break-all; margin-top: 1px; }
 
     /* Footer card */
     .cf {
