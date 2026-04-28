@@ -89,10 +89,10 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
   if (!worker) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
   if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
 
-  // Cantieri attivi assegnati al lavoratore
+  // Cantieri attivi assegnati al lavoratore (due query separate per evitare join PostgREST)
   const { data: assignments, error: assignErr } = await supabase
     .from('worksite_workers')
-    .select('site:sites (id, name, address, latitude, longitude, geofence_radius_m, status)')
+    .select('site_id')
     .eq('worker_id', worker.id)
     .eq('status', 'active');
 
@@ -101,10 +101,22 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 
-  // Solo cantieri non chiusi
-  const activeSites = (assignments || [])
-    .map(a => a.site)
-    .filter(s => s && s.status !== 'chiuso');
+  const siteIds = (assignments || []).map(a => a.site_id);
+
+  let activeSites = [];
+  if (siteIds.length > 0) {
+    const { data: sitesRows, error: sitesErr } = await supabase
+      .from('sites')
+      .select('id, name, address, latitude, longitude, geofence_radius_m, status')
+      .in('id', siteIds)
+      .neq('status', 'chiuso');
+
+    if (sitesErr) {
+      console.error('[badge-punch-context] sites error:', sitesErr.message);
+      return res.status(500).json({ error: 'DB_ERROR' });
+    }
+    activeSites = sitesRows || [];
+  }
 
   // Per ogni cantiere: distanza GPS + ultimo evento (query in parallelo)
   let siteData;
