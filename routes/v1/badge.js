@@ -130,13 +130,16 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!worker) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
-  // URL timbratura lavoratore (flusso primario — badge-punch.html)
-  const appBase  = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const badgeUrl = `${appBase}/timbratura/${worker.badge_code}`;
+  const appBase      = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const badgeUrl     = `${appBase}/timbratura/${worker.badge_code}`;   // QR timbratura
+  const verifyUrl    = `${appBase}/badge/${worker.badge_code}`;        // QR verifica enti
 
-  let qrDataUrl;
+  let qrDataUrl, qrVerifyDataUrl;
   try {
-    qrDataUrl = await QRCode.toDataURL(badgeUrl, { width: 220, margin: 1 });
+    [qrDataUrl, qrVerifyDataUrl] = await Promise.all([
+      QRCode.toDataURL(badgeUrl,  { width: 220, margin: 1 }),
+      QRCode.toDataURL(verifyUrl, { width: 160, margin: 1 }),
+    ]);
   } catch (e) {
     return res.status(500).json({ error: 'QR_GENERATION_FAILED', message: e.message });
   }
@@ -159,7 +162,7 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   const html = buildBadgePdfHtml({
     worker, companyName, employerLabel, hireDateStr,
     safetyStatus, healthStatus, overall,
-    qrDataUrl, badgeUrl,
+    qrDataUrl, qrVerifyDataUrl, badgeUrl,
   });
 
   let pdfBuffer;
@@ -196,7 +199,7 @@ function complianceDotInline(status) {
 
 function buildBadgePdfHtml({
   worker, companyName, employerLabel, hireDateStr,
-  safetyStatus, healthStatus, overall, qrDataUrl,
+  safetyStatus, healthStatus, overall, qrDataUrl, qrVerifyDataUrl,
 }) {
   // ── Fronte ────────────────────────────────────────────────────────────────
   const photoBlock = worker.photo_url
@@ -257,10 +260,16 @@ function buildBadgePdfHtml({
       <div class="code-lbl">Codice univoco anticontraffazione</div>
       <div class="code-val">${esc(codeFormatted)}</div>
     </div>
-    <!-- QR destra -->
+    <!-- QR destra: timbratura (grande) + verifica enti (piccolo) -->
     <div class="back-right">
-      <img src="${qrDataUrl}" alt="QR" class="qr-img">
-      <div class="qr-hint">Scansiona per<br>timbrare entrata/uscita</div>
+      <div class="qr-block">
+        <img src="${qrDataUrl}" alt="QR timbratura" class="qr-img">
+        <div class="qr-hint">Timbra<br>entrata/uscita</div>
+      </div>
+      <div class="qr-block qr-block-sm">
+        <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-img-sm">
+        <div class="qr-hint qr-hint-sm">Verifica<br>identità</div>
+      </div>
     </div>
   </div>
   <div class="cf">
@@ -462,10 +471,21 @@ function buildBadgePdfHtml({
     .code-val { font-family: 'Courier New', monospace; font-size: 7px;
       font-weight: 700; color: #0f172a; word-break: break-all; }
 
-    .back-right { flex-shrink: 0; text-align: center; }
-    .qr-img { width: 22mm; height: 22mm; display: block; }
-    .qr-hint { font-size: 5px; color: #94a3b8; line-height: 1.4;
-      text-align: center; margin-top: 2px; }
+    .back-right {
+      flex-shrink: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+    .qr-block { display: flex; flex-direction: column; align-items: center; }
+    .qr-img { width: 18mm; height: 18mm; display: block; }
+    .qr-hint { font-size: 4.5px; color: #64748b; font-weight: 700; line-height: 1.3;
+      text-align: center; margin-top: 1.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+
+    .qr-block-sm { border-top: 1px solid #e2e8f0; padding-top: 3px; }
+    .qr-img-sm { width: 13mm; height: 13mm; display: block; }
+    .qr-hint-sm { font-size: 4px; color: #94a3b8; }
   </style>
 </head>
 <body>
