@@ -65,6 +65,7 @@ const GPS_MAX_ACCURACY_M = (() => {
 // Query params opzionali:
 //   lat, lon  — posizione GPS del lavoratore (per auto-select cantiere in geofence)
 router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => {
+  try {
   const { code } = req.params;
 
   if (!isValidBadgeCode(code)) {
@@ -83,8 +84,8 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     .maybeSingle();
 
   if (workerErr) {
-    console.error('[badge-punch-context] db error:', workerErr.message);
-    return res.status(500).json({ error: 'DB_ERROR' });
+    console.error('[badge-punch-context] worker query error:', workerErr.message, workerErr.details);
+    return res.status(500).json({ error: 'DB_ERROR', hint: workerErr.message });
   }
   if (!worker) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
   if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
@@ -188,6 +189,11 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     auto_selected_site_id: autoSelectedSiteId,
     max_gps_accuracy_m:    GPS_MAX_ACCURACY_M,
   });
+
+  } catch (err) {
+    console.error('[badge-punch-context] unexpected error:', err.message, err.stack);
+    if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
 });
 
 // ── POST /api/v1/badge/:code/punch — PUBBLICO ─────────────────────────────────
