@@ -131,12 +131,16 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!worker) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
-  const appBase   = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const verifyUrl = `${appBase}/badge/${worker.badge_code}`;
+  const appBase        = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const timbrataUrl    = `${appBase}/timbratura/${worker.badge_code}`;
+  const verifyUrl      = `${appBase}/badge/${worker.badge_code}`;
 
-  let qrVerifyDataUrl;
+  let qrTimbrataUrl, qrVerifyDataUrl;
   try {
-    qrVerifyDataUrl = await QRCode.toDataURL(verifyUrl, { width: 260, margin: 1 });
+    [qrTimbrataUrl, qrVerifyDataUrl] = await Promise.all([
+      QRCode.toDataURL(timbrataUrl, { width: 180, margin: 1 }),
+      QRCode.toDataURL(verifyUrl,   { width: 260, margin: 1 }),
+    ]);
   } catch (e) {
     return res.status(500).json({ error: 'QR_GENERATION_FAILED', message: e.message });
   }
@@ -152,7 +156,8 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   const dobStr = parseDobFromCf(worker.fiscal_code);
 
   const html = buildBadgePdfHtml({
-    worker, companyName, employerLabel, hireDateStr, dobStr, qrVerifyDataUrl,
+    worker, companyName, employerLabel, hireDateStr, dobStr,
+    qrTimbrataUrl, qrVerifyDataUrl,
   });
 
   let pdfBuffer;
@@ -205,51 +210,78 @@ function parseDobFromCf(cf) {
 }
 
 function buildBadgePdfHtml({
-  worker, companyName, employerLabel, hireDateStr, dobStr, qrVerifyDataUrl,
+  worker, companyName, employerLabel, hireDateStr, dobStr,
+  qrTimbrataUrl, qrVerifyDataUrl,
 }) {
-  // ── Helpers locali ────────────────────────────────────────────────────────
   const photoBlock = worker.photo_url
     ? `<img src="${esc(worker.photo_url)}" alt="" class="photo-img">`
     : `<div class="photo-placeholder">&#128100;</div>`;
 
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
+  const cfUpper = worker.fiscal_code ? worker.fiscal_code.toUpperCase() : null;
 
-  // ── FRONTE: dati anagrafici ───────────────────────────────────────────────
+  // ── FRONTE ────────────────────────────────────────────────────────────────
+  // Layout: header scuro | body (foto piena altezza + colonna dati + QR timbratura) | footer
   const front = `
 <div class="card" id="front">
+
   <div class="ch">
     <div class="brand">PALLADIA</div>
+    <div class="ch-sep"></div>
     <div class="ch-right">
       <div class="company-name">${esc(employerLabel || companyName)}</div>
-      <div class="brand-sub">Badge Lavoratore · D.Lgs. 81/2008</div>
+      <div class="brand-sub">Badge Digitale Lavoratore &middot; D.Lgs. 81/2008</div>
     </div>
   </div>
-  <div class="cb">
-    <div class="pc">${photoBlock}</div>
-    <div class="ic">
-      <div class="wname">${esc(worker.full_name)}</div>
-      ${dobStr      ? `<div class="r"><span class="rl">Nato il</span><span class="rv">${esc(dobStr)}</span></div>`      : ''}
-      ${worker.fiscal_code ? `<div class="r"><span class="rl">Cod. Fiscale</span><span class="rv cf-val">${esc(worker.fiscal_code.toUpperCase())}</span></div>` : ''}
-      ${hireDateStr ? `<div class="r"><span class="rl">Assunto il</span><span class="rv">${esc(hireDateStr)}</span></div>` : ''}
+
+  <div class="body">
+
+    <!-- Foto: piena altezza, allineata al top -->
+    <div class="photo-col">${photoBlock}</div>
+
+    <div class="divider-v"></div>
+
+    <!-- Dati anagrafici (top) + QR timbratura (bottom) -->
+    <div class="data-col">
+
+      <div class="data-top">
+        <div class="wname">${esc(worker.full_name)}</div>
+        ${dobStr   ? `<div class="field"><span class="fl">Data di nascita</span><span class="fv">${esc(dobStr)}</span></div>` : ''}
+        ${cfUpper  ? `<div class="field"><span class="fl">Codice Fiscale</span><span class="fv fv-cf">${esc(cfUpper)}</span></div>` : ''}
+        ${hireDateStr ? `<div class="field"><span class="fl">Data di assunzione</span><span class="fv">${esc(hireDateStr)}</span></div>` : ''}
+      </div>
+
+      <div class="timb-row">
+        <div class="timb-label">TIMBRATURA</div>
+        <img src="${qrTimbrataUrl}" alt="QR timbratura" class="qr-timb">
+      </div>
+
     </div>
+
   </div>
-  <div class="cf">
+
+  <div class="footer">
     <span class="ft">palladia.app</span>
-    <span class="ft">D.Lgs. 81/2008</span>
+    <span class="ft">${esc(companyName)}</span>
   </div>
+
 </div>`;
 
-  // ── RETRO: codice anticontraffazione + QR VERIFICA centrato ──────────────
+  // ── RETRO ─────────────────────────────────────────────────────────────────
+  // Layout: header scuro | QR centrato + scritta VERIFICA | footer
   const back = `
 <div class="card" id="back">
+
   <div class="ch">
     <div class="brand">PALLADIA</div>
+    <div class="ch-sep"></div>
     <div class="ch-right">
       <div class="company-name">Verifica Identità</div>
       <div class="brand-sub">Scansiona per accedere ai dati completi</div>
     </div>
   </div>
-  <div class="cb cb-center">
+
+  <div class="body body-center">
     <div class="verifica-label">VERIFICA</div>
     <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-back">
     <div class="code-block">
@@ -257,13 +289,15 @@ function buildBadgePdfHtml({
       <div class="code-val">${esc(codeFormatted)}</div>
     </div>
   </div>
-  <div class="cf">
-    <span class="ft">palladia.app</span>
+
+  <div class="footer">
+    <span class="ft">palladia.app &middot; Verifica identit&agrave; e documenti</span>
     <span class="ft">${esc(companyName)}</span>
   </div>
+
 </div>`;
 
-  // ── CSS + HTML ────────────────────────────────────────────────────────────
+  // ── HTML completo ─────────────────────────────────────────────────────────
   return `<!DOCTYPE html>
 <html lang="it">
 <head>
@@ -271,7 +305,6 @@ function buildBadgePdfHtml({
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     @page { size: A4 portrait; margin: 26mm 0 24mm 0; }
-
     html, body {
       width: 210mm;
       font-family: Arial, Helvetica, sans-serif;
@@ -289,16 +322,14 @@ function buildBadgePdfHtml({
       flex-direction: column;
       align-items: center;
     }
-
     .hint {
       font-size: 7px;
       color: #9ca3af;
       text-align: center;
       margin-bottom: 6mm;
-      line-height: 1.6;
+      line-height: 1.7;
     }
     .hint strong { color: #6b7280; }
-
     .face-label {
       font-size: 7px;
       font-weight: 700;
@@ -309,10 +340,9 @@ function buildBadgePdfHtml({
       align-self: flex-start;
       margin-left: calc(50% - 85.6mm / 2);
     }
+    .gap { height: 8mm; }
 
-    .gap { height: 7mm; }
-
-    /* ── Card ISO ID-1: 85.6mm × 54mm ── */
+    /* ── Card ISO ID-1: 85.6 × 54mm ── */
     .card {
       width: 85.6mm;
       height: 54mm;
@@ -324,89 +354,118 @@ function buildBadgePdfHtml({
       flex-direction: column;
     }
 
-    /* ── Header ── */
+    /* ── Header scuro ── */
     .ch {
       background: #0f172a;
-      padding: 4px 9px;
+      padding: 3.5px 8px;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 0;
       flex-shrink: 0;
     }
     .brand {
-      font-size: 6px;
+      font-size: 5.5px;
       font-weight: 900;
-      letter-spacing: 0.24em;
-      color: #64748b;
+      letter-spacing: 0.25em;
+      color: #475569;
       text-transform: uppercase;
       flex-shrink: 0;
-      border-right: 1px solid #1e293b;
-      padding-right: 8px;
-      line-height: 1;
+      padding-right: 7px;
+    }
+    .ch-sep {
+      width: 1px;
+      height: 10px;
+      background: #1e293b;
+      flex-shrink: 0;
+      margin-right: 7px;
     }
     .ch-right { flex: 1; min-width: 0; }
     .company-name {
-      font-size: 8px;
+      font-size: 7.5px;
       font-weight: 700;
       color: #f1f5f9;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
-      line-height: 1.2;
+      line-height: 1.3;
     }
     .brand-sub {
-      font-size: 3.8px;
-      color: #475569;
-      letter-spacing: 0.05em;
+      font-size: 3.5px;
+      color: #334155;
+      letter-spacing: 0.04em;
       text-transform: uppercase;
-      margin-top: 1.5px;
+      margin-top: 1px;
     }
 
     /* ── Body ── */
-    .cb {
+    .body {
       flex: 1;
       display: flex;
-      gap: 7px;
-      padding: 7px 9px;
       overflow: hidden;
     }
 
-    /* ── FRONTE — foto ── */
-    .pc { flex-shrink: 0; }
+    /* ── Foto ── */
+    .photo-col {
+      flex-shrink: 0;
+      width: 19mm;
+      align-self: stretch;
+      padding: 5px 0 5px 7px;
+    }
     .photo-img {
-      width: 18mm;
-      height: 25mm;
+      width: 100%;
+      height: 100%;
       object-fit: cover;
       border-radius: 2px;
       border: 1px solid #e2e8f0;
       display: block;
     }
     .photo-placeholder {
-      width: 18mm;
-      height: 25mm;
+      width: 100%;
+      height: 100%;
       border-radius: 2px;
-      border: 1px solid #e2e8f0;
+      border: 1px solid #e8edf2;
       background: #f8fafc;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 22px;
+      font-size: 20px;
       color: #cbd5e1;
     }
 
-    /* ── FRONTE — dati anagrafici ── */
-    .ic { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+    /* ── Separatore verticale ── */
+    .divider-v {
+      width: 1px;
+      background: #f1f5f9;
+      margin: 5px 6px;
+      flex-shrink: 0;
+    }
+
+    /* ── Colonna dati ── */
+    .data-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 5px 7px 5px 0;
+    }
+    .data-top {
+      flex: 1;
+    }
     .wname {
-      font-size: 9px;
+      font-size: 8.5px;
       font-weight: 800;
       color: #0f172a;
       line-height: 1.25;
-      margin-bottom: 6px;
+      margin-bottom: 4px;
       word-break: break-word;
     }
-    .r { display: flex; flex-direction: column; margin-bottom: 4px; }
-    .rl {
-      font-size: 4px;
+    .field {
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 3.5px;
+    }
+    .fl {
+      font-size: 3.8px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
@@ -414,41 +473,71 @@ function buildBadgePdfHtml({
       line-height: 1;
       margin-bottom: 1px;
     }
-    .rv {
-      font-size: 6.5px;
+    .fv {
+      font-size: 6px;
       color: #1e293b;
       font-weight: 600;
       line-height: 1.2;
     }
-    .cf-val {
+    .fv-cf {
       font-family: 'Courier New', monospace;
-      font-size: 6px;
-      letter-spacing: 0.04em;
+      font-size: 5.5px;
+      letter-spacing: 0.05em;
     }
 
-    /* ── RETRO — layout centrato ── */
-    .cb-center {
+    /* ── QR timbratura (fondo colonna dati) ── */
+    .timb-row {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-top: 3px;
+      border-top: 0.75px solid #e8edf2;
+      margin-top: 2px;
+    }
+    .timb-label {
+      font-size: 6px;
+      font-weight: 900;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: #0f172a;
+    }
+    .qr-timb {
+      width: 13mm;
+      height: 13mm;
+      display: block;
+    }
+
+    /* ── Footer card ── */
+    .footer {
+      background: #f8fafc;
+      border-top: 1px solid #e8edf2;
+      padding: 2px 8px;
+      display: flex;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .ft { font-size: 4px; color: #94a3b8; }
+
+    /* ── RETRO: body centrato ── */
+    .body-center {
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 4px;
-      padding: 6px 9px 5px;
+      gap: 3.5px;
+      padding: 5px 8px;
     }
     .verifica-label {
-      font-size: 9px;
+      font-size: 8.5px;
       font-weight: 900;
-      letter-spacing: 0.22em;
+      letter-spacing: 0.24em;
       text-transform: uppercase;
       color: #1d4ed8;
     }
-    .qr-back {
-      width: 24mm;
-      height: 24mm;
-      display: block;
-    }
+    .qr-back { width: 25mm; height: 25mm; display: block; }
     .code-block { text-align: center; }
     .code-lbl {
-      font-size: 4px;
+      font-size: 3.8px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
@@ -457,38 +546,29 @@ function buildBadgePdfHtml({
     }
     .code-val {
       font-family: 'Courier New', monospace;
-      font-size: 6px;
+      font-size: 5.5px;
       font-weight: 700;
       color: #0f172a;
       letter-spacing: 0.04em;
     }
-
-    /* Footer card */
-    .cf {
-      background: #f1f5f9;
-      border-top: 1px solid #e2e8f0;
-      padding: 2px 8px;
-      display: flex;
-      justify-content: space-between;
-      flex-shrink: 0;
-    }
-    .ft { font-size: 4.5px; color: #94a3b8; }
   </style>
 </head>
 <body>
   <div class="page">
 
     <div class="hint">
-      <strong>1. Stampare</strong> &nbsp;·&nbsp; <strong>2. Ritagliare</strong> entrambi i rettangoli &nbsp;·&nbsp;
-      <strong>3. Incollare schiena a schiena</strong> &nbsp;·&nbsp; <strong>4. Plastificare</strong>
+      <strong>1. Stampare</strong> &nbsp;&middot;&nbsp;
+      <strong>2. Ritagliare</strong> entrambi i rettangoli &nbsp;&middot;&nbsp;
+      <strong>3. Incollare schiena a schiena</strong> &nbsp;&middot;&nbsp;
+      <strong>4. Plastificare</strong>
     </div>
 
-    <div class="face-label">▲ Fronte</div>
+    <div class="face-label">&#9650; Fronte</div>
     ${front}
 
     <div class="gap"></div>
 
-    <div class="face-label">▲ Retro</div>
+    <div class="face-label">&#9650; Retro</div>
     ${back}
 
   </div>
