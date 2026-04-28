@@ -36,6 +36,7 @@ const BADGE_FIELDS = [
   'subcontracting_auth',
   'safety_training_expiry',
   'health_fitness_expiry',
+  'birth_place',
 ];
 
 // Validazione date YYYY-MM-DD (o null/undefined per cancellare)
@@ -48,7 +49,7 @@ function isValidDate(val) {
 const WORKER_SELECT =
   'id, full_name, fiscal_code, is_active, created_at, badge_code, ' +
   'photo_url, hire_date, qualification, role, employer_name, ' +
-  'subcontracting_auth, safety_training_expiry, health_fitness_expiry';
+  'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place';
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, async (req, res) => {
@@ -298,7 +299,7 @@ router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
   }
 
   // Normalizza stringhe testuali
-  for (const f of ['qualification', 'role', 'employer_name']) {
+  for (const f of ['qualification', 'role', 'employer_name', 'birth_place']) {
     if (updates[f] !== undefined) {
       updates[f] = updates[f] ? String(updates[f]).trim() : null;
     }
