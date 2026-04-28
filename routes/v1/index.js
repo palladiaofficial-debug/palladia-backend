@@ -6,6 +6,7 @@ const { apiLimiter, chatLimiter } = require('../../middleware/rateLimit');
 router.use(apiLimiter);
 
 // Route private (JWT + company membership)
+router.use('/', require('./workerDocs'));
 router.use('/', require('./dashboard'));
 router.use('/', require('./sitesOverview'));
 router.use('/', require('./siteAdmin'));
