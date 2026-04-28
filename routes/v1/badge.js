@@ -225,6 +225,11 @@ function buildBadgePdfHtml({
       <div class="wname">${esc(worker.full_name)}</div>
       ${infoRows}
     </div>
+    <!-- QR verifica identità — per ispettori / enti di controllo -->
+    <div class="front-qr">
+      <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-verify-img">
+      <div class="qr-verify-hint">Verifica<br>identità</div>
+    </div>
   </div>
   <div class="cf">
     <span class="ft">D.Lgs. 81/2008 · Palladia</span>
@@ -260,16 +265,10 @@ function buildBadgePdfHtml({
       <div class="code-lbl">Codice univoco anticontraffazione</div>
       <div class="code-val">${esc(codeFormatted)}</div>
     </div>
-    <!-- QR destra: timbratura (grande) + verifica enti (piccolo) -->
+    <!-- QR timbratura — per il lavoratore -->
     <div class="back-right">
-      <div class="qr-block">
-        <img src="${qrDataUrl}" alt="QR timbratura" class="qr-img">
-        <div class="qr-hint">Timbra<br>entrata/uscita</div>
-      </div>
-      <div class="qr-block qr-block-sm">
-        <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-img-sm">
-        <div class="qr-hint qr-hint-sm">Verifica<br>identità</div>
-      </div>
+      <img src="${qrDataUrl}" alt="QR timbratura" class="qr-img">
+      <div class="qr-hint">Scansiona per<br>timbrare entrata/uscita</div>
     </div>
   </div>
   <div class="cf">
@@ -471,21 +470,34 @@ function buildBadgePdfHtml({
     .code-val { font-family: 'Courier New', monospace; font-size: 7px;
       font-weight: 700; color: #0f172a; word-break: break-all; }
 
-    .back-right {
+    /* QR verifica — fronte */
+    .front-qr {
       flex-shrink: 0;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 3px;
+      justify-content: center;
+      border-left: 1px solid #e2e8f0;
+      padding-left: 5px;
+      margin-left: 3px;
     }
-    .qr-block { display: flex; flex-direction: column; align-items: center; }
-    .qr-img { width: 18mm; height: 18mm; display: block; }
-    .qr-hint { font-size: 4.5px; color: #64748b; font-weight: 700; line-height: 1.3;
-      text-align: center; margin-top: 1.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .qr-verify-img { width: 14mm; height: 14mm; display: block; }
+    .qr-verify-hint {
+      font-size: 4.5px;
+      font-weight: 700;
+      color: #64748b;
+      text-align: center;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 2px;
+      line-height: 1.3;
+    }
 
-    .qr-block-sm { border-top: 1px solid #e2e8f0; padding-top: 3px; }
-    .qr-img-sm { width: 13mm; height: 13mm; display: block; }
-    .qr-hint-sm { font-size: 4px; color: #94a3b8; }
+    /* QR timbratura — retro */
+    .back-right { flex-shrink: 0; text-align: center; }
+    .qr-img { width: 22mm; height: 22mm; display: block; }
+    .qr-hint { font-size: 5px; color: #94a3b8; line-height: 1.4;
+      text-align: center; margin-top: 2px; }
   </style>
 </head>
 <body>
