@@ -20,16 +20,25 @@ const BUCKET   = 'site-documents'; // stesso bucket, path diverso
 const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
 
 const CATEGORIES = [
-  'durc',           // Documento Unico di Regolarità Contributiva
-  'visura',         // Visura Camerale
-  'dvr',            // Documento di Valutazione dei Rischi
-  'iso',            // Certificazione ISO
-  'soa',            // Attestazione SOA (qualificazione appalti pubblici)
-  'assicurazione',  // Polizze RCT/RCO
-  'f24',            // Modelli F24
-  'polizza',        // Polizza Fideiussoria (garanzie per appalti)
-  'duvri',          // Documento Unico Valutazione Rischi da Interferenze
-  'formazione',     // Piani, registri e attestati di formazione
+  // Sicurezza D.Lgs. 81/2008
+  'rspp',              // Nomina/attestato RSPP
+  'rls',               // Nomina/attestato RLS
+  'medico_competente', // Nomina Medico Competente
+  'visite_mediche',    // Cartelle sanitarie e visite periodiche
+  'primo_soccorso',    // Attestati addetti primo soccorso
+  'emergenze',         // Piano emergenze, attestati antincendio
+  'preposto',          // Nomina Preposto
+  'dvr',               // Documento di Valutazione dei Rischi
+  'duvri',             // Doc. Unico Valutazione Rischi Interferenze
+  'formazione',        // Piani, registri e attestati di formazione
+  // Documenti aziendali
+  'durc',              // Documento Unico di Regolarità Contributiva
+  'visura',            // Visura Camerale
+  'iso',               // Certificazione ISO
+  'soa',               // Attestazione SOA
+  'assicurazione',     // Polizze RCT/RCO
+  'polizza',           // Polizza Fideiussoria
+  'f24',               // Modelli F24
   'altro',
 ];
 
