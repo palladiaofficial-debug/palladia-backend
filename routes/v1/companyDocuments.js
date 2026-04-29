@@ -67,10 +67,10 @@ function safeName(original) {
 router.get('/company-documents/diag', async (_req, res) => {
   const { data, error } = await supabase
     .from('company_documents')
-    .select('count(*)')
+    .select('id')
     .limit(1);
   if (error) return res.json({ ok: false, error: error.message, code: error.code, hint: error.hint });
-  return res.json({ ok: true, rows: data });
+  return res.json({ ok: true, tableExists: true, sample: data });
 });
 
 router.use(verifySupabaseJwt);
