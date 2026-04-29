@@ -63,6 +63,16 @@ function safeName(original) {
   return base + ext;
 }
 
+// ── Diagnosi tabella (NO auth — solo per debug, rimuovere dopo) ───────────────
+router.get('/company-documents/diag', async (_req, res) => {
+  const { data, error } = await supabase
+    .from('company_documents')
+    .select('count(*)')
+    .limit(1);
+  if (error) return res.json({ ok: false, error: error.message, code: error.code, hint: error.hint });
+  return res.json({ ok: true, rows: data });
+});
+
 router.use(verifySupabaseJwt);
 
 // ── GET lista ─────────────────────────────────────────────────────────────────
