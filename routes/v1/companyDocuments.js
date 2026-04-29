@@ -19,9 +19,6 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
 
-// Stato ultima chiamata autenticata — esposto da /diag
-let _lastCall = { state: 'never_called' };
-
 const CATEGORIES = [
   // Sicurezza D.Lgs. 81/2008
   'rspp',              // Nomina/attestato RSPP
@@ -66,64 +63,19 @@ function safeName(original) {
   return base + ext;
 }
 
-// ── Diagnosi tabella (NO auth — solo per debug, rimuovere dopo) ───────────────
-router.get('/company-documents/diag', async (req, res) => {
-  const { data: t1, error: e1 } = await supabase
-    .from('company_documents').select('id').limit(1);
-  if (e1) return res.json({ step: 1, ok: false, error: e1.message, code: e1.code });
-
-  const cid = req.headers['x-company-id'] || req.query.company_id;
-  const { data: t2, error: e2 } = await supabase
-    .from('company_documents')
-    .select('id, name, category, file_size, mime_type, created_at')
-    .eq('company_id', cid || '00000000-0000-0000-0000-000000000000')
-    .order('created_at', { ascending: false });
-  if (e2) return res.json({ step: 2, ok: false, error: e2.message, code: e2.code, cid });
-
-  // Mostra l'ultimo errore catturato dalla route autenticata
-  return res.json({ ok: true, step1: t1?.length, step2: t2?.length, lastCall: _lastCall });
-});
-
 router.use(verifySupabaseJwt);
-
-// ── GET diagnostica autenticata ───────────────────────────────────────────────
-router.get('/company-documents/diag-auth', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('company_documents')
-      .select('id, name, category, file_size, mime_type, created_at')
-      .eq('company_id', req.companyId)
-      .order('created_at', { ascending: false });
-    if (error) return res.json({ ok: false, error: error.message, code: error.code, cid: req.companyId });
-    return res.json({ ok: true, count: data.length, cid: req.companyId });
-  } catch (e) {
-    return res.json({ ok: false, exception: e.message });
-  }
-});
 
 // ── GET lista ─────────────────────────────────────────────────────────────────
 
 router.get('/company-documents', async (req, res) => {
-  _lastCall = { state: 'entered', cid: req.companyId, ts: new Date().toISOString() };
-  try {
-    const { data, error } = await supabase
-      .from('company_documents')
-      .select('id, name, category, file_size, mime_type, created_at')
-      .eq('company_id', req.companyId)
-      .order('created_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('company_documents')
+    .select('id, name, category, file_size, mime_type, created_at')
+    .eq('company_id', req.companyId)
+    .order('created_at', { ascending: false });
 
-    if (error) {
-      _lastCall = { state: 'supabase_error', msg: error.message, code: error.code, cid: req.companyId, ts: new Date().toISOString() };
-      console.error('[company-docs] GET error:', error.message, error.code);
-      return res.status(500).json({ error: 'DB_ERROR', detail: error.message, code: error.code });
-    }
-    _lastCall = { state: 'success', rows: data?.length, cid: req.companyId, ts: new Date().toISOString() };
-    res.json(data || []);
-  } catch (e) {
-    _lastCall = { state: 'exception', msg: e.message, ts: new Date().toISOString() };
-    console.error('[company-docs] GET exception:', e.message);
-    res.status(500).json({ error: 'EXCEPTION', detail: e.message });
-  }
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json(data || []);
 });
 
 // ── POST upload ───────────────────────────────────────────────────────────────
