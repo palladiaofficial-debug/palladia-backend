@@ -16,8 +16,11 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
-const BUCKET   = 'site-documents'; // stesso bucket, path diverso
-const MAX_SIZE = 20 * 1024 * 1024; // 20 MB
+const BUCKET   = 'site-documents';
+const MAX_SIZE = 20 * 1024 * 1024;
+
+// Ultimo errore catturato — esposto da /diag per debug
+let _lastErr = null;
 
 const CATEGORIES = [
   // Sicurezza D.Lgs. 81/2008
@@ -65,14 +68,10 @@ function safeName(original) {
 
 // ── Diagnosi tabella (NO auth — solo per debug, rimuovere dopo) ───────────────
 router.get('/company-documents/diag', async (req, res) => {
-  // Test 1: tabella accessibile
   const { data: t1, error: e1 } = await supabase
-    .from('company_documents')
-    .select('id')
-    .limit(1);
+    .from('company_documents').select('id').limit(1);
   if (e1) return res.json({ step: 1, ok: false, error: e1.message, code: e1.code });
 
-  // Test 2: query completa con company_id dall'header (se presente)
   const cid = req.headers['x-company-id'] || req.query.company_id;
   const { data: t2, error: e2 } = await supabase
     .from('company_documents')
@@ -81,7 +80,8 @@ router.get('/company-documents/diag', async (req, res) => {
     .order('created_at', { ascending: false });
   if (e2) return res.json({ step: 2, ok: false, error: e2.message, code: e2.code, cid });
 
-  return res.json({ ok: true, step1: t1?.length, step2: t2?.length, cid });
+  // Mostra l'ultimo errore catturato dalla route autenticata
+  return res.json({ ok: true, step1: t1?.length, step2: t2?.length, lastAuthError: _lastErr });
 });
 
 router.use(verifySupabaseJwt);
@@ -112,11 +112,14 @@ router.get('/company-documents', async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('[company-docs] GET supabase error:', error.message, '| code:', error.code, '| cid:', req.companyId);
+      _lastErr = { type: 'supabase', msg: error.message, code: error.code, cid: req.companyId, ts: new Date().toISOString() };
+      console.error('[company-docs] GET error:', error.message, error.code);
       return res.status(500).json({ error: 'DB_ERROR', detail: error.message, code: error.code });
     }
+    _lastErr = null;
     res.json(data || []);
   } catch (e) {
+    _lastErr = { type: 'exception', msg: e.message, cid: req.companyId, ts: new Date().toISOString() };
     console.error('[company-docs] GET exception:', e.message);
     res.status(500).json({ error: 'EXCEPTION', detail: e.message });
   }
