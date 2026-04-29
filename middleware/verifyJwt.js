@@ -45,20 +45,24 @@ async function verifySupabaseJwt(req, res, next) {
     return res.status(400).json({ error: 'Missing X-Company-Id header' });
   }
 
-  // 4. Verifica membership reale in company_users
-  //    SECURITY: era il TODO critico — ora risolto.
-  //    Non si fida del company_id dal client: lo verifica contro DB.
-  const { data: membership, error: memberErr } = await supabase
-    .from('company_users')
-    .select('role')
-    .eq('company_id', companyId)
-    .eq('user_id', user.id)
-    .maybeSingle();
+  // 4. Verifica membership reale in company_users (con retry su errore transitorio)
+  let membership = null;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const { data, error: memberErr } = await supabase
+      .from('company_users')
+      .select('role')
+      .eq('company_id', companyId)
+      .eq('user_id', user.id)
+      .maybeSingle();
 
-  if (memberErr) {
-    console.error('[auth] membership check error:', memberErr.message);
-    return res.status(500).json({ error: 'Auth check failed' });
+    if (!memberErr) { membership = data; break; }
+    if (attempt === 2) {
+      console.error('[auth] membership check failed after retry:', memberErr.message);
+      return res.status(503).json({ error: 'Service temporarily unavailable' });
+    }
+    await new Promise(r => setTimeout(r, 300));
   }
+
   if (!membership) {
     return res.status(403).json({ error: 'Not a member of this company' });
   }
