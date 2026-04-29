@@ -74,7 +74,7 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     .from('workers')
     .select(`
       full_name, photo_url, hire_date, qualification, role,
-      employer_name, subcontracting_auth,
+      employer_name, subcontracting_auth, fiscal_code, birth_place,
       safety_training_expiry, health_fitness_expiry,
       badge_code, is_active, created_at,
       company:companies ( name )
@@ -99,17 +99,17 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     safety_training_expiry: worker.safety_training_expiry || null,
     health_fitness_expiry:  worker.health_fitness_expiry  || null,
     issued_at:    worker.created_at   || null,
-    // employer_name può essere diverso da company_name per i subappaltatori
     employer_name:       worker.employer_name    || null,
     qualification:       worker.qualification    || null,
     role:                worker.role             || null,
     hire_date:           worker.hire_date        || null,
+    fiscal_code:         worker.fiscal_code      || null,
+    birth_place:         worker.birth_place      || null,
     subcontracting_auth: worker.subcontracting_auth || false,
     safety_training_status: safetyStatus,
     health_fitness_status:  healthStatus,
     overall_status: overallStatus(worker),
     is_active:    worker.is_active,
-    issued_at:    worker.created_at,
   });
 });
 

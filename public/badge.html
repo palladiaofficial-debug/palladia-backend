@@ -373,6 +373,31 @@
       return idx !== -1 ? (parts[idx + 1] || '') : '';
     }
 
+    function parseDobFromCf(cf) {
+      if (!cf || cf.length < 11) return null;
+      try {
+        const MONTHS = { A:1,B:2,C:3,D:4,E:5,H:6,L:7,M:8,P:9,R:10,S:11,T:12 };
+        const yy    = parseInt(cf.substring(6, 8), 10);
+        const month = MONTHS[cf.charAt(8).toUpperCase()];
+        let   day   = parseInt(cf.substring(9, 11), 10);
+        if (!month || isNaN(day) || isNaN(yy)) return null;
+        if (day > 40) day -= 40;
+        const currentYY = new Date().getFullYear() % 100;
+        const fullYear  = yy > currentYY ? 1900 + yy : 2000 + yy;
+        return new Date(fullYear, month - 1, day)
+          .toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+      } catch { return null; }
+    }
+
+    function parseSexFromCf(cf) {
+      if (!cf || cf.length < 11) return null;
+      try {
+        const day = parseInt(cf.substring(9, 11), 10);
+        if (isNaN(day)) return null;
+        return day > 40 ? 'F' : 'M';
+      } catch { return null; }
+    }
+
     const STATUS_CFG = {
       compliant:     { icon: '✓', title: 'Lavoratore Conforme',      sub: 'Tutti i documenti di sicurezza sono validi e aggiornati' },
       expiring:      { icon: '⚠', title: 'Documenti in Scadenza',    sub: 'Uno o più documenti stanno per scadere — verificare il rinnovo' },
@@ -442,6 +467,10 @@
 
       const showEmployer = d.employer_name && d.employer_name !== d.company_name;
 
+      const dob      = parseDobFromCf(d.fiscal_code);
+      const sex      = parseSexFromCf(d.fiscal_code);
+      const sexLabel = sex === 'M' ? 'Maschio' : sex === 'F' ? 'Femmina' : null;
+
       const tags = [
         d.qualification      ? `<span class="tag">${esc(d.qualification)}</span>`         : '',
         d.role               ? `<span class="tag">${esc(d.role)}</span>`                  : '',
@@ -449,6 +478,18 @@
       ].filter(Boolean).join('');
 
       const fieldRows = [
+        dob
+          ? `<div class="field-row"><span class="field-label">Data di nascita</span><span class="field-value">${esc(dob)}</span></div>`
+          : '',
+        d.birth_place
+          ? `<div class="field-row"><span class="field-label">Luogo di nascita</span><span class="field-value">${esc(d.birth_place)}</span></div>`
+          : '',
+        sexLabel
+          ? `<div class="field-row"><span class="field-label">Sesso</span><span class="field-value">${esc(sexLabel)}</span></div>`
+          : '',
+        d.fiscal_code
+          ? `<div class="field-row"><span class="field-label">Codice fiscale</span><span class="field-value" style="font-family:monospace;letter-spacing:0.04em">${esc(d.fiscal_code.toUpperCase())}</span></div>`
+          : '',
         d.company_name
           ? `<div class="field-row"><span class="field-label">Gestione presenze</span><span class="field-value">${esc(d.company_name)}</span></div>`
           : '',
