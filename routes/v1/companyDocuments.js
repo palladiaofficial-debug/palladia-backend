@@ -19,8 +19,8 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
 
-// Ultimo errore catturato — esposto da /diag per debug
-let _lastErr = null;
+// Stato ultima chiamata autenticata — esposto da /diag
+let _lastCall = { state: 'never_called' };
 
 const CATEGORIES = [
   // Sicurezza D.Lgs. 81/2008
@@ -81,7 +81,7 @@ router.get('/company-documents/diag', async (req, res) => {
   if (e2) return res.json({ step: 2, ok: false, error: e2.message, code: e2.code, cid });
 
   // Mostra l'ultimo errore catturato dalla route autenticata
-  return res.json({ ok: true, step1: t1?.length, step2: t2?.length, lastAuthError: _lastErr });
+  return res.json({ ok: true, step1: t1?.length, step2: t2?.length, lastCall: _lastCall });
 });
 
 router.use(verifySupabaseJwt);
@@ -104,6 +104,7 @@ router.get('/company-documents/diag-auth', async (req, res) => {
 // ── GET lista ─────────────────────────────────────────────────────────────────
 
 router.get('/company-documents', async (req, res) => {
+  _lastCall = { state: 'entered', cid: req.companyId, ts: new Date().toISOString() };
   try {
     const { data, error } = await supabase
       .from('company_documents')
@@ -112,14 +113,14 @@ router.get('/company-documents', async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      _lastErr = { type: 'supabase', msg: error.message, code: error.code, cid: req.companyId, ts: new Date().toISOString() };
+      _lastCall = { state: 'supabase_error', msg: error.message, code: error.code, cid: req.companyId, ts: new Date().toISOString() };
       console.error('[company-docs] GET error:', error.message, error.code);
       return res.status(500).json({ error: 'DB_ERROR', detail: error.message, code: error.code });
     }
-    _lastErr = null;
+    _lastCall = { state: 'success', rows: data?.length, cid: req.companyId, ts: new Date().toISOString() };
     res.json(data || []);
   } catch (e) {
-    _lastErr = { type: 'exception', msg: e.message, cid: req.companyId, ts: new Date().toISOString() };
+    _lastCall = { state: 'exception', msg: e.message, ts: new Date().toISOString() };
     console.error('[company-docs] GET exception:', e.message);
     res.status(500).json({ error: 'EXCEPTION', detail: e.message });
   }
