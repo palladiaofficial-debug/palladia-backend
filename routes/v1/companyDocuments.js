@@ -86,6 +86,21 @@ router.get('/company-documents/diag', async (req, res) => {
 
 router.use(verifySupabaseJwt);
 
+// ── GET diagnostica autenticata ───────────────────────────────────────────────
+router.get('/company-documents/diag-auth', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('company_documents')
+      .select('id, name, category, file_size, mime_type, created_at')
+      .eq('company_id', req.companyId)
+      .order('created_at', { ascending: false });
+    if (error) return res.json({ ok: false, error: error.message, code: error.code, cid: req.companyId });
+    return res.json({ ok: true, count: data.length, cid: req.companyId });
+  } catch (e) {
+    return res.json({ ok: false, exception: e.message });
+  }
+});
+
 // ── GET lista ─────────────────────────────────────────────────────────────────
 
 router.get('/company-documents', async (req, res) => {
