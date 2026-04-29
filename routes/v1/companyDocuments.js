@@ -74,7 +74,10 @@ router.get('/company-documents', async (req, res) => {
     .eq('company_id', req.companyId)
     .order('created_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (error) {
+    console.error('[company-docs] GET error:', error.message, '| code:', error.code, '| companyId:', req.companyId);
+    return res.status(500).json({ error: 'DB_ERROR', detail: error.message, code: error.code });
+  }
   res.json(data || []);
 });
 
