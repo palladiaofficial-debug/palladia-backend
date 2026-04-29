@@ -64,13 +64,24 @@ function safeName(original) {
 }
 
 // ── Diagnosi tabella (NO auth — solo per debug, rimuovere dopo) ───────────────
-router.get('/company-documents/diag', async (_req, res) => {
-  const { data, error } = await supabase
+router.get('/company-documents/diag', async (req, res) => {
+  // Test 1: tabella accessibile
+  const { data: t1, error: e1 } = await supabase
     .from('company_documents')
     .select('id')
     .limit(1);
-  if (error) return res.json({ ok: false, error: error.message, code: error.code, hint: error.hint });
-  return res.json({ ok: true, tableExists: true, sample: data });
+  if (e1) return res.json({ step: 1, ok: false, error: e1.message, code: e1.code });
+
+  // Test 2: query completa con company_id dall'header (se presente)
+  const cid = req.headers['x-company-id'] || req.query.company_id;
+  const { data: t2, error: e2 } = await supabase
+    .from('company_documents')
+    .select('id, name, category, file_size, mime_type, created_at')
+    .eq('company_id', cid || '00000000-0000-0000-0000-000000000000')
+    .order('created_at', { ascending: false });
+  if (e2) return res.json({ step: 2, ok: false, error: e2.message, code: e2.code, cid });
+
+  return res.json({ ok: true, step1: t1?.length, step2: t2?.length, cid });
 });
 
 router.use(verifySupabaseJwt);
@@ -78,17 +89,22 @@ router.use(verifySupabaseJwt);
 // ── GET lista ─────────────────────────────────────────────────────────────────
 
 router.get('/company-documents', async (req, res) => {
-  const { data, error } = await supabase
-    .from('company_documents')
-    .select('id, name, category, file_size, mime_type, created_at')
-    .eq('company_id', req.companyId)
-    .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('company_documents')
+      .select('id, name, category, file_size, mime_type, created_at')
+      .eq('company_id', req.companyId)
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    console.error('[company-docs] GET error:', error.message, '| code:', error.code, '| companyId:', req.companyId);
-    return res.status(500).json({ error: 'DB_ERROR', detail: error.message, code: error.code });
+    if (error) {
+      console.error('[company-docs] GET supabase error:', error.message, '| code:', error.code, '| cid:', req.companyId);
+      return res.status(500).json({ error: 'DB_ERROR', detail: error.message, code: error.code });
+    }
+    res.json(data || []);
+  } catch (e) {
+    console.error('[company-docs] GET exception:', e.message);
+    res.status(500).json({ error: 'EXCEPTION', detail: e.message });
   }
-  res.json(data || []);
 });
 
 // ── POST upload ───────────────────────────────────────────────────────────────
