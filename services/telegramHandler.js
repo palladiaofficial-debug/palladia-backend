@@ -33,12 +33,13 @@ async function handleMessage(msg) {
     return linkAccount(chatId, token, msg.from);
   }
 
-  // Qualsiasi altro messaggio → redirect all'app
+  // Qualsiasi altro messaggio → redirect all'app + rimuove la tastiera
   return tg.sendMessage(chatId,
     `📲 <b>Palladia — Gestione Cantieri</b>\n\n` +
     `Questo canale invia avvisi automatici sulla tua impresa.\n\n` +
     `Per gestire cantieri, lavoratori e documenti apri l\'app:\n` +
-    `<a href="${FRONTEND_URL}">${FRONTEND_URL}</a>`
+    `<a href="${FRONTEND_URL}">${FRONTEND_URL}</a>`,
+    { replyMarkup: tg.removeReplyKeyboard() }
   );
 }
 
@@ -86,7 +87,8 @@ async function linkAccount(chatId, token, from) {
     `• Documenti in scadenza (lavoratori, mezzi, aziendali)\n` +
     `• Uscite non registrate a fine giornata\n` +
     `• Non conformità urgenti\n\n` +
-    `Nessuna azione richiesta — gli avvisi arrivano automaticamente.`
+    `Nessuna azione richiesta — gli avvisi arrivano automaticamente.`,
+    { replyMarkup: tg.removeReplyKeyboard() }
   );
 }
 
