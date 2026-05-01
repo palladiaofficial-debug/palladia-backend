@@ -144,9 +144,21 @@
     /* ── Documents ───────────────────────────────────────────── */
     .doc-list { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
     .doc-row  { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--card2); border-radius: var(--r-sm); }
-    .doc-icon { font-size: 16px; }
+    .doc-icon { font-size: 16px; flex-shrink: 0; }
     .doc-name { flex: 1; font-size: 13px; }
     .doc-status { font-size: 11px; font-weight: 600; }
+    .doc-status-ok   { font-size:11px; font-weight:600; color:var(--green); }
+    .doc-status-exp  { font-size:11px; font-weight:600; color:var(--yellow); }
+    .doc-status-bad  { font-size:11px; font-weight:600; color:var(--red); }
+    .doc-status-none { font-size:11px; font-weight:600; color:var(--dimmer); }
+    .doc-expiry      { font-size:10px; color:var(--dim); margin-top:1px; }
+    /* Worker docs expandable */
+    .worker-expand   { background:none; border:none; color:var(--blue); cursor:pointer; font-size:11px; padding:2px 6px; border-radius:4px; flex-shrink:0; }
+    .worker-expand:hover { background:var(--blue-bg); }
+    .worker-docs     { display:none; margin:2px 0 4px 18px; padding:8px 12px; background:var(--card); border-left:2px solid var(--border2); border-radius:0 var(--r-sm) var(--r-sm) 0; }
+    .worker-docs.open { display:block; }
+    .worker-doc-row  { display:flex; align-items:center; gap:10px; padding:3px 0; font-size:12px; }
+    .worker-doc-type { color:var(--dim); min-width:150px; flex-shrink:0; }
 
     /* ── Actions ─────────────────────────────────────────────── */
     .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
@@ -619,7 +631,7 @@ function backToPicker() {
 // ─── Site Detail ──────────────────────────────────────────────────────────────
 function renderDetail(data, showBack) {
   const { site, coordinator, safety_status, active_issues,
-          today_presences, document_status, workers,
+          today_presences, workers,
           nonconformities, recent_verifications, notes } = data;
 
   // Header
@@ -654,7 +666,7 @@ function renderDetail(data, showBack) {
   renderPresences(today_presences, workers, data.workers_count);
 
   // Documents
-  renderDocuments(document_status);
+  renderDocuments(data.company_documents || []);
 
   // Issues
   renderIssues(active_issues || []);
@@ -720,21 +732,50 @@ function renderPresences(tp, workers, totalWorkers) {
 
   const missingSet = new Set((tp.missing_exits || []).map(w => w.worker_id || w.id));
 
+  const WORKER_DOC_NAMES = {
+    idoneita_medica:'Idoneità medica', formazione_sicurezza:'Formazione sicurezza',
+    primo_soccorso:'Primo soccorso', antincendio:'Antincendio',
+    lavori_quota:'Lavori in quota', ponteggi:'Ponteggi', gruista:'Gruista',
+    pes_pav_pei:'PES/PAV/PEI', rspp:'RSPP', patente_guida:'Patente di guida', altro:'Altro',
+  };
+
   workers.slice(0, 20).forEach(w => {
-    const row = document.createElement('div');
+    const wrapper = document.createElement('div');
+    const row     = document.createElement('div');
     row.className = 'worker-row';
-    const onSite = w.on_site;
-    const cmp    = w.compliance?.overall || 'compliant';
-    const cmpTag = cmpBadge(cmp);
+    const onSite  = w.on_site;
+    const cmp     = w.compliance?.overall || 'compliant';
+    const hasDocs = w.documents && w.documents.length > 0;
 
     row.innerHTML = `
       <div class="worker-dot${onSite ? '' : ' absent'}"></div>
       <div class="worker-name">${esc(w.full_name)}${w.role ? ` <span style="color:var(--dim);font-size:11px">(${esc(w.role)})</span>` : ''}</div>
       ${onSite ? '<span class="worker-tag tag-ok">in cantiere</span>' : ''}
       ${missingSet.has(w.id) ? '<span class="worker-tag tag-exp">uscita mancante</span>' : ''}
-      ${cmp !== 'compliant' ? cmpTag : ''}
+      ${cmp !== 'compliant' ? cmpBadge(cmp) : ''}
+      ${hasDocs ? `<button class="worker-expand" onclick="toggleWorkerDocs('${w.id}')">📋 ${w.documents.length}</button>` : ''}
     `;
-    list.appendChild(row);
+
+    // Documenti lavoratore (espandibili)
+    const docsEl = document.createElement('div');
+    docsEl.className = 'worker-docs';
+    docsEl.id = `wdocs-${w.id}`;
+    if (hasDocs) {
+      w.documents.forEach(d => {
+        const dRow = document.createElement('div');
+        dRow.className = 'worker-doc-row';
+        const stHtml = d.status === 'expired'  ? `<span class="doc-status-bad">Scaduto${d.effective_expiry ? ' il ' + new Date(d.effective_expiry).toLocaleDateString('it-IT') : ''}</span>`
+                     : d.status === 'expiring' ? `<span class="doc-status-exp">In scadenza${d.effective_expiry ? ' il ' + new Date(d.effective_expiry).toLocaleDateString('it-IT') : ''}</span>`
+                     : d.status === 'ok'       ? `<span class="doc-status-ok">Valido${d.effective_expiry ? ' fino al ' + new Date(d.effective_expiry).toLocaleDateString('it-IT') : ''}</span>`
+                     : `<span class="doc-status-none">—</span>`;
+        dRow.innerHTML = `<span class="worker-doc-type">${esc(WORKER_DOC_NAMES[d.doc_type] || d.doc_type)}</span>${stHtml}`;
+        docsEl.appendChild(dRow);
+      });
+    }
+
+    wrapper.appendChild(row);
+    wrapper.appendChild(docsEl);
+    list.appendChild(wrapper);
   });
 
   if (workers.length > 20) {
@@ -743,6 +784,11 @@ function renderPresences(tp, workers, totalWorkers) {
     more.textContent = `+ altri ${workers.length - 20} lavoratori`;
     list.appendChild(more);
   }
+}
+
+function toggleWorkerDocs(workerId) {
+  const el = document.getElementById(`wdocs-${workerId}`);
+  if (el) el.classList.toggle('open');
 }
 
 function cmpBadge(overall) {
@@ -756,37 +802,61 @@ function cmpBadge(overall) {
 }
 
 // ─── Documents ────────────────────────────────────────────────────────────────
-function renderDocuments(ds) {
-  if (!ds) return;
+const DOC_ICONS = {
+  durc:'💼', dvr:'🛡️', duvri:'🔗', soa:'🏗️',
+  assicurazione:'🔒', polizza:'🔒', visura:'🏢',
+  formazione:'📚', rspp:'👷', rls:'🤝',
+  medico_competente:'⚕️', visite_mediche:'🩺',
+  primo_soccorso:'🏥', emergenze:'🚨', preposto:'📋',
+  f24:'💰', iso:'🎯', altro:'📁',
+};
+const DOC_NAMES = {
+  durc:'DURC', dvr:'DVR — Valutazione Rischi', duvri:'DUVRI',
+  soa:'Attestazione SOA', assicurazione:'Assicurazione', polizza:'Polizza',
+  visura:'Visura Camerale', formazione:'Formazione', rspp:'RSPP',
+  rls:'RLS', medico_competente:'Medico Competente',
+  visite_mediche:'Visite Mediche', primo_soccorso:'Primo Soccorso',
+  emergenze:'Piano Emergenze', preposto:'Preposto', f24:'F24',
+  iso:'Certificazione ISO', altro:'Altro',
+};
+
+function docStatusHtml(doc) {
+  const st = doc.status;
+  const d  = doc.effective_expiry ? new Date(doc.effective_expiry).toLocaleDateString('it-IT') : '';
+  if (st === 'expired')  return `<div><span class="doc-status-bad">● Scaduto</span>${d ? `<div class="doc-expiry">${d}</div>` : ''}</div>`;
+  if (st === 'expiring') return `<div><span class="doc-status-exp">● In scadenza</span>${d ? `<div class="doc-expiry">${d}</div>` : ''}</div>`;
+  if (st === 'ok')       return `<div><span class="doc-status-ok">● Valido</span>${d ? `<div class="doc-expiry">fino al ${d}</div>` : ''}</div>`;
+  return `<span class="doc-status-none">Nessuna scadenza</span>`;
+}
+
+function renderDocuments(docs) {
   const list = document.getElementById('doc-list');
   list.innerHTML = '';
 
-  const ICONS = { pos:'📄', psc:'📋', notifica_asl:'📬', durc:'💼', dvr:'🛡️' };
-  const NAMES = {
-    pos:'Piano Operativo di Sicurezza',
-    psc:'Piano di Sicurezza e Coordinamento',
-    notifica_asl:'Notifica ASL',
-    durc:'DURC',
-    dvr:'Documento Valutazione Rischi',
-  };
+  if (!docs || docs.length === 0) {
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📁</div>Nessun documento aziendale caricato</div>';
+    document.getElementById('docs-count').textContent = '0 documenti';
+    return;
+  }
 
-  let ok = 0, warn = 0;
-
-  (ds.categories || []).forEach(cat => {
+  let expired = 0, expiring = 0;
+  docs.forEach(doc => {
     const row = document.createElement('div');
     row.className = 'doc-row';
-    const statusColor = cat.present ? 'var(--green)' : 'var(--red)';
-    const statusText  = cat.present ? 'Presente' : 'Mancante';
-    if (cat.present) ok++; else warn++;
+    if (doc.status === 'expired')  expired++;
+    if (doc.status === 'expiring') expiring++;
     row.innerHTML = `
-      <span class="doc-icon">${ICONS[cat.key] || '📁'}</span>
-      <span class="doc-name">${NAMES[cat.key] || cat.key}</span>
-      <span class="doc-status" style="color:${statusColor}">${statusText}</span>
+      <span class="doc-icon">${DOC_ICONS[doc.doc_type] || '📁'}</span>
+      <span class="doc-name">${esc(doc.name || DOC_NAMES[doc.doc_type] || doc.doc_type)}</span>
+      ${docStatusHtml(doc)}
     `;
     list.appendChild(row);
   });
 
-  document.getElementById('docs-count').textContent = `${ok}/${(ds.categories||[]).length} presenti`;
+  const parts = [`${docs.length} document${docs.length !== 1 ? 'i' : 'o'}`];
+  if (expired > 0)  parts.push(`${expired} scadut${expired > 1 ? 'i' : 'o'}`);
+  if (expiring > 0) parts.push(`${expiring} in scadenza`);
+  document.getElementById('docs-count').textContent = parts.join(' · ');
 }
 
 // ─── Issues ───────────────────────────────────────────────────────────────────

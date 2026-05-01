@@ -96,7 +96,7 @@ async function getFullSiteData(invite) {
   const today = new Date().toISOString().slice(0, 10);
   const in30  = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
-  const [siteR, workersR, presR, notesR, ncR, visitsR, verifR, subsR, equipR] = await Promise.all([
+  const [siteR, workersR, presR, notesR, ncR, visitsR, verifR, subsR, equipR, companyDocsR] = await Promise.all([
     supabase.from('sites')
       .select('id, name, address, status, client, start_date, companies(name)')
       .eq('id', siteId).maybeSingle(),
@@ -142,6 +142,11 @@ async function getFullSiteData(invite) {
     supabase.from('equipment')
       .select('id, type, model, plate_or_serial, ownership, inspection_date, insurance_expiry, maintenance_date')
       .eq('company_id', companyId).eq('is_active', true).order('type'),
+
+    supabase.from('company_documents')
+      .select('id, name, doc_type, expiry_date, ai_expiry_date, ai_validity_ok, ai_summary, ai_analyzed_at, uploaded_at')
+      .eq('company_id', companyId)
+      .order('doc_type'),
   ]);
 
   if (!siteR.data) return null;
@@ -203,6 +208,33 @@ async function getFullSiteData(invite) {
   const todayPresences = await getTodayPresences(siteId, companyId, workers);
   const documentStatus = await getDocumentStatus(siteId, companyId);
 
+  // Documenti aziendali con status calcolato
+  const companyDocuments = (companyDocsR.data || []).map(d => ({
+    ...d,
+    effective_expiry: d.expiry_date || d.ai_expiry_date || null,
+    status: complianceStatus(d.expiry_date || d.ai_expiry_date),
+  }));
+
+  // Documenti lavoratori (per i lavoratori assegnati al cantiere)
+  if (workers.length > 0) {
+    const wIds = workers.map(w => w.id);
+    const { data: wDocsRaw } = await supabase
+      .from('worker_documents')
+      .select('id, worker_id, doc_type, name, expiry_date, ai_expiry_date, ai_validity_ok, ai_summary, ai_analyzed_at')
+      .in('worker_id', wIds)
+      .order('doc_type');
+    const wDocsByWorker = {};
+    for (const d of (wDocsRaw || [])) {
+      if (!wDocsByWorker[d.worker_id]) wDocsByWorker[d.worker_id] = [];
+      wDocsByWorker[d.worker_id].push({
+        ...d,
+        effective_expiry: d.expiry_date || d.ai_expiry_date || null,
+        status: complianceStatus(d.expiry_date || d.ai_expiry_date),
+      });
+    }
+    for (const w of workers) w.documents = wDocsByWorker[w.id] || [];
+  }
+
   // Mezzi
   const equipment = (equipR.data || []).map(e => {
     const dates = [e.inspection_date, e.insurance_expiry, e.maintenance_date].filter(Boolean);
@@ -227,7 +259,8 @@ async function getFullSiteData(invite) {
     safety_status:    safetyStatus,
     active_issues:    activeIssues,
     today_presences:  todayPresences,
-    document_status:  documentStatus,
+    company_documents: companyDocuments,
+    document_status:   documentStatus,
     workers,
     on_site_count:    onSiteIds.size,
     presence_summary: presenceSummary,

@@ -103,55 +103,18 @@ router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, async (req,
   let   portalUrl = cseUrl; // default per inviti senza email
 
   if (coordinator_email) {
-    // Crea sessione Pro + upsert profilo coordinatore → magic link portale unificato
-    const proRawToken  = generateToken();
-    const proTokenHash = hashToken(proRawToken);
-
-    const { error: proErr } = await supabase
-      .from('coordinator_pro_sessions')
-      .insert({
-        email:      String(coordinator_email).trim().toLowerCase(),
-        token_hash: proTokenHash,
-        expires_at: expiresAt,
+    try {
+      await sendCoordinatorInviteEmail({
+        to:                 coordinator_email,
+        coordinatorName:    invite.coordinator_name,
+        siteName:           site.name,
+        siteAddress:        site.address || '',
+        coordinatorCompany: invite.coordinator_company || '',
+        accessUrl:          cseUrl,
+        expiresAt,
       });
-
-    if (!proErr) {
-      // Upsert profilo (best-effort, non blocca)
-      supabase.from('coordinator_profiles').upsert({
-        email:      String(coordinator_email).trim().toLowerCase(),
-        full_name:  String(coordinator_name).trim().slice(0, 200),
-        azienda:    coordinator_company ? String(coordinator_company).trim().slice(0, 200) : null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'email' }).then(() => {});
-
-      portalUrl = `${appBase}/coordinator/accesso/${proRawToken}`;
-
-      try {
-        await sendProMagicLinkEmail({
-          to:                 coordinator_email,
-          coordinatorName:    invite.coordinator_name,
-          coordinatorCompany: invite.coordinator_company || '',
-          accessUrl:          portalUrl,
-        });
-      } catch (emailErr) {
-        console.warn('[coordinator] pro email failed:', emailErr.message);
-      }
-    } else {
-      // Fallback al vecchio link CSE
-      console.warn('[coordinator] pro session insert failed, fallback to CSE email:', proErr.message);
-      try {
-        await sendCoordinatorInviteEmail({
-          to:                 coordinator_email,
-          coordinatorName:    invite.coordinator_name,
-          siteName:           site.name,
-          siteAddress:        site.address || '',
-          coordinatorCompany: invite.coordinator_company || '',
-          accessUrl:          cseUrl,
-          expiresAt,
-        });
-      } catch (emailErr) {
-        console.warn('[coordinator] cse email failed:', emailErr.message);
-      }
+    } catch (emailErr) {
+      console.warn('[coordinator] email failed:', emailErr.message);
     }
   }
 
@@ -457,8 +420,8 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     recent_days:          recentDays,
   };
 
-  // ── Note + Non Conformità + Storico visite + Verifiche (in parallelo) ──────
-  const [notesRes, ncRes, visitsRes, verifRes] = await Promise.all([
+  // ── Note + NC + Visite + Verifiche + Documenti aziendali (in parallelo) ────
+  const [notesRes, ncRes, visitsRes, verifRes, companyDocsRes] = await Promise.all([
     supabase.from('site_coordinator_notes')
       .select('id, note_type, content, coordinator_name, created_at')
       .eq('site_id', invite.site_id)
@@ -479,7 +442,40 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
       .eq('invite_id', invite.id)
       .order('created_at', { ascending: false })
       .limit(5),
+    supabase.from('company_documents')
+      .select('id, name, doc_type, expiry_date, ai_expiry_date, ai_validity_ok, ai_summary, ai_analyzed_at, uploaded_at')
+      .eq('company_id', invite.company_id)
+      .order('doc_type'),
   ]);
+
+  // ── Documenti lavoratori (per i lavoratori assegnati al cantiere) ────────────
+  const workerIds = workers.map(w => w.id);
+  let workerDocsByWorkerId = {};
+  if (workerIds.length > 0) {
+    const { data: wDocsRaw } = await supabase
+      .from('worker_documents')
+      .select('id, worker_id, doc_type, name, expiry_date, ai_expiry_date, ai_validity_ok, ai_summary, ai_analyzed_at')
+      .in('worker_id', workerIds)
+      .order('doc_type');
+    for (const d of (wDocsRaw || [])) {
+      if (!workerDocsByWorkerId[d.worker_id]) workerDocsByWorkerId[d.worker_id] = [];
+      workerDocsByWorkerId[d.worker_id].push({
+        ...d,
+        effective_expiry: d.expiry_date || d.ai_expiry_date || null,
+        status: complianceStatus(d.expiry_date || d.ai_expiry_date),
+      });
+    }
+    for (const w of workers) {
+      w.documents = workerDocsByWorkerId[w.id] || [];
+    }
+  }
+
+  // ── Arricchisci documenti aziendali con status calcolato ─────────────────────
+  const companyDocuments = (companyDocsRes.data || []).map(d => ({
+    ...d,
+    effective_expiry: d.expiry_date || d.ai_expiry_date || null,
+    status: complianceStatus(d.expiry_date || d.ai_expiry_date),
+  }));
 
   // ── Calcoli arricchiti ────────────────────────────────────────────────────
   const complianceStats = workers.reduce((acc, w) => {
@@ -516,8 +512,9 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
     active_issues:  activeIssues,
     // ── Presenze di oggi ──────────────────────────────────────────────────
     today_presences: todayPresences,
-    // ── Documenti e scadenze ──────────────────────────────────────────────
-    document_status: documentStatus,
+    // ── Documenti aziendali (DURC, DVR, polizze, ecc.) ───────────────────
+    company_documents: companyDocuments,
+    document_status:   documentStatus,
     // ── Dati completi (compatibilità retroattiva) ─────────────────────────
     workers,
     workers_count:    workers.length,
