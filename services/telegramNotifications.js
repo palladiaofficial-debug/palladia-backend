@@ -392,6 +392,106 @@ async function notifyAutoExec(companyId, text) {
   return notifyCompany(companyId, text);
 }
 
+// ── Alert scadenze / documenti mancanti ──────────────────────────────────────
+
+const FRONTEND_URL_TG = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
+
+/**
+ * Invia un alert di scadenza/mancanza a tutti gli utenti Telegram della company.
+ * @param {string} companyId
+ * @param {string} text - testo HTML già formattato
+ */
+async function notifyExpiryAlert(companyId, text) {
+  return notifyCompany(companyId, text);
+}
+
+/**
+ * Invia "✅ Risolto" per una lista di notifiche risolte.
+ * Raggruppa i titoli risolti in un unico messaggio se sono più di uno.
+ */
+async function notifyResolved(companyId, resolvedItems, sectionLabel) {
+  if (!resolvedItems?.length) return;
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+
+  const list = resolvedItems.map(r => `• ${r.title}`).join('\n');
+  const text =
+    `✅ <b>PALLADIA — Risolto</b>\n\n` +
+    `${sectionLabel}:\n${list}\n\n` +
+    `Nessuna azione richiesta.`;
+
+  return notifyCompany(companyId, text);
+}
+
+/**
+ * Formatta un messaggio di alert scadenze per i mezzi aziendali.
+ */
+function buildEquipmentExpiryMessage(items) {
+  const lines = items.map(eq => {
+    const name    = [eq.type, eq.model, eq.plate_or_serial].filter(Boolean).join(' ');
+    const icon    = eq.issues.some(i => i.severity === 'critical') ? '🔴' : '🟡';
+    const details = eq.issues.map(i => `${i.label}: ${i.days < 0 ? `scaduta ${Math.abs(i.days)}gg fa` : `scade in ${i.days}gg`}`).join(', ');
+    return `${icon} <b>${name}</b>\n   ${details}`;
+  });
+  return (
+    `⚠️ <b>PALLADIA — Scadenze mezzi</b>\n\n` +
+    lines.join('\n\n') +
+    `\n\n→ <a href="${FRONTEND_URL_TG}/risorse">Gestisci i mezzi</a>`
+  );
+}
+
+/**
+ * Formatta un messaggio di alert scadenze per i documenti lavoratori.
+ */
+function buildWorkerDocExpiryMessage(docsByType, docTypeLabels) {
+  const lines = [];
+  for (const [docType, docs] of Object.entries(docsByType)) {
+    const label = docTypeLabels[docType] || docType;
+    lines.push(`📋 <b>${label}</b>`);
+    for (const d of docs) {
+      const icon = d.severity === 'critical' ? '🔴' : '🟡';
+      const when = d.days < 0 ? `scaduta ${Math.abs(d.days)}gg fa` : `scade in ${d.days}gg`;
+      lines.push(`   ${icon} ${d.worker?.full_name || ''} — ${when}`);
+    }
+  }
+  return (
+    `⚠️ <b>PALLADIA — Documenti lavoratori</b>\n\n` +
+    lines.join('\n') +
+    `\n\n→ <a href="${FRONTEND_URL_TG}/risorse">Aggiorna i documenti</a>`
+  );
+}
+
+/**
+ * Formatta un messaggio di alert scadenze per i documenti aziendali.
+ */
+function buildCompanyDocExpiryMessage(docs, categoryLabels) {
+  const lines = docs.map(d => {
+    const icon  = d.severity === 'critical' ? '🔴' : '🟡';
+    const label = (categoryLabels || {})[d.category] || d.category;
+    const when  = d.days < 0 ? `scaduto ${Math.abs(d.days)}gg fa` : `scade in ${d.days}gg`;
+    return `${icon} <b>${label}</b> — ${d.name}\n   ${when}`;
+  });
+  return (
+    `⚠️ <b>PALLADIA — Documenti aziendali</b>\n\n` +
+    lines.join('\n\n') +
+    `\n\n→ <a href="${FRONTEND_URL_TG}/risorse">Gestisci i documenti</a>`
+  );
+}
+
+/**
+ * Formatta un messaggio per lavoratori con documenti obbligatori mancanti.
+ */
+function buildMissingDocsMessage(workersMissing) {
+  const lines = workersMissing.map(w => {
+    const missing = w.missingTypes.join(', ');
+    return `🔴 <b>${w.full_name}</b>\n   Mancante: ${missing}`;
+  });
+  return (
+    `🚨 <b>PALLADIA — Documenti obbligatori mancanti</b>\n\n` +
+    lines.join('\n\n') +
+    `\n\n→ <a href="${FRONTEND_URL_TG}/risorse">Carica i documenti</a>`
+  );
+}
+
 module.exports = {
   notifyCompany,
   notifyCoordinators,
@@ -405,4 +505,10 @@ module.exports = {
   sendCustomNotification,
   getCompanyTelegramUsers,
   getLinkedChatIdsForSite,
+  notifyExpiryAlert,
+  notifyResolved,
+  buildEquipmentExpiryMessage,
+  buildWorkerDocExpiryMessage,
+  buildCompanyDocExpiryMessage,
+  buildMissingDocsMessage,
 };

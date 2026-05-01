@@ -1,7 +1,7 @@
 'use strict';
 /**
  * services/expiryHelper.js
- * Utility condivise tra i cron di scadenza (worker, equipment, company docs).
+ * Utility condivise tra i cron di scadenza (worker, equipment, company docs, missing docs).
  */
 
 const supabase = require('../lib/supabase');
@@ -21,9 +21,9 @@ function inDays(n) { return new Date(Date.now() + n * 86400000).toISOString().sp
 
 function severityFor(days) {
   if (days === null) return null;
-  if (days < 0)  return 'critical'; // già scaduto
-  if (days <= 7) return 'warning';  // scade entro 7 giorni
-  return 'info';                    // scade entro 30 giorni
+  if (days < 0)  return 'critical';
+  if (days <= 7) return 'warning';
+  return 'info';
 }
 
 function severityLabel(days) {
@@ -65,10 +65,16 @@ async function getCompanyAdminEmails(companyId) {
 const SEVERITY_RANK = { info: 0, warning: 1, critical: 2 };
 
 /**
- * Upsert una notifica. Se severity peggiora, azzera read_by.
+ * Upsert una notifica.
+ * Restituisce { isNew, escalated } — usati per decidere se inviare Telegram.
+ *
+ * Logica invio Telegram:
+ *   - isNew     → prima volta che questo problema appare  → invia sempre
+ *   - escalated → severity è peggiorata (info→warning o warning→critical) → invia sempre
+ *   - severity = 'critical' → invia sempre (ogni giorno finché non risolto)
+ *   - altrimenti           → non inviare (già notificato, non è peggiorato)
  */
 async function upsertNotification({ companyId, type, severity, title, body, entityType, entityId }) {
-  // Leggi se esiste già
   const { data: existing } = await supabase
     .from('notifications')
     .select('id, severity, read_by')
@@ -78,8 +84,8 @@ async function upsertNotification({ companyId, type, severity, title, body, enti
     .eq('type',        type)
     .maybeSingle();
 
-  const severityWorsened = existing
-    && (SEVERITY_RANK[severity] ?? 0) > (SEVERITY_RANK[existing.severity] ?? 0);
+  const isNew      = !existing;
+  const escalated  = !isNew && (SEVERITY_RANK[severity] ?? 0) > (SEVERITY_RANK[existing.severity] ?? 0);
 
   const record = {
     company_id:  companyId,
@@ -90,45 +96,45 @@ async function upsertNotification({ companyId, type, severity, title, body, enti
     entity_type: entityType,
     entity_id:   entityId,
     updated_at:  new Date().toISOString(),
-    // Azzera read_by se severity peggiora → la notifica riappare come non letta
-    ...(severityWorsened ? { read_by: [] } : {}),
+    ...(escalated ? { read_by: [] } : {}), // severity peggiorata → riappare come non letta
   };
 
   await supabase
     .from('notifications')
     .upsert(record, { onConflict: 'company_id,entity_type,entity_id,type' });
+
+  return { isNew, escalated };
 }
 
 /**
- * Rimuove notifiche di un tipo per cui non esiste più una scadenza imminente.
- * entityIds = set di ID ancora rilevanti (il resto viene eliminato).
+ * Determina se inviare la notifica Telegram in base a severity e metadati.
+ */
+function shouldSendTelegram(severity, { isNew, escalated }) {
+  if (severity === 'critical') return true;  // critici: ogni giorno
+  if (isNew || escalated)      return true;  // primo avviso o peggioramento
+  return false;
+}
+
+/**
+ * Rimuove notifiche per cui il problema non esiste più.
+ * Restituisce { resolved } — lista di notifiche eliminate (per inviare "✅ Risolto" su Telegram).
  */
 async function pruneNotifications(companyId, type, entityType, relevantEntityIds) {
-  if (!relevantEntityIds.size) {
-    // Nessuna scadenza rilevante → elimina tutte di quel tipo
-    await supabase.from('notifications')
-      .delete()
-      .eq('company_id', companyId)
-      .eq('type', type)
-      .eq('entity_type', entityType);
-    return;
-  }
-
-  // Recupera le notifiche esistenti per questo tipo
   const { data: existing } = await supabase
     .from('notifications')
-    .select('id, entity_id')
+    .select('id, entity_id, title')
     .eq('company_id', companyId)
     .eq('type', type)
     .eq('entity_type', entityType);
 
-  const toDelete = (existing || [])
-    .filter(n => !relevantEntityIds.has(n.entity_id))
-    .map(n => n.id);
+  const toDelete = (existing || []).filter(n => !relevantEntityIds.has(n.entity_id));
+  const resolved = toDelete.map(n => ({ id: n.id, title: n.title, entityId: n.entity_id }));
 
   if (toDelete.length) {
-    await supabase.from('notifications').delete().in('id', toDelete);
+    await supabase.from('notifications').delete().in('id', toDelete.map(n => n.id));
   }
+
+  return { resolved };
 }
 
 module.exports = {
@@ -140,5 +146,6 @@ module.exports = {
   getCompanyName,
   getCompanyAdminEmails,
   upsertNotification,
+  shouldSendTelegram,
   pruneNotifications,
 };

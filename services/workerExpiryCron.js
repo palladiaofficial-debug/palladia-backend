@@ -5,12 +5,9 @@
  * Cron giornaliero (07:15 Europe/Rome) — controlla worker_documents.expiry_date
  * per TUTTI i tipi di documento (idoneità, formazione, antincendio, ponteggi, ecc.).
  *
- * Soglie:
- *   - critical: già scaduto (< oggi)
- *   - warning:  scade entro 7 giorni
- *   - info:     scade entro 30 giorni
- *
- * Crea notifiche in-app + invia email agli owner/admin/tech.
+ * Cadenza Telegram:
+ *   - critical (già scaduto): ogni giorno
+ *   - warning/info (prima volta o peggioramento): una volta
  */
 
 const cron     = require('node-cron');
@@ -19,9 +16,13 @@ const {
   daysUntil, inDays,
   severityFor, severityLabel,
   getCompanyName, getCompanyAdminEmails,
-  upsertNotification, pruneNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications,
 } = require('./expiryHelper');
 const { sendWorkerDocExpiryAlert } = require('./email');
+const {
+  notifyExpiryAlert, notifyResolved,
+  buildWorkerDocExpiryMessage,
+} = require('./telegramNotifications');
 
 const DOC_TYPE_LABELS = {
   idoneita_medica:      'Idoneità medica',
@@ -42,23 +43,18 @@ async function runWorkerExpiryCheck() {
 
   const t30 = inDays(30);
 
-  // Tutti i worker_documents con scadenza nei prossimi 30 giorni (o già scaduta)
   const { data: docs, error } = await supabase
     .from('worker_documents')
-    .select(`
-      id, company_id, worker_id, doc_type, name, expiry_date,
-      worker:workers ( full_name, is_active )
-    `)
+    .select(`id, company_id, worker_id, doc_type, name, expiry_date,
+             worker:workers ( full_name, is_active )`)
     .not('expiry_date', 'is', null)
     .lte('expiry_date', t30);
 
   if (error) { console.error('[workerExpiry] fetch error:', error.message); return; }
 
-  // Filtra solo lavoratori attivi
   const relevant = (docs || []).filter(d => d.worker?.is_active);
-  if (!relevant.length) { console.log('[workerExpiry] nessuna scadenza imminente — skip.'); return; }
+  if (!relevant.length) { console.log('[workerExpiry] nessuna scadenza — skip.'); return; }
 
-  // Aggiungi days + severity
   const docsWithMeta = relevant.map(d => ({
     ...d,
     days:     daysUntil(d.expiry_date),
@@ -72,21 +68,16 @@ async function runWorkerExpiryCheck() {
     byCompany[d.company_id].push(d);
   }
 
-  const companyIds = Object.keys(byCompany);
-  if (!companyIds.length) { console.log('[workerExpiry] nessuna scadenza rilevante — skip.'); return; }
-
-  console.log(`[workerExpiry] ${companyIds.length} company con scadenze imminenti`);
-
-  for (const companyId of companyIds) {
+  for (const companyId of Object.keys(byCompany)) {
     const items = byCompany[companyId];
-
     try {
-      // ── Notifiche in-app — una per documento ──────────────────────────────
-      const relevantIds = new Set();
+      // ── Notifiche in-app + flag Telegram ──────────────────────────────────
+      const relevantIds  = new Set();
+      const telegramDocs = []; // docs che richiedono notifica Telegram oggi
 
       for (const d of items) {
         const typeLabel = DOC_TYPE_LABELS[d.doc_type] || 'Documento';
-        await upsertNotification({
+        const { isNew, escalated } = await upsertNotification({
           companyId,
           type:       'worker_doc_expiry',
           severity:   d.severity,
@@ -96,23 +87,38 @@ async function runWorkerExpiryCheck() {
           entityId:   d.id,
         });
         relevantIds.add(d.id);
+        if (shouldSendTelegram(d.severity, { isNew, escalated })) {
+          telegramDocs.push(d);
+        }
       }
 
-      await pruneNotifications(companyId, 'worker_doc_expiry', 'worker_document', relevantIds);
+      const { resolved } = await pruneNotifications(companyId, 'worker_doc_expiry', 'worker_document', relevantIds);
+
+      // ── Telegram ──────────────────────────────────────────────────────────
+      if (telegramDocs.length) {
+        // Raggruppa per tipo per il messaggio
+        const byType = {};
+        for (const d of telegramDocs) {
+          if (!byType[d.doc_type]) byType[d.doc_type] = [];
+          byType[d.doc_type].push(d);
+        }
+        const msg = buildWorkerDocExpiryMessage(byType, DOC_TYPE_LABELS);
+        await notifyExpiryAlert(companyId, msg).catch(() => {});
+      }
+
+      if (resolved.length) {
+        await notifyResolved(companyId, resolved, 'Documenti lavoratori aggiornati').catch(() => {});
+      }
 
       // ── Email ─────────────────────────────────────────────────────────────
       const emails      = await getCompanyAdminEmails(companyId);
       const companyName = await getCompanyName(companyId);
-
       if (emails.length) {
         await sendWorkerDocExpiryAlert({
-          to: emails,
-          companyName,
-          docs: items,
-          docTypeLabels: DOC_TYPE_LABELS,
-          dashboardUrl: (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
+          to: emails, companyName, docs: items, docTypeLabels: DOC_TYPE_LABELS,
+          dashboardUrl: (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
         });
-        console.log(`[workerExpiry] ${companyId}: email → ${emails.length} destinatari, ${items.length} documenti`);
+        console.log(`[workerExpiry] ${companyId}: email → ${emails.length} dest., Telegram → ${telegramDocs.length} docs, risolti → ${resolved.length}`);
       }
     } catch (e) {
       console.error(`[workerExpiry] errore company ${companyId}:`, e.message);
@@ -127,8 +133,7 @@ function startWorkerExpiryCron() {
     try { await runWorkerExpiryCheck(); }
     catch (e) { console.error('[workerExpiry] errore cron:', e.message); }
   }, { timezone: 'Europe/Rome' });
-
-  console.log('[cron] worker-expiry scheduler attivo — ogni giorno alle 07:15 (Europe/Rome)');
+  console.log('[cron] worker-expiry attivo — 07:15 Europe/Rome');
 }
 
 module.exports = { startWorkerExpiryCron, runWorkerExpiryCheck };

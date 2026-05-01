@@ -1008,6 +1008,44 @@ async function sendCompanyDocExpiryAlert({ to, companyName, docs, categoryLabels
   });
 }
 
+// ── sendWorkerMissingDocsAlert ────────────────────────────────────────────────
+// Alert giornaliero — lavoratori privi di idoneità medica o formazione sicurezza.
+async function sendWorkerMissingDocsAlert({ to, companyName, workers, dashboardUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const rows = workers.map(w => `<tr>
+    <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(w.full_name)}</td>
+    <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#ef4444;">${esc(w.missingTypes.join(', '))}</td>
+  </tr>`).join('');
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Documenti obbligatori mancanti</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Per <strong style="color:#1a1a1a;">${esc(companyName)}</strong>: ${workers.length} lavorator${workers.length === 1 ? 'e' : 'i'} senza documenti obbligatori per legge (D.Lgs. 81/2008).
+      Carica i documenti mancanti al più presto.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:24px;">
+      <thead><tr style="background:#fef2f2;">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#ef4444;text-transform:uppercase;letter-spacing:0.05em;">Documenti mancanti</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${btn('Carica i Documenti →', dashboardUrl)}
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Questo alert viene inviato ogni giorno finché i documenti non vengono caricati su Palladia.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   Array.isArray(to) ? to : [to],
+    subject: `Palladia ⚠️ — ${workers.length} lavorator${workers.length === 1 ? 'e' : 'i'} senza documenti obbligatori | ${esc(companyName)}`,
+    html:    layout('Documenti obbligatori mancanti', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1024,4 +1062,5 @@ module.exports = {
   sendWorkerDocExpiryAlert,
   sendEquipmentExpiryAlert,
   sendCompanyDocExpiryAlert,
+  sendWorkerMissingDocsAlert,
 };
