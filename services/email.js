@@ -1046,6 +1046,44 @@ async function sendWorkerMissingDocsAlert({ to, companyName, workers, dashboardU
   });
 }
 
+// ─── Email: Recupero link CSE ──────────────────────────────────────────────────
+async function sendCoordinatorRecoveryEmail({ to, coordinatorName, siteLinks }) {
+  const firstName = (coordinatorName || to).split(' ')[0];
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  const linksHtml = siteLinks.map(({ siteName, siteAddress, accessUrl, expiresAt }) => {
+    const expDate = new Date(expiresAt).toLocaleDateString('it-IT', { day:'2-digit', month:'long', year:'numeric' });
+    return `
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:12px;">
+      <tr><td style="padding:20px 24px;">
+        <p style="margin:0 0 4px;font-size:15px;font-weight:700;color:#1a1a1a;">${esc(siteName)}</p>
+        ${siteAddress ? `<p style="margin:0 0 10px;font-size:13px;color:#6b7280;">${esc(siteAddress)}</p>` : ''}
+        <p style="margin:0 0 14px;font-size:12px;color:#9ca3af;">Accesso valido fino al ${esc(expDate)}</p>
+        ${btn('Apri portale CSE →', accessUrl)}
+      </td></tr>
+    </table>`;
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${esc(firstName)},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Hai richiesto i link di accesso al portale CSE. Di seguito trovi i tuoi cantieri attivi.
+    </p>
+    ${linksHtml}
+    <p style="margin:20px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      I link precedenti sono stati sostituiti con quelli nuovi presenti in questa email.<br>
+      Se non hai richiesto questo invio, puoi ignorare questa email.
+    </p>`;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `I tuoi link di accesso CSE — Palladia`,
+    html: layout('Recupero accesso portale CSE', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1053,6 +1091,7 @@ module.exports = {
   sendInviteEmail,
   sendCoordinatorInviteEmail,
   sendCoordinatorNoteAlert,
+  sendCoordinatorRecoveryEmail,
   sendProMagicLinkEmail,
   sendMemberRemovedEmail,
   sendNonconformityAlert,

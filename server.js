@@ -288,6 +288,9 @@ app.get('/badge/:code', (req, res) => {
 app.get('/timbratura/:code', (req, res) => {
   res.sendFile('badge-punch.html', { root: __dirname + '/public' });
 });
+app.get('/coordinator', (req, res) => {
+  res.sendFile('coordinator.html', { root: __dirname + '/public' });
+});
 app.get('/coordinator/accesso/:token', (req, res) => {
   res.sendFile('coordinator.html', { root: __dirname + '/public' });
 });

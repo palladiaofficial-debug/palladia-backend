@@ -15,14 +15,23 @@
 const crypto   = require('crypto');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
+const rateLimit                = require('express-rate-limit');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { coordinatorLimiter }   = require('../../middleware/rateLimit');
 const { auditLog }             = require('../../lib/audit');
 const {
   sendCoordinatorInviteEmail,
   sendCoordinatorNoteAlert,
-  sendProMagicLinkEmail,
+  sendCoordinatorRecoveryEmail,
 } = require('../../services/email');
+
+const recoveryLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 ora
+  max:      3,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'TOO_MANY_REQUESTS' },
+});
 const {
   computeSafetyStatus,
   buildActiveIssues,
@@ -592,6 +601,65 @@ router.post('/coordinator/:token/notes', coordinatorLimiter, async (req, res) =>
   }
 
   res.status(201).json({ ok: true, note });
+});
+
+// ── POST /api/v1/coordinator/request-link — recupero link via email (PUBBLICO) ─
+// Rate limit: 3/ora per IP. Risponde sempre 200 per evitare enumerazione email.
+// Rigenera il token per ogni invito attivo → invalida link precedenti → invia email.
+router.post('/coordinator/request-link', recoveryLimiter, async (req, res) => {
+  const { email } = req.body || {};
+  const safeEmail = typeof email === 'string' ? email.trim().toLowerCase().slice(0, 200) : '';
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeEmail);
+
+  if (!emailValid) return res.json({ ok: true }); // silenzioso — no enumeration
+
+  try {
+    const { data: invites } = await supabase
+      .from('site_coordinator_invites')
+      .select('id, site_id, coordinator_name, coordinator_company, expires_at')
+      .eq('coordinator_email', safeEmail)
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString());
+
+    if (!invites || invites.length === 0) return res.json({ ok: true });
+
+    // Fetch nomi cantieri
+    const siteIds = [...new Set(invites.map(i => i.site_id))];
+    const { data: sitesRaw } = await supabase
+      .from('sites').select('id, name, address').in('id', siteIds);
+    const siteMap = Object.fromEntries((sitesRaw || []).map(s => [s.id, s]));
+
+    const appBase  = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+    const siteLinks = [];
+
+    for (const invite of invites) {
+      // Genera nuovo token e aggiorna hash → vecchio link invalidato
+      const rawToken  = generateToken();
+      const tokenHash = hashToken(rawToken);
+      await supabase
+        .from('site_coordinator_invites')
+        .update({ token_hash: tokenHash })
+        .eq('id', invite.id);
+
+      const site = siteMap[invite.site_id] || {};
+      siteLinks.push({
+        siteName:    site.name    || 'Cantiere',
+        siteAddress: site.address || '',
+        accessUrl:   `${appBase}/coordinator/${rawToken}`,
+        expiresAt:   invite.expires_at,
+      });
+    }
+
+    await sendCoordinatorRecoveryEmail({
+      to:              safeEmail,
+      coordinatorName: invites[0].coordinator_name,
+      siteLinks,
+    });
+  } catch (err) {
+    console.error('[coordinator] request-link error:', err.message);
+  }
+
+  res.json({ ok: true }); // sempre 200
 });
 
 module.exports = router;

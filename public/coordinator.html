@@ -160,6 +160,22 @@
     .worker-doc-row  { display:flex; align-items:center; gap:10px; padding:3px 0; font-size:12px; }
     .worker-doc-type { color:var(--dim); min-width:150px; flex-shrink:0; }
 
+    /* ── Landing ─────────────────────────────────────────────── */
+    .landing-hero { text-align:center; padding:40px 0 28px; }
+    .landing-hero-icon { font-size:48px; margin-bottom:14px; }
+    .landing-hero-title { font-size:22px; font-weight:700; margin-bottom:6px; }
+    .landing-hero-sub { font-size:13px; color:var(--dim); line-height:1.6; }
+    .landing-site-card { display:block; background:var(--card); border:1px solid var(--border); border-radius:var(--r); padding:16px 18px; margin-bottom:8px; cursor:pointer; transition:border-color .15s; text-decoration:none; color:var(--text); }
+    .landing-site-card:hover { border-color:var(--blue); background:var(--card2); }
+    .landing-site-name { font-size:15px; font-weight:700; margin-bottom:3px; }
+    .landing-site-meta { font-size:12px; color:var(--dim); }
+    .landing-site-exp  { font-size:11px; margin-top:6px; }
+    .landing-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--dim); margin:0 0 10px; }
+    .recovery-form { margin-top:24px; }
+    .recovery-success { display:none; background:var(--green-bg); border:1px solid rgba(16,185,129,.3); border-radius:var(--r); padding:14px 16px; font-size:13px; color:var(--green); margin-top:12px; }
+    /* Expiry banner */
+    .expiry-banner { display:none; background:var(--yellow-bg); border:1px solid rgba(245,158,11,.3); border-radius:var(--r-sm); padding:10px 14px; font-size:12px; color:var(--yellow); margin-bottom:12px; }
+
     /* ── Actions ─────────────────────────────────────────────── */
     .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 12px; }
     .action-btn { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; cursor: pointer; text-align: left; transition: border-color .15s, background .15s; color: var(--text); }
@@ -247,6 +263,30 @@
 </head>
 <body>
 
+<!-- Landing (nessun token nel URL) -->
+<div id="view-landing" class="view">
+  <div class="page-header">
+    <div class="logo-mark">P</div>
+    <div>
+      <div class="page-header-title">Portale Coordinatore</div>
+      <div class="page-header-sub">Palladia</div>
+    </div>
+  </div>
+  <main>
+    <div id="landing-saved-section"></div>
+
+    <div class="card recovery-form">
+      <div class="landing-section-title">Recupera accesso</div>
+      <p style="font-size:13px;color:var(--dim);margin-bottom:14px;line-height:1.6;">
+        Inserisci la tua email per ricevere un nuovo link ai cantieri attivi.
+      </p>
+      <input class="form-input" id="recovery-email" type="email" placeholder="la-tua@email.com" style="margin-bottom:10px;" />
+      <button class="btn btn-primary" id="recovery-btn" onclick="requestRecovery()" style="width:100%;">Invia link →</button>
+      <div class="recovery-success" id="recovery-success">✅ Email inviata! Controlla la casella di posta entro qualche minuto.</div>
+    </div>
+  </main>
+</div>
+
 <!-- Loading -->
 <div id="view-loading" class="view active">
   <div class="spinner"></div>
@@ -297,6 +337,9 @@
         <span id="sh-expire-badge"></span>
       </div>
     </div>
+
+    <!-- Expiry banner -->
+    <div class="expiry-banner" id="expiry-banner"></div>
 
     <!-- Safety status -->
     <div class="status-card dati_insufficienti" id="safety-card">
@@ -517,6 +560,92 @@ let _data     = null;        // full site data (single mode)
 let _multiData = null;       // { coordinator, sites } (multi mode)
 let _timelineLoaded = false;
 
+// ─── LocalStorage — accessi salvati ──────────────────────────────────────────
+const LS_KEY = 'palladia_cse_accesses';
+
+function saveCseAccess(token, data) {
+  try {
+    const list = loadCseAccesses().filter(e => e.token !== token);
+    list.unshift({
+      token,
+      site_name:    data.site?.name    || '—',
+      site_address: data.site?.address || '',
+      expires_at:   data.coordinator?.expires_at || null,
+      saved_at:     new Date().toISOString(),
+    });
+    localStorage.setItem(LS_KEY, JSON.stringify(list.slice(0, 10)));
+  } catch {}
+}
+
+function loadCseAccesses() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY) || '[]')
+      .filter(e => !e.expires_at || new Date(e.expires_at) > new Date());
+  } catch { return []; }
+}
+
+// ─── Landing page (nessun token nel URL) ─────────────────────────────────────
+function renderLanding() {
+  const saved = loadCseAccesses();
+  const section = document.getElementById('landing-saved-section');
+
+  if (saved.length > 0) {
+    let html = `<div class="landing-section-title" style="margin-bottom:10px;">I tuoi accessi recenti</div>`;
+    for (const e of saved) {
+      const daysLeft = e.expires_at ? Math.round((new Date(e.expires_at) - Date.now()) / 86400000) : null;
+      const expCls   = daysLeft !== null && daysLeft <= 7 ? 'doc-status-exp' : 'doc-status-none';
+      const expTxt   = daysLeft !== null
+        ? (daysLeft <= 0 ? 'Scaduto'
+           : daysLeft <= 7 ? `⚠️ Scade tra ${daysLeft} giorn${daysLeft===1?'o':'i'}`
+           : `Valido fino al ${new Date(e.expires_at).toLocaleDateString('it-IT')}`)
+        : '';
+      html += `<a class="landing-site-card" href="/coordinator/${esc(e.token)}">
+        <div class="landing-site-name">${esc(e.site_name)}</div>
+        ${e.site_address ? `<div class="landing-site-meta">${esc(e.site_address)}</div>` : ''}
+        ${expTxt ? `<div class="landing-site-exp ${expCls}">${expTxt}</div>` : ''}
+      </a>`;
+    }
+    section.innerHTML = html;
+  } else {
+    section.innerHTML = `
+      <div class="landing-hero">
+        <div class="landing-hero-icon">🏗️</div>
+        <div class="landing-hero-title">Portale CSE</div>
+        <div class="landing-hero-sub">Apri il link ricevuto via email per accedere al portale.<br>Oppure usa il form qui sotto per ricevere un nuovo link.</div>
+      </div>`;
+  }
+  showView('view-landing');
+}
+
+async function requestRecovery() {
+  const inp = document.getElementById('recovery-email');
+  const btn = document.getElementById('recovery-btn');
+  const ok  = document.getElementById('recovery-success');
+
+  inp.style.borderColor = '';
+  const email = inp.value.trim();
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    inp.style.borderColor = 'var(--red)';
+    inp.focus();
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Invio in corso…';
+
+  try {
+    await fetch('/api/v1/coordinator/request-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+  } catch {}
+
+  btn.style.display   = 'none';
+  inp.style.display   = 'none';
+  ok.style.display    = 'block';
+}
+
 // ─── Init ─────────────────────────────────────────────────────────────────────
 function extractToken() {
   const path = window.location.pathname;
@@ -527,11 +656,21 @@ function extractToken() {
 
 async function init() {
   _token = extractToken();
-  if (!_token) return showError('Link non valido', 'Il link non contiene un token valido. Richiedi un nuovo invito all\'impresa.');
+  if (!_token) { renderLanding(); return; }
 
   try {
     const res = await fetch(`/api/v1/coordinator/portal/${_token}`);
-    if (res.status === 404) return showError('Link scaduto o non valido', 'Il link è scaduto o è già stato revocato. Contatta l\'impresa per un nuovo invito.');
+    if (res.status === 404) {
+      // Link scaduto/revocato → mostra landing con recovery form
+      renderLanding();
+      document.getElementById('landing-saved-section').innerHTML = `
+        <div class="card" style="border-color:rgba(239,68,68,.3);margin-bottom:16px;">
+          <div style="font-size:20px;margin-bottom:8px;">⛔</div>
+          <div style="font-weight:700;color:var(--red);margin-bottom:4px;">Link scaduto o non valido</div>
+          <div style="font-size:13px;color:var(--dim);">Inserisci la tua email qui sotto per ricevere un nuovo link di accesso.</div>
+        </div>`;
+      return;
+    }
     if (!res.ok) return showError('Errore di rete', 'Impossibile connettersi al server. Riprova tra qualche istante.');
 
     const data = await res.json();
@@ -546,6 +685,7 @@ async function init() {
     } else {
       _data   = data;
       _siteId = data.site.id;
+      saveCseAccess(_token, data);          // salva nel browser per rientri futuri
       renderDetail(data, false);
     }
   } catch (e) {
@@ -657,6 +797,18 @@ function renderDetail(data, showBack) {
     document.getElementById('back-btn').classList.remove('hidden');
   } else {
     document.getElementById('back-btn').classList.add('hidden');
+  }
+
+  // Expiry banner — avvisa se il link scade entro 14 giorni
+  const daysLeft = coordinator?.expires_at
+    ? Math.round((new Date(coordinator.expires_at) - Date.now()) / 86400000)
+    : null;
+  const expiryBanner = document.getElementById('expiry-banner');
+  if (expiryBanner && daysLeft !== null && daysLeft <= 14) {
+    expiryBanner.style.display = 'block';
+    expiryBanner.textContent = daysLeft <= 0
+      ? '⛔ Il tuo accesso è scaduto. Vai su palladia.app/coordinator per richiedere un nuovo link.'
+      : `⏳ Il tuo accesso scade tra ${daysLeft} giorn${daysLeft===1?'o':'i'} (${new Date(coordinator.expires_at).toLocaleDateString('it-IT')}). Contatta l'impresa o vai su /coordinator per rinnovarlo.`;
   }
 
   // Safety status
