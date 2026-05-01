@@ -178,6 +178,14 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 
+  // Ordina per distanza: prima i più vicini, null in fondo
+  siteData.sort((a, b) => {
+    if (a.distance_m === null && b.distance_m === null) return 0;
+    if (a.distance_m === null) return 1;
+    if (b.distance_m === null) return -1;
+    return a.distance_m - b.distance_m;
+  });
+
   // Auto-select logic:
   // 1. Un solo cantiere in geofence → auto-select
   // 2. Nessun GPS ma un solo cantiere assegnato → auto-select
