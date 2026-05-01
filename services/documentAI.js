@@ -24,14 +24,20 @@ Analizza il documento e restituisci SOLO un oggetto JSON valido con questa strut
 {
   "summary": "<2-3 frasi: cosa è, chi l'ha emesso, cosa attesta>",
   "doc_type_detected": "<durc|dvr|duvri|soa|iso|assicurazione|polizza|visura|formazione|rspp|rls|medico_competente|visite_mediche|primo_soccorso|emergenze|preposto|f24|altro>",
-  "expiry_date": "<YYYY-MM-DD oppure null se non presente o permanente>",
+  "expiry_date": "<YYYY-MM-DD oppure null solo se impossibile determinare>",
   "renewal_years": <numero intero anni tra un rinnovo e l'altro, null se non applicabile>,
   "issued_by": "<ente o soggetto che ha emesso il documento, null se non leggibile>",
   "issues": ["<eventuale problema: documento scaduto, firma mancante, dati incompleti, ecc.>"],
   "validity_ok": <true se il documento sembra valido e completo, false se ci sono problemi>
 }
 
-Esempi renewal_years: DURC=3mesi(0), DVR=nessun limite fisso(null), SOA=5, ISO=3, assicurazione=1, idoneità medica=1 o 2, formazione sicurezza=5.
+REGOLA CRITICA PER expiry_date:
+Se il documento ha una data di emissione ma NON una scadenza esplicita, e conosci il periodo standard,
+CALCOLA la scadenza: expiry_date = data_emissione + renewal_years anni (o mesi per DURC).
+Restituisci null SOLO se non riesci a determinare né emissione né scadenza.
+
+Periodi standard: DURC=3 mesi (renewal_years=0, calcola comunque scadenza), DVR=null (nessun limite),
+SOA=5 anni, ISO=3 anni, assicurazione=1 anno, polizza=1 anno, visura=nessuna scadenza (null).
 Scrivi issues solo se ci sono problemi reali. Output: SOLO JSON grezzo senza markdown.`;
 
 // ── Prompt documenti lavoratori ───────────────────────────────────────────────
@@ -42,7 +48,7 @@ Analizza il documento e restituisci SOLO un oggetto JSON valido con questa strut
 {
   "summary": "<2-3 frasi: cosa attesta, chi riguarda, cosa autorizza>",
   "doc_type_detected": "<idoneita_medica|formazione_sicurezza|primo_soccorso|antincendio|lavori_quota|ponteggi|gruista|pes_pav_pei|rspp|patente_guida|altro>",
-  "expiry_date": "<YYYY-MM-DD oppure null se non presente o permanente>",
+  "expiry_date": "<YYYY-MM-DD oppure null solo se impossibile determinare>",
   "renewal_years": <numero intero anni tra un rinnovo e l'altro, null se non applicabile>,
   "issued_to": "<nome e cognome del lavoratore a cui è intestato, null se non leggibile>",
   "issued_by": "<medico, ente di formazione o soggetto emittente, null se non leggibile>",
@@ -50,8 +56,25 @@ Analizza il documento e restituisci SOLO un oggetto JSON valido con questa strut
   "validity_ok": <true se il documento sembra valido e completo, false se ci sono problemi>
 }
 
-Esempi renewal_years: idoneità medica=1(rischio alto) o 2(normale), formazione_sicurezza=5, primo_soccorso=3, antincendio=3, lavori_quota=5, ponteggi=4, patente_guida=10.
-Scrivi issues solo se ci sono problemi reali. Output: SOLO JSON grezzo senza markdown.`;
+REGOLA CRITICA PER expiry_date:
+Molti attestati italiani riportano solo la data di emissione senza una scadenza esplicita.
+In questo caso DEVI calcolare tu la scadenza: expiry_date = data_emissione + renewal_years anni.
+Esempio: attestato formazione sicurezza emesso il 15/03/2020 → renewal_years=5 → expiry_date="2025-03-15".
+Restituisci null SOLO se non riesci a leggere né la data di emissione né quella di scadenza.
+
+Periodi di rinnovo standard D.Lgs. 81/2008:
+- idoneita_medica: 1 anno (rischio alto) o 2 anni (normale) → usa il più conservativo se non specificato: 1
+- formazione_sicurezza: 5 anni
+- primo_soccorso: 3 anni
+- antincendio: 3 anni (medio/alto rischio), 5 anni (basso rischio)
+- lavori_quota: 5 anni
+- ponteggi: 4 anni
+- gruista: 5 anni
+- pes_pav_pei: 3 anni
+- rspp: 5 anni
+- patente_guida: 10 anni (B normale)
+
+Output: SOLO JSON grezzo senza markdown.`;
 
 // ── Helper: scarica file da Storage ──────────────────────────────────────────
 
@@ -103,7 +126,20 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
 
 function normalizeDate(val) {
   if (!val || typeof val !== 'string') return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  const s = val.trim();
+  // Formato ISO già corretto
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) return s;
+    return null;
+  }
+  // Formato italiano DD/MM/YYYY o DD-MM-YYYY
+  const itMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (itMatch) {
+    const iso = `${itMatch[3]}-${itMatch[2].padStart(2,'0')}-${itMatch[1].padStart(2,'0')}`;
+    const d = new Date(iso);
+    if (!isNaN(d.getTime())) return iso;
+  }
   return null;
 }
 
