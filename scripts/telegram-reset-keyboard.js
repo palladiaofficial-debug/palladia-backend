@@ -34,7 +34,7 @@ async function sendReset(chatId) {
 async function run() {
   const { data: users, error } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id, telegram_name');
+    .select('telegram_chat_id');
 
   if (error) { console.error('Errore fetch utenti:', error.message); process.exit(1); }
   if (!users?.length) { console.log('Nessun utente Telegram collegato.'); return; }
@@ -46,14 +46,14 @@ async function run() {
     try {
       const sent = await sendReset(u.telegram_chat_id);
       if (sent) {
-        console.log(`  ✓ ${u.telegram_name || u.telegram_chat_id}`);
+        console.log(`  ✓ ${u.telegram_chat_id}`);
         ok++;
       } else {
-        console.log(`  ✗ ${u.telegram_name || u.telegram_chat_id} — errore API`);
+        console.log(`  ✗ ${u.telegram_chat_id} — errore API`);
         fail++;
       }
     } catch (e) {
-      console.log(`  ✗ ${u.telegram_name || u.telegram_chat_id} — ${e.message}`);
+      console.log(`  ✗ ${u.telegram_chat_id} — ${e.message}`);
       fail++;
     }
     // Pausa 50ms tra i messaggi (rate limit Telegram: 30 msg/sec)
