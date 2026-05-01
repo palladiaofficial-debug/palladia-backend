@@ -2,16 +2,25 @@
 // ── Worker Documents ───────────────────────────────────────────────────────────
 // Archivio documenti personali del lavoratore (idoneità, attestati, corsi…)
 //
-// GET    /api/v1/workers/:workerId/documents          — lista doc lavoratore
-// POST   /api/v1/workers/:workerId/documents          — aggiungi documento
-// PATCH  /api/v1/workers/:workerId/documents/:docId   — modifica documento
-// DELETE /api/v1/workers/:workerId/documents/:docId   — elimina documento
-// GET    /api/v1/worker-documents                     — tutti i doc company (vista globale)
+// GET    /api/v1/workers/:workerId/documents                — lista doc lavoratore
+// POST   /api/v1/workers/:workerId/documents                — upload documento
+// PATCH  /api/v1/workers/:workerId/documents/:docId         — modifica metadati
+// DELETE /api/v1/workers/:workerId/documents/:docId         — elimina
+// GET    /api/v1/workers/:workerId/documents/:docId/download — signed URL download
+// POST   /api/v1/workers/:workerId/documents/:docId/analyze  — ri-analisi AI
+// GET    /api/v1/worker-documents                           — tutti i doc company (vista globale)
 // ──────────────────────────────────────────────────────────────────────────────
 
+const crypto   = require('crypto');
+const path     = require('path');
+const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { analyzeWorkerDoc }  = require('../../services/documentAI');
+
+const BUCKET   = 'site-documents';
+const MAX_SIZE = 20 * 1024 * 1024;
 
 const ALLOWED_TYPES = [
   'idoneita_medica',
@@ -26,6 +35,27 @@ const ALLOWED_TYPES = [
   'patente_guida',
   'altro',
 ];
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_SIZE },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      'application/pdf',
+      'image/jpeg', 'image/png', 'image/webp',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Tipo file non supportato. Usa PDF, immagini o documenti Word.'));
+  },
+});
+
+function safeName(original) {
+  const ext  = path.extname(original) || '';
+  const base = path.basename(original, ext).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
+  return base + ext;
+}
 
 function isValidDate(val) {
   if (!val) return true;
@@ -42,7 +72,6 @@ async function verifyWorker(workerId, companyId) {
   return !!data;
 }
 
-// Sincronizza scadenze shortcut su workers quando si salva idoneità / formazione
 async function syncWorkerExpiry(docType, expiryDate, workerId, companyId) {
   if (!expiryDate) return;
   const field = docType === 'idoneita_medica'      ? 'health_fitness_expiry'
@@ -55,6 +84,14 @@ async function syncWorkerExpiry(docType, expiryDate, workerId, companyId) {
     .eq('company_id', companyId);
 }
 
+const SELECT_FIELDS = `
+  id, company_id, worker_id, doc_type, name,
+  issued_date, expiry_date, file_url, file_path, mime_type, notes,
+  ai_summary, ai_expiry_date, ai_renewal_years,
+  ai_issued_to, ai_issued_by, ai_issues, ai_validity_ok, ai_analyzed_at,
+  created_at, updated_at
+`;
+
 // ── GET /api/v1/workers/:workerId/documents ───────────────────────────────────
 router.get('/workers/:workerId/documents', verifySupabaseJwt, async (req, res) => {
   const { workerId } = req.params;
@@ -63,7 +100,7 @@ router.get('/workers/:workerId/documents', verifySupabaseJwt, async (req, res) =
 
   const { data, error } = await supabase
     .from('worker_documents')
-    .select('*')
+    .select(SELECT_FIELDS)
     .eq('worker_id',  workerId)
     .eq('company_id', req.companyId)
     .order('expiry_date', { ascending: true, nullsFirst: false });
@@ -72,46 +109,89 @@ router.get('/workers/:workerId/documents', verifySupabaseJwt, async (req, res) =
   res.json(data || []);
 });
 
-// ── POST /api/v1/workers/:workerId/documents ──────────────────────────────────
-router.post('/workers/:workerId/documents', verifySupabaseJwt, async (req, res) => {
-  const { workerId } = req.params;
-  const { doc_type, name, issued_date, expiry_date, file_url, notes } = req.body;
+// ── POST /api/v1/workers/:workerId/documents — upload file ────────────────────
+router.post('/workers/:workerId/documents',
+  verifySupabaseJwt,
+  (req, res, next) => upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const { workerId } = req.params;
+    const { doc_type = 'altro', name, issued_date, expiry_date, notes } = req.body;
 
-  if (!name || !String(name).trim())
-    return res.status(400).json({ error: 'NAME_REQUIRED' });
-  if (doc_type && !ALLOWED_TYPES.includes(doc_type))
-    return res.status(400).json({ error: 'INVALID_DOC_TYPE' });
-  if (!isValidDate(issued_date) || !isValidDate(expiry_date))
-    return res.status(400).json({ error: 'DATE_FORMAT_YYYY_MM_DD' });
+    if (!name || !String(name).trim())
+      return res.status(400).json({ error: 'NAME_REQUIRED' });
+    if (!ALLOWED_TYPES.includes(doc_type))
+      return res.status(400).json({ error: 'INVALID_DOC_TYPE' });
+    if (!isValidDate(issued_date) || !isValidDate(expiry_date))
+      return res.status(400).json({ error: 'DATE_FORMAT_YYYY_MM_DD' });
 
-  if (!await verifyWorker(workerId, req.companyId))
-    return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+    if (!await verifyWorker(workerId, req.companyId))
+      return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
-  const { data, error } = await supabase
-    .from('worker_documents')
-    .insert({
-      company_id:  req.companyId,
-      worker_id:   workerId,
-      doc_type:    doc_type || 'altro',
-      name:        String(name).trim(),
-      issued_date: issued_date || null,
-      expiry_date: expiry_date || null,
-      file_url:    file_url   || null,
-      notes:       notes ? String(notes).trim() : null,
-    })
-    .select('*')
-    .single();
+    let filePath = null;
+    let fileUrl  = null;
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    // Upload file se allegato
+    if (req.file) {
+      const fileId   = crypto.randomUUID();
+      const filename = safeName(req.file.originalname);
+      filePath = `${req.companyId}/workers/${workerId}/${fileId}-${filename}`;
 
-  await syncWorkerExpiry(data.doc_type, data.expiry_date, workerId, req.companyId);
-  res.status(201).json(data);
-});
+      const { error: storageErr } = await supabase.storage
+        .from(BUCKET).upload(filePath, req.file.buffer, {
+          contentType: req.file.mimetype,
+          upsert: false,
+        });
 
-// ── PATCH /api/v1/workers/:workerId/documents/:docId ──────────────────────────
+      if (storageErr) return res.status(500).json({ error: 'UPLOAD_ERROR', detail: storageErr.message });
+
+      // Signed URL pubblica valida 10 anni — usata come file_url legacy
+      const { data: signed } = await supabase.storage
+        .from(BUCKET).createSignedUrl(filePath, 60 * 60 * 24 * 365 * 10);
+      fileUrl = signed?.signedUrl || null;
+    }
+
+    const { data, error } = await supabase
+      .from('worker_documents')
+      .insert({
+        company_id:  req.companyId,
+        worker_id:   workerId,
+        doc_type,
+        name:        String(name).trim(),
+        issued_date: issued_date || null,
+        expiry_date: expiry_date || null,
+        file_url:    fileUrl,
+        file_path:   filePath,
+        mime_type:   req.file?.mimetype || null,
+        notes:       notes ? String(notes).trim() : null,
+      })
+      .select(SELECT_FIELDS)
+      .single();
+
+    if (error) {
+      if (filePath) await supabase.storage.from(BUCKET).remove([filePath]).catch(() => {});
+      return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    }
+
+    await syncWorkerExpiry(data.doc_type, data.expiry_date, workerId, req.companyId);
+
+    // Analisi AI in background solo se c'è un file analizzabile
+    if (filePath && req.file) {
+      analyzeWorkerDoc(data.id, workerId, req.companyId, filePath, req.file.mimetype).catch(() => {});
+    }
+
+    res.status(201).json(data);
+  }
+);
+
+// ── PATCH /api/v1/workers/:workerId/documents/:docId — modifica metadati ──────
 router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (req, res) => {
   const { workerId, docId } = req.params;
-  const allowed = ['doc_type', 'name', 'issued_date', 'expiry_date', 'file_url', 'notes'];
+  const allowed = ['doc_type', 'name', 'issued_date', 'expiry_date', 'notes'];
   const updates = {};
   for (const k of allowed) {
     if (req.body[k] !== undefined) updates[k] = req.body[k] || null;
@@ -132,7 +212,7 @@ router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (re
     .eq('id',         docId)
     .eq('worker_id',  workerId)
     .eq('company_id', req.companyId)
-    .select('*')
+    .select(SELECT_FIELDS)
     .single();
 
   if (error || !data) return res.status(404).json({ error: 'DOC_NOT_FOUND' });
@@ -145,6 +225,20 @@ router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (re
 router.delete('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (req, res) => {
   const { workerId, docId } = req.params;
 
+  const { data: doc } = await supabase
+    .from('worker_documents')
+    .select('id, file_path')
+    .eq('id',         docId)
+    .eq('worker_id',  workerId)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  if (doc.file_path) {
+    await supabase.storage.from(BUCKET).remove([doc.file_path]).catch(() => {});
+  }
+
   const { error } = await supabase
     .from('worker_documents')
     .delete()
@@ -156,12 +250,56 @@ router.delete('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (r
   res.status(204).end();
 });
 
+// ── GET /api/v1/workers/:workerId/documents/:docId/download — signed URL ──────
+router.get('/workers/:workerId/documents/:docId/download', verifySupabaseJwt, async (req, res) => {
+  const { workerId, docId } = req.params;
+
+  const { data: doc } = await supabase
+    .from('worker_documents')
+    .select('id, file_path, name, mime_type')
+    .eq('id',         docId)
+    .eq('worker_id',  workerId)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (!doc)           return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!doc.file_path) return res.status(422).json({ error: 'NO_FILE' });
+
+  const { data: signed, error: signErr } = await supabase.storage
+    .from(BUCKET).createSignedUrl(doc.file_path, 3600);
+  if (signErr || !signed) return res.status(500).json({ error: 'SIGNED_URL_ERROR' });
+  res.json({ url: signed.signedUrl, name: doc.name });
+});
+
+// ── POST /api/v1/workers/:workerId/documents/:docId/analyze — ri-analisi AI ───
+router.post('/workers/:workerId/documents/:docId/analyze', verifySupabaseJwt, async (req, res) => {
+  const { workerId, docId } = req.params;
+
+  const { data: doc } = await supabase
+    .from('worker_documents')
+    .select('id, file_path, mime_type')
+    .eq('id',         docId)
+    .eq('worker_id',  workerId)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (!doc)           return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!doc.file_path) return res.status(422).json({ error: 'NO_FILE' });
+
+  await supabase.from('worker_documents')
+    .update({ ai_analyzed_at: null })
+    .eq('id', doc.id);
+
+  analyzeWorkerDoc(doc.id, workerId, req.companyId, doc.file_path, doc.mime_type).catch(() => {});
+  res.json({ ok: true, message: 'Analisi avviata' });
+});
+
 // ── GET /api/v1/worker-documents — vista globale (sezione Documenti) ──────────
 router.get('/worker-documents', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase
     .from('worker_documents')
     .select(`
-      *,
+      ${SELECT_FIELDS},
       worker:workers ( id, full_name, photo_url, is_active )
     `)
     .eq('company_id', req.companyId)

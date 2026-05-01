@@ -7,6 +7,7 @@
  * POST   /api/v1/company-documents              — upload
  * DELETE /api/v1/company-documents/:id          — elimina
  * GET    /api/v1/company-documents/:id/download — signed URL download
+ * POST   /api/v1/company-documents/:id/analyze  — ri-analisi AI manuale
  */
 
 const crypto   = require('crypto');
@@ -15,6 +16,7 @@ const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { analyzeCompanyDoc } = require('../../services/documentAI');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -70,7 +72,9 @@ router.use(verifySupabaseJwt);
 router.get('/company-documents', async (req, res) => {
   const { data, error } = await supabase
     .from('company_documents')
-    .select('id, name, category, file_size, mime_type, created_at')
+    .select(`id, name, category, file_size, mime_type, created_at,
+             ai_summary, ai_expiry_date, ai_renewal_years,
+             ai_issued_by, ai_issues, ai_validity_ok, ai_analyzed_at`)
     .eq('company_id', req.companyId)
     .order('created_at', { ascending: false });
 
@@ -119,9 +123,33 @@ router.post('/company-documents',
       return res.status(500).json({ error: 'DB_ERROR' });
     }
 
+    // Analisi AI in background (non blocca la risposta)
+    analyzeCompanyDoc(doc.id, filePath, req.file.mimetype).catch(() => {});
+
     res.status(201).json({ ok: true, document: doc });
   }
 );
+
+// ── POST re-analisi AI manuale ────────────────────────────────────────────────
+
+router.post('/company-documents/:id/analyze', async (req, res) => {
+  const { data: doc } = await supabase
+    .from('company_documents')
+    .select('id, file_path, mime_type')
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+  if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!doc.file_path) return res.status(422).json({ error: 'NO_FILE' });
+
+  // Reset analisi
+  await supabase.from('company_documents')
+    .update({ ai_analyzed_at: null })
+    .eq('id', doc.id);
+
+  analyzeCompanyDoc(doc.id, doc.file_path, doc.mime_type).catch(() => {});
+  res.json({ ok: true, message: 'Analisi avviata' });
+});
 
 // ── DELETE ────────────────────────────────────────────────────────────────────
 
