@@ -59,6 +59,9 @@ router.use('/', require('./documents'));
 // Documenti aziendali: libreria centralizzata (JWT)
 router.use('/', require('./companyDocuments'));
 
+// Notifiche in-app scadenze (JWT)
+router.use('/', require('./notifications'));
+
 // Portale coordinatore unificato (Pro + CSE) — DEVE stare PRIMA di coordinator
 router.use('/', require('./coordinatorPortal'));
 

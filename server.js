@@ -19,6 +19,8 @@ const { startDailySummaryCron }     = require('./services/dailySummaryCron');
 const { startEveningSummaryCron }   = require('./services/eveningSummaryCron');
 const { startExpiryAlertCron }      = require('./services/expiryAlertCron');
 const { startWorkerExpiryCron }     = require('./services/workerExpiryCron');
+const { startEquipmentExpiryCron }  = require('./services/equipmentExpiryCron');
+const { startCompanyDocExpiryCron } = require('./services/companyDocExpiryCron');
 const { startLadiaProactiveCron }   = require('./services/ladiaProactive');
 const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
 const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
@@ -1447,6 +1449,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startEveningSummaryCron();
     startExpiryAlertCron();
     startWorkerExpiryCron();
+    startEquipmentExpiryCron();
+    startCompanyDocExpiryCron();
     startLadiaProactiveCron();
     startWeeklyValueCron();
     startLadiaLiveCron();

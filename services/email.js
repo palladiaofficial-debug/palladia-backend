@@ -807,6 +807,207 @@ async function sendWorkerExpiryAlertCompany({ to, companyName, workers, dashboar
   });
 }
 
+// ── sendWorkerDocExpiryAlert ──────────────────────────────────────────────────
+// Alert giornaliero — tutti i tipi di documento lavoratori in scadenza.
+async function sendWorkerDocExpiryAlert({ to, companyName, docs, docTypeLabels, dashboardUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function severityColor(s) {
+    return s === 'critical' ? '#ef4444' : s === 'warning' ? '#f59e0b' : '#3b82f6';
+  }
+  function severityLabel(days) {
+    if (days === null) return '';
+    if (days < 0) return `scaduto ${Math.abs(days)}gg fa`;
+    if (days === 0) return 'scade oggi';
+    return `scade in ${days}gg`;
+  }
+
+  const critical = docs.filter(d => d.severity === 'critical').length;
+  const warning  = docs.filter(d => d.severity === 'warning').length;
+  const info     = docs.length - critical - warning;
+
+  const rows = docs.map(d => {
+    const typeLabel = (docTypeLabels || {})[d.doc_type] || d.doc_type || 'Documento';
+    const color     = severityColor(d.severity);
+    const label     = severityLabel(d.days);
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(d.worker?.full_name || '')}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(typeLabel)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+        <span style="color:${color};font-weight:700;">${fmtDate(d.expiry_date)}</span><br>
+        <span style="font-size:10px;color:${color};">${esc(label)}</span>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const summaryParts = [];
+  if (critical > 0) summaryParts.push(`<span style="color:#ef4444;font-weight:700;">${critical} scadut${critical === 1 ? 'o' : 'i'}</span>`);
+  if (warning  > 0) summaryParts.push(`<span style="color:#f59e0b;font-weight:700;">${warning} in scadenza entro 7 giorni</span>`);
+  if (info     > 0) summaryParts.push(`<span style="color:#3b82f6;font-weight:700;">${info} in scadenza entro 30 giorni</span>`);
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Documenti lavoratori in scadenza</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Per <strong style="color:#1a1a1a;">${esc(companyName)}</strong>: ${summaryParts.join(', ')}.
+      Rinnova i documenti prima della scadenza per restare in conformità con il D.Lgs. 81/2008.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:24px;">
+      <thead><tr style="background:#f8fafc;">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Tipo documento</th>
+        <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Scadenza</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${btn('Gestisci Lavoratori →', dashboardUrl)}
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Rosso = già scaduto · Arancione = scade entro 7 giorni · Blu = scade entro 30 giorni.<br>
+      Alert quotidiano finché i documenti non sono rinnovati.
+    </p>
+  `;
+
+  const subjectLabel = critical > 0 ? `${critical} documenti scaduti` : `${warning + info} documenti in scadenza`;
+  return getResend().emails.send({
+    from: FROM,
+    to:   Array.isArray(to) ? to : [to],
+    subject: `Palladia — ${subjectLabel} | Lavoratori | ${esc(companyName)}`,
+    html:    layout('Documenti lavoratori in scadenza', body),
+  });
+}
+
+// ── sendEquipmentExpiryAlert ──────────────────────────────────────────────────
+// Alert giornaliero — mezzi aziendali con assicurazione/revisione/tagliando in scadenza.
+async function sendEquipmentExpiryAlert({ to, companyName, items, dashboardUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function severityColor(s) {
+    return s === 'critical' ? '#ef4444' : s === 'warning' ? '#f59e0b' : '#3b82f6';
+  }
+  function severityLabel(days) {
+    if (days === null) return '';
+    if (days < 0) return `scaduto ${Math.abs(days)}gg fa`;
+    if (days === 0) return 'scade oggi';
+    return `scade in ${days}gg`;
+  }
+
+  const critical = items.filter(i => i.issues.some(x => x.severity === 'critical')).length;
+
+  const rows = items.flatMap(eq => {
+    const name = esc([eq.type, eq.model, eq.plate_or_serial].filter(Boolean).join(' — '));
+    return eq.issues.map((issue, idx) => {
+      const color = severityColor(issue.severity);
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:${idx === 0 ? '700' : '400'};color:${idx === 0 ? '#1a1a1a' : '#9ca3af'};">${idx === 0 ? name : ''}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(issue.label)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+          <span style="color:${color};font-weight:700;">${fmtDate(issue.date)}</span><br>
+          <span style="font-size:10px;color:${color};">${esc(severityLabel(issue.days))}</span>
+        </td>
+      </tr>`;
+    });
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Scadenze mezzi aziendali</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Per <strong style="color:#1a1a1a;">${esc(companyName)}</strong>: ${items.length} mezzo/i con scadenze imminenti${critical > 0 ? ` (<span style="color:#ef4444;font-weight:700;">${critical} già scadut${critical === 1 ? 'o' : 'i'}</span>)` : ''}.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:24px;">
+      <thead><tr style="background:#f8fafc;">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Mezzo</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Tipo scadenza</th>
+        <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Data</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${btn('Gestisci Mezzi →', dashboardUrl)}
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Rosso = già scaduto · Arancione = scade entro 7 giorni · Blu = scade entro 30 giorni.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   Array.isArray(to) ? to : [to],
+    subject: `Palladia — Scadenze mezzi aziendali | ${esc(companyName)}`,
+    html:    layout('Scadenze mezzi aziendali', body),
+  });
+}
+
+// ── sendCompanyDocExpiryAlert ─────────────────────────────────────────────────
+// Alert giornaliero — documenti aziendali (DURC, DVR, SOA, ecc.) in scadenza.
+async function sendCompanyDocExpiryAlert({ to, companyName, docs, categoryLabels, dashboardUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function severityColor(s) {
+    return s === 'critical' ? '#ef4444' : s === 'warning' ? '#f59e0b' : '#3b82f6';
+  }
+  function severityLabel(days) {
+    if (days === null) return '';
+    if (days < 0) return `scaduto ${Math.abs(days)}gg fa`;
+    if (days === 0) return 'scade oggi';
+    return `scade in ${days}gg`;
+  }
+
+  const critical = docs.filter(d => d.severity === 'critical').length;
+
+  const rows = docs.map(d => {
+    const catLabel = (categoryLabels || {})[d.category] || d.category || 'Documento';
+    const color    = severityColor(d.severity);
+    const renewalNote = d.ai_renewal_years
+      ? `<br><span style="font-size:10px;color:#9ca3af;">Rinnovo ogni ${d.ai_renewal_years} ann${d.ai_renewal_years === 1 ? 'o' : 'i'}</span>`
+      : '';
+    return `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(d.name)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(catLabel)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:center;">
+        <span style="color:${color};font-weight:700;">${fmtDate(d.ai_expiry_date)}</span><br>
+        <span style="font-size:10px;color:${color};">${esc(severityLabel(d.days))}</span>${renewalNote}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Documenti aziendali in scadenza</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Per <strong style="color:#1a1a1a;">${esc(companyName)}</strong>: ${docs.length} documento/i con scadenze imminenti${critical > 0 ? ` (<span style="color:#ef4444;font-weight:700;">${critical} già scadut${critical === 1 ? 'o' : 'i'}</span>)` : ''}.
+      Rinnova tempestivamente per mantenere la conformità normativa.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:24px;">
+      <thead><tr style="background:#f8fafc;">
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Documento</th>
+        <th style="padding:10px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Categoria</th>
+        <th style="padding:10px 12px;text-align:center;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Scadenza</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${btn('Gestisci Documenti Aziendali →', dashboardUrl)}
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Rosso = già scaduto · Arancione = scade entro 7 giorni · Blu = scade entro 30 giorni.<br>
+      Le date di scadenza sono estratte automaticamente dall'analisi AI dei documenti caricati.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   Array.isArray(to) ? to : [to],
+    subject: `Palladia — Documenti aziendali in scadenza | ${esc(companyName)}`,
+    html:    layout('Documenti aziendali in scadenza', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -820,4 +1021,7 @@ module.exports = {
   sendNonconformityUpdate,
   sendExpiryAlertPro,
   sendWorkerExpiryAlertCompany,
+  sendWorkerDocExpiryAlert,
+  sendEquipmentExpiryAlert,
+  sendCompanyDocExpiryAlert,
 };

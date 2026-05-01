@@ -2,117 +2,118 @@
 /**
  * services/workerExpiryCron.js
  *
- * Cron giornaliero (07:15 Europe/Rome) — avvisa i responsabili aziendali
- * (owner/admin/tech) quando i documenti dei propri lavoratori scadono entro 30 giorni.
+ * Cron giornaliero (07:15 Europe/Rome) — controlla worker_documents.expiry_date
+ * per TUTTI i tipi di documento (idoneità, formazione, antincendio, ponteggi, ecc.).
  *
- * Diverso da expiryAlertCron.js (settimanale, per i coordinatori Pro esterni):
- * questo è rivolto all'impresa stessa per i propri organici.
+ * Soglie:
+ *   - critical: già scaduto (< oggi)
+ *   - warning:  scade entro 7 giorni
+ *   - info:     scade entro 30 giorni
  *
- * Non invia se nessun documento è in scadenza.
+ * Crea notifiche in-app + invia email agli owner/admin/tech.
  */
 
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
-const { sendWorkerExpiryAlertCompany } = require('./email');
+const {
+  daysUntil, inDays,
+  severityFor, severityLabel,
+  getCompanyName, getCompanyAdminEmails,
+  upsertNotification, pruneNotifications,
+} = require('./expiryHelper');
+const { sendWorkerDocExpiryAlert } = require('./email');
 
-function daysUntil(dateStr) {
-  if (!dateStr) return null;
-  return Math.ceil((new Date(dateStr) - Date.now()) / 86400000);
-}
+const DOC_TYPE_LABELS = {
+  idoneita_medica:      'Idoneità medica',
+  formazione_sicurezza: 'Formazione sicurezza',
+  primo_soccorso:       'Primo soccorso',
+  antincendio:          'Antincendio',
+  lavori_quota:         'Lavori in quota',
+  ponteggi:             'Ponteggi',
+  gruista:              'Gruista',
+  pes_pav_pei:          'PES/PAV/PEI',
+  rspp:                 'RSPP',
+  patente_guida:        'Patente di guida',
+  altro:                'Documento',
+};
 
 async function runWorkerExpiryCheck() {
-  console.log('[workerExpiry] avvio controllo scadenze lavoratori...');
+  console.log('[workerExpiry] avvio controllo scadenze documenti lavoratori...');
 
-  // 1. Trova tutti i lavoratori attivi con almeno un documento in scadenza ≤ 30 giorni
-  //    Usiamo una finestra: scade tra oggi e +30 giorni (escludiamo già scaduti > 30gg)
-  const today = new Date().toISOString().split('T')[0];
-  const in30  = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+  const t30 = inDays(30);
 
-  const { data: workers, error } = await supabase
-    .from('workers')
-    .select('id, company_id, full_name, safety_training_expiry, health_fitness_expiry')
-    .eq('is_active', true)
-    .or(
-      `safety_training_expiry.lte.${in30},health_fitness_expiry.lte.${in30}`
-    );
+  // Tutti i worker_documents con scadenza nei prossimi 30 giorni (o già scaduta)
+  const { data: docs, error } = await supabase
+    .from('worker_documents')
+    .select(`
+      id, company_id, worker_id, doc_type, name, expiry_date,
+      worker:workers ( full_name, is_active )
+    `)
+    .not('expiry_date', 'is', null)
+    .lte('expiry_date', t30);
 
-  if (error) {
-    console.error('[workerExpiry] errore fetch workers:', error.message);
-    return;
-  }
+  if (error) { console.error('[workerExpiry] fetch error:', error.message); return; }
 
-  if (!workers?.length) {
-    console.log('[workerExpiry] nessuna scadenza imminente — skip.');
-    return;
-  }
+  // Filtra solo lavoratori attivi
+  const relevant = (docs || []).filter(d => d.worker?.is_active);
+  if (!relevant.length) { console.log('[workerExpiry] nessuna scadenza imminente — skip.'); return; }
 
-  // 2. Raggruppa per company
+  // Aggiungi days + severity
+  const docsWithMeta = relevant.map(d => ({
+    ...d,
+    days:     daysUntil(d.expiry_date),
+    severity: severityFor(daysUntil(d.expiry_date)),
+  }));
+
+  // Raggruppa per company
   const byCompany = {};
-  for (const w of workers) {
-    const safetyDays = daysUntil(w.safety_training_expiry);
-    const healthDays = daysUntil(w.health_fitness_expiry);
-
-    // Includi solo se almeno un doc scade entro 30 giorni (anche già scaduto)
-    const safetyRelevant = safetyDays !== null && safetyDays <= 30;
-    const healthRelevant = healthDays !== null && healthDays <= 30;
-    if (!safetyRelevant && !healthRelevant) continue;
-
-    if (!byCompany[w.company_id]) byCompany[w.company_id] = [];
-    byCompany[w.company_id].push({
-      name:           w.full_name,
-      safety_expiry:  safetyRelevant ? w.safety_training_expiry : null,
-      health_expiry:  healthRelevant ? w.health_fitness_expiry  : null,
-      safety_days:    safetyRelevant ? safetyDays : null,
-      health_days:    healthRelevant ? healthDays : null,
-      safety_status:  safetyRelevant ? (safetyDays < 0 ? 'expired' : 'expiring') : null,
-      health_status:  healthRelevant ? (healthDays < 0 ? 'expired' : 'expiring') : null,
-    });
+  for (const d of docsWithMeta) {
+    if (!byCompany[d.company_id]) byCompany[d.company_id] = [];
+    byCompany[d.company_id].push(d);
   }
 
   const companyIds = Object.keys(byCompany);
-  if (!companyIds.length) {
-    console.log('[workerExpiry] nessuna scadenza rilevante — skip.');
-    return;
-  }
+  if (!companyIds.length) { console.log('[workerExpiry] nessuna scadenza rilevante — skip.'); return; }
 
   console.log(`[workerExpiry] ${companyIds.length} company con scadenze imminenti`);
 
-  // 3. Per ogni company, recupera email degli admin e invia
   for (const companyId of companyIds) {
+    const items = byCompany[companyId];
+
     try {
-      // Recupera email di owner/admin/tech con auth.users via company_users
-      const { data: members } = await supabase
-        .from('company_users')
-        .select('user_id, role')
-        .eq('company_id', companyId)
-        .in('role', ['owner', 'admin', 'tech']);
+      // ── Notifiche in-app — una per documento ──────────────────────────────
+      const relevantIds = new Set();
 
-      if (!members?.length) continue;
-
-      // Recupera le email da auth.users (service_role)
-      const emails = [];
-      for (const m of members) {
-        const { data: { user } } = await supabase.auth.admin.getUserById(m.user_id);
-        if (user?.email) emails.push(user.email);
+      for (const d of items) {
+        const typeLabel = DOC_TYPE_LABELS[d.doc_type] || 'Documento';
+        await upsertNotification({
+          companyId,
+          type:       'worker_doc_expiry',
+          severity:   d.severity,
+          title:      `${d.worker.full_name} — ${typeLabel}`,
+          body:       severityLabel(d.days),
+          entityType: 'worker_document',
+          entityId:   d.id,
+        });
+        relevantIds.add(d.id);
       }
 
-      if (!emails.length) continue;
+      await pruneNotifications(companyId, 'worker_doc_expiry', 'worker_document', relevantIds);
 
-      // Recupera nome company
-      const { data: company } = await supabase
-        .from('companies')
-        .select('name')
-        .eq('id', companyId)
-        .single();
+      // ── Email ─────────────────────────────────────────────────────────────
+      const emails      = await getCompanyAdminEmails(companyId);
+      const companyName = await getCompanyName(companyId);
 
-      await sendWorkerExpiryAlertCompany({
-        to:          emails,
-        companyName: company?.name || 'la tua impresa',
-        workers:     byCompany[companyId],
-        dashboardUrl: (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
-      });
-
-      console.log(`[workerExpiry] company ${companyId}: email inviata a ${emails.length} destinatari — ${byCompany[companyId].length} lavoratori`);
+      if (emails.length) {
+        await sendWorkerDocExpiryAlert({
+          to: emails,
+          companyName,
+          docs: items,
+          docTypeLabels: DOC_TYPE_LABELS,
+          dashboardUrl: (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
+        });
+        console.log(`[workerExpiry] ${companyId}: email → ${emails.length} destinatari, ${items.length} documenti`);
+      }
     } catch (e) {
       console.error(`[workerExpiry] errore company ${companyId}:`, e.message);
     }
@@ -122,13 +123,12 @@ async function runWorkerExpiryCheck() {
 }
 
 function startWorkerExpiryCron() {
-  // Ogni giorno alle 07:15 Europe/Rome (prima del daily summary delle 07:30)
   cron.schedule('15 7 * * *', async () => {
     try { await runWorkerExpiryCheck(); }
     catch (e) { console.error('[workerExpiry] errore cron:', e.message); }
   }, { timezone: 'Europe/Rome' });
 
-  console.log('[cron] worker-expiry scheduler attivo — esecuzione ogni giorno alle 07:15 (Europe/Rome)');
+  console.log('[cron] worker-expiry scheduler attivo — ogni giorno alle 07:15 (Europe/Rome)');
 }
 
 module.exports = { startWorkerExpiryCron, runWorkerExpiryCheck };
