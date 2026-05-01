@@ -439,6 +439,43 @@
     }
   }
 
+  // Aspetta fino a timeoutMs per una lettura GPS con accuracy <= targetAccuracyM.
+  // Risolve con {latitude, longitude, accuracy} oppure null se timeout/non disponibile.
+  // Il watcher viene pulito al termine — non interferisce con startGps() successivo.
+  function waitForGps(timeoutMs, targetAccuracyM) {
+    return new Promise(resolve => {
+      if (!navigator.geolocation) { resolve(null); return; }
+
+      let watchId = null;
+      let best    = null;
+
+      const done = () => {
+        if (watchId !== null) {
+          navigator.geolocation.clearWatch(watchId);
+          watchId = null;
+        }
+        resolve(best);
+      };
+
+      const timer = setTimeout(done, timeoutMs);
+
+      watchId = navigator.geolocation.watchPosition(
+        pos => {
+          const acc = pos.coords.accuracy;
+          if (!best || acc < best.accuracy) {
+            best = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: acc };
+          }
+          if (acc <= targetAccuracyM) {
+            clearTimeout(timer);
+            done();
+          }
+        },
+        () => { /* errori temporanei: il timeout risolverà */ },
+        { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 }
+      );
+    });
+  }
+
   function updateGpsRow() {
     const el = document.getElementById('gps-row');
     if (!el) return;
@@ -738,10 +775,23 @@
       return;
     }
 
-    // Fetch punch-context (senza GPS inizialmente, più veloce)
+    // Aspetta fino a 3s per un fix GPS (accuracy ≤ 200m) prima di interrogare il backend.
+    // Così il backend può calcolare le distanze e fare auto-select corretto anche per
+    // lavoratori assegnati a più cantieri. Su Android il GPS cached risolve in <100ms.
+    const initialGps = await waitForGps(3000, 200);
+    if (initialGps) {
+      gpsCoords = initialGps;
+    }
+
+    // Fetch punch-context, con GPS se disponibile
+    let contextUrl = `/api/v1/badge/${BADGE_CODE}/punch-context`;
+    if (gpsCoords) {
+      contextUrl += `?lat=${gpsCoords.latitude}&lon=${gpsCoords.longitude}`;
+    }
+
     let res;
     try {
-      res = await apiFetch('GET', `/api/v1/badge/${BADGE_CODE}/punch-context`);
+      res = await apiFetch('GET', contextUrl);
     } catch (e) {
       renderError('NETWORK_ERROR');
       return;
