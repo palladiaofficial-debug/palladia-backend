@@ -117,6 +117,19 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
       return res.status(500).json({ error: 'DB_ERROR' });
     }
     activeSites = sitesRows || [];
+  } else {
+    // Nessuna assegnazione specifica → fallback a tutti i cantieri attivi dell'azienda
+    const { data: companySites, error: companySitesErr } = await supabase
+      .from('sites')
+      .select('id, name, address, latitude, longitude, geofence_radius_m, status')
+      .eq('company_id', worker.company_id)
+      .neq('status', 'chiuso');
+
+    if (companySitesErr) {
+      console.error('[badge-punch-context] company sites error:', companySitesErr.message);
+      return res.status(500).json({ error: 'DB_ERROR' });
+    }
+    activeSites = companySites || [];
   }
 
   // Per ogni cantiere: distanza GPS + ultimo evento (query in parallelo)
