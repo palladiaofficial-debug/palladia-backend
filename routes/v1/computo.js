@@ -48,42 +48,48 @@ async function resolveSite(siteId, companyId) {
 // ── POST /api/v1/sites/:siteId/computo/parse ──────────────────
 // Parsa il file con AI, ritorna il draft senza salvare nulla.
 
-router.post('/sites/:siteId/computo/parse', upload.single('file'), async (req, res) => {
-  const { companyId } = req;
-  const { siteId }    = req.params;
+router.post('/sites/:siteId/computo/parse',
+  (req, res, next) => upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: 'UPLOAD_ERROR', message: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const { companyId } = req;
+    const { siteId }    = req.params;
 
-  const site = await resolveSite(siteId, companyId);
-  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    const site = await resolveSite(siteId, companyId);
+    if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
-  if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED', message: 'Carica un file PDF o Excel.' });
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED', message: 'Carica un file PDF o Excel.' });
 
-  const { mimetype, buffer } = req.file;
-  const isPdf   = mimetype === 'application/pdf';
-  const isExcel = mimetype.includes('excel') || mimetype.includes('spreadsheet');
+    const { mimetype, buffer } = req.file;
+    const isPdf   = mimetype === 'application/pdf';
+    const isExcel = mimetype.includes('excel') || mimetype.includes('spreadsheet');
 
-  try {
-    let parsed;
-    if (isPdf)        parsed = await parsePdf(buffer);
-    else if (isExcel) parsed = await parseExcel(buffer);
-    else return res.status(400).json({ error: 'FORMAT_UNSUPPORTED' });
+    try {
+      let parsed;
+      if (isPdf)        parsed = await parsePdf(buffer);
+      else if (isExcel) parsed = await parseExcel(buffer);
+      else return res.status(400).json({ error: 'FORMAT_UNSUPPORTED' });
 
-    res.json({
-      nome:             parsed.nome || 'Computo metrico',
-      totale_contratto: parsed.totale_contratto,
-      n_voci:           parsed.voci.filter(v => v.tipo === 'voce').length,
-      n_categorie:      parsed.voci.filter(v => v.tipo === 'categoria').length,
-      fonte:            isPdf ? 'pdf' : 'excel',
-      voci:             parsed.voci,
-    });
-  } catch (err) {
-    console.error('[computo/parse]', err.message);
-    const isUserError = err.message.includes('non contiene') || err.message.includes('Nessuna voce') || err.message.includes('non parsabile');
-    res.status(isUserError ? 422 : 500).json({
-      error:   isUserError ? 'PARSE_FAILED' : 'INTERNAL',
-      message: err.message,
-    });
+      res.json({
+        nome:             parsed.nome || 'Computo metrico',
+        totale_contratto: parsed.totale_contratto,
+        n_voci:           parsed.voci.filter(v => v.tipo === 'voce').length,
+        n_categorie:      parsed.voci.filter(v => v.tipo === 'categoria').length,
+        fonte:            isPdf ? 'pdf' : 'excel',
+        voci:             parsed.voci,
+      });
+    } catch (err) {
+      const msg = err?.message || String(err);
+      console.error('[computo/parse] ERROR:', msg, err?.stack || '');
+      const isUserError = msg.includes('non contiene') || msg.includes('Nessuna voce') || msg.includes('non parsabile') || msg.includes('grande');
+      res.status(isUserError ? 422 : 500).json({ error: isUserError ? 'PARSE_FAILED' : 'INTERNAL', message: msg });
+    }
   }
-});
+);
 
 // ── POST /api/v1/sites/:siteId/computo ────────────────────────
 // Salva il computo (confermato dall'utente dopo revisione).

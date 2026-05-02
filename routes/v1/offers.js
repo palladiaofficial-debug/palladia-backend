@@ -42,52 +42,61 @@ const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{1
 const round2 = n => Math.round(n * 100) / 100;
 
 // ── POST /api/v1/offers/parse — AI parsing, nessun salvataggio ───────────────
-router.post('/offers/parse', upload.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
-  const { mimetype, buffer } = req.file;
-  const isPdf   = mimetype === 'application/pdf';
-  const isExcel = mimetype.includes('excel') || mimetype.includes('spreadsheet') || mimetype === 'text/csv';
+router.post('/offers/parse',
+  (req, res, next) => upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: 'UPLOAD_ERROR', message: err.message });
+    next();
+  }),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+    const { mimetype, buffer } = req.file;
+    const isPdf   = mimetype === 'application/pdf';
+    const isExcel = mimetype.includes('excel') || mimetype.includes('spreadsheet') || mimetype === 'text/csv';
 
-  try {
-    let parsed;
-    if (isPdf)        parsed = await parsePdf(buffer);
-    else if (isExcel) parsed = await parseExcel(buffer);
-    else return res.status(400).json({ error: 'FORMAT_UNSUPPORTED' });
+    try {
+      let parsed;
+      if (isPdf)        parsed = await parsePdf(buffer);
+      else if (isExcel) parsed = await parseExcel(buffer);
+      else return res.status(400).json({ error: 'FORMAT_UNSUPPORTED' });
 
-    // Mappa prezzo_unitario → prezzo_ref, pre-compila prezzo_offerta
-    const voci = parsed.voci.map(v => ({
-      tipo:           v.tipo,
-      parent_codice:  v.parent_codice || null,
-      codice:         v.codice || null,
-      descrizione:    v.descrizione,
-      unita_misura:   v.unita_misura || null,
-      quantita:       v.quantita,
-      prezzo_ref:     v.prezzo_unitario,
-      prezzo_offerta: v.prezzo_unitario, // pre-compilato: partenza = prezzo capitolato
-      importo_offerta: (v.quantita != null && v.prezzo_unitario != null)
-        ? round2(v.quantita * v.prezzo_unitario)
-        : null,
-      sort_order: v.sort_order,
-    }));
+      // Mappa prezzo_unitario → prezzo_ref, pre-compila prezzo_offerta
+      const voci = parsed.voci.map(v => ({
+        tipo:           v.tipo,
+        parent_codice:  v.parent_codice || null,
+        codice:         v.codice || null,
+        descrizione:    v.descrizione,
+        unita_misura:   v.unita_misura || null,
+        quantita:       v.quantita,
+        prezzo_ref:     v.prezzo_unitario,
+        prezzo_offerta: v.prezzo_unitario,
+        importo_offerta: (v.quantita != null && v.prezzo_unitario != null)
+          ? round2(v.quantita * v.prezzo_unitario)
+          : null,
+        sort_order: v.sort_order,
+      }));
 
-    const totale_offerta = round2(
-      voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo_offerta || 0), 0)
-    );
+      const totale_offerta = round2(
+        voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo_offerta || 0), 0)
+      );
 
-    res.json({
-      nome:            parsed.nome || 'Nuova offerta',
-      fonte:           isPdf ? 'pdf' : 'excel',
-      n_voci:          voci.filter(v => v.tipo === 'voce').length,
-      n_categorie:     voci.filter(v => v.tipo === 'categoria').length,
-      totale_offerta,
-      voci,
-    });
-  } catch (err) {
-    console.error('[offers/parse]', err.message);
-    const isUser = err.message.includes('non contiene') || err.message.includes('Nessuna voce') || err.message.includes('non parsabile');
-    res.status(isUser ? 422 : 500).json({ error: isUser ? 'PARSE_FAILED' : 'INTERNAL', message: err.message });
+      res.json({
+        nome:            parsed.nome || 'Nuova offerta',
+        fonte:           isPdf ? 'pdf' : 'excel',
+        n_voci:          voci.filter(v => v.tipo === 'voce').length,
+        n_categorie:     voci.filter(v => v.tipo === 'categoria').length,
+        totale_offerta,
+        voci,
+      });
+    } catch (err) {
+      const msg = err?.message || String(err);
+      console.error('[offers/parse] ERROR:', msg, err?.stack || '');
+      const isUser = msg.includes('non contiene') || msg.includes('Nessuna voce') || msg.includes('non parsabile') || msg.includes('grande');
+      res.status(isUser ? 422 : 500).json({ error: isUser ? 'PARSE_FAILED' : 'INTERNAL', message: msg });
+    }
   }
-});
+);
 
 // ── POST /api/v1/offers — salva offerta con voci ─────────────────────────────
 router.post('/offers', async (req, res) => {
