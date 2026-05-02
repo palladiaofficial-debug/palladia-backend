@@ -9,31 +9,16 @@
  *   3. Return: { voci[], summary, totalCategorie, importoTotale }
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
+const Anthropic          = require('@anthropic-ai/sdk');
+const { extractPdfText } = require('../lib/pdfExtract');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // Massimo testo da inviare a Claude in un singolo chunk (caratteri)
 const MAX_CHUNK_CHARS = 90_000;
 
-/**
- * Estrae testo dal PDF usando pdfjs-dist (Node-compatible).
- */
 async function extractTextFromPDF(buffer) {
-  // pdfjs-dist legacy build per Node.js
-  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-  const data     = new Uint8Array(buffer);
-  const doc      = await pdfjsLib.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise;
-  const numPages = Math.min(doc.numPages, 80); // max 80 pagine
-
-  const pages = [];
-  for (let i = 1; i <= numPages; i++) {
-    const page    = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const text    = content.items.map(item => item.str).join(' ');
-    if (text.trim().length > 20) pages.push(`--- Pagina ${i} ---\n${text}`);
-  }
-  return { text: pages.join('\n\n'), numPages: doc.numPages };
+  return extractPdfText(buffer, { maxPages: 80 });
 }
 
 const PARSE_SYSTEM = `Sei un esperto di capitolati speciali d'appalto italiani (edilizia civile e industriale).

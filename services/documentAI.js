@@ -9,8 +9,9 @@
  * Usato da companyDocuments.js e workerDocs.js dopo ogni upload.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
-const supabase  = require('../lib/supabase');
+const Anthropic          = require('@anthropic-ai/sdk');
+const supabase           = require('../lib/supabase');
+const { extractPdfText } = require('../lib/pdfExtract');
 
 const MODEL      = 'claude-sonnet-4-6';
 const MAX_TOKENS = 1024;
@@ -101,20 +102,9 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
 
   let messageContent;
   if (isPdf) {
-    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-    const data     = new Uint8Array(fileBuffer);
-    const doc      = await pdfjsLib.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise;
-    const numPages = Math.min(doc.numPages, 30);
-    const pages    = [];
-    for (let i = 1; i <= numPages; i++) {
-      const page    = await doc.getPage(i);
-      const content = await page.getTextContent();
-      const text    = content.items.map(item => item.str).join(' ');
-      if (text.trim().length > 10) pages.push(`--- Pagina ${i} ---\n${text}`);
-    }
-    const pdfText = pages.join('\n\n').slice(0, 15000);
+    const { text: pdfText } = await extractPdfText(fileBuffer, { maxPages: 30, minChars: 10 });
     if (!pdfText.trim()) return null;
-    messageContent = `Testo estratto dal PDF:\n\n${pdfText}\n\nAnalizza questo documento e restituisci il JSON richiesto.`;
+    messageContent = `Testo estratto dal PDF:\n\n${pdfText.slice(0, 15000)}\n\nAnalizza questo documento e restituisci il JSON richiesto.`;
   } else {
     messageContent = [
       { type: 'image', source: { type: 'base64', media_type: mimeType, data: fileBuffer.toString('base64') } },

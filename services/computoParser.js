@@ -4,8 +4,9 @@
  * Parsing AI di computi metrici da PDF o Excel.
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
-const xlsx      = require('xlsx');
+const Anthropic      = require('@anthropic-ai/sdk');
+const xlsx           = require('xlsx');
+const { extractPdfText } = require('../lib/pdfExtract');
 
 const MODEL      = 'claude-sonnet-4-6';
 const MAX_TOKENS = 16000;
@@ -33,18 +34,7 @@ REGOLE (documento economico/legale — precisione assoluta):
 
 // ── PDF: estrai testo con pdfjs-dist → Claude ─────────────────────────────────
 async function parsePdf(buffer) {
-  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-  const data     = new Uint8Array(buffer);
-  const doc      = await pdfjsLib.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise;
-  const numPages = Math.min(doc.numPages, 80);
-  const pages    = [];
-  for (let i = 1; i <= numPages; i++) {
-    const page    = await doc.getPage(i);
-    const content = await page.getTextContent();
-    const text    = content.items.map(item => item.str).join(' ');
-    if (text.trim().length > 20) pages.push(`--- Pagina ${i} ---\n${text}`);
-  }
-  const pdfText = pages.join('\n\n');
+  const { text: pdfText } = await extractPdfText(buffer, { maxPages: 80 });
   if (!pdfText.trim()) throw new Error('Il PDF non contiene testo estraibile (documento scansionato?).');
 
   const truncated = pdfText.length > MAX_CHARS
