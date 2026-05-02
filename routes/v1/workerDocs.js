@@ -17,7 +17,7 @@ const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { analyzeWorkerDoc }  = require('../../services/documentAI');
+const { analyzeWorkerDoc, analyzeDocumentBuffer } = require('../../services/documentAI');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -309,5 +309,81 @@ router.get('/worker-documents', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.json(data || []);
 });
+
+// ── Fuzzy name matching ────────────────────────────────────────────────────────
+
+function levenshtein(a, b) {
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0)
+  );
+  for (let i = 1; i <= m; i++)
+    for (let j = 1; j <= n; j++)
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[m][n];
+}
+
+function normName(s) {
+  return (s || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/\p{Mn}/gu, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Restituisce 0-100; gestisce "ROSSI Mario" vs "Mario Rossi" via token overlap
+function scoreMatch(extracted, workerName) {
+  const a = normName(extracted);
+  const b = normName(workerName);
+  if (!a || !b) return 0;
+  const ta = new Set(a.split(' ').filter(t => t.length > 1));
+  const tb = new Set(b.split(' ').filter(t => t.length > 1));
+  const common = [...ta].filter(t => tb.has(t)).length;
+  const tokenScore = common / Math.max(ta.size, tb.size, 1);
+  const lev = levenshtein(a, b);
+  const levScore = 1 - lev / Math.max(a.length, b.length, 1);
+  return Math.round((tokenScore * 70 + levScore * 30) * 100);
+}
+
+// ── POST /api/v1/worker-docs/ai-import — analisi AI + matching senza salvare ──
+router.post('/worker-docs/ai-import',
+  verifySupabaseJwt,
+  (req, res, next) => upload.single('file')(req, res, err => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    let analysis;
+    try {
+      analysis = await analyzeDocumentBuffer(req.file.buffer, req.file.mimetype);
+    } catch (err) {
+      console.error('[ai-import] analysis failed:', err.message);
+      return res.status(500).json({ error: 'AI_ERROR', detail: err.message });
+    }
+    if (!analysis) return res.status(422).json({ error: 'UNSUPPORTED_FORMAT' });
+
+    const { data: workers } = await supabase
+      .from('workers')
+      .select('id, full_name, photo_url, is_active')
+      .eq('company_id', req.companyId)
+      .eq('is_active', true)
+      .order('full_name');
+
+    const worker_matches = (workers || [])
+      .map(w => ({ worker: w, score: scoreMatch(analysis.issued_to, w.full_name) }))
+      .filter(m => m.score >= 35)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+
+    res.json({ analysis, worker_matches });
+  }
+);
 
 module.exports = router;

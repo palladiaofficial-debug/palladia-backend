@@ -218,4 +218,23 @@ async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) 
   }
 }
 
-module.exports = { analyzeCompanyDoc, analyzeWorkerDoc };
+// ── Analisi su buffer diretto (smart import — senza salvare prima) ─────────────
+// Restituisce i dati estratti da Claude in forma normalizzata, senza toccare il DB.
+async function analyzeDocumentBuffer(fileBuffer, mimeType) {
+  const raw = await analyzeDocument(fileBuffer, mimeType, WORKER_DOC_PROMPT);
+  if (!raw) return null;
+  return {
+    doc_type:      raw.doc_type_detected || 'altro',
+    expiry_date:   normalizeDate(raw.expiry_date),
+    renewal_years: Number.isInteger(raw.renewal_years) ? raw.renewal_years : null,
+    issued_to:     (String(raw.issued_to  || '')).trim().slice(0, 200) || null,
+    issued_by:     (String(raw.issued_by  || '')).trim().slice(0, 200) || null,
+    summary:       (String(raw.summary    || '')).slice(0, 800)        || null,
+    issues:        Array.isArray(raw.issues)
+      ? raw.issues.slice(0, 5).map(s => String(s).slice(0, 200))
+      : [],
+    validity_ok:   typeof raw.validity_ok === 'boolean' ? raw.validity_ok : null,
+  };
+}
+
+module.exports = { analyzeCompanyDoc, analyzeWorkerDoc, analyzeDocumentBuffer };
