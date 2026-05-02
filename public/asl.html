@@ -213,6 +213,58 @@
       border-top: 1px solid var(--border);
       margin: 8px 0 16px;
     }
+
+    /* ── Sezione lavoratori ───────────────────────────────── */
+    .workers-section { width: 100%; max-width: 520px; margin-top: 4px; }
+    .workers-title {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: var(--muted);
+      margin-bottom: 12px; text-align: center;
+    }
+    .worker-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); margin-bottom: 10px; overflow: hidden;
+    }
+    .worker-header {
+      padding: 14px 16px; cursor: pointer;
+      display: flex; align-items: center; gap: 12px; user-select: none;
+    }
+    .worker-header:active { opacity: 0.8; }
+    .worker-avatar {
+      width: 36px; height: 36px; background: var(--accent); border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 13px; color: #fff; flex-shrink: 0;
+    }
+    .worker-info { flex: 1; min-width: 0; }
+    .worker-name { font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .worker-cf   { font-size: 11px; color: var(--muted); margin-top: 1px; font-family: monospace; letter-spacing: 0.04em; }
+    .worker-role { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .worker-arrow { font-size: 11px; color: var(--muted); transition: transform 0.2s; flex-shrink: 0; }
+    .worker-card.open .worker-arrow { transform: rotate(180deg); }
+    .worker-body {
+      display: none; padding: 2px 16px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .worker-card.open .worker-body { display: block; }
+    .doc-empty { font-size: 13px; color: var(--muted); padding: 14px 0; text-align: center; }
+    .doc-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+    .doc-item:last-child { border-bottom: none; }
+    .doc-icon { font-size: 15px; flex-shrink: 0; width: 22px; text-align: center; }
+    .doc-details { flex: 1; min-width: 0; }
+    .doc-name   { font-size: 13px; font-weight: 600; }
+    .doc-expiry { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .btn-view {
+      font-size: 12px; font-weight: 600; color: var(--accent);
+      background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 6px; padding: 6px 12px; cursor: pointer; flex-shrink: 0;
+      white-space: nowrap; transition: background 0.15s;
+    }
+    .btn-view:hover:not(:disabled) { background: rgba(59,130,246,0.2); }
+    .btn-view:disabled { opacity: 0.5; cursor: not-allowed; }
+    .workers-loading { text-align: center; padding: 20px; color: var(--muted); font-size: 13px; }
   </style>
 </head>
 <body>
@@ -281,12 +333,52 @@
       Valido ai fini di verifica D.Lgs.&nbsp;81/2008.
     </p>
 
+    <hr class="divider" style="margin-top:20px;">
+
+    <!-- Lavoratori e documenti -->
+    <div id="workers-loading" class="workers-loading">
+      <div class="spin" style="width:20px;height:20px;border-width:2px;display:inline-block;"></div>
+      <span style="margin-left:8px;">Caricamento lavoratori…</span>
+    </div>
+    <div id="workers-section" class="workers-section" style="display:none">
+      <div class="workers-title" id="workers-title">Lavoratori assegnati al cantiere</div>
+      <div id="workers-list"></div>
+    </div>
+
   </div>
 
   <script>
   'use strict';
 
   const $ = id => document.getElementById(id);
+
+  // ── Costanti documenti ────────────────────────────────────────────────────────
+  const DOC_LABELS = {
+    idoneita_medica:      'Idoneità medica',
+    formazione_sicurezza: 'Formazione sicurezza',
+    primo_soccorso:       'Primo soccorso',
+    antincendio:          'Antincendio',
+    lavori_quota:         'Lavori in quota',
+    ponteggi:             'Ponteggi',
+    gruista:              'Gruista',
+    pes_pav_pei:          'PES / PAV / PEI',
+    rspp:                 'RSPP',
+    patente_guida:        'Patente di guida',
+    altro:                'Documento',
+  };
+  const DOC_ICONS = {
+    idoneita_medica:      '🩺',
+    formazione_sicurezza: '🎓',
+    primo_soccorso:       '🏥',
+    antincendio:          '🔥',
+    lavori_quota:         '🦺',
+    ponteggi:             '🏗️',
+    gruista:              '🏗️',
+    pes_pav_pei:          '⚡',
+    rspp:                 '👷',
+    patente_guida:        '🚗',
+    altro:                '📄',
+  };
 
   // Estrai token dal path: /asl/<token>
   const pathParts = window.location.pathname.split('/');
@@ -390,10 +482,110 @@
       setTimeout(() => { $('progress-csv').classList.remove('visible'); }, 5000);
     });
 
-    // Mostra pagina
+    // Mostra pagina e carica lavoratori
     $('state-loading').classList.add('hidden');
     $('state-main').classList.remove('hidden');
     $('state-main').style.display = 'flex';
+
+    loadWorkers();
+  }
+
+  // ── Lavoratori e documenti ────────────────────────────────────────────────────
+  async function loadWorkers() {
+    try {
+      const res  = await fetch(`/api/v1/asl/${TOKEN}?format=workers`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Errore');
+      renderWorkers(body.workers || []);
+    } catch {
+      $('workers-loading').innerHTML =
+        '<span style="color:var(--red);font-size:13px;">Impossibile caricare i lavoratori.</span>';
+    }
+  }
+
+  function renderWorkers(workers) {
+    $('workers-loading').style.display = 'none';
+    const section = $('workers-section');
+    const list    = $('workers-list');
+    section.style.display = '';
+    $('workers-title').textContent =
+      `Lavoratori assegnati al cantiere (${workers.length})`;
+
+    if (!workers.length) {
+      list.innerHTML = '<div class="doc-empty">Nessun lavoratore assegnato al cantiere.</div>';
+      return;
+    }
+
+    list.innerHTML = '';
+    workers.forEach((w, i) => {
+      const card     = document.createElement('div');
+      card.className = 'worker-card';
+
+      const initials = w.full_name.split(' ')
+        .map(p => p[0]).join('').slice(0, 2).toUpperCase();
+      const roleLine = [w.role, w.employer_name].filter(Boolean).join(' · ');
+
+      const docsHtml = !w.documents.length
+        ? '<div class="doc-empty">Nessun documento caricato</div>'
+        : w.documents.map(doc => {
+            const label  = DOC_LABELS[doc.doc_type] || doc.name || doc.doc_type;
+            const icon   = DOC_ICONS[doc.doc_type]  || '📄';
+            const expTxt = doc.expiry_date
+              ? 'Scad. ' + new Date(doc.expiry_date).toLocaleDateString('it-IT')
+              : '';
+            const viewBtn = doc.has_file
+              ? `<button class="btn-view"
+                   onclick="viewDoc('${esc(doc.id)}',this)"
+                   aria-label="Visualizza ${esc(label)}">Visualizza</button>`
+              : '';
+            return `<div class="doc-item">
+              <div class="doc-icon">${icon}</div>
+              <div class="doc-details">
+                <div class="doc-name">${esc(label)}</div>
+                ${expTxt ? `<div class="doc-expiry">${expTxt}</div>` : ''}
+              </div>
+              ${viewBtn}
+            </div>`;
+          }).join('');
+
+      card.innerHTML = `
+        <div class="worker-header" onclick="toggleWorker(this.parentElement)">
+          <div class="worker-avatar">${initials}</div>
+          <div class="worker-info">
+            <div class="worker-name">${esc(w.full_name)}</div>
+            <div class="worker-cf">${esc(w.fiscal_code || '')}</div>
+            ${roleLine ? `<div class="worker-role">${esc(roleLine)}</div>` : ''}
+          </div>
+          <span class="worker-arrow">▼</span>
+        </div>
+        <div class="worker-body">${docsHtml}</div>`;
+
+      if (i === 0) card.classList.add('open');
+      list.appendChild(card);
+    });
+  }
+
+  function toggleWorker(card) { card.classList.toggle('open'); }
+
+  async function viewDoc(docId, btn) {
+    btn.disabled    = true;
+    btn.textContent = '…';
+    try {
+      const res  = await fetch(`/api/v1/asl/${TOKEN}/document/${docId}`);
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || 'Errore');
+      window.open(body.url, '_blank', 'noopener');
+    } catch {
+      alert('Impossibile aprire il documento. Riprovare.');
+    }
+    btn.disabled    = false;
+    btn.textContent = 'Visualizza';
+  }
+
+  function esc(s) {
+    return String(s || '')
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   loadInfo();

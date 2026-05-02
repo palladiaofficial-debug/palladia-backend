@@ -207,6 +207,60 @@ router.get('/asl/:token', aslLimiter, async (req, res) => {
     });
   }
 
+  // ── Workers + documenti (per la pagina HTML — nessuno status compliance) ──
+  if (format === 'workers') {
+    const { data: assignments, error: aErr } = await supabase
+      .from('worksite_workers')
+      .select('worker_id')
+      .eq('site_id',   tokenRow.site_id)
+      .eq('company_id', tokenRow.company_id)
+      .eq('status', 'active');
+
+    if (aErr) return res.status(500).json({ error: 'DB_ERROR' });
+
+    const workerIds = (assignments || []).map(a => a.worker_id);
+    if (!workerIds.length) return res.json({ workers: [] });
+
+    const [{ data: workers }, { data: docs }] = await Promise.all([
+      supabase
+        .from('workers')
+        .select('id, full_name, fiscal_code, role, employer_name')
+        .in('id', workerIds)
+        .eq('company_id', tokenRow.company_id)
+        .eq('is_active', true)
+        .order('full_name'),
+      supabase
+        .from('worker_documents')
+        .select('id, worker_id, doc_type, name, expiry_date, file_path')
+        .in('worker_id', workerIds)
+        .eq('company_id', tokenRow.company_id)
+        .order('doc_type'),
+    ]);
+
+    const docsByWorker = {};
+    for (const doc of docs || []) {
+      if (!docsByWorker[doc.worker_id]) docsByWorker[doc.worker_id] = [];
+      docsByWorker[doc.worker_id].push({
+        id:          doc.id,
+        doc_type:    doc.doc_type,
+        name:        doc.name,
+        expiry_date: doc.expiry_date,
+        has_file:    !!doc.file_path,
+      });
+    }
+
+    return res.json({
+      workers: (workers || []).map(w => ({
+        id:            w.id,
+        full_name:     w.full_name,
+        fiscal_code:   w.fiscal_code,
+        role:          w.role || null,
+        employer_name: w.employer_name || null,
+        documents:     docsByWorker[w.id] || [],
+      })),
+    });
+  }
+
   // ── Build dati (comune a CSV e PDF) ─────────────────────────────────────
   let reportData;
   try {
@@ -266,6 +320,61 @@ router.get('/asl/:token', aslLimiter, async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${fileBase}.pdf"`);
   res.setHeader('Content-Length', pdfBuffer.length);
   res.send(pdfBuffer);
+});
+
+// ── GET /api/v1/asl/:token/document/:docId — signed URL documento (pubblico) ──
+// Valida il token ASL, verifica che il documento appartenga a un lavoratore
+// assegnato al cantiere del token, genera un URL firmato valido 1 ora.
+router.get('/asl/:token/document/:docId', aslLimiter, async (req, res) => {
+  const { token, docId } = req.params;
+
+  if (typeof token !== 'string' || token.length !== 64)
+    return res.status(400).json({ error: 'TOKEN_INVALID' });
+
+  const tokenHash = hashAslToken(token);
+  const now = new Date();
+
+  const { data: tokenRow, error: tErr } = await supabase
+    .from('asl_access_tokens')
+    .select('id, company_id, site_id, revoked_at, expires_at')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+
+  if (tErr || !tokenRow)                   return res.status(403).json({ error: 'TOKEN_NOT_FOUND' });
+  if (tokenRow.revoked_at)                 return res.status(403).json({ error: 'TOKEN_REVOKED' });
+  if (new Date(tokenRow.expires_at) < now) return res.status(403).json({ error: 'TOKEN_EXPIRED' });
+
+  // Documento — deve appartenere alla stessa azienda del token
+  const { data: doc, error: dErr } = await supabase
+    .from('worker_documents')
+    .select('id, worker_id, file_path, name, mime_type')
+    .eq('id', docId)
+    .eq('company_id', tokenRow.company_id)
+    .maybeSingle();
+
+  if (dErr || !doc || !doc.file_path)
+    return res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+
+  // Il lavoratore deve essere assegnato al cantiere del token
+  const { data: assignment } = await supabase
+    .from('worksite_workers')
+    .select('id')
+    .eq('worker_id',  doc.worker_id)
+    .eq('site_id',    tokenRow.site_id)
+    .eq('company_id', tokenRow.company_id)
+    .maybeSingle();
+
+  if (!assignment) return res.status(403).json({ error: 'WORKER_NOT_AT_SITE' });
+
+  // Signed URL valido 1 ora
+  const { data: signed, error: signErr } = await supabase.storage
+    .from('site-documents')
+    .createSignedUrl(doc.file_path, 3600);
+
+  if (signErr || !signed?.signedUrl)
+    return res.status(500).json({ error: 'SIGN_ERROR' });
+
+  res.json({ url: signed.signedUrl, name: doc.name, mime_type: doc.mime_type });
 });
 
 module.exports = router;
