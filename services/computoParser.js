@@ -8,9 +8,9 @@ const Anthropic      = require('@anthropic-ai/sdk');
 const xlsx           = require('xlsx');
 const { extractPdfText } = require('../lib/pdfExtract');
 
-const MODEL      = 'claude-sonnet-4-6';
-const MAX_TOKENS = 16000;
-const MAX_CHARS  = 50000;
+const MODEL      = 'claude-haiku-4-5-20251001';
+const MAX_TOKENS = 6000;
+const MAX_CHARS  = 25000;
 
 const SYSTEM_PROMPT = `Sei un esperto di computi metrici italiani nel settore delle costruzioni.
 Analizza il documento fornito (computo metrico, lista lavorazioni, capitolato, preventivo o contratto) e restituisci SOLO un oggetto JSON valido, senza markdown, senza backtick, senza spiegazioni.

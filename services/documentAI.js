@@ -13,7 +13,7 @@ const Anthropic          = require('@anthropic-ai/sdk');
 const supabase           = require('../lib/supabase');
 const { extractPdfText } = require('../lib/pdfExtract');
 
-const MODEL      = 'claude-sonnet-4-6';
+const MODEL      = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS = 1024;
 const BUCKET     = 'site-documents';
 
