@@ -261,6 +261,28 @@ app.use('/api/telegram', require('./routes/telegram'));
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 
+// ── Parse diagnostics (public, temporaneo) ──────────────────────────────────
+app.get('/api/parse-diag', async (req, res) => {
+  const steps = {};
+  try {
+    const { PDFDocument } = require('pdf-lib');
+    const doc = await PDFDocument.create();
+    doc.addPage().drawText('A.01 demolizione muratura 100 euro m2');
+    const buf = Buffer.from(await doc.save());
+    steps.pdf_lib = 'ok';
+
+    const { extractPdfText } = require('./lib/pdfExtract');
+    const { text } = await extractPdfText(buf);
+    steps.pdfjs = text.length > 0 ? `ok (${text.length} chars)` : 'empty';
+
+    res.json({ ok: true, steps });
+  } catch (e) {
+    steps.error = e.message;
+    steps.stack = e.stack?.split('\n').slice(0, 5).join('\n');
+    res.status(500).json({ ok: false, steps });
+  }
+});
+
 // Favicon — evita 404 nei log
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 

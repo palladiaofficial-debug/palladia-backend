@@ -116,7 +116,9 @@
       "Bash(identify \"C:/Users/ricka/Desktop/PALLADIA/palladia-main/palladia-main/public/apple-touch-icon.png\")",
       "Bash(cat services/telegramNotifications.js)",
       "Bash(ls services/telegram*)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "PowerShell(git push *)",
+      "PowerShell(git *)"
     ]
   }
 }
