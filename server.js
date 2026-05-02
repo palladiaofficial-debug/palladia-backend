@@ -275,10 +275,19 @@ app.get('/api/parse-diag', async (req, res) => {
     const { text } = await extractPdfText(buf);
     steps.pdfjs = text.length > 0 ? `ok (${text.length} chars)` : 'empty';
 
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client    = new Anthropic();
+    const resp      = await client.messages.create({
+      model:      'claude-sonnet-4-6',
+      max_tokens: 20,
+      messages:   [{ role: 'user', content: 'Rispondi solo con: {"ok":true}' }],
+    });
+    steps.anthropic = resp.content?.[0]?.text?.slice(0, 50) || 'empty response';
+
     res.json({ ok: true, steps });
   } catch (e) {
     steps.error = e.message;
-    steps.stack = e.stack?.split('\n').slice(0, 5).join('\n');
+    steps.stack = e.stack?.split('\n').slice(0, 4).join(' | ');
     res.status(500).json({ ok: false, steps });
   }
 });
