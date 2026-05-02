@@ -317,105 +317,114 @@
     }
     .fade-in { animation: fadeUp 0.3s ease-out both; }
 
-    /* ── PWA Install Bar ── */
-    #pwa-install-bar {
-      position: fixed;
-      bottom: 0; left: 0; right: 0;
-      background: #1e293b;
-      border-top: 1px solid #334155;
-      padding: 14px 16px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      z-index: 100;
-      box-shadow: 0 -4px 24px rgba(0,0,0,.5);
-    }
-    #pwa-install-bar.hidden { display: none !important; }
-    .pwa-bar-icon { font-size: 30px; flex-shrink: 0; }
-    .pwa-bar-text { flex: 1; min-width: 0; }
-    .pwa-bar-title { font-size: 14px; font-weight: 700; color: #f1f5f9; }
-    .pwa-bar-sub   { font-size: 12px; color: #94a3b8; margin-top: 1px; }
-    .pwa-bar-btn {
-      background: var(--blue);
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 10px 16px;
-      font-size: 13px;
-      font-weight: 700;
-      cursor: pointer;
-      flex-shrink: 0;
-      font-family: inherit;
-      white-space: nowrap;
-    }
-    .pwa-bar-dismiss {
-      background: none;
-      border: none;
-      color: #64748b;
-      font-size: 22px;
-      cursor: pointer;
-      padding: 4px;
-      flex-shrink: 0;
-      line-height: 1;
-    }
-
-    /* ── iOS Install Modal ── */
-    #pwa-ios-modal {
+    /* ── Guida salvataggio Home ── */
+    #pwa-guide {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,.72);
+      background: rgba(0,0,0,.82);
       display: flex;
       align-items: flex-end;
       justify-content: center;
-      z-index: 200;
-      padding: 0 16px 24px;
+      z-index: 300;
+      padding: 0;
     }
-    #pwa-ios-modal.hidden { display: none !important; }
-    .pwa-modal-box {
+    #pwa-guide.hidden { display: none !important; }
+
+    .pwa-sheet {
       background: #1e293b;
-      border: 1px solid #334155;
-      border-radius: 20px;
-      padding: 24px 20px 20px;
+      border-top: 1px solid #475569;
+      border-radius: 24px 24px 0 0;
+      padding: 28px 24px 36px;
       width: 100%;
-      max-width: 480px;
+      max-width: 520px;
+      animation: slideUp .28s ease-out both;
     }
-    .pwa-modal-title {
-      font-size: 17px;
-      font-weight: 700;
+    @keyframes slideUp {
+      from { transform: translateY(60px); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    .pwa-handle {
+      width: 40px; height: 4px;
+      background: #475569;
+      border-radius: 2px;
+      margin: 0 auto 22px;
+    }
+    .pwa-headline {
+      font-size: 20px;
+      font-weight: 800;
       color: #f1f5f9;
-      margin-bottom: 18px;
       text-align: center;
+      margin-bottom: 6px;
+      line-height: 1.25;
     }
+    .pwa-sub {
+      font-size: 14px;
+      color: #94a3b8;
+      text-align: center;
+      margin-bottom: 26px;
+      line-height: 1.5;
+    }
+    .pwa-steps { display: flex; flex-direction: column; gap: 16px; margin-bottom: 28px; }
     .pwa-step {
       display: flex;
       align-items: flex-start;
-      gap: 12px;
-      font-size: 14px;
-      color: #cbd5e1;
-      line-height: 1.5;
-      margin-bottom: 14px;
+      gap: 14px;
     }
     .pwa-step-num {
-      width: 26px; height: 26px;
+      width: 30px; height: 30px;
       background: var(--blue);
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; color: #fff;
+      font-size: 14px; font-weight: 800; color: #fff;
       flex-shrink: 0; margin-top: 1px;
     }
-    .pwa-modal-close {
+    .pwa-step-text {
+      flex: 1;
+      font-size: 15px;
+      color: #e2e8f0;
+      line-height: 1.5;
+    }
+    .pwa-step-text strong { color: #f1f5f9; }
+    .pwa-step-icon { font-size: 19px; flex-shrink: 0; margin-top: 2px; }
+
+    .pwa-note {
+      background: rgba(59,130,246,.1);
+      border: 1px solid rgba(59,130,246,.25);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13px;
+      color: #93c5fd;
+      line-height: 1.5;
+      margin-bottom: 22px;
+    }
+
+    .pwa-btn-primary {
       display: block;
       width: 100%;
-      margin-top: 20px;
-      padding: 13px;
-      background: #334155;
-      color: #f1f5f9;
+      padding: 16px;
+      background: var(--blue);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      font-family: inherit;
+      font-size: 16px;
+      font-weight: 800;
+      cursor: pointer;
+      margin-bottom: 12px;
+      letter-spacing: 0.01em;
+    }
+    .pwa-btn-skip {
+      display: block;
+      width: 100%;
+      padding: 12px;
+      background: none;
+      color: #64748b;
       border: none;
       border-radius: 12px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
       font-family: inherit;
+      font-size: 14px;
+      cursor: pointer;
     }
   </style>
 </head>
@@ -425,35 +434,16 @@
     <div class="brand">Palladia</div>
   </div>
 
-  <!-- PWA Install Bar: visibile su Android/Chrome/Samsung/Firefox via beforeinstallprompt
-       e manualmente su iOS con istruzioni passo-passo -->
-  <div id="pwa-install-bar" class="hidden">
-    <div class="pwa-bar-icon">📲</div>
-    <div class="pwa-bar-text">
-      <div class="pwa-bar-title">Aggiungi alla schermata Home</div>
-      <div class="pwa-bar-sub">Apri Timbratura in un click</div>
-    </div>
-    <button class="pwa-bar-btn" id="pwa-bar-btn" onclick="pwaInstall()">Installa</button>
-    <button class="pwa-bar-dismiss" onclick="pwaDismiss()" aria-label="Chiudi">×</button>
-  </div>
-
-  <!-- iOS: istruzioni manuali (share → aggiungi a schermata Home) -->
-  <div id="pwa-ios-modal" class="hidden">
-    <div class="pwa-modal-box">
-      <div class="pwa-modal-title">Aggiungi alla schermata Home</div>
-      <div class="pwa-step">
-        <div class="pwa-step-num">1</div>
-        <div>Tocca l'icona <strong>Condividi</strong> ⬆ in basso nel browser Safari</div>
-      </div>
-      <div class="pwa-step">
-        <div class="pwa-step-num">2</div>
-        <div>Scorri e tocca <strong>"Aggiungi a schermata Home"</strong></div>
-      </div>
-      <div class="pwa-step">
-        <div class="pwa-step-num">3</div>
-        <div>Tocca <strong>Aggiungi</strong> in alto a destra — fatto!</div>
-      </div>
-      <button class="pwa-modal-close" onclick="pwaIosClose()">Ho capito</button>
+  <!-- Guida salvataggio Home — si apre automaticamente, contenuto generato da JS -->
+  <div id="pwa-guide" class="hidden">
+    <div class="pwa-sheet">
+      <div class="pwa-handle"></div>
+      <div class="pwa-headline" id="pwa-headline">Salva sulla schermata Home</div>
+      <div class="pwa-sub">Così apri Timbratura ogni giorno con un tocco — senza più scansionare il QR code.</div>
+      <div class="pwa-steps" id="pwa-steps"><!-- riempito da JS --></div>
+      <div class="pwa-note" id="pwa-note" style="display:none"></div>
+      <button class="pwa-btn-primary" id="pwa-btn-primary" onclick="pwaGuideAction()">Ho capito — ci provo!</button>
+      <button class="pwa-btn-skip" onclick="pwaGuideSkip()">Adesso no, faccio dopo</button>
     </div>
   </div>
 
@@ -973,8 +963,10 @@
   }
 
   // ── PWA ──────────────────────────────────────────────────────────────────────
-  // Persistenza badge code: salva in localStorage al caricamento con code in URL.
-  // Se aperta dal home screen (standalone) senza code, redirect al code salvato.
+
+  // Persistenza badge code in localStorage.
+  // Se l'app viene aperta dall'icona home (standalone) senza code nell'URL,
+  // redirect al codice salvato così non serve riscansionare il QR.
   (function () {
     var parts = window.location.pathname.split('/').filter(Boolean);
     var idx   = parts.indexOf('timbratura');
@@ -982,9 +974,9 @@
     if (code && /^[A-Fa-f0-9]{18}$/i.test(code)) {
       try { localStorage.setItem('palladia_badge_code', code); } catch (e) {}
     } else {
-      var isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
-                         window.navigator.standalone === true;
-      if (isStandalone) {
+      var standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                       window.navigator.standalone === true;
+      if (standalone) {
         var saved = null;
         try { saved = localStorage.getItem('palladia_badge_code'); } catch (e) {}
         if (saved && /^[A-Fa-f0-9]{18}$/i.test(saved)) {
@@ -994,73 +986,156 @@
     }
   })();
 
-  let _pwaPrompt = null;
-
-  // Android/Chrome/Samsung/Firefox: intercetta il prompt nativo
-  window.addEventListener('beforeinstallprompt', function (e) {
-    e.preventDefault();
-    _pwaPrompt = e;
-    var dismissed = false;
-    try { dismissed = !!sessionStorage.getItem('pwa_dismissed'); } catch (e2) {}
-    if (!dismissed) {
-      document.getElementById('pwa-install-bar').classList.remove('hidden');
-      document.body.style.paddingBottom = '80px';
-    }
-  });
-
-  window.addEventListener('appinstalled', function () {
-    document.getElementById('pwa-install-bar').classList.add('hidden');
-    document.body.style.paddingBottom = '';
-  });
-
-  function pwaInstall() {
-    if (!_pwaPrompt) return;
-    _pwaPrompt.prompt();
-    _pwaPrompt.userChoice.then(function () {
-      _pwaPrompt = null;
-      pwaDismiss();
-    });
-  }
-
-  function pwaDismiss() {
-    document.getElementById('pwa-install-bar').classList.add('hidden');
-    document.body.style.paddingBottom = '';
-    try { sessionStorage.setItem('pwa_dismissed', '1'); } catch (e) {}
-  }
-
-  function pwaIosOpen() {
-    document.getElementById('pwa-ios-modal').classList.remove('hidden');
-  }
-
-  function pwaIosClose() {
-    document.getElementById('pwa-ios-modal').classList.add('hidden');
-    pwaDismiss();
-    try { sessionStorage.setItem('pwa_ios_dismissed', '1'); } catch (e) {}
-  }
-
-  // iOS Safari: mostra barra con istruzioni manuali (no beforeinstallprompt su iOS)
-  (function () {
-    var isIos       = /iphone|ipad|ipod/i.test(navigator.userAgent);
-    var isStandalone = window.navigator.standalone === true;
-    if (!isIos || isStandalone) return;
-    var dismissed = false;
-    try { dismissed = !!sessionStorage.getItem('pwa_ios_dismissed'); } catch (e) {}
-    if (dismissed) return;
-    setTimeout(function () {
-      var bar = document.getElementById('pwa-install-bar');
-      if (!bar || !bar.classList.contains('hidden')) return;
-      bar.classList.remove('hidden');
-      document.body.style.paddingBottom = '80px';
-      var btn = document.getElementById('pwa-bar-btn');
-      if (btn) { btn.textContent = 'Come fare'; btn.onclick = pwaIosOpen; }
-    }, 2500);
-  })();
-
-  // Service Worker (richiesto per l'installabilità PWA su tutti i browser)
+  // Service Worker — richiesto per installabilità PWA
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js', { scope: '/timbratura/' })
       .catch(function (e) { console.warn('[PWA] SW:', e.message); });
   }
+
+  // ── Guida salvataggio Home ────────────────────────────────────────────────────
+  var _pwaPrompt = null; // beforeinstallprompt Android Chrome
+
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    _pwaPrompt = e;
+    // Aggiorna il bottone se la guida è già aperta
+    var btn = document.getElementById('pwa-btn-primary');
+    if (btn) { btn.textContent = '📲 Installa ora'; }
+  });
+
+  window.addEventListener('appinstalled', function () {
+    pwaGuideHide();
+  });
+
+  function pwaDetect() {
+    var ua = navigator.userAgent;
+    var isIos     = /iphone|ipad|ipod/i.test(ua);
+    var isSamsung = /samsungbrowser/i.test(ua);
+    var isFirefox = /firefox/i.test(ua) && !isIos;
+    var isOpera   = /opr\//i.test(ua);
+    if (isIos)     return 'ios';
+    if (isSamsung) return 'samsung';
+    if (isFirefox) return 'firefox';
+    if (isOpera)   return 'opera';
+    return 'chrome'; // Chrome, Edge, WebView, default
+  }
+
+  var PWA_STEPS = {
+    ios: [
+      { n: '1', icon: '⬆️', text: 'Tocca il pulsante <strong>Condividi</strong> — l\'icona con la freccia verso l\'alto, nella barra in basso di Safari' },
+      { n: '2', icon: '➕', text: 'Scorri l\'elenco verso il basso e tocca <strong>"Aggiungi a schermata Home"</strong>' },
+      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> in alto a destra — l\'icona di Timbratura apparirà sul tuo telefono' },
+    ],
+    samsung: [
+      { n: '1', icon: '☰', text: 'Tocca le <strong>tre linee</strong> in basso a destra (menu del browser)' },
+      { n: '2', icon: '➕', text: 'Tocca <strong>"Aggiungi pagina a"</strong> e poi <strong>"Schermata Home"</strong>' },
+      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> — l\'icona apparirà sul tuo telefono' },
+    ],
+    firefox: [
+      { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso a destra (menu del browser)' },
+      { n: '2', icon: '📲', text: 'Tocca <strong>"Installa"</strong> — comparirà un\'anteprima dell\'app' },
+      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
+    ],
+    opera: [
+      { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso (menu)' },
+      { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
+      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
+    ],
+    chrome: [
+      { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in alto a destra (menu del browser)' },
+      { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
+      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> per confermare — l\'icona apparirà sul tuo telefono' },
+    ],
+  };
+
+  var PWA_NOTES = {
+    ios:     '📌 Su iPhone e iPad questo passaggio si fa solo da <strong>Safari</strong>. Se stai usando un altro browser, aprilo in Safari per poter salvare l\'app.',
+    samsung: null,
+    firefox: null,
+    opera:   null,
+    chrome:  null,
+  };
+
+  function pwaGuideBuild() {
+    var browser  = pwaDetect();
+    var steps    = PWA_STEPS[browser] || PWA_STEPS.chrome;
+    var note     = PWA_NOTES[browser];
+    var headline = document.getElementById('pwa-headline');
+    var stepsEl  = document.getElementById('pwa-steps');
+    var noteEl   = document.getElementById('pwa-note');
+    var btnEl    = document.getElementById('pwa-btn-primary');
+
+    if (headline) headline.textContent = 'Salva sulla schermata Home';
+
+    if (stepsEl) {
+      stepsEl.innerHTML = steps.map(function (s) {
+        return '<div class="pwa-step">' +
+          '<div class="pwa-step-num">' + s.n + '</div>' +
+          '<div class="pwa-step-icon">' + s.icon + '</div>' +
+          '<div class="pwa-step-text">' + s.text + '</div>' +
+          '</div>';
+      }).join('');
+    }
+
+    if (noteEl) {
+      if (note) { noteEl.innerHTML = note; noteEl.style.display = ''; }
+      else       { noteEl.style.display = 'none'; }
+    }
+
+    // Se il prompt nativo è già disponibile (Android Chrome) cambia il bottone
+    if (btnEl && _pwaPrompt) {
+      btnEl.textContent = '📲 Installa ora';
+    }
+  }
+
+  function pwaGuideShow() {
+    var guide = document.getElementById('pwa-guide');
+    if (!guide) return;
+    pwaGuideBuild();
+    guide.classList.remove('hidden');
+    // Blocca scroll del body mentre la guida è aperta
+    document.body.style.overflow = 'hidden';
+  }
+
+  function pwaGuideHide() {
+    var guide = document.getElementById('pwa-guide');
+    if (guide) guide.classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+
+  function pwaGuideAction() {
+    // Android Chrome con prompt nativo: avvia installazione diretta
+    if (_pwaPrompt) {
+      _pwaPrompt.prompt();
+      _pwaPrompt.userChoice.then(function () {
+        _pwaPrompt = null;
+        pwaGuideHide();
+      });
+      return;
+    }
+    // Tutti gli altri: l'utente ha letto le istruzioni, chiude la guida
+    pwaGuideHide();
+    try { localStorage.setItem('palladia_pwa_guide_done', '1'); } catch (e) {}
+  }
+
+  function pwaGuideSkip() {
+    pwaGuideHide();
+    // "adesso no" → non salvare il flag, così ricompare alla prossima apertura
+  }
+
+  // Mostra la guida se: non in standalone, non già completata
+  (function () {
+    var standalone = window.matchMedia('(display-mode: standalone)').matches ||
+                     window.navigator.standalone === true;
+    if (standalone) return; // già installata — non serve la guida
+
+    var done = false;
+    try { done = !!localStorage.getItem('palladia_pwa_guide_done'); } catch (e) {}
+    if (done) return;
+
+    // Breve delay: prima mostra la schermata di timbratura, poi la guida
+    setTimeout(pwaGuideShow, 800);
+  })();
 
   main();
   </script>
