@@ -26,6 +26,7 @@ const { startLadiaProactiveCron }   = require('./services/ladiaProactive');
 const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
 const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
 const { startReminderCron }         = require('./services/reminderCron');
+const { PNG }                       = require('pngjs');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -284,6 +285,60 @@ app.get('/setup', (req, res) => {
 app.get('/badge/:code', (req, res) => {
   res.sendFile('badge.html', { root: __dirname + '/public' });
 });
+// ── PWA: icone generate in-memory con pngjs ──────────────────────────────────
+let _iconCache = {};
+function buildSolidIcon(size) {
+  if (_iconCache[size]) return _iconCache[size];
+  const png = new PNG({ width: size, height: size });
+  const [r, g, b] = [0x3b, 0x82, 0xf6]; // #3b82f6 blue
+  for (let i = 0; i < size * size; i++) {
+    const off = i * 4;
+    png.data[off] = r; png.data[off + 1] = g; png.data[off + 2] = b; png.data[off + 3] = 255;
+  }
+  return (_iconCache[size] = PNG.sync.write(png));
+}
+
+app.get('/icon-pwa-192.png', (_req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(buildSolidIcon(192));
+});
+app.get('/icon-pwa-512.png', (_req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(buildSolidIcon(512));
+});
+app.get('/apple-touch-icon.png', (_req, res) => {
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.send(buildSolidIcon(192));
+});
+
+// Manifest dinamico per-lavoratore — start_url punta direttamente al badge code
+// DEVE stare PRIMA della route /timbratura/:code e di express.static
+app.get('/timbratura/:code/manifest.json', (req, res) => {
+  const { code } = req.params;
+  if (!/^[A-Fa-f0-9]{18}$/i.test(code)) return res.status(400).json({ error: 'invalid' });
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({
+    name:             'Palladia · Timbratura',
+    short_name:       'Timbratura',
+    description:      'Timbratura cantiere Palladia',
+    start_url:        `/timbratura/${code}`,
+    scope:            '/timbratura/',
+    display:          'standalone',
+    background_color: '#0f172a',
+    theme_color:      '#0f172a',
+    orientation:      'portrait-primary',
+    lang:             'it',
+    icons: [
+      { src: '/icon-pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/icon-pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+    ],
+  });
+});
+
 // Timbratura via badge personale lavoratore (nuovo flusso primario)
 app.get('/timbratura/:code', (req, res) => {
   res.sendFile('badge-punch.html', { root: __dirname + '/public' });
