@@ -800,11 +800,8 @@ function renderDetail(data, showBack) {
   }
 
   // Expiry banner — avvisa se il link scade entro 14 giorni
-  const daysLeft = coordinator?.expires_at
-    ? Math.round((new Date(coordinator.expires_at) - Date.now()) / 86400000)
-    : null;
   const expiryBanner = document.getElementById('expiry-banner');
-  if (expiryBanner && daysLeft !== null && daysLeft <= 14) {
+  if (expiryBanner && daysLeft <= 14) {
     expiryBanner.style.display = 'block';
     expiryBanner.textContent = daysLeft <= 0
       ? '⛔ Il tuo accesso è scaduto. Vai su palladia.app/coordinator per richiedere un nuovo link.'
