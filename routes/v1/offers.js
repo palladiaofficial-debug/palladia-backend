@@ -94,7 +94,7 @@ router.post('/offers', async (req, res) => {
   const { companyId, user } = req;
   const { nome, cliente, oggetto, fonte, note, voci } = req.body;
 
-  if (!voci || !Array.isArray(voci) || voci.length === 0)
+  if (!voci || !Array.isArray(voci))
     return res.status(400).json({ error: 'VOCI_REQUIRED' });
 
   const totale = round2(
