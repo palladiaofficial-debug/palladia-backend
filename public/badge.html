@@ -301,6 +301,17 @@
       line-height: 1.6;
     }
 
+    /* ── Pulsante visualizza documento ── */
+    .btn-view-doc {
+      font-size: 12px; font-weight: 600; color: var(--accent);
+      background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 6px; padding: 5px 11px; cursor: pointer;
+      flex-shrink: 0; white-space: nowrap; transition: background 0.15s;
+      display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-view-doc:hover:not(:disabled) { background: rgba(59,130,246,0.2); }
+    .btn-view-doc:disabled { opacity: 0.5; cursor: not-allowed; }
+
     /* ── Footer ── */
     .page-footer {
       margin-top: 24px;
@@ -456,9 +467,98 @@
         </div>`;
     }
 
+    const DOC_LABELS = {
+      idoneita_medica:      'Idoneità medica',
+      formazione_sicurezza: 'Formazione sicurezza',
+      primo_soccorso:       'Primo soccorso',
+      antincendio:          'Antincendio',
+      lavori_quota:         'Lavori in quota',
+      ponteggi:             'Ponteggi',
+      gruista:              'Gruista',
+      pes_pav_pei:          'PES / PAV / PEI',
+      rspp:                 'RSPP',
+      patente_guida:        'Patente di guida',
+      altro:                'Documento',
+    };
+    const DOC_ICONS = {
+      idoneita_medica:      '🩺',
+      formazione_sicurezza: '🎓',
+      primo_soccorso:       '🏥',
+      antincendio:          '🔥',
+      lavori_quota:         '🦺',
+      ponteggi:             '🏗️',
+      gruista:              '🏗️',
+      pes_pav_pei:          '⚡',
+      rspp:                 '👷',
+      patente_guida:        '🚗',
+      altro:                '📄',
+    };
+
+    function renderDocSection(d) {
+      let rows = '';
+
+      if (d.documents && d.documents.length > 0) {
+        rows = d.documents.map(doc => {
+          const label  = DOC_LABELS[doc.doc_type] || doc.name || doc.doc_type;
+          const icon   = DOC_ICONS[doc.doc_type]  || '📄';
+          const expTxt = doc.expiry_date
+            ? `Scad. ${new Date(doc.expiry_date).toLocaleDateString('it-IT')}`
+            : '';
+          const viewBtn = doc.has_file
+            ? `<button class="btn-view-doc"
+                 onclick="viewDocument('${esc(d.badge_code)}','${esc(doc.id)}',this)">
+                 👁 Visualizza
+               </button>`
+            : '';
+          return `<div class="doc-row">
+            <div class="doc-header">
+              <span class="doc-name">${icon}&nbsp;${esc(label)}</span>
+              ${viewBtn}
+            </div>
+            ${expTxt ? `<div class="doc-detail">${expTxt}</div>` : ''}
+          </div>`;
+        }).join('');
+      } else {
+        // Fallback ai campi legacy sul record worker
+        const safetyExp = d.safety_training_expiry
+          ? `<div class="doc-detail">Scad. ${formatDate(d.safety_training_expiry)}</div>`
+          : `<div class="doc-detail">Data non registrata</div>`;
+        const healthExp = d.health_fitness_expiry
+          ? `<div class="doc-detail">Scad. ${formatDate(d.health_fitness_expiry)}</div>`
+          : `<div class="doc-detail">Data non registrata</div>`;
+        rows = `
+          <div class="doc-row">
+            <div class="doc-header"><span class="doc-name">🎓&nbsp;Formazione Sicurezza</span></div>
+            ${safetyExp}
+          </div>
+          <div class="doc-row">
+            <div class="doc-header"><span class="doc-name">🩺&nbsp;Sorveglianza Sanitaria</span></div>
+            ${healthExp}
+          </div>`;
+      }
+
+      return `
+        <div class="section-label">Documenti di sicurezza · D.Lgs. 81/2008</div>
+        <div class="card">${rows}</div>`;
+    }
+
+    async function viewDocument(badgeCode, docId, btn) {
+      btn.disabled = true;
+      const orig   = btn.innerHTML;
+      btn.innerHTML = '…';
+      try {
+        const resp = await fetch(`/api/v1/badge/${badgeCode}/document/${docId}`);
+        const body = await resp.json();
+        if (!resp.ok) throw new Error(body.error || 'Errore');
+        window.open(body.url, '_blank', 'noopener');
+      } catch {
+        alert('Impossibile aprire il documento. Riprova.');
+      }
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+
     function renderBadge(d) {
-      const cfg  = STATUS_CFG[d.overall_status] || STATUS_CFG.inactive;
-      const cls  = 's-' + (d.overall_status || 'inactive');
       const code = formatCode(d.badge_code);
 
       const photoHtml = d.photo_url
@@ -510,17 +610,6 @@
 
       document.getElementById('container').innerHTML = `
 
-        <!-- Status complessivo -->
-        <div class="card">
-          <div class="status-banner ${cls}">
-            <div class="status-icon">${cfg.icon}</div>
-            <div>
-              <div class="status-title">${cfg.title}</div>
-              <div class="status-sub">${cfg.sub}</div>
-            </div>
-          </div>
-        </div>
-
         <!-- Identità lavoratore -->
         <div class="card">
           <div class="identity-card">
@@ -534,24 +623,7 @@
           </div>
         </div>
 
-        <!-- Documenti di sicurezza D.Lgs. 81/2008 -->
-        <div class="section-label">Documenti di sicurezza · D.Lgs. 81/2008</div>
-        <div class="card">
-          <div class="doc-row">
-            <div class="doc-header">
-              <span class="doc-name">Formazione Sicurezza</span>
-              ${docBadge(d.safety_training_status)}
-            </div>
-            ${docDetail(d.safety_training_expiry, d.safety_training_status)}
-          </div>
-          <div class="doc-row">
-            <div class="doc-header">
-              <span class="doc-name">Sorveglianza Sanitaria</span>
-              ${docBadge(d.health_fitness_status)}
-            </div>
-            ${docDetail(d.health_fitness_expiry, d.health_fitness_status)}
-          </div>
-        </div>
+        ${renderDocSection(d)}
 
         <!-- Dettagli impiego -->
         <div class="section-label">Dettagli impiego</div>
