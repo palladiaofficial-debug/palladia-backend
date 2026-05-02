@@ -5,8 +5,8 @@
   "start_url": "/timbratura/",
   "scope": "/timbratura/",
   "display": "standalone",
-  "background_color": "#0f172a",
-  "theme_color": "#0f172a",
+  "background_color": "#f5f3ee",
+  "theme_color": "#1a1a1a",
   "orientation": "portrait-primary",
   "lang": "it",
   "icons": [

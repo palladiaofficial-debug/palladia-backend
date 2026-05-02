@@ -3,13 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#f5f3ee">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Timbratura">
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="manifest" href="/manifest.json" id="pwa-manifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <title>Timbratura — Palladia</title>
   <script>
   (function () {
@@ -25,17 +28,17 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #0f172a;
-      --surface:  #1e293b;
-      --border:   #334155;
-      --text:     #f1f5f9;
-      --muted:    #94a3b8;
-      --green:    #22c55e;
-      --green-dk: #16a34a;
-      --red:      #ef4444;
-      --red-dk:   #dc2626;
-      --amber:    #f59e0b;
-      --blue:     #3b82f6;
+      --bg:       #f5f3ee;
+      --surface:  #ffffff;
+      --border:   #e4e7ec;
+      --text:     #1a1a1a;
+      --muted:    #71717a;
+      --green:    #16a34a;
+      --green-dk: #15803d;
+      --red:      #dc2626;
+      --red-dk:   #b91c1c;
+      --amber:    #d97706;
+      --blue:     #2563eb;
       --radius:   16px;
     }
 
@@ -44,7 +47,7 @@
       min-height: 100dvh;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
       font-size: 17px;
       line-height: 1.4;
       -webkit-font-smoothing: antialiased;
@@ -221,7 +224,7 @@
     .hint-help {
       text-align: center;
       font-size: 12px;
-      color: #475569;
+      color: var(--muted);
       margin-top: 4px;
     }
 
@@ -254,7 +257,7 @@
       text-align: left;
       margin-bottom: 8px;
     }
-    .site-btn:hover  { border-color: var(--blue); background: rgba(59,130,246,.06); }
+    .site-btn:hover  { border-color: var(--blue); background: rgba(37,99,235,.06); }
     .site-btn:active { transform: scale(0.98); }
     .site-btn-name { font-size: 17px; font-weight: 700; color: var(--text); }
     .site-btn-addr { font-size: 13px; color: var(--muted); }
@@ -268,7 +271,7 @@
     .success-icon { font-size: 56px; line-height: 1; margin-bottom: 16px; display: block; }
     .success-title { font-size: 26px; font-weight: 800; margin-bottom: 6px; }
     .success-sub   { font-size: 15px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
-    .success-close { font-size: 13px; color: #475569; }
+    .success-close { font-size: 13px; color: var(--muted); }
 
     /* ── Errore ── */
     .error-wrap {
@@ -321,7 +324,7 @@
     #pwa-guide {
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,.82);
+      background: rgba(0,0,0,.5);
       display: flex;
       align-items: flex-end;
       justify-content: center;
@@ -331,10 +334,10 @@
     #pwa-guide.hidden { display: none !important; }
 
     .pwa-sheet {
-      background: #1e293b;
-      border-top: 1px solid #475569;
+      background: #ffffff;
+      border-top: 1px solid #e4e7ec;
       border-radius: 24px 24px 0 0;
-      padding: 28px 24px 36px;
+      padding: 28px 24px 40px;
       width: 100%;
       max-width: 520px;
       animation: slideUp .28s ease-out both;
@@ -346,21 +349,21 @@
 
     .pwa-handle {
       width: 40px; height: 4px;
-      background: #475569;
+      background: #d1d5db;
       border-radius: 2px;
       margin: 0 auto 22px;
     }
     .pwa-headline {
       font-size: 20px;
       font-weight: 800;
-      color: #f1f5f9;
+      color: #111827;
       text-align: center;
       margin-bottom: 6px;
       line-height: 1.25;
     }
     .pwa-sub {
       font-size: 14px;
-      color: #94a3b8;
+      color: #6b7280;
       text-align: center;
       margin-bottom: 26px;
       line-height: 1.5;
@@ -373,7 +376,7 @@
     }
     .pwa-step-num {
       width: 30px; height: 30px;
-      background: var(--blue);
+      background: #000000;
       border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 14px; font-weight: 800; color: #fff;
@@ -382,19 +385,19 @@
     .pwa-step-text {
       flex: 1;
       font-size: 15px;
-      color: #e2e8f0;
+      color: #374151;
       line-height: 1.5;
     }
-    .pwa-step-text strong { color: #f1f5f9; }
+    .pwa-step-text strong { color: #111827; }
     .pwa-step-icon { font-size: 19px; flex-shrink: 0; margin-top: 2px; }
 
     .pwa-note {
-      background: rgba(59,130,246,.1);
-      border: 1px solid rgba(59,130,246,.25);
+      background: #fefce8;
+      border: 1px solid #fde68a;
       border-radius: 12px;
       padding: 12px 14px;
       font-size: 13px;
-      color: #93c5fd;
+      color: #78350f;
       line-height: 1.5;
       margin-bottom: 22px;
     }
@@ -403,7 +406,7 @@
       display: block;
       width: 100%;
       padding: 16px;
-      background: var(--blue);
+      background: #000000;
       color: #fff;
       border: none;
       border-radius: 14px;
@@ -419,7 +422,7 @@
       width: 100%;
       padding: 12px;
       background: none;
-      color: #64748b;
+      color: #9ca3af;
       border: none;
       border-radius: 12px;
       font-family: inherit;
@@ -781,14 +784,14 @@
     if (!resultCard) return;
 
     resultCard.className = '';
-    resultCard.style.cssText = 'background:#1c1009;border:1.5px solid #92400e;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;';
+    resultCard.style.cssText = 'background:#fffbeb;border:1.5px solid #d97706;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;';
     resultCard.innerHTML = `
       <div style="font-size:28px;margin-bottom:10px;">📡</div>
-      <div style="font-size:17px;font-weight:700;color:#f59e0b;margin-bottom:6px;">GPS non abbastanza preciso</div>
-      <div style="font-size:14px;color:#94a3b8;margin-bottom:16px;line-height:1.5;">
+      <div style="font-size:17px;font-weight:700;color:#d97706;margin-bottom:6px;">GPS non abbastanza preciso</div>
+      <div style="font-size:14px;color:#6b7280;margin-bottom:16px;line-height:1.5;">
         Spostati all'aperto, aspetta qualche secondo e riprova.
       </div>
-      <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:#f59e0b;color:#000;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;">
+      <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:#000;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;">
         Riprova
       </button>`;
     resultCard.classList.remove('hidden');

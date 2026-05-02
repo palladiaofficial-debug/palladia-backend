@@ -290,7 +290,7 @@ let _iconCache = {};
 function buildSolidIcon(size) {
   if (_iconCache[size]) return _iconCache[size];
   const png = new PNG({ width: size, height: size });
-  const [r, g, b] = [0x3b, 0x82, 0xf6]; // #3b82f6 blue
+  const [r, g, b] = [0x1a, 0x1a, 0x1a]; // #1a1a1a — Palladia primary (near-black)
   for (let i = 0; i < size * size; i++) {
     const off = i * 4;
     png.data[off] = r; png.data[off + 1] = g; png.data[off + 2] = b; png.data[off + 3] = 255;
@@ -328,8 +328,8 @@ app.get('/timbratura/:code/manifest.json', (req, res) => {
     start_url:        `/timbratura/${code}`,
     scope:            '/timbratura/',
     display:          'standalone',
-    background_color: '#0f172a',
-    theme_color:      '#0f172a',
+    background_color: '#f5f3ee',
+    theme_color:      '#1a1a1a',
     orientation:      'portrait-primary',
     lang:             'it',
     icons: [

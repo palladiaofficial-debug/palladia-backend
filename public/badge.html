@@ -3,21 +3,24 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#0f172a">
+  <meta name="theme-color" content="#f5f3ee">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <title>Verifica Badge — Palladia</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:      #0f172a;
-      --surface: #1e293b;
-      --border:  #334155;
-      --accent:  #3b82f6;
-      --green:   #22c55e;
-      --red:     #ef4444;
-      --amber:   #f59e0b;
-      --muted:   #94a3b8;
-      --text:    #f1f5f9;
+      --bg:      #f5f3ee;
+      --surface: #ffffff;
+      --border:  #e4e7ec;
+      --accent:  #2563eb;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --amber:   #d97706;
+      --muted:   #71717a;
+      --text:    #1a1a1a;
       --radius:  14px;
     }
 
@@ -25,7 +28,7 @@
       min-height: 100%;
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
       font-size: 16px;
       line-height: 1.5;
     }
@@ -51,10 +54,10 @@
       color: var(--muted);
       text-transform: uppercase;
     }
-    .brand-sep { width: 1px; height: 14px; background: #334155; }
+    .brand-sep { width: 1px; height: 14px; background: #d1d5db; }
     .brand-sub {
       font-size: 11px;
-      color: #475569;
+      color: var(--muted);
       letter-spacing: 0.04em;
     }
 
@@ -123,8 +126,8 @@
     .s-non_compliant .status-title { color: var(--red); }
     .s-incomplete    .status-icon  { background: rgba(100,116,139,.12); color: var(--muted); }
     .s-incomplete    .status-title { color: var(--muted); }
-    .s-inactive      .status-icon  { background: rgba(30,41,59,.9);     color: #475569; }
-    .s-inactive      .status-title { color: #475569; }
+    .s-inactive      .status-icon  { background: rgba(0,0,0,.08);       color: #9ca3af; }
+    .s-inactive      .status-title { color: #9ca3af; }
 
     /* ── Identity ── */
     .identity-card {
@@ -145,14 +148,14 @@
       border-radius: 8px;
       border: 1px solid var(--border);
       flex-shrink: 0;
-      background: #162032;
+      background: #f0ece4;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       gap: 4px;
       font-size: 30px;
-      color: #334155;
+      color: #d1d5db;
     }
     .identity-info { flex: 1; min-width: 0; }
     .worker-name {
@@ -182,12 +185,12 @@
       border-radius: 20px;
       border: 1px solid var(--border);
       color: var(--muted);
-      background: rgba(255,255,255,0.04);
+      background: rgba(0,0,0,0.04);
     }
     .tag.sub-auth {
-      border-color: rgba(59,130,246,0.4);
+      border-color: rgba(37,99,235,0.35);
       color: var(--accent);
-      background: rgba(59,130,246,0.08);
+      background: rgba(37,99,235,0.07);
     }
 
     /* ── Section label ── */
@@ -196,14 +199,14 @@
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #475569;
+      color: var(--muted);
       padding: 0 2px;
     }
 
     /* ── Compliance docs ── */
     .doc-row {
       padding: 14px 18px;
-      border-bottom: 1px solid rgba(51,65,85,0.5);
+      border-bottom: 1px solid var(--border);
     }
     .doc-row:last-child { border-bottom: none; }
     .doc-header {
@@ -230,14 +233,14 @@
       flex-shrink: 0;
     }
     .doc-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-    .cs-ok       { background: rgba(34,197,94,.12);  color: #22c55e; }
-    .cs-ok       .doc-dot { background: #22c55e; }
-    .cs-expiring { background: rgba(245,158,11,.12); color: #f59e0b; }
-    .cs-expiring .doc-dot { background: #f59e0b; }
-    .cs-expired  { background: rgba(239,68,68,.12);  color: #ef4444; }
-    .cs-expired  .doc-dot { background: #ef4444; }
-    .cs-not_set  { background: rgba(100,116,139,.1); color: #94a3b8; }
-    .cs-not_set  .doc-dot { background: #94a3b8; }
+    .cs-ok       { background: rgba(22,163,74,.1);   color: #16a34a; }
+    .cs-ok       .doc-dot { background: #16a34a; }
+    .cs-expiring { background: rgba(215,119,6,.1);   color: #d97706; }
+    .cs-expiring .doc-dot { background: #d97706; }
+    .cs-expired  { background: rgba(220,38,38,.1);   color: #dc2626; }
+    .cs-expired  .doc-dot { background: #dc2626; }
+    .cs-not_set  { background: rgba(107,114,128,.1); color: #6b7280; }
+    .cs-not_set  .doc-dot { background: #9ca3af; }
 
     .doc-detail {
       font-size: 12px;
@@ -256,7 +259,7 @@
       justify-content: space-between;
       gap: 12px;
       padding: 11px 18px;
-      border-bottom: 1px solid rgba(51,65,85,0.5);
+      border-bottom: 1px solid var(--border);
     }
     .field-row:last-child { border-bottom: none; }
     .field-label {
@@ -297,19 +300,19 @@
     }
     .auth-hint {
       font-size: 11px;
-      color: #475569;
+      color: var(--muted);
       line-height: 1.6;
     }
 
     /* ── Pulsante visualizza documento ── */
     .btn-view-doc {
       font-size: 12px; font-weight: 600; color: var(--accent);
-      background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3);
+      background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25);
       border-radius: 6px; padding: 5px 11px; cursor: pointer;
       flex-shrink: 0; white-space: nowrap; transition: background 0.15s;
       display: inline-flex; align-items: center; gap: 5px;
     }
-    .btn-view-doc:hover:not(:disabled) { background: rgba(59,130,246,0.2); }
+    .btn-view-doc:hover:not(:disabled) { background: rgba(37,99,235,0.15); }
     .btn-view-doc:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Footer ── */
@@ -317,13 +320,13 @@
       margin-top: 24px;
       text-align: center;
       font-size: 11px;
-      color: #334155;
+      color: #9ca3af;
       line-height: 1.8;
     }
     .verify-ts {
       margin-top: 4px;
       font-size: 11px;
-      color: #475569;
+      color: var(--muted);
       font-weight: 600;
     }
   </style>
