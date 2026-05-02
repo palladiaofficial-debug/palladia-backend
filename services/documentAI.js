@@ -99,21 +99,34 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
     return null;
   }
 
-  const contentBlock = isPdf
-    ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBuffer.toString('base64') } }
-    : { type: 'image',    source: { type: 'base64', media_type: mimeType,           data: fileBuffer.toString('base64') } };
+  let messageContent;
+  if (isPdf) {
+    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+    const data     = new Uint8Array(fileBuffer);
+    const doc      = await pdfjsLib.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise;
+    const numPages = Math.min(doc.numPages, 30);
+    const pages    = [];
+    for (let i = 1; i <= numPages; i++) {
+      const page    = await doc.getPage(i);
+      const content = await page.getTextContent();
+      const text    = content.items.map(item => item.str).join(' ');
+      if (text.trim().length > 10) pages.push(`--- Pagina ${i} ---\n${text}`);
+    }
+    const pdfText = pages.join('\n\n').slice(0, 15000);
+    if (!pdfText.trim()) return null;
+    messageContent = `Testo estratto dal PDF:\n\n${pdfText}\n\nAnalizza questo documento e restituisci il JSON richiesto.`;
+  } else {
+    messageContent = [
+      { type: 'image', source: { type: 'base64', media_type: mimeType, data: fileBuffer.toString('base64') } },
+      { type: 'text',  text: 'Analizza questo documento e restituisci il JSON richiesto.' },
+    ];
+  }
 
   const response = await client.messages.create({
     model:      MODEL,
     max_tokens: MAX_TOKENS,
     system:     systemPrompt,
-    messages: [{
-      role:    'user',
-      content: [
-        contentBlock,
-        { type: 'text', text: 'Analizza questo documento e restituisci il JSON richiesto.' },
-      ],
-    }],
+    messages: [{ role: 'user', content: messageContent }],
   });
 
   const raw = response.content?.[0]?.text || '';

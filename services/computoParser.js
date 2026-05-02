@@ -2,7 +2,6 @@
 /**
  * services/computoParser.js
  * Parsing AI di computi metrici da PDF o Excel.
- * Usa Claude Sonnet 4.6 con native PDF document API.
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
@@ -32,27 +31,34 @@ REGOLE (documento economico/legale — precisione assoluta):
 11. Valore assente → null (non 0).
 12. Output: SOLO JSON grezzo, niente altro.`;
 
-// ── PDF: native document API ──────────────────────────────────────────────────
+// ── PDF: estrai testo con pdfjs-dist → Claude ─────────────────────────────────
 async function parsePdf(buffer) {
-  const client = new Anthropic();
-  const base64 = buffer.toString('base64');
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+  const data     = new Uint8Array(buffer);
+  const doc      = await pdfjsLib.getDocument({ data, disableFontFace: true, verbosity: 0 }).promise;
+  const numPages = Math.min(doc.numPages, 80);
+  const pages    = [];
+  for (let i = 1; i <= numPages; i++) {
+    const page    = await doc.getPage(i);
+    const content = await page.getTextContent();
+    const text    = content.items.map(item => item.str).join(' ');
+    if (text.trim().length > 20) pages.push(`--- Pagina ${i} ---\n${text}`);
+  }
+  const pdfText = pages.join('\n\n');
+  if (!pdfText.trim()) throw new Error('Il PDF non contiene testo estraibile (documento scansionato?).');
 
+  const truncated = pdfText.length > MAX_CHARS
+    ? pdfText.slice(0, MAX_CHARS) + '\n[troncato...]'
+    : pdfText;
+
+  const client   = new Anthropic();
   const response = await client.messages.create({
     model:      MODEL,
     max_tokens: MAX_TOKENS,
     system:     SYSTEM_PROMPT,
     messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-        },
-        {
-          type: 'text',
-          text: 'Estrai tutte le voci del computo metrico nel formato JSON richiesto. Sii preciso con ogni valore numerico.',
-        },
-      ],
+      role:    'user',
+      content: `Testo estratto dal PDF:\n\n${truncated}\n\nEstrai tutte le voci del computo metrico nel formato JSON richiesto. Sii preciso con ogni valore numerico.`,
     }],
   });
 
