@@ -91,6 +91,9 @@ router.use('/', require('./economia'));
 // Computo Metrico: import PDF/Excel, parsing AI, SAL% per voce
 router.use('/', require('./computo'));
 
+// Offerte economiche: preventivi e gare d'appalto (senza cantiere)
+router.use('/', require('./offers'));
+
 // Ladia In Cantiere: attivazione, capitolato, fasi, costi
 router.use('/', require('./ladiaConfig'));
 router.use('/', require('./capitolato'));
