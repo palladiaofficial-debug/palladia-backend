@@ -382,7 +382,9 @@ router.post('/worker-docs/ai-import',
       .sort((a, b) => b.score - a.score)
       .slice(0, 3);
 
-    res.json({ analysis, worker_matches });
+    const all_workers = (workers || []).map(w => ({ id: w.id, full_name: w.full_name }));
+
+    res.json({ analysis, worker_matches, all_workers });
   }
 );
 
