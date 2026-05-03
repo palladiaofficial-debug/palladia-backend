@@ -2,113 +2,107 @@
 /**
  * services/computoParser.js
  * Parsing AI di computi metrici, capitolati e liste prezzi da PDF o Excel.
+ *
+ * Strategia:
+ *   1. Pre-filtraggio euristico: mantieni solo le righe che assomigliano a
+ *      voci di lavorazione (contengono UM, numeri, codici articolo).
+ *      Riduce tipicamente un capitolato da 95k → 15-25k caratteri.
+ *   2. Una singola chiamata Haiku sul testo ridotto.
+ *   3. Chunking solo se il testo filtrato supera ancora MAX_CHARS.
  */
 
 const Anthropic      = require('@anthropic-ai/sdk');
 const xlsx           = require('xlsx');
 const { extractPdfText } = require('../lib/pdfExtract');
 
-const MODEL      = 'claude-sonnet-4-6';
-const MAX_TOKENS = 8000;
-const MAX_CHARS  = 50000;   // chunk più piccoli → JSON output sotto i 8000 token
-const CHUNK_OVERLAP = 3000;
+const MODEL      = 'claude-haiku-4-5-20251001';
+const MAX_TOKENS = 4096;
+const MAX_CHARS  = 30000;   // soglia per chunk (su testo già pre-filtrato)
+const CHUNK_OVERLAP = 2000;
 
-const SYSTEM_PROMPT = `Sei un esperto di computi metrici e capitolati d'appalto italiani nel settore delle costruzioni.
-Analizza il documento fornito e restituisci SOLO un oggetto JSON valido, senza markdown, senza backtick, senza spiegazioni.
+// ── Pattern per identificare righe di lavorazione ────────────────────────────
+const UM_RE     = /\b(mq|m²|mc|m³|ml|m\.l\.|kg|tonn?|t\b|h\b|ora[e]?|cad|corpo|a\s+corpo|n\b|nr\b|pz\b|%|lump\s+sum)\b/i;
+const NUMBER_RE = /\b\d{1,6}([.,]\d{1,3})?\b/;
+const CODICE_RE = /^[A-Z]{0,3}\d+([.\-/]\d+){0,3}\s/;
+const CAPS_RE   = /^[A-Z\s\d\-–—:]{6,80}$/;  // intestazioni categoria
 
-Il documento può essere di diversi tipi:
-- Computo metrico estimativo: ha descrizione, quantità, prezzo unitario e importo
-- Capitolato / lista lavorazioni / richiesta di offerta (RFQ): ha descrizione e quantità, ma i prezzi unitari sono ASSENTI o in bianco — questo è normale e atteso
-- Preventivo o contratto: ha tutti i dati
+/**
+ * Riduce il testo del documento tenendo solo le righe rilevanti.
+ * Ritorna il testo filtrato + una stima del rapporto di riduzione.
+ */
+function preFilter(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
 
-Struttura output:
-{"nome":"titolo del documento o 'Computo metrico'","voci":[{"tipo":"categoria","codice":"A","descrizione":"DEMOLIZIONI","sort_order":0},{"tipo":"voce","parent_codice":"A","codice":"A.01","descrizione":"Demolizione muratura portante","unita_misura":"m³","quantita":45.5,"prezzo_unitario":null,"importo":null,"sort_order":1}]}
+  const keep = new Set();
 
-REGOLE (documento economico/legale — precisione assoluta):
-1. Categorie/capitoli → tipo "categoria". Righe lavorazione → tipo "voce" con parent_codice = codice categoria.
-2. Estrai TUTTE le voci che hanno una descrizione e/o una quantità, anche se prezzo_unitario è assente.
-3. NON inventare prezzi. Se il prezzo unitario non è scritto nel documento → prezzo_unitario: null, importo: null.
-4. Se importo mancante ma ci sono quantita e prezzo_unitario → calcolalo (q × p).
-5. Se prezzo_unitario mancante ma ci sono importo e quantita → calcolalo (importo / q).
-6. Numeri: punto come decimale. Rimuovi separatori migliaia.
-7. unita_misura: abbreviazioni IT standard → mq, mc, ml, kg, t, h, cad, corpo, a corpo, %, lump sum
-8. Mantieni ordine originale del documento (sort_order incrementale da 0).
-9. Ignora subtotali, totali di categoria e totali generali.
-10. Se non ci sono categorie esplicite → crea una categoria generica che rispecchi il contenuto.
-11. codice: usa quello del documento; se assente, genera progressivo (A, A.01, A.02…).
-12. Descrizioni fedeli al documento, complete ma concise (max 300 caratteri).
-13. Valore numerico assente nel documento → null (mai 0).
-14. Output: SOLO JSON grezzo, niente altro.`;
+  lines.forEach((line, i) => {
+    // Salta righe troppo lunghe (blocchi normativi) o troppo corte
+    if (line.length > 400 || line.length < 4) return;
 
-// ── PDF: estrai testo con pdfjs-dist → Claude (con chunking) ──────────────────
-async function parsePdf(buffer) {
-  const { text: pdfText, numPages } = await extractPdfText(buffer, { maxPages: 80 });
-  if (!pdfText.trim()) throw new Error('Il PDF non contiene testo estraibile (documento scansionato?).');
+    let score = 0;
+    if (UM_RE.test(line))     score += 3;
+    if (NUMBER_RE.test(line)) score += 1;
+    if (CODICE_RE.test(line)) score += 2;
+    if (CAPS_RE.test(line) && line.length > 5) score += 2;  // header categoria
 
-  console.log(`[computoParser/parsePdf] ${numPages} pagine, ${pdfText.length} caratteri`);
-
-  const client = new Anthropic();
-
-  if (pdfText.length <= MAX_CHARS) {
-    const response = await client.messages.create({
-      model:      MODEL,
-      max_tokens: MAX_TOKENS,
-      system:     SYSTEM_PROMPT,
-      messages: [{
-        role:    'user',
-        content: `Testo estratto dal PDF (${numPages} pagine):\n\n${pdfText}\n\nEstrai tutte le voci nel formato JSON richiesto. Se i prezzi unitari sono assenti, usa null — non inventarli.`,
-      }],
-    });
-    return processResponse(response, 'parsePdf');
-  }
-
-  // Documento lungo: dividi in chunk con overlap e unifica
-  const chunks = [];
-  for (let i = 0; i < pdfText.length; i += MAX_CHARS - CHUNK_OVERLAP) {
-    chunks.push(pdfText.slice(i, i + MAX_CHARS));
-  }
-  console.log(`[computoParser/parsePdf] splitting in ${chunks.length} chunk`);
-
-  const allVoci = [];
-  let globalNome = '';
-
-  for (let ci = 0; ci < chunks.length; ci++) {
-    const response = await client.messages.create({
-      model:      MODEL,
-      max_tokens: MAX_TOKENS,
-      system:     SYSTEM_PROMPT,
-      messages: [{
-        role:    'user',
-        content: `Testo estratto dal PDF — parte ${ci + 1}/${chunks.length}:\n\n${chunks[ci]}\n\nEstrai tutte le voci in questa sezione nel formato JSON richiesto.`,
-      }],
-    });
-
-    const raw = response.content[0]?.text?.trim() || '{}';
-    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
-    let parsed;
-    try {
-      parsed = JSON.parse(cleaned);
-    } catch (e) {
-      console.warn(`[computoParser/parsePdf] chunk ${ci} JSON troncato, recupero voci parziali:`, e.message);
-      const recovered = recoverVociFromTruncated(cleaned);
-      console.log(`[computoParser/parsePdf] recuperate ${recovered.length} voci dal chunk ${ci}`);
-      allVoci.push(...recovered);
-      continue;
+    if (score >= 3) {
+      // Tieni la riga + contesto immediato
+      if (i > 0) keep.add(i - 1);
+      keep.add(i);
+      if (i < lines.length - 1) keep.add(i + 1);
     }
-    if (!globalNome && parsed.nome) globalNome = parsed.nome;
-    if (Array.isArray(parsed.voci)) allVoci.push(...parsed.voci);
-  }
+  });
 
-  if (allVoci.length === 0) throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
+  // Sempre tieni le righe che sembrano titoli di capitolo/categoria
+  lines.forEach((line, i) => {
+    if (/^(capo|capitolo|categoria|sezione|art\.?|voce)\s+\d/i.test(line)) keep.add(i);
+    if (CAPS_RE.test(line) && line.length >= 6 && line.length <= 80) keep.add(i);
+  });
 
-  return extractJson(JSON.stringify({ nome: globalNome || 'Computo metrico', voci: allVoci }));
+  const filtered = [...keep].sort((a, b) => a - b).map(i => lines[i]).join('\n');
+  return filtered;
 }
 
-// ── Excel: xlsx → CSV → Claude ────────────────────────────────────────────────
+const SYSTEM_PROMPT = `Sei un esperto di capitolati d'appalto italiani (edilizia civile e industriale).
+Analizza il testo fornito ed estrai le voci di lavorazione nel formato JSON richiesto.
+
+Il documento può avere prezzi (computo metrico) oppure prezzi assenti (capitolato/RFQ) — entrambi sono validi.
+
+Struttura output:
+{"nome":"titolo del documento","voci":[{"tipo":"categoria","codice":"A","descrizione":"DEMOLIZIONI","sort_order":0},{"tipo":"voce","parent_codice":"A","codice":"A.01","descrizione":"Demolizione muratura portante","unita_misura":"mc","quantita":45.5,"prezzo_unitario":null,"importo":null,"sort_order":1}]}
+
+REGOLE:
+1. Categorie/capitoli → tipo "categoria". Voci di lavorazione → tipo "voce" con parent_codice = codice categoria.
+2. Estrai TUTTE le voci con descrizione e/o quantità, anche se il prezzo è assente.
+3. NON inventare prezzi — se non presenti nel testo usa null.
+4. Calcola importo solo se hai sia quantita che prezzo_unitario (q × p).
+5. Numeri: usa punto come decimale, rimuovi separatori migliaia.
+6. unita_misura: abbreviazioni standard → mq, mc, ml, kg, t, h, cad, corpo, %, lump sum
+7. Mantieni l'ordine originale (sort_order incrementale da 0).
+8. Ignora subtotali e totali.
+9. codice: dal documento; se assente genera progressivo (A, A.01…).
+10. Descrizioni fedeli al documento, max 300 caratteri.
+11. Valore numerico assente → null (non 0).
+12. Output: SOLO JSON grezzo, niente altro.`;
+
+// ── PDF ───────────────────────────────────────────────────────────────────────
+async function parsePdf(buffer) {
+  const { text: raw, numPages } = await extractPdfText(buffer, { maxPages: 80 });
+  if (!raw.trim()) throw new Error('Il PDF non contiene testo estraibile (documento scansionato?).');
+
+  const filtered = preFilter(raw);
+  console.log(`[computoParser/parsePdf] ${numPages} pag, ${raw.length} → ${filtered.length} char dopo pre-filtro`);
+
+  if (!filtered.trim()) throw new Error('Il documento non contiene voci di lavorazione riconoscibili.');
+
+  return runAI(filtered, 'parsePdf');
+}
+
+// ── Excel ─────────────────────────────────────────────────────────────────────
 async function parseExcel(buffer) {
-  const client   = new Anthropic();
   const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true });
 
+  // Scegli il foglio con più celle
   let bestSheet = workbook.SheetNames[0];
   let maxCells  = 0;
   for (const name of workbook.SheetNames) {
@@ -121,27 +115,36 @@ async function parseExcel(buffer) {
   const sheet   = workbook.Sheets[bestSheet];
   const csvText = xlsx.utils.sheet_to_csv(sheet, { blankrows: false });
 
-  console.log(`[computoParser/parseExcel] foglio "${bestSheet}", ${csvText.length} caratteri CSV`);
+  // Per Excel il testo è già strutturato — pre-filtro leggero (solo righe con contenuto)
+  const filtered = csvText.split('\n')
+    .filter(l => l.replace(/,+/g, '').trim().length > 2)
+    .join('\n');
 
-  if (csvText.length <= MAX_CHARS) {
+  console.log(`[computoParser/parseExcel] foglio "${bestSheet}", ${csvText.length} → ${filtered.length} char`);
+
+  return runAI(filtered, 'parseExcel');
+}
+
+// ── Chiama Haiku (con chunking se necessario) ─────────────────────────────────
+async function runAI(text, ctx) {
+  const client = new Anthropic();
+
+  if (text.length <= MAX_CHARS) {
     const response = await client.messages.create({
       model:      MODEL,
       max_tokens: MAX_TOKENS,
       system:     SYSTEM_PROMPT,
-      messages: [{
-        role:    'user',
-        content: `Foglio Excel "${bestSheet}" in formato CSV:\n\n${csvText}\n\nEstrai tutte le voci nel formato JSON richiesto. Se i prezzi unitari sono assenti, usa null — non inventarli.`,
-      }],
+      messages: [{ role: 'user', content: `Testo da analizzare:\n\n${text}` }],
     });
-    return processResponse(response, 'parseExcel');
+    return processResponse(response, ctx);
   }
 
-  // Excel grande: chunking
+  // Chunking per documenti ancora grandi dopo il pre-filtro
   const chunks = [];
-  for (let i = 0; i < csvText.length; i += MAX_CHARS - CHUNK_OVERLAP) {
-    chunks.push(csvText.slice(i, i + MAX_CHARS));
+  for (let i = 0; i < text.length; i += MAX_CHARS - CHUNK_OVERLAP) {
+    chunks.push(text.slice(i, i + MAX_CHARS));
   }
-  console.log(`[computoParser/parseExcel] splitting in ${chunks.length} chunk`);
+  console.log(`[computoParser/${ctx}] splitting in ${chunks.length} chunk da ~${MAX_CHARS} char`);
 
   const allVoci = [];
   let globalNome = '';
@@ -151,21 +154,19 @@ async function parseExcel(buffer) {
       model:      MODEL,
       max_tokens: MAX_TOKENS,
       system:     SYSTEM_PROMPT,
-      messages: [{
-        role:    'user',
-        content: `Foglio Excel "${bestSheet}" in formato CSV — parte ${ci + 1}/${chunks.length}:\n\n${chunks[ci]}\n\nEstrai tutte le voci in questa sezione nel formato JSON richiesto.`,
-      }],
+      messages: [{ role: 'user', content: `Parte ${ci + 1}/${chunks.length}:\n\n${chunks[ci]}` }],
     });
 
-    const raw = response.content[0]?.text?.trim() || '{}';
+    const raw     = response.content[0]?.text?.trim() || '{}';
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+
     let parsed;
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.warn(`[computoParser/parseExcel] chunk ${ci} JSON troncato, recupero voci parziali:`, e.message);
+      console.warn(`[computoParser/${ctx}] chunk ${ci} JSON troncato, recupero parziale:`, e.message);
       const recovered = recoverVociFromTruncated(cleaned);
-      console.log(`[computoParser/parseExcel] recuperate ${recovered.length} voci dal chunk ${ci}`);
+      console.log(`[computoParser/${ctx}] recuperate ${recovered.length} voci`);
       allVoci.push(...recovered);
       continue;
     }
@@ -173,24 +174,30 @@ async function parseExcel(buffer) {
     if (Array.isArray(parsed.voci)) allVoci.push(...parsed.voci);
   }
 
-  if (allVoci.length === 0) throw new Error('Nessuna voce trovata nel file Excel. Verifica che contenga una lista lavorazioni.');
+  if (allVoci.length === 0)
+    throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
 
   return extractJson(JSON.stringify({ nome: globalNome || 'Computo metrico', voci: allVoci }));
 }
 
-// ── Processa risposta ─────────────────────────────────────────────────────────
+// ── Processa risposta singola ─────────────────────────────────────────────────
 function processResponse(response, ctx) {
   const raw = response.content[0].text;
   console.log(`[computoParser/${ctx}] stop_reason:${response.stop_reason} tokens_out:${response.usage?.output_tokens}`);
 
   if (response.stop_reason === 'max_tokens') {
-    throw new Error('Il documento è troppo grande. Prova a dividere il computo in sezioni o usa il formato Excel.');
+    const recovered = recoverVociFromTruncated(raw);
+    if (recovered.length > 0) {
+      console.warn(`[computoParser/${ctx}] max_tokens raggiunto — recuperate ${recovered.length} voci parziali`);
+      return extractJson(JSON.stringify({ nome: 'Computo metrico', voci: recovered }));
+    }
+    throw new Error('Il documento è troppo grande anche dopo il pre-filtro. Prova a dividerlo in sezioni.');
   }
 
   return extractJson(raw);
 }
 
-// ── Recupera voci da JSON troncato (max_tokens raggiunto in chunk) ────────────
+// ── Recupera voci da JSON troncato ────────────────────────────────────────────
 function recoverVociFromTruncated(text) {
   const start = text.indexOf('"voci"');
   if (start === -1) return [];
@@ -212,7 +219,7 @@ function recoverVociFromTruncated(text) {
   return voci;
 }
 
-// ── Estrai e valida JSON ───────────────────────────────────────────────────────
+// ── Estrai e normalizza JSON ──────────────────────────────────────────────────
 function extractJson(text) {
   const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
   const jsonStr = fenceMatch
@@ -224,9 +231,7 @@ function extractJson(text) {
         return text.slice(start, end + 1);
       })();
 
-  if (!jsonStr) {
-    throw new Error('Il documento non contiene dati di computo metrico riconoscibili.');
-  }
+  if (!jsonStr) throw new Error('Il documento non contiene dati di computo metrico riconoscibili.');
 
   let parsed;
   try {
@@ -236,9 +241,8 @@ function extractJson(text) {
     throw new Error('Formato non parsabile. Verifica che il documento contenga un computo metrico valido.');
   }
 
-  if (!parsed.voci || !Array.isArray(parsed.voci) || parsed.voci.length === 0) {
+  if (!parsed.voci || !Array.isArray(parsed.voci) || parsed.voci.length === 0)
     throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
-  }
 
   parsed.voci = parsed.voci.map((v, i) => ({
     tipo:            ['categoria', 'voce'].includes(v.tipo) ? v.tipo : 'voce',
@@ -253,9 +257,8 @@ function extractJson(text) {
   }));
 
   parsed.voci.forEach(v => {
-    if (v.tipo === 'voce' && v.importo === null && v.quantita !== null && v.prezzo_unitario !== null) {
+    if (v.tipo === 'voce' && v.importo === null && v.quantita !== null && v.prezzo_unitario !== null)
       v.importo = round2(v.quantita * v.prezzo_unitario);
-    }
   });
 
   parsed.totale_contratto = round2(
@@ -273,8 +276,6 @@ function toNumber(val) {
   return isNaN(n) ? null : n;
 }
 
-function round2(n) {
-  return Math.round(n * 100) / 100;
-}
+function round2(n) { return Math.round(n * 100) / 100; }
 
 module.exports = { parsePdf, parseExcel };
