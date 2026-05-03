@@ -10,8 +10,8 @@ const { extractPdfText } = require('../lib/pdfExtract');
 
 const MODEL      = 'claude-sonnet-4-6';
 const MAX_TOKENS = 8000;
-const MAX_CHARS  = 90_000;
-const CHUNK_OVERLAP = 5_000;
+const MAX_CHARS  = 50000;   // chunk più piccoli → JSON output sotto i 8000 token
+const CHUNK_OVERLAP = 3000;
 
 const SYSTEM_PROMPT = `Sei un esperto di computi metrici e capitolati d'appalto italiani nel settore delle costruzioni.
 Analizza il documento fornito e restituisci SOLO un oggetto JSON valido, senza markdown, senza backtick, senza spiegazioni.
@@ -84,12 +84,15 @@ async function parsePdf(buffer) {
     });
 
     const raw = response.content[0]?.text?.trim() || '{}';
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
     let parsed;
     try {
-      const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.warn(`[computoParser/parsePdf] chunk ${ci} JSON parse error:`, e.message);
+      console.warn(`[computoParser/parsePdf] chunk ${ci} JSON troncato, recupero voci parziali:`, e.message);
+      const recovered = recoverVociFromTruncated(cleaned);
+      console.log(`[computoParser/parsePdf] recuperate ${recovered.length} voci dal chunk ${ci}`);
+      allVoci.push(...recovered);
       continue;
     }
     if (!globalNome && parsed.nome) globalNome = parsed.nome;
@@ -155,12 +158,15 @@ async function parseExcel(buffer) {
     });
 
     const raw = response.content[0]?.text?.trim() || '{}';
+    const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
     let parsed;
     try {
-      const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.warn(`[computoParser/parseExcel] chunk ${ci} JSON parse error:`, e.message);
+      console.warn(`[computoParser/parseExcel] chunk ${ci} JSON troncato, recupero voci parziali:`, e.message);
+      const recovered = recoverVociFromTruncated(cleaned);
+      console.log(`[computoParser/parseExcel] recuperate ${recovered.length} voci dal chunk ${ci}`);
+      allVoci.push(...recovered);
       continue;
     }
     if (!globalNome && parsed.nome) globalNome = parsed.nome;
@@ -182,6 +188,28 @@ function processResponse(response, ctx) {
   }
 
   return extractJson(raw);
+}
+
+// ── Recupera voci da JSON troncato (max_tokens raggiunto in chunk) ────────────
+function recoverVociFromTruncated(text) {
+  const start = text.indexOf('"voci"');
+  if (start === -1) return [];
+  const arrStart = text.indexOf('[', start);
+  if (arrStart === -1) return [];
+
+  const voci = [];
+  let depth = 0, objStart = -1;
+  for (let i = arrStart; i < text.length; i++) {
+    if (text[i] === '{') { if (depth === 0) objStart = i; depth++; }
+    else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        try { voci.push(JSON.parse(text.slice(objStart, i + 1))); } catch (_) {}
+        objStart = -1;
+      }
+    }
+  }
+  return voci;
 }
 
 // ── Estrai e valida JSON ───────────────────────────────────────────────────────

@@ -52,7 +52,8 @@ app.use((req, res, next) => {
     req.path.includes('/computo') ||
     req.path.includes('/pdf') ||
     req.path.includes('/verbale') ||
-    req.path.includes('/asl');          // report PDF ASL può essere lungo
+    req.path.includes('/asl') ||         // report PDF ASL può essere lungo
+    req.path.includes('/offers/parse');  // AI parsing multi-chunk, può superare 60s
   if (skip) return next();
 
   const timer = setTimeout(() => {
