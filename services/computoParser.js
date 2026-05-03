@@ -353,13 +353,12 @@ async function aiResolve(vociDaRisolvere) {
 
 // ─── AI full parse — per qualsiasi formato di computo metrico ────────────────
 const AI_FULL_SYSTEM = `Sei un esperto di computi metrici e capitolati d'appalto italiani.
-Analizza il testo ed estrai tutte le categorie e voci di lavorazione.
+Analizza il testo ed estrai le categorie e voci del COMPUTO METRICO ESTIMATIVO principale.
 
-Una CATEGORIA è un raggruppamento (es. "A  DEMOLIZIONI", "01 - OPERE EDILI", "IMPIANTI IDRAULICI").
-Una VOCE è una singola lavorazione con descrizione tecnica, unità di misura, quantità, prezzo.
-
-Le voci si estendono spesso su più righe. Il prezzo può essere su riga separata dalla descrizione.
-La quantità può essere la somma di più misurazioni elencate sotto la voce.
+Il computo metrico contiene lavorazioni tecniche con unità di misura, quantità e prezzi unitari.
+I codici possono usare vari formati: "A.1)", "A.1  ", "1.1", "01.", ecc.
+Le descrizioni si estendono spesso su più righe.
+Il prezzo può essere su riga separata; la quantità può essere somma di più misurazioni.
 
 Per ogni elemento restituisci:
 {
@@ -372,11 +371,13 @@ Per ogni elemento restituisci:
   "importo": number | null
 }
 
-REGOLE:
+REGOLE CRITICHE:
 - Converti numeri italiani: "1.234,56" → 1234.56, "42,50" → 42.50
-- NON inventare valori numerici assenti nel testo
+- NON inventare valori numerici — usa solo i numeri presenti nel testo
 - Ignora: intestazioni pagina, numeri di pagina, totali di sezione, note legali
-- Se un blocco è chiaramente un totale/riepilogo di categoria, ignoralo
+- Ignora: tavole grafiche, prospetti architettonici, planimetrie, sezioni grafiche, leggende
+- Ignora: documentazione amministrativa (clausole contrattuali, norme, capitolato prestazionale)
+- Se un blocco è un totale/riepilogo di categoria o di sezione, ignoralo
 - Restituisci SOLO l'array JSON grezzo, zero testo aggiuntivo o markdown`;
 
 function completeness(item) {
@@ -539,8 +540,19 @@ async function runParse(rawLines, ctx) {
 async function parsePdf(buffer) {
   const { text: raw, numPages } = await extractPdfText(buffer, { maxPages: 80 });
   if (!raw.trim()) throw new Error('Il PDF non contiene testo estraibile (documento scansionato?).');
-  console.log(`[computoParser/parsePdf] ${numPages} pagine, ${raw.length} char`);
-  return runParse(raw.split('\n'), 'parsePdf');
+  const lines = preFilter(raw.split('\n'));
+  console.log(`[computoParser/parsePdf] ${numPages} pagine → ${lines.length} righe dopo preFilter`);
+
+  // PDF: sempre AI full parse — il formato è troppo variabile per regex
+  const voci = await aiParseFull(lines);
+  const nVoci = voci.filter(v => v.tipo === 'voce').length;
+  console.log(`[computoParser/parsePdf] AI full → ${voci.length} elementi (${nVoci} voci)`);
+  if (nVoci === 0)
+    throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
+  voci.forEach((v, idx) => { v.sort_order = idx; });
+  const totale = r2(voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo || 0), 0));
+  console.log(`[computoParser/parsePdf] totale contratto stimato: ${totale}`);
+  return { nome: 'Capitolato speciale d\'appalto', voci, totale_contratto: totale };
 }
 
 // ─── Excel ────────────────────────────────────────────────────────────────────
