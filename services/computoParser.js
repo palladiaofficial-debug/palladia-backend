@@ -27,40 +27,59 @@ const CODICE_RE = /^[A-Z]{0,3}\d+([.\-/]\d+){0,3}\s/;
 const CAPS_RE   = /^[A-Z\s\d\-–—:]{6,80}$/;  // intestazioni categoria
 
 /**
- * Riduce il testo del documento tenendo solo le righe rilevanti.
- * Ritorna il testo filtrato + una stima del rapporto di riduzione.
+ * Riduce il testo del documento tenendo solo i segmenti rilevanti.
+ * pdfjs-dist restituisce ogni pagina come un'unica stringa senza newline interni:
+ * prima spezziamo le righe lunghe in segmenti da ~250 char, poi filtriamo.
  */
 function preFilter(text) {
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+  // Step 1: segmenta — gestisce sia testo con newline sia pagine-monoblocco
+  const segments = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
 
+    if (line.length <= 300) {
+      segments.push(line);
+    } else {
+      // Riga lunga (tipica di pdfjs): spezza a word-boundary ogni ~250 char
+      let i = 0;
+      while (i < line.length) {
+        let end = Math.min(i + 250, line.length);
+        if (end < line.length) {
+          const sp = line.lastIndexOf(' ', end);
+          if (sp > i + 40) end = sp;
+        }
+        const chunk = line.slice(i, end).trim();
+        if (chunk.length > 2) segments.push(chunk);
+        i = end;
+      }
+    }
+  }
+
+  // Step 2: punteggio e selezione
   const keep = new Set();
-
-  lines.forEach((line, i) => {
-    // Salta righe troppo lunghe (blocchi normativi) o troppo corte
-    if (line.length > 400 || line.length < 4) return;
-
+  segments.forEach((seg, i) => {
+    if (seg.length < 4) return;
     let score = 0;
-    if (UM_RE.test(line))     score += 3;
-    if (NUMBER_RE.test(line)) score += 1;
-    if (CODICE_RE.test(line)) score += 2;
-    if (CAPS_RE.test(line) && line.length > 5) score += 2;  // header categoria
+    if (UM_RE.test(seg))     score += 3;
+    if (NUMBER_RE.test(seg)) score += 1;
+    if (CODICE_RE.test(seg)) score += 2;
+    if (CAPS_RE.test(seg) && seg.length >= 6 && seg.length <= 80) score += 2;
 
     if (score >= 3) {
-      // Tieni la riga + contesto immediato
       if (i > 0) keep.add(i - 1);
       keep.add(i);
-      if (i < lines.length - 1) keep.add(i + 1);
+      if (i < segments.length - 1) keep.add(i + 1);
     }
   });
 
-  // Sempre tieni le righe che sembrano titoli di capitolo/categoria
-  lines.forEach((line, i) => {
-    if (/^(capo|capitolo|categoria|sezione|art\.?|voce)\s+\d/i.test(line)) keep.add(i);
-    if (CAPS_RE.test(line) && line.length >= 6 && line.length <= 80) keep.add(i);
+  // Tieni sempre header di capitolo/categoria
+  segments.forEach((seg, i) => {
+    if (/^(capo|capitolo|categoria|sezione|art\.?|voce)\s+\d/i.test(seg)) keep.add(i);
+    if (CAPS_RE.test(seg) && seg.length >= 6 && seg.length <= 80) keep.add(i);
   });
 
-  const filtered = [...keep].sort((a, b) => a - b).map(i => lines[i]).join('\n');
-  return filtered;
+  return [...keep].sort((a, b) => a - b).map(i => segments[i]).join('\n');
 }
 
 const SYSTEM_PROMPT = `Sei un esperto di capitolati d'appalto italiani (edilizia civile e industriale).
