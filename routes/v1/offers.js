@@ -196,33 +196,59 @@ router.get('/offers', async (req, res) => {
   res.json(data || []);
 });
 
-// ── PATCH /api/v1/offers/items/:itemId — aggiorna prezzo voce ─────────────────
+// ── PATCH /api/v1/offers/items/:itemId — aggiorna voce (prezzo, quantità, desc…)
 // DEVE stare prima di /offers/:id per evitare che "items" venga catturato come :id
 router.patch('/offers/items/:itemId', async (req, res) => {
   const { companyId } = req;
   const { itemId }    = req.params;
-  const { prezzo_offerta } = req.body;
 
   if (!isUuid(itemId)) return res.status(400).json({ error: 'INVALID_ID' });
 
-  const raw = prezzo_offerta === null || prezzo_offerta === '' ? null : Number(prezzo_offerta);
-  if (raw !== null && (isNaN(raw) || raw < 0))
-    return res.status(400).json({ error: 'INVALID_PRICE' });
+  const { prezzo_offerta, quantita, descrizione, unita_misura, codice } = req.body;
 
   const { data: item } = await supabase
     .from('offer_items')
-    .select('id, offer_id, quantita')
+    .select('id, offer_id, tipo, quantita, prezzo_offerta')
     .eq('id', itemId)
     .eq('company_id', companyId)
     .maybeSingle();
 
   if (!item) return res.status(404).json({ error: 'ITEM_NOT_FOUND' });
 
-  const qt = item.quantita != null ? Number(item.quantita) : null;
-  const importo_offerta = (raw != null && qt != null) ? round2(qt * raw) : null;
+  const patch = {};
+
+  if (descrizione !== undefined) {
+    if (typeof descrizione !== 'string' || !descrizione.trim())
+      return res.status(400).json({ error: 'INVALID_DESCRIZIONE' });
+    patch.descrizione = descrizione.trim().slice(0, 500);
+  }
+  if (unita_misura !== undefined) patch.unita_misura = unita_misura ? String(unita_misura).slice(0, 20) : null;
+  if (codice !== undefined)       patch.codice = codice ? String(codice).slice(0, 50) : null;
+
+  if (quantita !== undefined) {
+    const qt = quantita === null || quantita === '' ? null : Number(quantita);
+    if (qt !== null && (isNaN(qt) || qt < 0))
+      return res.status(400).json({ error: 'INVALID_QUANTITA' });
+    patch.quantita = qt;
+  }
+
+  if (prezzo_offerta !== undefined) {
+    const pr = prezzo_offerta === null || prezzo_offerta === '' ? null : Number(prezzo_offerta);
+    if (pr !== null && (isNaN(pr) || pr < 0))
+      return res.status(400).json({ error: 'INVALID_PRICE' });
+    patch.prezzo_offerta = pr;
+  }
+
+  if (Object.keys(patch).length === 0)
+    return res.status(400).json({ error: 'NO_FIELDS' });
+
+  // Ricalcola importo se quantita o prezzo cambiano
+  const finalQt = patch.quantita    !== undefined ? patch.quantita    : (item.quantita       != null ? Number(item.quantita)       : null);
+  const finalPr = patch.prezzo_offerta !== undefined ? patch.prezzo_offerta : (item.prezzo_offerta != null ? Number(item.prezzo_offerta) : null);
+  patch.importo_offerta = (finalQt != null && finalPr != null) ? round2(finalQt * finalPr) : null;
 
   await supabase.from('offer_items')
-    .update({ prezzo_offerta: raw, importo_offerta })
+    .update(patch)
     .eq('id', itemId)
     .eq('company_id', companyId);
 
@@ -240,7 +266,7 @@ router.patch('/offers/items/:itemId', async (req, res) => {
     .eq('id', item.offer_id)
     .eq('company_id', companyId);
 
-  res.json({ ok: true, prezzo_offerta: raw, importo_offerta, totale_offerta });
+  res.json({ ok: true, ...patch, totale_offerta });
 });
 
 // ── GET /api/v1/offers/:id — dettaglio con voci ───────────────────────────────
