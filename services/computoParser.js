@@ -4,12 +4,16 @@
  * Parsing ibrido regex+AI di capitolati speciali d'appalto italiani.
  *
  * Flusso:
- *  1. extractPdfText/xlsx → testo grezzo
- *  2. preFilter → rimuove header ripetuti e font spaziato
- *  3. regexParse → estrae struttura completa (categorie, voci, misure, prezzi)
- *  4. AI Haiku (UNA sola chiamata) → solo voci dove regex non trovò il prezzo
- *
- * Risparmio AI: ~85% vs versione full-chunking precedente.
+ *  1. extractPdfText/xlsx → righe reali (coordinate Y pdfjs)
+ *  2. preFilter → rimuove header/footer ripetuti e font spaziato
+ *  3. regexParse → struttura completa; gestisce:
+ *     – formula embedded nella riga voce (c.ca / n. x / corpo / comp.unitario)
+ *     – prezzo galleggiante sulla riga PRECEDENTE ("85 42,50 €")
+ *     – pu dopo l'unità: "€/mq 50"
+ *     – riepilogo sezione (um=null) → skip + backfill importo verso voce reale
+ *     – deduplicazione: prima occorrenza di ogni codice vince
+ *     – filtro E.1-E.18 template se esistono E-A/E-B/… sub-categorie
+ *  4. AI Haiku (UNA sola chiamata) → solo voci con um ma prezzo ancora null
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
@@ -28,10 +32,8 @@ function preFilter(rawLines) {
     if (/^-+\s*pagina\s+\d+\s*-+$/i.test(line))                    continue;
     if (/^\d+\s*[\/\-]\s*\d+$/.test(line))                          continue;
     if (/^pagina\s+\d+$/i.test(line))                               continue;
-    // Font spaziato da loghi PDF ("s t u d i o")
     line = line.replace(/(?:[a-zA-ZÀ-ÿ&]\s){4,}[a-zA-ZÀ-ÿ]/g, ' ')
                .replace(/\s{2,}/g, ' ').trim();
-    // Footer ripetuto di pagina
     line = line.replace(
       /manutenzione[^.]{5,}capitolato speciale d'appalto lavori\s+pag\.\s*\d+/gi, ''
     ).trim();
@@ -42,38 +44,23 @@ function preFilter(rawLines) {
 }
 
 // ─── Pattern ──────────────────────────────────────────────────────────────────
-// Categoria: "A OPERE PROVVISIONALI", "E TERRAZZO A TASCA TIPO A"
-const RE_CAT = /^([A-G])\s{1,6}([A-ZÀÈÉÌÒÙ][A-ZÀÈÉÌÒÙ\s\d,'àèéìòùì°.()\-]+)$/;
-
-// Voce: "A.1 Formazione cantiere", "E.1 Calcestruzzo armato…"
-const RE_VOCE = /^([A-G])\.(\d+[a-z]?)\s{1,5}(.{4,})/;
-
-// c.ca / c.a X UM x
-const RE_CCA = /c\.?\s*ca\s+([\d,.]+)\s*(mq|mc|ml|kg|t\b|h\b|cad|n\b|nr\b)\s*x/i;
-
-// n. X x (cadauno)
-const RE_N_X = /n\.\s*([\d,]+)\s*x/i;
-
-// Prezzo unitario inline: "45,00 €/mq" — con o senza spazi
+const RE_CAT       = /^([A-G])\s{1,6}([A-ZÀÈÉÌÒÙ][A-ZÀÈÉÌÒÙ\s\d,'àèéìòùì°.()\-]+)$/;
+const RE_VOCE      = /^([A-G])\.(\d+[a-z]?)\s{1,5}(.{4,})/;
+const RE_CCA       = /c\.?\s*ca\s+([\d,.]+)\s*(mq|mc|ml|kg|t\b|h\b|cad|n\b|nr\b)\s*x/i;
+const RE_N_X       = /n\.\s*([\d,]+)\s*x/i;
 const RE_PU_INLINE = /([\d.]+,\d{1,2})\s*€\s*\/\s*(mq|mc|ml|kg|t|h|cad|n|nr)/i;
-
-// Importo totale inline: "= € 13.950,00" a fine riga
-const RE_IMP_INLINE = /=\s*€\s*([\d.]+(?:,\d{1,2})?)\s*€?\s*$/;
-
-// compenso a corpo = € [prezzo opzionale]
-const RE_CORPO = /compenso\s+a\s+corpo\s*=\s*€\s*([\d.]+(?:,\d{1,2})?)?/i;
-
-// compenso unitario = €/UM [prezzo opzionale sulla stessa riga]
+const RE_PU_AFTER  = /€\s*\/\s*(?:mq|mc|ml|kg|t|h|cad|n|nr)\s+(\d+(?:,\d{1,2})?)/i;
+const RE_IMP_INLINE= /=\s*€\s*([\d.]+(?:,\d{1,2})?)\s*€?\s*$/;
+const RE_IMP_END   = /([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€\s*$/;
+const RE_CORPO     = /compenso\s+a\s+corpo\s*=\s*€\s*([\d.]+(?:,\d{1,2})?)?/i;
 const RE_COMP_UNIT = /compenso\s+unitario\s*=\s*€\s*\/\s*(mq|mc|ml|kg|t|h|cad|n|nr)\s*([\d.]+(?:,\d{1,2})?)?/i;
-
-// TOTALE = € N (per voci composte tipo A.5, A.6)
-const RE_TOTALE = /^TOTALE\s*=\s*€\s*([\d.]+(?:,\d{1,2})?)/i;
-
-// Numero galleggiante con decimali: "3.200,00", "45,00", "3.200,00 €"
-const RE_FLOAT = /^([\d]{1,3}(?:\.\d{3})*,\d{1,2})\s*€?\s*$/;
-
-// Numero intero plausibile come prezzo unitario: "85", "42"
-const RE_INT_PX = /^(\d{1,4}(?:,00)?)\s*€?\s*$/;
+const RE_TOTALE    = /^TOTALE\s*=\s*€\s*([\d.]+(?:,\d{1,2})?)/i;
+const RE_FLOAT     = /^([\d]{1,3}(?:\.\d{3})*,\d{1,2})\s*€?\s*$/;
+const RE_INT_PX    = /^(\d{1,4}(?:,00)?)\s*€?\s*$/;
+// Riga "pu imp€" prima della voce: "85 42,50 €"
+const RE_PU_IMP_PREV = /^(\d{1,4}(?:,\d{2})?)\s+([\d]{1,3}(?:\.\d{3})*,\d{2})\s*€?\s*$/;
+// Pattern riepilogo: "= € ........" (stringa breve con punti/spazi)
+const RE_RIEPILOGO_DESC = /=\s*€\s*[.\s…]{4,}/;
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 function toIT(s) {
@@ -98,24 +85,48 @@ function normUM(raw) {
 
 function r2(n) { return n != null ? Math.round(n * 100) / 100 : null; }
 
-// ─── Ricerca prezzo "galleggiante" nelle righe vicine ─────────────────────────
-// Cerca nelle righe SUCCESSIVE alla formula (poi nelle precedenti).
-// Si ferma se incontra un'altra voce/categoria o testo descrittivo lungo.
-function nearbyPrice(lines, formulaIdx, fwd = 10, bwd = 2) {
+// ─── Formula dalla riga voce stessa ──────────────────────────────────────────
+function extractFormulaFromText(text) {
+  let m;
+  if ((m = RE_CORPO.exec(text)))
+    return { qty: null, um: 'corpo', pu: m[1] ? toIT(m[1]) : null, imp: m[1] ? toIT(m[1]) : null };
+  if ((m = RE_COMP_UNIT.exec(text)))
+    return { qty: null, um: normUM(m[1]), pu: m[2] ? toIT(m[2]) : null, imp: null };
+  if ((m = RE_CCA.exec(text))) {
+    const qty = toIT(m[1]), um = normUM(m[2]);
+    const pm = RE_PU_INLINE.exec(text);
+    let pu = pm ? toIT(pm[1]) : null;
+    if (!pu) { const am = RE_PU_AFTER.exec(text); if (am) pu = toIT(am[1]); }
+    const im = RE_IMP_INLINE.exec(text), em = RE_IMP_END.exec(text);
+    return { qty, um, pu, imp: im ? toIT(im[1]) : (em ? toIT(em[1]) : null) };
+  }
+  if ((m = RE_N_X.exec(text))) {
+    const qty = toIT(m[1]);
+    const pm = RE_PU_INLINE.exec(text);
+    let pu = pm ? toIT(pm[1]) : null;
+    if (!pu) { const am = RE_PU_AFTER.exec(text); if (am) pu = toIT(am[1]); }
+    const im = RE_IMP_INLINE.exec(text), em = RE_IMP_END.exec(text);
+    return { qty, um: 'cad', pu, imp: im ? toIT(im[1]) : (em ? toIT(em[1]) : null) };
+  }
+  return null;
+}
+
+// ─── Prezzo galleggiante nelle righe vicine ───────────────────────────────────
+function nearbyPrice(lines, baseIdx, fwd = 10, bwd = 2) {
   for (let d = 1; d <= fwd; d++) {
-    const j = formulaIdx + d;
+    const j = baseIdx + d;
     if (j >= lines.length) break;
     const l = lines[j];
     if (RE_VOCE.test(l) || RE_CAT.test(l)) break;
     if (RE_CORPO.test(l) || RE_COMP_UNIT.test(l) || RE_CCA.test(l)) break;
-    // Salta righe descrittive (più di 7 parole che non siano un numero)
-    if (l.split(/\s+/).length > 7 && !RE_FLOAT.test(l) && !RE_INT_PX.test(l)) continue;
+    if (l.split(/\s+/).length > 7 && !RE_FLOAT.test(l) && !RE_INT_PX.test(l) && !RE_PU_IMP_PREV.test(l)) continue;
     let m;
-    if ((m = RE_FLOAT.exec(l)))    return toIT(m[1]);
-    if ((m = RE_INT_PX.exec(l)))   { const n = toIT(m[1]); if (n >= 3 && n <= 9999) return n; }
+    if ((m = RE_FLOAT.exec(l)))      return toIT(m[1]);
+    if ((m = RE_INT_PX.exec(l)))     { const n = toIT(m[1]); if (n >= 3 && n <= 9999) return n; }
+    if ((m = RE_PU_IMP_PREV.exec(l))) return toIT(m[1]);  // "85 42,50 €" → ritorna il pu
   }
   for (let d = 1; d <= bwd; d++) {
-    const j = formulaIdx - d;
+    const j = baseIdx - d;
     if (j < 0) break;
     const l = lines[j];
     if (RE_VOCE.test(l) || RE_CAT.test(l)) break;
@@ -125,83 +136,64 @@ function nearbyPrice(lines, formulaIdx, fwd = 10, bwd = 2) {
   return null;
 }
 
-// ─── Cerca formula misura/prezzo nel blocco di una voce ──────────────────────
+// ─── Formula su righe successive ─────────────────────────────────────────────
 function findFormula(lines, startI) {
   const MAX_SCAN = 55;
-
   for (let j = startI; j < Math.min(startI + MAX_SCAN, lines.length); j++) {
     const line = lines[j];
-
-    // Nuova voce o categoria → stop
-    if (RE_VOCE.test(line) || RE_CAT.test(line)) {
+    if (RE_VOCE.test(line) || RE_CAT.test(line))
       return { qty: null, um: null, pu: null, imp: null, nextI: j };
-    }
-
     let m;
-
-    // ── TOTALE di voce composta (es. A.5 con sub-voci) ──
-    if ((m = RE_TOTALE.exec(line))) {
+    if ((m = RE_TOTALE.exec(line)))
       return { qty: null, um: 'corpo', pu: null, imp: toIT(m[1]), nextI: j + 1 };
-    }
-
-    // ── compenso a corpo ──
     if ((m = RE_CORPO.exec(line))) {
       const pu = m[1] ? toIT(m[1]) : nearbyPrice(lines, j);
       return { qty: null, um: 'corpo', pu, imp: pu, nextI: j + 1 };
     }
-
-    // ── compenso unitario = €/UM ──
     if ((m = RE_COMP_UNIT.exec(line))) {
-      const um = normUM(m[1]);
-      const pu = m[2] ? toIT(m[2]) : nearbyPrice(lines, j);
+      const um = normUM(m[1]), pu = m[2] ? toIT(m[2]) : nearbyPrice(lines, j);
       return { qty: null, um, pu, imp: null, nextI: j + 1 };
     }
-
-    // ── c.ca X UM x ──
     if ((m = RE_CCA.exec(line))) {
-      const qty = toIT(m[1]);
-      const um  = normUM(m[2]);
-      const pm  = RE_PU_INLINE.exec(line);
-      const pu  = pm ? toIT(pm[1]) : nearbyPrice(lines, j);
-      const im  = RE_IMP_INLINE.exec(line);
-      const imp = im ? toIT(im[1]) : null;
-      return { qty, um, pu, imp, nextI: j + 1 };
+      const qty = toIT(m[1]), um = normUM(m[2]);
+      const pm = RE_PU_INLINE.exec(line);
+      let pu = pm ? toIT(pm[1]) : null;
+      if (!pu) { const am = RE_PU_AFTER.exec(line); if (am) pu = toIT(am[1]); }
+      if (!pu) pu = nearbyPrice(lines, j);
+      const im = RE_IMP_INLINE.exec(line), em = RE_IMP_END.exec(line);
+      return { qty, um, pu, imp: im ? toIT(im[1]) : (em ? toIT(em[1]) : null), nextI: j + 1 };
     }
-
-    // ── n. X x (cadauno) ──
     if ((m = RE_N_X.exec(line))) {
       const qty = toIT(m[1]);
-      const pm  = RE_PU_INLINE.exec(line);
-      const pu  = pm ? toIT(pm[1]) : nearbyPrice(lines, j);
-      const im  = RE_IMP_INLINE.exec(line);
-      const imp = im ? toIT(im[1]) : null;
-      return { qty, um: 'cad', pu, imp, nextI: j + 1 };
+      const pm = RE_PU_INLINE.exec(line);
+      let pu = pm ? toIT(pm[1]) : null;
+      if (!pu) { const am = RE_PU_AFTER.exec(line); if (am) pu = toIT(am[1]); }
+      if (!pu) pu = nearbyPrice(lines, j);
+      const im = RE_IMP_INLINE.exec(line), em = RE_IMP_END.exec(line);
+      return { qty, um: 'cad', pu, imp: im ? toIT(im[1]) : (em ? toIT(em[1]) : null), nextI: j + 1 };
     }
   }
-
   return { qty: null, um: null, pu: null, imp: null, nextI: startI + MAX_SCAN };
 }
 
 // ─── Parser regex principale ──────────────────────────────────────────────────
 function regexParse(lines) {
-  const result = [];
-  let sortOrder = 0;
-  let i = 0;
-  let inRiepilogo = false;
-  let currentCatCodice = null;  // traccia categoria corrente (es. "A", "E-A")
+  const result         = [];
+  const importoBackfill = new Map();   // codice → importo da riga riepilogo
+  let sortOrder        = 0;
+  let i                = 0;
+  let inRiepilogo      = false;
+  let currentCatCodice = null;
 
   while (i < lines.length) {
     const line = lines[i];
 
-    // ── Stop al riepilogo finale o alle opere in economia ──
-    if (/riepilogo\s+dei\s+prezzi/i.test(line) || /^G\s+OPERE\s+IN\s+ECONOMIA/i.test(line)) {
+    if (/riepilogo\s+dei\s+prezzi/i.test(line) || /^G\s+OPERE\s+IN\s+ECONOMIA/i.test(line))
       inRiepilogo = true;
-    }
     if (inRiepilogo) { i++; continue; }
 
-    // ── Salta righe di totale sezione, note, didascalie ──
-    if (/^importo\s+tot/i.test(line))                continue && i++;
-    if (/^TOTALE\s*=\s*€/i.test(line) && !/^([A-G])\./i.test(line)) { i++; continue; }
+    if (/^importo\s+tot/i.test(line))               { i++; continue; }
+    if (/^TOTALE\s*=\s*€/i.test(line))              { i++; continue; }
     if (/^individuazione\b/i.test(line))             { i++; continue; }
     if (/^vista\s+(esemplificativa|zenitale)/i.test(line)) { i++; continue; }
     if (/^legenda$/i.test(line))                     { i++; continue; }
@@ -212,44 +204,85 @@ function regexParse(lines) {
     // ── Categoria ──
     if ((m = RE_CAT.exec(line))) {
       let codice = m[1];
-      const desc  = m[2].trim();
-
-      // Sottocategoria "TIPO A/B/C..." per sezione E
+      const desc = m[2].trim();
       const tipoM = /TIPO\s+([A-G])\s*$/i.exec(desc);
       if (tipoM) codice = `${m[1]}-${tipoM[1].toUpperCase()}`;
-
       currentCatCodice = codice;
-
       result.push({
-        tipo: 'categoria',
-        codice,
-        parent_codice: null,
-        descrizione: desc,
-        unita_misura: null, quantita: null,
-        prezzo_unitario: null, importo: null,
-        sort_order: sortOrder++,
+        tipo: 'categoria', codice, parent_codice: null,
+        descrizione: desc, unita_misura: null, quantita: null,
+        prezzo_unitario: null, importo: null, sort_order: sortOrder++,
       });
       i++; continue;
     }
 
     // ── Voce ──
     if ((m = RE_VOCE.exec(line))) {
-      // Se siamo in una sub-categoria "E-A", il parent è "E-A" e il codice "E-A.1"
-      const isSubcat = currentCatCodice && currentCatCodice.includes('-');
-      const parent  = isSubcat ? currentCatCodice : m[1];
-      const codice  = isSubcat ? `${currentCatCodice}.${m[2]}` : `${m[1]}.${m[2]}`;
-      const descHdr = m[3].trim().slice(0, 400);
+      const isSubcat = currentCatCodice?.includes('-');
+      const parent   = isSubcat ? currentCatCodice : m[1];
+      const codice   = isSubcat ? `${currentCatCodice}.${m[2]}` : `${m[1]}.${m[2]}`;
+      const descHdr  = m[3].trim().slice(0, 400);
 
-      const { qty, um, pu, imp, nextI } = findFormula(lines, i + 1);
+      let qty = null, um = null, pu = null, imp = null, nextI;
+
+      // 1. Formula embedded nella riga voce stessa
+      const fromLine = extractFormulaFromText(line);
+      if (fromLine) {
+        qty = fromLine.qty; um = fromLine.um; pu = fromLine.pu; imp = fromLine.imp;
+        const ff = findFormula(lines, i + 1);
+        nextI = ff.nextI;
+        if (ff.imp != null) imp = ff.imp;
+      } else {
+        // 2. Formula su righe successive
+        const ff = findFormula(lines, i + 1);
+        qty = ff.qty; um = ff.um; pu = ff.pu; imp = ff.imp; nextI = ff.nextI;
+      }
+
+      // ── Se um è ancora null → riga riepilogo/sommario: estrai importo per backfill, salta ──
+      if (um === null) {
+        // RE_IMP_END cerca "N.NNN,NN €" a fine riga
+        const em = RE_IMP_END.exec(line);
+        if (em && !importoBackfill.has(codice)) {
+          importoBackfill.set(codice, toIT(em[1]));
+        }
+        // Anche pattern "= € ..... N,NN €" nella descrizione
+        if (!importoBackfill.has(codice)) {
+          const rm = RE_RIEPILOGO_DESC.exec(descHdr);
+          if (rm) {
+            const iem = RE_IMP_END.exec(descHdr);
+            if (iem) importoBackfill.set(codice, toIT(iem[1]));
+          }
+        }
+        i++; continue;  // Salta: non è una voce reale
+      }
+
+      // 3. Prezzo sulla riga precedente: "85 42,50 €" (pdfjs floating elements)
+      if (pu == null && imp == null && qty != null && i > 0) {
+        const prev = lines[i - 1];
+        const pm = RE_PU_IMP_PREV.exec(prev);
+        if (pm) {
+          pu  = toIT(pm[1]);
+          imp = toIT(pm[2]);
+        } else {
+          const fm = RE_FLOAT.exec(prev);
+          if (fm) { const n = toIT(fm[1]); if (n >= 3) pu = n; }
+          else {
+            const im2 = RE_INT_PX.exec(prev);
+            if (im2) { const n = toIT(im2[1]); if (n >= 3 && n <= 9999) pu = n; }
+          }
+        }
+      }
+
+      // 4. NearbyPrice forward (fallback per voci con CCA ma senza prezzo)
+      if (pu == null && imp == null && um !== 'corpo') {
+        const npu = nearbyPrice(lines, i, 8, 0);
+        if (npu) pu = npu;
+      }
 
       result.push({
-        tipo: 'voce',
-        codice,
-        parent_codice: parent,
-        descrizione: descHdr,
-        unita_misura: um,
-        quantita: qty,
-        prezzo_unitario: pu != null ? r2(pu) : null,
+        tipo: 'voce', codice, parent_codice: parent,
+        descrizione: descHdr, unita_misura: um, quantita: qty,
+        prezzo_unitario: pu  != null ? r2(pu)  : null,
         importo: imp != null ? r2(imp)
                : (qty != null && pu != null ? r2(qty * pu) : null),
         sort_order: sortOrder++,
@@ -261,7 +294,33 @@ function regexParse(lines) {
     i++;
   }
 
-  return result;
+  // ── Backfill importo da righe riepilogo ──────────────────────────────────────
+  for (const v of result) {
+    if (v.tipo !== 'voce' || v.importo != null) continue;
+    const bf = importoBackfill.get(v.codice);
+    if (bf == null) continue;
+    v.importo = r2(bf);
+    if (v.quantita != null && v.prezzo_unitario == null && v.quantita > 0)
+      v.prezzo_unitario = r2(bf / v.quantita);
+  }
+
+  // ── Deduplicazione: prima occorrenza di ogni codice voce vince ───────────────
+  const seen = new Set();
+  const dedup = [];
+  for (const v of result) {
+    if (v.tipo === 'categoria') { dedup.push(v); continue; }
+    if (!seen.has(v.codice)) { seen.add(v.codice); dedup.push(v); }
+  }
+
+  // ── Filtro E.X template se esistono E-A/E-B/… sub-categorie ─────────────────
+  const hasESubcat = dedup.some(v => v.tipo === 'categoria' && /^E-[A-G]$/.test(v.codice));
+  const final = hasESubcat
+    ? dedup.filter(v => !(v.tipo === 'voce' && /^E\.\d+[a-z]?$/.test(v.codice)))
+    : dedup;
+
+  // Ricalcola sort_order
+  final.forEach((v, idx) => { v.sort_order = idx; });
+  return final;
 }
 
 // ─── AI fallback — UNA sola chiamata con tutte le voci irrisolte ─────────────
@@ -270,33 +329,25 @@ Per ognuna restituisci un oggetto JSON con: codice, prezzo_unitario (numero o nu
 Usa SOLO i dati presenti nel testo — non inventare prezzi. Numeri italiani: 1.500,00 → 1500.00.
 Risposta: array JSON grezzo, nessun markdown.`;
 
-async function aiResolve(vociDaRisolvere, linesCtx) {
+async function aiResolve(vociDaRisolvere) {
   if (vociDaRisolvere.length === 0) return new Map();
   const client = new Anthropic();
-
   const payload = vociDaRisolvere.map(v =>
     `${v.codice}: ${v.descrizione}` +
     (v.unita_misura ? ` [${v.unita_misura}]` : '') +
     (v.quantita     ? ` qty=${v.quantita}`    : '')
   ).join('\n');
-
   console.log(`[computoParser/AI] risolvo ${vociDaRisolvere.length} voci senza prezzo`);
-
   const resp = await client.messages.create({
     model: MODEL, max_tokens: MAX_TOKENS,
     system: AI_SYSTEM,
     messages: [{ role: 'user', content: `Voci da analizzare:\n${payload}` }],
   });
-
   const raw   = resp.content[0]?.text?.trim() || '[]';
   const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
-  let parsed;
-  try { parsed = JSON.parse(clean); } catch { parsed = []; }
-
+  let parsed; try { parsed = JSON.parse(clean); } catch { parsed = []; }
   const map = new Map();
-  for (const v of parsed) {
-    if (v.codice) map.set(v.codice, v);
-  }
+  for (const v of parsed) if (v.codice) map.set(v.codice, v);
   return map;
 }
 
@@ -305,22 +356,18 @@ async function runParse(rawLines, ctx) {
   const lines = preFilter(rawLines);
   console.log(`[computoParser/${ctx}] ${rawLines.length} righe raw → ${lines.length} dopo preFilter`);
 
-  // Fase 1: regex
-  const voci = regexParse(lines);
+  const voci  = regexParse(lines);
   const nVoci = voci.filter(v => v.tipo === 'voce').length;
   console.log(`[computoParser/${ctx}] regex → ${voci.length} elementi (${nVoci} voci)`);
 
-  if (nVoci === 0) {
+  if (nVoci === 0)
     throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
-  }
 
-  // Fase 2: AI solo per le voci con UM ma prezzo null
   const irrisolte = voci.filter(v =>
     v.tipo === 'voce' && v.prezzo_unitario == null && v.unita_misura != null
   );
-
   if (irrisolte.length > 0) {
-    const aiMap = await aiResolve(irrisolte, ctx);
+    const aiMap = await aiResolve(irrisolte);
     for (const v of irrisolte) {
       const ai = aiMap.get(v.codice);
       if (!ai) continue;
@@ -331,10 +378,8 @@ async function runParse(rawLines, ctx) {
     }
   }
 
-  // Normalizza sort_order e calcola totale
-  voci.forEach((v, i) => { v.sort_order = i; });
+  voci.forEach((v, idx) => { v.sort_order = idx; });
   const totale = r2(voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo || 0), 0));
-
   console.log(`[computoParser/${ctx}] totale contratto stimato: ${totale}`);
   return { nome: 'Capitolato speciale d\'appalto', voci, totale_contratto: totale };
 }
@@ -350,8 +395,7 @@ async function parsePdf(buffer) {
 // ─── Excel ────────────────────────────────────────────────────────────────────
 async function parseExcel(buffer) {
   const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true });
-  let bestSheet = workbook.SheetNames[0];
-  let maxCells  = 0;
+  let bestSheet = workbook.SheetNames[0], maxCells = 0;
   for (const name of workbook.SheetNames) {
     const sheet = workbook.Sheets[name];
     const range = xlsx.utils.decode_range(sheet['!ref'] || 'A1:A1');
