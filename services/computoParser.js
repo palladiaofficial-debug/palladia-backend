@@ -397,98 +397,145 @@ async function aiParseChunk(text, client, chunkIdx, total) {
   console.log(`[computoParser/AI-full] chunk ${chunkIdx}/${total} (${text.length} char)`);
   const resp = await client.messages.create({
     model: MODEL,
-    max_tokens: 4096,
+    max_tokens: 8192,
     system: AI_FULL_SYSTEM,
     messages: [{ role: 'user', content: `Testo capitolato:\n${text}` }],
   });
   return parseJsonSafe(resp.content[0]?.text?.trim() || '[]');
 }
 
+// Trova la sezione del computo metrico nel testo (salta TOC e testo legale)
+function findComputoSection(lines) {
+  // Voce "corpo" del documento: X.N) testo senza dots/numero di pagina trailing
+  const isBodyVoce = (l) => {
+    const t = l.trim();
+    return /^[A-G]\.\d+[a-z]?\)/.test(t) && !/\.{4,}/.test(t) && !/\s\d{1,3}\s*$/.test(t);
+  };
+
+  let startIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (isBodyVoce(lines[i])) {
+      startIdx = Math.max(0, i - 5);
+      break;
+    }
+  }
+  if (startIdx === -1) return null;
+
+  // Cerca fine: TOTALE CAPITOLATO o marcatori appendice
+  let endIdx = lines.length;
+  for (let i = startIdx + 30; i < lines.length; i++) {
+    if (/TOTALE\s+CAPITOLATO/i.test(lines[i])) {
+      endIdx = Math.min(i + 3, lines.length);
+      break;
+    }
+    if (i > startIdx + 50 &&
+        (/^[A-G]\s+ALLEGATI\b/i.test(lines[i]) || /^ALLEGATI\s*$/i.test(lines[i]) || /^RIEPILOGO\s*$/i.test(lines[i]))) {
+      endIdx = i;
+      break;
+    }
+  }
+
+  const section = lines.slice(startIdx, endIdx);
+  return section.length >= 20 ? section : null;
+}
+
+function mergeAiItems(rawItems) {
+  const merged = [];
+  const byCode = new Map();
+  const byDesc = new Map();
+
+  for (const raw of rawItems) {
+    if (!raw.descrizione || !raw.tipo) continue;
+    const tipo = raw.tipo === 'categoria' ? 'categoria' : 'voce';
+    const item = {
+      tipo,
+      codice:          raw.codice ? String(raw.codice).trim().slice(0, 50) : null,
+      parent_codice:   null,
+      descrizione:     String(raw.descrizione).trim().slice(0, 400),
+      unita_misura:    raw.unita_misura ? normUM(String(raw.unita_misura)) : null,
+      quantita:        raw.quantita        != null ? r2(Number(raw.quantita))        : null,
+      prezzo_unitario: raw.prezzo_unitario != null ? r2(Number(raw.prezzo_unitario)) : null,
+      importo:         raw.importo         != null ? r2(Number(raw.importo))         : null,
+      sort_order:      0,
+    };
+    if (isNaN(item.quantita))        item.quantita        = null;
+    if (isNaN(item.prezzo_unitario)) item.prezzo_unitario = null;
+    if (isNaN(item.importo))         item.importo         = null;
+
+    if (item.codice) {
+      const ex = byCode.get(item.codice);
+      if (ex !== undefined) {
+        if (completeness(item) > completeness(merged[ex])) merged[ex] = item;
+        continue;
+      }
+      byCode.set(item.codice, merged.length);
+    } else {
+      const key = item.descrizione.slice(0, 50).toLowerCase();
+      const ex = byDesc.get(key);
+      if (ex !== undefined) {
+        if (completeness(item) > completeness(merged[ex])) merged[ex] = item;
+        continue;
+      }
+      byDesc.set(key, merged.length);
+    }
+    merged.push(item);
+  }
+
+  // parent_codice
+  let lastCat = null;
+  for (const item of merged) {
+    if (item.tipo === 'categoria') { lastCat = item.codice; }
+    else { item.parent_codice = lastCat; }
+  }
+
+  // Calcola importo mancante
+  for (const item of merged) {
+    if (item.tipo === 'voce' && item.importo == null &&
+        item.quantita != null && item.prezzo_unitario != null)
+      item.importo = r2(item.quantita * item.prezzo_unitario);
+  }
+
+  merged.forEach((v, idx) => { v.sort_order = idx; });
+  return merged;
+}
+
 async function aiParseFull(lines) {
-  const CHUNK_LINES   = 150;
-  const OVERLAP_LINES = 20;
   const client = new Anthropic();
 
-  // Suddividi in chunk con overlap
+  // Percorso veloce: trova solo la sezione computo (evita 15+ chiamate su PDF lunghi)
+  const section = findComputoSection(lines);
+  if (section) {
+    console.log(`[computoParser/AI-full] sezione computo: ${section.length} righe → 1 chiamata`);
+    try {
+      const items = await aiParseChunk(section.join('\n'), client, 1, 1);
+      const merged = mergeAiItems(items);
+      if (merged.filter(v => v.tipo === 'voce').length > 0) return merged;
+      console.log('[computoParser/AI-full] chiamata singola = 0 voci, fallback chunked');
+    } catch (e) {
+      console.error('[computoParser/AI-full] errore chiamata singola:', e.message);
+    }
+  }
+
+  // Percorso fallback: chunked (max ~6 chiamate con chunk da 300 righe)
+  const CHUNK_LINES   = 300;
+  const OVERLAP_LINES = 30;
   const chunks = [];
   for (let i = 0; i < lines.length; i += CHUNK_LINES - OVERLAP_LINES) {
     chunks.push(lines.slice(i, i + CHUNK_LINES).join('\n'));
     if (i + CHUNK_LINES >= lines.length) break;
   }
-  console.log(`[computoParser/AI-full] ${lines.length} righe → ${chunks.length} chunk`);
+  console.log(`[computoParser/AI-full] chunked: ${lines.length} righe → ${chunks.length} chunk`);
 
-  const merged   = [];
-  const byCode   = new Map(); // codice → indice in merged
-  const byDesc   = new Map(); // desc[:50] → indice in merged (per voci senza codice)
-
+  const allItems = [];
   for (let ci = 0; ci < chunks.length; ci++) {
-    let items;
-    try { items = await aiParseChunk(chunks[ci], client, ci + 1, chunks.length); }
-    catch (e) { console.error(`[computoParser/AI-full] chunk ${ci+1} errore:`, e.message); continue; }
-
-    for (const raw of items) {
-      if (!raw.descrizione || !raw.tipo) continue;
-      const tipo = raw.tipo === 'categoria' ? 'categoria' : 'voce';
-      const item = {
-        tipo,
-        codice:          raw.codice ? String(raw.codice).trim().slice(0, 50) : null,
-        parent_codice:   null,
-        descrizione:     String(raw.descrizione).trim().slice(0, 400),
-        unita_misura:    raw.unita_misura ? normUM(String(raw.unita_misura)) : null,
-        quantita:        raw.quantita        != null ? r2(Number(raw.quantita))        : null,
-        prezzo_unitario: raw.prezzo_unitario != null ? r2(Number(raw.prezzo_unitario)) : null,
-        importo:         raw.importo         != null ? r2(Number(raw.importo))         : null,
-        sort_order:      0,
-      };
-      if (isNaN(item.quantita))        item.quantita        = null;
-      if (isNaN(item.prezzo_unitario)) item.prezzo_unitario = null;
-      if (isNaN(item.importo))         item.importo         = null;
-
-      // Deduplicazione: per codice (preferisci versione più completa)
-      if (item.codice) {
-        const existing = byCode.get(item.codice);
-        if (existing !== undefined) {
-          if (completeness(item) > completeness(merged[existing]))
-            merged[existing] = item;
-          continue;
-        }
-        byCode.set(item.codice, merged.length);
-      } else {
-        // Senza codice: deduplicazione per i primi 50 char di descrizione
-        const key = item.descrizione.slice(0, 50).toLowerCase();
-        const existing = byDesc.get(key);
-        if (existing !== undefined) {
-          if (completeness(item) > completeness(merged[existing]))
-            merged[existing] = item;
-          continue;
-        }
-        byDesc.set(key, merged.length);
-      }
-
-      merged.push(item);
+    try {
+      const items = await aiParseChunk(chunks[ci], client, ci + 1, chunks.length);
+      allItems.push(...items);
+    } catch (e) {
+      console.error(`[computoParser/AI-full] chunk ${ci+1} errore:`, e.message);
     }
   }
-
-  // Risolvi parent_codice: ogni voce eredita l'ultima categoria vista
-  let lastCat = null;
-  for (const item of merged) {
-    if (item.tipo === 'categoria') {
-      lastCat = item.codice;
-    } else {
-      item.parent_codice = lastCat;
-    }
-  }
-
-  // Calcola importo mancante dove possibile
-  for (const item of merged) {
-    if (item.tipo === 'voce' && item.importo == null &&
-        item.quantita != null && item.prezzo_unitario != null) {
-      item.importo = r2(item.quantita * item.prezzo_unitario);
-    }
-  }
-
-  merged.forEach((v, idx) => { v.sort_order = idx; });
-  return merged;
+  return mergeAiItems(allItems);
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
