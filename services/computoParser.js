@@ -351,18 +351,169 @@ async function aiResolve(vociDaRisolvere) {
   return map;
 }
 
+// ─── AI full parse — per qualsiasi formato di computo metrico ────────────────
+const AI_FULL_SYSTEM = `Sei un esperto di computi metrici e capitolati d'appalto italiani.
+Analizza il testo ed estrai tutte le categorie e voci di lavorazione.
+
+Una CATEGORIA è un raggruppamento (es. "A  DEMOLIZIONI", "01 - OPERE EDILI", "IMPIANTI IDRAULICI").
+Una VOCE è una singola lavorazione con descrizione tecnica, unità di misura, quantità, prezzo.
+
+Le voci si estendono spesso su più righe. Il prezzo può essere su riga separata dalla descrizione.
+La quantità può essere la somma di più misurazioni elencate sotto la voce.
+
+Per ogni elemento restituisci:
+{
+  "tipo": "categoria" | "voce",
+  "codice": string | null,
+  "descrizione": string,
+  "unita_misura": string | null,
+  "quantita": number | null,
+  "prezzo_unitario": number | null,
+  "importo": number | null
+}
+
+REGOLE:
+- Converti numeri italiani: "1.234,56" → 1234.56, "42,50" → 42.50
+- NON inventare valori numerici assenti nel testo
+- Ignora: intestazioni pagina, numeri di pagina, totali di sezione, note legali
+- Se un blocco è chiaramente un totale/riepilogo di categoria, ignoralo
+- Restituisci SOLO l'array JSON grezzo, zero testo aggiuntivo o markdown`;
+
+function completeness(item) {
+  return (item.quantita != null ? 1 : 0) +
+         (item.prezzo_unitario != null ? 1 : 0) +
+         (item.importo != null ? 1 : 0) +
+         (item.unita_misura != null ? 1 : 0);
+}
+
+function parseJsonSafe(raw) {
+  const clean = raw.trim()
+    .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+  try { return JSON.parse(clean); } catch { return []; }
+}
+
+async function aiParseChunk(text, client, chunkIdx, total) {
+  console.log(`[computoParser/AI-full] chunk ${chunkIdx}/${total} (${text.length} char)`);
+  const resp = await client.messages.create({
+    model: MODEL,
+    max_tokens: 4096,
+    system: AI_FULL_SYSTEM,
+    messages: [{ role: 'user', content: `Testo capitolato:\n${text}` }],
+  });
+  return parseJsonSafe(resp.content[0]?.text?.trim() || '[]');
+}
+
+async function aiParseFull(lines) {
+  const CHUNK_LINES   = 150;
+  const OVERLAP_LINES = 20;
+  const client = new Anthropic();
+
+  // Suddividi in chunk con overlap
+  const chunks = [];
+  for (let i = 0; i < lines.length; i += CHUNK_LINES - OVERLAP_LINES) {
+    chunks.push(lines.slice(i, i + CHUNK_LINES).join('\n'));
+    if (i + CHUNK_LINES >= lines.length) break;
+  }
+  console.log(`[computoParser/AI-full] ${lines.length} righe → ${chunks.length} chunk`);
+
+  const merged   = [];
+  const byCode   = new Map(); // codice → indice in merged
+  const byDesc   = new Map(); // desc[:50] → indice in merged (per voci senza codice)
+
+  for (let ci = 0; ci < chunks.length; ci++) {
+    let items;
+    try { items = await aiParseChunk(chunks[ci], client, ci + 1, chunks.length); }
+    catch (e) { console.error(`[computoParser/AI-full] chunk ${ci+1} errore:`, e.message); continue; }
+
+    for (const raw of items) {
+      if (!raw.descrizione || !raw.tipo) continue;
+      const tipo = raw.tipo === 'categoria' ? 'categoria' : 'voce';
+      const item = {
+        tipo,
+        codice:          raw.codice ? String(raw.codice).trim().slice(0, 50) : null,
+        parent_codice:   null,
+        descrizione:     String(raw.descrizione).trim().slice(0, 400),
+        unita_misura:    raw.unita_misura ? normUM(String(raw.unita_misura)) : null,
+        quantita:        raw.quantita        != null ? r2(Number(raw.quantita))        : null,
+        prezzo_unitario: raw.prezzo_unitario != null ? r2(Number(raw.prezzo_unitario)) : null,
+        importo:         raw.importo         != null ? r2(Number(raw.importo))         : null,
+        sort_order:      0,
+      };
+      if (isNaN(item.quantita))        item.quantita        = null;
+      if (isNaN(item.prezzo_unitario)) item.prezzo_unitario = null;
+      if (isNaN(item.importo))         item.importo         = null;
+
+      // Deduplicazione: per codice (preferisci versione più completa)
+      if (item.codice) {
+        const existing = byCode.get(item.codice);
+        if (existing !== undefined) {
+          if (completeness(item) > completeness(merged[existing]))
+            merged[existing] = item;
+          continue;
+        }
+        byCode.set(item.codice, merged.length);
+      } else {
+        // Senza codice: deduplicazione per i primi 50 char di descrizione
+        const key = item.descrizione.slice(0, 50).toLowerCase();
+        const existing = byDesc.get(key);
+        if (existing !== undefined) {
+          if (completeness(item) > completeness(merged[existing]))
+            merged[existing] = item;
+          continue;
+        }
+        byDesc.set(key, merged.length);
+      }
+
+      merged.push(item);
+    }
+  }
+
+  // Risolvi parent_codice: ogni voce eredita l'ultima categoria vista
+  let lastCat = null;
+  for (const item of merged) {
+    if (item.tipo === 'categoria') {
+      lastCat = item.codice;
+    } else {
+      item.parent_codice = lastCat;
+    }
+  }
+
+  // Calcola importo mancante dove possibile
+  for (const item of merged) {
+    if (item.tipo === 'voce' && item.importo == null &&
+        item.quantita != null && item.prezzo_unitario != null) {
+      item.importo = r2(item.quantita * item.prezzo_unitario);
+    }
+  }
+
+  merged.forEach((v, idx) => { v.sort_order = idx; });
+  return merged;
+}
+
 // ─── Entry point ─────────────────────────────────────────────────────────────
 async function runParse(rawLines, ctx) {
   const lines = preFilter(rawLines);
   console.log(`[computoParser/${ctx}] ${rawLines.length} righe raw → ${lines.length} dopo preFilter`);
 
-  const voci  = regexParse(lines);
-  const nVoci = voci.filter(v => v.tipo === 'voce').length;
+  let voci = regexParse(lines);
+  let nVoci = voci.filter(v => v.tipo === 'voce').length;
   console.log(`[computoParser/${ctx}] regex → ${voci.length} elementi (${nVoci} voci)`);
 
-  if (nVoci === 0)
-    throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
+  // Se regex non riconosce il formato, usa il parser AI completo
+  if (nVoci < 3) {
+    console.log(`[computoParser/${ctx}] formato non standard → AI full parse`);
+    voci  = await aiParseFull(lines);
+    nVoci = voci.filter(v => v.tipo === 'voce').length;
+    console.log(`[computoParser/${ctx}] AI full → ${voci.length} elementi (${nVoci} voci)`);
+    if (nVoci === 0)
+      throw new Error('Nessuna voce trovata nel documento. Prova con un file diverso o inserisci manualmente.');
+    voci.forEach((v, idx) => { v.sort_order = idx; });
+    const totale = r2(voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo || 0), 0));
+    console.log(`[computoParser/${ctx}] totale contratto stimato: ${totale}`);
+    return { nome: 'Capitolato speciale d\'appalto', voci, totale_contratto: totale };
+  }
 
+  // Regex ha funzionato: risolvi solo i prezzi mancanti con AI
   const irrisolte = voci.filter(v =>
     v.tipo === 'voce' && v.prezzo_unitario == null && v.unita_misura != null
   );
