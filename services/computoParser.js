@@ -16,9 +16,9 @@ const xlsx           = require('xlsx');
 const { extractPdfText } = require('../lib/pdfExtract');
 
 const MODEL      = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS = 4096;
-const MAX_CHARS  = 30000;   // soglia per chunk (su testo già pre-filtrato)
-const CHUNK_OVERLAP = 2000;
+const MAX_TOKENS = 6000;
+const MAX_CHARS  = 20000;   // chunk piccoli → JSON output sotto i 6000 token
+const CHUNK_OVERLAP = 1500;
 
 // ── Pattern per identificare righe di lavorazione ────────────────────────────
 const UM_RE     = /\b(mq|m²|mc|m³|ml|m\.l\.|kg|tonn?|t\b|h\b|ora[e]?|cad|corpo|a\s+corpo|n\b|nr\b|pz\b|%|lump\s+sum)\b/i;
@@ -57,6 +57,8 @@ function preFilter(text) {
   }
 
   // Step 2: punteggio e selezione
+  // Soglia >= 4: richiede UM+numero (tipica riga tabella) oppure codice+UM
+  // Questo esclude il testo normativo che contiene solo UM in frasi generiche
   const keep = new Set();
   segments.forEach((seg, i) => {
     if (seg.length < 4) return;
@@ -66,10 +68,11 @@ function preFilter(text) {
     if (CODICE_RE.test(seg)) score += 2;
     if (CAPS_RE.test(seg) && seg.length >= 6 && seg.length <= 80) score += 2;
 
-    if (score >= 3) {
-      if (i > 0) keep.add(i - 1);
-      keep.add(i);
-      if (i < segments.length - 1) keep.add(i + 1);
+    if (score >= 4) {
+      // Finestra ampia indietro: la descrizione può occupare 2-3 segmenti da 250 char
+      for (let k = Math.max(0, i - 3); k <= Math.min(segments.length - 1, i + 1); k++) {
+        keep.add(k);
+      }
     }
   });
 
