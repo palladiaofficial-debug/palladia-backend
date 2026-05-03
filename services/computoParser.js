@@ -23,72 +23,98 @@ const CHUNK_OVERLAP = 1000;
 const SYSTEM_PROMPT = `Sei un esperto di capitolati speciali d'appalto italiani (edilizia civile e industriale).
 Analizza il testo e restituisci SOLO un oggetto JSON valido, senza markdown, senza testo prima o dopo.
 
-TIPO DI DOCUMENTO:
+TIPI DI DOCUMENTO SUPPORTATI:
+- Capitolato speciale d'appalto / RFQ: prezzi ASSENTI (in bianco o con puntini "...") — normale
 - Computo metrico estimativo: ha quantità, prezzo unitario e importo
-- Capitolato / lista lavorazioni / RFQ: ha quantità ma PREZZI ASSENTI — normale e atteso
-- Preventivo / contratto: ha tutti i valori
+- Preventivo: ha tutti i valori
 
 STRUTTURA OUTPUT:
 {"nome":"titolo del documento","voci":[
-  {"tipo":"categoria","codice":"A","descrizione":"DEMOLIZIONI E RIMOZIONI","sort_order":0},
-  {"tipo":"voce","parent_codice":"A","codice":"A.01","descrizione":"Demolizione di muratura portante in mattoni pieni per qualsiasi spessore, compresi ponteggi e trasporto a rifiuto","unita_misura":"mc","quantita":12.50,"prezzo_unitario":null,"importo":null,"sort_order":1}
+  {"tipo":"categoria","codice":"A","descrizione":"OPERE PROVVISIONALI","sort_order":0},
+  {"tipo":"voce","parent_codice":"A","codice":"A.1","descrizione":"Formazione completa di cantiere per tutta la durata dei lavori","unita_misura":"corpo","quantita":null,"prezzo_unitario":null,"importo":null,"sort_order":1},
+  {"tipo":"categoria","codice":"B","descrizione":"CANALE DI GRONDA","sort_order":2},
+  {"tipo":"voce","parent_codice":"B","codice":"B.1","descrizione":"Rimozione impermeabilizzazione canale di gronda","unita_misura":"mq","quantita":80.0,"prezzo_unitario":null,"importo":null,"sort_order":3}
 ]}
 
-UNITÀ DI MISURA — standardizza così:
-  mq  = metri quadrati (anche m², MQ)
-  mc  = metri cubi (anche m³, MC)
-  ml  = metri lineari (anche m.l., m/l, ML)
-  kg  = chilogrammi
-  t   = tonnellate (anche ton, tonn)
-  h   = ore (anche ora, ore)
-  cad = cadauno (anche n., nr., pz, pezzi, N)
-  corpo = compenso a corpo / a corpo / a forfait / a lump sum / corpo (TUTTE queste vanno in "corpo")
-  %   = percentuale
-  kw  = kilowatt / kwh
+PATTERN DI PREZZO DEL DOCUMENTO — come riconoscerli:
+  "c.ca 180,0 ml x ................... €/ml = €"  → quantita=180.0, unita_misura="ml", prezzo_unitario=null
+  "c.ca 35,0 mq x ................... €/mq = €"  → quantita=35.0,  unita_misura="mq", prezzo_unitario=null
+  "compenso a corpo = € ........................" → quantita=null, unita_misura="corpo", prezzo_unitario=null
+  "compenso unitario = €/cad ...................."→ quantita=null, unita_misura="cad",  prezzo_unitario=null
+  "85,00 €/mq"                                   → prezzo_unitario=85.0, unita_misura="mq"
+  I puntini ".................." e "………..." significano SEMPRE prezzo assente → null
 
-NUMERI ITALIANI — converti SEMPRE in decimale con punto:
-  1.500    → 1500      (punto = separatore migliaia)
-  12,50    → 12.50     (virgola = decimale)
-  1.500,00 → 1500.00   (formato misto)
-  12.5     → 12.5      (già corretto)
+UNITÀ DI MISURA — standardizza SEMPRE così:
+  mq  = metri quadrati (m², MQ, mq)
+  mc  = metri cubi (m³, MC)
+  ml  = metri lineari (m.l., m/l, ML, ml)
+  kg  = chilogrammi | t = tonnellate | h = ore (ora, ore)
+  cad = cadauno (n., nr., pz, N, cad)
+  corpo = compenso a corpo / a corpo / a forfait / lump sum / compenso unitario senza UM
+  %   = percentuale | kw = kilowatt
+
+NUMERI ITALIANI — converti SEMPRE:
+  1.500    → 1500   (punto = separatore migliaia)
+  12,50    → 12.50  (virgola = decimale)
+  1.500,00 → 1500.00
+  c.ca 4,2 → 4.2    (ignora "c.ca" = circa, usa il numero)
 
 REGOLE TASSATIVE:
-1. Estrai TUTTE le voci con descrizione, anche se prezzo è assente → null
-2. NON inventare mai prezzi, quantità o importi assenti nel testo → null
-3. Categorie/capitoli/titoli di sezione → tipo "categoria". Voci di lavorazione → tipo "voce" con parent_codice = codice della categoria padre.
-4. IGNORA completamente: totali di categoria, totale complessivo, sommari, riepiloghi, IVA, spese generali, oneri sicurezza (a meno che non siano voci prezzate).
-5. Se non ci sono categorie esplicite → crea categoria "Lavori" con sort_order 0.
-6. codice: usa quello del documento; se assente, genera progressivo (A, A.01, A.02…).
-7. Descrizione: fedele al documento, completa, max 400 caratteri.
-8. sort_order: incrementale da 0, mantieni l'ordine del documento.
-9. Output: SOLO JSON grezzo, nessun altro testo.`;
+1. Estrai TUTTE le voci con descrizione, anche se prezzo è null.
+2. NON inventare prezzi — puntini/spazi al posto del prezzo = null.
+3. Categorie/capitoli (es. "A OPERE PROVVISIONALI", "B CANALE DI GRONDA") → tipo "categoria".
+   Voci di lavorazione → tipo "voce" con parent_codice = codice della categoria padre.
+4. IGNORA: righe di totale/sommario come "Importo totale articolo A = € ........",
+   "Riepilogo", "Totale complessivo", IVA, spese generali.
+5. Se la stessa sezione si ripete per sottotipi (es. "TIPO A", "TIPO B"…):
+   crea una categoria separata per ogni sottotipo e assegna parent_codice diverso.
+   Es.: categoria "E-A" = "TERRAZZO A TASCA TIPO A", categoria "E-B" = "TERRAZZO A TASCA TIPO B".
+   Le voci E.1, E.2… di ogni tipo vanno tutte estratte con il loro parent_codice e quantità.
+6. codice: usa quello del documento (A.1, B.3, ecc.); se assente, genera progressivo.
+7. Descrizione: fedele al documento, max 400 caratteri.
+8. sort_order: incrementale da 0, mantieni ordine del documento.
+9. Output: SOLO JSON grezzo, niente altro.`;
 
-// ── Pre-filtro MINIMO ─────────────────────────────────────────────────────────
-// Rimuove solo righe vuote e header/footer di pagina tipici (numero pagina, ecc.)
-// NON fa euristiche su UM o numeri: qualunque riga potrebbe contenere una voce.
+// ── Pre-filtro ────────────────────────────────────────────────────────────────
+// Rimuove header/footer di pagina e testo con font spaziato (es. "s t u d i o")
+// che pdfjs estrae dai loghi/intestazioni di studi tecnici.
 function preFilter(text) {
   const lines = [];
   for (const raw of text.split('\n')) {
-    const line = raw.trim();
+    let line = raw.trim();
     if (!line || line.length < 3) continue;
-    if (/^-+\s*pagina\s+\d+\s*-+$/i.test(line)) continue;   // "--- Pagina 3 ---"
-    if (/^\d+\s*[\/\-]\s*\d+$/.test(line)) continue;         // "3 / 10"
+    if (/^-+\s*pagina\s+\d+\s*-+$/i.test(line)) continue;  // "--- Pagina 3 ---"
+    if (/^\d+\s*[\/\-]\s*\d+$/.test(line)) continue;        // "3 / 10"
     if (/^pagina\s+\d+$/i.test(line)) continue;
+
+    // Rimuove inline il testo con font spaziato ("s t u d i o   a s s o c i a t o")
+    // Pattern: 4+ singoli caratteri ognuno seguito da spazio (tipico di loghi PDF)
+    line = line.replace(/(?:[a-zA-ZÀ-ÿ&]\s){4,}[a-zA-ZÀ-ÿ]/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+    // Rimuove intestazioni di pagina ripetitive tipo:
+    // "manutenzione canale di gronda ... capitolato speciale d'appalto lavori   pag. N"
+    line = line.replace(/manutenzione[^.]{5,}capitolato speciale d'appalto lavori\s+pag\.\s*\d+/gi, '').trim();
+
+    if (!line || line.length < 3) continue;
     lines.push(line);
   }
   return lines.join('\n');
 }
 
 // ── Deduplicazione chunk-overlap ──────────────────────────────────────────────
-// Items vicini al bordo dei chunk possono comparire due volte.
-// Deduplicazione basata su codice (se presente) oppure sui primi 80 char di descrizione.
+// Rimuove SOLO i veri duplicati da overlap (stessa voce estratta due volte).
+// Non deduplicare voci con stesso codice ma quantità diverse
+// (es. E.1 per terrazzo tipo A, B, C... hanno codice E.1 ma quantità distinte).
 function deduplicateVoci(voci) {
   const seen  = new Set();
   const result = [];
   for (const v of voci) {
-    const key = v.codice
-      ? `c:${String(v.codice).trim().toLowerCase()}`
-      : `d:${String(v.descrizione || '').slice(0, 80).toLowerCase().trim()}`;
+    const codice  = String(v.codice  || '').trim().toLowerCase();
+    const parent  = String(v.parent_codice || '').trim().toLowerCase();
+    const desc    = String(v.descrizione || '').slice(0, 60).toLowerCase().trim();
+    const qt      = v.quantita != null ? String(Math.round(v.quantita * 1000)) : 'null';
+    // Due voci sono duplicate SOLO se codice + parent + quantità + descrizione combaciano
+    const key = `${codice}|${parent}|${qt}|${desc}`;
     if (seen.has(key)) continue;
     seen.add(key);
     result.push(v);
