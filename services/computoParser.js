@@ -15,9 +15,9 @@ const xlsx           = require('xlsx');
 const { extractPdfText } = require('../lib/pdfExtract');
 
 const MODEL         = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS    = 7000;
-const MAX_CHARS     = 18000;
-const CHUNK_OVERLAP = 2000;
+const MAX_TOKENS    = 6000;
+const MAX_CHARS     = 10000;  // chunk piccoli → JSON output mai > 5000 token
+const CHUNK_OVERLAP = 1000;
 
 // ── Prompt ────────────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `Sei un esperto di capitolati speciali d'appalto italiani (edilizia civile e industriale).
@@ -167,18 +167,22 @@ async function runAI(text, ctx) {
 
     const raw     = response.content[0]?.text?.trim() || '{}';
     const cleaned = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
+    const stopReason = response.stop_reason;
+    const tokensOut  = response.usage?.output_tokens;
 
     let parsed;
     try {
       parsed = JSON.parse(cleaned);
     } catch (e) {
-      console.warn(`[computoParser/${ctx}] chunk ${ci} JSON troncato — recupero parziale:`, e.message);
+      console.warn(`[computoParser/${ctx}] chunk ${ci} TRONCATO (stop:${stopReason} tok:${tokensOut}):`, e.message);
       const recovered = recoverVociFromTruncated(cleaned);
-      console.log(`[computoParser/${ctx}] recuperate ${recovered.length} voci`);
+      console.log(`[computoParser/${ctx}] chunk ${ci} recuperate ${recovered.length} voci parziali`);
       allVoci.push(...recovered);
       continue;
     }
 
+    const n = Array.isArray(parsed.voci) ? parsed.voci.length : 0;
+    console.log(`[computoParser/${ctx}] chunk ${ci} OK — ${n} voci (stop:${stopReason} tok:${tokensOut})`);
     if (!globalNome && parsed.nome) globalNome = parsed.nome;
     if (Array.isArray(parsed.voci)) allVoci.push(...parsed.voci);
   }
