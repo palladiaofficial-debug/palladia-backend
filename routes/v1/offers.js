@@ -18,7 +18,8 @@ const router   = require('express').Router();
 const multer   = require('multer');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
-const { parsePdf, parseExcel } = require('../../services/computoParser');
+const { parseOfferPdf }      = require('../../services/visionParser');
+const { parseExcel }         = require('../../services/computoParser');
 const { generateOfferPdf }   = require('../../services/offerPdfGenerator');
 
 const upload = multer({
@@ -57,7 +58,7 @@ router.post('/offers/parse',
 
     try {
       let parsed;
-      if (isPdf)        parsed = await parsePdf(buffer);
+      if (isPdf)        parsed = await parseOfferPdf(buffer);
       else if (isExcel) parsed = await parseExcel(buffer);
       else return res.status(400).json({ error: 'FORMAT_UNSUPPORTED' });
 
