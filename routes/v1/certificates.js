@@ -62,7 +62,7 @@ router.get('/formazione/dashboard', verifySupabaseJwt, async (req, res) => {
 
   if (wErr) return res.status(500).json({ error: 'DB_ERROR', detail: wErr.message });
 
-  // Load all their certificates
+  // Load all their certificates (graceful if migration not yet run)
   const workerIds = workers.map(w => w.id);
   const { data: certs, error: cErr } = await supabase
     .from('worker_certificates')
@@ -73,7 +73,13 @@ router.get('/formazione/dashboard', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', companyId)
     .in('worker_id', workerIds.length > 0 ? workerIds : ['00000000-0000-0000-0000-000000000000']);
 
-  if (cErr) return res.status(500).json({ error: 'DB_ERROR', detail: cErr.message });
+  // 42P01 = table does not exist (migration not run yet) — return empty gracefully
+  if (cErr) {
+    if (cErr.code === '42P01') {
+      return res.json({ stats: { scaduti: 0, critici: 0, in_scadenza: 0, validi: 0 }, workers_at_risk: [], workers_ok: [] });
+    }
+    return res.status(500).json({ error: 'DB_ERROR', detail: cErr.message });
+  }
 
   // Build worker → certs map
   const certsByWorker = {};
@@ -296,7 +302,10 @@ router.get('/formazione/notifications', verifySupabaseJwt, async (req, res) => {
     .order('sent_at', { ascending: false })
     .limit(50);
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) {
+    if (error.code === '42P01') return res.json({ notifications: [], unread_count: 0 });
+    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  }
 
   const notifications = (data || []).map(n => ({
     id:               n.id,
