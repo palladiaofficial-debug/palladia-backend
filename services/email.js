@@ -1084,6 +1084,55 @@ async function sendCoordinatorRecoveryEmail({ to, coordinatorName, siteLinks }) 
   });
 }
 
+// ─── Email: Attestati in scadenza (Formazione) ─────────────────────────────
+
+/**
+ * @param {string} to - email responsabile impresa
+ * @param {Array<{workers:{full_name:string}, course_types:{name:string}, expiry_date:string}>} certs
+ */
+async function sendExpiryAlert(to, certs) {
+  const rows = certs.map(c => {
+    const days = Math.floor((new Date(c.expiry_date) - Date.now()) / 86_400_000);
+    const status = days < 0 ? '🔴 Scaduto' : days < 30 ? '🟠 Critico' : '🟡 In scadenza';
+    const dateStr = new Date(c.expiry_date).toLocaleDateString('it-IT');
+    return `<tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;">${c.workers?.full_name || '—'}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${c.course_types?.name || '—'}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${dateStr}</td>
+      <td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;font-weight:600;">${status}</td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Ci sono <strong>${certs.length} attestat${certs.length > 1 ? 'i' : 'o'}</strong>
+      che richiedono attenzione nella tua impresa.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#9ca3af;border-bottom:2px solid #f0f0f0;">Lavoratore</th>
+          <th style="text-align:left;padding:8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#9ca3af;border-bottom:2px solid #f0f0f0;">Corso</th>
+          <th style="text-align:left;padding:8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#9ca3af;border-bottom:2px solid #f0f0f0;">Scadenza</th>
+          <th style="text-align:left;padding:8px 0;font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:#9ca3af;border-bottom:2px solid #f0f0f0;">Stato</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${btn('Vai alla Dashboard Formazione', `${APP_URL}/formazione`)}
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;">
+      Trova enti di formazione accreditati direttamente su Palladia → Formazione → Marketplace.
+    </p>`;
+
+  const resend = getResend();
+  await resend.emails.send({
+    from:    FROM,
+    to,
+    subject: `⚠️ ${certs.length} attestat${certs.length > 1 ? 'i' : 'o'} in scadenza su Palladia`,
+    html:    layout('Attestati in scadenza', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1102,4 +1151,5 @@ module.exports = {
   sendEquipmentExpiryAlert,
   sendCompanyDocExpiryAlert,
   sendWorkerMissingDocsAlert,
+  sendExpiryAlert,
 };

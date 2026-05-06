@@ -103,6 +103,18 @@ router.use('/', require('./siteCosts'));
 // Prezzario regionale + prezzi fornitori azienda
 router.use('/', require('./prezzario'));
 
+// Modulo Formazione: attestati, notifiche scadenze, cron check
+router.use('/', require('./certificates'));
+
+// Marketplace corsi di formazione
+router.use('/', require('./marketplace'));
+
+// Prenotazioni corsi + Stripe Checkout
+router.use('/', require('./bookings'));
+
+// Admin Formazione (super_admin only)
+router.use('/', require('./formazioneAdmin'));
+
 
 // ── Error handler v1 ─────────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
