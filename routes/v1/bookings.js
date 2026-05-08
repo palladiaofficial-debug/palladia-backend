@@ -6,12 +6,14 @@
  * POST /api/v1/bookings/checkout   — crea prenotazione + Stripe Checkout Session
  * GET  /api/v1/bookings            — storico prenotazioni azienda
  * GET  /api/v1/bookings/:id        — dettaglio prenotazione
+ * GET  /api/v1/bookings/:id/ics    — file .ics per calendario
  * POST /api/v1/bookings/:id/cancel — cancella prenotazione pending
  */
 
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { sendBookingConfirmation } = require('../../services/email');
 
 const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
 
@@ -19,6 +21,25 @@ function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error('STRIPE_SECRET_KEY non configurata');
   return require('stripe')(key);
+}
+
+function buildIcs({ title, start, end, location, description, uid }) {
+  const fmt = d => d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Palladia//Formazione//IT',
+    'BEGIN:VEVENT',
+    `UID:${uid}@palladia.app`,
+    `DTSTAMP:${fmt(new Date())}`,
+    `DTSTART:${fmt(new Date(start))}`,
+    `DTEND:${fmt(new Date(end))}`,
+    `SUMMARY:${title}`,
+    location ? `LOCATION:${location}` : '',
+    description ? `DESCRIPTION:${description.replace(/\n/g, '\\n')}` : '',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].filter(Boolean).join('\r\n');
 }
 
 router.use(verifySupabaseJwt);
@@ -75,31 +96,69 @@ router.post('/bookings/checkout', async (req, res) => {
   }
 
   // Compute pricing
-  const unitPrice      = course.price_cents;
-  const totalPrice     = unitPrice * worker_ids.length;
-  const commissionRate = provider.commission_rate || 15;
-  const commissionCents = Math.round(totalPrice * commissionRate / 100);
-  const providerPayout  = totalPrice - commissionCents;
+  const isConsultantCourse = !!course.consultant_id;
+  const unitPrice          = course.price_cents;
+  const totalPrice         = unitPrice * worker_ids.length;
+  const commissionRate     = isConsultantCourse ? 15 : (provider?.commission_rate || 15);
+  const commissionCents    = Math.round(totalPrice * commissionRate / 100);
+  const payoutCents        = totalPrice - commissionCents;
 
-  // Create booking records (one per worker)
-  const bookingRows = workers.map(w => ({
-    session_id,
-    course_id:            course.id,
-    worker_id:            w.id,
-    site_id:              site_id || null,
-    company_id:           req.companyId,
-    status:               'pending',
-    payment_status:       'unpaid',
-    total_price_cents:    unitPrice,
-    commission_cents:     Math.round(commissionCents / worker_ids.length),
-    provider_payout_cents: Math.round(providerPayout / worker_ids.length),
-    notes:                notes || null,
+  // Workers con dati completi per la prenotazione consulente (workers_data jsonb)
+  const workersData = workers.map(w => ({
+    worker_id:   w.id,
+    worker_name: w.full_name,
   }));
 
-  const { data: bookings, error: bErr } = await supabase
-    .from('course_bookings')
-    .insert(bookingRows)
-    .select('id');
+  let bookings, bErr;
+
+  if (isConsultantCourse) {
+    // Per corsi consulente: UN singolo record di prenotazione con workers_data jsonb
+    const { data: bData, error: bE } = await supabase
+      .from('course_bookings')
+      .insert({
+        session_id,
+        course_id:               course.id,
+        company_id:              req.companyId,
+        consultant_id:           course.consultant_id,
+        workers_data:            workersData,
+        participants_count:      workers.length,
+        unit_price_cents:        unitPrice,
+        total_price_cents:       totalPrice,
+        commission_rate:         commissionRate,
+        commission_cents:        commissionCents,
+        consultant_payout_cents: payoutCents,
+        status:                  'pending',
+        payment_status:          'unpaid',
+        notes:                   notes || null,
+      })
+      .select('id');
+
+    bookings = bData;
+    bErr     = bE;
+  } else {
+    // Per corsi provider: un record per lavoratore (comportamento esistente)
+    const bookingRows = workers.map(w => ({
+      session_id,
+      course_id:             course.id,
+      worker_id:             w.id,
+      site_id:               site_id || null,
+      company_id:            req.companyId,
+      status:                'pending',
+      payment_status:        'unpaid',
+      total_price_cents:     unitPrice,
+      commission_cents:      Math.round(commissionCents / workers.length),
+      provider_payout_cents: Math.round(payoutCents / workers.length),
+      notes:                 notes || null,
+    }));
+
+    const { data: bData, error: bE } = await supabase
+      .from('course_bookings')
+      .insert(bookingRows)
+      .select('id');
+
+    bookings = bData;
+    bErr     = bE;
+  }
 
   if (bErr) return res.status(500).json({ error: 'DB_ERROR', detail: bErr.message });
 
@@ -179,6 +238,42 @@ router.get('/bookings', async (req, res) => {
   const { data, error, count } = await query;
   if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
   res.json({ bookings: data || [], total: count || 0, limit, offset });
+});
+
+// ── GET /api/v1/bookings/:id/ics ─────────────────────────────────────────────
+
+router.get('/bookings/:id/ics', async (req, res) => {
+  const { id } = req.params;
+
+  const { data, error } = await supabase
+    .from('course_bookings')
+    .select(`
+      id,
+      marketplace_courses ( title, location_city, location_address ),
+      course_sessions ( start_date, end_date )
+    `)
+    .eq('id', id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (error || !data) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const sess    = data.course_sessions;
+  const course  = data.marketplace_courses;
+  const location = [course?.location_address, course?.location_city].filter(Boolean).join(', ');
+
+  const ics = buildIcs({
+    title:       `Corso: ${course?.title || 'Formazione'}`,
+    start:       sess?.start_date,
+    end:         sess?.end_date,
+    location,
+    description: `Prenotazione Palladia #${id.slice(0, 8)}`,
+    uid:         id,
+  });
+
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="corso-${id.slice(0, 8)}.ics"`);
+  res.send(ics);
 });
 
 // ── GET /api/v1/bookings/:id ──────────────────────────────────────────────────

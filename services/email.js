@@ -1133,6 +1133,125 @@ async function sendExpiryAlert(to, certs) {
   });
 }
 
+// ─── Email: Conferma prenotazione (impresa) ────────────────────────────────
+
+async function sendBookingConfirmation(to, { courseName, providerName, sessionDate, workers, totalCents, bookingIds }) {
+  const dateStr  = sessionDate ? new Date(sessionDate).toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long', year:'numeric' }) : '—';
+  const total    = (totalCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 });
+  const wList    = (workers || []).map(w => `<li style="padding:4px 0;font-size:14px;color:#374151;">${w.worker_name || w.full_name || w}</li>`).join('');
+
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      La tua prenotazione è stata confermata. Ecco il riepilogo:
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:120px;">Corso</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${courseName}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Erogatore</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${providerName}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Data</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${dateStr}</td></tr>
+      <tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;">Totale</td><td style="padding:10px 0;font-size:15px;color:#1a1a1a;font-weight:700;">€ ${total}</td></tr>
+    </table>
+    <p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#374151;">Lavoratori iscritti:</p>
+    <ul style="margin:0 0 24px;padding:0 0 0 16px;">${wList}</ul>
+    ${btn('Vedi la prenotazione', `${APP_URL}/formazione/prenotazioni?ids=${bookingIds}`)}`;
+
+  try {
+    const resend = getResend();
+    await resend.emails.send({
+      from: FROM, to,
+      subject: `✅ Prenotazione confermata — ${courseName}`,
+      html: layout('Prenotazione confermata', body),
+    });
+  } catch (e) {
+    console.error('[email] sendBookingConfirmation:', e.message);
+  }
+}
+
+// ─── Email: Nuova prenotazione (consulente) ────────────────────────────────
+
+async function sendBookingConfirmedConsultant(to, { companyName, courseName, participants, totalCents, sessionDate, bookingId }) {
+  const dateStr = sessionDate ? new Date(sessionDate).toLocaleDateString('it-IT', { day:'2-digit', month:'long', year:'numeric' }) : '—';
+  const total   = (totalCents / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 });
+  const payout  = ((totalCents * 0.85) / 100).toLocaleString('it-IT', { minimumFractionDigits: 2 });
+
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Hai ricevuto una nuova prenotazione da <strong>${companyName}</strong>.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:130px;">Corso</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${courseName}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Data sessione</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${dateStr}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Partecipanti</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${participants}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Totale incassato</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:15px;color:#1a1a1a;font-weight:700;">€ ${total}</td></tr>
+      <tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;">Tuo guadagno netto</td><td style="padding:10px 0;font-size:15px;color:#16a34a;font-weight:700;">€ ${payout}</td></tr>
+    </table>
+    ${btn('Vedi dettaglio prenotazione', `${APP_URL}/consulente/prenotazioni/${bookingId}`)}`;
+
+  try {
+    const resend = getResend();
+    await resend.emails.send({
+      from: FROM, to,
+      subject: `💼 Nuova prenotazione da ${companyName} — ${courseName}`,
+      html: layout('Nuova prenotazione ricevuta', body),
+    });
+  } catch (e) {
+    console.error('[email] sendBookingConfirmedConsultant:', e.message);
+  }
+}
+
+// ─── Email: Attestati caricati (impresa) ───────────────────────────────────
+
+async function sendCertificatesUploaded(to, { certificates_count, booking_id }) {
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Il tuo consulente ha caricato <strong>${certificates_count} nuov${certificates_count > 1 ? 'i attestati' : 'o attestato'}</strong>
+      nella tua area Formazione.
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.6;">
+      I nuovi attestati sono già visibili nel profilo di ogni lavoratore e la dashboard è stata aggiornata.
+    </p>
+    ${btn('Vedi i nuovi attestati', `${APP_URL}/formazione`)}`;
+
+  try {
+    const resend = getResend();
+    await resend.emails.send({
+      from: FROM, to,
+      subject: `🎓 Nuovi attestati caricati dal tuo consulente`,
+      html: layout('Attestati aggiornati', body),
+    });
+  } catch (e) {
+    console.error('[email] sendCertificatesUploaded:', e.message);
+  }
+}
+
+// ─── Email: Promemoria sessione (48h prima) ────────────────────────────────
+
+async function sendSessionReminder(to, { courseName, sessionDate, location, workers }) {
+  const dateStr = sessionDate ? new Date(sessionDate).toLocaleString('it-IT', { weekday:'long', day:'2-digit', month:'long', hour:'2-digit', minute:'2-digit' }) : '—';
+  const wList   = (workers || []).map(w => `<li style="padding:4px 0;font-size:14px;color:#374151;">${w}</li>`).join('');
+
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Promemoria: il corso <strong>${courseName}</strong> si svolge domani.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:100px;">Data</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${dateStr}</td></tr>
+      ${location ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;">Luogo</td><td style="padding:10px 0;font-size:14px;color:#374151;">${location}</td></tr>` : ''}
+    </table>
+    ${wList ? `<p style="margin:0 0 8px;font-size:13px;font-weight:600;color:#374151;">Lavoratori iscritti:</p><ul style="margin:0 0 24px;padding:0 0 0 16px;">${wList}</ul>` : ''}
+    ${btn('Vedi la prenotazione', `${APP_URL}/formazione/prenotazioni`)}`;
+
+  try {
+    const resend = getResend();
+    await resend.emails.send({
+      from: FROM, to,
+      subject: `⏰ Promemoria corso domani — ${courseName}`,
+      html: layout('Promemoria sessione', body),
+    });
+  } catch (e) {
+    console.error('[email] sendSessionReminder:', e.message);
+  }
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1152,4 +1271,8 @@ module.exports = {
   sendCompanyDocExpiryAlert,
   sendWorkerMissingDocsAlert,
   sendExpiryAlert,
+  sendBookingConfirmation,
+  sendBookingConfirmedConsultant,
+  sendCertificatesUploaded,
+  sendSessionReminder,
 };

@@ -16,7 +16,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { sendExpiryAlert }   = require('../../services/email');
+const { sendExpiryAlert, sendSessionReminder } = require('../../services/email');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -336,6 +336,90 @@ router.patch('/formazione/notifications/:id/read', verifySupabaseJwt, async (req
   res.json({ ok: true });
 });
 
+// ── GET /api/v1/formazione/export-csv ────────────────────────────────────────
+
+router.get('/formazione/export-csv', verifySupabaseJwt, async (req, res) => {
+  const { data: certs, error } = await supabase
+    .from('worker_certificates')
+    .select(`
+      id, issue_date, expiry_date, issuing_body, certificate_number, created_at,
+      course_types ( name, risk_level, validity_years ),
+      workers ( full_name, fiscal_code )
+    `)
+    .eq('company_id', req.companyId)
+    .order('expiry_date', { ascending: true });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const rows = (certs || []).map(c => {
+    const status = certStatus(c.expiry_date);
+    return [
+      `"${c.workers?.full_name || ''}"`,
+      `"${c.workers?.fiscal_code || ''}"`,
+      `"${c.course_types?.name || ''}"`,
+      `"${c.course_types?.risk_level || ''}"`,
+      `"${c.issue_date || ''}"`,
+      `"${c.expiry_date || ''}"`,
+      `"${c.issuing_body || ''}"`,
+      `"${c.certificate_number || ''}"`,
+      `"${status}"`,
+      `"${daysLeft(c.expiry_date)}"`,
+    ].join(',');
+  });
+
+  const header = ['Lavoratore','Codice Fiscale','Tipo Corso','Rischio','Data Rilascio','Data Scadenza','Ente Erogatore','N. Attestato','Stato','Giorni Rimanenti'].join(',');
+  const csv = '﻿' + header + '\n' + rows.join('\n');
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="formazione-${new Date().toISOString().slice(0,10)}.csv"`);
+  res.send(csv);
+});
+
+// ── GET /api/v1/formazione/coverage ──────────────────────────────────────────
+
+router.get('/formazione/coverage', verifySupabaseJwt, async (req, res) => {
+  const { data: workers } = await supabase
+    .from('workers')
+    .select('id')
+    .eq('company_id', req.companyId)
+    .eq('is_active', true);
+
+  const total = (workers || []).length;
+  if (total === 0) return res.json({ coverage_pct: 100, workers_ok: 0, workers_issues: 0, total });
+
+  const workerIds = workers.map(w => w.id);
+
+  const { data: certs } = await supabase
+    .from('worker_certificates')
+    .select('worker_id, expiry_date')
+    .eq('company_id', req.companyId)
+    .in('worker_id', workerIds);
+
+  // Un lavoratore è "ok" se ha almeno un attestato valido (non scaduto)
+  const workerStatus = {};
+  for (const c of certs || []) {
+    const ok = certStatus(c.expiry_date) === 'valido';
+    if (!workerStatus[c.worker_id]) workerStatus[c.worker_id] = { has_cert: true, all_ok: ok };
+    else if (!ok) workerStatus[c.worker_id].all_ok = false;
+  }
+
+  let workersOk     = 0;
+  let workersIssues = 0;
+
+  for (const w of workers) {
+    const ws = workerStatus[w.id];
+    if (!ws || !ws.has_cert || !ws.all_ok) workersIssues++;
+    else workersOk++;
+  }
+
+  res.json({
+    coverage_pct:   Math.round((workersOk / total) * 100),
+    workers_ok:     workersOk,
+    workers_issues: workersIssues,
+    total,
+  });
+});
+
 // ── POST /api/v1/notifications/check-expiries (cron) ─────────────────────────
 // Chiamato ogni giorno alle 08:00 da un cron job Railway.
 // Autenticazione via header X-Cron-Secret.
@@ -426,6 +510,98 @@ router.post('/notifications/check-expiries', async (req, res) => {
     } catch (e) {
       console.error('[check-expiries] email error:', e.message);
     }
+  }
+
+  // ── Notifica consulenti collegati con clienti in scadenza ────────────────────
+  // Per ogni impresa con scadenze, controlla se ha un consulente collegato
+  // e invia notifica in-app al consulente (email separata — solo se ha corso disponibile)
+  try {
+    const companyIdsWithExpiry = [...new Set((certs || []).map(c => c.company_id))];
+
+    if (companyIdsWithExpiry.length > 0) {
+      const { data: consultantLinks } = await supabase
+        .from('consultant_clients')
+        .select('consultant_id, company_id, companies(name)')
+        .in('company_id', companyIdsWithExpiry)
+        .eq('status', 'active');
+
+      // Raggruppa per consulente
+      const byConsultant = {};
+      for (const link of consultantLinks || []) {
+        if (!byConsultant[link.consultant_id]) byConsultant[link.consultant_id] = [];
+        byConsultant[link.consultant_id].push(link);
+      }
+
+      for (const [consultantId, links] of Object.entries(byConsultant)) {
+        // Crea notifica in-app per il consulente
+        for (const link of links) {
+          const count = (certs || []).filter(c => c.company_id === link.company_id).length;
+          if (count > 0) {
+            await supabase.from('expiry_notifications').insert({
+              certificate_id:    (certs || []).find(c => c.company_id === link.company_id)?.id,
+              worker_id:         (certs || []).find(c => c.company_id === link.company_id)?.worker_id,
+              company_id:        link.company_id,
+              notification_type: '30_days',
+            }).catch(() => null);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[check-expiries] consultant notify error:', e.message);
+  }
+
+  // ── Promemoria sessioni nelle prossime 48h ────────────────────────────────
+  try {
+    const in48h = new Date(); in48h.setHours(in48h.getHours() + 48);
+    const now   = new Date();
+
+    const { data: upcomingSessions } = await supabase
+      .from('course_sessions')
+      .select(`
+        id, start_date, end_date, location_override,
+        marketplace_courses ( title, location_city, location_address )
+      `)
+      .gte('start_date', now.toISOString())
+      .lte('start_date', in48h.toISOString())
+      .eq('is_cancelled', false);
+
+    for (const sess of upcomingSessions || []) {
+      // Trova prenotazioni per questa sessione
+      const { data: bookings } = await supabase
+        .from('course_bookings')
+        .select('company_id, workers_data, workers(full_name)')
+        .eq('session_id', sess.id)
+        .in('status', ['confirmed','pending'])
+        .eq('payment_status', 'paid');
+
+      for (const b of bookings || []) {
+        const { data: cu } = await supabase
+          .from('company_users')
+          .select('user_id')
+          .eq('company_id', b.company_id)
+          .eq('role', 'owner')
+          .limit(1)
+          .maybeSingle();
+
+        if (!cu) continue;
+        const { data: authUser } = await supabase.auth.admin.getUserById(cu.user_id).catch(() => ({ data: null }));
+        const email = authUser?.user?.email;
+        if (!email) continue;
+
+        const workers = b.workers_data?.map(w => w.worker_name) || [b.workers?.full_name].filter(Boolean);
+        const location = sess.location_override || [sess.marketplace_courses?.location_address, sess.marketplace_courses?.location_city].filter(Boolean).join(', ');
+
+        await sendSessionReminder(email, {
+          courseName:  sess.marketplace_courses?.title || 'Corso di formazione',
+          sessionDate: sess.start_date,
+          location,
+          workers,
+        });
+      }
+    }
+  } catch (e) {
+    console.error('[check-expiries] session reminder error:', e.message);
   }
 
   console.log(`[check-expiries] notifiche create: ${sent}`);
