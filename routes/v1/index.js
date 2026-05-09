@@ -56,6 +56,17 @@ router.use('/', require('./badgePunch'));
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
+// Consulente RSPP: profilo, clienti, corsi, dashboard, payouts, Stripe Connect, preventivi
+// NOTA: verifyConsultantJwt NON usa X-Company-Id — montato PRIMA dei router con
+//       router.use(verifySupabaseJwt) globale per evitare 400 MISSING_X-COMPANY-ID
+router.use('/', require('./consultantProfile'));
+router.use('/', require('./consultantCourses'));
+router.use('/', require('./consultantBookings'));
+router.use('/', require('./consultantConnect'));
+
+// Preventivi corsi in cantiere (impresa + consulente, middleware per-route)
+router.use('/', require('./courseQuotes'));
+
 // Documenti aziendali: libreria centralizzata (JWT)
 router.use('/', require('./companyDocuments'));
 
@@ -117,16 +128,6 @@ router.use('/', require('./marketplace'));
 
 // Prenotazioni corsi + Stripe Checkout
 router.use('/', require('./bookings'));
-
-// Consulente RSPP: profilo, clienti, corsi, dashboard, payouts, Stripe Connect, preventivi
-// NOTA: verifyConsultantJwt non usa X-Company-Id → endpoint separati da quelli impresa
-router.use('/', require('./consultantProfile'));
-router.use('/', require('./consultantCourses'));
-router.use('/', require('./consultantBookings'));
-router.use('/', require('./consultantConnect'));
-
-// Preventivi corsi in cantiere (impresa + consulente)
-router.use('/', require('./courseQuotes'));
 
 // Admin Formazione (super_admin only)
 router.use('/', require('./formazioneAdmin'));
