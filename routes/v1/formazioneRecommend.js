@@ -23,11 +23,10 @@ router.get('/formazione/recommended-courses', verifySupabaseJwt, async (req, res
   // 1. Attestati in scadenza nei prossimi 90 giorni per questa impresa
   const { data: expiring, error: eErr } = await supabase
     .from('worker_certificates')
-    .select('worker_id, course_type_id, expiry_date, workers(full_name)')
+    .select('worker_id, course_type_id, expiry_date')
     .eq('company_id', companyId)
     .lte('expiry_date', in90.toISOString().slice(0, 10))
-    .gte('expiry_date', new Date().toISOString().slice(0, 10))
-    .eq('workers.is_active', true);
+    .gte('expiry_date', new Date().toISOString().slice(0, 10));
 
   if (eErr) return res.status(500).json({ error: 'DB_ERROR', detail: eErr.message });
 
