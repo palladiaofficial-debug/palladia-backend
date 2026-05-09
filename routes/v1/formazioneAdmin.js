@@ -16,6 +16,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { sendProviderApprovedEmail } = require('../../services/email');
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────
 
@@ -102,6 +103,34 @@ router.put('/admin/providers/:id', async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
   if (!data)  return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ provider: data });
+});
+
+// ── PATCH /api/v1/admin/providers/:id/approve ─────────────────────────────────
+
+router.patch('/admin/providers/:id/approve', async (req, res) => {
+  const { id } = req.params;
+
+  const { data: provider, error: fetchErr } = await supabase
+    .from('training_providers')
+    .select('id, name, email, is_active')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (fetchErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!provider) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (provider.is_active) return res.status(400).json({ error: 'ALREADY_ACTIVE', message: 'Provider già attivo' });
+
+  const { error: updateErr } = await supabase
+    .from('training_providers')
+    .update({ is_active: true })
+    .eq('id', id);
+
+  if (updateErr) return res.status(500).json({ error: 'DB_ERROR', detail: updateErr.message });
+
+  await sendProviderApprovedEmail({ to: provider.email, providerName: provider.name });
+
+  console.log(`[admin] provider ${id} (${provider.name}) approvato`);
+  res.json({ ok: true });
 });
 
 // ── POST /api/v1/admin/providers/:id/courses ──────────────────────────────────

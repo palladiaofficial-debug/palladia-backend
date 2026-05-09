@@ -14,9 +14,69 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { sendProviderApplicationAlert } = require('../../services/email');
 
 // course-types è pubblico (usato anche in form add-certificate senza marketplace)
 // I marketplace endpoint richiedono JWT per associare i lavoratori dell'impresa
+
+// ── GET /api/v1/public/courses/:slug ─────────────────────────────────────────
+// Endpoint PUBBLICO (no JWT) — per landing page SEO indicizzabili da Google.
+
+router.get('/public/courses/:slug', async (req, res) => {
+  const { slug } = req.params;
+
+  const { data: course, error } = await supabase
+    .from('marketplace_courses')
+    .select(`
+      id, slug, title, description, price_cents, delivery_mode, location_city,
+      location_address, duration_hours, max_participants, includes_exam,
+      certificate_issued_days, language, issuing_body_name,
+      training_providers ( id, name, location_city, location_province, website, rating, total_reviews ),
+      course_types ( id, name, legal_reference, validity_years, risk_level )
+    `)
+    .eq('slug', slug)
+    .eq('is_active', true)
+    .eq('is_draft', false)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!course) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { data: sessions } = await supabase
+    .from('course_sessions')
+    .select('id, start_date, end_date, available_spots, booked_spots')
+    .eq('course_id', course.id)
+    .eq('is_cancelled', false)
+    .gt('start_date', new Date().toISOString())
+    .order('start_date', { ascending: true })
+    .limit(5);
+
+  const { data: reviews } = await supabase
+    .from('course_reviews')
+    .select('rating, comment, created_at')
+    .eq('course_id', course.id)
+    .eq('is_public', true)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  const rawReviews = reviews || [];
+  const avgRating  = rawReviews.length
+    ? Math.round(rawReviews.reduce((s, r) => s + r.rating, 0) / rawReviews.length * 10) / 10
+    : null;
+
+  res.json({
+    course: {
+      ...course,
+      sessions: (sessions || []).map(s => ({
+        ...s,
+        spots_left: s.available_spots - (s.booked_spots || 0),
+      })),
+      reviews,
+      avg_rating:    avgRating,
+      total_reviews: rawReviews.length,
+    },
+  });
+});
 
 // ── GET /api/v1/course-types ──────────────────────────────────────────────────
 
@@ -35,6 +95,7 @@ router.get('/course-types', verifySupabaseJwt, async (req, res) => {
 
 router.get('/marketplace/courses', verifySupabaseJwt, async (req, res) => {
   const {
+    q,
     course_type_id,
     delivery_mode,
     city,
@@ -76,6 +137,7 @@ router.get('/marketplace/courses', verifySupabaseJwt, async (req, res) => {
     .eq('is_active', true)
     .eq('is_draft', false);
 
+  if (q)                    query = query.textSearch('search_vector', q.trim(), { type: 'websearch', config: 'italian' });
   if (course_type_id)       query = query.eq('course_type_id', course_type_id);
   if (delivery_mode)        query = query.eq('delivery_mode', delivery_mode);
   if (city)                 query = query.ilike('location_city', `%${city}%`);
@@ -205,13 +267,22 @@ router.get('/marketplace/courses/:id', verifySupabaseJwt, async (req, res) => {
     .order('start_date', { ascending: true })
     .limit(10);
 
-  // Reviews
-  const { data: reviews } = await supabase
-    .from('provider_reviews')
+  // Reviews dalla nuova tabella course_reviews
+  let reviewQuery = supabase
+    .from('course_reviews')
     .select('id, rating, comment, created_at')
-    .eq('provider_id', course.provider_id)
+    .eq('course_id', id)
+    .eq('is_public', true)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(20);
+
+  const { data: reviews } = await reviewQuery;
+
+  // Rating aggregato (calcolato lato client ma ritorno anche la media pre-calcolata)
+  const rawReviews = reviews || [];
+  const avgRating = rawReviews.length
+    ? Math.round(rawReviews.reduce((s, r) => s + r.rating, 0) / rawReviews.length * 10) / 10
+    : null;
 
   res.json({
     course: {
@@ -220,7 +291,9 @@ router.get('/marketplace/courses/:id', verifySupabaseJwt, async (req, res) => {
         ...s,
         spots_left: s.available_spots - (s.booked_spots || 0),
       })),
-      reviews: reviews || [],
+      reviews:         rawReviews,
+      avg_rating:      avgRating,
+      total_reviews:   rawReviews.length,
     },
   });
 });
@@ -304,19 +377,97 @@ router.get('/marketplace/consultant/:consultantId', verifySupabaseJwt, async (re
     .eq('is_draft', false)
     .order('total_bookings', { ascending: false });
 
-  // Controlla se l'impresa richiedente è già cliente del consulente
-  const { data: rel } = await supabase
-    .from('consultant_clients')
-    .select('id, status')
-    .eq('consultant_id', consultantId)
-    .eq('company_id', req.companyId)
-    .maybeSingle();
+  // course_reviews.consultant_id è consultant_profiles.id (PK), non user_id
+  // Lo ricaviamo dal profilo già caricato se presente, altrimenti query separata
+  const [relRes, profileIdRes] = await Promise.all([
+    supabase
+      .from('consultant_clients')
+      .select('id, status')
+      .eq('consultant_id', consultantId)
+      .eq('company_id', req.companyId)
+      .maybeSingle(),
+    supabase
+      .from('consultant_profiles')
+      .select('id')
+      .eq('user_id', consultantId)
+      .maybeSingle(),
+  ]);
+
+  let reviewsData = [];
+  if (profileIdRes.data?.id) {
+    const { data: rv } = await supabase
+      .from('course_reviews')
+      .select('id, rating, comment, created_at')
+      .eq('consultant_id', profileIdRes.data.id)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false })
+      .limit(20);
+    reviewsData = rv || [];
+  }
 
   res.json({
-    consultant: profile,
-    courses:    courses || [],
-    relationship: rel ? { id: rel.id, status: rel.status } : null,
+    consultant:   profile,
+    courses:      courses || [],
+    reviews:      reviewsData,
+    relationship: relRes.data ? { id: relRes.data.id, status: relRes.data.status } : null,
   });
+});
+
+// ── POST /api/v1/marketplace/providers/register ───────────────────────────────
+// Endpoint PUBBLICO — no JWT. L'ente si candida; parte in stato is_active=false.
+
+router.post('/marketplace/providers/register', async (req, res) => {
+  const {
+    name, email, phone, location_city, location_province, address,
+    website, description, accreditation_code, accreditation_region,
+    notes,
+  } = req.body || {};
+
+  if (!name || !email || !location_city || !location_province) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'name, email, location_city, location_province obbligatori' });
+  }
+
+  const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRx.test(email)) {
+    return res.status(400).json({ error: 'INVALID_EMAIL' });
+  }
+
+  const { data, error } = await supabase
+    .from('training_providers')
+    .insert({
+      name:                 name.trim(),
+      email:                email.trim().toLowerCase(),
+      phone:                phone?.trim() || null,
+      location_city:        location_city.trim(),
+      location_province:    location_province.trim(),
+      address:              address?.trim() || null,
+      website:              website?.trim() || null,
+      description:          description?.trim() || null,
+      accreditation_code:   accreditation_code?.trim() || null,
+      accreditation_region: accreditation_region?.trim() || null,
+      application_notes:    notes?.trim() || null,
+      applied_at:           new Date().toISOString(),
+      is_active:            false,   // attivato dall'admin dopo revisione
+      commission_rate:      15,
+    })
+    .select('id')
+    .single();
+
+  if (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'EMAIL_ALREADY_REGISTERED', message: 'Email già registrata' });
+    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  }
+
+  // Notifica admin
+  const adminEmails = (process.env.SUPER_ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
+  for (const adminEmail of adminEmails) {
+    await sendProviderApplicationAlert({
+      adminEmail, providerName: name, city: location_city, province: location_province,
+      email, phone, accreditationCode: accreditation_code, notes,
+    });
+  }
+
+  res.status(201).json({ ok: true, provider_id: data.id, message: 'Candidatura inviata — ti contatteremo entro 48 ore' });
 });
 
 module.exports = router;

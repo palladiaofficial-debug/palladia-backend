@@ -112,6 +112,14 @@ router.get('/consultant/dashboard', async (req, res) => {
     }
   }
 
+  const consultant = req.consultant;
+  const connectStatus = {
+    configured:                 !!consultant.stripe_account_id,
+    onboarding_complete:        consultant.stripe_onboarding_complete || false,
+    charges_enabled:            consultant.stripe_charges_enabled || false,
+    needs_setup:                !consultant.stripe_charges_enabled,
+  };
+
   res.json({
     kpi: {
       monthly_revenue_cents:  monthlyRevenue,
@@ -122,6 +130,7 @@ router.get('/consultant/dashboard', async (req, res) => {
     recent_bookings:  recentBookings,
     expiry_alerts:    expiryAlerts,
     active_clients:   clients.length,
+    connect_status:   connectStatus,
   });
 });
 

@@ -301,6 +301,102 @@ router.get('/bookings/:id', async (req, res) => {
   res.json({ booking: data });
 });
 
+// ── POST /api/v1/bookings/:id/review ─────────────────────────────────────────
+
+router.post('/bookings/:id/review', async (req, res) => {
+  const { id } = req.params;
+  const { rating, comment } = req.body || {};
+
+  if (!rating || rating < 1 || rating > 5) {
+    return res.status(400).json({ error: 'INVALID_RATING', message: 'rating deve essere tra 1 e 5' });
+  }
+
+  const { data: booking, error: bErr } = await supabase
+    .from('course_bookings')
+    .select('id, status, course_id, consultant_id, company_id, marketplace_courses(provider_id)')
+    .eq('id', id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (bErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!booking) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (booking.status !== 'completed') {
+    return res.status(400).json({ error: 'BOOKING_NOT_COMPLETED', message: 'Puoi recensire solo corsi completati' });
+  }
+
+  // Se corso consulente: risolvi user_id → consultant_profiles.id (FK)
+  let consultantProfileId = null;
+  if (booking.consultant_id) {
+    const { data: cp } = await supabase
+      .from('consultant_profiles')
+      .select('id')
+      .eq('user_id', booking.consultant_id)
+      .maybeSingle();
+    consultantProfileId = cp?.id || null;
+  }
+
+  const reviewRow = {
+    booking_id:    id,
+    course_id:     booking.course_id,
+    company_id:    req.companyId,
+    consultant_id: consultantProfileId,
+    provider_id:   booking.marketplace_courses?.provider_id || null,
+    rating:        parseInt(rating, 10),
+    comment:       comment?.trim() || null,
+  };
+
+  const { data: review, error: rErr } = await supabase
+    .from('course_reviews')
+    .insert(reviewRow)
+    .select('id')
+    .maybeSingle();
+
+  if (rErr) {
+    if (rErr.code === '23505') return res.status(409).json({ error: 'ALREADY_REVIEWED' });
+    return res.status(500).json({ error: 'DB_ERROR', detail: rErr.message });
+  }
+
+  // Aggiorna avg_rating sul consulente o sull'ente
+  if (booking.consultant_id) {
+    // Prima recupera consultant_profiles.id dal user_id
+    const { data: profile } = await supabase
+      .from('consultant_profiles')
+      .select('id')
+      .eq('user_id', booking.consultant_id)
+      .maybeSingle();
+
+    if (profile?.id) {
+      const { data: stats } = await supabase
+        .from('course_reviews')
+        .select('rating')
+        .eq('consultant_id', profile.id);
+
+      if (stats?.length) {
+        const avg = stats.reduce((s, r) => s + r.rating, 0) / stats.length;
+        await supabase
+          .from('consultant_profiles')
+          .update({ avg_rating: Math.round(avg * 10) / 10, total_reviews: stats.length })
+          .eq('id', profile.id);
+      }
+    }
+  } else if (booking.marketplace_courses?.provider_id) {
+    const { data: stats } = await supabase
+      .from('course_reviews')
+      .select('rating')
+      .eq('provider_id', booking.marketplace_courses.provider_id);
+
+    if (stats?.length) {
+      const avg = stats.reduce((s, r) => s + r.rating, 0) / stats.length;
+      await supabase
+        .from('training_providers')
+        .update({ rating: Math.round(avg * 10) / 10, total_reviews: stats.length })
+        .eq('id', booking.marketplace_courses.provider_id);
+    }
+  }
+
+  res.status(201).json({ review_id: review.id });
+});
+
 // ── POST /api/v1/bookings/:id/cancel ─────────────────────────────────────────
 
 router.post('/bookings/:id/cancel', async (req, res) => {

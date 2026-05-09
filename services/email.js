@@ -1252,6 +1252,100 @@ async function sendSessionReminder(to, { courseName, sessionDate, location, work
   }
 }
 
+async function sendQuoteRequestConsultant({ to, consultantName, companyName, courseName, participants, address, preferredDates, notes, quoteUrl }) {
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Ciao ${consultantName}, <strong>${companyName}</strong> ha richiesto un preventivo per il corso <strong>${courseName}</strong>.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:130px;">Partecipanti</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${participants}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Cantiere</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${address}</td></tr>
+      ${preferredDates ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Date preferite</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${preferredDates}</td></tr>` : ''}
+      ${notes ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Note</td><td style="padding:10px 0;font-size:14px;color:#374151;">${notes}</td></tr>` : ''}
+    </table>
+    ${btn('Rispondi al preventivo', quoteUrl)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: `📋 Richiesta preventivo — ${courseName} (${participants} partecipanti)`,
+      html: layout('Richiesta preventivo in cantiere', body),
+    });
+  } catch (e) {
+    console.error('[email] sendQuoteRequestConsultant:', e.message);
+  }
+}
+
+async function sendQuoteReceivedCompany({ to, companyName, consultantName, courseName, quotedPriceCents, quotedMessage, acceptUrl }) {
+  const price = `€${(quotedPriceCents / 100).toFixed(2)}`;
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      ${consultantName} ha risposto alla tua richiesta di preventivo per <strong>${courseName}</strong>.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:130px;">Totale preventivo</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:20px;color:#1a1a1a;font-weight:700;">${price}</td></tr>
+      ${quotedMessage ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Messaggio</td><td style="padding:10px 0;font-size:14px;color:#374151;">${quotedMessage}</td></tr>` : ''}
+    </table>
+    ${btn('Accetta e procedi al pagamento', acceptUrl)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: `💰 Preventivo ricevuto — ${courseName} (${price})`,
+      html: layout('Preventivo ricevuto', body),
+    });
+  } catch (e) {
+    console.error('[email] sendQuoteReceivedCompany:', e.message);
+  }
+}
+
+async function sendProviderApplicationAlert({ adminEmail, providerName, city, province, email, phone, accreditationCode, notes }) {
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Un nuovo ente ha richiesto di entrare nel marketplace Palladia.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:140px;">Ente</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${providerName}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Città</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${city}${province ? ', ' + province : ''}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Email</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${email}</td></tr>
+      ${phone ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Telefono</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${phone}</td></tr>` : ''}
+      ${accreditationCode ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Accreditamento</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${accreditationCode}</td></tr>` : ''}
+      ${notes ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Note</td><td style="padding:10px 0;font-size:14px;color:#374151;">${notes}</td></tr>` : ''}
+    </table>
+    ${btn('Approva nella dashboard admin', `${APP_URL}/admin/formazione/providers`)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to: adminEmail,
+      subject: `📋 Nuova candidatura ente — ${providerName}`,
+      html: layout('Nuova candidatura ente formatore', body),
+    });
+  } catch (e) {
+    console.error('[email] sendProviderApplicationAlert:', e.message);
+  }
+}
+
+async function sendProviderApprovedEmail({ to, providerName }) {
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Ottima notizia! Il profilo di <strong>${providerName}</strong> è stato approvato e i tuoi corsi sono ora visibili nel marketplace Palladia.
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;">
+      Puoi aggiungere e gestire i tuoi corsi direttamente dalla dashboard.
+    </p>
+    ${btn('Accedi al marketplace', `${APP_URL}/formazione/marketplace`)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: 'Profilo approvato — Benvenuto nel marketplace Palladia!',
+      html: layout('Profilo approvato', body),
+    });
+  } catch (e) {
+    console.error('[email] sendProviderApprovedEmail:', e.message);
+  }
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1275,4 +1369,8 @@ module.exports = {
   sendBookingConfirmedConsultant,
   sendCertificatesUploaded,
   sendSessionReminder,
+  sendProviderApplicationAlert,
+  sendProviderApprovedEmail,
+  sendQuoteRequestConsultant,
+  sendQuoteReceivedCompany,
 };

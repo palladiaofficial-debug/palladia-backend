@@ -164,18 +164,98 @@ app.post('/api/webhooks/stripe',
 
     try {
       if (event.type === 'checkout.session.completed') {
-        const session   = event.data.object;
-        const companyId = session.client_reference_id || session.metadata?.company_id;
-        const plan      = session.metadata?.plan || 'starter';
-        if (companyId) {
-          await supabaseW.from('companies').update({
-            stripe_customer_id:     session.customer,
-            stripe_subscription_id: session.subscription,
-            subscription_status:    'active',
-            subscription_plan:      plan,
-          }).eq('id', companyId);
-          console.log(`[stripe-webhook] company ${companyId} attivata — piano ${plan}`);
+        const session = event.data.object;
+
+        // BILLING — presenza di metadata.plan indica abbonamento piattaforma
+        if (session.metadata?.plan) {
+          const companyId = session.client_reference_id || session.metadata?.company_id;
+          const plan      = session.metadata.plan;
+          if (companyId) {
+            await supabaseW.from('companies').update({
+              stripe_customer_id:     session.customer,
+              stripe_subscription_id: session.subscription,
+              subscription_status:    'active',
+              subscription_plan:      plan,
+            }).eq('id', companyId);
+            console.log(`[stripe-webhook] company ${companyId} attivata — piano ${plan}`);
+          }
         }
+
+        // FORMAZIONE — presenza di metadata.booking_ids indica prenotazione corso
+        if (session.metadata?.booking_ids) {
+          const bookingIds = session.metadata.booking_ids.split(',').filter(Boolean);
+          if (bookingIds.length > 0) {
+            await supabaseW
+              .from('course_bookings')
+              .update({ payment_status: 'paid', status: 'confirmed' })
+              .in('id', bookingIds);
+            console.log(`[stripe-webhook] ${bookingIds.length} prenotazioni corso confermate`);
+
+            // Stripe Connect transfer → consulente (se ha account configurato)
+            const { data: consultantBookings } = await supabaseW
+              .from('course_bookings')
+              .select('id, consultant_id, total_price_cents, consultant_payout_cents')
+              .in('id', bookingIds)
+              .not('consultant_id', 'is', null);
+
+            for (const booking of (consultantBookings || [])) {
+              if (!booking.consultant_payout_cents || booking.consultant_payout_cents <= 0) continue;
+
+              const { data: profile } = await supabaseW
+                .from('consultant_profiles')
+                .select('id, stripe_account_id, stripe_charges_enabled')
+                .eq('id', booking.consultant_id)
+                .maybeSingle();
+
+              if (!profile?.stripe_account_id || !profile?.stripe_charges_enabled) {
+                console.warn(`[stripe-webhook] consulente ${booking.consultant_id} senza Connect configurato — payout in sospeso`);
+                continue;
+              }
+
+              try {
+                const { getStripe } = require('./services/stripe');
+                const transfer = await getStripe().transfers.create({
+                  amount:      booking.consultant_payout_cents,
+                  currency:    'eur',
+                  destination: profile.stripe_account_id,
+                  description: `Palladia payout #${booking.id.slice(0, 8)}`,
+                  metadata:    { booking_id: booking.id, consultant_id: booking.consultant_id },
+                });
+
+                const commissionCents = (booking.total_price_cents || 0) - booking.consultant_payout_cents;
+                await supabaseW.from('consultant_payouts').insert({
+                  consultant_id:      booking.consultant_id,
+                  period_start:       new Date().toISOString(),
+                  period_end:         new Date().toISOString(),
+                  total_bookings:     1,
+                  gross_amount_cents: booking.total_price_cents || booking.consultant_payout_cents,
+                  commission_cents:   commissionCents,
+                  net_amount_cents:   booking.consultant_payout_cents,
+                  status:             'paid',
+                  stripe_transfer_id: transfer.id,
+                });
+
+                console.log(`[stripe-webhook] transfer ${transfer.id} → consulente ${booking.consultant_id} (€${(booking.consultant_payout_cents / 100).toFixed(2)})`);
+              } catch (tErr) {
+                console.error(`[stripe-webhook] transfer fallito booking ${booking.id}:`, tErr.message);
+              }
+            }
+          }
+        }
+      }
+
+      // Stripe Connect — aggiorna stato onboarding consulente
+      if (event.type === 'account.updated') {
+        const account = event.data.object;
+        const { error: acErr } = await supabaseW
+          .from('consultant_profiles')
+          .update({
+            stripe_onboarding_complete: account.details_submitted,
+            stripe_charges_enabled:     account.charges_enabled,
+            stripe_payouts_enabled:     account.payouts_enabled,
+          })
+          .eq('stripe_account_id', account.id);
+        if (!acErr) console.log(`[stripe-webhook] Connect account ${account.id} aggiornato`);
       }
 
       if (event.type === 'customer.subscription.updated') {

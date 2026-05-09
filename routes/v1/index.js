@@ -106,6 +106,9 @@ router.use('/', require('./prezzario'));
 // Modulo Formazione: attestati, notifiche scadenze, cron check
 router.use('/', require('./certificates'));
 
+// Formazione: raccomandazioni corsi intelligenti (scadenze → corsi disponibili)
+router.use('/', require('./formazioneRecommend'));
+
 // Formazione: OCR upload attestati (richiede multer — DEVE stare prima di altri middleware body)
 router.use('/', require('./certificateOcr'));
 
@@ -115,11 +118,15 @@ router.use('/', require('./marketplace'));
 // Prenotazioni corsi + Stripe Checkout
 router.use('/', require('./bookings'));
 
-// Consulente RSPP: profilo, clienti, corsi, dashboard, payouts
+// Consulente RSPP: profilo, clienti, corsi, dashboard, payouts, Stripe Connect, preventivi
 // NOTA: verifyConsultantJwt non usa X-Company-Id → endpoint separati da quelli impresa
 router.use('/', require('./consultantProfile'));
 router.use('/', require('./consultantCourses'));
 router.use('/', require('./consultantBookings'));
+router.use('/', require('./consultantConnect'));
+
+// Preventivi corsi in cantiere (impresa + consulente)
+router.use('/', require('./courseQuotes'));
 
 // Admin Formazione (super_admin only)
 router.use('/', require('./formazioneAdmin'));
