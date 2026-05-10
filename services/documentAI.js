@@ -52,6 +52,7 @@ Analizza il documento e restituisci SOLO un oggetto JSON valido con questa strut
   "expiry_date": "<YYYY-MM-DD oppure null solo se impossibile determinare>",
   "renewal_years": <numero intero anni tra un rinnovo e l'altro, null se non applicabile>,
   "issued_to": "<nome e cognome del lavoratore a cui è intestato, null se non leggibile>",
+  "fiscal_code": "<codice fiscale italiano 16 caratteri alfanumerici, null se non presente>",
   "issued_by": "<medico, ente di formazione o soggetto emittente, null se non leggibile>",
   "issues": ["<eventuale problema: scaduto, firma mancante, nominativo illeggibile, ecc.>"],
   "validity_ok": <true se il documento sembra valido e completo, false se ci sono problemi>
@@ -226,11 +227,13 @@ async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) 
 async function analyzeDocumentBuffer(fileBuffer, mimeType) {
   const raw = await analyzeDocument(fileBuffer, mimeType, WORKER_DOC_PROMPT);
   if (!raw) return null;
+  const rawCf = String(raw.fiscal_code || '').toUpperCase().replace(/\s/g, '');
   return {
     doc_type:      raw.doc_type_detected || 'altro',
     expiry_date:   normalizeDate(raw.expiry_date),
     renewal_years: Number.isInteger(raw.renewal_years) ? raw.renewal_years : null,
     issued_to:     (String(raw.issued_to  || '')).trim().slice(0, 200) || null,
+    fiscal_code:   /^[A-Z0-9]{16}$/.test(rawCf) ? rawCf : null,
     issued_by:     (String(raw.issued_by  || '')).trim().slice(0, 200) || null,
     summary:       (String(raw.summary    || '')).slice(0, 800)        || null,
     issues:        Array.isArray(raw.issues)

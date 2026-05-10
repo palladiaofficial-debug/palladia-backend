@@ -293,19 +293,20 @@ router.post('/split-import/analyze',
           : `${typeLabel} ${yr}`;
 
         results[idx] = {
-          temp_path:            tempPath,
-          page_start:           doc.page_start,
-          page_end:             doc.page_end,
-          page_count:           doc.page_end - doc.page_start + 1,
-          doc_type:             docType,
-          doc_name:             docName,
-          expiry_date:          expiryDate || '',
-          summary:              analysis?.summary || null,
-          worker_name_detected: workerName,
-          worker_matches:       workerMatches,
-          confidence:           doc.confidence,
-          issues:               analysis?.issues || [],
-          validity_ok:          analysis?.validity_ok ?? null,
+          temp_path:             tempPath,
+          page_start:            doc.page_start,
+          page_end:              doc.page_end,
+          page_count:            doc.page_end - doc.page_start + 1,
+          doc_type:              docType,
+          doc_name:              docName,
+          expiry_date:           expiryDate || '',
+          summary:               analysis?.summary || null,
+          worker_name_detected:  workerName,
+          fiscal_code_detected:  analysis?.fiscal_code || null,
+          worker_matches:        workerMatches,
+          confidence:            doc.confidence,
+          issues:                analysis?.issues || [],
+          validity_ok:           analysis?.validity_ok ?? null,
         };
       }
     };
