@@ -123,6 +123,9 @@ router.use('/', require('./formazioneRecommend'));
 // Formazione: OCR upload attestati (richiede multer — DEVE stare prima di altri middleware body)
 router.use('/', require('./certificateOcr'));
 
+// Split import: PDF composito → più documenti × più lavoratori
+router.use('/', require('./splitImport'));
+
 // Marketplace corsi di formazione (provider + consulenti)
 router.use('/', require('./marketplace'));
 
