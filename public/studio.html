@@ -790,8 +790,9 @@ async function init() {
   const acceptToken = extractAcceptToken();
 
   sb.auth.onAuthStateChange(async (event, session) => {
-    if (event === 'SIGNED_IN' && session) {
+    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
       _session = session;
+      if (event === 'TOKEN_REFRESHED') return; // solo aggiorna token, non ricarica
       if (acceptToken) { showAcceptView(acceptToken); return; }
       await checkStudio(session);
     }
@@ -811,9 +812,8 @@ async function init() {
     const hash = window.location.hash;
     if (!hash || !hash.includes('access_token')) {
       if (acceptToken) {
-        // Mostra auth prima di accept
         showView('view-auth');
-        document.getElementById('auth-subtitle').textContent = 'Accedi per accettare l\'invito dello studio consulente.';
+        document.querySelector('.auth-subtitle').textContent = 'Accedi per accettare l\'invito dello studio consulente.';
       } else {
         showView('view-auth');
       }

@@ -107,6 +107,18 @@ router.post('/studio/clients/invite', verifyStudioJwt, async (req, res) => {
 
   if (!company) return res.status(404).json({ error: 'Azienda non trovata' });
 
+  // Se relazione già attiva, non degradarla a 'pending'
+  const { data: existing } = await supabase
+    .from('studio_clients')
+    .select('id, status')
+    .eq('studio_id', req.studioId)
+    .eq('company_id', company_id)
+    .maybeSingle();
+
+  if (existing?.status === 'active') {
+    return res.status(409).json({ error: 'ALREADY_ACTIVE', message: 'Questa azienda è già un cliente attivo del tuo studio.' });
+  }
+
   const invite_token = crypto.randomBytes(24).toString('hex');
 
   const { data, error } = await supabase
