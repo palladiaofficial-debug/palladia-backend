@@ -243,4 +243,17 @@ async function analyzeDocumentBuffer(fileBuffer, mimeType) {
   };
 }
 
-module.exports = { analyzeCompanyDoc, analyzeWorkerDoc, analyzeDocumentBuffer };
+// ── Analisi generica per documenti subappaltatori ─────────────────────────────
+// Usa COMPANY_DOC_PROMPT (DURC, polizza, SOA, visura, ecc.) e restituisce patch pronta.
+async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType) {
+  const raw = await analyzeDocument(fileBuffer, mimeType, COMPANY_DOC_PROMPT);
+  if (!raw) return null;
+  return {
+    summary:     (raw.summary    || '').slice(0, 2000) || null,
+    expiry_date: normalizeDate(raw.expiry_date),
+    issues:      Array.isArray(raw.issues) ? raw.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
+    validity_ok: typeof raw.validity_ok === 'boolean' ? raw.validity_ok : null,
+  };
+}
+
+module.exports = { analyzeCompanyDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer };

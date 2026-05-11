@@ -39,6 +39,12 @@ router.use('/', require('./billing'));
 // POS — lista documenti azienda (JWT richiesto)
 router.use('/', require('./pos'));
 
+// DVR — Documento di Valutazione dei Rischi (JWT richiesto)
+router.use('/', require('./dvr'));
+
+// Feature Flags — visibilità moduli per company (JWT richiesto)
+router.use('/', require('./featureFlags'));
+
 // Portale Professionisti (CSE/CSP/DL/RUP) — accesso pubblico via magic link
 router.use('/', require('./coordinatorPro'));
 

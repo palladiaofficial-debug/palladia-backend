@@ -11,6 +11,7 @@ const { generatePdf } = require('./pdf-generator');
 const { buildPosDocument } = require('./pos-template');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
+const { generateDvrHtml } = require('./dvr-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
 const v1Router = require('./routes/v1');
@@ -53,7 +54,8 @@ app.use((req, res, next) => {
     req.path.includes('/pdf') ||
     req.path.includes('/verbale') ||
     req.path.includes('/asl') ||         // report PDF ASL può essere lungo
-    req.path.includes('/offers/parse');  // AI parsing multi-chunk, può superare 60s
+    req.path.includes('/offers/parse') || // AI parsing multi-chunk, può superare 60s
+    req.path.includes('/generate-dvr');   // DVR generation SSE
   if (skip) return next();
 
   const timer = setTimeout(() => {
@@ -1237,6 +1239,205 @@ app.post('/api/generate-pos-template-stream', async (req, res) => {
     } catch (innerErr) {
       console.error('[template-stream] error handler threw:', innerErr.message);
     }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DVR GENERATION — Documento di Valutazione dei Rischi (D.Lgs 81/2008 Art. 28)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// --- Helper: prossima revisione DVR ---
+async function getNextDvrRevision(siteId, companyId) {
+  let query = supabase.from('dvr_documents').select('revision').order('revision', { ascending: false }).limit(1);
+  if (siteId)    query = query.eq('site_id', siteId);
+  if (companyId) query = query.eq('company_id', companyId);
+  const { data } = await query;
+  return (data && data.length > 0) ? data[0].revision + 1 : 1;
+}
+
+// --- Helper: prompt AI Haiku per valutazione rischi per mansione ---
+function buildDvrRisksPrompt(dvrData) {
+  const d = dvrData || {};
+  const mansioni = Array.isArray(d.mansioni) && d.mansioni.length > 0
+    ? d.mansioni.map(m => `- ${m.nome}${m.numAddetti ? ` (${m.numAddetti} addetti)` : ''}${m.attivita ? ': ' + m.attivita : ''}`).join('\n')
+    : '- [Mansioni non specificate]';
+
+  const attrezzature = Array.isArray(d.attrezzature)
+    ? d.attrezzature.join(', ') : (d.attrezzature || 'Non specificate');
+  const agentiChimici = Array.isArray(d.agentiChimici)
+    ? d.agentiChimici.join(', ') : (d.agentiChimici || 'Nessuno');
+  const agentiFisici = Array.isArray(d.agentiFisici)
+    ? d.agentiFisici.join(', ') : (d.agentiFisici || 'Nessuno');
+
+  return `Sei un RSPP esperto. Genera la sezione "Valutazione dei Rischi per Mansione" di un DVR ai sensi del D.Lgs 81/2008.
+
+AZIENDA: ${d.ragioneSociale || 'N/A'}
+SETTORE: ${d.settore || 'Edilizia'}
+ATTIVITÀ: ${d.descrizioneAttivita || 'Costruzione e ristrutturazione edifici'}
+ATTREZZATURE: ${attrezzature}
+AGENTI CHIMICI: ${agentiChimici}
+AGENTI FISICI: ${agentiFisici}
+
+MANSIONI DA VALUTARE:
+${mansioni}
+
+Per OGNI mansione genera ESATTAMENTE questo formato:
+
+### [Nome Mansione] — [N] addetti
+
+**Rischi identificati (matrice P×D):**
+
+| Rischio | Fonte pericolo | P (1-4) | D (1-4) | R (P×D) | Livello | Misure preventive |
+|---------|----------------|---------|---------|---------|---------|------------------|
+(una riga per ogni rischio; includi almeno 5-8 rischi per mansione)
+
+Legenda: P=Probabilità (1=Improbabile, 2=Poco prob., 3=Probabile, 4=Molto prob.)
+         D=Danno (1=Lieve, 2=Medio, 3=Grave, 4=Gravissimo)
+         Livello: R≤3=Basso, 4-8=Medio, 9-12=Alto, ≥13=Molto Alto
+
+**Misure collettive di prevenzione:**
+- (elenco misure tecniche, organizzative e procedurali)
+
+**DPI obbligatori:**
+| DPI | Norma UNI EN | Categoria |
+|-----|-------------|-----------|
+(tabella DPI specifici con norme di riferimento)
+
+**Sorveglianza sanitaria:** [Sì/No] — Periodicità: [semestrale/annuale/biennale]
+
+**Formazione specifica obbligatoria:** [Titolo corso, ore minime per legge]
+
+---
+
+Sii tecnico, preciso, conforme D.Lgs 81/2008. Livelli di rischio realistici per il settore. Rispondi SOLO con il contenuto delle mansioni, senza preamboli.`;
+}
+
+// --- DVR Generation SSE: standalone ---
+app.post('/api/generate-dvr-stream', async (req, res) => {
+  res.on('error', (e) => console.error('[dvr-stream] res error:', e.message));
+  if (req.socket) { req.socket.setNoDelay(true); req.socket.setTimeout(0); }
+
+  let headersFlushed = false;
+  let heartbeatTimer = null;
+
+  try {
+    const dvrData  = req.body;
+    const siteId   = dvrData.siteId   || null;
+    const companyId = dvrData.companyId || null;
+
+    const revision = await getNextDvrRevision(siteId, companyId);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    headersFlushed = true;
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'meta', revision, mode: 'dvr' })}\n\n`);
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Valutazione rischi AI in corso...' })}\n\n`);
+
+    heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
+
+    let aiRisks = '';
+    try {
+      const risksPrompt = buildDvrRisksPrompt(dvrData);
+      aiRisks = await callAnthropicHaiku(risksPrompt);
+    } catch (aiErr) {
+      console.error('[dvr-stream] Haiku error:', aiErr.message);
+      aiRisks = '[Valutazione rischi non disponibile — errore AI]';
+    }
+
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'risks', text: aiRisks })}\n\n`);
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento DVR...' })}\n\n`);
+
+    const CHUNK_SIZE = 512;
+    for (let i = 0; i < aiRisks.length; i += CHUNK_SIZE) {
+      sseWrite(res, `data: ${JSON.stringify({ type: 'text', text: aiRisks.slice(i, i + CHUNK_SIZE) })}\n\n`);
+    }
+
+    // Salva in DB
+    let dvrId = null;
+    try {
+      const { data: saved, error: saveError } = await supabase
+        .from('dvr_documents')
+        .insert([{
+          company_id: companyId || null,
+          site_id:    siteId    || null,
+          revision,
+          content:    aiRisks,
+          dvr_data:   dvrData,
+          created_by: dvrData.createdBy || null,
+        }])
+        .select()
+        .single();
+      if (saveError) console.error('[dvr-stream] DB save error:', saveError.message);
+      else dvrId = saved?.id || null;
+    } catch (dbErr) {
+      console.error('[dvr-stream] DB exception:', dbErr.message);
+    }
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'done', dvrId, revision, mode: 'dvr' })}\n\n`);
+    sseWrite(res, 'data: [DONE]\n\n');
+    if (!res.writableEnded) res.end();
+
+  } catch (error) {
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    console.error('[dvr-stream] fatal error:', error.message);
+    try {
+      if (headersFlushed) {
+        sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
+        if (!res.writableEnded) res.end();
+      } else {
+        res.status(error.status || 500).json({ error: String(error.message) });
+      }
+    } catch (e) { console.error('[dvr-stream] error handler threw:', e.message); }
+  }
+});
+
+// --- DVR PDF download ---
+app.get('/api/dvr/:dvrId/pdf', async (req, res) => {
+  try {
+    const { dvrId } = req.params;
+    const { data: dvr, error } = await supabase
+      .from('dvr_documents').select('*').eq('id', dvrId).single();
+    if (error || !dvr) return res.status(404).json({ error: 'DVR not found' });
+
+    const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
+
+    const ragSoc   = dvr.dvr_data?.ragioneSociale || 'Azienda';
+    const docTitle = `DVR – ${ragSoc} – Rev. ${dvr.revision}`;
+    const fileName = `DVR-Rev${dvr.revision}-${ragSoc.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)}.pdf`;
+
+    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: dvr.revision });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('[dvr-pdf] error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+});
+
+// --- DVR HTML preview ---
+app.get('/api/dvr/:dvrId/html', async (req, res) => {
+  try {
+    const { dvrId } = req.params;
+    const { data: dvr, error } = await supabase
+      .from('dvr_documents').select('*').eq('id', dvrId).single();
+    if (error || !dvr) return res.status(404).json({ error: 'DVR not found' });
+
+    const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+
+  } catch (error) {
+    console.error('[dvr-html] error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
   }
 });
 
