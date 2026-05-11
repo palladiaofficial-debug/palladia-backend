@@ -64,6 +64,33 @@ async function verifySupabaseJwt(req, res, next) {
   }
 
   if (!membership) {
+    // Fallback CDL: controlla se l'utente è un CDL con accesso attivo a questa company
+    const { data: studioUser } = await supabase
+      .from('studio_users')
+      .select('studio_id, role')
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (studioUser) {
+      const { data: studioRelation } = await supabase
+        .from('studio_clients')
+        .select('id')
+        .eq('studio_id', studioUser.studio_id)
+        .eq('company_id', companyId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (studioRelation) {
+        req.user      = { id: user.id, email: user.email };
+        req.jwt       = jwt;
+        req.companyId = companyId;
+        req.userRole  = 'cdl';
+        req.isCdl     = true;
+        req.studioId  = studioUser.studio_id;
+        return next();
+      }
+    }
+
     return res.status(403).json({ error: 'Not a member of this company' });
   }
 
