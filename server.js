@@ -11,7 +11,8 @@ const { generatePdf } = require('./pdf-generator');
 const { buildPosDocument } = require('./pos-template');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
-const { generateDvrHtml } = require('./dvr-html-generator');
+const { generateDvrHtml }  = require('./dvr-html-generator');
+const { generatePimusHtml } = require('./pimus-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
 const v1Router = require('./routes/v1');
@@ -55,7 +56,8 @@ app.use((req, res, next) => {
     req.path.includes('/verbale') ||
     req.path.includes('/asl') ||         // report PDF ASL può essere lungo
     req.path.includes('/offers/parse') || // AI parsing multi-chunk, può superare 60s
-    req.path.includes('/generate-dvr');   // DVR generation SSE
+    req.path.includes('/generate-dvr') ||  // DVR generation SSE
+    req.path.includes('/generate-pimus');  // PIMUS generation SSE
   if (skip) return next();
 
   const timer = setTimeout(() => {
@@ -1449,6 +1451,198 @@ app.get('/api/dvr/:dvrId/html', async (req, res) => {
 
   } catch (error) {
     console.error('[dvr-html] error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PIMUS — Piano di Montaggio, Uso e Smontaggio dei Ponteggi
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function getNextPimusRevision(siteId, companyId) {
+  let q = supabase.from('pimus_documents').select('revision').order('revision', { ascending: false }).limit(1);
+  if (siteId)    q = q.eq('site_id', siteId);
+  if (companyId) q = q.eq('company_id', companyId);
+  const { data } = await q;
+  return (data && data.length > 0) ? data[0].revision + 1 : 1;
+}
+
+function buildPimusPrompt(d) {
+  const tipo     = d.tipoPonteggio    || 'Ponteggio metallare fisso (PRP)';
+  const altezza  = d.altezzaMax       || 'N/D';
+  const lunghez  = d.lunghezzaTotale  || 'N/D';
+  const piani    = d.numPiani         || 'N/D';
+  const carico   = d.caricoPrevisto   || '200';
+  const dest     = d.destinazione     || 'Facciate edificio';
+  const marca    = d.marcaModello     || 'N/D';
+  const amMin    = d.autorizzazioneMin || 'N/D';
+  const addetti  = Array.isArray(d.addetti) && d.addetti.length > 0
+    ? d.addetti.map(a => `- ${a.nome || a.name || 'N/D'} (${a.qualifica || 'operaio'})`).join('\n')
+    : '- [Addetti da specificare]';
+
+  return `Sei un coordinatore della sicurezza (CSP/CSE) esperto in ponteggi. Redigi il PIMUS ai sensi del D.Lgs 81/2008 Art. 136 e Allegato XXII per il seguente ponteggio:
+
+TIPO: ${tipo}
+MARCA/MODELLO: ${marca}
+AUTORIZZAZIONE MINISTERIALE: ${amMin}
+ALTEZZA MASSIMA: ${altezza} m
+LUNGHEZZA TOTALE: ${lunghez} m
+N° PIANI DI LAVORO: ${piani}
+CARICO PREVISTO: ${carico} kg/m²
+DESTINAZIONE: ${dest}
+AZIENDA: ${d.ragioneSociale || 'N/D'}
+CANTIERE: ${d.nomeCantiere || d.indirizzoCantiere || 'N/D'}
+
+ADDETTI AL MONTAGGIO:
+${addetti}
+
+Genera ESATTAMENTE le sezioni seguenti (usa ### per i titoli di sezione):
+
+### Verifica di Resistenza e Stabilità
+Analisi sintetica del carico, verifica portata e stabilità per il tipo di ponteggio specificato. Includi verifica ancoraggio (ogni quanti m²), note su carichi nominali e coefficienti di sicurezza richiesti dalla norma.
+
+### Sequenza di Montaggio — Procedura Operativa
+Procedura passo-passo numerata per il montaggio del ponteggio. Almeno 10 passaggi dettagliati. Per ciascuno specifica: azione, rischio connesso, misura preventiva.
+
+| N° | Operazione | Rischio | Misura preventiva |
+|----|------------|---------|------------------|
+(almeno 10 righe)
+
+### Sequenza di Smontaggio — Procedura Operativa
+Come montaggio ma in senso inverso. Almeno 8 passaggi.
+
+| N° | Operazione | Rischio | Misura preventiva |
+|----|------------|---------|------------------|
+
+### Condizioni di Uso Sicuro
+Elenco puntato delle condizioni che devono essere garantite durante l'uso del ponteggio (ispezione giornaliera, condizioni meteo, carichi massimi, accesso autorizzato, ecc.)
+
+### DPI Obbligatori per Lavori su Ponteggio
+
+| DPI | Norma UNI EN | Quando |
+|-----|-------------|--------|
+(almeno 6 DPI specifici per lavori su ponteggio con altezza > 2m)
+
+### Verifiche Periodiche Obbligatorie
+
+| Frequenza | Tipo di verifica | Responsabile | Riferimento normativo |
+|-----------|-----------------|-------------|----------------------|
+(almeno 5 righe: giornaliera, settimanale, dopo eventi atmosferici, mensile, annuale)
+
+### Piano di Emergenza
+Procedura da seguire in caso di: caduta dall'alto, crollo parziale ponteggio, infortunio sul lavoro. Per ogni scenario: azioni immediate, numeri da chiamare, modalità di evacuazione dell'area.
+
+---
+
+Sii preciso, conforme alla norma. Rispondi SOLO con il contenuto delle sezioni, senza preamboli.`;
+}
+
+// --- PIMUS Generation SSE ---
+app.post('/api/generate-pimus-stream', async (req, res) => {
+  res.on('error', (e) => console.error('[pimus-stream] res error:', e.message));
+  if (req.socket) { req.socket.setNoDelay(true); req.socket.setTimeout(0); }
+
+  let headersFlushed = false;
+  let heartbeatTimer = null;
+
+  try {
+    const pimusData = req.body;
+    const siteId    = pimusData.siteId  || null;
+    let companyId   = pimusData.companyId || null;
+
+    if (!companyId && siteId) {
+      const { data: sr } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
+      if (sr?.company_id) companyId = sr.company_id;
+    }
+
+    const revision = await getNextPimusRevision(siteId, companyId);
+
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+    headersFlushed = true;
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'meta', revision, mode: 'pimus' })}\n\n`);
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Analisi ponteggio e procedure AI in corso...' })}\n\n`);
+
+    heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
+
+    let aiContent = '';
+    try {
+      aiContent = await callAnthropicHaiku(buildPimusPrompt(pimusData));
+    } catch (aiErr) {
+      console.error('[pimus-stream] AI error:', aiErr.message);
+      aiContent = '[Procedure non disponibili — errore AI]';
+    }
+
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento PIMUS...' })}\n\n`);
+
+    const CHUNK_SIZE = 512;
+    for (let i = 0; i < aiContent.length; i += CHUNK_SIZE) {
+      sseWrite(res, `data: ${JSON.stringify({ type: 'text', text: aiContent.slice(i, i + CHUNK_SIZE) })}\n\n`);
+    }
+
+    let pimusId = null;
+    try {
+      const { data: saved, error: saveError } = await supabase
+        .from('pimus_documents')
+        .insert([{
+          company_id: companyId || null,
+          site_id:    siteId    || null,
+          revision,
+          content:    aiContent,
+          pimus_data: pimusData,
+          created_by: pimusData.createdBy || null,
+        }])
+        .select()
+        .single();
+      if (saveError) console.error('[pimus-stream] DB error:', saveError.message);
+      else pimusId = saved?.id || null;
+    } catch (dbErr) {
+      console.error('[pimus-stream] DB exception:', dbErr.message);
+    }
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'done', pimusId, revision, mode: 'pimus' })}\n\n`);
+    sseWrite(res, 'data: [DONE]\n\n');
+    if (!res.writableEnded) res.end();
+
+  } catch (error) {
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    console.error('[pimus-stream] fatal:', error.message);
+    try {
+      if (headersFlushed) {
+        sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
+        if (!res.writableEnded) res.end();
+      } else {
+        res.status(error.status || 500).json({ error: String(error.message) });
+      }
+    } catch (e) { console.error('[pimus-stream] error handler threw:', e.message); }
+  }
+});
+
+// --- PIMUS PDF download ---
+app.get('/api/pimus/:pimusId/pdf', async (req, res) => {
+  try {
+    const { data: pimus, error } = await supabase
+      .from('pimus_documents').select('*').eq('id', req.params.pimusId).single();
+    if (error || !pimus) return res.status(404).json({ error: 'PIMUS not found' });
+
+    const html     = generatePimusHtml(pimus.pimus_data || {}, pimus.revision, pimus.content || '');
+    const ragSoc   = pimus.pimus_data?.ragioneSociale || 'Azienda';
+    const docTitle = `PIMUS – ${ragSoc} – Rev. ${pimus.revision}`;
+    const fileName = `PIMUS-Rev${pimus.revision}-${ragSoc.replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)}.pdf`;
+
+    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pimus.revision });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
+
+  } catch (error) {
+    console.error('[pimus-pdf] error:', error.message);
     if (!res.headersSent) res.status(500).json({ error: error.message });
   }
 });

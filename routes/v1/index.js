@@ -42,6 +42,9 @@ router.use('/', require('./pos'));
 // DVR — Documento di Valutazione dei Rischi (JWT richiesto)
 router.use('/', require('./dvr'));
 
+// PIMUS — Piano di Montaggio Uso e Smontaggio Ponteggi (JWT richiesto)
+router.use('/', require('./pimus'));
+
 // Feature Flags — visibilità moduli per company (JWT richiesto)
 router.use('/', require('./featureFlags'));
 
