@@ -5,8 +5,8 @@
 
 CREATE TABLE IF NOT EXISTS dvr_documents (
   id          UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id  UUID        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
-  site_id     UUID        REFERENCES sites(id) ON DELETE SET NULL,  -- opzionale: DVR può essere aziendale
+  company_id  UUID        REFERENCES companies(id) ON DELETE CASCADE,  -- nullable: come pos_documents
+  site_id     UUID        REFERENCES sites(id) ON DELETE SET NULL,     -- opzionale: DVR può essere aziendale
   revision    INTEGER     NOT NULL DEFAULT 1,
   content     TEXT,        -- sezione "valutazione rischi per mansione" generata da AI (Haiku)
   dvr_data    JSONB,       -- dati input form (anagrafica, mansioni, figure sicurezza, ecc.)
@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS dvr_documents (
 );
 
 CREATE INDEX IF NOT EXISTS idx_dvr_documents_company
-  ON dvr_documents(company_id, created_at DESC);
+  ON dvr_documents(company_id, created_at DESC)
+  WHERE company_id IS NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_dvr_documents_site
   ON dvr_documents(site_id)

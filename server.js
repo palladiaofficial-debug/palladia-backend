@@ -1321,9 +1321,15 @@ app.post('/api/generate-dvr-stream', async (req, res) => {
   let heartbeatTimer = null;
 
   try {
-    const dvrData  = req.body;
-    const siteId   = dvrData.siteId   || null;
-    const companyId = dvrData.companyId || null;
+    const dvrData = req.body;
+    const siteId  = dvrData.siteId || null;
+    let companyId = dvrData.companyId || null;
+
+    // Se companyId non fornito ma siteId sì, derivalo dal cantiere
+    if (!companyId && siteId) {
+      const { data: siteRow } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
+      if (siteRow?.company_id) companyId = siteRow.company_id;
+    }
 
     const revision = await getNextDvrRevision(siteId, companyId);
 

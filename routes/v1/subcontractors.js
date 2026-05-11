@@ -1,13 +1,12 @@
 'use strict';
 const crypto   = require('crypto');
-const path     = require('path');
 const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
 // ── Upload configurazione documenti subappaltatori ────────────────────────────
-const BUCKET       = 'company-documents';
+const BUCKET       = 'site-documents'; // stesso bucket usato da companyDocuments e documents
 const MAX_SIZE     = 20 * 1024 * 1024; // 20 MB
 const SUB_DOC_CATS = ['durc', 'insurance', 'soa', 'visura', 'iso', 'f24', 'altro'];
 
