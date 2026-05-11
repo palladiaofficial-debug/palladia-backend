@@ -1346,6 +1346,53 @@ async function sendProviderApprovedEmail({ to, providerName }) {
   }
 }
 
+// ─── Email: Invito Studio CDL ─────────────────────────────────────────────────
+
+/**
+ * Invia all'owner dell'impresa cliente l'invito dello studio CDL a collaborare.
+ * @param {{ to: string, studioName: string, acceptUrl: string }} opts
+ */
+async function sendStudioInviteEmail({ to, studioName, acceptUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Invito da ${esc(studioName)}</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Lo studio <strong style="color:#1a1a1a;">${esc(studioName)}</strong> ti ha invitato a collaborare
+      su Palladia. Come studio CDL/consulente, monitorerà la compliance della tua azienda
+      (DVR, documenti, formazione) e ti segnalerà eventuali scadenze.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Cosa significa accettare</p>
+          <ul style="margin:0;padding:0 0 0 16px;">
+            <li style="padding:4px 0;font-size:13px;color:#374151;line-height:1.5;">Lo studio potrà visualizzare i tuoi cantieri, lavoratori e documenti</li>
+            <li style="padding:4px 0;font-size:13px;color:#374151;line-height:1.5;">Non può modificare nulla — solo consultare e monitorare</li>
+            <li style="padding:4px 0;font-size:13px;color:#374151;line-height:1.5;">Riceverai segnalazioni proattive su scadenze e non conformità</li>
+          </ul>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Accetta la collaborazione →', acceptUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Se non conosci ${esc(studioName)} o non ti aspettavi questo invito, ignora questa email.
+      Il link scade e non darà accesso a nessuno senza la tua conferma.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${studioName} ti ha invitato su Palladia`,
+    html: layout(`Invito studio — ${studioName}`, body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1373,4 +1420,5 @@ module.exports = {
   sendProviderApprovedEmail,
   sendQuoteRequestConsultant,
   sendQuoteReceivedCompany,
+  sendStudioInviteEmail,
 };

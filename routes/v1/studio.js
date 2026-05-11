@@ -18,6 +18,7 @@ const router   = require('express').Router();
 const crypto   = require('crypto');
 const supabase = require('../../lib/supabase');
 const { verifyStudioJwt, verifyStudioOrCreate } = require('../../middleware/verifyStudio');
+const { sendStudioInviteEmail } = require('../../services/email');
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
 
@@ -138,6 +139,25 @@ router.post('/studio/clients/invite', verifyStudioJwt, async (req, res) => {
 
   const APP_BASE_URL = process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app';
   const accept_url   = `${APP_BASE_URL}/studio/accetta/${invite_token}`;
+
+  // Trova l'email dell'owner dell'impresa invitata e invia l'email (fire-and-forget)
+  supabase
+    .from('company_users')
+    .select('user_id')
+    .eq('company_id', company_id)
+    .eq('role', 'owner')
+    .maybeSingle()
+    .then(async ({ data: owner }) => {
+      if (!owner?.user_id) return;
+      const { data: { user } } = await supabase.auth.admin.getUserById(owner.user_id);
+      if (!user?.email) return;
+      await sendStudioInviteEmail({
+        to:         user.email,
+        studioName: req.studio.studio_name,
+        acceptUrl:  accept_url,
+      });
+    })
+    .catch(err => console.error('[studio] sendStudioInviteEmail:', err.message));
 
   res.json({ client: data, invite_token, accept_url });
 });
