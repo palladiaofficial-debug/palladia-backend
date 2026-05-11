@@ -62,6 +62,11 @@ router.use('/', require('./badgePunch'));
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
+// Studio CDL Partner: portale per Consulenti del Lavoro (CDL) + N imprese clienti
+// NOTA: verifyStudioJwt NON usa X-Company-Id — montato PRIMA dei router con
+//       router.use(verifySupabaseJwt) globale per evitare 400 MISSING_X-COMPANY-ID
+router.use('/', require('./studio'));
+
 // Consulente RSPP: profilo, clienti, corsi, dashboard, payouts, Stripe Connect, preventivi
 // NOTA: verifyConsultantJwt NON usa X-Company-Id — montato PRIMA dei router con
 //       router.use(verifySupabaseJwt) globale per evitare 400 MISSING_X-COMPANY-ID

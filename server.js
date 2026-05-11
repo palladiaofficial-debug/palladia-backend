@@ -457,6 +457,12 @@ app.get('/timbratura/:code/manifest.json', (req, res) => {
 app.get('/timbratura/:code', (req, res) => {
   res.sendFile('badge-punch.html', { root: __dirname + '/public' });
 });
+app.get('/studio', (req, res) => {
+  res.sendFile('studio.html', { root: __dirname + '/public' });
+});
+app.get('/studio/accetta/:token', (req, res) => {
+  res.sendFile('studio.html', { root: __dirname + '/public' });
+});
 app.get('/coordinator', (req, res) => {
   res.sendFile('coordinator.html', { root: __dirname + '/public' });
 });
