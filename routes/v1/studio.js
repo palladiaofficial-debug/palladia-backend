@@ -3,18 +3,43 @@
  * routes/v1/studio.js
  * Portale Studio CDL Partner — Consulenti del Lavoro che gestiscono N imprese clienti.
  *
- * POST /api/v1/studio/onboard                             — crea/aggiorna profilo studio
- * GET  /api/v1/studio/me                                  — profilo studio corrente
- * PUT  /api/v1/studio/me                                  — aggiorna profilo studio
- * GET  /api/v1/studio/clients                             — lista imprese clienti (attive + pending)
- * POST /api/v1/studio/clients/invite                      — invita impresa per P.IVA + email (o company_id legacy)
- * POST /api/v1/studio/clients/accept/:token               — impresa Palladia accetta invito
- * POST /api/v1/studio/pending-invites/accept/:token       — nuova impresa accetta invito pending
- * GET  /api/v1/studio/clients/:companyId                  — dettaglio impresa cliente
- * GET  /api/v1/studio/clients/:companyId/report-vigilanza.pdf — PDF report vigilanza
- * DELETE /api/v1/studio/clients/:companyId                — rimuovi relazione
- * GET  /api/v1/studio/dashboard                           — dashboard aggregato con semaforo
- * POST /api/v1/studio/digest/preview                      — anteprima digest (test/manuale)
+ * Il CDL è il data controller. Le imprese non devono essere su Palladia.
+ *
+ * ── Profilo studio ──────────────────────────────────────────────────────────
+ * POST /api/v1/studio/onboard
+ * GET  /api/v1/studio/me
+ * PUT  /api/v1/studio/me
+ *
+ * ── Gestione clienti ────────────────────────────────────────────────────────
+ * GET  /api/v1/studio/clients                             lista (attivi + pending)
+ * POST /api/v1/studio/clients/create-direct              CDL crea impresa cliente direttamente
+ * POST /api/v1/studio/clients/invite                      invita impresa esistente su Palladia
+ * POST /api/v1/studio/clients/accept/:token               impresa Palladia accetta invito
+ * POST /api/v1/studio/pending-invites/accept/:token       nuova impresa accetta pending invite
+ * GET  /api/v1/studio/clients/:companyId                  dettaglio impresa
+ * PUT  /api/v1/studio/clients/:companyId/profile          aggiorna profilo impresa (CDL-owned)
+ * DELETE /api/v1/studio/clients/:companyId                rimuovi relazione
+ *
+ * ── Gestione lavoratori (CDL-owned) ────────────────────────────────────────
+ * GET    /api/v1/studio/clients/:companyId/workers
+ * POST   /api/v1/studio/clients/:companyId/workers
+ * PUT    /api/v1/studio/clients/:companyId/workers/:workerId
+ * DELETE /api/v1/studio/clients/:companyId/workers/:workerId
+ *
+ * ── Gestione certificati (CDL-owned) ───────────────────────────────────────
+ * GET    /api/v1/studio/clients/:companyId/certificates
+ * POST   /api/v1/studio/clients/:companyId/certificates
+ * PUT    /api/v1/studio/clients/:companyId/certificates/:certId
+ * DELETE /api/v1/studio/clients/:companyId/certificates/:certId
+ *
+ * ── Import e report ─────────────────────────────────────────────────────────
+ * POST /api/v1/studio/clients/:companyId/import-csv       import CSV lavoratori + certificati
+ * GET  /api/v1/studio/clients/:companyId/lettera-scadenze.pdf  lettera formale CDL all'impresa
+ * GET  /api/v1/studio/clients/:companyId/report-vigilanza.pdf  report per ispezioni
+ *
+ * ── Dashboard e digest ──────────────────────────────────────────────────────
+ * GET  /api/v1/studio/dashboard
+ * POST /api/v1/studio/digest/send-now
  */
 
 const router   = require('express').Router();
@@ -26,6 +51,57 @@ const {
   sendStudioPendingInviteEmail,
 } = require('../../services/email');
 const { rendererPool } = require('../../pdf-renderer');
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Verifica che lo studio abbia accesso all'impresa.
+ * Se requireOwnership=true, verifica che lo studio sia anche il data controller.
+ */
+async function checkStudioAccess(studioId, companyId, requireOwnership = false) {
+  const { data, error } = await supabase
+    .from('studio_clients')
+    .select('id, owned_by_studio')
+    .eq('studio_id', studioId)
+    .eq('company_id', companyId)
+    .eq('status', 'active')
+    .maybeSingle();
+
+  if (error || !data) {
+    return { ok: false, status: 403, error: 'Azienda non associata a questo studio' };
+  }
+  if (requireOwnership && !data.owned_by_studio) {
+    return { ok: false, status: 403, error: 'Questa azienda è gestita autonomamente — il CDL non può modificare i dati direttamente' };
+  }
+  return { ok: true, isOwner: !!data.owned_by_studio };
+}
+
+/**
+ * Trova o crea un course_type per nome (case-insensitive match sul nome esatto,
+ * poi fallback a INSERT ... ON CONFLICT DO NOTHING).
+ * Restituisce l'id del course_type.
+ */
+async function resolveOrCreateCourseType(name) {
+  const trimmed = name.trim();
+  const { data: existing } = await supabase
+    .from('course_types')
+    .select('id')
+    .ilike('name', trimmed)
+    .maybeSingle();
+  if (existing) return existing.id;
+
+  const { data: created } = await supabase
+    .from('course_types')
+    .insert({
+      name:            trimmed,
+      legal_reference: 'D.Lgs 81/2008',
+      validity_years:  5,
+      renewal_hours:   0,
+    })
+    .select('id')
+    .single();
+  return created?.id || null;
+}
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
 
@@ -399,7 +475,7 @@ router.get('/studio/clients/:companyId', verifyStudioJwt, async (req, res) => {
 
   const { data: relation } = await supabase
     .from('studio_clients')
-    .select('*')
+    .select('*, owned_by_studio')
     .eq('studio_id', req.studioId)
     .eq('company_id', companyId)
     .eq('status', 'active')
@@ -425,6 +501,7 @@ router.get('/studio/clients/:companyId', verifyStudioJwt, async (req, res) => {
 
   res.json({
     company,
+    owned_by_studio: !!relation.owned_by_studio,
     sites:          sites          || [],
     workers:        workers        || [],
     dvrs:           dvrs           || [],
@@ -614,6 +691,581 @@ router.get('/studio/clients/:companyId/report-vigilanza.pdf', verifyStudioJwt, a
   const safeName = (company?.name || 'impresa').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="report-vigilanza-${safeName}.pdf"`);
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.send(pdfBuffer);
+});
+
+// ── Crea impresa cliente direttamente (CDL data controller) ──────────────────
+// Non richiede che l'impresa sia su Palladia. Il CDL crea il profilo e poi
+// gestisce lavoratori e certificati in autonomia.
+router.post('/studio/clients/create-direct', verifyStudioJwt, async (req, res) => {
+  const { company_name, piva, address, phone, contact_email, safety_manager } = req.body || {};
+
+  if (!company_name?.trim()) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Il nome azienda è obbligatorio' });
+  }
+
+  // Verifica che non esista già un'impresa con questa P.IVA collegata a questo studio
+  if (piva?.trim()) {
+    const normalizedVat = piva.trim().toUpperCase().replace(/\s/g, '');
+    const { data: existingCompany } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('piva', normalizedVat)
+      .maybeSingle();
+
+    if (existingCompany) {
+      const { data: existingRelation } = await supabase
+        .from('studio_clients')
+        .select('id, status')
+        .eq('studio_id', req.studioId)
+        .eq('company_id', existingCompany.id)
+        .maybeSingle();
+
+      if (existingRelation?.status === 'active') {
+        return res.status(409).json({ error: 'ALREADY_LINKED', message: 'Un\'impresa con questa P.IVA è già collegata al tuo studio.' });
+      }
+    }
+  }
+
+  // Crea il record azienda
+  const { data: company, error: cErr } = await supabase
+    .from('companies')
+    .insert({
+      name:                 company_name.trim(),
+      piva:                 piva?.trim().toUpperCase().replace(/\s/g, '') || null,
+      address:              address?.trim()        || null,
+      phone:                phone?.trim()          || null,
+      contact_email:        contact_email?.trim()  || null,
+      safety_manager:       safety_manager?.trim() || null,
+      created_by_studio_id: req.studioId,
+    })
+    .select()
+    .single();
+
+  if (cErr) return res.status(500).json({ error: cErr.message });
+
+  // Crea la relazione studio_clients (già attiva, owned_by_studio=true)
+  const { data: client, error: scErr } = await supabase
+    .from('studio_clients')
+    .insert({
+      studio_id:      req.studioId,
+      company_id:     company.id,
+      status:         'active',
+      owned_by_studio: true,
+      invited_by:     req.user.id,
+      invite_token:   crypto.randomBytes(24).toString('hex'),
+      accepted_at:    new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (scErr) {
+    await supabase.from('companies').delete().eq('id', company.id);
+    return res.status(500).json({ error: scErr.message });
+  }
+
+  res.status(201).json({ company, client });
+});
+
+// ── Aggiorna profilo impresa CDL-owned ────────────────────────────────────────
+router.put('/studio/clients/:companyId/profile', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const allowed = ['name', 'piva', 'address', 'phone', 'contact_email', 'safety_manager'];
+  const update  = {};
+  for (const k of allowed) if (req.body[k] !== undefined) update[k] = req.body[k] || null;
+
+  if (update.piva) update.piva = update.piva.trim().toUpperCase().replace(/\s/g, '');
+
+  const { data, error } = await supabase
+    .from('companies')
+    .update(update)
+    .eq('id', companyId)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ company: data });
+});
+
+// ── Lavoratori CDL-owned ──────────────────────────────────────────────────────
+
+router.get('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { data, error } = await supabase
+    .from('workers')
+    .select('id, full_name, fiscal_code, is_active, created_at')
+    .eq('company_id', companyId)
+    .order('full_name', { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ workers: data || [], owned_by_studio: access.isOwner });
+});
+
+router.post('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { full_name, fiscal_code } = req.body || {};
+  if (!full_name?.trim() || !fiscal_code?.trim()) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Nome e codice fiscale sono obbligatori' });
+  }
+
+  const { data, error } = await supabase
+    .from('workers')
+    .upsert({
+      company_id:  companyId,
+      full_name:   full_name.trim(),
+      fiscal_code: fiscal_code.trim().toUpperCase(),
+      is_active:   true,
+    }, { onConflict: 'company_id,fiscal_code' })
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ worker: data });
+});
+
+router.put('/studio/clients/:companyId/workers/:workerId', verifyStudioJwt, async (req, res) => {
+  const { companyId, workerId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const allowed = ['full_name', 'fiscal_code', 'is_active'];
+  const update  = {};
+  for (const k of allowed) if (req.body[k] !== undefined) update[k] = req.body[k];
+  if (update.fiscal_code) update.fiscal_code = update.fiscal_code.trim().toUpperCase();
+  if (update.full_name)   update.full_name   = update.full_name.trim();
+
+  const { data, error } = await supabase
+    .from('workers')
+    .update(update)
+    .eq('id', workerId)
+    .eq('company_id', companyId)
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ worker: data });
+});
+
+router.delete('/studio/clients/:companyId/workers/:workerId', verifyStudioJwt, async (req, res) => {
+  const { companyId, workerId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { error } = await supabase
+    .from('workers')
+    .update({ is_active: false })
+    .eq('id', workerId)
+    .eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ── Certificati CDL-owned ─────────────────────────────────────────────────────
+
+router.get('/studio/clients/:companyId/certificates', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { data, error } = await supabase
+    .from('worker_certificates')
+    .select('id, worker_id, course_type_id, issue_date, expiry_date, issuing_body, certificate_number, workers(full_name, fiscal_code), course_types(id, name, validity_years)')
+    .eq('company_id', companyId)
+    .order('expiry_date', { ascending: true });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ certificates: data || [], owned_by_studio: access.isOwner });
+});
+
+router.post('/studio/clients/:companyId/certificates', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const {
+    worker_id,
+    course_type_name,   // nome libero — risolviamo o creiamo il course_type
+    issue_date,
+    expiry_date,
+    issuing_body = 'Non specificato',
+    certificate_number,
+  } = req.body || {};
+
+  if (!worker_id || !course_type_name?.trim() || !expiry_date) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'worker_id, course_type_name ed expiry_date sono obbligatori' });
+  }
+
+  // Verifica che il lavoratore appartenga all'impresa
+  const { data: worker } = await supabase.from('workers').select('id').eq('id', worker_id).eq('company_id', companyId).maybeSingle();
+  if (!worker) return res.status(404).json({ error: 'Lavoratore non trovato per questa impresa' });
+
+  const courseTypeId = await resolveOrCreateCourseType(course_type_name);
+  if (!courseTypeId) return res.status(500).json({ error: 'Impossibile risolvere il tipo di corso' });
+
+  const resolvedIssueDate = issue_date || (() => {
+    // Stima issue_date dalla expiry_date se non fornita (fallback a 5 anni prima)
+    const exp = new Date(expiry_date);
+    exp.setFullYear(exp.getFullYear() - 5);
+    return exp.toISOString().slice(0, 10);
+  })();
+
+  const { data, error } = await supabase
+    .from('worker_certificates')
+    .insert({
+      company_id:         companyId,
+      worker_id,
+      course_type_id:     courseTypeId,
+      issue_date:         resolvedIssueDate,
+      expiry_date,
+      issuing_body:       issuing_body.trim(),
+      certificate_number: certificate_number?.trim() || null,
+    })
+    .select('*, workers(full_name), course_types(name)')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ certificate: data });
+});
+
+router.put('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt, async (req, res) => {
+  const { companyId, certId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { course_type_name, issue_date, expiry_date, issuing_body, certificate_number } = req.body || {};
+  const update = {};
+  if (issue_date)          update.issue_date          = issue_date;
+  if (expiry_date)         update.expiry_date          = expiry_date;
+  if (issuing_body)        update.issuing_body         = issuing_body.trim();
+  if (certificate_number !== undefined) update.certificate_number = certificate_number?.trim() || null;
+  if (course_type_name?.trim()) {
+    const id = await resolveOrCreateCourseType(course_type_name);
+    if (id) update.course_type_id = id;
+  }
+
+  const { data, error } = await supabase
+    .from('worker_certificates')
+    .update(update)
+    .eq('id', certId)
+    .eq('company_id', companyId)
+    .select('*, workers(full_name), course_types(name)')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ certificate: data });
+});
+
+router.delete('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt, async (req, res) => {
+  const { companyId, certId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { error } = await supabase
+    .from('worker_certificates')
+    .delete()
+    .eq('id', certId)
+    .eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ── Import CSV ────────────────────────────────────────────────────────────────
+// Formato CSV (separatore , o ;):
+//   nome_lavoratore,codice_fiscale,tipo_corso,data_scadenza[,ente_erogatore][,data_inizio]
+//
+// La prima riga deve essere l'intestazione (qualsiasi testo, viene saltata).
+// Esempio:
+//   Nome,CF,Corso,Scadenza,Ente
+//   Mario Rossi,RSSMRA80A01H501Z,Formazione lavoratori - Rischio Alto,2026-06-30,Formedil MI
+//   Mario Rossi,RSSMRA80A01H501Z,Idoneità medica,2025-12-01,Dr. Bianchi
+//
+router.post('/studio/clients/:companyId/import-csv', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { csv_text } = req.body || {};
+  if (!csv_text?.trim()) return res.status(400).json({ error: 'csv_text obbligatorio' });
+
+  // ── Parse CSV ──────────────────────────────────────────────────────────────
+  const lines = csv_text.trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return res.status(400).json({ error: 'CSV deve avere almeno un\'intestazione e una riga di dati' });
+
+  // Rileva separatore (virgola o punto e virgola)
+  const sep = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
+
+  // Salta intestazione
+  const dataLines = lines.slice(1);
+
+  const results = { imported: 0, workers_created: 0, certs_created: 0, errors: [] };
+
+  for (let i = 0; i < dataLines.length; i++) {
+    const line = dataLines[i].trim();
+    if (!line) continue;
+
+    const cols = line.split(sep).map(c => c.trim().replace(/^"(.*)"$/, '$1').trim());
+    const [full_name, fiscal_code, course_name, expiry_date, issuing_body_raw, issue_date_raw] = cols;
+
+    if (!full_name || !fiscal_code || !course_name || !expiry_date) {
+      results.errors.push({ row: i + 2, line, error: 'Colonne mancanti (richieste: nome, CF, corso, scadenza)' });
+      continue;
+    }
+
+    // Valida data
+    const expDate = new Date(expiry_date);
+    if (isNaN(expDate.getTime())) {
+      results.errors.push({ row: i + 2, line, error: `Data scadenza non valida: "${expiry_date}"` });
+      continue;
+    }
+
+    try {
+      // Upsert lavoratore
+      const { data: worker, error: wErr } = await supabase
+        .from('workers')
+        .upsert({
+          company_id:  companyId,
+          full_name:   full_name.trim(),
+          fiscal_code: fiscal_code.trim().toUpperCase(),
+          is_active:   true,
+        }, { onConflict: 'company_id,fiscal_code' })
+        .select('id')
+        .single();
+
+      if (wErr) { results.errors.push({ row: i + 2, error: wErr.message }); continue; }
+      if (!results._existingWorkers?.includes(fiscal_code.toUpperCase())) results.workers_created++;
+
+      // Risolvi o crea course_type
+      const courseTypeId = await resolveOrCreateCourseType(course_name);
+      if (!courseTypeId) { results.errors.push({ row: i + 2, error: 'Impossibile creare tipo corso' }); continue; }
+
+      const resolvedIssueDate = issue_date_raw?.trim() || (() => {
+        const exp = new Date(expiry_date);
+        exp.setFullYear(exp.getFullYear() - 5);
+        return exp.toISOString().slice(0, 10);
+      })();
+
+      // Insert certificato (non upsert — può avere più certificati dello stesso tipo)
+      const { error: certErr } = await supabase
+        .from('worker_certificates')
+        .insert({
+          company_id:     companyId,
+          worker_id:      worker.id,
+          course_type_id: courseTypeId,
+          issue_date:     resolvedIssueDate,
+          expiry_date,
+          issuing_body:   issuing_body_raw?.trim() || 'Non specificato',
+        });
+
+      if (certErr) { results.errors.push({ row: i + 2, error: certErr.message }); continue; }
+
+      results.certs_created++;
+      results.imported++;
+    } catch (err) {
+      results.errors.push({ row: i + 2, error: err.message });
+    }
+  }
+
+  res.json({
+    ok:              true,
+    imported:        results.imported,
+    workers_created: results.workers_created,
+    certs_created:   results.certs_created,
+    errors:          results.errors,
+    total_rows:      dataLines.length,
+  });
+});
+
+// ── Lettera formale scadenze ──────────────────────────────────────────────────
+// Genera una lettera professionale da stampare/inviare all'impresa cliente.
+router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const now  = new Date();
+  const in60 = new Date(now.getTime() + 60 * 86_400_000);
+
+  const [
+    { data: company },
+    { data: studio  },
+    { data: certs   },
+  ] = await Promise.all([
+    supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
+    supabase.from('studio_partners').select('*').eq('id', req.studioId).maybeSingle(),
+    supabase.from('worker_certificates')
+      .select('id, expiry_date, issue_date, issuing_body, workers(full_name, fiscal_code), course_types(name, validity_years)')
+      .eq('company_id', companyId)
+      .lt('expiry_date', in60.toISOString().slice(0, 10))
+      .order('expiry_date', { ascending: true })
+      .limit(100),
+  ]);
+
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function fmtDateLong(d) {
+    return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  const expired  = (certs || []).filter(c => new Date(c.expiry_date) < now);
+  const expiring = (certs || []).filter(c => new Date(c.expiry_date) >= now);
+
+  const certRow = (c) => {
+    const isExp = new Date(c.expiry_date) < now;
+    const color = isExp ? '#dc2626' : '#d97706';
+    const stato = isExp ? 'SCADUTO' : 'IN SCADENZA';
+    return `<tr>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(c.workers?.full_name || '—')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:11px;color:#6b7280;">${esc(c.workers?.fiscal_code || '—')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;">${esc(c.course_types?.name || '—')}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:12px;">${fmtDate(c.expiry_date)}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:11px;font-weight:700;color:${color};">${stato}</td>
+      <td style="padding:8px 10px;border-bottom:1px solid #f3f4f6;font-size:11px;color:#6b7280;">${esc(c.issuing_body || '—')}</td>
+    </tr>`;
+  };
+
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, Arial, sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; }
+  .page { padding: 25mm 22mm 30mm; max-width: 210mm; }
+  .letterhead { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 16px; border-bottom: 2px solid #1a1a1a; margin-bottom: 24px; }
+  .studio-name { font-size: 18px; font-weight: 800; letter-spacing: -0.02em; color: #1a1a1a; }
+  .studio-sub  { font-size: 10px; color: #6b7280; margin-top: 3px; }
+  .studio-meta { font-size: 10px; color: #6b7280; text-align: right; line-height: 1.8; }
+  .date-line   { font-size: 11px; color: #6b7280; margin-bottom: 20px; }
+  .recipient   { margin-bottom: 20px; }
+  .recipient-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #9ca3af; margin-bottom: 6px; }
+  .recipient-name  { font-size: 13px; font-weight: 700; }
+  .recipient-meta  { font-size: 11px; color: #6b7280; line-height: 1.7; }
+  .object { font-size: 12px; font-weight: 700; margin-bottom: 20px; padding: 10px 14px; background: #f9fafb; border-left: 3px solid #1a1a1a; }
+  .body-text { font-size: 12px; line-height: 1.8; color: #374151; margin-bottom: 16px; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #6b7280; margin: 20px 0 10px; padding-bottom: 5px; border-bottom: 1px solid #e5e7eb; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: #f9fafb; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #9ca3af; padding: 7px 10px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  .alert-box { background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 11px; color: #991b1b; }
+  .footer-sig { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e5e7eb; }
+  .sig-label { font-size: 10px; color: #9ca3af; margin-bottom: 6px; }
+  .sig-name { font-size: 13px; font-weight: 700; }
+  .sig-meta { font-size: 11px; color: #6b7280; margin-top: 2px; }
+  .page-footer { position: fixed; bottom: 0; left: 0; right: 0; height: 16mm; display: flex; align-items: center; justify-content: space-between; padding: 0 22mm; border-top: 1px solid #e5e7eb; font-size: 9px; color: #9ca3af; }
+  .legal-note { margin-top: 24px; padding: 10px 14px; background: #f9fafb; border-radius: 4px; font-size: 10px; color: #6b7280; line-height: 1.6; }
+</style>
+</head><body>
+<div class="page">
+
+  <div class="letterhead">
+    <div>
+      <div class="studio-name">${esc(studio?.studio_name || 'Studio CDL')}</div>
+      <div class="studio-sub">Studio di Consulenza del Lavoro${studio?.registration_number ? ' · Albo n. ' + studio.registration_number : ''}</div>
+    </div>
+    <div class="studio-meta">
+      ${studio?.vat_number ? `P.IVA ${esc(studio.vat_number)}<br>` : ''}
+      ${studio?.operative_regions?.length ? esc(studio.operative_regions.join(', ')) + '<br>' : ''}
+      Generato tramite Palladia
+    </div>
+  </div>
+
+  <div class="date-line">${esc(fmtDateLong(now))}</div>
+
+  <div class="recipient">
+    <div class="recipient-label">Destinatario</div>
+    <div class="recipient-name">${esc(company?.name || 'Impresa')}</div>
+    <div class="recipient-meta">
+      ${company?.piva ? 'P.IVA ' + esc(company.piva) : ''}
+      ${company?.address ? '<br>' + esc(company.address) : ''}
+      ${company?.contact_email ? '<br>' + esc(company.contact_email) : ''}
+    </div>
+  </div>
+
+  <div class="object">
+    Oggetto: Comunicazione scadenze certificazioni sicurezza — ai sensi del D.Lgs. 81/2008 art. 37
+  </div>
+
+  <div class="body-text">
+    Gentile Cliente,<br><br>
+    con la presente Vi comunichiamo che la verifica periodica delle certificazioni di sicurezza
+    del personale in forza alla Vostra azienda ha evidenziato
+    ${expired.length > 0 ? `<strong>${expired.length} certificato${expired.length > 1 ? 'i' : ''} già scaduto${expired.length > 1 ? 'i' : ''}</strong>` : ''}
+    ${expired.length > 0 && expiring.length > 0 ? ' e ' : ''}
+    ${expiring.length > 0 ? `<strong>${expiring.length} certificato${expiring.length > 1 ? 'i' : ''} in scadenza nei prossimi 60 giorni</strong>` : ''}
+    che richiedono la Vostra immediata attenzione.
+  </div>
+
+  ${expired.length > 0 ? '<div class="alert-box">⚠️ I certificati scaduti espongono l\'azienda a responsabilità penali e civili ai sensi del D.Lgs. 81/2008. È necessario procedere con urgenza al rinnovo.</div>' : ''}
+
+  ${(certs || []).length > 0 ? `
+  <div class="section-title">Dettaglio certificazioni da rinnovare</div>
+  <table>
+    <thead>
+      <tr>
+        <th>Lavoratore</th>
+        <th>Codice Fiscale</th>
+        <th>Tipo corso</th>
+        <th>Scadenza</th>
+        <th>Stato</th>
+        <th>Ente erogatore</th>
+      </tr>
+    </thead>
+    <tbody>${(certs || []).map(certRow).join('')}</tbody>
+  </table>
+  ` : '<div class="body-text">Nessuna scadenza imminente rilevata nel periodo considerato.</div>'}
+
+  <div class="body-text" style="margin-top:20px;">
+    Vi invitiamo a procedere con il rinnovo delle certificazioni entro i termini indicati,
+    avvalendovi degli enti di formazione accreditati. Lo Studio rimane a Vostra disposizione
+    per qualsiasi chiarimento o assistenza nella gestione delle scadenze.
+  </div>
+
+  <div class="legal-note">
+    La presente comunicazione è predisposta nell'ambito del servizio di monitoraggio della conformità
+    prestato dallo Studio ai sensi del D.Lgs. 81/2008. Il responsabile delle misure di prevenzione
+    rimane il datore di lavoro ai sensi dell'art. 18 del medesimo decreto.
+  </div>
+
+  <div class="footer-sig">
+    <div class="sig-label">Firma dello Studio</div>
+    <div class="sig-name">${esc(studio?.studio_name || 'Studio CDL')}</div>
+    <div class="sig-meta">
+      Consulente del Lavoro${studio?.registration_number ? ' — Albo n. ' + esc(studio.registration_number) : ''}
+    </div>
+    <div style="margin-top:40px;border-top:1px solid #d1d5db;width:200px;padding-top:4px;font-size:10px;color:#9ca3af;">Timbro e firma</div>
+  </div>
+
+</div>
+
+<div class="page-footer">
+  <span>${esc(studio?.studio_name || '')} — Studio di Consulenza del Lavoro</span>
+  <span>Generato il ${fmtDate(now.toISOString())} tramite Palladia</span>
+</div>
+</body></html>`;
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await rendererPool.render(html, { docTitle: `Lettera scadenze — ${company?.name}`, rev: 1 });
+  } catch (err) {
+    console.error('[studio] lettera render error:', err.message);
+    return res.status(500).json({ error: 'PDF_RENDER_ERROR' });
+  }
+
+  const safeName = (company?.name || 'impresa').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+  const dateStr  = now.toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="lettera-scadenze-${safeName}-${dateStr}.pdf"`);
   res.setHeader('Content-Length', pdfBuffer.length);
   res.send(pdfBuffer);
 });

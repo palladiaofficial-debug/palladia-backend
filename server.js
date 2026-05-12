@@ -59,7 +59,8 @@ app.use((req, res, next) => {
     req.path.includes('/offers/parse') || // AI parsing multi-chunk, può superare 60s
     req.path.includes('/generate-dvr') ||  // DVR generation SSE
     req.path.includes('/generate-pimus') ||  // PIMUS generation SSE
-    req.path.includes('/report-vigilanza');  // PDF report vigilanza studio CDL
+    req.path.includes('/report-vigilanza') ||  // PDF report vigilanza studio CDL
+    req.path.includes('/lettera-scadenze');    // PDF lettera scadenze studio CDL
   if (skip) return next();
 
   const timer = setTimeout(() => {

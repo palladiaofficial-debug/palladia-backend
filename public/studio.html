@@ -49,13 +49,13 @@
     .auth-logo-sub  { font-size: 11px; color: var(--dim); }
     .auth-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
     .auth-subtitle { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
-    .btn-google { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px; background: var(--card2); border: 1px solid var(--border2); border-radius: var(--r-sm); cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text); transition: background .15s, border-color .15s; }
-    .btn-google:hover { background: #20293f; border-color: var(--border2); }
+    .btn-google { width: 100%; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 11px; background: var(--card2); border: 1px solid var(--border2); border-radius: var(--r-sm); cursor: pointer; font-size: 14px; font-weight: 500; color: var(--text); transition: background .15s; }
+    .btn-google:hover { background: #20293f; }
     .auth-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--dimmer); font-size: 12px; }
     .auth-divider::before, .auth-divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
     .form-group { margin-bottom: 14px; }
     label { display: block; font-size: 12px; color: var(--dim); margin-bottom: 5px; font-weight: 500; }
-    input[type=email], input[type=text], input[type=password], textarea, select {
+    input[type=email], input[type=text], input[type=date], textarea, select {
       width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm);
       color: var(--text); padding: 9px 12px; font-size: 14px; outline: none; transition: border-color .15s;
     }
@@ -63,30 +63,32 @@
     textarea { resize: vertical; min-height: 80px; font-family: inherit; }
     .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 18px; border-radius: var(--r-sm); font-size: 14px; font-weight: 600; cursor: pointer; transition: opacity .15s, background .15s; border: none; }
     .btn:disabled { opacity: .5; cursor: not-allowed; }
-    .btn-primary { background: var(--blue); color: #fff; width: 100%; }
+    .btn-primary { background: var(--blue); color: #fff; }
     .btn-primary:hover:not(:disabled) { background: #5558e3; }
     .btn-secondary { background: var(--card2); border: 1px solid var(--border2); color: var(--dim); }
-    .btn-secondary:hover { color: var(--text); border-color: var(--blue); }
+    .btn-secondary:hover:not(:disabled) { color: var(--text); border-color: var(--blue); }
     .btn-danger { background: var(--red-bg); border: 1px solid rgba(239,68,68,.3); color: var(--red); }
+    .btn-success { background: var(--green-bg); border: 1px solid rgba(16,185,129,.3); color: var(--green); }
     .btn-sm { padding: 5px 12px; font-size: 12px; }
+    .btn-xs { padding: 3px 8px; font-size: 11px; }
+    .btn-full { width: 100%; }
     .auth-error { color: var(--red); font-size: 12px; margin-top: 10px; min-height: 18px; }
     .auth-success { color: var(--green); font-size: 13px; margin-top: 10px; text-align: center; }
 
-    /* ── Layout principale ───────────────────────────────────────── */
+    /* ── Layout ──────────────────────────────────────────────────── */
     .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; height: 54px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 20; }
     .topbar-logo { display: flex; align-items: center; gap: 9px; }
     .topbar-mark { width: 26px; height: 26px; background: linear-gradient(135deg, var(--blue) 0%, #4f46e5 100%); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; }
     .topbar-name { font-size: 14px; font-weight: 700; }
     .topbar-badge { font-size: 10px; color: var(--blue-light); background: var(--blue-bg); padding: 2px 7px; border-radius: 10px; font-weight: 600; }
-    .topbar-studio { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--dim); }
-    .topbar-logout { background: none; border: 1px solid var(--border); color: var(--dim); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; }
-    .topbar-logout:hover { color: var(--text); border-color: var(--border2); }
-
+    .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .topbar-studio { font-size: 13px; color: var(--dim); }
+    .topbar-btn { background: none; border: 1px solid var(--border); color: var(--dim); padding: 5px 10px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; }
+    .topbar-btn:hover { color: var(--text); border-color: var(--border2); }
     main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 60px; }
 
     /* ── Cards ───────────────────────────────────────────────────── */
     .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 16px; }
-    .card + .card { margin-top: 12px; }
     .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
 
@@ -107,19 +109,19 @@
     .stat-val.red    { color: var(--red); }
 
     /* ── Dashboard layout ────────────────────────────────────────── */
-    .dash-layout { display: grid; grid-template-columns: 1fr 320px; gap: 16px; align-items: start; }
+    .dash-layout { display: grid; grid-template-columns: 1fr 300px; gap: 16px; align-items: start; }
     @media (max-width: 800px) { .dash-layout { grid-template-columns: 1fr; } }
 
-    /* ── Semaforo table ──────────────────────────────────────────── */
+    /* ── Table ───────────────────────────────────────────────────── */
     .table-wrap { overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; }
     th { font-size: 11px; color: var(--dim); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border); }
-    td { padding: 11px 10px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; font-size: 13px; }
+    td { padding: 10px 10px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; font-size: 13px; }
     tr:last-child td { border-bottom: none; }
     tr.clickable { cursor: pointer; }
-    tr.clickable:hover td { background: rgba(255,255,255,.025); }
+    tr.clickable:hover td { background: rgba(255,255,255,.02); }
 
-    /* ── Semaforo badge ──────────────────────────────────────────── */
+    /* ── Semaforo ────────────────────────────────────────────────── */
     .sem { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; padding: 3px 10px; border-radius: 20px; }
     .sem-verde  { background: var(--green-bg);  color: var(--green); }
     .sem-giallo { background: var(--yellow-bg); color: var(--yellow); }
@@ -131,53 +133,12 @@
 
     /* ── Alert feed ──────────────────────────────────────────────── */
     .alert-feed { display: flex; flex-direction: column; gap: 8px; }
-    .alert-item { background: var(--card2); border-left: 3px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; }
+    .alert-item { background: var(--card2); border-left: 3px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; cursor: pointer; }
     .alert-item.critical { border-left-color: var(--red); }
     .alert-item.warning  { border-left-color: var(--yellow); }
     .alert-company { font-size: 11px; font-weight: 700; color: var(--blue-light); margin-bottom: 2px; text-transform: uppercase; letter-spacing: .05em; }
     .alert-msg     { font-size: 13px; color: var(--text); }
     .alert-empty   { color: var(--dim); font-size: 13px; text-align: center; padding: 20px 0; }
-
-    /* ── Invita impresa ──────────────────────────────────────────── */
-    .invite-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
-    @media (max-width: 600px) { .invite-grid { grid-template-columns: 1fr; } }
-    .invite-result { margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; font-size: 12px; display: none; }
-    .invite-result.show { display: block; }
-    .invite-result.palladia { border-color: var(--blue); }
-    .invite-result.pending  { border-color: var(--yellow); }
-    .pending-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: rgba(245,158,11,.12); color: var(--yellow); }
-
-    /* ── Client detail ───────────────────────────────────────────── */
-    .back-btn { background: none; border: 1px solid var(--border); color: var(--dim); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 18px; }
-    .back-btn:hover { color: var(--text); border-color: var(--border2); }
-    .client-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-    .client-name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
-    .client-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-
-    /* ── Tabs ────────────────────────────────────────────────────── */
-    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
-    .tab-btn { background: none; border: none; color: var(--dim); padding: 10px 16px; cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s, border-color .15s; }
-    .tab-btn.active { color: var(--blue-light); border-bottom-color: var(--blue); }
-    .tab-btn:hover { color: var(--text); }
-    .tab-panel { display: none; }
-    .tab-panel.active { display: block; }
-
-    /* ── Grid metriche ───────────────────────────────────────────── */
-    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; margin-bottom: 16px; }
-    .metric-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px 14px; }
-    .metric-label { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
-    .metric-val   { font-size: 22px; font-weight: 800; }
-
-    /* ── Accept invito ───────────────────────────────────────────── */
-    #view-accept { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
-    .accept-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 36px 32px; width: 100%; max-width: 400px; text-align: center; }
-    .accept-icon  { font-size: 48px; margin-bottom: 16px; }
-    .accept-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
-    .accept-sub   { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
-
-    /* ── Empty states ────────────────────────────────────────────── */
-    .empty { text-align: center; padding: 32px 0; color: var(--dim); font-size: 13px; }
-    .empty-icon { font-size: 32px; margin-bottom: 8px; }
 
     /* ── Chips ───────────────────────────────────────────────────── */
     .chip { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; display: inline-block; }
@@ -186,14 +147,81 @@
     .chip-red    { background: var(--red-bg);    color: var(--red); }
     .chip-blue   { background: var(--blue-bg);   color: var(--blue-light); }
     .chip-gray   { background: rgba(100,116,139,.12); color: #64748b; }
+    .chip-violet { background: rgba(139,92,246,.12); color: #a78bfa; }
 
+    /* ── Modal ───────────────────────────────────────────────────── */
+    .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+    .modal-overlay.open { display: flex; }
+    .modal { background: var(--card); border: 1px solid var(--border2); border-radius: var(--r); width: 100%; max-width: 540px; max-height: 90vh; overflow-y: auto; }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+    .modal-title { font-size: 15px; font-weight: 700; }
+    .modal-close { background: none; border: none; color: var(--dim); font-size: 18px; cursor: pointer; line-height: 1; padding: 4px; }
+    .modal-body  { padding: 20px; }
+    .modal-footer { padding: 14px 20px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* ── Tabs (modal) ────────────────────────────────────────────── */
+    .mtabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+    .mtab { background: none; border: none; color: var(--dim); padding: 9px 16px; cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+    .mtab.active { color: var(--blue-light); border-bottom-color: var(--blue); }
+
+    /* ── Client detail ───────────────────────────────────────────── */
+    .back-btn { background: none; border: 1px solid var(--border); color: var(--dim); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 18px; }
+    .back-btn:hover { color: var(--text); }
+    .client-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .client-name { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+    .client-meta { font-size: 12px; color: var(--dim); margin-top: 4px; }
+    .client-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+    /* ── Tabs (detail) ───────────────────────────────────────────── */
+    .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; overflow-x: auto; }
+    .tab-btn { background: none; border: none; color: var(--dim); padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
+    .tab-btn.active { color: var(--blue-light); border-bottom-color: var(--blue); }
+    .tab-btn:hover { color: var(--text); }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Metrics grid ────────────────────────────────────────────── */
+    .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .metric-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px 14px; }
+    .metric-label { font-size: 11px; color: var(--dim); margin-bottom: 4px; }
+    .metric-val   { font-size: 22px; font-weight: 800; }
+
+    /* ── Tab toolbar ─────────────────────────────────────────────── */
+    .tab-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+    .tab-toolbar-title { font-size: 13px; font-weight: 600; color: var(--dim); }
+
+    /* ── Inline form ─────────────────────────────────────────────── */
+    .inline-form { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 14px; margin-bottom: 12px; }
+    .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+    @media (max-width: 600px) { .form-grid-2, .form-grid-3 { grid-template-columns: 1fr; } }
+    .form-actions { display: flex; gap: 8px; margin-top: 10px; }
+
+    /* ── CSV area ────────────────────────────────────────────────── */
+    .csv-area { width: 100%; min-height: 160px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; color: var(--text); font-family: 'SF Mono', 'Consolas', monospace; font-size: 12px; resize: vertical; }
+    .csv-help { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 12px; margin-bottom: 12px; font-size: 12px; color: var(--dim); line-height: 1.8; }
+    .csv-help code { color: var(--blue-light); font-family: monospace; }
+
+    /* ── Accept view ─────────────────────────────────────────────── */
+    #view-accept { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    .accept-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 36px 32px; width: 100%; max-width: 400px; text-align: center; }
+    .accept-icon  { font-size: 48px; margin-bottom: 16px; }
+    .accept-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .accept-sub   { color: var(--dim); font-size: 13px; margin-bottom: 24px; }
+
+    /* ── Empty state ─────────────────────────────────────────────── */
+    .empty { text-align: center; padding: 32px 0; color: var(--dim); font-size: 13px; }
+    .empty-icon { font-size: 32px; margin-bottom: 8px; }
+
+    /* ── Misc ────────────────────────────────────────────────────── */
     .text-dim { color: var(--dim); }
     .text-sm  { font-size: 12px; }
     .mt-12 { margin-top: 12px; }
-    .mt-16 { margin-top: 16px; }
-    .mt-20 { margin-top: 20px; }
-    .flex-between { display: flex; align-items: center; justify-content: space-between; }
-    .section-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; }
+    .badge-owned { font-size: 10px; color: #a78bfa; background: rgba(139,92,246,.12); padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+    .result-box { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); font-size: 12px; border: 1px solid var(--border); background: var(--surface); display: none; }
+    .result-box.show { display: block; }
+    .result-box.ok  { border-color: rgba(16,185,129,.3); }
+    .result-box.err { border-color: rgba(239,68,68,.3); }
   </style>
 </head>
 <body>
@@ -209,77 +237,52 @@
   <div class="auth-box">
     <div class="auth-logo">
       <div class="auth-logo-mark">P</div>
-      <div>
-        <div class="auth-logo-text">Palladia</div>
-        <div class="auth-logo-sub">Studio CDL Partner</div>
-      </div>
+      <div><div class="auth-logo-text">Palladia</div><div class="auth-logo-sub">Studio CDL Partner</div></div>
     </div>
     <div class="auth-title">Accedi al portale studio</div>
     <div class="auth-subtitle">Gestisci le tue imprese clienti in un unico pannello.</div>
-
     <button class="btn-google" onclick="loginGoogle()">
       <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
       Accedi con Google
     </button>
-
     <div class="auth-divider">oppure</div>
-
     <div class="form-group">
       <label>Email professionale</label>
       <input id="auth-email" type="email" placeholder="studio@example.it" autocomplete="email">
     </div>
-    <button class="btn btn-primary" onclick="loginMagicLink()">Invia link di accesso</button>
+    <button class="btn btn-primary btn-full" onclick="loginMagicLink()">Invia link di accesso</button>
     <div id="auth-error"   class="auth-error"></div>
     <div id="auth-success" class="auth-success" style="display:none">✅ Controlla la tua email per il link di accesso.</div>
   </div>
 </div>
 
-<!-- ── View: accept invito ─────────────────────────────────────────────────── -->
+<!-- ── View: accept ────────────────────────────────────────────────────────── -->
 <div id="view-accept" class="view">
   <div class="accept-box">
     <div class="accept-icon">🤝</div>
-    <div class="accept-title" id="accept-title">Invito Studio CDL</div>
-    <div class="accept-sub" id="accept-sub">Stai per collegare la tua azienda a uno studio consulente. Accedi per confermare.</div>
-    <button class="btn btn-primary" onclick="doAccept()" id="accept-btn">Accetta e collega</button>
-    <div id="accept-msg" style="margin-top:12px; font-size:13px;"></div>
+    <div class="accept-title">Invito Studio CDL</div>
+    <div class="accept-sub" id="accept-sub">Stai per collegare la tua azienda a uno studio consulente.</div>
+    <button class="btn btn-primary btn-full" onclick="doAccept()" id="accept-btn">Accetta e collega</button>
+    <div id="accept-msg" style="margin-top:12px;font-size:13px;"></div>
   </div>
 </div>
 
 <!-- ── View: setup ─────────────────────────────────────────────────────────── -->
 <div id="view-setup" class="view">
-  <main>
+  <main style="max-width:560px">
     <div class="setup-hero">
       <div style="font-size:40px;margin-bottom:12px;">📋</div>
       <h1>Configura il tuo Studio</h1>
       <p>Inserisci i dati dello studio di consulenza del lavoro per iniziare.</p>
     </div>
-
     <div class="card">
-      <div class="form-group">
-        <label>Nome studio *</label>
-        <input id="setup-name" type="text" placeholder="es. Studio CDL Rossi & Associati">
-      </div>
-      <div class="form-group">
-        <label>Partita IVA</label>
-        <input id="setup-vat" type="text" placeholder="IT12345678901">
-      </div>
-      <div class="form-group">
-        <label>N° Albo Consulenti del Lavoro</label>
-        <input id="setup-reg" type="text" placeholder="Provincia/12345">
-      </div>
-      <div class="form-group">
-        <label>Regioni operative (separate da virgola)</label>
-        <input id="setup-regions" type="text" placeholder="Lombardia, Piemonte, Liguria">
-      </div>
-      <div class="form-group">
-        <label>Codice Ente Bilaterale / Edil Connect <span style="color:var(--dimmer)">(opzionale)</span></label>
-        <input id="setup-edil" type="text" placeholder="es. EDILCASSA-PN-0042">
-      </div>
-      <div class="form-group">
-        <label>Presentazione studio</label>
-        <textarea id="setup-bio" placeholder="Breve descrizione dello studio…"></textarea>
-      </div>
-      <button class="btn btn-primary" onclick="doSetup()" id="setup-btn">Crea il mio profilo studio</button>
+      <div class="form-group"><label>Nome studio *</label><input id="setup-name" type="text" placeholder="Studio CDL Rossi & Associati"></div>
+      <div class="form-group"><label>Partita IVA</label><input id="setup-vat" type="text" placeholder="IT12345678901"></div>
+      <div class="form-group"><label>N° Albo Consulenti del Lavoro</label><input id="setup-reg" type="text" placeholder="Provincia/12345"></div>
+      <div class="form-group"><label>Regioni operative (separate da virgola)</label><input id="setup-regions" type="text" placeholder="Lombardia, Piemonte"></div>
+      <div class="form-group"><label>Codice Ente Bilaterale / Edil Connect <span style="color:var(--dimmer)">(opzionale)</span></label><input id="setup-edil" type="text" placeholder="EDILCASSA-PN-0042"></div>
+      <div class="form-group"><label>Presentazione studio</label><textarea id="setup-bio" placeholder="Breve descrizione…"></textarea></div>
+      <button class="btn btn-primary btn-full" onclick="doSetup()" id="setup-btn">Crea il mio profilo studio</button>
       <div id="setup-error" class="auth-error"></div>
     </div>
   </main>
@@ -293,86 +296,40 @@
       <span class="topbar-name">Palladia</span>
       <span class="topbar-badge">Studio CDL</span>
     </div>
-    <div class="topbar-studio">
-      <span id="topbar-studio-name"></span>
-      <button class="topbar-logout" onclick="sendDigestNow()" id="digest-btn" title="Invia report settimanale adesso">📧 Digest</button>
-      <button class="topbar-logout" onclick="doLogout()">Esci</button>
+    <div class="topbar-right">
+      <span class="topbar-studio" id="topbar-studio-name"></span>
+      <button class="topbar-btn" onclick="sendDigestNow()" id="digest-btn" title="Invia digest settimanale adesso">📧 Digest</button>
+      <button class="topbar-btn" onclick="doLogout()">Esci</button>
     </div>
   </div>
   <main>
-    <!-- Stats strip -->
     <div class="stats-strip">
-      <div class="stat-card">
-        <div class="stat-label">Clienti totali</div>
-        <div class="stat-val" id="stat-total">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Conformi</div>
-        <div class="stat-val green" id="stat-verde">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Attenzione</div>
-        <div class="stat-val yellow" id="stat-giallo">—</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Non conformi</div>
-        <div class="stat-val red" id="stat-rosso">—</div>
-      </div>
+      <div class="stat-card"><div class="stat-label">Clienti totali</div><div class="stat-val" id="stat-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Conformi</div><div class="stat-val green" id="stat-verde">—</div></div>
+      <div class="stat-card"><div class="stat-label">Attenzione</div><div class="stat-val yellow" id="stat-giallo">—</div></div>
+      <div class="stat-card"><div class="stat-label">Non conformi</div><div class="stat-val red" id="stat-rosso">—</div></div>
     </div>
 
     <div class="dash-layout">
-      <!-- Tabella clienti -->
       <div>
         <div class="card" style="padding:0">
-          <div style="padding:14px 16px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;">
+          <div style="padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">
             <span class="card-title">Imprese clienti</span>
-            <button class="btn btn-sm btn-secondary" onclick="showInvitePanel()">+ Invita impresa</button>
-          </div>
-          <div id="invite-panel" style="display:none; padding:14px 16px; border-bottom:1px solid var(--border);">
-            <div style="font-size:12px; color:var(--dim); margin-bottom:10px;">Inserisci P.IVA e/o email dell'impresa. Se è già su Palladia, riceverà un link di collegamento. Altrimenti le invieremo un invito a registrarsi.</div>
-            <div class="invite-grid">
-              <div>
-                <label style="font-size:11px;">P.IVA impresa</label>
-                <input id="invite-vat" type="text" placeholder="IT12345678901" style="margin-top:4px;">
-              </div>
-              <div>
-                <label style="font-size:11px;">Email contatto *</label>
-                <input id="invite-email" type="email" placeholder="titolare@impresa.it" style="margin-top:4px;">
-              </div>
-              <div>
-                <label style="font-size:11px;">Nome contatto</label>
-                <input id="invite-name" type="text" placeholder="Mario Rossi" style="margin-top:4px;">
-              </div>
-              <div>
-                <label style="font-size:11px;">Nome azienda</label>
-                <input id="invite-company-name" type="text" placeholder="Edilizia Rossi Srl" style="margin-top:4px;">
-              </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-sm btn-primary" onclick="openModal('modal-add-client')">+ Aggiungi impresa</button>
             </div>
-            <button class="btn btn-sm btn-primary" onclick="doInvite()" style="width:100%;">Invia invito</button>
-            <div id="invite-result-box" class="invite-result"></div>
           </div>
           <div class="table-wrap">
             <table>
-              <thead>
-                <tr>
-                  <th>Azienda</th>
-                  <th>Semaforo</th>
-                  <th>Cantieri</th>
-                  <th>Lavoratori</th>
-                  <th>DVR</th>
-                  <th>Alert</th>
-                </tr>
-              </thead>
+              <thead><tr><th>Azienda</th><th>Gestione</th><th>Semaforo</th><th>Lavoratori</th><th>DVR</th><th>Alert</th></tr></thead>
               <tbody id="clients-tbody"></tbody>
             </table>
           </div>
         </div>
       </div>
-
-      <!-- Alert feed -->
       <div>
         <div class="card">
-          <div class="card-title" style="margin-bottom:12px;">Alert prioritari</div>
+          <div class="card-title" style="margin-bottom:12px">Alert prioritari</div>
           <div class="alert-feed" id="alert-feed"></div>
         </div>
       </div>
@@ -388,57 +345,191 @@
       <span class="topbar-name">Palladia</span>
       <span class="topbar-badge">Studio CDL</span>
     </div>
-    <div class="topbar-studio">
-      <span id="topbar-studio-name2"></span>
-      <button class="topbar-logout" onclick="doLogout()">Esci</button>
+    <div class="topbar-right">
+      <span class="topbar-studio" id="topbar-studio-name2"></span>
+      <button class="topbar-btn" onclick="doLogout()">Esci</button>
     </div>
   </div>
   <main>
-    <button class="back-btn" onclick="showView('view-dashboard'); loadDashboard()">← Dashboard</button>
-
+    <button class="back-btn" onclick="showView('view-dashboard');loadDashboard()">← Dashboard</button>
     <div class="client-header">
       <div>
         <div class="client-name" id="client-name"></div>
         <div id="client-sem"></div>
+        <div class="client-meta" id="client-meta"></div>
       </div>
-      <div class="client-actions">
-        <button class="btn btn-sm btn-secondary" onclick="downloadReportVigilanza()" id="report-btn">📋 Report vigilanza</button>
-        <button class="btn btn-sm btn-secondary" onclick="generateDvrForClient()">📄 Genera DVR</button>
-      </div>
+      <div class="client-actions" id="client-actions"></div>
     </div>
-
-    <!-- Metriche -->
     <div class="metrics-grid" id="client-metrics"></div>
-
-    <!-- Tabs -->
-    <div class="tabs">
-      <button class="tab-btn active" data-tab="tab-sites"     onclick="switchTab(this,'tab-sites')">Cantieri</button>
-      <button class="tab-btn"        data-tab="tab-workers"   onclick="switchTab(this,'tab-workers')">Lavoratori</button>
-      <button class="tab-btn"        data-tab="tab-dvr"       onclick="switchTab(this,'tab-dvr')">DVR</button>
-      <button class="tab-btn"        data-tab="tab-certs"     onclick="switchTab(this,'tab-certs')">Formazione</button>
-      <button class="tab-btn"        data-tab="tab-subs"      onclick="switchTab(this,'tab-subs')">Subappaltatori</button>
-    </div>
-
-    <div id="tab-sites" class="tab-panel active"></div>
-    <div id="tab-workers" class="tab-panel"></div>
-    <div id="tab-dvr" class="tab-panel"></div>
-    <div id="tab-certs" class="tab-panel"></div>
-    <div id="tab-subs" class="tab-panel"></div>
+    <div class="tabs" id="client-tabs"></div>
+    <div id="client-tab-panels"></div>
   </main>
 </div>
 
-<!-- ── Supabase JS ─────────────────────────────────────────────────────────── -->
+<!-- ── Modal: aggiungi impresa ─────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-add-client">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Aggiungi impresa cliente</span>
+      <button class="modal-close" onclick="closeModal('modal-add-client')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="mtabs">
+        <button class="mtab active" onclick="switchMtab(this,'mtab-direct')">📁 Crea profilo direttamente</button>
+        <button class="mtab"        onclick="switchMtab(this,'mtab-invite')">🔗 Collega impresa su Palladia</button>
+      </div>
+
+      <!-- Tab: Crea direttamente -->
+      <div id="mtab-direct">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:14px;">
+          Inserisci i dati dell'impresa. Puoi gestire lavoratori e certificati tu direttamente, senza che il cliente debba registrarsi.
+        </div>
+        <div class="form-group"><label>Ragione sociale *</label><input id="dc-name" type="text" placeholder="Edilizia Rossi Srl"></div>
+        <div class="form-grid-2">
+          <div class="form-group"><label>Partita IVA</label><input id="dc-piva" type="text" placeholder="IT12345678901"></div>
+          <div class="form-group"><label>Email contatto</label><input id="dc-email" type="email" placeholder="info@impresa.it"></div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group"><label>Indirizzo</label><input id="dc-address" type="text" placeholder="Via Roma 1, Milano"></div>
+          <div class="form-group"><label>Telefono</label><input id="dc-phone" type="text" placeholder="+39 02 1234567"></div>
+        </div>
+        <div class="form-group"><label>Responsabile sicurezza (RSPP/DATORE)</label><input id="dc-safety" type="text" placeholder="Mario Rossi"></div>
+        <div id="dc-result" class="result-box"></div>
+      </div>
+
+      <!-- Tab: Invita esistente -->
+      <div id="mtab-invite" style="display:none">
+        <div style="font-size:12px;color:var(--dim);margin-bottom:14px;">
+          Se l'impresa è già su Palladia, inserisci P.IVA o email per inviarle un link di collegamento. Se non è su Palladia, usa la scheda "Crea profilo direttamente".
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group"><label>P.IVA impresa</label><input id="inv-vat" type="text" placeholder="IT12345678901"></div>
+          <div class="form-group"><label>Email contatto</label><input id="inv-email" type="email" placeholder="titolare@impresa.it"></div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group"><label>Nome contatto</label><input id="inv-name" type="text" placeholder="Mario Rossi"></div>
+          <div class="form-group"><label>Nome azienda</label><input id="inv-cname" type="text" placeholder="Edilizia Rossi Srl"></div>
+        </div>
+        <div id="inv-result" class="result-box"></div>
+      </div>
+    </div>
+    <div class="modal-footer" id="modal-add-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-client')">Annulla</button>
+      <button class="btn btn-primary btn-sm" id="modal-add-btn" onclick="doAddClient()">Crea profilo</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: aggiungi lavoratore ─────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-add-worker">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <span class="modal-title">Aggiungi lavoratore</span>
+      <button class="modal-close" onclick="closeModal('modal-add-worker')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group"><label>Nome e cognome *</label><input id="aw-name" type="text" placeholder="Mario Rossi"></div>
+      <div class="form-group"><label>Codice fiscale *</label><input id="aw-cf" type="text" placeholder="RSSMRA80A01H501Z" style="text-transform:uppercase"></div>
+      <div id="aw-result" class="result-box"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-worker')">Annulla</button>
+      <button class="btn btn-primary btn-sm" id="aw-btn" onclick="doAddWorker()">Aggiungi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: aggiungi certificato ────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-add-cert">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title">Aggiungi certificato</span>
+      <button class="modal-close" onclick="closeModal('modal-add-cert')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Lavoratore *</label>
+        <select id="ac-worker"></select>
+      </div>
+      <div class="form-group">
+        <label>Tipo corso *</label>
+        <select id="ac-course-select" onchange="onCourseSelect(this)">
+          <option value="">— seleziona o scrivi sotto —</option>
+          <option value="Formazione lavoratori - Rischio Basso">Formazione lavoratori - Rischio Basso</option>
+          <option value="Formazione lavoratori - Rischio Medio">Formazione lavoratori - Rischio Medio</option>
+          <option value="Formazione lavoratori - Rischio Alto">Formazione lavoratori - Rischio Alto</option>
+          <option value="Idoneità medica">Idoneità medica</option>
+          <option value="Primo Soccorso - Gruppo A">Primo Soccorso - Gruppo A</option>
+          <option value="Primo Soccorso - Gruppo B/C">Primo Soccorso - Gruppo B/C</option>
+          <option value="Antincendio - Rischio Basso">Antincendio - Rischio Basso</option>
+          <option value="Antincendio - Rischio Medio">Antincendio - Rischio Medio</option>
+          <option value="Antincendio - Rischio Alto">Antincendio - Rischio Alto</option>
+          <option value="Ponteggi - Montaggio e smontaggio">Ponteggi - Montaggio e smontaggio</option>
+          <option value="Lavori in quota">Lavori in quota</option>
+          <option value="Carrelli elevatori">Carrelli elevatori</option>
+          <option value="Escavatori e macchine movimento terra">Escavatori e macchine movimento terra</option>
+          <option value="Formazione Preposto">Formazione Preposto</option>
+          <option value="__custom__">Altro (scrivi sotto…)</option>
+        </select>
+      </div>
+      <div class="form-group" id="ac-course-custom-wrap" style="display:none">
+        <label>Nome corso personalizzato</label>
+        <input id="ac-course-custom" type="text" placeholder="es. Idoneità ponteggiatore">
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group"><label>Data inizio <span style="color:var(--dimmer)">(opt.)</span></label><input id="ac-issue" type="date"></div>
+        <div class="form-group"><label>Data scadenza *</label><input id="ac-expiry" type="date"></div>
+      </div>
+      <div class="form-group"><label>Ente erogatore</label><input id="ac-body" type="text" placeholder="es. Formedil Milano"></div>
+      <div class="form-group"><label>N° attestato</label><input id="ac-num" type="text" placeholder="opzionale"></div>
+      <div id="ac-result" class="result-box"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-add-cert')">Annulla</button>
+      <button class="btn btn-primary btn-sm" id="ac-btn" onclick="doAddCert()">Aggiungi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Modal: import CSV ───────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="modal-csv">
+  <div class="modal" style="max-width:600px">
+    <div class="modal-header">
+      <span class="modal-title">Import CSV — lavoratori e certificati</span>
+      <button class="modal-close" onclick="closeModal('modal-csv')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="csv-help">
+        <strong>Formato CSV</strong> (separatore virgola <code>,</code> o punto e virgola <code>;</code>)<br>
+        Prima riga: intestazioni (viene ignorata). Colonne:<br>
+        <code>Nome lavoratore; Codice Fiscale; Tipo corso; Data scadenza [; Ente erogatore] [; Data inizio]</code><br><br>
+        <strong>Esempio:</strong><br>
+        <code>Mario Rossi; RSSMRA80A01H501Z; Formazione lavoratori - Rischio Alto; 2026-06-30; Formedil MI</code><br>
+        <code>Mario Rossi; RSSMRA80A01H501Z; Idoneità medica; 2025-12-01; Dr. Bianchi</code><br><br>
+        Il lavoratore viene creato automaticamente se non esiste. Le date devono essere in formato <code>AAAA-MM-GG</code>.
+      </div>
+      <textarea class="csv-area" id="csv-text" placeholder="Incolla qui il CSV…"></textarea>
+      <div id="csv-result" class="result-box" style="margin-top:10px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary btn-sm" onclick="closeModal('modal-csv')">Annulla</button>
+      <button class="btn btn-primary btn-sm" id="csv-btn" onclick="doImportCsv()">Importa</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Supabase JS ──────────────────────────────────────────────────────────── -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 'use strict';
 
 let sb = null;
-let _session   = null;
-let _studio    = null;
-let _clientData = null;
-let _inviteToken = null;
+let _session     = null;
+let _studio      = null;
+let _clientData  = null;   // { companyId, owned_by_studio, workers, ... }
+let _activeModalTab = 'direct'; // 'direct' | 'invite'
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────────────
 
 function showView(id) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -452,21 +543,19 @@ function esc(s) {
 
 function fmtDate(iso) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('it-IT', { day:'2-digit', month:'short', year:'numeric' });
+  return new Date(iso).toLocaleDateString('it-IT', { day:'2-digit', month:'2-digit', year:'numeric' });
 }
 
 function semHtml(s) {
-  const map = { verde: ['dot-verde','sem-verde','●'], giallo: ['dot-giallo','sem-giallo','●'], rosso: ['dot-rosso','sem-rosso','●'] };
-  const [dotCls, semCls] = map[s] || map['verde'];
-  const labels = { verde: 'Conforme', giallo: 'Attenzione', rosso: 'Non conforme' };
-  return `<span class="sem ${semCls}"><span class="dot ${dotCls}"></span>${labels[s] || s}</span>`;
+  const map = { verde:'dot-verde sem-verde', giallo:'dot-giallo sem-giallo', rosso:'dot-rosso sem-rosso' };
+  const labels = { verde:'Conforme', giallo:'Attenzione', rosso:'Non conforme' };
+  const [dotCls, semCls] = (map[s]||map['verde']).split(' ');
+  return `<span class="sem ${semCls}"><span class="dot ${dotCls}"></span>${labels[s]||s}</span>`;
 }
 
 async function apiGet(path) {
-  const r = await fetch('/api/v1' + path, {
-    headers: { 'Authorization': `Bearer ${_session.access_token}` }
-  });
-  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `HTTP ${r.status}`); }
+  const r = await fetch('/api/v1' + path, { headers: { 'Authorization': `Bearer ${_session.access_token}` }});
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error||`HTTP ${r.status}`); }
   return r.json();
 }
 
@@ -476,118 +565,140 @@ async function apiPost(path, body) {
     headers: { 'Authorization': `Bearer ${_session.access_token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || e.message || `HTTP ${r.status}`); }
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error||e.message||`HTTP ${r.status}`); }
   return r.json();
 }
 
-// ── Auth ───────────────────────────────────────────────────────────────────
+async function apiPut(path, body) {
+  const r = await fetch('/api/v1' + path, {
+    method: 'PUT',
+    headers: { 'Authorization': `Bearer ${_session.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error||e.message||`HTTP ${r.status}`); }
+  return r.json();
+}
+
+async function apiDelete(path) {
+  const r = await fetch('/api/v1' + path, {
+    method: 'DELETE',
+    headers: { 'Authorization': `Bearer ${_session.access_token}` },
+  });
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error||`HTTP ${r.status}`); }
+  return r.json();
+}
+
+async function downloadPdf(path, filename) {
+  const r = await fetch('/api/v1' + path, { headers: { 'Authorization': `Bearer ${_session.access_token}` }});
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const blob = await r.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────────
+
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+function switchMtab(btn, tabId) {
+  document.querySelectorAll('.mtab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#mtab-direct,#mtab-invite').forEach(p => p.style.display = 'none');
+  document.getElementById(tabId).style.display = 'block';
+  _activeModalTab = tabId === 'mtab-direct' ? 'direct' : 'invite';
+  document.getElementById('modal-add-btn').textContent = _activeModalTab === 'direct' ? 'Crea profilo' : 'Invia invito';
+}
+
+function onCourseSelect(sel) {
+  document.getElementById('ac-course-custom-wrap').style.display = sel.value === '__custom__' ? 'block' : 'none';
+}
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
 
 async function loginGoogle() {
-  const { error } = await sb.auth.signInWithOAuth({
-    provider: 'google',
-    options: { redirectTo: window.location.origin + '/studio' }
-  });
+  const { error } = await sb.auth.signInWithOAuth({ provider:'google', options:{ redirectTo: window.location.origin+'/studio' }});
   if (error) document.getElementById('auth-error').textContent = error.message;
 }
 
 async function loginMagicLink() {
   const email = document.getElementById('auth-email').value.trim();
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    document.getElementById('auth-error').textContent = 'Inserisci un indirizzo email valido.';
-    return;
+    document.getElementById('auth-error').textContent = 'Email non valida.'; return;
   }
   document.getElementById('auth-error').textContent = '';
-  const { error } = await sb.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: window.location.origin + '/studio' }
-  });
+  const { error } = await sb.auth.signInWithOtp({ email, options:{ emailRedirectTo: window.location.origin+'/studio' }});
   if (error) { document.getElementById('auth-error').textContent = error.message; return; }
   document.getElementById('auth-success').style.display = 'block';
 }
 
-async function doLogout() {
-  await sb.auth.signOut();
-  _session = null;
-  _studio  = null;
-  showView('view-auth');
-}
+async function doLogout() { await sb.auth.signOut(); _session=null; _studio=null; showView('view-auth'); }
 
-// ── Onboarding ──────────────────────────────────────────────────────────────
+// ── Setup ────────────────────────────────────────────────────────────────────
 
 async function doSetup() {
   const btn = document.getElementById('setup-btn');
   const err = document.getElementById('setup-error');
   err.textContent = '';
-
   const name = document.getElementById('setup-name').value.trim();
   if (!name) { err.textContent = 'Il nome studio è obbligatorio.'; return; }
-
-  const regions = document.getElementById('setup-regions').value
-    .split(',').map(s => s.trim()).filter(Boolean);
-
-  btn.disabled = true;
-  btn.textContent = 'Creazione in corso…';
-
+  const regions = document.getElementById('setup-regions').value.split(',').map(s=>s.trim()).filter(Boolean);
+  btn.disabled = true; btn.textContent = 'Creazione…';
   try {
     const data = await apiPost('/studio/onboard', {
       studio_name:         name,
-      vat_number:          document.getElementById('setup-vat').value.trim()    || null,
-      registration_number: document.getElementById('setup-reg').value.trim()    || null,
+      vat_number:          document.getElementById('setup-vat').value.trim()||null,
+      registration_number: document.getElementById('setup-reg').value.trim()||null,
       operative_regions:   regions,
-      edil_connect_code:   document.getElementById('setup-edil').value.trim()   || null,
-      bio:                 document.getElementById('setup-bio').value.trim()     || null,
+      edil_connect_code:   document.getElementById('setup-edil').value.trim()||null,
+      bio:                 document.getElementById('setup-bio').value.trim()||null,
     });
     _studio = data.studio;
     await loadDashboard();
-  } catch (e) {
-    err.textContent = e.message;
-    btn.disabled    = false;
-    btn.textContent = 'Crea il mio profilo studio';
-  }
+  } catch (e) { err.textContent = e.message; btn.disabled=false; btn.textContent='Crea il mio profilo studio'; }
 }
 
-// ── Dashboard ───────────────────────────────────────────────────────────────
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 
 async function loadDashboard() {
   showView('view-dashboard');
   document.getElementById('topbar-studio-name').textContent = _studio?.studio_name || '';
   document.getElementById('clients-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--dim)">Caricamento…</td></tr>';
-  document.getElementById('alert-feed').innerHTML   = '';
-
   try {
     const data = await apiGet('/studio/dashboard');
     renderDashboard(data);
   } catch (e) {
-    document.getElementById('clients-tbody').innerHTML =
-      `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--red)">Errore: ${esc(e.message)}</td></tr>`;
+    document.getElementById('clients-tbody').innerHTML = `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--red)">Errore: ${esc(e.message)}</td></tr>`;
   }
 }
 
 function renderDashboard(data) {
-  // Stats
   document.getElementById('stat-total').textContent  = data.summary.total;
   document.getElementById('stat-verde').textContent  = data.summary.verde;
   document.getElementById('stat-giallo').textContent = data.summary.giallo;
   document.getElementById('stat-rosso').textContent  = data.summary.rosso;
 
-  // Table
   const tbody = document.getElementById('clients-tbody');
   if (!data.clients.length) {
-    tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏢</div>Nessuna impresa cliente. Usa il bottone "+ Invita impresa" per aggiungere la prima.</div></td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty"><div class="empty-icon">🏢</div>Nessuna impresa cliente. Usa "+ Aggiungi impresa" per iniziare.</div></td></tr>`;
   } else {
     tbody.innerHTML = data.clients.map(c => {
-      const alertCount = c.alerts?.length || 0;
-      const alertBadge = alertCount > 0
-        ? `<span class="chip ${c.semaforo === 'rosso' ? 'chip-red' : 'chip-yellow'}">${alertCount}</span>`
+      const alertBadge = (c.alerts?.length||0) > 0
+        ? `<span class="chip ${c.semaforo==='rosso'?'chip-red':'chip-yellow'}">${c.alerts.length}</span>`
         : '<span class="text-dim">—</span>';
       const dvrBadge = c.dvr_presente
-        ? `<span class="chip chip-green">✓ Presente</span>`
-        : (c.lavoratori_totali > 0 ? `<span class="chip chip-red">Mancante</span>` : `<span class="text-dim">—</span>`);
-
+        ? `<span class="chip chip-green">✓</span>`
+        : (c.lavoratori_totali>0?`<span class="chip chip-red">Mancante</span>`:'<span class="text-dim">—</span>');
+      const gestBadge = c.owned_by_studio
+        ? `<span class="chip chip-violet">CDL</span>`
+        : `<span class="chip chip-blue">Collegata</span>`;
       return `<tr class="clickable" onclick="openClient('${esc(c.company_id)}')">
         <td><strong>${esc(c.company_name)}</strong></td>
+        <td>${gestBadge}</td>
         <td>${semHtml(c.semaforo)}</td>
-        <td>${c.cantieri_attivi}</td>
         <td>${c.lavoratori_totali}</td>
         <td>${dvrBadge}</td>
         <td>${alertBadge}</td>
@@ -595,191 +706,464 @@ function renderDashboard(data) {
     }).join('');
   }
 
-  // Alert feed
   const feed = document.getElementById('alert-feed');
   if (!data.alerts.length) {
     feed.innerHTML = '<div class="alert-empty">✅ Nessun alert attivo</div>';
   } else {
-    // Deduplica per company + tipo
     const seen = new Set();
-    const unique = data.alerts.filter(a => {
-      const k = `${a.company_id}:${a.type}`;
-      if (seen.has(k)) return false;
-      seen.add(k); return true;
-    });
-    feed.innerHTML = unique.slice(0, 20).map(a => `
-      <div class="alert-item ${a.severity}" onclick="openClient('${esc(a.company_id)}')" style="cursor:pointer">
+    const unique = data.alerts.filter(a => { const k=`${a.company_id}:${a.type}`; if(seen.has(k))return false; seen.add(k); return true; });
+    feed.innerHTML = unique.slice(0,20).map(a =>
+      `<div class="alert-item ${a.severity}" onclick="openClient('${esc(a.company_id)}')">
         <div class="alert-company">${esc(a.company_name)}</div>
         <div class="alert-msg">${esc(a.message)}</div>
       </div>`).join('');
   }
 }
 
-// ── Invite ──────────────────────────────────────────────────────────────────
+// ── Aggiungi impresa ─────────────────────────────────────────────────────────
 
-function showInvitePanel() {
-  const panel = document.getElementById('invite-panel');
-  const isOpen = panel.style.display !== 'none';
-  panel.style.display = isOpen ? 'none' : 'block';
-  if (!isOpen) document.getElementById('invite-result-box').classList.remove('show');
+async function doAddClient() {
+  if (_activeModalTab === 'direct') {
+    await doCreateDirect();
+  } else {
+    await doInviteExisting();
+  }
 }
 
-async function doInvite() {
-  const vat   = document.getElementById('invite-vat').value.trim();
-  const email = document.getElementById('invite-email').value.trim();
-  const name  = document.getElementById('invite-name').value.trim();
-  const cname = document.getElementById('invite-company-name').value.trim();
+async function doCreateDirect() {
+  const btn = document.getElementById('modal-add-btn');
+  const res = document.getElementById('dc-result');
+  const name = document.getElementById('dc-name').value.trim();
+  if (!name) { res.className='result-box show err'; res.textContent='Il nome azienda è obbligatorio.'; return; }
 
-  if (!email && !vat) {
-    alert('Inserisci almeno P.IVA o email di contatto.');
-    return;
-  }
+  btn.disabled = true; btn.textContent = 'Creazione…';
+  res.className = 'result-box'; res.textContent='';
 
-  const box = document.getElementById('invite-result-box');
-  box.classList.remove('show', 'palladia', 'pending');
-  box.innerHTML = 'Invio in corso…';
-  box.classList.add('show');
+  try {
+    await apiPost('/studio/clients/create-direct', {
+      company_name:   name,
+      piva:           document.getElementById('dc-piva').value.trim()||null,
+      contact_email:  document.getElementById('dc-email').value.trim()||null,
+      address:        document.getElementById('dc-address').value.trim()||null,
+      phone:          document.getElementById('dc-phone').value.trim()||null,
+      safety_manager: document.getElementById('dc-safety').value.trim()||null,
+    });
+    res.className='result-box show ok'; res.innerHTML=`<span style="color:var(--green)">✅ ${esc(name)} aggiunta. Puoi ora inserire i lavoratori e i certificati.</span>`;
+    ['dc-name','dc-piva','dc-email','dc-address','dc-phone','dc-safety'].forEach(id=>document.getElementById(id).value='');
+    setTimeout(()=>{ closeModal('modal-add-client'); loadDashboard(); }, 1500);
+  } catch (e) { res.className='result-box show err'; res.textContent='Errore: '+e.message; }
+  finally { btn.disabled=false; btn.textContent='Crea profilo'; }
+}
+
+async function doInviteExisting() {
+  const btn = document.getElementById('modal-add-btn');
+  const res = document.getElementById('inv-result');
+  const vat   = document.getElementById('inv-vat').value.trim();
+  const email = document.getElementById('inv-email').value.trim();
+  if (!vat && !email) { res.className='result-box show err'; res.textContent='Inserisci P.IVA o email.'; return; }
+
+  btn.disabled=true; btn.textContent='Invio…';
+  res.className='result-box'; res.textContent='';
 
   try {
     const data = await apiPost('/studio/clients/invite', {
-      vat_number:    vat   || undefined,
-      contact_email: email || undefined,
-      contact_name:  name  || undefined,
-      company_name:  cname || undefined,
+      vat_number:    vat||undefined,
+      contact_email: email||undefined,
+      contact_name:  document.getElementById('inv-name').value.trim()||undefined,
+      company_name:  document.getElementById('inv-cname').value.trim()||undefined,
     });
-
-    if (data.type === 'palladia_invite') {
-      box.classList.add('palladia');
-      box.innerHTML = `
-        <div style="color:var(--blue-light);font-weight:700;margin-bottom:6px;">✅ Impresa trovata su Palladia</div>
-        <div style="margin-bottom:8px;"><strong>${esc(data.company_name)}</strong> — invito inviato via email al titolare.</div>
-        <div style="color:var(--dim);font-size:11px;margin-bottom:6px;">Oppure condividi manualmente il link:</div>
-        <div style="word-break:break-all;background:var(--bg);padding:6px 8px;border-radius:4px;font-size:11px;">${esc(data.accept_url)}</div>
-        <button onclick="navigator.clipboard.writeText('${esc(data.accept_url)}').then(()=>this.textContent='✓ Copiato')" class="btn btn-sm btn-secondary" style="margin-top:6px">📋 Copia link</button>`;
+    if (data.type==='palladia_invite') {
+      res.className='result-box show ok';
+      res.innerHTML=`<span style="color:var(--green)">✅ ${esc(data.company_name)} trovata su Palladia — invito inviato.</span>`;
     } else {
-      box.classList.add('pending');
-      box.innerHTML = `
-        <div style="color:var(--yellow);font-weight:700;margin-bottom:6px;">📧 Invito inviato</div>
-        <div style="margin-bottom:8px;">${esc(data.message)}</div>
-        <div style="color:var(--dim);font-size:11px;">Il contatto riceverà un'email con le istruzioni per registrarsi su Palladia e collegarsi al tuo studio. Comparirà nella dashboard appena avrà completato l'onboarding.</div>`;
+      res.className='result-box show ok';
+      res.innerHTML=`<span style="color:var(--yellow)">📧 ${esc(data.message)}</span>`;
     }
-
-    // Pulisci form
-    ['invite-vat','invite-email','invite-name','invite-company-name'].forEach(id => {
-      document.getElementById(id).value = '';
-    });
-    setTimeout(loadDashboard, 1500);
-  } catch (e) {
-    box.innerHTML = `<span style="color:var(--red)">Errore: ${esc(e.message)}</span>`;
-  }
+    setTimeout(()=>{ closeModal('modal-add-client'); loadDashboard(); }, 2000);
+  } catch(e) { res.className='result-box show err'; res.textContent='Errore: '+e.message; }
+  finally { btn.disabled=false; btn.textContent='Invia invito'; }
 }
 
-// ── Client detail ───────────────────────────────────────────────────────────
+// ── Client detail ─────────────────────────────────────────────────────────────
 
 async function openClient(companyId) {
   showView('view-client');
-  document.getElementById('topbar-studio-name2').textContent = _studio?.studio_name || '';
+  document.getElementById('topbar-studio-name2').textContent = _studio?.studio_name||'';
   document.getElementById('client-name').textContent = 'Caricamento…';
   document.getElementById('client-sem').innerHTML    = '';
+  document.getElementById('client-meta').textContent  = '';
   document.getElementById('client-metrics').innerHTML = '';
+  document.getElementById('client-tabs').innerHTML    = '';
+  document.getElementById('client-tab-panels').innerHTML = '';
+  document.getElementById('client-actions').innerHTML = '';
 
   try {
     const data = await apiGet(`/studio/clients/${companyId}`);
     _clientData = { companyId, ...data };
     renderClientDetail(data);
-  } catch (e) {
-    document.getElementById('client-name').textContent = 'Errore: ' + e.message;
+  } catch(e) {
+    document.getElementById('client-name').textContent = 'Errore: '+e.message;
   }
 }
 
 function renderClientDetail(data) {
-  const { company, sites, workers, dvrs, subcontractors, certificates } = data;
+  const { company, owned_by_studio, sites, workers, dvrs, subcontractors, certificates } = data;
 
-  document.getElementById('client-name').textContent = company?.name || '—';
+  document.getElementById('client-name').textContent = company?.name||'—';
 
-  // Calcola semaforo locale
+  const meta = [
+    company?.piva    ? 'P.IVA ' + company.piva    : null,
+    company?.address ? company.address             : null,
+    company?.contact_email ? company.contact_email : null,
+  ].filter(Boolean).join(' · ');
+  document.getElementById('client-meta').textContent = meta;
+
+  // Semaforo
   const now  = new Date();
-  const in30 = new Date(now.getTime() + 30 * 86400_000);
-  const hasDvr = dvrs.length > 0;
-  const expiredCerts = certificates.filter(c => c.expiry_date && new Date(c.expiry_date) < now);
-  const soonCerts    = certificates.filter(c => c.expiry_date && new Date(c.expiry_date) >= now && new Date(c.expiry_date) < in30);
-  const activeWorkers = workers.filter(w => w.is_active !== false);
-  const activeSites   = (sites || []).filter(s => s.status !== 'chiuso');
-
+  const in30 = new Date(now.getTime()+30*86400_000);
+  const expiredCerts = certificates.filter(c => c.expiry_date && new Date(c.expiry_date)<now);
+  const soonCerts    = certificates.filter(c => c.expiry_date && new Date(c.expiry_date)>=now && new Date(c.expiry_date)<in30);
+  const activeWorkers = workers.filter(w=>w.is_active!==false);
   let sem = 'verde';
-  if (!hasDvr && activeWorkers.length > 0) sem = 'rosso';
-  else if (expiredCerts.length > 0)         sem = 'rosso';
-  else if (soonCerts.length > 0)            sem = 'giallo';
+  if (!dvrs.length && activeWorkers.length>0) sem='rosso';
+  else if (expiredCerts.length>0) sem='rosso';
+  else if (soonCerts.length>0)    sem='giallo';
   document.getElementById('client-sem').innerHTML = semHtml(sem);
 
-  // Metriche
-  document.getElementById('client-metrics').innerHTML = [
-    { label: 'Cantieri attivi',     val: activeSites.length },
-    { label: 'Lavoratori attivi',   val: activeWorkers.length },
-    { label: 'Revisioni DVR',       val: dvrs.length },
-    { label: 'Attestati totali',    val: certificates.length },
-    { label: 'Scaduti',             val: expiredCerts.length,  cls: expiredCerts.length > 0 ? 'color:var(--red)' : '' },
-    { label: 'In scadenza (30gg)',  val: soonCerts.length,     cls: soonCerts.length > 0 ? 'color:var(--yellow)' : '' },
-    { label: 'Subappaltatori',      val: (subcontractors||[]).length },
-  ].map(m => `<div class="metric-box"><div class="metric-label">${esc(m.label)}</div><div class="metric-val" style="${m.cls||''}">${m.val}</div></div>`).join('');
+  // Badge gestione
+  const badgeHtml = owned_by_studio
+    ? `<span class="badge-owned">Gestita dal CDL</span>`
+    : `<span class="chip chip-blue" style="font-size:11px">Collegata</span>`;
 
-  // Tab: Cantieri
-  document.getElementById('tab-sites').innerHTML = !activeSites.length
+  // Actions
+  const actionsEl = document.getElementById('client-actions');
+  let actHtml = `${badgeHtml} `;
+  if (owned_by_studio) {
+    actHtml += `
+      <button class="btn btn-sm btn-secondary" onclick="openModal('modal-csv')">📥 Import CSV</button>
+      <button class="btn btn-sm btn-secondary" onclick="downloadLettera()" id="lettera-btn">📩 Lettera scadenze</button>
+    `;
+  } else {
+    actHtml += `<button class="btn btn-sm btn-secondary" onclick="downloadLettera()" id="lettera-btn">📩 Lettera scadenze</button>`;
+  }
+  actHtml += `
+    <button class="btn btn-sm btn-secondary" onclick="downloadReportVigilanza()" id="report-btn">📋 Report vigilanza</button>
+    <button class="btn btn-sm btn-secondary" onclick="generateDvrForClient()">📄 Genera DVR</button>
+  `;
+  actionsEl.innerHTML = actHtml;
+
+  // KPI
+  document.getElementById('client-metrics').innerHTML = [
+    { label:'Cantieri attivi',    val:(sites||[]).filter(s=>s.status!=='chiuso').length },
+    { label:'Lavoratori attivi',  val:activeWorkers.length },
+    { label:'DVR',                val:dvrs.length },
+    { label:'Attestati totali',   val:certificates.length },
+    { label:'Scaduti',            val:expiredCerts.length, css:expiredCerts.length>0?'color:var(--red)':'' },
+    { label:'In scadenza (30gg)', val:soonCerts.length,    css:soonCerts.length>0?'color:var(--yellow)':'' },
+    { label:'Subappaltatori',     val:(subcontractors||[]).length },
+  ].map(m=>`<div class="metric-box"><div class="metric-label">${esc(m.label)}</div><div class="metric-val" style="${m.css||''}">${m.val}</div></div>`).join('');
+
+  // Tabs
+  const tabs = [
+    { id:'tab-workers',  label:`Lavoratori (${activeWorkers.length})` },
+    { id:'tab-certs',    label:`Formazione (${certificates.length})` },
+    { id:'tab-sites',    label:`Cantieri` },
+    { id:'tab-dvr',      label:`DVR` },
+    { id:'tab-subs',     label:`Subappaltatori` },
+  ];
+  const tabsEl  = document.getElementById('client-tabs');
+  const panelsEl = document.getElementById('client-tab-panels');
+
+  tabsEl.innerHTML = tabs.map((t,i) =>
+    `<button class="tab-btn ${i===0?'active':''}" data-tab="${t.id}" onclick="switchTab(this,'${t.id}')">${t.label}</button>`
+  ).join('');
+  panelsEl.innerHTML = tabs.map((t,i) =>
+    `<div id="${t.id}" class="tab-panel ${i===0?'active':''}"></div>`
+  ).join('');
+
+  // Render tab contents
+  renderTabWorkers(activeWorkers, owned_by_studio);
+  renderTabCerts(certificates, owned_by_studio, now, in30);
+  renderTabSites(sites);
+  renderTabDvr(dvrs, activeWorkers);
+  renderTabSubs(subcontractors);
+}
+
+// ── Tab: Lavoratori ───────────────────────────────────────────────────────────
+
+function renderTabWorkers(workers, isOwner) {
+  const el = document.getElementById('tab-workers');
+  let html = '';
+
+  if (isOwner) {
+    html += `<div class="tab-toolbar">
+      <span class="tab-toolbar-title">${workers.length} lavoratori attivi</span>
+      <button class="btn btn-sm btn-primary" onclick="openAddWorkerModal()">+ Aggiungi</button>
+    </div>`;
+  }
+
+  if (!workers.length) {
+    html += `<div class="empty"><div class="empty-icon">👷</div>Nessun lavoratore${isOwner?'. Usa "+ Aggiungi" o importa un CSV.':''}</div>`;
+  } else {
+    html += `<div class="card" style="padding:0"><div class="table-wrap"><table>
+      <thead><tr><th>Nome</th><th>Codice Fiscale</th>${isOwner?'<th></th>':''}</tr></thead>
+      <tbody>${workers.map(w=>`<tr>
+        <td><strong>${esc(w.full_name)}</strong></td>
+        <td class="text-dim text-sm">${esc(w.fiscal_code||'—')}</td>
+        ${isOwner?`<td><button class="btn btn-xs btn-danger" onclick="doDeleteWorker('${w.id}')">Rimuovi</button></td>`:''}
+      </tr>`).join('')}</tbody>
+    </table></div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── Tab: Formazione ───────────────────────────────────────────────────────────
+
+function renderTabCerts(certs, isOwner, now, in30) {
+  const el = document.getElementById('tab-certs');
+  let html = '';
+
+  if (isOwner) {
+    html += `<div class="tab-toolbar">
+      <span class="tab-toolbar-title">${certs.length} attestati</span>
+      <button class="btn btn-sm btn-primary" onclick="openAddCertModal()">+ Aggiungi</button>
+    </div>`;
+  }
+
+  if (!certs.length) {
+    html += `<div class="empty"><div class="empty-icon">🎓</div>Nessun attestato${isOwner?'. Usa "+ Aggiungi" o importa un CSV.':''}</div>`;
+  } else {
+    html += `<div class="card" style="padding:0"><div class="table-wrap"><table>
+      <thead><tr><th>Lavoratore</th><th>Corso</th><th>Scadenza</th><th>Stato</th><th>Ente</th>${isOwner?'<th></th>':''}</tr></thead>
+      <tbody>${certs.map(c=>{
+        const exp = c.expiry_date ? new Date(c.expiry_date) : null;
+        let badge='';
+        if (!exp)          badge='<span class="chip chip-gray">N/D</span>';
+        else if (exp<now)  badge='<span class="chip chip-red">Scaduto</span>';
+        else if (exp<in30) badge='<span class="chip chip-yellow">In scadenza</span>';
+        else               badge='<span class="chip chip-green">Valido</span>';
+        return `<tr>
+          <td><strong>${esc(c.workers?.full_name||'—')}</strong></td>
+          <td class="text-sm">${esc(c.course_types?.name||'—')}</td>
+          <td class="text-sm text-dim">${fmtDate(c.expiry_date)}</td>
+          <td>${badge}</td>
+          <td class="text-sm text-dim">${esc(c.issuing_body||'—')}</td>
+          ${isOwner?`<td><button class="btn btn-xs btn-danger" onclick="doDeleteCert('${c.id}')">✕</button></td>`:''}
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div></div>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── Tab: Cantieri ─────────────────────────────────────────────────────────────
+
+function renderTabSites(sites) {
+  const el = document.getElementById('tab-sites');
+  const active = (sites||[]).filter(s=>s.status!=='chiuso');
+  el.innerHTML = !active.length
     ? '<div class="empty"><div class="empty-icon">🏗️</div>Nessun cantiere attivo</div>'
     : `<div class="card" style="padding:0"><div class="table-wrap"><table>
         <thead><tr><th>Nome</th><th>Indirizzo</th><th>Stato</th></tr></thead>
-        <tbody>${activeSites.map(s => `<tr><td><strong>${esc(s.name)}</strong></td><td class="text-dim">${esc(s.address||'—')}</td><td><span class="chip chip-blue">${esc(s.status||'attivo')}</span></td></tr>`).join('')}</tbody>
+        <tbody>${active.map(s=>`<tr><td><strong>${esc(s.name)}</strong></td><td class="text-dim text-sm">${esc(s.address||'—')}</td><td><span class="chip chip-blue">${esc(s.status||'attivo')}</span></td></tr>`).join('')}</tbody>
       </table></div></div>`;
+}
 
-  // Tab: Lavoratori
-  document.getElementById('tab-workers').innerHTML = !activeWorkers.length
-    ? '<div class="empty"><div class="empty-icon">👷</div>Nessun lavoratore attivo</div>'
-    : `<div class="card" style="padding:0"><div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>Codice Fiscale</th></tr></thead>
-        <tbody>${activeWorkers.map(w => `<tr><td><strong>${esc(w.full_name)}</strong></td><td class="text-dim">${esc(w.fiscal_code||'—')}</td></tr>`).join('')}</tbody>
-      </table></div></div>`;
+// ── Tab: DVR ──────────────────────────────────────────────────────────────────
 
-  // Tab: DVR
-  document.getElementById('tab-dvr').innerHTML = !dvrs.length
-    ? (activeWorkers.length > 0
-        ? '<div class="empty" style="color:var(--red)"><div class="empty-icon">⚠️</div>DVR non presente — obbligatorio per legge (D.Lgs 81/2008 Art. 28)</div>'
-        : '<div class="empty"><div class="empty-icon">📄</div>Nessun DVR generato</div>')
+function renderTabDvr(dvrs, workers) {
+  const el = document.getElementById('tab-dvr');
+  el.innerHTML = !dvrs.length
+    ? (workers.length>0
+        ? '<div class="empty" style="color:var(--red)"><div class="empty-icon">⚠️</div>DVR non presente — obbligatorio D.Lgs 81/2008 art. 28</div>'
+        : '<div class="empty"><div class="empty-icon">📄</div>Nessun DVR</div>')
     : `<div class="card" style="padding:0"><div class="table-wrap"><table>
         <thead><tr><th>Revisione</th><th>Data</th><th>Datore di lavoro</th></tr></thead>
-        <tbody>${dvrs.map(d => `<tr><td>Rev. ${esc(String(d.revision))}</td><td>${fmtDate(d.created_at)}</td><td>${esc(d.dvr_data?.datoreLavoro||'—')}</td></tr>`).join('')}</tbody>
+        <tbody>${dvrs.map(d=>`<tr><td>Rev. ${esc(String(d.revision))}</td><td>${fmtDate(d.created_at)}</td><td>${esc(d.dvr_data?.datoreLavoro||'—')}</td></tr>`).join('')}</tbody>
       </table></div></div>`;
+}
 
-  // Tab: Formazione
-  const now2 = new Date();
-  document.getElementById('tab-certs').innerHTML = !certificates.length
-    ? '<div class="empty"><div class="empty-icon">🎓</div>Nessun attestato registrato</div>'
-    : `<div class="card" style="padding:0"><div class="table-wrap"><table>
-        <thead><tr><th>Corso</th><th>Scadenza</th><th>Stato</th></tr></thead>
-        <tbody>${certificates.map(c => {
-          const exp = c.expiry_date ? new Date(c.expiry_date) : null;
-          let badge = '';
-          if (!exp)              badge = '<span class="chip chip-gray">Nessuna</span>';
-          else if (exp < now2)   badge = '<span class="chip chip-red">Scaduto</span>';
-          else if (exp < in30)   badge = '<span class="chip chip-yellow">In scadenza</span>';
-          else                   badge = '<span class="chip chip-green">Valido</span>';
-          return `<tr><td>${esc(c.course_types?.name||'—')}</td><td>${fmtDate(c.expiry_date)}</td><td>${badge}</td></tr>`;
-        }).join('')}</tbody>
-      </table></div></div>`;
+// ── Tab: Subappaltatori ───────────────────────────────────────────────────────
 
-  // Tab: Subappaltatori
-  document.getElementById('tab-subs').innerHTML = !(subcontractors||[]).length
-    ? '<div class="empty"><div class="empty-icon">🏭</div>Nessun subappaltatore registrato</div>'
+function renderTabSubs(subs) {
+  const el = document.getElementById('tab-subs');
+  el.innerHTML = !(subs||[]).length
+    ? '<div class="empty"><div class="empty-icon">🏭</div>Nessun subappaltatore</div>'
     : `<div class="card" style="padding:0"><div class="table-wrap"><table>
         <thead><tr><th>Ragione sociale</th><th>Stato</th></tr></thead>
-        <tbody>${subcontractors.map(s => `<tr><td><strong>${esc(s.company_name)}</strong></td><td><span class="chip ${s.status==='active'?'chip-green':'chip-gray'}">${esc(s.status||'—')}</span></td></tr>`).join('')}</tbody>
+        <tbody>${subs.map(s=>`<tr><td><strong>${esc(s.company_name)}</strong></td><td><span class="chip ${s.status==='active'?'chip-green':'chip-gray'}">${esc(s.status||'—')}</span></td></tr>`).join('')}</tbody>
       </table></div></div>`;
 }
 
 function switchTab(btn, tabId) {
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById(tabId).classList.add('active');
+}
+
+// ── Worker CRUD ───────────────────────────────────────────────────────────────
+
+function openAddWorkerModal() {
+  document.getElementById('aw-name').value='';
+  document.getElementById('aw-cf').value='';
+  document.getElementById('aw-result').className='result-box';
+  openModal('modal-add-worker');
+}
+
+async function doAddWorker() {
+  const btn = document.getElementById('aw-btn');
+  const res = document.getElementById('aw-result');
+  const name = document.getElementById('aw-name').value.trim();
+  const cf   = document.getElementById('aw-cf').value.trim().toUpperCase();
+  if (!name||!cf) { res.className='result-box show err'; res.textContent='Nome e CF obbligatori.'; return; }
+
+  btn.disabled=true; btn.textContent='Salvataggio…';
+  try {
+    await apiPost(`/studio/clients/${_clientData.companyId}/workers`, { full_name:name, fiscal_code:cf });
+    res.className='result-box show ok'; res.innerHTML=`<span style="color:var(--green)">✅ ${esc(name)} aggiunto.</span>`;
+    setTimeout(async()=>{ closeModal('modal-add-worker'); await refreshClientWorkers(); }, 1000);
+  } catch(e) { res.className='result-box show err'; res.textContent='Errore: '+e.message; }
+  finally { btn.disabled=false; btn.textContent='Aggiungi'; }
+}
+
+async function doDeleteWorker(workerId) {
+  if (!confirm('Rimuovere questo lavoratore? Resterà nei log storici ma non sarà più attivo.')) return;
+  try {
+    await apiDelete(`/studio/clients/${_clientData.companyId}/workers/${workerId}`);
+    await refreshClientWorkers();
+  } catch(e) { alert('Errore: '+e.message); }
+}
+
+async function refreshClientWorkers() {
+  const data = await apiGet(`/studio/clients/${_clientData.companyId}/workers`);
+  _clientData.workers = data.workers;
+  renderTabWorkers(data.workers.filter(w=>w.is_active!==false), _clientData.owned_by_studio);
+  // Aggiorna anche la select nel modal cert
+  populateWorkerSelect(data.workers.filter(w=>w.is_active!==false));
+}
+
+// ── Cert CRUD ─────────────────────────────────────────────────────────────────
+
+function openAddCertModal() {
+  const activeWorkers = (_clientData.workers||[]).filter(w=>w.is_active!==false);
+  populateWorkerSelect(activeWorkers);
+  document.getElementById('ac-course-select').value='';
+  document.getElementById('ac-course-custom-wrap').style.display='none';
+  document.getElementById('ac-course-custom').value='';
+  document.getElementById('ac-issue').value='';
+  document.getElementById('ac-expiry').value='';
+  document.getElementById('ac-body').value='';
+  document.getElementById('ac-num').value='';
+  document.getElementById('ac-result').className='result-box';
+  openModal('modal-add-cert');
+}
+
+function populateWorkerSelect(workers) {
+  const sel = document.getElementById('ac-worker');
+  sel.innerHTML = workers.length
+    ? workers.map(w=>`<option value="${esc(w.id)}">${esc(w.full_name)}</option>`).join('')
+    : '<option value="">Nessun lavoratore — aggiungi prima i lavoratori</option>';
+}
+
+async function doAddCert() {
+  const btn = document.getElementById('ac-btn');
+  const res = document.getElementById('ac-result');
+  const workerId = document.getElementById('ac-worker').value;
+  const courseSelect = document.getElementById('ac-course-select').value;
+  const courseName = courseSelect==='__custom__'
+    ? document.getElementById('ac-course-custom').value.trim()
+    : courseSelect;
+  const expiry = document.getElementById('ac-expiry').value;
+
+  if (!workerId||!courseName||!expiry) { res.className='result-box show err'; res.textContent='Lavoratore, corso e scadenza sono obbligatori.'; return; }
+
+  btn.disabled=true; btn.textContent='Salvataggio…';
+  try {
+    await apiPost(`/studio/clients/${_clientData.companyId}/certificates`, {
+      worker_id:          workerId,
+      course_type_name:   courseName,
+      issue_date:         document.getElementById('ac-issue').value||undefined,
+      expiry_date:        expiry,
+      issuing_body:       document.getElementById('ac-body').value.trim()||undefined,
+      certificate_number: document.getElementById('ac-num').value.trim()||undefined,
+    });
+    res.className='result-box show ok'; res.innerHTML=`<span style="color:var(--green)">✅ Certificato aggiunto.</span>`;
+    setTimeout(async()=>{ closeModal('modal-add-cert'); await refreshClientCerts(); }, 1000);
+  } catch(e) { res.className='result-box show err'; res.textContent='Errore: '+e.message; }
+  finally { btn.disabled=false; btn.textContent='Aggiungi'; }
+}
+
+async function doDeleteCert(certId) {
+  if (!confirm('Eliminare questo attestato?')) return;
+  try {
+    await apiDelete(`/studio/clients/${_clientData.companyId}/certificates/${certId}`);
+    await refreshClientCerts();
+  } catch(e) { alert('Errore: '+e.message); }
+}
+
+async function refreshClientCerts() {
+  const data = await apiGet(`/studio/clients/${_clientData.companyId}/certificates`);
+  _clientData.certificates = data.certificates;
+  const now  = new Date();
+  const in30 = new Date(now.getTime()+30*86400_000);
+  renderTabCerts(data.certificates, _clientData.owned_by_studio, now, in30);
+}
+
+// ── Import CSV ────────────────────────────────────────────────────────────────
+
+async function doImportCsv() {
+  const btn = document.getElementById('csv-btn');
+  const res = document.getElementById('csv-result');
+  const text = document.getElementById('csv-text').value.trim();
+  if (!text) { res.className='result-box show err'; res.textContent='Incolla il CSV.'; return; }
+
+  btn.disabled=true; btn.textContent='Importazione…';
+  res.className='result-box show'; res.textContent='Elaborazione in corso…';
+
+  try {
+    const data = await apiPost(`/studio/clients/${_clientData.companyId}/import-csv`, { csv_text: text });
+    let msg = `✅ Importati ${data.imported} record su ${data.total_rows} righe. `;
+    msg += `Lavoratori: ${data.workers_created} | Certificati: ${data.certs_created}.`;
+    if (data.errors?.length) {
+      msg += ` ⚠️ ${data.errors.length} righe con errori: ` + data.errors.slice(0,3).map(e=>`riga ${e.row}: ${e.error}`).join('; ');
+    }
+    res.className='result-box show ok'; res.textContent=msg;
+    document.getElementById('csv-text').value='';
+    setTimeout(async()=>{
+      closeModal('modal-csv');
+      const detail = await apiGet(`/studio/clients/${_clientData.companyId}`);
+      _clientData = { ..._clientData, ...detail };
+      renderClientDetail(detail);
+    }, 2000);
+  } catch(e) { res.className='result-box show err'; res.textContent='Errore: '+e.message; }
+  finally { btn.disabled=false; btn.textContent='Importa'; }
+}
+
+// ── PDF Downloads ─────────────────────────────────────────────────────────────
+
+async function downloadLettera() {
+  const btn = document.getElementById('lettera-btn');
+  btn.disabled=true; btn.textContent='⏳ Generazione…';
+  try {
+    await downloadPdf(
+      `/studio/clients/${_clientData.companyId}/lettera-scadenze.pdf`,
+      `lettera-scadenze-${_clientData.companyId}.pdf`
+    );
+  } catch(e) { alert('Errore: '+e.message); }
+  finally { btn.disabled=false; btn.textContent='📩 Lettera scadenze'; }
+}
+
+async function downloadReportVigilanza() {
+  const btn = document.getElementById('report-btn');
+  btn.disabled=true; btn.textContent='⏳ Generazione…';
+  try {
+    await downloadPdf(
+      `/studio/clients/${_clientData.companyId}/report-vigilanza.pdf`,
+      `report-vigilanza-${_clientData.companyId}.pdf`
+    );
+  } catch(e) { alert('Errore: '+e.message); }
+  finally { btn.disabled=false; btn.textContent='📋 Report vigilanza'; }
 }
 
 function generateDvrForClient() {
@@ -787,54 +1171,19 @@ function generateDvrForClient() {
   window.open(`/pos/nuovo?company_id=${_clientData.companyId}`, '_blank');
 }
 
-async function downloadReportVigilanza() {
-  if (!_clientData?.companyId) return;
-  const btn = document.getElementById('report-btn');
-  btn.disabled    = true;
-  btn.textContent = '⏳ Generazione…';
-  try {
-    const res = await fetch(`/api/v1/studio/clients/${_clientData.companyId}/report-vigilanza.pdf`, {
-      headers: { 'Authorization': `Bearer ${_session.access_token}` }
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `report-vigilanza-${_clientData.companyId}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    alert('Errore generazione PDF: ' + e.message);
-  } finally {
-    btn.disabled    = false;
-    btn.textContent = '📋 Report vigilanza';
-  }
-}
-
 async function sendDigestNow() {
   const btn = document.getElementById('digest-btn');
-  if (!confirm('Vuoi inviare adesso il digest settimanale alla tua email?')) return;
-  btn.disabled    = true;
-  btn.textContent = '⏳ Invio…';
+  if (!confirm('Inviare adesso il digest settimanale alla tua email?')) return;
+  btn.disabled=true; btn.textContent='⏳ Invio…';
   try {
     const data = await apiPost('/studio/digest/send-now', {});
-    if (data.sent) {
-      alert(`✅ Digest inviato! ${data.issues_count} problemi rilevati su ${data.summary.total} clienti.`);
-    } else {
-      alert('Nessun dato da inviare: ' + (data.reason || ''));
-    }
-  } catch (e) {
-    alert('Errore: ' + e.message);
-  } finally {
-    btn.disabled    = false;
-    btn.textContent = '📧 Digest';
-  }
+    if (data.sent) alert(`✅ Digest inviato. ${data.issues_count} problemi su ${data.summary.total} clienti.`);
+    else alert('Nessun dato da inviare: '+(data.reason||''));
+  } catch(e) { alert('Errore: '+e.message); }
+  finally { btn.disabled=false; btn.textContent='📧 Digest'; }
 }
 
-// ── Accept invito ───────────────────────────────────────────────────────────
+// ── Accept invito ─────────────────────────────────────────────────────────────
 
 function extractAcceptToken() {
   const m = window.location.pathname.match(/\/studio\/accetta\/([0-9a-f]{48})/i);
@@ -844,111 +1193,69 @@ function extractAcceptToken() {
 async function doAccept() {
   const token = extractAcceptToken();
   if (!token || !_session) return;
-
   const btn = document.getElementById('accept-btn');
   const msg = document.getElementById('accept-msg');
-  btn.disabled    = true;
-  btn.textContent = 'Collegamento in corso…';
+  btn.disabled=true; btn.textContent='Collegamento…';
 
-  // Prova prima come pending invite (impresa appena registrata), poi come invite classico
-  const endpoints = [
-    `/api/v1/studio/pending-invites/accept/${token}`,
-    `/api/v1/studio/clients/accept/${token}`,
-  ];
-
-  for (const endpoint of endpoints) {
+  for (const ep of [`/studio/pending-invites/accept/${token}`, `/studio/clients/accept/${token}`]) {
     try {
-      const r = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${_session.access_token}`, 'Content-Type': 'application/json' },
-      });
+      const r = await fetch('/api/v1'+ep, { method:'POST', headers:{'Authorization':`Bearer ${_session.access_token}`,'Content-Type':'application/json'} });
       const data = await r.json();
-
-      if (r.status === 404) continue; // prova l'endpoint successivo
-
-      if (r.status === 403 && data.error === 'NO_COMPANY') {
-        msg.innerHTML = `<span style="color:var(--yellow)">
-          Per completare il collegamento, devi prima creare la tua azienda su Palladia.<br><br>
-          <a href="/" style="color:var(--blue-light);">Crea l'azienda su Palladia →</a>
-          <br><small style="color:var(--dim)">Poi torna su questo link per completare il collegamento.</small>
-        </span>`;
-        btn.style.display = 'none';
-        return;
+      if (r.status===404) continue;
+      if (r.status===403 && data.error==='NO_COMPANY') {
+        msg.innerHTML=`<span style="color:var(--yellow)">Prima crea la tua azienda su Palladia, poi torna qui.<br><a href="/" style="color:var(--blue-light)">Vai a Palladia →</a></span>`;
+        btn.style.display='none'; return;
       }
-
-      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-
-      msg.innerHTML = `<span style="color:var(--green)">✅ Collegamento completato! Lo studio <strong>${esc(data.studio_name||'CDL')}</strong> ora ha accesso ai tuoi dati di conformità.</span>`;
-      btn.style.display = 'none';
-      return;
-    } catch (e) {
-      if (e.message === 'NOT_FOUND') continue;
-      msg.innerHTML   = `<span style="color:var(--red)">Errore: ${esc(e.message)}</span>`;
-      btn.disabled    = false;
-      btn.textContent = 'Accetta e collega';
-      return;
+      if (!r.ok) throw new Error(data.error||`HTTP ${r.status}`);
+      msg.innerHTML=`<span style="color:var(--green)">✅ Collegato a ${esc(data.studio_name||'CDL')}.</span>`;
+      btn.style.display='none'; return;
+    } catch(e) {
+      if (e.message==='NOT_FOUND') continue;
+      msg.innerHTML=`<span style="color:var(--red)">Errore: ${esc(e.message)}</span>`;
+      btn.disabled=false; btn.textContent='Accetta e collega'; return;
     }
   }
-
-  msg.innerHTML   = `<span style="color:var(--red)">Invito non trovato o non valido.</span>`;
-  btn.disabled    = false;
-  btn.textContent = 'Riprova';
+  msg.innerHTML=`<span style="color:var(--red)">Invito non trovato.</span>`;
+  btn.disabled=false; btn.textContent='Riprova';
 }
 
-// ── Init ────────────────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
   let cfg;
   try {
-    cfg = await fetch('/api/config').then(r => r.json());
-    if (!cfg.supabase_url || !cfg.supabase_anon_key) throw new Error('Config mancante');
-  } catch (e) {
-    document.getElementById('view-loading').innerHTML = `<div style="color:var(--red);font-size:14px">Errore configurazione: ${e.message}</div>`;
+    cfg = await fetch('/api/config').then(r=>r.json());
+    if (!cfg.supabase_url||!cfg.supabase_anon_key) throw new Error('Config mancante');
+  } catch(e) {
+    document.getElementById('view-loading').innerHTML=`<div style="color:var(--red);font-size:14px">Errore configurazione: ${e.message}</div>`;
     return;
   }
 
   sb = supabase.createClient(cfg.supabase_url, cfg.supabase_anon_key, {
-    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    auth: { persistSession:true, autoRefreshToken:true, detectSessionInUrl:true }
   });
 
   const acceptToken = extractAcceptToken();
 
   sb.auth.onAuthStateChange(async (event, session) => {
-    if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') && session) {
+    if ((event==='SIGNED_IN'||event==='TOKEN_REFRESHED') && session) {
       _session = session;
-      if (event === 'TOKEN_REFRESHED') return; // solo aggiorna token, non ricarica
-      if (acceptToken) { showAcceptView(acceptToken); return; }
+      if (event==='TOKEN_REFRESHED') return;
+      if (acceptToken) { showView('view-accept'); return; }
       await checkStudio(session);
     }
-    if (event === 'SIGNED_OUT') {
-      _session = null; _studio = null;
-      showView('view-auth');
-    }
+    if (event==='SIGNED_OUT') { _session=null; _studio=null; showView('view-auth'); }
   });
 
-  const { data: { session } } = await sb.auth.getSession();
+  const { data:{ session } } = await sb.auth.getSession();
   if (session) {
     _session = session;
-    if (acceptToken) { showAcceptView(acceptToken); return; }
+    if (acceptToken) { showView('view-accept'); return; }
     await checkStudio(session);
   } else {
-    // Gestisce hash params dal redirect OAuth
-    const hash = window.location.hash;
-    if (!hash || !hash.includes('access_token')) {
-      if (acceptToken) {
-        showView('view-auth');
-        document.querySelector('.auth-subtitle').textContent = 'Accedi per accettare l\'invito dello studio consulente.';
-      } else {
-        showView('view-auth');
-      }
-    }
-    // onAuthStateChange gestirà il SIGNED_IN dopo il redirect
+    showView('view-auth');
+    if (acceptToken) document.querySelector('.auth-subtitle').textContent='Accedi per accettare l\'invito.';
   }
-}
-
-function showAcceptView(token) {
-  showView('view-accept');
-  document.getElementById('accept-sub').textContent = 'Sei stato invitato a condividere i dati di conformità della tua azienda con uno studio consulente del lavoro. Clicca per accettare.';
 }
 
 async function checkStudio(session) {
@@ -957,12 +1264,9 @@ async function checkStudio(session) {
     const data = await apiGet('/studio/me');
     _studio = data.studio;
     await loadDashboard();
-  } catch (e) {
-    if (e.message.includes('STUDIO_NOT_FOUND') || e.message.includes('403')) {
-      showView('view-setup');
-    } else {
-      showView('view-auth');
-    }
+  } catch(e) {
+    if (e.message.includes('STUDIO_NOT_FOUND')||e.message.includes('403')) showView('view-setup');
+    else showView('view-auth');
   }
 }
 
