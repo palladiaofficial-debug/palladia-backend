@@ -1393,6 +1393,186 @@ async function sendStudioInviteEmail({ to, studioName, acceptUrl }) {
   });
 }
 
+/**
+ * Invita un'impresa non ancora su Palladia a registrarsi e collegarsi allo studio.
+ * @param {{ to: string, studioName: string, companyNameHint: string, acceptUrl: string, registerUrl: string }} opts
+ */
+async function sendStudioPendingInviteEmail({ to, studioName, companyNameHint, acceptUrl, registerUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Invito da ${esc(studioName)}</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Lo studio <strong style="color:#1a1a1a;">${esc(studioName)}</strong>
+      ${companyNameHint ? `vuole monitorare la compliance di <strong style="color:#1a1a1a;">${esc(companyNameHint)}</strong>` : 'vuole collaborare con te'}
+      tramite Palladia, la piattaforma per la sicurezza sul lavoro nei cantieri.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Come funziona</p>
+          <ul style="margin:0;padding:0 0 0 16px;">
+            <li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.5;"><strong>1.</strong> Crea il tuo account gratuito su Palladia (2 minuti)</li>
+            <li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.5;"><strong>2.</strong> Collega la tua azienda allo Studio ${esc(studioName)}</li>
+            <li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.5;"><strong>3.</strong> Il tuo studio monitora DVR, formazione e documenti per te</li>
+          </ul>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Accetta l\'invito e registrati →', acceptUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Se non conosci ${esc(studioName)} o non ti aspettavi questo invito, ignora questa email — non verrà creato nessun account senza la tua azione.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${studioName} ti invita su Palladia`,
+    html: layout(`Invito da ${studioName}`, body),
+  });
+}
+
+/**
+ * Digest settimanale per lo studio CDL: riepilogo stato conformità di tutti i clienti.
+ * @param {{ to: string, studioName: string, summary: object, issues: Array }} opts
+ */
+async function sendStudioWeeklyDigest({ to, studioName, summary, issues }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+
+  const semRow = (label, count, color) =>
+    `<td style="text-align:center;padding:16px 24px;border-right:1px solid #f0f0f0;">
+       <div style="font-size:28px;font-weight:800;color:${color};">${count}</div>
+       <div style="font-size:11px;color:#9ca3af;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">${label}</div>
+     </td>`;
+
+  const issueRows = (issues || []).slice(0, 30).map(i => {
+    const color   = i.severity === 'critical' ? '#ef4444' : '#f59e0b';
+    const border  = i.severity === 'critical' ? '#ef4444' : '#f59e0b';
+    return `<tr>
+      <td style="padding:10px 0;border-bottom:1px solid #f9f9f6;vertical-align:top;">
+        <table cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="vertical-align:top;padding-right:10px;width:8px;">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-top:4px;"></span>
+            </td>
+            <td>
+              <div style="font-size:13px;font-weight:700;color:#1a1a1a;">${esc(i.company_name)}</div>
+              <div style="font-size:12px;color:#6b7280;margin-top:2px;">${esc(i.message)}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const today = new Date().toLocaleDateString('it-IT', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
+
+  const body = `
+    <p style="margin:0 0 4px;font-size:13px;color:#9ca3af;">${esc(today)}</p>
+    <p style="margin:0 0 24px;font-size:20px;font-weight:800;color:#1a1a1a;">Rapporto settimanale — ${esc(studioName)}</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:12px;border:1px solid #e5e5e0;margin-bottom:28px;">
+      <tr>
+        ${semRow('Conformi', summary.verde, '#10b981')}
+        ${semRow('Attenzione', summary.giallo, '#f59e0b')}
+        ${semRow('Non conformi', summary.rosso, '#ef4444')}
+        <td style="text-align:center;padding:16px 24px;">
+          <div style="font-size:28px;font-weight:800;color:#1a1a1a;">${summary.total}</div>
+          <div style="font-size:11px;color:#9ca3af;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;">Clienti totali</div>
+        </td>
+      </tr>
+    </table>
+
+    ${issues && issues.length > 0 ? `
+    <p style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Problemi rilevati</p>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      ${issueRows}
+    </table>
+    ` : `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:20px 24px;text-align:center;">
+      <p style="margin:0;font-size:15px;font-weight:700;color:#16a34a;">✅ Tutti i clienti sono conformi questa settimana.</p>
+    </div>
+    `}
+
+    ${btn('Apri il portale studio →', APP_BASE_URL + '/studio')}
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `[Palladia] Rapporto settimanale — ${summary.rosso > 0 ? `${summary.rosso} non ${summary.rosso === 1 ? 'conforme' : 'conformi'}` : summary.giallo > 0 ? `${summary.giallo} in attenzione` : 'tutto ok'}`,
+    html: layout(`Rapporto settimanale — ${studioName}`, body),
+  });
+}
+
+/**
+ * Notifica l'impresa di scadenze imminenti rilevate dal suo studio CDL.
+ * @param {{ to: string, companyName: string, studioName: string, issues: Array, studioUrl: string }} opts
+ */
+async function sendStudioExpiryAlertToCompany({ to, companyName, studioName, issues }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+
+  const criticalCount = (issues || []).filter(i => i.severity === 'critical').length;
+  const warningCount  = (issues || []).filter(i => i.severity === 'warning').length;
+
+  const issueRows = (issues || []).map(i => {
+    const color = i.severity === 'critical' ? '#ef4444' : '#f59e0b';
+    const label = i.severity === 'critical' ? 'URGENTE' : 'Attenzione';
+    return `<tr>
+      <td style="padding:12px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;">
+        <table cellpadding="0" cellspacing="0" width="100%">
+          <tr>
+            <td style="vertical-align:middle;padding-right:12px;width:80px;">
+              <span style="display:inline-block;padding:3px 8px;background:${color}18;color:${color};font-size:10px;font-weight:700;border-radius:4px;letter-spacing:0.06em;">${label}</span>
+            </td>
+            <td>
+              <div style="font-size:13px;color:#374151;">${esc(i.message)}</div>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Attenzione richiesta — ${esc(companyName)}</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Il tuo studio consulente <strong style="color:#1a1a1a;">${esc(studioName)}</strong> ha rilevato
+      ${criticalCount > 0 ? `<strong style="color:#ef4444;">${criticalCount} problema${criticalCount > 1 ? 'i critici' : ' critico'}</strong>` : ''}
+      ${criticalCount > 0 && warningCount > 0 ? ' e ' : ''}
+      ${warningCount > 0 ? `<strong style="color:#f59e0b;">${warningCount} ${warningCount > 1 ? 'avvisi' : 'avviso'}</strong>` : ''}
+      che richiedono la tua attenzione.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      ${issueRows}
+    </table>
+
+    <p style="margin:0 0 4px;font-size:13px;color:#6b7280;">Contatta il tuo studio <strong>${esc(studioName)}</strong> per risolvere queste non conformità o accedi direttamente a Palladia per aggiornare i documenti.</p>
+
+    ${btn('Apri Palladia →', APP_BASE_URL + '/dashboard')}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Questa notifica è stata generata automaticamente da Palladia su richiesta di ${esc(studioName)}.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `[Palladia] Scadenze rilevate — ${companyName} (segnalato da ${studioName})`,
+    html: layout(`Scadenze rilevate — ${companyName}`, body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1421,4 +1601,7 @@ module.exports = {
   sendQuoteRequestConsultant,
   sendQuoteReceivedCompany,
   sendStudioInviteEmail,
+  sendStudioPendingInviteEmail,
+  sendStudioWeeklyDigest,
+  sendStudioExpiryAlertToCompany,
 };

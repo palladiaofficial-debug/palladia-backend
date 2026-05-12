@@ -139,10 +139,13 @@
     .alert-empty   { color: var(--dim); font-size: 13px; text-align: center; padding: 20px 0; }
 
     /* ── Invita impresa ──────────────────────────────────────────── */
-    .invite-row { display: flex; gap: 8px; }
-    .invite-row input { flex: 1; }
-    .invite-url { margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 12px; font-size: 12px; color: var(--dim); word-break: break-all; display: none; }
-    .invite-url.show { display: block; }
+    .invite-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    @media (max-width: 600px) { .invite-grid { grid-template-columns: 1fr; } }
+    .invite-result { margin-top: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 10px 12px; font-size: 12px; display: none; }
+    .invite-result.show { display: block; }
+    .invite-result.palladia { border-color: var(--blue); }
+    .invite-result.pending  { border-color: var(--yellow); }
+    .pending-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 10px; background: rgba(245,158,11,.12); color: var(--yellow); }
 
     /* ── Client detail ───────────────────────────────────────────── */
     .back-btn { background: none; border: 1px solid var(--border); color: var(--dim); padding: 5px 12px; border-radius: var(--r-sm); cursor: pointer; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; margin-bottom: 18px; }
@@ -292,6 +295,7 @@
     </div>
     <div class="topbar-studio">
       <span id="topbar-studio-name"></span>
+      <button class="topbar-logout" onclick="sendDigestNow()" id="digest-btn" title="Invia report settimanale adesso">📧 Digest</button>
       <button class="topbar-logout" onclick="doLogout()">Esci</button>
     </div>
   </div>
@@ -325,12 +329,27 @@
             <button class="btn btn-sm btn-secondary" onclick="showInvitePanel()">+ Invita impresa</button>
           </div>
           <div id="invite-panel" style="display:none; padding:14px 16px; border-bottom:1px solid var(--border);">
-            <div style="font-size:12px; color:var(--dim); margin-bottom:8px;">Inserisci il Company ID Palladia dell'impresa (visibile nelle impostazioni azienda):</div>
-            <div class="invite-row">
-              <input id="invite-company-id" type="text" placeholder="UUID impresa (es. 550e8400-e29b-41d4…)">
-              <button class="btn btn-sm btn-primary" onclick="doInvite()">Invita</button>
+            <div style="font-size:12px; color:var(--dim); margin-bottom:10px;">Inserisci P.IVA e/o email dell'impresa. Se è già su Palladia, riceverà un link di collegamento. Altrimenti le invieremo un invito a registrarsi.</div>
+            <div class="invite-grid">
+              <div>
+                <label style="font-size:11px;">P.IVA impresa</label>
+                <input id="invite-vat" type="text" placeholder="IT12345678901" style="margin-top:4px;">
+              </div>
+              <div>
+                <label style="font-size:11px;">Email contatto *</label>
+                <input id="invite-email" type="email" placeholder="titolare@impresa.it" style="margin-top:4px;">
+              </div>
+              <div>
+                <label style="font-size:11px;">Nome contatto</label>
+                <input id="invite-name" type="text" placeholder="Mario Rossi" style="margin-top:4px;">
+              </div>
+              <div>
+                <label style="font-size:11px;">Nome azienda</label>
+                <input id="invite-company-name" type="text" placeholder="Edilizia Rossi Srl" style="margin-top:4px;">
+              </div>
             </div>
-            <div id="invite-url-box" class="invite-url"></div>
+            <button class="btn btn-sm btn-primary" onclick="doInvite()" style="width:100%;">Invia invito</button>
+            <div id="invite-result-box" class="invite-result"></div>
           </div>
           <div class="table-wrap">
             <table>
@@ -383,8 +402,8 @@
         <div id="client-sem"></div>
       </div>
       <div class="client-actions">
+        <button class="btn btn-sm btn-secondary" onclick="downloadReportVigilanza()" id="report-btn">📋 Report vigilanza</button>
         <button class="btn btn-sm btn-secondary" onclick="generateDvrForClient()">📄 Genera DVR</button>
-        <button class="btn btn-sm btn-secondary" onclick="openClientPortal()">🔗 Apri portale impresa</button>
       </div>
     </div>
 
@@ -600,24 +619,58 @@ function renderDashboard(data) {
 
 function showInvitePanel() {
   const panel = document.getElementById('invite-panel');
-  panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-  document.getElementById('invite-url-box').classList.remove('show');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) document.getElementById('invite-result-box').classList.remove('show');
 }
 
 async function doInvite() {
-  const cid = document.getElementById('invite-company-id').value.trim();
-  if (!cid) return;
+  const vat   = document.getElementById('invite-vat').value.trim();
+  const email = document.getElementById('invite-email').value.trim();
+  const name  = document.getElementById('invite-name').value.trim();
+  const cname = document.getElementById('invite-company-name').value.trim();
+
+  if (!email && !vat) {
+    alert('Inserisci almeno P.IVA o email di contatto.');
+    return;
+  }
+
+  const box = document.getElementById('invite-result-box');
+  box.classList.remove('show', 'palladia', 'pending');
+  box.innerHTML = 'Invio in corso…';
+  box.classList.add('show');
 
   try {
-    const data = await apiPost('/studio/clients/invite', { company_id: cid });
-    const box  = document.getElementById('invite-url-box');
-    box.innerHTML = `<strong>Link di invito:</strong><br>${esc(data.accept_url)}<br><br>
-      <button onclick="navigator.clipboard.writeText('${esc(data.accept_url)}')" class="btn btn-sm btn-secondary" style="margin-top:4px">📋 Copia link</button>`;
-    box.classList.add('show');
-    document.getElementById('invite-company-id').value = '';
-    setTimeout(loadDashboard, 1000);
+    const data = await apiPost('/studio/clients/invite', {
+      vat_number:    vat   || undefined,
+      contact_email: email || undefined,
+      contact_name:  name  || undefined,
+      company_name:  cname || undefined,
+    });
+
+    if (data.type === 'palladia_invite') {
+      box.classList.add('palladia');
+      box.innerHTML = `
+        <div style="color:var(--blue-light);font-weight:700;margin-bottom:6px;">✅ Impresa trovata su Palladia</div>
+        <div style="margin-bottom:8px;"><strong>${esc(data.company_name)}</strong> — invito inviato via email al titolare.</div>
+        <div style="color:var(--dim);font-size:11px;margin-bottom:6px;">Oppure condividi manualmente il link:</div>
+        <div style="word-break:break-all;background:var(--bg);padding:6px 8px;border-radius:4px;font-size:11px;">${esc(data.accept_url)}</div>
+        <button onclick="navigator.clipboard.writeText('${esc(data.accept_url)}').then(()=>this.textContent='✓ Copiato')" class="btn btn-sm btn-secondary" style="margin-top:6px">📋 Copia link</button>`;
+    } else {
+      box.classList.add('pending');
+      box.innerHTML = `
+        <div style="color:var(--yellow);font-weight:700;margin-bottom:6px;">📧 Invito inviato</div>
+        <div style="margin-bottom:8px;">${esc(data.message)}</div>
+        <div style="color:var(--dim);font-size:11px;">Il contatto riceverà un'email con le istruzioni per registrarsi su Palladia e collegarsi al tuo studio. Comparirà nella dashboard appena avrà completato l'onboarding.</div>`;
+    }
+
+    // Pulisci form
+    ['invite-vat','invite-email','invite-name','invite-company-name'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    setTimeout(loadDashboard, 1500);
   } catch (e) {
-    alert('Errore: ' + e.message);
+    box.innerHTML = `<span style="color:var(--red)">Errore: ${esc(e.message)}</span>`;
   }
 }
 
@@ -731,12 +784,54 @@ function switchTab(btn, tabId) {
 
 function generateDvrForClient() {
   if (!_clientData?.companyId) return;
-  const url = `/pos/nuovo?company_id=${_clientData.companyId}`;
-  window.open(url, '_blank');
+  window.open(`/pos/nuovo?company_id=${_clientData.companyId}`, '_blank');
 }
 
-function openClientPortal() {
-  alert('Funzione in arrivo: link magico per accedere direttamente al portale dell\'impresa cliente.');
+async function downloadReportVigilanza() {
+  if (!_clientData?.companyId) return;
+  const btn = document.getElementById('report-btn');
+  btn.disabled    = true;
+  btn.textContent = '⏳ Generazione…';
+  try {
+    const res = await fetch(`/api/v1/studio/clients/${_clientData.companyId}/report-vigilanza.pdf`, {
+      headers: { 'Authorization': `Bearer ${_session.access_token}` }
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `report-vigilanza-${_clientData.companyId}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Errore generazione PDF: ' + e.message);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '📋 Report vigilanza';
+  }
+}
+
+async function sendDigestNow() {
+  const btn = document.getElementById('digest-btn');
+  if (!confirm('Vuoi inviare adesso il digest settimanale alla tua email?')) return;
+  btn.disabled    = true;
+  btn.textContent = '⏳ Invio…';
+  try {
+    const data = await apiPost('/studio/digest/send-now', {});
+    if (data.sent) {
+      alert(`✅ Digest inviato! ${data.issues_count} problemi rilevati su ${data.summary.total} clienti.`);
+    } else {
+      alert('Nessun dato da inviare: ' + (data.reason || ''));
+    }
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  } finally {
+    btn.disabled    = false;
+    btn.textContent = '📧 Digest';
+  }
 }
 
 // ── Accept invito ───────────────────────────────────────────────────────────
@@ -755,20 +850,49 @@ async function doAccept() {
   btn.disabled    = true;
   btn.textContent = 'Collegamento in corso…';
 
-  try {
-    const r = await fetch(`/api/v1/studio/clients/accept/${token}`, {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${_session.access_token}`, 'Content-Type': 'application/json' },
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-    msg.innerHTML = `<span style="color:var(--green)">✅ Collegamento completato! Lo studio <strong>${esc(data.studio_name||'CDL')}</strong> ora ha accesso ai tuoi dati di conformità.</span>`;
-    btn.style.display = 'none';
-  } catch (e) {
-    msg.innerHTML   = `<span style="color:var(--red)">Errore: ${esc(e.message)}</span>`;
-    btn.disabled    = false;
-    btn.textContent = 'Accetta e collega';
+  // Prova prima come pending invite (impresa appena registrata), poi come invite classico
+  const endpoints = [
+    `/api/v1/studio/pending-invites/accept/${token}`,
+    `/api/v1/studio/clients/accept/${token}`,
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const r = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${_session.access_token}`, 'Content-Type': 'application/json' },
+      });
+      const data = await r.json();
+
+      if (r.status === 404) continue; // prova l'endpoint successivo
+
+      if (r.status === 403 && data.error === 'NO_COMPANY') {
+        msg.innerHTML = `<span style="color:var(--yellow)">
+          Per completare il collegamento, devi prima creare la tua azienda su Palladia.<br><br>
+          <a href="/" style="color:var(--blue-light);">Crea l'azienda su Palladia →</a>
+          <br><small style="color:var(--dim)">Poi torna su questo link per completare il collegamento.</small>
+        </span>`;
+        btn.style.display = 'none';
+        return;
+      }
+
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+
+      msg.innerHTML = `<span style="color:var(--green)">✅ Collegamento completato! Lo studio <strong>${esc(data.studio_name||'CDL')}</strong> ora ha accesso ai tuoi dati di conformità.</span>`;
+      btn.style.display = 'none';
+      return;
+    } catch (e) {
+      if (e.message === 'NOT_FOUND') continue;
+      msg.innerHTML   = `<span style="color:var(--red)">Errore: ${esc(e.message)}</span>`;
+      btn.disabled    = false;
+      btn.textContent = 'Accetta e collega';
+      return;
+    }
   }
+
+  msg.innerHTML   = `<span style="color:var(--red)">Invito non trovato o non valido.</span>`;
+  btn.disabled    = false;
+  btn.textContent = 'Riprova';
 }
 
 // ── Init ────────────────────────────────────────────────────────────────────

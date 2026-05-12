@@ -28,6 +28,7 @@ const { startLadiaProactiveCron }   = require('./services/ladiaProactive');
 const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
 const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
 const { startReminderCron }         = require('./services/reminderCron');
+const { startStudioDigestCron }     = require('./services/studioDigestCron');
 const { PNG }                       = require('pngjs');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
@@ -57,7 +58,8 @@ app.use((req, res, next) => {
     req.path.includes('/asl') ||         // report PDF ASL può essere lungo
     req.path.includes('/offers/parse') || // AI parsing multi-chunk, può superare 60s
     req.path.includes('/generate-dvr') ||  // DVR generation SSE
-    req.path.includes('/generate-pimus');  // PIMUS generation SSE
+    req.path.includes('/generate-pimus') ||  // PIMUS generation SSE
+    req.path.includes('/report-vigilanza');  // PDF report vigilanza studio CDL
   if (skip) return next();
 
   const timer = setTimeout(() => {
@@ -2034,6 +2036,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startWeeklyValueCron();
     startLadiaLiveCron();
     startReminderCron();
+    startStudioDigestCron();
   }
 });
 
