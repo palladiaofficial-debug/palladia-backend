@@ -51,7 +51,7 @@ async function processStudio(studio, now, in30, oneYearAgo) {
   // Clienti attivi di questo studio
   const { data: clients } = await supabase
     .from('studio_clients')
-    .select('company_id, companies(id, name)')
+    .select('company_id, owned_by_studio, companies(id, name, contact_email)')
     .eq('studio_id', studio.id)
     .eq('status', 'active');
 
@@ -78,8 +78,8 @@ async function processStudio(studio, now, in30, oneYearAgo) {
     supabase.from('sites').select('id, company_id').in('company_id', companyIds).neq('status', 'chiuso'),
     supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true),
     supabase.from('dvr_documents').select('id, company_id, created_at').in('company_id', companyIds).order('created_at', { ascending: false }),
-    supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds).lt('expiry_date', todayStr),
-    supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds)
+    supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds).is('deleted_at', null).lt('expiry_date', todayStr),
+    supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds).is('deleted_at', null)
       .gte('expiry_date', todayStr).lt('expiry_date', in30Str),
     supabase.from('subcontractor_documents').select('id, company_id, valid_until').in('company_id', companyIds),
     supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true)
@@ -94,12 +94,14 @@ async function processStudio(studio, now, in30, oneYearAgo) {
   const metrics = {};
   for (const c of clients) {
     metrics[c.company_id] = {
-      company_id:   c.company_id,
-      company_name: c.companies.name,
-      workers:      0,
-      dvr_presente: false,
-      dvr_data:     null,
-      alerts:       [],
+      company_id:       c.company_id,
+      company_name:     c.companies.name,
+      contact_email:    c.companies.contact_email || null,
+      owned_by_studio:  !!c.owned_by_studio,
+      workers:          0,
+      dvr_presente:     false,
+      dvr_data:         null,
+      alerts:           [],
     };
   }
 
@@ -212,7 +214,22 @@ async function processStudio(studio, now, in30, oneYearAgo) {
 
   for (const company of problematicCompanies) {
     try {
-      // Trova owner/admin dell'impresa
+      const alertPayload = {
+        companyName: company.company_name,
+        studioName:  studio.studio_name,
+        issues:      company.alerts,
+      };
+
+      if (company.owned_by_studio) {
+        // Impresa CDL-owned senza account Palladia: usa contact_email dal profilo
+        if (company.contact_email) {
+          await sendStudioExpiryAlertToCompany({ to: company.contact_email, ...alertPayload })
+            .catch(err => console.error(`[studioDigest] owned alert errore per ${company.company_id}:`, err.message));
+        }
+        continue;
+      }
+
+      // Impresa con account Palladia: usa owner/admin da company_users
       const { data: members } = await supabase
         .from('company_users')
         .select('user_id')
@@ -221,16 +238,12 @@ async function processStudio(studio, now, in30, oneYearAgo) {
 
       if (!members?.length) continue;
 
-      for (const member of members.slice(0, 2)) { // max 2 destinatari per impresa
+      for (const member of members.slice(0, 2)) {
         const { data: { user: companyUser } } = await supabase.auth.admin.getUserById(member.user_id);
         if (!companyUser?.email) continue;
 
-        await sendStudioExpiryAlertToCompany({
-          to:          companyUser.email,
-          companyName: company.company_name,
-          studioName:  studio.studio_name,
-          issues:      company.alerts,
-        }).catch(err => console.error(`[studioDigest] company alert errore per ${company.company_id}:`, err.message));
+        await sendStudioExpiryAlertToCompany({ to: companyUser.email, ...alertPayload })
+          .catch(err => console.error(`[studioDigest] company alert errore per ${company.company_id}:`, err.message));
       }
     } catch (err) {
       console.error(`[studioDigest] errore notifica impresa ${company.company_id}:`, err.message);
@@ -247,4 +260,4 @@ function startStudioDigestCron() {
   console.log('[studioDigest] cron avviato — ogni lunedì 08:00 Europe/Rome');
 }
 
-module.exports = { startStudioDigestCron, runStudioDigest };
+module.exports = { startStudioDigestCron, runStudioDigest, processStudio };

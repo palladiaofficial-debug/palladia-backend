@@ -525,8 +525,11 @@ router.get('/studio/clients/:companyId/report-vigilanza.pdf', verifyStudioJwt, a
 
   if (!relation) return res.status(403).json({ error: 'Azienda non associata a questo studio' });
 
-  const now  = new Date();
-  const in30 = new Date(now.getTime() + 30 * 86_400_000);
+  const now        = new Date();
+  const in30       = new Date(now.getTime() + 30 * 86_400_000);
+  const oneYearAgo = new Date(now.getTime() - 365 * 86_400_000);
+  const todayStr   = now.toISOString().slice(0, 10);
+  const in30Str    = in30.toISOString().slice(0, 10);
 
   const [
     { data: company },
@@ -536,14 +539,22 @@ router.get('/studio/clients/:companyId/report-vigilanza.pdf', verifyStudioJwt, a
     { data: subcontractors },
     { data: certs },
     { data: subDocs },
+    { data: ssorvExpired },
+    { data: ssorvSoon },
+    { data: compData },
+    { data: safetyRoles },
   ] = await Promise.all([
     supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
     supabase.from('sites').select('id, name, status, address').eq('company_id', companyId).neq('status', 'chiuso').order('created_at', { ascending: false }),
     supabase.from('workers').select('id, full_name, fiscal_code, is_active').eq('company_id', companyId).eq('is_active', true).limit(300),
     supabase.from('dvr_documents').select('id, revision, dvr_data, created_at').eq('company_id', companyId).order('created_at', { ascending: false }).limit(5),
     supabase.from('subcontractors').select('id, company_name, status, piva').eq('company_id', companyId),
-    supabase.from('worker_certificates').select('id, worker_id, expiry_date, course_types(name), workers(full_name)').eq('company_id', companyId).order('expiry_date', { ascending: true }).limit(200),
+    supabase.from('worker_certificates').select('id, worker_id, expiry_date, course_types(name), workers(full_name)').eq('company_id', companyId).is('deleted_at', null).order('expiry_date', { ascending: true }).limit(200),
     supabase.from('subcontractor_documents').select('id, company_id, doc_type, valid_until').eq('company_id', companyId).limit(50),
+    supabase.from('workers').select('id').eq('company_id', companyId).eq('is_active', true).not('health_fitness_expiry', 'is', null).lt('health_fitness_expiry', todayStr),
+    supabase.from('workers').select('id').eq('company_id', companyId).eq('is_active', true).not('health_fitness_expiry', 'is', null).gte('health_fitness_expiry', todayStr).lt('health_fitness_expiry', in30Str),
+    supabase.from('companies').select('durc_expiry_date, last_safety_meeting_at').eq('id', companyId).maybeSingle(),
+    supabase.from('company_safety_roles').select('role_type').eq('company_id', companyId),
   ]);
 
   const expiredCerts = (certs || []).filter(c => c.expiry_date && new Date(c.expiry_date) < now);
@@ -558,8 +569,34 @@ router.get('/studio/clients/:companyId/report-vigilanza.pdf', verifyStudioJwt, a
   }
   function semColor(s) { return { verde: '#10b981', giallo: '#f59e0b', rosso: '#ef4444' }[s] || '#6b7280'; }
 
-  const hasIssues = expiredCerts.length > 0 || (!latestDvr && (workers || []).length > 0);
-  const semaforo  = hasIssues ? 'rosso' : soonCerts.length > 0 ? 'giallo' : 'verde';
+  // Semaforo: logica completa allineata a dashboard e digest cron
+  const _sv = [];
+  const _workerCount = (workers || []).length;
+  if (!latestDvr && _workerCount > 0)
+    _sv.push('critical');
+  else if (latestDvr && new Date(latestDvr.created_at) < oneYearAgo)
+    _sv.push('warning');
+  if (expiredCerts.length > 0) _sv.push('critical');
+  if (soonCerts.length > 0)    _sv.push('warning');
+  for (const d of subDocs || []) {
+    if (!d.valid_until) continue;
+    const vd = new Date(d.valid_until);
+    if (vd < now) _sv.push('critical'); else if (vd < in30) _sv.push('warning');
+  }
+  if ((ssorvExpired || []).length > 0) _sv.push('critical');
+  if ((ssorvSoon    || []).length > 0) _sv.push('warning');
+  if (compData?.durc_expiry_date) {
+    if (compData.durc_expiry_date < todayStr)       _sv.push('critical');
+    else if (compData.durc_expiry_date < in30Str)   _sv.push('warning');
+  }
+  if (compData?.last_safety_meeting_at) {
+    const nextDue = new Date(new Date(compData.last_safety_meeting_at).getTime() + 365 * 86_400_000);
+    if (nextDue < now) _sv.push('warning');
+  }
+  if (_workerCount > 0 && !(safetyRoles || []).some(r => r.role_type === 'rspp'))
+    _sv.push('warning');
+
+  const semaforo      = _sv.includes('critical') ? 'rosso' : _sv.includes('warning') ? 'giallo' : 'verde';
   const semaforoLabel = { verde: 'CONFORME', giallo: 'ATTENZIONE', rosso: 'NON CONFORME' }[semaforo];
 
   const certRows = (certs || []).map(c => {
@@ -882,6 +919,7 @@ router.get('/studio/clients/:companyId/certificates', verifyStudioJwt, async (re
     .from('worker_certificates')
     .select('id, worker_id, course_type_id, issue_date, expiry_date, issuing_body, certificate_number, workers(full_name, fiscal_code), course_types(id, name, validity_years)')
     .eq('company_id', companyId)
+    .is('deleted_at', null)
     .order('expiry_date', { ascending: true });
 
   if (error) return res.status(500).json({ error: error.message });
@@ -973,9 +1011,10 @@ router.delete('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt
 
   const { error } = await supabase
     .from('worker_certificates')
-    .delete()
+    .update({ deleted_at: new Date().toISOString() })
     .eq('id', certId)
-    .eq('company_id', companyId);
+    .eq('company_id', companyId)
+    .is('deleted_at', null);
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
@@ -1008,6 +1047,13 @@ router.post('/studio/clients/:companyId/import-csv', verifyStudioJwt, async (req
 
   // Salta intestazione
   const dataLines = lines.slice(1);
+
+  // Pre-carica i CF già presenti per contare correttamente i nuovi lavoratori
+  const { data: existingWorkersData } = await supabase
+    .from('workers')
+    .select('fiscal_code')
+    .eq('company_id', companyId);
+  const existingFiscalCodes = new Set((existingWorkersData || []).map(w => w.fiscal_code.toUpperCase()));
 
   const results = { imported: 0, workers_created: 0, certs_created: 0, errors: [] };
 
@@ -1044,7 +1090,11 @@ router.post('/studio/clients/:companyId/import-csv', verifyStudioJwt, async (req
         .single();
 
       if (wErr) { results.errors.push({ row: i + 2, error: wErr.message }); continue; }
-      if (!results._existingWorkers?.includes(fiscal_code.toUpperCase())) results.workers_created++;
+      const cfNorm = fiscal_code.trim().toUpperCase();
+      if (!existingFiscalCodes.has(cfNorm)) {
+        results.workers_created++;
+        existingFiscalCodes.add(cfNorm);
+      }
 
       // Risolvi o crea course_type
       const courseTypeId = await resolveOrCreateCourseType(course_name);
@@ -1101,15 +1151,24 @@ router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, a
     { data: company },
     { data: studio  },
     { data: certs   },
+    { data: medici  },
   ] = await Promise.all([
     supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
     supabase.from('studio_partners').select('*').eq('id', req.studioId).maybeSingle(),
     supabase.from('worker_certificates')
       .select('id, expiry_date, issue_date, issuing_body, workers(full_name, fiscal_code), course_types(name, validity_years)')
       .eq('company_id', companyId)
+      .is('deleted_at', null)
       .lt('expiry_date', in60.toISOString().slice(0, 10))
       .order('expiry_date', { ascending: true })
       .limit(100),
+    supabase.from('workers')
+      .select('id, full_name, fiscal_code, health_fitness_expiry')
+      .eq('company_id', companyId)
+      .eq('is_active', true)
+      .not('health_fitness_expiry', 'is', null)
+      .lt('health_fitness_expiry', in60.toISOString().slice(0, 10))
+      .order('health_fitness_expiry', { ascending: true }),
   ]);
 
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -1121,8 +1180,21 @@ router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, a
     return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
-  const expired  = (certs || []).filter(c => new Date(c.expiry_date) < now);
-  const expiring = (certs || []).filter(c => new Date(c.expiry_date) >= now);
+  // Converti idoneità mediche nello stesso formato dei certificati per la tabella
+  const mediciRows = (medici || []).map(w => ({
+    expiry_date:  w.health_fitness_expiry,
+    issue_date:   null,
+    issuing_body: 'Medico Competente',
+    workers:      { full_name: w.full_name, fiscal_code: w.fiscal_code },
+    course_types: { name: 'Idoneità medica (sorveglianza sanitaria)', validity_years: 1 },
+  }));
+
+  const allItems = [...(certs || []), ...mediciRows].sort((a, b) =>
+    new Date(a.expiry_date) - new Date(b.expiry_date)
+  );
+
+  const expired  = allItems.filter(c => new Date(c.expiry_date) < now);
+  const expiring = allItems.filter(c => new Date(c.expiry_date) >= now);
 
   const certRow = (c) => {
     const isExp = new Date(c.expiry_date) < now;
@@ -1208,7 +1280,7 @@ router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, a
 
   ${expired.length > 0 ? '<div class="alert-box">⚠️ I certificati scaduti espongono l\'azienda a responsabilità penali e civili ai sensi del D.Lgs. 81/2008. È necessario procedere con urgenza al rinnovo.</div>' : ''}
 
-  ${(certs || []).length > 0 ? `
+  ${allItems.length > 0 ? `
   <div class="section-title">Dettaglio certificazioni da rinnovare</div>
   <table>
     <thead>
@@ -1221,7 +1293,7 @@ router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, a
         <th>Ente erogatore</th>
       </tr>
     </thead>
-    <tbody>${(certs || []).map(certRow).join('')}</tbody>
+    <tbody>${allItems.map(certRow).join('')}</tbody>
   </table>
   ` : '<div class="body-text">Nessuna scadenza imminente rilevata nel periodo considerato.</div>'}
 
@@ -1326,8 +1398,8 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
     supabase.from('sites').select('id, company_id').in('company_id', companyIds).neq('status', 'chiuso'),
     supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true),
     supabase.from('dvr_documents').select('id, company_id, created_at').in('company_id', companyIds).order('created_at', { ascending: false }),
-    supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds).lt('expiry_date', todayStr),
-    supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds)
+    supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds).is('deleted_at', null).lt('expiry_date', todayStr),
+    supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds).is('deleted_at', null)
       .gte('expiry_date', todayStr).lt('expiry_date', in30Str),
     supabase.from('subcontractor_documents').select('id, company_id, valid_until').in('company_id', companyIds),
     supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true)
@@ -1465,74 +1537,21 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
 });
 
 // ── Digest manuale ────────────────────────────────────────────────────────────
-// Permette di inviare il digest settimanale on-demand (pulsante nel portale CDL).
+// Esegue un ciclo completo (identico al cron settimanale) on-demand.
 router.post('/studio/digest/send-now', verifyStudioJwt, async (req, res) => {
-  const { runStudioDigest } = require('../../services/studioDigestCron');
-  // Esegui solo per questo studio
+  const { processStudio } = require('../../services/studioDigestCron');
   const now        = new Date();
   const in30       = new Date(now.getTime() + 30 * 86_400_000);
   const oneYearAgo = new Date(now.getTime() - 365 * 86_400_000);
 
   try {
-    // processStudio non è esportata — usiamo runStudioDigest filtrato
-    // Alternativa semplice: restituiamo i dati al frontend senza inviare email
-    const { data: clients } = await supabase
-      .from('studio_clients')
-      .select('company_id, companies(id, name)')
-      .eq('studio_id', req.studioId)
-      .eq('status', 'active');
-
-    if (!clients?.length) return res.json({ sent: false, reason: 'Nessun cliente attivo' });
-
-    const companyIds = clients.map(c => c.company_id);
-    const [
-      { data: certExpired },
-      { data: certSoon },
-      { data: dvrs },
-      { data: workers },
-    ] = await Promise.all([
-      supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds).lt('expiry_date', now.toISOString().slice(0, 10)),
-      supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds)
-        .gte('expiry_date', now.toISOString().slice(0, 10)).lt('expiry_date', in30.toISOString().slice(0, 10)),
-      supabase.from('dvr_documents').select('id, company_id, created_at').in('company_id', companyIds).order('created_at', { ascending: false }),
-      supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true),
-    ]);
-
-    const metrics = {};
-    for (const c of clients) metrics[c.company_id] = { company_name: c.companies.name, workers: 0, dvr: false, alerts: [] };
-    for (const w of workers || []) if (metrics[w.company_id]) metrics[w.company_id].workers++;
-    const latestDvr = {};
-    for (const d of dvrs || []) if (!latestDvr[d.company_id]) latestDvr[d.company_id] = d;
-    for (const [cid, dvr] of Object.entries(latestDvr)) {
-      if (!metrics[cid]) continue;
-      metrics[cid].dvr = true;
-      if (new Date(dvr.created_at) < oneYearAgo) metrics[cid].alerts.push({ type: 'dvr_old', message: 'DVR non aggiornato da oltre 12 mesi', severity: 'warning' });
-    }
-    for (const c of certExpired || []) if (metrics[c.company_id]) metrics[c.company_id].alerts.push({ type: 'cert_expired', message: 'Attestato scaduto', severity: 'critical' });
-    for (const c of certSoon   || []) if (metrics[c.company_id]) metrics[c.company_id].alerts.push({ type: 'cert_expiring', message: 'Attestato in scadenza', severity: 'warning' });
-    for (const m of Object.values(metrics)) {
-      if (!m.dvr && m.workers > 0) m.alerts.push({ type: 'dvr_missing', message: 'DVR assente', severity: 'critical' });
-      m.alerts = [...new Map(m.alerts.map(a => [a.type, a])).values()];
-      m.semaforo = m.alerts.some(a => a.severity === 'critical') ? 'rosso' : m.alerts.some(a => a.severity === 'warning') ? 'giallo' : 'verde';
-    }
-
-    const summary = {
-      total:  Object.keys(metrics).length,
-      verde:  Object.values(metrics).filter(m => m.semaforo === 'verde').length,
-      giallo: Object.values(metrics).filter(m => m.semaforo === 'giallo').length,
-      rosso:  Object.values(metrics).filter(m => m.semaforo === 'rosso').length,
+    const studio = {
+      id:          req.studioId,
+      studio_name: req.studio.studio_name,
+      user_id:     req.user.id,
     };
-    const issues = Object.entries(metrics).flatMap(([cid, m]) =>
-      m.alerts.map(a => ({ ...a, company_id: cid, company_name: m.company_name }))
-    );
-
-    const { sendStudioWeeklyDigest } = require('../../services/email');
-    const { data: { user: owner } } = await supabase.auth.admin.getUserById(req.user.id);
-    if (owner?.email) {
-      await sendStudioWeeklyDigest({ to: owner.email, studioName: req.studio.studio_name, summary, issues });
-    }
-
-    res.json({ sent: true, summary, issues_count: issues.length });
+    await processStudio(studio, now, in30, oneYearAgo);
+    res.json({ sent: true });
   } catch (err) {
     console.error('[studio] digest/send-now errore:', err.message);
     res.status(500).json({ error: err.message });
@@ -1986,6 +2005,86 @@ ${(certs||[]).length>0?`<div class="sec">
   res.setHeader('Content-Disposition',`attachment; filename="report-conformita-${safeName}-${dateStr}.pdf"`);
   res.setHeader('Content-Length', pdfBuffer.length);
   res.send(pdfBuffer);
+});
+
+// ── Claim impresa CDL-owned ───────────────────────────────────────────────────
+// Permette a un utente Palladia appena registrato di "rivendicare" il profilo
+// della propria azienda, creato in precedenza dal CDL (owned_by_studio=true).
+// Dopo il claim, l'utente diventa owner e può gestire l'azienda autonomamente,
+// mentre il CDL mantiene la visibilità tramite studio_clients.
+router.post('/studio/claim-company', async (req, res) => {
+  const auth = req.headers['authorization'];
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing Authorization header' });
+  const jwt = auth.slice(7);
+
+  let user;
+  try {
+    const { data, error } = await supabase.auth.getUser(jwt);
+    if (error || !data?.user) return res.status(401).json({ error: 'Invalid or expired token' });
+    user = data.user;
+  } catch (e) {
+    return res.status(401).json({ error: 'Token validation failed' });
+  }
+
+  const { vat_number } = req.body || {};
+  if (!vat_number?.trim()) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'vat_number obbligatorio' });
+  }
+
+  const normalizedVat = vat_number.trim().toUpperCase().replace(/\s/g, '');
+
+  const { data: company } = await supabase
+    .from('companies')
+    .select('id, name, claimed_at, created_by_studio_id, studio_partners(studio_name)')
+    .eq('piva', normalizedVat)
+    .not('created_by_studio_id', 'is', null)
+    .maybeSingle();
+
+  if (!company) {
+    return res.status(404).json({
+      error:   'COMPANY_NOT_FOUND',
+      message: 'Nessun profilo trovato per questa P.IVA creato da uno studio CDL.',
+    });
+  }
+
+  if (company.claimed_at) {
+    return res.status(409).json({
+      error:   'ALREADY_CLAIMED',
+      message: 'Questo profilo è già stato rivendicato da un altro utente.',
+    });
+  }
+
+  const { data: existingMembership } = await supabase
+    .from('company_users')
+    .select('id')
+    .eq('company_id', company.id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (existingMembership) {
+    return res.status(409).json({ error: 'ALREADY_MEMBER', message: 'Sei già membro di questa azienda.' });
+  }
+
+  const [{ error: cuErr }, { error: clErr }] = await Promise.all([
+    supabase.from('company_users').insert({
+      company_id: company.id,
+      user_id:    user.id,
+      role:       'owner',
+    }),
+    supabase.from('companies')
+      .update({ claimed_at: new Date().toISOString() })
+      .eq('id', company.id),
+  ]);
+
+  if (cuErr || clErr) return res.status(500).json({ error: cuErr?.message || clErr?.message });
+
+  res.json({
+    ok:           true,
+    company_id:   company.id,
+    company_name: company.name,
+    studio_name:  company.studio_partners?.studio_name || null,
+    message:      `Profilo di ${company.name} rivendicato con successo. Ora puoi gestire la tua azienda su Palladia.`,
+  });
 });
 
 module.exports = router;
