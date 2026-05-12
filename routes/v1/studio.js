@@ -800,7 +800,7 @@ router.get('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, re
 
   const { data, error } = await supabase
     .from('workers')
-    .select('id, full_name, fiscal_code, is_active, created_at')
+    .select('id, full_name, fiscal_code, is_active, health_fitness_expiry, safety_training_expiry, created_at')
     .eq('company_id', companyId)
     .order('full_name', { ascending: true });
 
@@ -1291,7 +1291,7 @@ router.delete('/studio/clients/:companyId', verifyStudioJwt, async (req, res) =>
 router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
   const { data: clients } = await supabase
     .from('studio_clients')
-    .select('company_id, companies(id, name)')
+    .select('company_id, owned_by_studio, companies(id, name)')
     .eq('studio_id', req.studioId)
     .eq('status', 'active');
 
@@ -1304,11 +1304,13 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
   }
 
   const companyIds = clients.map(c => c.company_id);
-  const now    = new Date();
-  const in30   = new Date(now.getTime() + 30 * 86400_000);
+  const now        = new Date();
+  const in30       = new Date(now.getTime() + 30 * 86400_000);
   const oneYearAgo = new Date(now.getTime() - 365 * 86400_000);
+  const todayStr   = now.toISOString().slice(0, 10);
+  const in30Str    = in30.toISOString().slice(0, 10);
 
-  // Fetch parallelo di tutti i dati necessari
+  // Fetch parallelo di tutti i dati necessari (incluse le nuove dimensioni conformità)
   const [
     { data: sites        },
     { data: workers      },
@@ -1316,14 +1318,24 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
     { data: certExpired  },
     { data: certSoon     },
     { data: subDocs      },
+    { data: ssorvExpired },
+    { data: ssorvSoon    },
+    { data: compData     },
+    { data: safetyRoles  },
   ] = await Promise.all([
     supabase.from('sites').select('id, company_id').in('company_id', companyIds).neq('status', 'chiuso'),
     supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true),
     supabase.from('dvr_documents').select('id, company_id, created_at').in('company_id', companyIds).order('created_at', { ascending: false }),
-    supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds).lt('expiry_date', now.toISOString().slice(0,10)),
+    supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds).lt('expiry_date', todayStr),
     supabase.from('worker_certificates').select('id, company_id').in('company_id', companyIds)
-      .gte('expiry_date', now.toISOString().slice(0,10)).lt('expiry_date', in30.toISOString().slice(0,10)),
+      .gte('expiry_date', todayStr).lt('expiry_date', in30Str),
     supabase.from('subcontractor_documents').select('id, company_id, valid_until').in('company_id', companyIds),
+    supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true)
+      .not('health_fitness_expiry', 'is', null).lt('health_fitness_expiry', todayStr),
+    supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true)
+      .not('health_fitness_expiry', 'is', null).gte('health_fitness_expiry', todayStr).lt('health_fitness_expiry', in30Str),
+    supabase.from('companies').select('id, durc_expiry_date, last_safety_meeting_at').in('id', companyIds),
+    supabase.from('company_safety_roles').select('company_id, role_type').in('company_id', companyIds),
   ]);
 
   // Inizializza metriche per ogni impresa
@@ -1332,6 +1344,7 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
     metrics[c.company_id] = {
       company_id:               c.company_id,
       company_name:             c.companies.name,
+      owned_by_studio:          c.owned_by_studio || false,
       cantieri_attivi:          0,
       lavoratori_totali:        0,
       dvr_presente:             false,
@@ -1377,6 +1390,46 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
       metrics[d.company_id].alerts.push({ type: 'sub_doc_expired', message: 'Documento subappaltatore scaduto', severity: 'critical' });
     } else if (vDate < in30) {
       metrics[d.company_id].alerts.push({ type: 'sub_doc_expiring', message: 'Documento subappaltatore in scadenza', severity: 'warning' });
+    }
+  }
+
+  // ── Sorveglianza sanitaria ─────────────────────────────────────────────────
+  for (const w of ssorvExpired || []) {
+    if (!metrics[w.company_id]) continue;
+    metrics[w.company_id].alerts.push({ type: 'sorv_expired', message: 'Idoneità medica scaduta', severity: 'critical' });
+  }
+  for (const w of ssorvSoon || []) {
+    if (!metrics[w.company_id]) continue;
+    metrics[w.company_id].alerts.push({ type: 'sorv_expiring', message: 'Idoneità medica in scadenza (30 gg)', severity: 'warning' });
+  }
+
+  // ── DURC e riunione periodica ──────────────────────────────────────────────
+  for (const co of compData || []) {
+    if (!metrics[co.id]) continue;
+    if (co.durc_expiry_date) {
+      if (co.durc_expiry_date < todayStr) {
+        metrics[co.id].alerts.push({ type: 'durc_expired',   message: 'DURC scaduto',               severity: 'critical' });
+      } else if (co.durc_expiry_date < in30Str) {
+        metrics[co.id].alerts.push({ type: 'durc_expiring',  message: 'DURC in scadenza (30 gg)',    severity: 'warning' });
+      }
+    }
+    if (co.last_safety_meeting_at) {
+      const nextDue = new Date(new Date(co.last_safety_meeting_at).getTime() + 365 * 86_400_000);
+      if (nextDue < now) {
+        metrics[co.id].alerts.push({ type: 'riunione_scaduta', message: 'Riunione periodica art.35 da rinnovare', severity: 'warning' });
+      }
+    }
+  }
+
+  // ── RSPP non nominato ──────────────────────────────────────────────────────
+  const rolesByCompany = {};
+  for (const r of safetyRoles || []) {
+    if (!rolesByCompany[r.company_id]) rolesByCompany[r.company_id] = new Set();
+    rolesByCompany[r.company_id].add(r.role_type);
+  }
+  for (const [cid, m] of Object.entries(metrics)) {
+    if (m.lavoratori_totali > 0 && !rolesByCompany[cid]?.has('rspp')) {
+      m.alerts.push({ type: 'rspp_mancante', message: 'RSPP non nominato', severity: 'warning' });
     }
   }
 
@@ -1484,6 +1537,455 @@ router.post('/studio/digest/send-now', verifyStudioJwt, async (req, res) => {
     console.error('[studio] digest/send-now errore:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Sorveglianza sanitaria ────────────────────────────────────────────────────
+
+router.get('/studio/clients/:companyId/sorveglianza', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { data, error } = await supabase
+    .from('workers')
+    .select('id, full_name, fiscal_code, health_fitness_expiry, safety_training_expiry, is_active')
+    .eq('company_id', companyId)
+    .eq('is_active', true)
+    .order('health_fitness_expiry', { ascending: true, nullsFirst: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ workers: data || [], owned_by_studio: access.isOwner });
+});
+
+router.put('/studio/clients/:companyId/workers/:workerId/sorveglianza', verifyStudioJwt, async (req, res) => {
+  const { companyId, workerId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { health_fitness_expiry, safety_training_expiry } = req.body || {};
+  const update = {};
+  if (health_fitness_expiry  !== undefined) update.health_fitness_expiry  = health_fitness_expiry  || null;
+  if (safety_training_expiry !== undefined) update.safety_training_expiry = safety_training_expiry || null;
+
+  const { data, error } = await supabase
+    .from('workers')
+    .update(update)
+    .eq('id', workerId)
+    .eq('company_id', companyId)
+    .select('id, full_name, health_fitness_expiry, safety_training_expiry')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ worker: data });
+});
+
+// ── Conformità impresa (DURC + riunione periodica) ────────────────────────────
+
+router.get('/studio/clients/:companyId/compliance', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const [{ data: company }, { data: roles }] = await Promise.all([
+    supabase.from('companies')
+      .select('durc_expiry_date, last_safety_meeting_at, safety_meeting_threshold')
+      .eq('id', companyId).maybeSingle(),
+    supabase.from('company_safety_roles')
+      .select('*').eq('company_id', companyId).order('role_type'),
+  ]);
+
+  res.json({
+    durc_expiry_date:         company?.durc_expiry_date         || null,
+    last_safety_meeting_at:   company?.last_safety_meeting_at   || null,
+    safety_meeting_threshold: company?.safety_meeting_threshold ?? 15,
+    safety_roles:             roles || [],
+  });
+});
+
+router.put('/studio/clients/:companyId/compliance', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const allowed = ['durc_expiry_date', 'last_safety_meeting_at'];
+  const update  = {};
+  for (const k of allowed) if (req.body[k] !== undefined) update[k] = req.body[k] || null;
+
+  const { data, error } = await supabase
+    .from('companies').update(update).eq('id', companyId)
+    .select('durc_expiry_date, last_safety_meeting_at').single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// ── Figure sicurezza ──────────────────────────────────────────────────────────
+
+const VALID_SAFETY_ROLES = ['rspp','mc','rls','preposto','aspp','addetto_ps','addetto_antincendio'];
+const SAFETY_ROLE_LABELS = {
+  rspp: 'RSPP', mc: 'Medico Competente', rls: 'RLS', preposto: 'Preposto',
+  aspp: 'ASPP', addetto_ps: 'Addetto Primo Soccorso', addetto_antincendio: 'Addetto Antincendio',
+};
+
+router.post('/studio/clients/:companyId/safety-roles', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { role_type, full_name, appointment_date, expiry_date, qualification, notes } = req.body || {};
+  if (!role_type || !full_name?.trim()) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'role_type e full_name obbligatori' });
+  }
+  if (!VALID_SAFETY_ROLES.includes(role_type)) {
+    return res.status(400).json({ error: 'INVALID_ROLE_TYPE', message: `role_type deve essere uno di: ${VALID_SAFETY_ROLES.join(', ')}` });
+  }
+
+  const { data, error } = await supabase
+    .from('company_safety_roles')
+    .upsert({
+      company_id:       companyId,
+      role_type,
+      full_name:        full_name.trim(),
+      appointment_date: appointment_date || null,
+      expiry_date:      expiry_date      || null,
+      qualification:    qualification?.trim() || null,
+      notes:            notes?.trim()    || null,
+      updated_at:       new Date().toISOString(),
+    }, { onConflict: 'company_id,role_type' })
+    .select().single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ role: data });
+});
+
+router.delete('/studio/clients/:companyId/safety-roles/:roleId', verifyStudioJwt, async (req, res) => {
+  const { companyId, roleId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { error } = await supabase
+    .from('company_safety_roles').delete()
+    .eq('id', roleId).eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ── Scadenziario unificato ────────────────────────────────────────────────────
+// Vista cronologica di TUTTE le scadenze di TUTTI i clienti dello studio.
+// Include: attestati, sorveglianza, DURC, DVR vecchio, riunione periodica, figure sicurezza.
+
+router.get('/studio/scadenziario', verifyStudioJwt, async (req, res) => {
+  const { data: clients } = await supabase
+    .from('studio_clients')
+    .select('company_id, companies(id, name)')
+    .eq('studio_id', req.studioId)
+    .eq('status', 'active');
+
+  if (!clients?.length) return res.json({ items: [], total_critical: 0 });
+
+  const companyIds  = clients.map(c => c.company_id);
+  const companyMap  = Object.fromEntries(clients.map(c => [c.company_id, c.companies.name]));
+  const now         = new Date();
+  const in90        = new Date(now.getTime() + 90 * 86_400_000);
+  const oneYearAgo  = new Date(now.getTime() - 365 * 86_400_000);
+  const todayStr    = now.toISOString().slice(0, 10);
+  const in90Str     = in90.toISOString().slice(0, 10);
+
+  const [
+    { data: certs     },
+    { data: sorv      },
+    { data: companies },
+    { data: dvrs      },
+    { data: roles     },
+  ] = await Promise.all([
+    supabase.from('worker_certificates')
+      .select('id, company_id, expiry_date, workers(full_name), course_types(name)')
+      .in('company_id', companyIds).lt('expiry_date', in90Str).order('expiry_date'),
+    supabase.from('workers')
+      .select('id, company_id, full_name, health_fitness_expiry')
+      .in('company_id', companyIds).eq('is_active', true)
+      .not('health_fitness_expiry', 'is', null).lt('health_fitness_expiry', in90Str),
+    supabase.from('companies')
+      .select('id, durc_expiry_date, last_safety_meeting_at')
+      .in('id', companyIds),
+    supabase.from('dvr_documents')
+      .select('id, company_id, created_at').in('company_id', companyIds)
+      .order('created_at', { ascending: false }),
+    supabase.from('company_safety_roles')
+      .select('id, company_id, role_type, full_name, expiry_date')
+      .in('company_id', companyIds).not('expiry_date', 'is', null).lt('expiry_date', in90Str),
+  ]);
+
+  const items = [];
+
+  for (const c of certs || []) {
+    if (!companyMap[c.company_id]) continue;
+    items.push({
+      type: 'cert', company_id: c.company_id, company_name: companyMap[c.company_id],
+      expiry_date: c.expiry_date,
+      label: `${c.course_types?.name || 'Attestato'} — ${c.workers?.full_name || '—'}`,
+      severity: c.expiry_date < todayStr ? 'critical' : 'warning',
+    });
+  }
+
+  for (const w of sorv || []) {
+    if (!companyMap[w.company_id]) continue;
+    items.push({
+      type: 'sorveglianza', company_id: w.company_id, company_name: companyMap[w.company_id],
+      expiry_date: w.health_fitness_expiry,
+      label: `Idoneità medica — ${w.full_name}`,
+      severity: w.health_fitness_expiry < todayStr ? 'critical' : 'warning',
+    });
+  }
+
+  for (const co of companies || []) {
+    if (!companyMap[co.id]) continue;
+    if (co.durc_expiry_date && co.durc_expiry_date < in90Str) {
+      items.push({
+        type: 'durc', company_id: co.id, company_name: companyMap[co.id],
+        expiry_date: co.durc_expiry_date,
+        label: 'DURC — scadenza',
+        severity: co.durc_expiry_date < todayStr ? 'critical' : 'warning',
+      });
+    }
+    if (co.last_safety_meeting_at) {
+      const nextDue    = new Date(new Date(co.last_safety_meeting_at).getTime() + 365 * 86_400_000);
+      const nextDueStr = nextDue.toISOString().slice(0, 10);
+      if (nextDueStr < in90Str) {
+        items.push({
+          type: 'riunione', company_id: co.id, company_name: companyMap[co.id],
+          expiry_date: nextDueStr,
+          label: 'Riunione periodica art.35 D.Lgs.81/2008',
+          severity: nextDueStr < todayStr ? 'critical' : 'warning',
+        });
+      }
+    }
+  }
+
+  // DVR vecchio (>12 mesi dall'ultima revisione)
+  const latestDvr = {};
+  for (const d of dvrs || []) if (!latestDvr[d.company_id]) latestDvr[d.company_id] = d;
+  for (const [cid, dvr] of Object.entries(latestDvr)) {
+    if (!companyMap[cid]) continue;
+    const dvrDate = new Date(dvr.created_at);
+    if (dvrDate < oneYearAgo) {
+      const dueStr = new Date(dvrDate.getTime() + 365 * 86_400_000).toISOString().slice(0, 10);
+      items.push({
+        type: 'dvr', company_id: cid, company_name: companyMap[cid],
+        expiry_date: dueStr,
+        label: `DVR da aggiornare — ultima rev. ${dvrDate.toLocaleDateString('it-IT')}`,
+        severity: 'warning',
+      });
+    }
+  }
+
+  for (const r of roles || []) {
+    if (!companyMap[r.company_id]) continue;
+    items.push({
+      type: 'safety_role', company_id: r.company_id, company_name: companyMap[r.company_id],
+      expiry_date: r.expiry_date,
+      label: `Nomina ${SAFETY_ROLE_LABELS[r.role_type] || r.role_type} — ${r.full_name}`,
+      severity: r.expiry_date < todayStr ? 'critical' : 'warning',
+    });
+  }
+
+  items.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === 'critical' ? -1 : 1;
+    return (a.expiry_date || '').localeCompare(b.expiry_date || '');
+  });
+
+  res.json({ items, total_critical: items.filter(i => i.severity === 'critical').length });
+});
+
+// ── Report conformità completo PDF ────────────────────────────────────────────
+// Documento di audit completo che il CDL porta alle ispezioni ASL/INAIL.
+
+router.get('/studio/clients/:companyId/report-conformita.pdf', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const now        = new Date();
+  const in30       = new Date(now.getTime() + 30 * 86_400_000);
+  const in60       = new Date(now.getTime() + 60 * 86_400_000);
+  const oneYearAgo = new Date(now.getTime() - 365 * 86_400_000);
+  const todayStr   = now.toISOString().slice(0, 10);
+
+  const [
+    { data: company  },
+    { data: studio   },
+    { data: workers  },
+    { data: dvrs     },
+    { data: certs    },
+    { data: roles    },
+    { data: subDocs  },
+  ] = await Promise.all([
+    supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
+    supabase.from('studio_partners').select('*').eq('id', req.studioId).maybeSingle(),
+    supabase.from('workers').select('id, full_name, fiscal_code, health_fitness_expiry, is_active').eq('company_id', companyId).eq('is_active', true).order('full_name'),
+    supabase.from('dvr_documents').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
+    supabase.from('worker_certificates').select('*, workers(full_name, fiscal_code), course_types(name)').eq('company_id', companyId).order('expiry_date'),
+    supabase.from('company_safety_roles').select('*').eq('company_id', companyId),
+    supabase.from('subcontractor_documents').select('*').eq('company_id', companyId),
+  ]);
+
+  function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+  function fmtDate(iso) { if(!iso)return '—'; return new Date(iso).toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}); }
+
+  const latestDvr   = dvrs?.[0];
+  const dvrOld      = latestDvr && new Date(latestDvr.created_at) < oneYearAgo;
+  const expiredCerts = (certs||[]).filter(c => c.expiry_date && c.expiry_date < todayStr);
+  const soonCerts    = (certs||[]).filter(c => c.expiry_date && c.expiry_date >= todayStr && new Date(c.expiry_date) < in60);
+  const expiredSorv  = (workers||[]).filter(w => w.health_fitness_expiry && w.health_fitness_expiry < todayStr);
+  const soonSorv     = (workers||[]).filter(w => w.health_fitness_expiry && w.health_fitness_expiry >= todayStr && new Date(w.health_fitness_expiry) < in60);
+
+  const durcDate    = company?.durc_expiry_date;
+  const durcExpired = durcDate && durcDate < todayStr;
+  const durcSoon    = durcDate && durcDate >= todayStr && new Date(durcDate) < in30;
+  const meetingNext = company?.last_safety_meeting_at
+    ? new Date(new Date(company.last_safety_meeting_at).getTime() + 365 * 86_400_000)
+    : null;
+  const meetingDue  = meetingNext && meetingNext < now;
+
+  const hasCritical = (!latestDvr && (workers||[]).length > 0) || expiredCerts.length > 0 || expiredSorv.length > 0 || durcExpired;
+  const hasWarning  = dvrOld || soonCerts.length > 0 || soonSorv.length > 0 || durcSoon || meetingDue;
+  const semaforo    = hasCritical ? 'rosso' : hasWarning ? 'giallo' : 'verde';
+  const semColor    = semaforo === 'rosso' ? '#dc2626' : semaforo === 'giallo' ? '#d97706' : '#059669';
+  const semLabel    = semaforo === 'rosso' ? 'NON CONFORME' : semaforo === 'giallo' ? 'ATTENZIONE' : 'CONFORME';
+
+  function chip(ok, okLabel, koLabel) {
+    return ok
+      ? `<span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${okLabel}</span>`
+      : `<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700">${koLabel}</span>`;
+  }
+
+  function certColor(expStr) {
+    if (!expStr) return '#6b7280';
+    if (expStr < todayStr) return '#dc2626';
+    if (new Date(expStr) < in60) return '#d97706';
+    return '#059669';
+  }
+  function certLabel(expStr) {
+    if (!expStr) return 'N/D';
+    if (expStr < todayStr) return 'SCADUTO';
+    if (new Date(expStr) < in60) return 'IN SCADENZA';
+    return 'VALIDO';
+  }
+
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,Arial,sans-serif;font-size:12px;color:#1a1a1a;background:#fff}
+  .page{padding:20mm 22mm 28mm;max-width:210mm}
+  .lh{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:12px;border-bottom:2px solid #1a1a1a;margin-bottom:18px}
+  .sn{font-size:16px;font-weight:800}.ss{font-size:10px;color:#6b7280;margin-top:2px}.sm{font-size:10px;color:#6b7280;text-align:right;line-height:1.8}
+  .sec{margin-bottom:18px}
+  .sec-t{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:7px;padding-bottom:4px;border-bottom:1px solid #e5e7eb}
+  table{width:100%;border-collapse:collapse}
+  th{background:#f9fafb;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9ca3af;padding:5px 8px;text-align:left;border-bottom:1px solid #e5e7eb}
+  td{padding:6px 8px;border-bottom:1px solid #f3f4f6;font-size:11px;vertical-align:middle}
+  .cr{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;border-bottom:1px solid #f3f4f6}
+  .cl{font-size:12px}.cd{font-size:11px;color:#6b7280;margin-top:1px}
+  .sf{margin-top:24px;padding-top:14px;border-top:1px solid #e5e7eb;display:flex;justify-content:space-between}
+  .sb{font-size:11px;color:#6b7280}.sb strong{display:block;font-size:12px;color:#1a1a1a;margin-bottom:2px}
+  .pf{position:fixed;bottom:0;left:0;right:0;height:12mm;display:flex;align-items:center;justify-content:space-between;padding:0 22mm;border-top:1px solid #e5e7eb;font-size:9px;color:#9ca3af}
+  .sg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:14px}
+  .sb2{background:#f9fafb;border-radius:6px;padding:9px;text-align:center}
+  .sn2{font-size:20px;font-weight:800}.sl{font-size:10px;color:#6b7280;margin-top:2px}
+</style>
+</head><body><div class="page">
+
+<div class="lh">
+  <div>
+    <div class="sn">${esc(studio?.studio_name||'Studio CDL')}</div>
+    <div class="ss">Studio di Consulenza del Lavoro${studio?.registration_number?' · Albo n. '+studio.registration_number:''}</div>
+  </div>
+  <div class="sm">${studio?.vat_number?`P.IVA ${esc(studio.vat_number)}<br>`:''}Generato ${fmtDate(now.toISOString())} via Palladia</div>
+</div>
+
+<div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:18px;gap:16px">
+  <div>
+    <div style="font-size:14px;font-weight:800">Report di Conformità D.Lgs. 81/2008</div>
+    <div style="font-size:11px;color:#6b7280;margin-top:3px">${esc(company?.name||'Impresa')}${company?.piva?' — P.IVA '+esc(company.piva):''}${company?.address?'<br>'+esc(company.address):''}</div>
+  </div>
+  <div style="text-align:right;flex-shrink:0">
+    <span style="background:${semColor}22;color:${semColor};border:1px solid ${semColor}44;padding:4px 12px;border-radius:4px;font-size:12px;font-weight:800">${semLabel}</span>
+    <div style="font-size:10px;color:#6b7280;margin-top:4px">${fmtDate(now.toISOString())}</div>
+  </div>
+</div>
+
+<div class="sec">
+  <div class="sec-t">Sommario</div>
+  <div class="sg">
+    <div class="sb2"><div class="sn2">${(workers||[]).length}</div><div class="sl">Lavoratori</div></div>
+    <div class="sb2"><div class="sn2" style="${expiredCerts.length>0?'color:#dc2626':''}">${expiredCerts.length}</div><div class="sl">Attestati scaduti</div></div>
+    <div class="sb2"><div class="sn2" style="${expiredSorv.length>0?'color:#dc2626':''}">${expiredSorv.length}</div><div class="sl">Idon. med. scadute</div></div>
+    <div class="sb2"><div class="sn2" style="${soonCerts.length>0?'color:#d97706':''}">${soonCerts.length}</div><div class="sl">In scadenza 60gg</div></div>
+  </div>
+</div>
+
+<div class="sec">
+  <div class="sec-t">Checklist conformità</div>
+  <div style="background:#f9fafb;border-radius:6px;overflow:hidden;border:1px solid #e5e7eb">
+    <div class="cr"><div><div class="cl">DVR (Documento Valutazione Rischi)</div><div class="cd">${latestDvr?'Ultima rev.: '+fmtDate(latestDvr.created_at):'Non presente'}</div></div>
+      ${latestDvr?(dvrOld?chip(false,'','DA AGGIORNARE'):chip(true,'AGGIORNATO','')):((workers||[]).length>0?chip(false,'','ASSENTE OBBLIGATORIO'):chip(true,'N/A',''))}</div>
+    <div class="cr"><div><div class="cl">DURC (Regolarità Contributiva)</div><div class="cd">${durcDate?'Scadenza: '+fmtDate(durcDate):'Non registrato'}</div></div>
+      ${durcDate?(durcExpired?chip(false,'','SCADUTO'):durcSoon?chip(false,'','IN SCADENZA'):chip(true,'VALIDO','')):chip(false,'','NON REGISTRATO')}</div>
+    <div class="cr"><div><div class="cl">Riunione periodica (art. 35 D.Lgs.81/2008)</div><div class="cd">${company?.last_safety_meeting_at?'Ultima: '+fmtDate(company.last_safety_meeting_at):'Non registrata'}</div></div>
+      ${company?.last_safety_meeting_at?(meetingDue?chip(false,'','DA RINNOVARE'):chip(true,'OK','')):chip(false,'','NON REGISTRATA')}</div>
+    ${!(roles||[]).length
+      ? `<div class="cr"><div><div class="cl">Figure sicurezza (RSPP, MC, RLS)</div><div class="cd">Nessuna figura nominata</div></div>${chip(false,'','VERIFICARE')}</div>`
+      : (roles||[]).map(r=>`<div class="cr"><div><div class="cl">${esc(SAFETY_ROLE_LABELS[r.role_type]||r.role_type)}: ${esc(r.full_name)}</div><div class="cd">${r.appointment_date?'Nomina: '+fmtDate(r.appointment_date):''}${r.expiry_date?' · Scad.: '+fmtDate(r.expiry_date):''}</div></div>${r.expiry_date?(r.expiry_date<todayStr?chip(false,'','SCADUTO'):chip(true,'OK','')):chip(true,'OK','')}</div>`).join('')}
+  </div>
+</div>
+
+${(workers||[]).some(w=>w.health_fitness_expiry)?`<div class="sec">
+  <div class="sec-t">Sorveglianza sanitaria — idoneità lavorativa</div>
+  <table><thead><tr><th>Lavoratore</th><th>CF</th><th>Scadenza</th><th>Stato</th></tr></thead>
+  <tbody>${(workers||[]).filter(w=>w.health_fitness_expiry).map(w=>`<tr>
+    <td>${esc(w.full_name)}</td><td style="color:#6b7280;font-size:11px">${esc(w.fiscal_code||'—')}</td>
+    <td>${fmtDate(w.health_fitness_expiry)}</td>
+    <td><span style="color:${certColor(w.health_fitness_expiry)};font-weight:700;font-size:10px">${certLabel(w.health_fitness_expiry)}</span></td>
+  </tr>`).join('')}</tbody></table>
+</div>`:''}
+
+${(certs||[]).length>0?`<div class="sec">
+  <div class="sec-t">Attestati di formazione</div>
+  <table><thead><tr><th>Lavoratore</th><th>Tipo corso</th><th>Scadenza</th><th>Ente</th><th>Stato</th></tr></thead>
+  <tbody>${(certs||[]).map(c=>`<tr>
+    <td>${esc(c.workers?.full_name||'—')}</td><td>${esc(c.course_types?.name||'—')}</td>
+    <td>${fmtDate(c.expiry_date)}</td><td style="color:#6b7280">${esc(c.issuing_body||'—')}</td>
+    <td><span style="color:${certColor(c.expiry_date)};font-weight:700;font-size:10px">${certLabel(c.expiry_date)}</span></td>
+  </tr>`).join('')}</tbody></table>
+</div>`:''}
+
+<div class="sf">
+  <div class="sb"><strong>${esc(studio?.studio_name||'Studio CDL')}</strong>Consulente del Lavoro${studio?.registration_number?' — Albo n. '+esc(studio.registration_number):''}</div>
+  <div style="margin-top:30px;border-top:1px solid #d1d5db;width:160px;padding-top:4px;font-size:10px;color:#9ca3af;text-align:center">Timbro e firma</div>
+</div>
+
+</div>
+<div class="pf">
+  <span>${esc(studio?.studio_name||'')} — Conformità ${esc(company?.name||'')}</span>
+  <span>Generato ${fmtDate(now.toISOString())} via Palladia</span>
+</div>
+</body></html>`;
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await rendererPool.render(html, { docTitle: `Report conformità — ${company?.name}`, rev: 1 });
+  } catch (err) {
+    console.error('[studio] report-conformita render error:', err.message);
+    return res.status(500).json({ error: 'PDF_RENDER_ERROR' });
+  }
+
+  const safeName = (company?.name||'impresa').replace(/[^a-zA-Z0-9]/g,'-').toLowerCase();
+  const dateStr  = now.toISOString().slice(0,10);
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition',`attachment; filename="report-conformita-${safeName}-${dateStr}.pdf"`);
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.send(pdfBuffer);
 });
 
 module.exports = router;

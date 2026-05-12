@@ -60,6 +60,9 @@ async function processStudio(studio, now, in30, oneYearAgo) {
   const companyIds = clients.map(c => c.company_id);
 
   // Fetch parallelo di tutti i dati di conformità
+  const todayStr = now.toISOString().slice(0, 10);
+  const in30Str  = in30.toISOString().slice(0, 10);
+
   const [
     { data: sites },
     { data: workers },
@@ -67,14 +70,24 @@ async function processStudio(studio, now, in30, oneYearAgo) {
     { data: certExpired },
     { data: certSoon },
     { data: subDocs },
+    { data: ssorvExpired },
+    { data: ssorvSoon },
+    { data: compData },
+    { data: safetyRoles },
   ] = await Promise.all([
     supabase.from('sites').select('id, company_id').in('company_id', companyIds).neq('status', 'chiuso'),
     supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true),
     supabase.from('dvr_documents').select('id, company_id, created_at').in('company_id', companyIds).order('created_at', { ascending: false }),
-    supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds).lt('expiry_date', now.toISOString().slice(0, 10)),
+    supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds).lt('expiry_date', todayStr),
     supabase.from('worker_certificates').select('id, company_id, expiry_date, course_types(name)').in('company_id', companyIds)
-      .gte('expiry_date', now.toISOString().slice(0, 10)).lt('expiry_date', in30.toISOString().slice(0, 10)),
+      .gte('expiry_date', todayStr).lt('expiry_date', in30Str),
     supabase.from('subcontractor_documents').select('id, company_id, valid_until').in('company_id', companyIds),
+    supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true)
+      .not('health_fitness_expiry', 'is', null).lt('health_fitness_expiry', todayStr),
+    supabase.from('workers').select('id, company_id').in('company_id', companyIds).eq('is_active', true)
+      .not('health_fitness_expiry', 'is', null).gte('health_fitness_expiry', todayStr).lt('health_fitness_expiry', in30Str),
+    supabase.from('companies').select('id, durc_expiry_date, last_safety_meeting_at').in('id', companyIds),
+    supabase.from('company_safety_roles').select('company_id, role_type').in('company_id', companyIds),
   ]);
 
   // Metriche per impresa
@@ -123,9 +136,47 @@ async function processStudio(studio, now, in30, oneYearAgo) {
     }
   }
 
+  // ── Sorveglianza sanitaria ─────────────────────────────────────────────────
+  for (const w of ssorvExpired || []) {
+    if (!metrics[w.company_id]) continue;
+    metrics[w.company_id].alerts.push({ type: 'sorv_expired', message: 'Idoneità medica scaduta', severity: 'critical' });
+  }
+  for (const w of ssorvSoon || []) {
+    if (!metrics[w.company_id]) continue;
+    metrics[w.company_id].alerts.push({ type: 'sorv_expiring', message: 'Idoneità medica in scadenza (30 gg)', severity: 'warning' });
+  }
+
+  // ── DURC e riunione periodica ──────────────────────────────────────────────
+  for (const co of compData || []) {
+    if (!metrics[co.id]) continue;
+    if (co.durc_expiry_date) {
+      if (co.durc_expiry_date < todayStr) {
+        metrics[co.id].alerts.push({ type: 'durc_expired',  message: 'DURC scaduto', severity: 'critical' });
+      } else if (co.durc_expiry_date < in30Str) {
+        metrics[co.id].alerts.push({ type: 'durc_expiring', message: 'DURC in scadenza (30 gg)', severity: 'warning' });
+      }
+    }
+    if (co.last_safety_meeting_at) {
+      const nextDue = new Date(new Date(co.last_safety_meeting_at).getTime() + 365 * 86_400_000);
+      if (nextDue < now) {
+        metrics[co.id].alerts.push({ type: 'riunione_scaduta', message: 'Riunione periodica art.35 da rinnovare', severity: 'warning' });
+      }
+    }
+  }
+
+  // ── RSPP non nominato ──────────────────────────────────────────────────────
+  const rolesByCompany = {};
+  for (const r of safetyRoles || []) {
+    if (!rolesByCompany[r.company_id]) rolesByCompany[r.company_id] = new Set();
+    rolesByCompany[r.company_id].add(r.role_type);
+  }
+
   for (const m of Object.values(metrics)) {
     if (!m.dvr_presente && m.workers > 0) {
       m.alerts.push({ type: 'dvr_missing', message: 'DVR assente — obbligatorio per legge (D.Lgs 81/2008)', severity: 'critical' });
+    }
+    if (m.workers > 0 && !rolesByCompany[m.company_id]?.has('rspp')) {
+      m.alerts.push({ type: 'rspp_mancante', message: 'RSPP non nominato', severity: 'warning' });
     }
     // Deduplica per tipo
     m.alerts = [...new Map(m.alerts.map(a => [a.type, a])).values()];
