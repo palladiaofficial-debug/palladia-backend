@@ -90,22 +90,29 @@ router.post('/onboarding/setup', verifyJwtOnly, async (req, res) => {
 
   const cleanName = company_name.trim();
 
-  // Controlla che l'utente non abbia già una company
-  const { data: existing, error: existErr } = await supabase
+  // Controlla che l'utente non abbia già una company come owner
+  // Usa .limit(1) invece di .maybeSingle() per evitare errore PGRST116 su utenti con più membership
+  const { data: existingRows, error: existErr } = await supabase
     .from('company_users')
-    .select('company_id')
+    .select('company_id, companies(name)')
     .eq('user_id', req.user.id)
-    .maybeSingle();
+    .eq('role', 'owner')
+    .limit(1);
 
   if (existErr) {
     console.error('[onboarding] existing check error:', existErr.message);
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 
-  if (existing) {
-    return res.status(409).json({
-      error:      'ALREADY_HAS_COMPANY',
-      company_id: existing.company_id
+  // Idempotente: se ha già una company come owner, restituisce quella esistente (non errore)
+  if (existingRows && existingRows.length > 0) {
+    const existing = existingRows[0];
+    console.log(`[onboarding] utente ${req.user.id} ha già company owner ${existing.company_id} — restituita`);
+    return res.status(200).json({
+      ok:           true,
+      company_id:   existing.company_id,
+      company_name: existing.companies?.name ?? cleanName,
+      already_existed: true,
     });
   }
 

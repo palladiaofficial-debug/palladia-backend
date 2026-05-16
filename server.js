@@ -91,6 +91,11 @@ app.get('/api/health', async (req, res) => {
     .limit(1)
     .maybeSingle();
 
+  // PDF queue depth — quanti render sono in attesa o in corso
+  const { pdfSemaphore } = require('./pdf-renderer');
+  const pdfRunning = pdfSemaphore._running;
+  const pdfQueued  = pdfSemaphore._queue.length;
+
   const status = dbErr ? 'degraded' : 'ok';
 
   res.status(dbErr ? 503 : 200).json({
@@ -100,6 +105,10 @@ app.get('/api/health', async (req, res) => {
       rss_mb:       Math.round(mem.rss        / 1024 / 1024),
       heap_used_mb: Math.round(mem.heapUsed   / 1024 / 1024),
       heap_total_mb:Math.round(mem.heapTotal  / 1024 / 1024),
+    },
+    pdf: {
+      running: pdfRunning,
+      queued:  pdfQueued,
     },
     db:        dbErr ? `error: ${dbErr.message}` : 'ok',
     timestamp: new Date().toISOString(),

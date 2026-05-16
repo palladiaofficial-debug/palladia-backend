@@ -293,8 +293,69 @@ router.post('/leave-company', async (req, res) => {
   res.json({ ok: true });
 });
 
-// DELETE /api/v1/companies/:companyId — l'owner elimina una sua company vuota
-// JWT only. Blocca se la company ha cantieri attivi.
+// GET /api/v1/my-companies-overview — panoramica di tutte le company dell'utente con conteggi dati
+// JWT only. Usato per identificare e pulire aziende duplicate.
+router.get('/my-companies-overview', async (req, res) => {
+  const auth = req.headers['authorization'];
+  if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
+  const jwt = auth.slice(7);
+
+  const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
+  if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const userId = authData.user.id;
+
+  const { data: memberships, error: memberErr } = await supabase
+    .from('company_users')
+    .select('company_id, role, companies(id, name, created_at, subscription_status, subscription_plan)')
+    .eq('user_id', userId);
+
+  if (memberErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!memberships || memberships.length === 0) return res.json([]);
+
+  const overviews = await Promise.all(memberships.map(async (m) => {
+    const cid = m.company_id;
+
+    const [
+      { count: sitesCount },
+      { count: workersCount },
+      { count: presenceCount },
+      { count: memberCount },
+    ] = await Promise.all([
+      supabase.from('sites').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('workers').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('presence_logs').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+      supabase.from('company_users').select('id', { count: 'exact', head: true }).eq('company_id', cid),
+    ]);
+
+    return {
+      company_id:          cid,
+      company_name:        m.companies?.name ?? '—',
+      role:                m.role,
+      created_at:          m.companies?.created_at,
+      subscription_status: m.companies?.subscription_status ?? null,
+      subscription_plan:   m.companies?.subscription_plan ?? null,
+      data_summary: {
+        sites:         sitesCount    ?? 0,
+        workers:       workersCount  ?? 0,
+        presence_logs: presenceCount ?? 0,
+        team_members:  memberCount   ?? 0,
+      },
+      is_empty: (sitesCount ?? 0) === 0 && (workersCount ?? 0) === 0 && (presenceCount ?? 0) === 0,
+      can_delete: m.role === 'owner' && (presenceCount ?? 0) === 0,
+    };
+  }));
+
+  const ROLE_ORDER = { owner: 0, admin: 1, tech: 2, viewer: 3 };
+  overviews.sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
+
+  res.json(overviews);
+});
+
+// DELETE /api/v1/companies/:companyId — l'owner elimina una sua company
+// JWT only. Permesso solo se la company non ha timbrature (presenza reale).
+// Per company vuote (nessuna timbratura): cancella cascata nell'ordine corretto.
+// Per company con timbrature: blocca (dati reali non eliminabili dall'UI).
 router.delete('/companies/:companyId', async (req, res) => {
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
@@ -303,10 +364,10 @@ router.delete('/companies/:companyId', async (req, res) => {
   const { data: authData, error: authErr } = await supabase.auth.getUser(jwt);
   if (authErr || !authData?.user) return res.status(401).json({ error: 'INVALID_TOKEN' });
 
-  const userId    = authData.user.id;
+  const userId        = authData.user.id;
   const { companyId } = req.params;
 
-  // Verifica che l'utente sia owner
+  // Verifica che l'utente sia owner di questa company
   const { data: membership } = await supabase
     .from('company_users')
     .select('role')
@@ -314,19 +375,34 @@ router.delete('/companies/:companyId', async (req, res) => {
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (!membership) return res.status(403).json({ error: 'FORBIDDEN' });
-  if (membership.role !== 'owner') return res.status(403).json({ error: 'OWNER_ONLY' });
+  if (!membership)                  return res.status(403).json({ error: 'FORBIDDEN' });
+  if (membership.role !== 'owner')  return res.status(403).json({ error: 'OWNER_ONLY' });
 
-  // Blocca se ha cantieri (qualsiasi status)
-  const { count } = await supabase
-    .from('sites')
+  // Blocca se la company ha timbrature reali (dati irreversibili)
+  const { count: presenceCount } = await supabase
+    .from('presence_logs')
     .select('id', { count: 'exact', head: true })
     .eq('company_id', companyId);
 
-  if (count && count > 0) {
-    return res.status(400).json({ error: 'HAS_SITES', message: 'Non puoi eliminare un\'azienda con cantieri. Elimina prima i cantieri.' });
+  if (presenceCount && presenceCount > 0) {
+    return res.status(400).json({
+      error:   'HAS_REAL_DATA',
+      message: `Questa azienda ha ${presenceCount} timbrature reali e non può essere eliminata dall'app. Contatta il supporto se è davvero necessario.`,
+    });
   }
 
+  console.log(`[delete-company] inizio cancellazione cascata company ${companyId} (owner: ${userId})`);
+
+  // Cancellazione in ordine FK-safe (dalla foglia alla radice)
+  // 1. Sessioni badge operai
+  await supabase.from('worker_device_sessions').delete().eq('company_id', companyId);
+  // 2. Assegnazioni operai-cantieri
+  await supabase.from('worksite_workers').delete().eq('company_id', companyId);
+  // 3. Operai
+  await supabase.from('workers').delete().eq('company_id', companyId);
+  // 4. Cantieri (cascade sui propri dati collegati via FK ON DELETE CASCADE)
+  await supabase.from('sites').delete().eq('company_id', companyId);
+  // 5. Company — cascade elimina automaticamente: company_users, company_invites
   const { error } = await supabase
     .from('companies')
     .delete()
@@ -334,9 +410,15 @@ router.delete('/companies/:companyId', async (req, res) => {
 
   if (error) {
     console.error('[delete-company] error:', error.message);
-    return res.status(500).json({ error: 'DB_ERROR' });
+    // FK violation residua: ci sono dati che non abbiamo gestito
+    return res.status(400).json({
+      error:   'HAS_DEPENDENCIES',
+      message: 'Ci sono ancora dati collegati a questa azienda. Eliminali manualmente dalla dashboard prima di procedere.',
+      detail:  error.message,
+    });
   }
 
+  console.log(`[delete-company] company ${companyId} eliminata con successo`);
   res.json({ ok: true });
 });
 

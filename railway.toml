@@ -1,0 +1,13 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+# Railway legge questo path per stabilire se il container è sano prima di mandare traffico.
+# Se risponde 200: deployment confermato. Se risponde 503 o non risponde entro timeout: rollback automatico.
+healthcheckPath    = "/api/health"
+healthcheckTimeout = 30
+
+# Riavvio automatico in caso di crash, massimo 3 volte in sequenza.
+# Se il container crasha più di 3 volte di fila Railway avvisa via email e si ferma.
+restartPolicyType       = "ON_FAILURE"
+restartPolicyMaxRetries = 3
