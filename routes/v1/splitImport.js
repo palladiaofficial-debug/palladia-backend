@@ -13,9 +13,8 @@ const router    = require('express').Router();
 const { PDFDocument } = require('pdf-lib');
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../../lib/supabase');
-const { verifySupabaseJwt }     = require('../../middleware/verifyJwt');
-const { extractPdfText }        = require('../../lib/pdfExtract');
-const { analyzeDocumentBuffer } = require('../../services/documentAI');
+const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { extractPdfText }    = require('../../lib/pdfExtract');
 
 const BUCKET             = 'site-documents';
 const MAX_BYTES          = 50 * 1024 * 1024; // 50 MB
@@ -34,47 +33,6 @@ const upload = multer({
       : cb(new Error('Solo file PDF supportato per la modalità multi-documento.')),
 });
 
-// ── Fuzzy match lavoratori ────────────────────────────────────────────────────
-
-function normName(s) {
-  return (s || '').toLowerCase()
-    .normalize('NFD').replace(/\p{Mn}/gu, '')
-    .replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
-  );
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i-1] === b[j-1]
-        ? dp[i-1][j-1]
-        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
-  return dp[m][n];
-}
-
-function scoreMatch(extracted, workerName) {
-  const a = normName(extracted), b = normName(workerName);
-  if (!a || !b) return 0;
-  const ta = new Set(a.split(' ').filter(t => t.length > 1));
-  const tb = new Set(b.split(' ').filter(t => t.length > 1));
-  const common = [...ta].filter(t => tb.has(t)).length;
-  const tokenScore = common / Math.max(ta.size, tb.size, 1);
-  const levScore   = 1 - levenshtein(a, b) / Math.max(a.length, b.length, 1);
-  return Math.round(tokenScore * 70 + levScore * 30);
-}
-
-function matchWorkers(nameQuery, workers) {
-  if (!nameQuery) return [];
-  return workers
-    .map(w => ({ worker: w, score: scoreMatch(nameQuery, w.full_name) }))
-    .filter(m => m.score >= 35)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 3);
-}
-
 // ── Estrae il primo oggetto JSON completo (brace-tracking) ───────────────────
 
 function extractFirstJson(str) {
@@ -86,6 +44,69 @@ function extractFirstJson(str) {
     else if (str[i] === '}' && --depth === 0) return str.slice(start, i + 1);
   }
   return null;
+}
+
+// ── Prompt semplificato per analisi per-pagina (nessun nome) ─────────────────
+
+const PAGE_PROMPT = `Sei un esperto di documentazione sicurezza lavoro italiana (D.Lgs. 81/2008).
+Analizza il documento e restituisci SOLO un oggetto JSON valido:
+
+{
+  "doc_type": "<idoneita_medica|formazione_sicurezza|primo_soccorso|antincendio|lavori_quota|ponteggi|gruista|pes_pav_pei|rspp|patente_guida|altro>",
+  "expiry_date": "<YYYY-MM-DD oppure null>",
+  "renewal_years": <intero oppure null>,
+  "issued_by": "<ente emittente oppure null>",
+  "summary": "<1-2 frasi: tipo documento e cosa attesta>",
+  "issues": [],
+  "validity_ok": <true|false>
+}
+
+Se c'è solo data di emissione (senza scadenza esplicita), calcola: expiry_date = emissione + renewal_years anni.
+Periodi standard D.Lgs. 81/2008: idoneita_medica=1a, formazione_sicurezza=5a, primo_soccorso=3a,
+antincendio=3a, lavori_quota=5a, ponteggi=4a, gruista=5a, pes_pav_pei=3a, rspp=5a.
+Output: SOLO JSON grezzo, zero markdown.`;
+
+function normalizeDate(val) {
+  if (!val || typeof val !== 'string') return null;
+  const s = val.trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) { const d = new Date(s); return isNaN(d.getTime()) ? null : s; }
+  const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) { const iso = `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`; return isNaN(new Date(iso).getTime()) ? null : iso; }
+  return null;
+}
+
+async function analyzePageBuffer(buf) {
+  const { text } = await extractPdfText(buf, { maxPages: 5, minChars: 10 });
+  const isText   = !!(text.trim());
+  const client   = new Anthropic();
+
+  const content = isText
+    ? `Testo estratto:\n\n${text.slice(0, 8000)}\n\nAnalizza e restituisci il JSON.`
+    : [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: buf.toString('base64') } },
+        { type: 'text', text: 'Analizza e restituisci il JSON.' },
+      ];
+
+  const response = await client.messages.create({
+    model:       isText ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6',
+    max_tokens:  512,
+    temperature: 0,
+    system:      PAGE_PROMPT,
+    messages:    [{ role: 'user', content }],
+  });
+
+  const raw     = response.content?.[0]?.text || '';
+  const jsonStr = extractFirstJson(raw);
+  if (!jsonStr) return null;
+  const parsed  = JSON.parse(jsonStr);
+  return {
+    doc_type:    parsed.doc_type    || 'altro',
+    expiry_date: normalizeDate(String(parsed.expiry_date || '')),
+    issued_by:   (String(parsed.issued_by || '')).trim() || null,
+    summary:     (String(parsed.summary   || '')).slice(0, 800) || null,
+    issues:      Array.isArray(parsed.issues) ? parsed.issues.slice(0, 5).map(s => String(s).slice(0, 200)) : [],
+    validity_ok: typeof parsed.validity_ok === 'boolean' ? parsed.validity_ok : null,
+  };
 }
 
 // ── Claude: rilevamento confini documenti ─────────────────────────────────────
@@ -307,36 +328,25 @@ router.post('/split-import/analyze',
             continue;
           }
 
-          // Analisi per-pezzo: Haiku su testuali, Sonnet su scansionati
           let analysis = null;
-          try { analysis = await analyzeDocumentBuffer(buf, 'application/pdf'); } catch { /* ignora */ }
+          try { analysis = await analyzePageBuffer(buf); } catch { /* ignora */ }
 
-          const nameForMatch  = analysis?.issued_to || doc.worker_name || '';
-          const workerMatches = matchWorkers(nameForMatch, allWorkers);
-          const docType       = analysis?.doc_type || doc.doc_type || 'altro';
-          const expiryDate    = analysis?.expiry_date || null;
-          const yr            = expiryDate ? new Date(expiryDate).getFullYear() : new Date().getFullYear();
-          const workerName    = analysis?.issued_to || doc.worker_name || '';
-          const typeLabel     = DOC_LABEL[docType] || 'Documento';
-          const docName       = workerName
-            ? `${typeLabel} - ${workerName.split(/\s+/).slice(0, 2).join(' ')} ${yr}`
-            : `${typeLabel} ${yr}`;
+          const docType    = analysis?.doc_type || doc.doc_type || 'altro';
+          const expiryDate = analysis?.expiry_date || null;
+          const yr         = expiryDate ? new Date(expiryDate).getFullYear() : new Date().getFullYear();
+          const typeLabel  = DOC_LABEL[docType] || 'Documento';
 
           results[idx] = {
-            temp_path:             tempPath,
-            page_start:            doc.page_start,
-            page_end:              doc.page_end,
-            page_count:            doc.page_end - doc.page_start + 1,
-            doc_type:              docType,
-            doc_name:              docName,
-            expiry_date:           expiryDate || '',
-            summary:               analysis?.summary || null,
-            worker_name_detected:  workerName,
-            fiscal_code_detected:  analysis?.fiscal_code || null,
-            worker_matches:        workerMatches,
-            confidence:            doc.confidence,
-            issues:                analysis?.issues || [],
-            validity_ok:           analysis?.validity_ok ?? null,
+            temp_path:   tempPath,
+            page_start:  doc.page_start,
+            page_end:    doc.page_end,
+            page_count:  doc.page_end - doc.page_start + 1,
+            doc_type:    docType,
+            doc_name:    `${typeLabel} ${yr}`,
+            expiry_date: expiryDate || '',
+            summary:     analysis?.summary || null,
+            issues:      analysis?.issues || [],
+            validity_ok: analysis?.validity_ok ?? null,
           };
         }
       };
