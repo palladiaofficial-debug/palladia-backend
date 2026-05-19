@@ -345,7 +345,7 @@ function scoreMatch(extracted, workerName) {
   const tokenScore = common / Math.max(ta.size, tb.size, 1);
   const lev = levenshtein(a, b);
   const levScore = 1 - lev / Math.max(a.length, b.length, 1);
-  return Math.round((tokenScore * 70 + levScore * 30) * 100);
+  return Math.round(tokenScore * 70 + levScore * 30);
 }
 
 // ── POST /api/v1/worker-docs/ai-import — analisi AI + matching senza salvare ──

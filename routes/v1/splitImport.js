@@ -62,7 +62,7 @@ function scoreMatch(extracted, workerName) {
   const common = [...ta].filter(t => tb.has(t)).length;
   const tokenScore = common / Math.max(ta.size, tb.size, 1);
   const levScore   = 1 - levenshtein(a, b) / Math.max(a.length, b.length, 1);
-  return Math.round((tokenScore * 70 + levScore * 30) * 100);
+  return Math.round(tokenScore * 70 + levScore * 30);
 }
 
 function matchWorkers(nameQuery, workers) {
