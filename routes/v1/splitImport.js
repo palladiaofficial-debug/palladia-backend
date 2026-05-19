@@ -118,20 +118,24 @@ async function detectBoundaries(pdfBuffer) {
     minChars: 0,
   });
 
-  if (!text.trim() || text.length < 80) {
-    const err = new Error('Il PDF non contiene testo leggibile (è una scansione senza OCR).');
-    err.code = 'NO_TEXT';
-    throw err;
-  }
-
   const client = new Anthropic();
-  const userMsg = `Il PDF ha ${numPages} pagine totali.\n\nTesto estratto:\n\n${text.slice(0, 32000)}\n\nIdentifica tutti i documenti.`;
+  let userContent;
+
+  if (text.trim() && text.length >= 80) {
+    userContent = `Il PDF ha ${numPages} pagine totali.\n\nTesto estratto:\n\n${text.slice(0, 32000)}\n\nIdentifica tutti i documenti.`;
+  } else {
+    // PDF scansionato senza testo OCR: analisi visiva
+    userContent = [
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBuffer.toString('base64') } },
+      { type: 'text', text: `Il PDF ha ${numPages} pagine totali. Analizza visivamente le pagine e identifica tutti i documenti separati.` },
+    ];
+  }
 
   const response = await client.messages.create({
     model:      'claude-sonnet-4-6',
     max_tokens: 2048,
     system:     BOUNDARY_SYSTEM,
-    messages:   [{ role: 'user', content: userMsg }],
+    messages:   [{ role: 'user', content: userContent }],
   });
 
   const raw     = response.content?.[0]?.text || '';
