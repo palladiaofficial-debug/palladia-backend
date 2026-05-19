@@ -104,8 +104,15 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
   let messageContent;
   if (isPdf) {
     const { text: pdfText } = await extractPdfText(fileBuffer, { maxPages: 30, minChars: 10 });
-    if (!pdfText.trim()) return null;
-    messageContent = `Testo estratto dal PDF:\n\n${pdfText.slice(0, 15000)}\n\nAnalizza questo documento e restituisci il JSON richiesto.`;
+    if (pdfText.trim()) {
+      messageContent = `Testo estratto dal PDF:\n\n${pdfText.slice(0, 15000)}\n\nAnalizza questo documento e restituisci il JSON richiesto.`;
+    } else {
+      // PDF scansionato senza testo OCR: usa vision nativa di Claude
+      messageContent = [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBuffer.toString('base64') } },
+        { type: 'text', text: 'Analizza questo documento e restituisci il JSON richiesto.' },
+      ];
+    }
   } else {
     messageContent = [
       { type: 'image', source: { type: 'base64', media_type: mimeType, data: fileBuffer.toString('base64') } },
