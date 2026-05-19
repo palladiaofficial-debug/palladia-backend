@@ -87,6 +87,19 @@ async function downloadFileBuffer(filePath) {
   return Buffer.from(arrayBuffer);
 }
 
+// ── Estrae il primo oggetto JSON completo da una stringa (brace-tracking) ──────
+
+function extractFirstJson(str) {
+  const start = str.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === '{') depth++;
+    else if (str[i] === '}' && --depth === 0) return str.slice(start, i + 1);
+  }
+  return null;
+}
+
 // ── Analisi Claude ─────────────────────────────────────────────────────────────
 
 async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
@@ -128,9 +141,9 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
   });
 
   const raw = response.content?.[0]?.text || '';
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) throw new Error('Claude non ha restituito un JSON valido');
-  return JSON.parse(jsonMatch[0]);
+  const jsonStr = extractFirstJson(raw);
+  if (!jsonStr) throw new Error('Claude non ha restituito un JSON valido');
+  return JSON.parse(jsonStr);
 }
 
 // ── Normalizza data ────────────────────────────────────────────────────────────

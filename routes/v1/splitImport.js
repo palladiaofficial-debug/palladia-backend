@@ -74,6 +74,19 @@ function matchWorkers(nameQuery, workers) {
     .slice(0, 3);
 }
 
+// ── Estrae il primo oggetto JSON completo (brace-tracking) ───────────────────
+
+function extractFirstJson(str) {
+  const start = str.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0;
+  for (let i = start; i < str.length; i++) {
+    if (str[i] === '{') depth++;
+    else if (str[i] === '}' && --depth === 0) return str.slice(start, i + 1);
+  }
+  return null;
+}
+
 // ── Claude: rilevamento confini documenti ─────────────────────────────────────
 
 const BOUNDARY_SYSTEM = `Sei un esperto di documentazione sicurezza lavoro italiana (D.Lgs. 81/2008).
@@ -121,11 +134,11 @@ async function detectBoundaries(pdfBuffer) {
     messages:   [{ role: 'user', content: userMsg }],
   });
 
-  const raw   = response.content?.[0]?.text || '';
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) throw new Error('Analisi struttura fallita: risposta AI non valida.');
+  const raw     = response.content?.[0]?.text || '';
+  const jsonStr = extractFirstJson(raw);
+  if (!jsonStr) throw new Error('Analisi struttura fallita: risposta AI non valida.');
 
-  const parsed = JSON.parse(match[0]);
+  const parsed = JSON.parse(jsonStr);
   let docs = (parsed.documents || [])
     .map(d => ({
       page_start:  Math.max(1, Math.round(Number(d.page_start) || 1)),
