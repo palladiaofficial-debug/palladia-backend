@@ -17,10 +17,11 @@ const { verifySupabaseJwt }     = require('../../middleware/verifyJwt');
 const { extractPdfText }        = require('../../lib/pdfExtract');
 const { analyzeDocumentBuffer } = require('../../services/documentAI');
 
-const BUCKET      = 'site-documents';
-const MAX_BYTES   = 50 * 1024 * 1024; // 50 MB
-const MAX_PAGES   = 150;
-const CONCURRENCY = 3;
+const BUCKET             = 'site-documents';
+const MAX_BYTES          = 50 * 1024 * 1024; // 50 MB
+const MAX_PAGES          = 150;
+const CONCURRENCY        = 3; // PDF testuali (Haiku, veloce)
+const CONCURRENCY_VISION = 4; // PDF scansionati (Sonnet vision, più pesante)
 
 // ── Multer — solo PDF ─────────────────────────────────────────────────────────
 
@@ -118,22 +119,28 @@ async function detectBoundaries(pdfBuffer) {
     minChars: 0,
   });
 
-  const client = new Anthropic();
   const isTextBased = !!(text.trim() && text.length >= 80);
-  let userContent;
 
-  if (isTextBased) {
-    userContent = `Il PDF ha ${numPages} pagine totali.\n\nTesto estratto:\n\n${text.slice(0, 32000)}\n\nIdentifica tutti i documenti.`;
-  } else {
-    // PDF scansionato senza testo OCR: analisi visiva
-    userContent = [
-      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBuffer.toString('base64') } },
-      { type: 'text', text: `Il PDF ha ${numPages} pagine totali. Analizza visivamente le pagine e identifica tutti i documenti separati.` },
-    ];
+  // PDF scansionato: salta la boundary detection e tratta ogni pagina come documento separato.
+  // L'analisi per-pagina con Sonnet (fase successiva) darà nomi accurati senza spread l'intero
+  // PDF in un'unica call Claude che confonde i nominativi tra pagine diverse.
+  if (!isTextBased) {
+    const docs = Array.from({ length: numPages }, (_, i) => ({
+      page_start:  i + 1,
+      page_end:    i + 1,
+      worker_name: null,
+      doc_type:    'altro',
+      confidence:  0.7,
+    }));
+    return { docs, numPages, isTextBased: false };
   }
 
+  // PDF testuale: Haiku per la boundary detection (veloce, output strutturato)
+  const client = new Anthropic();
+  const userContent = `Il PDF ha ${numPages} pagine totali.\n\nTesto estratto:\n\n${text.slice(0, 32000)}\n\nIdentifica tutti i documenti.`;
+
   const response = await client.messages.create({
-    model:       isTextBased ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6',
+    model:       'claude-haiku-4-5-20251001',
     max_tokens:  2048,
     temperature: 0,
     system:      BOUNDARY_SYSTEM,
@@ -156,11 +163,10 @@ async function detectBoundaries(pdfBuffer) {
     .filter(d => d.page_start <= d.page_end)
     .sort((a, b) => a.page_start - b.page_start);
 
-  // Risolvi sovrapposizioni e buchi
   docs = normalizeBoundaries(docs, numPages);
   if (!docs.length) throw new Error('Nessun documento identificato nel PDF.');
 
-  return { docs, numPages, isTextBased };
+  return { docs, numPages, isTextBased: true };
 }
 
 // Normalizza i confini: elimina sovrapposizioni, riempie buchi con "altro"
@@ -279,9 +285,10 @@ router.post('/split-import/analyze',
       const results = new Array(docs.length).fill(null);
 
       // 3. Upload temp + AI analysis + worker matching — pool di concorrenza
-      // Per PDF scansionati (isTextBased=false) saltiamo l'analisi per-pezzo con Sonnet:
-      // la boundary detection ha già estratto worker_name e doc_type. L'analisi ripetuta
-      // per N pezzi causerebbe timeout Railway (N × ~12s con vision Sonnet).
+      // PDF scansionati: ogni pagina è già un doc separato; Sonnet analizza ognuna con CONCURRENCY_VISION
+      //   (no overhead boundary detection → totale ~40s per 16 pag, nomi accurati pagina per pagina)
+      // PDF testuali: Haiku per-pezzo, veloce
+      const concurrency = isTextBased ? CONCURRENCY : CONCURRENCY_VISION;
       let i = 0;
       const run = async () => {
         while (i < docs.length) {
@@ -300,12 +307,9 @@ router.post('/split-import/analyze',
             continue;
           }
 
-          // Analisi per-pezzo solo su PDF testuali (Haiku, veloce).
-          // Su scansionati i dati vengono dalla boundary detection già fatta.
+          // Analisi per-pezzo: Haiku su testuali, Sonnet su scansionati
           let analysis = null;
-          if (isTextBased) {
-            try { analysis = await analyzeDocumentBuffer(buf, 'application/pdf'); } catch { /* ignora */ }
-          }
+          try { analysis = await analyzeDocumentBuffer(buf, 'application/pdf'); } catch { /* ignora */ }
 
           const nameForMatch  = analysis?.issued_to || doc.worker_name || '';
           const workerMatches = matchWorkers(nameForMatch, allWorkers);
@@ -337,7 +341,7 @@ router.post('/split-import/analyze',
         }
       };
 
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, docs.length) }, run));
+      await Promise.all(Array.from({ length: Math.min(concurrency, docs.length) }, run));
 
       res.json({
         job_id:      jobId,
