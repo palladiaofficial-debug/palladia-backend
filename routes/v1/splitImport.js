@@ -119,9 +119,10 @@ async function detectBoundaries(pdfBuffer) {
   });
 
   const client = new Anthropic();
+  const isTextBased = !!(text.trim() && text.length >= 80);
   let userContent;
 
-  if (text.trim() && text.length >= 80) {
+  if (isTextBased) {
     userContent = `Il PDF ha ${numPages} pagine totali.\n\nTesto estratto:\n\n${text.slice(0, 32000)}\n\nIdentifica tutti i documenti.`;
   } else {
     // PDF scansionato senza testo OCR: analisi visiva
@@ -132,10 +133,11 @@ async function detectBoundaries(pdfBuffer) {
   }
 
   const response = await client.messages.create({
-    model:      'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system:     BOUNDARY_SYSTEM,
-    messages:   [{ role: 'user', content: userContent }],
+    model:       isTextBased ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6',
+    max_tokens:  2048,
+    temperature: 0,
+    system:      BOUNDARY_SYSTEM,
+    messages:    [{ role: 'user', content: userContent }],
   });
 
   const raw     = response.content?.[0]?.text || '';
@@ -158,7 +160,7 @@ async function detectBoundaries(pdfBuffer) {
   docs = normalizeBoundaries(docs, numPages);
   if (!docs.length) throw new Error('Nessun documento identificato nel PDF.');
 
-  return { docs, numPages };
+  return { docs, numPages, isTextBased };
 }
 
 // Normalizza i confini: elimina sovrapposizioni, riempie buchi con "altro"
@@ -244,99 +246,110 @@ router.post('/split-import/analyze',
     next();
   }),
   async (req, res) => {
-    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
-
-    // Carica lavoratori attivi
-    const { data: workers } = await supabase
-      .from('workers')
-      .select('id, full_name, photo_url, is_active')
-      .eq('company_id', req.companyId)
-      .eq('is_active', true)
-      .order('full_name');
-    const allWorkers = workers || [];
-
-    // 1. Rileva confini via Claude
-    let docs, numPages;
     try {
-      ({ docs, numPages } = await detectBoundaries(req.file.buffer));
-    } catch (err) {
-      const code = err.code === 'NO_TEXT' ? 'PDF_NO_TEXT' : 'BOUNDARY_DETECTION_FAILED';
-      return res.status(422).json({ error: code, detail: err.message });
-    }
+      if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
-    // 2. Splitta in buffer separati
-    let splitBuffers;
-    try {
-      splitBuffers = await splitPdfBuffers(req.file.buffer, docs);
-    } catch (err) {
-      return res.status(500).json({ error: 'SPLIT_FAILED', detail: err.message });
-    }
+      // Carica lavoratori attivi
+      const { data: workers } = await supabase
+        .from('workers')
+        .select('id, full_name, photo_url, is_active')
+        .eq('company_id', req.companyId)
+        .eq('is_active', true)
+        .order('full_name');
+      const allWorkers = workers || [];
 
-    const jobId   = crypto.randomUUID();
-    const results = new Array(docs.length).fill(null);
-
-    // 3. Upload temp + AI analysis + worker matching — pool di concorrenza
-    let i = 0;
-    const run = async () => {
-      while (i < docs.length) {
-        const idx = i++;
-        const doc = docs[idx];
-        const buf = splitBuffers[idx];
-
-        // Upload in temp storage
-        let tempPath;
-        try { tempPath = await uploadTemp(req.companyId, jobId, idx, buf); }
-        catch {
-          results[idx] = {
-            error: 'UPLOAD_FAILED',
-            page_start: doc.page_start, page_end: doc.page_end,
-          };
-          continue;
-        }
-
-        // Rianalisi precisa del sotto-PDF
-        let analysis = null;
-        try { analysis = await analyzeDocumentBuffer(buf, 'application/pdf'); } catch { /* ignora */ }
-
-        const nameForMatch  = analysis?.issued_to || doc.worker_name || '';
-        const workerMatches = matchWorkers(nameForMatch, allWorkers);
-        const docType       = analysis?.doc_type || doc.doc_type || 'altro';
-        const expiryDate    = analysis?.expiry_date || null;
-        const yr            = expiryDate ? new Date(expiryDate).getFullYear() : new Date().getFullYear();
-        const workerName    = analysis?.issued_to || doc.worker_name || '';
-        const typeLabel     = DOC_LABEL[docType] || 'Documento';
-        const docName       = workerName
-          ? `${typeLabel} - ${workerName.split(/\s+/).slice(0, 2).join(' ')} ${yr}`
-          : `${typeLabel} ${yr}`;
-
-        results[idx] = {
-          temp_path:             tempPath,
-          page_start:            doc.page_start,
-          page_end:              doc.page_end,
-          page_count:            doc.page_end - doc.page_start + 1,
-          doc_type:              docType,
-          doc_name:              docName,
-          expiry_date:           expiryDate || '',
-          summary:               analysis?.summary || null,
-          worker_name_detected:  workerName,
-          fiscal_code_detected:  analysis?.fiscal_code || null,
-          worker_matches:        workerMatches,
-          confidence:            doc.confidence,
-          issues:                analysis?.issues || [],
-          validity_ok:           analysis?.validity_ok ?? null,
-        };
+      // 1. Rileva confini via Claude
+      let docs, numPages, isTextBased;
+      try {
+        ({ docs, numPages, isTextBased } = await detectBoundaries(req.file.buffer));
+      } catch (err) {
+        const code = err.code === 'NO_TEXT' ? 'PDF_NO_TEXT' : 'BOUNDARY_DETECTION_FAILED';
+        return res.status(422).json({ error: code, detail: err.message });
       }
-    };
 
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, docs.length) }, run));
+      // 2. Splitta in buffer separati
+      let splitBuffers;
+      try {
+        splitBuffers = await splitPdfBuffers(req.file.buffer, docs);
+      } catch (err) {
+        return res.status(500).json({ error: 'SPLIT_FAILED', detail: err.message });
+      }
 
-    res.json({
-      job_id:      jobId,
-      num_pages:   numPages,
-      total:       results.length,
-      all_workers: allWorkers.map(w => ({ id: w.id, full_name: w.full_name })),
-      documents:   results,
-    });
+      const jobId   = crypto.randomUUID();
+      const results = new Array(docs.length).fill(null);
+
+      // 3. Upload temp + AI analysis + worker matching — pool di concorrenza
+      // Per PDF scansionati (isTextBased=false) saltiamo l'analisi per-pezzo con Sonnet:
+      // la boundary detection ha già estratto worker_name e doc_type. L'analisi ripetuta
+      // per N pezzi causerebbe timeout Railway (N × ~12s con vision Sonnet).
+      let i = 0;
+      const run = async () => {
+        while (i < docs.length) {
+          const idx = i++;
+          const doc = docs[idx];
+          const buf = splitBuffers[idx];
+
+          // Upload in temp storage
+          let tempPath;
+          try { tempPath = await uploadTemp(req.companyId, jobId, idx, buf); }
+          catch {
+            results[idx] = {
+              error: 'UPLOAD_FAILED',
+              page_start: doc.page_start, page_end: doc.page_end,
+            };
+            continue;
+          }
+
+          // Analisi per-pezzo solo su PDF testuali (Haiku, veloce).
+          // Su scansionati i dati vengono dalla boundary detection già fatta.
+          let analysis = null;
+          if (isTextBased) {
+            try { analysis = await analyzeDocumentBuffer(buf, 'application/pdf'); } catch { /* ignora */ }
+          }
+
+          const nameForMatch  = analysis?.issued_to || doc.worker_name || '';
+          const workerMatches = matchWorkers(nameForMatch, allWorkers);
+          const docType       = analysis?.doc_type || doc.doc_type || 'altro';
+          const expiryDate    = analysis?.expiry_date || null;
+          const yr            = expiryDate ? new Date(expiryDate).getFullYear() : new Date().getFullYear();
+          const workerName    = analysis?.issued_to || doc.worker_name || '';
+          const typeLabel     = DOC_LABEL[docType] || 'Documento';
+          const docName       = workerName
+            ? `${typeLabel} - ${workerName.split(/\s+/).slice(0, 2).join(' ')} ${yr}`
+            : `${typeLabel} ${yr}`;
+
+          results[idx] = {
+            temp_path:             tempPath,
+            page_start:            doc.page_start,
+            page_end:              doc.page_end,
+            page_count:            doc.page_end - doc.page_start + 1,
+            doc_type:              docType,
+            doc_name:              docName,
+            expiry_date:           expiryDate || '',
+            summary:               analysis?.summary || null,
+            worker_name_detected:  workerName,
+            fiscal_code_detected:  analysis?.fiscal_code || null,
+            worker_matches:        workerMatches,
+            confidence:            doc.confidence,
+            issues:                analysis?.issues || [],
+            validity_ok:           analysis?.validity_ok ?? null,
+          };
+        }
+      };
+
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, docs.length) }, run));
+
+      res.json({
+        job_id:      jobId,
+        num_pages:   numPages,
+        total:       results.length,
+        all_workers: allWorkers.map(w => ({ id: w.id, full_name: w.full_name })),
+        documents:   results,
+      });
+    } catch (err) {
+      console.error('[split-import/analyze] unhandled error:', err.message);
+      if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR', detail: err.message });
+    }
   }
 );
 
