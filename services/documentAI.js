@@ -13,9 +13,10 @@ const Anthropic          = require('@anthropic-ai/sdk');
 const supabase           = require('../lib/supabase');
 const { extractPdfText } = require('../lib/pdfExtract');
 
-const MODEL      = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS = 1024;
-const BUCKET     = 'site-documents';
+const MODEL_TEXT   = 'claude-haiku-4-5-20251001'; // PDF con testo OCR — veloce, economico
+const MODEL_VISION = 'claude-sonnet-4-6';          // PDF scansionati e immagini — visione accurata
+const MAX_TOKENS   = 1024;
+const BUCKET       = 'site-documents';
 
 // ── Prompt documenti aziendali ────────────────────────────────────────────────
 
@@ -51,21 +52,28 @@ Analizza il documento e restituisci SOLO un oggetto JSON valido con questa strut
   "doc_type_detected": "<idoneita_medica|formazione_sicurezza|primo_soccorso|antincendio|lavori_quota|ponteggi|gruista|pes_pav_pei|rspp|patente_guida|altro>",
   "expiry_date": "<YYYY-MM-DD oppure null solo se impossibile determinare>",
   "renewal_years": <numero intero anni tra un rinnovo e l'altro, null se non applicabile>,
-  "issued_to": "<nome e cognome del lavoratore a cui è intestato, null se non leggibile>",
-  "fiscal_code": "<codice fiscale italiano 16 caratteri alfanumerici, null se non presente>",
+  "issued_to": "<nome e cognome ESATTAMENTE come appare nel documento; null se anche solo una lettera è incerta>",
+  "fiscal_code": "<codice fiscale italiano 16 caratteri alfanumerici maiuscoli; null se non leggibile con certezza>",
   "issued_by": "<medico, ente di formazione o soggetto emittente, null se non leggibile>",
-  "issues": ["<eventuale problema: scaduto, firma mancante, nominativo illeggibile, ecc.>"],
+  "issues": ["<problema reale: scaduto, firma mancante, nominativo illeggibile, ecc.>"],
   "validity_ok": <true se il documento sembra valido e completo, false se ci sono problemi>
 }
 
-REGOLA CRITICA PER expiry_date:
-Molti attestati italiani riportano solo la data di emissione senza una scadenza esplicita.
-In questo caso DEVI calcolare tu la scadenza: expiry_date = data_emissione + renewal_years anni.
-Esempio: attestato formazione sicurezza emesso il 15/03/2020 → renewal_years=5 → expiry_date="2025-03-15".
-Restituisci null SOLO se non riesci a leggere né la data di emissione né quella di scadenza.
+━━━ REGOLA ASSOLUTA — issued_to (nome lavoratore) ━━━
+Trascrivi il nome LETTERA PER LETTERA esattamente come lo vedi scritto.
+NON dedurre, NON completare lettere mancanti, NON normalizzare.
+Se qualsiasi lettera del nome è sfocata, coperta, parzialmente visibile o incerta → issued_to: null.
+È VIETATO inventare o ipotizzare un nome plausibile: null è sempre preferibile a un nome errato.
+Aggiungi in issues: "Nominativo lavoratore non leggibile con certezza" se restituisci null.
+
+━━━ REGOLA CRITICA — expiry_date ━━━
+Se il documento ha solo data di emissione (senza scadenza esplicita), calcola:
+expiry_date = data_emissione + renewal_years anni.
+Esempio: formazione sicurezza emessa 15/03/2020 → renewal_years=5 → expiry_date="2025-03-15".
+Restituisci null SOLO se non riesci a leggere né emissione né scadenza.
 
 Periodi di rinnovo standard D.Lgs. 81/2008:
-- idoneita_medica: 1 anno (rischio alto) o 2 anni (normale) → usa il più conservativo se non specificato: 1
+- idoneita_medica: 1 anno (rischio alto) o 2 anni (normale) → usa 1 se non specificato
 - formazione_sicurezza: 5 anni
 - primo_soccorso: 3 anni
 - antincendio: 3 anni (medio/alto rischio), 5 anni (basso rischio)
@@ -114,19 +122,22 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
     return null;
   }
 
+  let model = MODEL_TEXT;
   let messageContent;
   if (isPdf) {
     const { text: pdfText } = await extractPdfText(fileBuffer, { maxPages: 30, minChars: 10 });
     if (pdfText.trim()) {
+      model = MODEL_TEXT;
       messageContent = `Testo estratto dal PDF:\n\n${pdfText.slice(0, 15000)}\n\nAnalizza questo documento e restituisci il JSON richiesto.`;
     } else {
-      // PDF scansionato senza testo OCR: usa vision nativa di Claude
+      model = MODEL_VISION;
       messageContent = [
         { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fileBuffer.toString('base64') } },
         { type: 'text', text: 'Analizza questo documento e restituisci il JSON richiesto.' },
       ];
     }
   } else {
+    model = MODEL_VISION;
     messageContent = [
       { type: 'image', source: { type: 'base64', media_type: mimeType, data: fileBuffer.toString('base64') } },
       { type: 'text',  text: 'Analizza questo documento e restituisci il JSON richiesto.' },
@@ -134,8 +145,9 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
   }
 
   const response = await client.messages.create({
-    model:      MODEL,
+    model,
     max_tokens: MAX_TOKENS,
+    temperature: 0,
     system:     systemPrompt,
     messages: [{ role: 'user', content: messageContent }],
   });
