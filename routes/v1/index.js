@@ -128,6 +128,9 @@ router.use('/', require('./siteCosts'));
 // Prezzario regionale + prezzi fornitori azienda
 router.use('/', require('./prezzario'));
 
+// Kit Baracca: semaforo compliance + checklist + PDF kit (JWT)
+router.use('/', require('./baracca'));
+
 // Modulo Formazione: attestati, notifiche scadenze, cron check
 router.use('/', require('./certificates'));
 
