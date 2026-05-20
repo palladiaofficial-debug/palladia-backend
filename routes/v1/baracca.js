@@ -127,7 +127,7 @@ router.patch('/sites/:siteId/baracca/checklist', verifySupabaseJwt, async (req, 
       item_key,
       checked: !!checked,
       checked_at: checked ? new Date().toISOString() : null,
-      checked_by: req.userId || null,
+      checked_by: req.user?.id || null,
       updated_at: new Date().toISOString(),
     }, { onConflict: 'site_id,item_key' });
 
@@ -284,10 +284,7 @@ router.get('/sites/:siteId/baracca/pdf', verifySupabaseJwt, async (req, res) => 
 </html>`;
 
   try {
-    const pdfBuf = await renderHtmlToPdf(html, {
-      margin: { top: '15mm', bottom: '15mm', left: '0mm', right: '0mm' },
-      printBackground: true,
-    });
+    const pdfBuf = await renderHtmlToPdf(html, { noHeaderFooter: true });
     const safeName = site.name.replace(/[^a-zA-Z0-9\-_]/g, '_').slice(0, 40);
     res.set('Content-Type', 'application/pdf');
     res.set('Content-Disposition', `attachment; filename="kit-baracca-${safeName}.pdf"`);
