@@ -41,7 +41,7 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
       .eq('company_id', req.companyId)
       .gte('timestamp_server', fromUtc)
       .order('timestamp_server', { ascending: false })
-      .limit(500),
+      .limit(2000),
 
     supabase
       .from('worker_documents')

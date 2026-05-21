@@ -289,6 +289,7 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
 
     if (logsErr) return res.status(500).json({ error: logsErr.message });
 
+    const limitReached = (logs || []).length === 200000;
     const rows = [
       'data,lavoratore,codice_fiscale,evento,timestamp,distanza_m,gps_accuracy_m',
       ...(logs || []).filter(r => r.worker).map(r => [
@@ -300,12 +301,14 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
         r.distance_m     ?? '',
         r.gps_accuracy_m ?? ''
       ].join(','))
-    ].join('\r\n');
+    ];
+    if (limitReached) rows.unshift('# ATTENZIONE: dati troncati a 200.000 righe raw \u2014 export parziale');
 
     const filename = `presenze-${siteId}-${from}-${to}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send('\uFEFF' + rows);
+    if (limitReached) res.setHeader('X-Palladia-Truncated', 'true');
+    return res.send('\uFEFF' + rows.join('\r\n'));
   }
 
   // format === 'pdf'
