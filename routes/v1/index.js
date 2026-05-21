@@ -70,13 +70,8 @@ router.use('/', require('./documents'));
 //       router.use(verifySupabaseJwt) globale per evitare 400 MISSING_X-COMPANY-ID
 router.use('/', require('./studio'));
 
-// Consulente RSPP: profilo, clienti, corsi, dashboard, payouts, Stripe Connect, preventivi
-// NOTA: verifyConsultantJwt NON usa X-Company-Id — montato PRIMA dei router con
-//       router.use(verifySupabaseJwt) globale per evitare 400 MISSING_X-COMPANY-ID
+// Consulente RSPP: profilo (middleware per-route, safe per tutti gli utenti)
 router.use('/', require('./consultantProfile'));
-router.use('/', require('./consultantCourses'));
-router.use('/', require('./consultantBookings'));
-router.use('/', require('./consultantConnect'));
 
 // Preventivi corsi in cantiere (impresa + consulente, middleware per-route)
 router.use('/', require('./courseQuotes'));
@@ -150,6 +145,13 @@ router.use('/', require('./bookings'));
 // Admin Formazione (super_admin only)
 router.use('/', require('./formazioneAdmin'));
 
+// Consulente RSPP: corsi, prenotazioni, Stripe Connect
+// NOTA: questi router usano router.use(verifyConsultantJwt) globale — devono stare
+//       in FONDO all'index, altrimenti il loro middleware intercetta e blocca con 403
+//       tutte le richieste di utenti non-consulente che non hanno ancora trovato risposta.
+router.use('/', require('./consultantCourses'));
+router.use('/', require('./consultantBookings'));
+router.use('/', require('./consultantConnect'));
 
 // ── Error handler v1 ─────────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
