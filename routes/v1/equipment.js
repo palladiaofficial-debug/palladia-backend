@@ -78,14 +78,16 @@ router.get('/equipment', verifySupabaseJwt, async (req, res) => {
 // Accetta immagine o PDF, estrae dati con AI. Stateless (nessun salvataggio).
 // DEVE stare PRIMA di /equipment/:id per evitare che "ocr" venga trattato come ID.
 router.post('/equipment/ocr', verifySupabaseJwt, upload.single('file'), async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
   const { mimetype, buffer } = req.file;
-  const isImage = mimetype.startsWith('image/');
+  const SUPPORTED_IMAGES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  const isImage = SUPPORTED_IMAGES.includes(mimetype);
   const isPdf   = mimetype === 'application/pdf';
 
   if (!isImage && !isPdf) {
-    return res.status(400).json({ error: 'INVALID_FILE_TYPE', detail: 'Accettati: immagini (jpg/png/webp/heic) o PDF' });
+    return res.status(400).json({ error: 'INVALID_FILE_TYPE', detail: 'Accettati: jpg, png, webp, gif o PDF (HEIC non supportato)' });
   }
 
   const base64 = buffer.toString('base64');
@@ -277,11 +279,12 @@ router.post('/equipment/:id/documents', verifySupabaseJwt, upload.single('file')
   if (!eq) return res.status(404).json({ error: 'NOT_FOUND' });
 
   const { mimetype, buffer, originalname, size } = req.file;
-  const isImage = mimetype.startsWith('image/');
+  const SUPPORTED_IMAGES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  const isImage = SUPPORTED_IMAGES.includes(mimetype);
   const isPdf   = mimetype === 'application/pdf';
 
   if (!isImage && !isPdf) {
-    return res.status(400).json({ error: 'INVALID_FILE_TYPE' });
+    return res.status(400).json({ error: 'INVALID_FILE_TYPE', detail: 'Accettati: jpg, png, webp, gif o PDF (HEIC non supportato)' });
   }
 
   const docType  = req.body?.doc_type || 'altro';
