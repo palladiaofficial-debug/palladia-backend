@@ -190,8 +190,8 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   let qrTimbrataUrl, qrVerifyDataUrl;
   try {
     [qrTimbrataUrl, qrVerifyDataUrl] = await Promise.all([
-      QRCode.toDataURL(timbrataUrl, { width: 240, margin: 1 }),
-      QRCode.toDataURL(verifyUrl,   { width: 320, margin: 1 }),
+      QRCode.toDataURL(timbrataUrl, { width: 200, margin: 1 }),
+      QRCode.toDataURL(verifyUrl,   { width: 260, margin: 1 }),
     ]);
   } catch (e) {
     return res.status(500).json({ error: 'QR_GENERATION_FAILED', message: e.message });
@@ -460,20 +460,20 @@ function buildBadgePdfHtml({
       min-height: 0;
     }
 
-    /* Colonna sinistra (58%) — tutto centrato */
+    /* Colonna sinistra (58%) — space-between per distribuire il contenuto */
     .f-left {
       width: 58%;
       height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      padding: 3px 3px 3px 5px;
-      gap: 2px;
+      justify-content: space-evenly;
+      padding: 4px 2px 4px 4px;
+      overflow: hidden;
     }
     .f-timb-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 10px;
+      font-size: 8px;
       font-weight: 900;
       letter-spacing: 0.22em;
       text-transform: uppercase;
@@ -481,34 +481,33 @@ function buildBadgePdfHtml({
       flex-shrink: 0;
     }
     .f-qr {
-      width: 23mm;
-      height: 23mm;
+      width: 17mm;
+      height: 17mm;
       display: block;
       flex-shrink: 0;
     }
     .f-divider {
-      width: 75%;
-      height: 0.6px;
-      background: #e2e8f0;
+      width: 80%;
+      height: 0.5px;
+      background: #d1d5db;
       flex-shrink: 0;
-      margin: 1px 0;
     }
     .f-name {
       font-family: 'Barlow', sans-serif;
-      font-size: 12px;
+      font-size: 10px;
       font-weight: 800;
       color: #111111;
-      line-height: 1.2;
+      line-height: 1.15;
       text-align: center;
       word-break: break-word;
       flex-shrink: 0;
     }
     .f-field {
       font-family: 'Barlow', sans-serif;
-      font-size: 7.5px;
+      font-size: 6.5px;
       font-weight: 500;
       color: #374151;
-      line-height: 1.4;
+      line-height: 1.3;
       text-align: center;
       white-space: nowrap;
       overflow: hidden;
@@ -521,12 +520,12 @@ function buildBadgePdfHtml({
       font-weight: 700;
       color: #9ca3af;
       text-transform: uppercase;
-      font-size: 6px;
+      font-size: 5px;
       letter-spacing: 0.06em;
     }
     .f-cf {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 8px;
+      font-size: 7px;
       font-weight: 700;
       color: #111111;
       letter-spacing: 0.06em;
@@ -539,20 +538,20 @@ function buildBadgePdfHtml({
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 6px 6px 6px 3px;
+      padding: 5px 5px 5px 3px;
       background: #f5f3ee;
+      overflow: hidden;
     }
     .f-photo-img {
       width: 100%;
-      height: auto;
-      max-height: 42mm;
+      height: 100%;
       object-fit: cover;
       border-radius: 2mm;
       display: block;
     }
     .f-photo-placeholder {
       width: 100%;
-      height: 40mm;
+      height: 100%;
       background: #ece9e3;
       border-radius: 2mm;
       display: flex;
@@ -611,19 +610,20 @@ function buildBadgePdfHtml({
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
-      gap: 4px;
+      justify-content: space-evenly;
       padding: 4px 8px;
+      overflow: hidden;
     }
     .verifica-label {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 13px;
+      font-size: 11px;
       font-weight: 900;
       letter-spacing: 0.26em;
       text-transform: uppercase;
       color: #111111;
+      flex-shrink: 0;
     }
-    .qr-back { width: 30mm; height: 30mm; display: block; }
+    .qr-back { width: 22mm; height: 22mm; display: block; flex-shrink: 0; }
     .code-block { text-align: center; }
     .code-lbl {
       font-family: 'Barlow', sans-serif;
