@@ -153,7 +153,7 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id', 'X-Hint-Company-Id']
 }));
 // ── Stripe Webhook — DEVE stare prima di express.json() ────────────────────
 // Stripe invia il body come raw bytes; la verifica firma richiede il raw body.
