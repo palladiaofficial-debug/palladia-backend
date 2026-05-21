@@ -146,7 +146,7 @@ router.post('/studio/onboard', verifyStudioOrCreate, async (req, res) => {
 
 // ── Profilo ───────────────────────────────────────────────────────────────────
 
-router.get('/studio/me', verifyStudioJwt, async (req, res) => {
+router.get('/studio/me', verifyStudioOrCreate, async (req, res) => {
   res.json({ studio: req.studio });
 });
 
