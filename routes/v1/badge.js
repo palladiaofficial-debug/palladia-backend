@@ -389,14 +389,14 @@ function buildBadgePdfHtml({
       letter-spacing: 0.12em;
       margin-bottom: 2mm;
       align-self: flex-start;
-      margin-left: calc(50% - 85.6mm / 2);
+      margin-left: calc(50% - 88.6mm / 2);
     }
     .gap { height: 8mm; }
 
-    /* ── Card ISO ID-1: 85.6 × 54mm ── */
+    /* ── Card: 88.6 × 57mm (ISO ID-1 + 3mm per leggibilità) ── */
     .card {
-      width: 85.6mm;
-      height: 54mm;
+      width: 88.6mm;
+      height: 57mm;
       border: 1.5px dashed #cbd5e1;
       border-radius: 4mm;
       overflow: hidden;
@@ -429,7 +429,7 @@ function buildBadgePdfHtml({
     }
     .fh-right { flex: 1; min-width: 0; padding-left: 7px; }
     .fh-company {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
       color: #e2e8f0;
       white-space: nowrap;
@@ -471,8 +471,8 @@ function buildBadgePdfHtml({
       flex-shrink: 0;
     }
     .f-qr {
-      width: 22mm;
-      height: 22mm;
+      width: 23mm;
+      height: 23mm;
       display: block;
       flex-shrink: 0;
     }
@@ -484,7 +484,7 @@ function buildBadgePdfHtml({
       margin: 1px 0;
     }
     .f-name {
-      font-size: 10.5px;
+      font-size: 11.5px;
       font-weight: 800;
       color: #0f172a;
       line-height: 1.2;
@@ -573,7 +573,7 @@ function buildBadgePdfHtml({
     }
     .ch-right { flex: 1; min-width: 0; padding-left: 7px; }
     .company-name {
-      font-size: 10px;
+      font-size: 11px;
       font-weight: 700;
       color: #f1f5f9;
       white-space: nowrap;
@@ -603,7 +603,7 @@ function buildBadgePdfHtml({
       text-transform: uppercase;
       color: #1d4ed8;
     }
-    .qr-back { width: 28mm; height: 28mm; display: block; }
+    .qr-back { width: 30mm; height: 30mm; display: block; }
     .code-block { text-align: center; }
     .code-lbl {
       font-size: 5.5px;
