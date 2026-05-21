@@ -224,20 +224,22 @@ async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) 
 
     await supabase.from('worker_documents').update(patch).eq('id', docId);
 
-    // Se l'AI ha estratto una scadenza e il record non aveva expiry_date, aggiornala
-    if (patch.ai_expiry_date) {
-      const { data: doc } = await supabase
-        .from('worker_documents')
-        .select('expiry_date, doc_type')
-        .eq('id', docId)
-        .maybeSingle();
+    // Leggi il documento aggiornato (serve per sync formazione e shortcut workers)
+    const { data: doc } = await supabase
+      .from('worker_documents')
+      .select('doc_type, name, issued_date, expiry_date, file_url')
+      .eq('id', docId)
+      .maybeSingle();
 
-      if (doc && !doc.expiry_date) {
+    if (doc) {
+      const expiryToUse = doc.expiry_date || patch.ai_expiry_date;
+
+      // Se l'AI ha estratto una scadenza e il record non ne aveva, aggiornala
+      if (!doc.expiry_date && patch.ai_expiry_date) {
         await supabase.from('worker_documents')
           .update({ expiry_date: patch.ai_expiry_date })
           .eq('id', docId);
 
-        // Sincronizza shortcut su workers
         const field = doc.doc_type === 'idoneita_medica'      ? 'health_fitness_expiry'
                     : doc.doc_type === 'formazione_sicurezza' ? 'safety_training_expiry'
                     : null;
@@ -248,6 +250,16 @@ async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) 
             .eq('company_id', companyId);
         }
       }
+
+      // Sincronizza con sistema Formazione (worker_certificates)
+      await syncToFormazione(
+        docId, workerId, companyId,
+        doc.doc_type, doc.name,
+        doc.issued_date,
+        expiryToUse,
+        patch.ai_issued_by,
+        doc.file_url,
+      );
     }
   } catch (err) {
     console.error('[documentAI] worker doc analysis failed:', docId, err.message);
@@ -275,6 +287,91 @@ async function analyzeDocumentBuffer(fileBuffer, mimeType) {
   };
 }
 
+// ── Sync Documenti → Formazione ───────────────────────────────────────────────
+// Quando un worker_document di tipo formativo viene caricato/analizzato,
+// crea o aggiorna automaticamente il record in worker_certificates.
+
+const FORMAZIONE_SYNC_TYPES = new Set([
+  'formazione_sicurezza', 'primo_soccorso', 'antincendio',
+  'lavori_quota', 'ponteggi', 'gruista',
+]);
+
+function detectCourseTypeName(docType, docName) {
+  const lower = (docName || '').toLowerCase();
+  switch (docType) {
+    case 'formazione_sicurezza':
+      if (lower.includes('alto'))  return 'Formazione lavoratori - Rischio Alto';
+      if (lower.includes('medio')) return 'Formazione lavoratori - Rischio Medio';
+      if (lower.includes('basso')) return 'Formazione lavoratori - Rischio Basso';
+      return 'Formazione lavoratori - Rischio Alto'; // default cantieri edili
+    case 'primo_soccorso':
+      if (lower.includes('gruppo a')) return 'Primo Soccorso - Gruppo A';
+      return 'Primo Soccorso - Gruppo B/C';
+    case 'antincendio':
+      if (lower.includes('alto'))  return 'Antincendio - Rischio Alto';
+      if (lower.includes('basso')) return 'Antincendio - Rischio Basso';
+      return 'Antincendio - Rischio Medio';
+    case 'lavori_quota': return 'Lavori in quota';
+    case 'ponteggi':     return 'Ponteggi - Montaggio e smontaggio';
+    case 'gruista':      return 'Gru per autocarro';
+    default:             return null;
+  }
+}
+
+async function syncToFormazione(docId, workerId, companyId, docType, docName, issueDate, expiryDate, issuedBy, fileUrl) {
+  if (!FORMAZIONE_SYNC_TYPES.has(docType)) return;
+  const courseTypeName = detectCourseTypeName(docType, docName);
+  if (!courseTypeName) return;
+
+  const { data: ct } = await supabase
+    .from('course_types')
+    .select('id, validity_years')
+    .ilike('name', courseTypeName)
+    .maybeSingle();
+  if (!ct) return; // course_type non ancora nel DB
+
+  // Calcola issue_date se mancante
+  let resolvedIssue = issueDate || null;
+  if (!resolvedIssue && expiryDate && ct.validity_years) {
+    const d = new Date(expiryDate);
+    d.setFullYear(d.getFullYear() - ct.validity_years);
+    resolvedIssue = d.toISOString().slice(0, 10);
+  }
+  if (!resolvedIssue || !expiryDate) return; // dati insufficienti
+
+  const body = (issuedBy || '').trim() || 'Non specificato';
+
+  // Cerca certificato esistente per worker + course_type
+  const { data: existing } = await supabase
+    .from('worker_certificates')
+    .select('id, expiry_date')
+    .eq('worker_id', workerId)
+    .eq('company_id', companyId)
+    .eq('course_type_id', ct.id)
+    .order('expiry_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    // Aggiorna solo se la nuova scadenza è più recente o uguale
+    if (!existing.expiry_date || expiryDate >= existing.expiry_date) {
+      await supabase.from('worker_certificates')
+        .update({ issue_date: resolvedIssue, expiry_date: expiryDate, issuing_body: body, pdf_url: fileUrl || null })
+        .eq('id', existing.id);
+    }
+  } else {
+    await supabase.from('worker_certificates').insert({
+      company_id:     companyId,
+      worker_id:      workerId,
+      course_type_id: ct.id,
+      issue_date:     resolvedIssue,
+      expiry_date:    expiryDate,
+      issuing_body:   body,
+      pdf_url:        fileUrl || null,
+    });
+  }
+}
+
 // ── Analisi generica per documenti subappaltatori ─────────────────────────────
 // Usa COMPANY_DOC_PROMPT (DURC, polizza, SOA, visura, ecc.) e restituisce patch pronta.
 async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType) {
@@ -288,4 +385,4 @@ async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType) {
   };
 }
 
-module.exports = { analyzeCompanyDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer };
+module.exports = { analyzeCompanyDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione };

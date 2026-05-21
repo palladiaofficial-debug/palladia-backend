@@ -17,7 +17,7 @@ const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { analyzeWorkerDoc, analyzeDocumentBuffer } = require('../../services/documentAI');
+const { analyzeWorkerDoc, analyzeDocumentBuffer, syncToFormazione } = require('../../services/documentAI');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -179,7 +179,15 @@ router.post('/workers/:workerId/documents',
 
     await syncWorkerExpiry(data.doc_type, data.expiry_date, workerId, req.companyId);
 
-    // Analisi AI in background solo se c'è un file analizzabile
+    // Sync immediato verso Formazione (dati manuali — senza AI)
+    syncToFormazione(
+      data.id, workerId, req.companyId,
+      data.doc_type, data.name,
+      data.issued_date, data.expiry_date,
+      null, data.file_url,
+    ).catch(() => {});
+
+    // Analisi AI in background: aggiorna worker_certificates con dati più precisi
     if (filePath && req.file) {
       analyzeWorkerDoc(data.id, workerId, req.companyId, filePath, req.file.mimetype).catch(() => {});
     }
@@ -218,6 +226,14 @@ router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (re
   if (error || !data) return res.status(404).json({ error: 'DOC_NOT_FOUND' });
 
   await syncWorkerExpiry(data.doc_type, data.expiry_date, workerId, req.companyId);
+
+  syncToFormazione(
+    data.id, workerId, req.companyId,
+    data.doc_type, data.name,
+    data.issued_date, data.expiry_date,
+    null, data.file_url,
+  ).catch(() => {});
+
   res.json(data);
 });
 
