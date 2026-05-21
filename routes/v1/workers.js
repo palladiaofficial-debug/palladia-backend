@@ -30,6 +30,7 @@ function generateBadgeCode() {
 const BADGE_FIELDS = [
   'photo_url',
   'hire_date',
+  'birth_date',
   'qualification',
   'role',
   'employer_name',
@@ -48,14 +49,14 @@ function isValidDate(val) {
 // Colonne restituite nelle query GET
 const WORKER_SELECT =
   'id, full_name, fiscal_code, is_active, created_at, badge_code, ' +
-  'photo_url, hire_date, qualification, role, employer_name, ' +
+  'photo_url, hire_date, birth_date, qualification, role, employer_name, ' +
   'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place';
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, async (req, res) => {
   const {
     full_name, fiscal_code,
-    photo_url, hire_date, qualification, role,
+    photo_url, hire_date, birth_date, qualification, role,
     employer_name, subcontracting_auth,
     safety_training_expiry, health_fitness_expiry,
   } = req.body;
@@ -72,7 +73,7 @@ router.post('/workers', verifySupabaseJwt, async (req, res) => {
   if (!isValidFiscalCode(fiscal_code)) {
     return res.status(400).json({ error: 'INVALID_FISCAL_CODE' });
   }
-  for (const f of ['hire_date', 'safety_training_expiry', 'health_fitness_expiry']) {
+  for (const f of ['hire_date', 'birth_date', 'safety_training_expiry', 'health_fitness_expiry']) {
     if (req.body[f] !== undefined && !isValidDate(req.body[f])) {
       return res.status(400).json({ error: `${f} deve essere YYYY-MM-DD` });
     }
@@ -91,6 +92,7 @@ router.post('/workers', verifySupabaseJwt, async (req, res) => {
   // Aggiungi campi badge opzionali se presenti
   if (photo_url              !== undefined) record.photo_url              = photo_url              || null;
   if (hire_date              !== undefined) record.hire_date              = hire_date              || null;
+  if (birth_date             !== undefined) record.birth_date             = birth_date             || null;
   if (qualification          !== undefined) record.qualification          = qualification          ? String(qualification).trim() : null;
   if (role                   !== undefined) record.role                   = role                   ? String(role).trim()          : null;
   if (employer_name          !== undefined) record.employer_name          = employer_name          ? String(employer_name).trim() : null;
@@ -290,7 +292,7 @@ router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
   }
 
   // Validazione campi data
-  for (const f of ['hire_date', 'safety_training_expiry', 'health_fitness_expiry']) {
+  for (const f of ['hire_date', 'birth_date', 'safety_training_expiry', 'health_fitness_expiry']) {
     if (updates[f] !== undefined && !isValidDate(updates[f])) {
       return res.status(400).json({ error: `${f} deve essere YYYY-MM-DD o null` });
     }

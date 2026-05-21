@@ -73,7 +73,7 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     .from('workers')
     .select(`
       id, company_id,
-      full_name, photo_url, hire_date, qualification, role,
+      full_name, photo_url, hire_date, birth_date, qualification, role,
       employer_name, subcontracting_auth, fiscal_code, birth_place,
       safety_training_expiry, health_fitness_expiry,
       badge_code, is_active, created_at,
@@ -112,6 +112,7 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     role:                worker.role             || null,
     hire_date:           worker.hire_date        || null,
     fiscal_code:         worker.fiscal_code      || null,
+    birth_date:          worker.birth_date       || null,
     birth_place:         worker.birth_place      || null,
     subcontracting_auth: worker.subcontracting_auth || false,
     safety_training_status: safetyStatus,
@@ -172,7 +173,7 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   const { data: worker, error } = await supabase
     .from('workers')
     .select(`
-      id, full_name, photo_url, fiscal_code, hire_date, birth_place,
+      id, full_name, photo_url, fiscal_code, hire_date, birth_date, birth_place,
       employer_name, badge_code, is_active, created_at,
       company:companies ( name )
     `)
@@ -205,7 +206,10 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
     ? new Date(worker.hire_date).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })
     : null;
 
-  const dobStr    = parseDobFromCf(worker.fiscal_code);
+  // Preferisce birth_date dal DB; fallback al CF solo se assente
+  const dobStr = worker.birth_date
+    ? new Date(worker.birth_date).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    : parseDobFromCf(worker.fiscal_code);
   const sexStr    = parseSexFromCf(worker.fiscal_code);
   const birthPlace = worker.birth_place || null;
 
