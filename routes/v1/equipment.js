@@ -139,7 +139,6 @@ IMPORTANTE:
       max_tokens: 800,
       messages:   [{ role: 'user', content }],
     };
-    if (isPdf) msgOpts.betas = ['pdfs-2024-09-25'];
 
     const msg  = await getClient().messages.create(msgOpts);
     const text = msg.content[0]?.text || '{}';
@@ -318,7 +317,6 @@ Date in formato YYYY-MM-DD. null per campi non presenti.`;
       : [{ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: base64 } }, { type: 'text', text: prompt }];
 
     const msgOpts = { model: 'claude-haiku-4-5-20251001', max_tokens: 500, messages: [{ role: 'user', content }] };
-    if (isPdf) msgOpts.betas = ['pdfs-2024-09-25'];
 
     const msg  = await getClient().messages.create(msgOpts);
     const text = msg.content[0]?.text || '{}';
