@@ -190,8 +190,8 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   let qrTimbrataUrl, qrVerifyDataUrl;
   try {
     [qrTimbrataUrl, qrVerifyDataUrl] = await Promise.all([
-      QRCode.toDataURL(timbrataUrl, { width: 180, margin: 1 }),
-      QRCode.toDataURL(verifyUrl,   { width: 260, margin: 1 }),
+      QRCode.toDataURL(timbrataUrl, { width: 240, margin: 1 }),
+      QRCode.toDataURL(verifyUrl,   { width: 320, margin: 1 }),
     ]);
   } catch (e) {
     return res.status(500).json({ error: 'QR_GENERATION_FAILED', message: e.message });
@@ -382,7 +382,7 @@ function buildBadgePdfHtml({
     }
     .hint strong { color: #6b7280; }
     .face-label {
-      font-size: 7px;
+      font-size: 9px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
@@ -412,13 +412,13 @@ function buildBadgePdfHtml({
     /* Header blu scuro — identico al retro */
     .fh {
       background: #0f172a;
-      padding: 3.5px 8px;
+      padding: 4px 8px;
       display: flex;
       align-items: center;
       flex-shrink: 0;
     }
     .fh-brand {
-      font-size: 5.5px;
+      font-size: 8px;
       font-weight: 900;
       letter-spacing: 0.25em;
       color: #cbd5e1;
@@ -429,7 +429,7 @@ function buildBadgePdfHtml({
     }
     .fh-right { flex: 1; min-width: 0; padding-left: 7px; }
     .fh-company {
-      font-size: 7px;
+      font-size: 10px;
       font-weight: 700;
       color: #e2e8f0;
       white-space: nowrap;
@@ -437,7 +437,7 @@ function buildBadgePdfHtml({
       text-overflow: ellipsis;
     }
     .fh-sub {
-      font-size: 3.5px;
+      font-size: 5px;
       color: #94a3b8;
       letter-spacing: 0.05em;
       text-transform: uppercase;
@@ -459,11 +459,11 @@ function buildBadgePdfHtml({
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 5px 4px 5px 6px;
+      padding: 3px 3px 3px 5px;
       gap: 2px;
     }
     .f-timb-label {
-      font-size: 6px;
+      font-size: 9px;
       font-weight: 900;
       letter-spacing: 0.22em;
       text-transform: uppercase;
@@ -471,8 +471,8 @@ function buildBadgePdfHtml({
       flex-shrink: 0;
     }
     .f-qr {
-      width: 20mm;
-      height: 20mm;
+      width: 22mm;
+      height: 22mm;
       display: block;
       flex-shrink: 0;
     }
@@ -484,7 +484,7 @@ function buildBadgePdfHtml({
       margin: 1px 0;
     }
     .f-name {
-      font-size: 7.5px;
+      font-size: 10.5px;
       font-weight: 800;
       color: #0f172a;
       line-height: 1.2;
@@ -493,9 +493,9 @@ function buildBadgePdfHtml({
       flex-shrink: 0;
     }
     .f-field {
-      font-size: 5px;
+      font-size: 7px;
       color: #374151;
-      line-height: 1.5;
+      line-height: 1.4;
       text-align: center;
       white-space: nowrap;
       overflow: hidden;
@@ -507,12 +507,12 @@ function buildBadgePdfHtml({
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
-      font-size: 4px;
+      font-size: 6px;
       letter-spacing: 0.05em;
     }
     .f-cf {
       font-family: 'Courier New', monospace;
-      font-size: 4.8px;
+      font-size: 7px;
       color: #1e293b;
       letter-spacing: 0.05em;
     }
@@ -556,13 +556,13 @@ function buildBadgePdfHtml({
     }
     .ch {
       background: #0f172a;
-      padding: 3.5px 8px;
+      padding: 4px 8px;
       display: flex;
       align-items: center;
       flex-shrink: 0;
     }
     .brand {
-      font-size: 5.5px;
+      font-size: 8px;
       font-weight: 900;
       letter-spacing: 0.25em;
       color: #cbd5e1;
@@ -573,7 +573,7 @@ function buildBadgePdfHtml({
     }
     .ch-right { flex: 1; min-width: 0; padding-left: 7px; }
     .company-name {
-      font-size: 7.5px;
+      font-size: 10px;
       font-weight: 700;
       color: #f1f5f9;
       white-space: nowrap;
@@ -581,7 +581,7 @@ function buildBadgePdfHtml({
       text-overflow: ellipsis;
     }
     .brand-sub {
-      font-size: 3.5px;
+      font-size: 5px;
       color: #94a3b8;
       letter-spacing: 0.04em;
       text-transform: uppercase;
@@ -593,20 +593,20 @@ function buildBadgePdfHtml({
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 3.5px;
-      padding: 5px 8px;
+      gap: 4px;
+      padding: 4px 8px;
     }
     .verifica-label {
-      font-size: 8.5px;
+      font-size: 12px;
       font-weight: 900;
       letter-spacing: 0.24em;
       text-transform: uppercase;
       color: #1d4ed8;
     }
-    .qr-back { width: 25mm; height: 25mm; display: block; }
+    .qr-back { width: 28mm; height: 28mm; display: block; }
     .code-block { text-align: center; }
     .code-lbl {
-      font-size: 3.8px;
+      font-size: 5.5px;
       font-weight: 700;
       color: #94a3b8;
       text-transform: uppercase;
@@ -615,7 +615,7 @@ function buildBadgePdfHtml({
     }
     .code-val {
       font-family: 'Courier New', monospace;
-      font-size: 5.5px;
+      font-size: 8px;
       font-weight: 700;
       color: #0f172a;
       letter-spacing: 0.04em;
@@ -628,7 +628,7 @@ function buildBadgePdfHtml({
       justify-content: space-between;
       flex-shrink: 0;
     }
-    .ft { font-size: 4px; color: #94a3b8; }
+    .ft { font-size: 5.5px; color: #94a3b8; }
   </style>
 </head>
 <body>
