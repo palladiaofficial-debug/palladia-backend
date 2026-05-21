@@ -353,14 +353,17 @@ function buildBadgePdfHtml({
 <html lang="it">
 <head>
   <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     @page { size: A4 portrait; margin: 26mm 0 24mm 0; }
     html, body {
       width: 210mm;
-      font-family: Arial, Helvetica, sans-serif;
+      font-family: 'Barlow', sans-serif;
       background: #fff;
-      color: #111827;
+      color: #1a1a1a;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -375,6 +378,7 @@ function buildBadgePdfHtml({
     }
     .hint {
       font-size: 7px;
+      font-family: 'Barlow', sans-serif;
       color: #9ca3af;
       text-align: center;
       margin-bottom: 6mm;
@@ -383,10 +387,11 @@ function buildBadgePdfHtml({
     .hint strong { color: #6b7280; }
     .face-label {
       font-size: 9px;
+      font-family: 'Barlow Condensed', sans-serif;
       font-weight: 700;
-      color: #94a3b8;
+      color: #6b7280;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.14em;
       margin-bottom: 2mm;
       align-self: flex-start;
       margin-left: calc(50% - 85.6mm / 2);
@@ -397,8 +402,8 @@ function buildBadgePdfHtml({
     .card {
       width: 85.6mm;
       height: 54mm;
-      border: 1.5px dashed #cbd5e1;
-      border-radius: 4mm;
+      border: 1.5px dashed #d1d5db;
+      border-radius: 3mm;
       overflow: hidden;
       background: #fff;
       display: flex;
@@ -411,35 +416,39 @@ function buildBadgePdfHtml({
 
     /* Header blu scuro — identico al retro */
     .fh {
-      background: #0f172a;
+      background: #111111;
       padding: 4px 8px;
       display: flex;
       align-items: center;
       flex-shrink: 0;
     }
     .fh-brand {
-      font-size: 8px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 9px;
       font-weight: 900;
-      letter-spacing: 0.25em;
-      color: #cbd5e1;
+      letter-spacing: 0.3em;
+      color: #ffffff;
       text-transform: uppercase;
       flex-shrink: 0;
       padding-right: 7px;
-      border-right: 1px solid #334155;
+      border-right: 1px solid #333333;
     }
     .fh-right { flex: 1; min-width: 0; padding-left: 7px; }
     .fh-company {
+      font-family: 'Barlow', sans-serif;
       font-size: 11px;
       font-weight: 700;
-      color: #e2e8f0;
+      color: #ffffff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .fh-sub {
-      font-size: 5px;
-      color: #94a3b8;
-      letter-spacing: 0.05em;
+      font-family: 'Barlow', sans-serif;
+      font-size: 5.5px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       margin-top: 1px;
     }
@@ -463,11 +472,12 @@ function buildBadgePdfHtml({
       gap: 2px;
     }
     .f-timb-label {
-      font-size: 9px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 10px;
       font-weight: 900;
       letter-spacing: 0.22em;
       text-transform: uppercase;
-      color: #1d4ed8;
+      color: #111111;
       flex-shrink: 0;
     }
     .f-qr {
@@ -484,16 +494,19 @@ function buildBadgePdfHtml({
       margin: 1px 0;
     }
     .f-name {
-      font-size: 11.5px;
+      font-family: 'Barlow', sans-serif;
+      font-size: 12px;
       font-weight: 800;
-      color: #0f172a;
+      color: #111111;
       line-height: 1.2;
       text-align: center;
       word-break: break-word;
       flex-shrink: 0;
     }
     .f-field {
-      font-size: 7px;
+      font-family: 'Barlow', sans-serif;
+      font-size: 7.5px;
+      font-weight: 500;
       color: #374151;
       line-height: 1.4;
       text-align: center;
@@ -504,17 +517,19 @@ function buildBadgePdfHtml({
       flex-shrink: 0;
     }
     .f-lbl {
+      font-family: 'Barlow', sans-serif;
       font-weight: 700;
-      color: #94a3b8;
+      color: #9ca3af;
       text-transform: uppercase;
       font-size: 6px;
-      letter-spacing: 0.05em;
+      letter-spacing: 0.06em;
     }
     .f-cf {
-      font-family: 'Courier New', monospace;
-      font-size: 7px;
-      color: #1e293b;
-      letter-spacing: 0.05em;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 8px;
+      font-weight: 700;
+      color: #111111;
+      letter-spacing: 0.06em;
     }
 
     /* Colonna destra (42%) — foto lavoratore */
@@ -525,7 +540,7 @@ function buildBadgePdfHtml({
       align-items: center;
       justify-content: center;
       padding: 6px 6px 6px 3px;
-      background: #f8fafc;
+      background: #f5f3ee;
     }
     .f-photo-img {
       width: 100%;
@@ -538,7 +553,7 @@ function buildBadgePdfHtml({
     .f-photo-placeholder {
       width: 100%;
       height: 40mm;
-      background: #e2e8f0;
+      background: #ece9e3;
       border-radius: 2mm;
       display: flex;
       align-items: center;
@@ -555,35 +570,39 @@ function buildBadgePdfHtml({
       flex-direction: column;
     }
     .ch {
-      background: #0f172a;
+      background: #111111;
       padding: 4px 8px;
       display: flex;
       align-items: center;
       flex-shrink: 0;
     }
     .brand {
-      font-size: 8px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 9px;
       font-weight: 900;
-      letter-spacing: 0.25em;
-      color: #cbd5e1;
+      letter-spacing: 0.3em;
+      color: #ffffff;
       text-transform: uppercase;
       flex-shrink: 0;
       padding-right: 7px;
-      border-right: 1px solid #334155;
+      border-right: 1px solid #333333;
     }
     .ch-right { flex: 1; min-width: 0; padding-left: 7px; }
     .company-name {
+      font-family: 'Barlow', sans-serif;
       font-size: 11px;
       font-weight: 700;
-      color: #f1f5f9;
+      color: #ffffff;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .brand-sub {
-      font-size: 5px;
-      color: #94a3b8;
-      letter-spacing: 0.04em;
+      font-family: 'Barlow', sans-serif;
+      font-size: 5.5px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.55);
+      letter-spacing: 0.06em;
       text-transform: uppercase;
       margin-top: 1px;
     }
@@ -597,38 +616,40 @@ function buildBadgePdfHtml({
       padding: 4px 8px;
     }
     .verifica-label {
-      font-size: 12px;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 13px;
       font-weight: 900;
-      letter-spacing: 0.24em;
+      letter-spacing: 0.26em;
       text-transform: uppercase;
-      color: #1d4ed8;
+      color: #111111;
     }
     .qr-back { width: 30mm; height: 30mm; display: block; }
     .code-block { text-align: center; }
     .code-lbl {
+      font-family: 'Barlow', sans-serif;
       font-size: 5.5px;
       font-weight: 700;
-      color: #94a3b8;
+      color: #9ca3af;
       text-transform: uppercase;
       letter-spacing: 0.1em;
       margin-bottom: 1.5px;
     }
     .code-val {
-      font-family: 'Courier New', monospace;
-      font-size: 8px;
-      font-weight: 700;
-      color: #0f172a;
-      letter-spacing: 0.04em;
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 9px;
+      font-weight: 800;
+      color: #111111;
+      letter-spacing: 0.08em;
     }
     .footer {
-      background: #f8fafc;
-      border-top: 1px solid #e8edf2;
+      background: #f5f3ee;
+      border-top: 1px solid #e5e1d8;
       padding: 2px 8px;
       display: flex;
       justify-content: space-between;
       flex-shrink: 0;
     }
-    .ft { font-size: 5.5px; color: #94a3b8; }
+    .ft { font-family: 'Barlow', sans-serif; font-size: 5.5px; font-weight: 500; color: #9ca3af; }
   </style>
 </head>
 <body>
