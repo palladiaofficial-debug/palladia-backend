@@ -343,10 +343,6 @@ function buildBadgePdfHtml({
     </div>
 
   </div>
-  <div class="footer">
-    <span class="ft">palladia.app &middot; Verifica identit&agrave; e documenti</span>
-    <span class="ft">${esc(companyName)}</span>
-  </div>
 </div>`;
 
   // ── HTML completo ─────────────────────────────────────────────────────────
@@ -476,11 +472,11 @@ function buildBadgePdfHtml({
     }
     .fl-timb-lbl {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 7px;
+      font-size: 11px;
       font-weight: 900;
-      letter-spacing: 0.2em;
+      letter-spacing: 0.22em;
       text-transform: uppercase;
-      color: #6b7280;
+      color: #111111;
     }
     .fl-qr { width: 24mm; height: 24mm; display: block; flex-shrink: 0; }
 
@@ -579,12 +575,12 @@ function buildBadgePdfHtml({
     .bl-code-block { text-align: center; flex-shrink: 0; }
     .bl-code-lbl {
       font-family: 'Barlow', sans-serif;
-      font-size: 5px;
+      font-size: 7.5px;
       font-weight: 700;
-      color: #9ca3af;
+      color: #6b7280;
       text-transform: uppercase;
-      letter-spacing: 0.1em;
-      margin-bottom: 1px;
+      letter-spacing: 0.08em;
+      margin-bottom: 2px;
     }
     .bl-code-val {
       font-family: 'Barlow Condensed', sans-serif;
