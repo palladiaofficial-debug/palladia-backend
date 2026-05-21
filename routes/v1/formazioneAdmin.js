@@ -17,6 +17,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendProviderApprovedEmail } = require('../../services/email');
+const { syncToFormazione } = require('../../services/documentAI');
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────
 
@@ -298,6 +299,45 @@ router.patch('/admin/bookings/:id/complete', async (req, res) => {
     .eq('id', id);
 
   res.json({ ok: true, certificate: cert });
+});
+
+// ── POST /api/v1/admin/migrate-formazione ─────────────────────────────────────
+// Migrazione one-shot: sincronizza tutti i worker_documents formativi esistenti
+// verso worker_certificates. Idempotente: rilancia più volte senza duplicati.
+
+router.post('/admin/migrate-formazione', async (req, res) => {
+  const FORMAZIONE_TYPES = ['formazione_sicurezza', 'primo_soccorso', 'antincendio', 'lavori_quota', 'ponteggi', 'gruista'];
+
+  // Carica tutti i worker_documents formativi con almeno una scadenza
+  const { data: docs, error } = await supabase
+    .from('worker_documents')
+    .select('id, company_id, worker_id, doc_type, name, issued_date, expiry_date, ai_expiry_date, ai_issued_by, file_url')
+    .in('doc_type', FORMAZIONE_TYPES)
+    .limit(5000);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+
+  const stats = { total: docs.length, processed: 0, skipped_no_date: 0, errors: 0 };
+
+  for (const doc of docs) {
+    const expiryDate = doc.expiry_date || doc.ai_expiry_date;
+    if (!expiryDate) { stats.skipped_no_date++; continue; }
+
+    try {
+      await syncToFormazione(
+        doc.id, doc.worker_id, doc.company_id,
+        doc.doc_type, doc.name,
+        doc.issued_date, expiryDate,
+        doc.ai_issued_by, doc.file_url,
+      );
+      stats.processed++;
+    } catch (e) {
+      console.error('[migrate-formazione]', doc.id, e.message);
+      stats.errors++;
+    }
+  }
+
+  res.json({ ok: true, ...stats });
 });
 
 module.exports = router;
