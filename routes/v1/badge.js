@@ -283,15 +283,14 @@ function buildBadgePdfHtml({
   const sexLabel = sexStr === 'M' ? 'Maschio' : sexStr === 'F' ? 'Femmina' : null;
 
   // ── FRONTE ────────────────────────────────────────────────────────────────
-  // Header: barra blu scuro (brand + azienda)
-  // Corpo:  sinistra = TIMBRATURA + QR + dati identità; destra = foto
+  // Sinistra (42%): QR timbratura
+  // Destra  (58%): nome grande + dati personali leggibili (niente foto)
   const photoHtml = worker.photo_url
-    ? `<img src="${esc(worker.photo_url)}" alt="Foto" class="f-photo-img">`
-    : `<div class="f-photo-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
+    ? `<img src="${esc(worker.photo_url)}" alt="Foto" class="bl-photo-img">`
+    : `<div class="bl-photo-placeholder"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg></div>`;
 
   const front = `
 <div class="card" id="front">
-
   <div class="fh">
     <div class="fh-brand">PALLADIA</div>
     <div class="fh-right">
@@ -299,52 +298,54 @@ function buildBadgePdfHtml({
       <div class="fh-sub">Badge di Cantiere</div>
     </div>
   </div>
-
   <div class="front-body">
 
-    <div class="f-left">
-      <div class="f-timb-label">TIMBRATURA</div>
-      <img src="${qrTimbrataUrl}" alt="QR timbratura" class="f-qr">
-      <div class="f-divider"></div>
-      <div class="f-name">${esc(worker.full_name)}</div>
-      ${dobStr      ? `<div class="f-field"><span class="f-lbl">Nato il&nbsp;</span>${esc(dobStr)}</div>`         : ''}
-      ${birthPlace  ? `<div class="f-field"><span class="f-lbl">Luogo&nbsp;</span>${esc(birthPlace)}</div>`       : ''}
-      ${sexLabel    ? `<div class="f-field"><span class="f-lbl">Sesso&nbsp;</span>${esc(sexLabel)}</div>`          : ''}
-      ${cfUpper     ? `<div class="f-field f-cf">${esc(cfUpper)}</div>`                                           : ''}
+    <div class="fl-qr-col">
+      <div class="fl-timb-lbl">TIMBRATURA</div>
+      <img src="${qrTimbrataUrl}" alt="QR" class="fl-qr">
     </div>
 
-    <div class="f-right">${photoHtml}</div>
+    <div class="fl-data-col">
+      <div class="fl-name">${esc(worker.full_name)}</div>
+      <div class="fl-divider"></div>
+      ${dobStr     ? `<div class="fl-row"><span class="fl-lbl">Nato il </span>${esc(dobStr)}</div>`    : ''}
+      ${birthPlace ? `<div class="fl-row"><span class="fl-lbl">Luogo </span>${esc(birthPlace)}</div>` : ''}
+      ${sexLabel   ? `<div class="fl-row"><span class="fl-lbl">Sesso </span>${esc(sexLabel)}</div>`   : ''}
+      ${cfUpper    ? `<div class="fl-cf">${esc(cfUpper)}</div>`                                        : ''}
+    </div>
 
   </div>
 </div>`;
 
   // ── RETRO ─────────────────────────────────────────────────────────────────
+  // Sinistra (42%): foto lavoratore
+  // Destra  (58%): VERIFICA + QR + codice anticontraffazione
   const back = `
 <div class="card" id="back">
-  <div class="back-card">
+  <div class="fh">
+    <div class="fh-brand">PALLADIA</div>
+    <div class="fh-right">
+      <div class="fh-company">Verifica Identit&agrave;</div>
+      <div class="fh-sub">Scansiona per accedere ai dati completi</div>
+    </div>
+  </div>
+  <div class="back-body">
 
-    <div class="ch">
-      <div class="brand">PALLADIA</div>
-      <div class="ch-right">
-        <div class="company-name">Verifica Identit&agrave;</div>
-        <div class="brand-sub">Scansiona per accedere ai dati completi</div>
+    <div class="bl-photo-col">${photoHtml}</div>
+
+    <div class="bl-verifica-col">
+      <div class="bl-verifica-lbl">VERIFICA</div>
+      <img src="${qrVerifyDataUrl}" alt="QR verifica" class="bl-qr">
+      <div class="bl-code-block">
+        <div class="bl-code-lbl">Codice anticontraffazione</div>
+        <div class="bl-code-val">${esc(codeFormatted)}</div>
       </div>
     </div>
 
-    <div class="body-center">
-      <div class="verifica-label">VERIFICA</div>
-      <img src="${qrVerifyDataUrl}" alt="QR verifica" class="qr-back">
-      <div class="code-block">
-        <div class="code-lbl">Codice anticontraffazione</div>
-        <div class="code-val">${esc(codeFormatted)}</div>
-      </div>
-    </div>
-
-    <div class="footer">
-      <span class="ft">palladia.app &middot; Verifica identit&agrave; e documenti</span>
-      <span class="ft">${esc(companyName)}</span>
-    </div>
-
+  </div>
+  <div class="footer">
+    <span class="ft">palladia.app &middot; Verifica identit&agrave; e documenti</span>
+    <span class="ft">${esc(companyName)}</span>
   </div>
 </div>`;
 
@@ -453,203 +454,164 @@ function buildBadgePdfHtml({
       margin-top: 1px;
     }
 
+    /* ════════════════════════════════════
+       FRONTE — QR sx + dati personali dx
+       ════════════════════════════════════ */
     .front-body {
-      width: 100%;
-      flex: 1;
-      display: flex;
-      min-height: 0;
+      width: 100%; flex: 1; display: flex; min-height: 0; overflow: hidden;
     }
 
-    /* Colonna sinistra (58%) — space-between per distribuire il contenuto */
-    .f-left {
-      width: 58%;
+    /* Colonna sinistra 40% — QR timbratura */
+    .fl-qr-col {
+      width: 40%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      padding: 5px 3px 5px 5px;
+      border-right: 0.5px solid #e5e1d8;
+      overflow: hidden;
+    }
+    .fl-timb-lbl {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 7px;
+      font-weight: 900;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: #6b7280;
+    }
+    .fl-qr { width: 24mm; height: 24mm; display: block; flex-shrink: 0; }
+
+    /* Colonna destra 60% — dati personali */
+    .fl-data-col {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      padding: 5px 6px 5px 7px;
+      overflow: hidden;
+    }
+    .fl-name {
+      font-family: 'Barlow', sans-serif;
+      font-size: 14px;
+      font-weight: 900;
+      color: #111111;
+      line-height: 1.15;
+      word-break: break-word;
+    }
+    .fl-divider {
+      width: 100%;
+      height: 0.5px;
+      background: #d1d5db;
+      margin: 2px 0;
+      flex-shrink: 0;
+    }
+    .fl-row {
+      font-family: 'Barlow', sans-serif;
+      font-size: 8.5px;
+      font-weight: 500;
+      color: #1a1a1a;
+      line-height: 1.4;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fl-lbl {
+      font-family: 'Barlow', sans-serif;
+      font-size: 7px;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .fl-cf {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 9px;
+      font-weight: 800;
+      color: #111111;
+      letter-spacing: 0.04em;
+      margin-top: 1px;
+    }
+
+    /* ════════════════════════════════════
+       RETRO — foto sx + verifica dx
+       ════════════════════════════════════ */
+    .back-body {
+      width: 100%; flex: 1; display: flex; min-height: 0; overflow: hidden;
+    }
+
+    /* Colonna sinistra 42% — foto */
+    .bl-photo-col {
+      width: 42%;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      padding: 5px 3px 5px 5px;
+      background: #f5f3ee;
+      border-right: 0.5px solid #e5e1d8;
+      overflow: hidden;
+    }
+    .bl-photo-img {
+      width: 100%; height: 100%; object-fit: cover; border-radius: 2mm; display: block;
+    }
+    .bl-photo-placeholder {
+      width: 100%; height: 100%; background: #ece9e3; border-radius: 2mm;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Colonna destra 58% — QR verifica + codice */
+    .bl-verifica-col {
+      flex: 1;
       height: 100%;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: space-evenly;
-      padding: 4px 2px 4px 4px;
+      padding: 4px 5px;
       overflow: hidden;
     }
-    .f-timb-label {
+    .bl-verifica-lbl {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 8px;
+      font-size: 11px;
       font-weight: 900;
       letter-spacing: 0.22em;
       text-transform: uppercase;
       color: #111111;
       flex-shrink: 0;
     }
-    .f-qr {
-      width: 17mm;
-      height: 17mm;
-      display: block;
-      flex-shrink: 0;
-    }
-    .f-divider {
-      width: 80%;
-      height: 0.5px;
-      background: #d1d5db;
-      flex-shrink: 0;
-    }
-    .f-name {
+    .bl-qr { width: 24mm; height: 24mm; display: block; flex-shrink: 0; }
+    .bl-code-block { text-align: center; flex-shrink: 0; }
+    .bl-code-lbl {
       font-family: 'Barlow', sans-serif;
-      font-size: 10px;
-      font-weight: 800;
-      color: #111111;
-      line-height: 1.15;
-      text-align: center;
-      word-break: break-word;
-      flex-shrink: 0;
-    }
-    .f-field {
-      font-family: 'Barlow', sans-serif;
-      font-size: 6.5px;
-      font-weight: 500;
-      color: #374151;
-      line-height: 1.3;
-      text-align: center;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 100%;
-      flex-shrink: 0;
-    }
-    .f-lbl {
-      font-family: 'Barlow', sans-serif;
-      font-weight: 700;
-      color: #9ca3af;
-      text-transform: uppercase;
       font-size: 5px;
-      letter-spacing: 0.06em;
-    }
-    .f-cf {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 7px;
-      font-weight: 700;
-      color: #111111;
-      letter-spacing: 0.06em;
-    }
-
-    /* Colonna destra (42%) — foto lavoratore */
-    .f-right {
-      flex: 1;
-      height: 100%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 5px 5px 5px 3px;
-      background: #f5f3ee;
-      overflow: hidden;
-    }
-    .f-photo-img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      border-radius: 2mm;
-      display: block;
-    }
-    .f-photo-placeholder {
-      width: 100%;
-      height: 100%;
-      background: #ece9e3;
-      border-radius: 2mm;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    /* ════════════════════════════════
-       RETRO — header scuro + QR centrato
-       ════════════════════════════════ */
-    .back-card {
-      width: 100%;
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-    .ch {
-      background: #111111;
-      padding: 4px 8px;
-      display: flex;
-      align-items: center;
-      flex-shrink: 0;
-    }
-    .brand {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 9px;
-      font-weight: 900;
-      letter-spacing: 0.3em;
-      color: #ffffff;
-      text-transform: uppercase;
-      flex-shrink: 0;
-      padding-right: 7px;
-      border-right: 1px solid #333333;
-    }
-    .ch-right { flex: 1; min-width: 0; padding-left: 7px; }
-    .company-name {
-      font-family: 'Barlow', sans-serif;
-      font-size: 11px;
-      font-weight: 700;
-      color: #ffffff;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .brand-sub {
-      font-family: 'Barlow', sans-serif;
-      font-size: 5.5px;
-      font-weight: 500;
-      color: rgba(255,255,255,0.55);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      margin-top: 1px;
-    }
-    .body-center {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-evenly;
-      padding: 4px 8px;
-      overflow: hidden;
-    }
-    .verifica-label {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 11px;
-      font-weight: 900;
-      letter-spacing: 0.26em;
-      text-transform: uppercase;
-      color: #111111;
-      flex-shrink: 0;
-    }
-    .qr-back { width: 22mm; height: 22mm; display: block; flex-shrink: 0; }
-    .code-block { text-align: center; }
-    .code-lbl {
-      font-family: 'Barlow', sans-serif;
-      font-size: 5.5px;
       font-weight: 700;
       color: #9ca3af;
       text-transform: uppercase;
       letter-spacing: 0.1em;
-      margin-bottom: 1.5px;
+      margin-bottom: 1px;
     }
-    .code-val {
+    .bl-code-val {
       font-family: 'Barlow Condensed', sans-serif;
-      font-size: 9px;
+      font-size: 8.5px;
       font-weight: 800;
       color: #111111;
-      letter-spacing: 0.08em;
+      letter-spacing: 0.06em;
     }
+
+    /* ════ Footer (retro) ════ */
     .footer {
       background: #f5f3ee;
-      border-top: 1px solid #e5e1d8;
+      border-top: 0.5px solid #e5e1d8;
       padding: 2px 8px;
       display: flex;
       justify-content: space-between;
       flex-shrink: 0;
     }
-    .ft { font-family: 'Barlow', sans-serif; font-size: 5.5px; font-weight: 500; color: #9ca3af; }
+    .ft { font-family: 'Barlow', sans-serif; font-size: 5px; font-weight: 500; color: #9ca3af; }
   </style>
 </head>
 <body>
