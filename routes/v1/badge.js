@@ -311,7 +311,7 @@ function buildBadgePdfHtml({
       ${dobStr     ? `<div class="fl-row"><span class="fl-lbl">Nato il </span>${esc(dobStr)}</div>`    : ''}
       ${birthPlace ? `<div class="fl-row"><span class="fl-lbl">Luogo </span>${esc(birthPlace)}</div>` : ''}
       ${sexLabel   ? `<div class="fl-row"><span class="fl-lbl">Sesso </span>${esc(sexLabel)}</div>`   : ''}
-      ${cfUpper    ? `<div class="fl-cf">${esc(cfUpper)}</div>`                                        : ''}
+      ${cfUpper    ? `<div class="fl-row"><span class="fl-lbl">CF </span>${esc(cfUpper)}</div>`       : ''}
     </div>
 
   </div>
@@ -497,7 +497,7 @@ function buildBadgePdfHtml({
     }
     .fl-name {
       font-family: 'Barlow', sans-serif;
-      font-size: 14px;
+      font-size: 17px;
       font-weight: 900;
       color: #111111;
       line-height: 1.15;
@@ -507,12 +507,12 @@ function buildBadgePdfHtml({
       width: 100%;
       height: 0.5px;
       background: #d1d5db;
-      margin: 2px 0;
+      margin: 3px 0;
       flex-shrink: 0;
     }
     .fl-row {
       font-family: 'Barlow', sans-serif;
-      font-size: 8.5px;
+      font-size: 10px;
       font-weight: 500;
       color: #1a1a1a;
       line-height: 1.4;
@@ -522,19 +522,11 @@ function buildBadgePdfHtml({
     }
     .fl-lbl {
       font-family: 'Barlow', sans-serif;
-      font-size: 7px;
+      font-size: 8px;
       font-weight: 700;
       color: #9ca3af;
       text-transform: uppercase;
       letter-spacing: 0.05em;
-    }
-    .fl-cf {
-      font-family: 'Barlow Condensed', sans-serif;
-      font-size: 9px;
-      font-weight: 800;
-      color: #111111;
-      letter-spacing: 0.04em;
-      margin-top: 1px;
     }
 
     /* ════════════════════════════════════
