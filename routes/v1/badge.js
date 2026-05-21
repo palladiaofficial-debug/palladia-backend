@@ -421,11 +421,11 @@ function buildBadgePdfHtml({
       font-size: 5.5px;
       font-weight: 900;
       letter-spacing: 0.25em;
-      color: #94a3b8;
+      color: #cbd5e1;
       text-transform: uppercase;
       flex-shrink: 0;
       padding-right: 7px;
-      border-right: 1px solid #1e293b;
+      border-right: 1px solid #334155;
     }
     .fh-right { flex: 1; min-width: 0; padding-left: 7px; }
     .fh-company {
@@ -438,7 +438,7 @@ function buildBadgePdfHtml({
     }
     .fh-sub {
       font-size: 3.5px;
-      color: #64748b;
+      color: #94a3b8;
       letter-spacing: 0.05em;
       text-transform: uppercase;
       margin-top: 1px;
@@ -565,11 +565,11 @@ function buildBadgePdfHtml({
       font-size: 5.5px;
       font-weight: 900;
       letter-spacing: 0.25em;
-      color: #475569;
+      color: #cbd5e1;
       text-transform: uppercase;
       flex-shrink: 0;
       padding-right: 7px;
-      border-right: 1px solid #1e293b;
+      border-right: 1px solid #334155;
     }
     .ch-right { flex: 1; min-width: 0; padding-left: 7px; }
     .company-name {
@@ -582,7 +582,7 @@ function buildBadgePdfHtml({
     }
     .brand-sub {
       font-size: 3.5px;
-      color: #334155;
+      color: #94a3b8;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       margin-top: 1px;
