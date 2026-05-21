@@ -434,7 +434,7 @@ router.get('/reports/worker-hours-xlsx', verifySupabaseJwt, async (req, res) => 
 
   let xlsxBuffer;
   try {
-    xlsxBuffer = generateWorkerHoursXlsx(data);
+    xlsxBuffer = await generateWorkerHoursXlsx(data);
   } catch (xlsxErr) {
     console.error('[worker-hours-xlsx] xlsx error:', xlsxErr.message);
     return res.status(500).json({ error: 'XLSX_ERROR' });

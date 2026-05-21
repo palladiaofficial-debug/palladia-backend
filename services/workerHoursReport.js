@@ -453,10 +453,10 @@ function generateWorkerHoursPdfHtml(data) {
 </html>`;
 }
 
-// ── XLSX builder ──────────────────────────────────────────────────────────────
+// ── XLSX builder (ExcelJS — styled, professional) ─────────────────────────────
 
-function generateWorkerHoursXlsx(data) {
-  const XLSX = require('xlsx');
+async function generateWorkerHoursXlsx(data) {
+  const ExcelJS = require('exceljs');
   const { site, company, period, workers, totals, generated_at } = data;
 
   const genStr = new Date(generated_at).toLocaleString('it-IT', {
@@ -464,102 +464,231 @@ function generateWorkerHoursXlsx(data) {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
   });
 
-  const wb = XLSX.utils.book_new();
+  const wb = new ExcelJS.Workbook();
+  wb.creator  = 'Palladia';
+  wb.created  = new Date(generated_at);
+  wb.modified = new Date();
 
-  // ── Sheet 1: Riepilogo ────────────────────────────────────────────────────
-  const summaryData = [
-    [`PALLADIA — Report Ore Lavorate`],
-    [`Cantiere: ${site.name}`],
-    [`Periodo: ${period.formatted}`],
-    company.name ? [`Azienda: ${company.name}`] : [],
-    [`Generato il: ${genStr}`],
-    [],
-    ['Lavoratore', 'Codice Fiscale', 'Giorni Lavorati', 'Ore Totali (h)', 'Ore Totali (decimale)'],
-    ...workers.map(w => [
-      w.full_name,
-      w.fiscal_code,
-      w.total_days,
-      w.total_hours_str,
-      w.total_hours,
-    ]),
-    [],
-    ['TOTALE COMPLESSIVO', '', workers.reduce((s, w) => s + w.total_days, 0), totals.grand_total_str, parseFloat((workers.reduce((s, w) => s + w.total_minutes, 0) / 60).toFixed(2))],
-  ].filter(r => r.length > 0);
+  // ── Style presets ─────────────────────────────────────────────────────────
+  const DARK   = '1a1a1a';
+  const WHITE  = 'FFFFFF';
+  const AMBER  = 'FEF3C7';  // overtime row bg
+  const RED_BG = 'FFF1F0';  // anomaly row bg
+  const GRAY   = 'F5F5F5';  // alternating row
+  const TOTAL_BG = 'EBEBEB';
 
-  const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
-
-  // Column widths
-  wsSummary['!cols'] = [
-    { wch: 30 }, { wch: 20 }, { wch: 18 }, { wch: 18 }, { wch: 20 },
-  ];
-
-  XLSX.utils.book_append_sheet(wb, wsSummary, 'Riepilogo');
-
-  // ── Sheet 2: Dettaglio giornaliero ────────────────────────────────────────
-  const detailRows = [
-    ['Lavoratore', 'Codice Fiscale', 'Data', 'Giorno', 'Entrata', 'Uscita', 'Ore (h)', 'Ore (decimale)', 'Note / Anomalie'],
-  ];
-
-  for (const w of workers) {
-    for (const d of w.days) {
-      for (let idx = 0; idx < d.entries.length; idx++) {
-        const e = d.entries[idx];
-        detailRows.push([
-          w.full_name,
-          w.fiscal_code,
-          d.date_formatted,
-          d.weekday,
-          e.entry_time || '',
-          e.exit_time  || '',
-          e.hours_str,
-          toDecimalHours(e.minutes),
-          e.anomaly || '',
-        ]);
-      }
-      // Sub-total row for multi-interval days
-      if (d.entries.length > 1) {
-        detailRows.push([
-          '', '', d.date_formatted, '→ Totale giorno', '', '',
-          d.day_total_str, toDecimalHours(d.day_total_minutes), '',
-        ]);
-      }
-    }
-    // Worker subtotal
-    detailRows.push([
-      `SUBTOTALE: ${w.full_name}`, '', '', '', '', '',
-      w.total_hours_str, w.total_hours, `${w.total_days} giorni`,
-    ]);
-    detailRows.push([]); // spacer
+  function headerCell(ws, row, col, value, width) {
+    const cell = ws.getCell(row, col);
+    cell.value = value;
+    cell.font  = { bold: true, color: { argb: WHITE }, name: 'Arial', size: 10 };
+    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+    cell.border = {
+      top: { style: 'thin', color: { argb: DARK } },
+      bottom: { style: 'thin', color: { argb: DARK } },
+      left: { style: 'thin', color: { argb: DARK } },
+      right: { style: 'thin', color: { argb: DARK } },
+    };
+    if (width) ws.getColumn(col).width = width;
   }
 
-  const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
-  wsDetail['!cols'] = [
-    { wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 12 },
-    { wch: 10 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 28 },
-  ];
+  function dataCell(cell, value, opts = {}) {
+    cell.value = value;
+    cell.font  = { name: 'Arial', size: 9, bold: opts.bold || false, color: { argb: opts.color || '1a1a1a' } };
+    if (opts.bg) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.bg } };
+    cell.alignment = { vertical: 'middle', horizontal: opts.align || 'left', wrapText: false };
+    if (opts.border) {
+      cell.border = { bottom: { style: 'thin', color: { argb: 'DDDDDD' } } };
+    }
+    if (opts.numFmt) cell.numFmt = opts.numFmt;
+  }
 
-  XLSX.utils.book_append_sheet(wb, wsDetail, 'Dettaglio Giornaliero');
+  function metaRow(ws, label, value) {
+    const r = ws.addRow([label, value]);
+    r.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '666666' } };
+    r.getCell(2).font = { name: 'Arial', size: 9, color: { argb: '1a1a1a' } };
+    r.height = 16;
+  }
 
-  // ── Sheet 3: Anomalie ─────────────────────────────────────────────────────
-  const anomalyRows = [
-    ['Lavoratore', 'Codice Fiscale', 'Data', 'Entrata', 'Uscita', 'Anomalia'],
+  // ── Sheet 1: Riepilogo ────────────────────────────────────────────────────
+  const ws1 = wb.addWorksheet('Riepilogo');
+  ws1.properties.defaultRowHeight = 18;
+
+  // Title
+  ws1.mergeCells('A1:E1');
+  const titleCell = ws1.getCell('A1');
+  titleCell.value = 'PALLADIA — Report Ore Lavorate';
+  titleCell.font  = { name: 'Arial', size: 14, bold: true, color: { argb: DARK } };
+  titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+  ws1.getRow(1).height = 28;
+
+  ws1.addRow([]);
+  metaRow(ws1, 'Cantiere', site.name);
+  if (site.address) metaRow(ws1, 'Indirizzo', site.address);
+  metaRow(ws1, 'Periodo', period.formatted);
+  if (company.name) metaRow(ws1, 'Azienda', company.name);
+  metaRow(ws1, 'Generato il', genStr);
+  ws1.addRow([]);
+
+  // Header row
+  const hdrRowNum = ws1.lastRow.number + 1;
+  const hdrCols = [
+    ['Lavoratore', 32], ['Codice Fiscale', 20], ['Giorni Lavorati', 16],
+    ['Ore Totali', 14], ['Ore (decimale)', 16], ['Straordinari', 14],
   ];
+  hdrCols.forEach(([label, w], i) => headerCell(ws1, hdrRowNum, i + 1, label, w));
+  ws1.getRow(hdrRowNum).height = 22;
+  ws1.views = [{ state: 'frozen', ySplit: hdrRowNum }];
+
+  // Data rows
+  workers.forEach((w, idx) => {
+    const r = ws1.addRow([]);
+    const bg = idx % 2 === 1 ? GRAY : null;
+    dataCell(r.getCell(1), w.full_name, { bold: false, bg, border: true });
+    dataCell(r.getCell(2), w.fiscal_code, { bg, border: true, align: 'center' });
+    dataCell(r.getCell(3), w.total_days, { bg, border: true, align: 'center' });
+    dataCell(r.getCell(4), w.total_hours_str, { bg, border: true, align: 'right', bold: true });
+    dataCell(r.getCell(5), w.total_hours, { bg, border: true, align: 'right', numFmt: '0.00' });
+    dataCell(r.getCell(6), w.overtime_str || '—', {
+      bg: w.overtime_minutes > 0 ? AMBER : bg,
+      border: true, align: 'center',
+      color: w.overtime_minutes > 0 ? '92400E' : '999999',
+      bold: w.overtime_minutes > 0,
+    });
+    r.height = 18;
+  });
+
+  // Total row
+  const totRow = ws1.addRow([]);
+  totRow.height = 22;
+  const grandTotal = parseFloat((workers.reduce((s, w) => s + w.total_minutes, 0) / 60).toFixed(2));
+  const totCells = [
+    ['TOTALE COMPLESSIVO', 'left'],
+    ['', 'center'],
+    [workers.reduce((s, w) => s + w.total_days, 0), 'center'],
+    [totals.grand_total_str, 'right'],
+    [grandTotal, 'right'],
+    [totals.grand_overtime_str || '—', 'center'],
+  ];
+  totCells.forEach(([val, align], i) => {
+    const cell = totRow.getCell(i + 1);
+    cell.value = val;
+    cell.font  = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
+    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
+    cell.alignment = { vertical: 'middle', horizontal: align };
+    if (i === 4 && typeof val === 'number') cell.numFmt = '0.00';
+  });
+
+  ws1.autoFilter = { from: { row: hdrRowNum, column: 1 }, to: { row: hdrRowNum, column: 6 } };
+
+  // ── Sheet 2: Dettaglio Giornaliero ────────────────────────────────────────
+  const ws2 = wb.addWorksheet('Dettaglio Giornaliero');
+  ws2.properties.defaultRowHeight = 17;
+
+  const det2Cols = [
+    ['Lavoratore', 28], ['Codice Fiscale', 18], ['Data', 12],
+    ['Giorno', 8], ['Entrata', 10], ['Uscita', 10],
+    ['Ore (h)', 12], ['Ore (dec.)', 12], ['Note / Anomalie', 32],
+  ];
+  det2Cols.forEach(([label, w], i) => headerCell(ws2, 1, i + 1, label, w));
+  ws2.getRow(1).height = 22;
+  ws2.views = [{ state: 'frozen', ySplit: 1 }];
+  ws2.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } };
+
+  let altIdx = 0;
+  for (const w of workers) {
+    for (const d of w.days) {
+      for (let ei = 0; ei < d.entries.length; ei++) {
+        const e  = d.entries[ei];
+        const bg = e.anomaly ? RED_BG : (d.is_overtime ? AMBER : (altIdx % 2 === 1 ? GRAY : null));
+        const r  = ws2.addRow([]);
+        r.height = 17;
+        dataCell(r.getCell(1), ei === 0 ? w.full_name : '', { bg, border: true });
+        dataCell(r.getCell(2), ei === 0 ? w.fiscal_code : '', { bg, border: true, align: 'center' });
+        dataCell(r.getCell(3), d.date_formatted, { bg, border: true, align: 'center' });
+        dataCell(r.getCell(4), d.weekday, { bg, border: true, align: 'center' });
+        dataCell(r.getCell(5), e.entry_time || '—', { bg, border: true, align: 'center' });
+        dataCell(r.getCell(6), e.exit_time  || '—', { bg, border: true, align: 'center' });
+        dataCell(r.getCell(7), e.hours_str, { bg, border: true, align: 'right', bold: !e.anomaly });
+        dataCell(r.getCell(8), toDecimalHours(e.minutes), { bg, border: true, align: 'right', numFmt: '0.00' });
+        dataCell(r.getCell(9), e.anomaly || '', {
+          bg, border: true,
+          color: e.anomaly ? 'C0392B' : '1a1a1a',
+          bold: !!e.anomaly,
+        });
+      }
+      // Sub-total for multi-interval days
+      if (d.entries.length > 1) {
+        const r = ws2.addRow([]);
+        r.height = 16;
+        for (let c = 1; c <= 9; c++) {
+          r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } };
+          r.getCell(c).font = { name: 'Arial', size: 8.5, italic: true };
+        }
+        dataCell(r.getCell(3), d.date_formatted, { bg: TOTAL_BG, align: 'center' });
+        dataCell(r.getCell(4), '→ tot.', { bg: TOTAL_BG, align: 'center' });
+        dataCell(r.getCell(7), d.day_total_str, { bg: TOTAL_BG, align: 'right', bold: true });
+        dataCell(r.getCell(8), toDecimalHours(d.day_total_minutes), { bg: TOTAL_BG, align: 'right', numFmt: '0.00' });
+      }
+      altIdx++;
+    }
+    // Worker subtotal
+    const sr = ws2.addRow([]);
+    sr.height = 20;
+    for (let c = 1; c <= 9; c++) {
+      sr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
+      sr.getCell(c).font = { name: 'Arial', size: 9, bold: true, color: { argb: WHITE } };
+    }
+    sr.getCell(1).value = `SUBTOTALE — ${w.full_name}`;
+    sr.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
+    sr.getCell(7).value = w.total_hours_str;
+    sr.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+    sr.getCell(8).value = w.total_hours;
+    sr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
+    sr.getCell(8).numFmt = '0.00';
+    sr.getCell(9).value = `${w.total_days} giorni`;
+    sr.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+    ws2.addRow([]);
+    altIdx = 0;
+  }
+
+  // ── Sheet 3: Anomalie (solo se presenti) ──────────────────────────────────
+  const anomalies = [];
   for (const w of workers) {
     for (const d of w.days) {
       for (const e of d.entries) {
-        if (e.anomaly) {
-          anomalyRows.push([w.full_name, w.fiscal_code, d.date_formatted, e.entry_time || '', e.exit_time || '', e.anomaly]);
-        }
+        if (e.anomaly) anomalies.push({ w, d, e });
       }
     }
   }
-  if (anomalyRows.length > 1) {
-    const wsAnom = XLSX.utils.aoa_to_sheet(anomalyRows);
-    wsAnom['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 30 }];
-    XLSX.utils.book_append_sheet(wb, wsAnom, 'Anomalie');
+
+  if (anomalies.length > 0) {
+    const ws3 = wb.addWorksheet('Anomalie');
+    ws3.properties.defaultRowHeight = 17;
+    const anCols = [
+      ['Lavoratore', 28], ['Codice Fiscale', 18], ['Data', 12],
+      ['Entrata', 10], ['Uscita', 10], ['Anomalia', 34],
+    ];
+    anCols.forEach(([label, w], i) => headerCell(ws3, 1, i + 1, label, w));
+    ws3.getRow(1).height = 22;
+    ws3.views = [{ state: 'frozen', ySplit: 1 }];
+
+    anomalies.forEach(({ w, d, e }, idx) => {
+      const r = ws3.addRow([]);
+      r.height = 17;
+      const bg = idx % 2 === 1 ? 'FFF8F8' : RED_BG;
+      dataCell(r.getCell(1), w.full_name,    { bg, border: true });
+      dataCell(r.getCell(2), w.fiscal_code,  { bg, border: true, align: 'center' });
+      dataCell(r.getCell(3), d.date_formatted, { bg, border: true, align: 'center' });
+      dataCell(r.getCell(4), e.entry_time || '—', { bg, border: true, align: 'center' });
+      dataCell(r.getCell(5), e.exit_time  || '—', { bg, border: true, align: 'center' });
+      dataCell(r.getCell(6), e.anomaly,     { bg, border: true, bold: true, color: 'C0392B' });
+    });
+
+    ws3.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 6 } };
   }
 
-  return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+  return wb.xlsx.writeBuffer();
 }
 
 module.exports = { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx, fmtDuration };
