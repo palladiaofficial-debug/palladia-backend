@@ -389,14 +389,14 @@ function buildBadgePdfHtml({
       letter-spacing: 0.12em;
       margin-bottom: 2mm;
       align-self: flex-start;
-      margin-left: calc(50% - 88.6mm / 2);
+      margin-left: calc(50% - 85.6mm / 2);
     }
     .gap { height: 8mm; }
 
-    /* ── Card: 88.6 × 57mm (ISO ID-1 + 3mm per leggibilità) ── */
+    /* ── Card ISO ID-1: 85.6 × 54mm ── */
     .card {
-      width: 88.6mm;
-      height: 57mm;
+      width: 85.6mm;
+      height: 54mm;
       border: 1.5px dashed #cbd5e1;
       border-radius: 4mm;
       overflow: hidden;
