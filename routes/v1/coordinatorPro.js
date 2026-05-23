@@ -106,7 +106,7 @@ router.patch('/coordinator/pro/:token/me', async (req, res) => {
       .update({ coordinator_name: updates.full_name })
       .eq('coordinator_email', session.email)
       .eq('is_active', true)
-      .then(() => {});
+      .then(() => {}).catch(err => console.error('sync coordinator_name:', err));
   }
 
   res.json({ ok: true });
@@ -222,7 +222,7 @@ router.get('/coordinator/pro/:token', async (req, res) => {
   supabase.from('coordinator_pro_sessions')
     .update({ last_used_at: new Date().toISOString() })
     .eq('id', session.id)
-    .then(() => {});
+    .then(() => {}).catch(err => console.error('update last_used_at:', err));
 
   const now = new Date().toISOString();
   const { data: invites } = await supabase

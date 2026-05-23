@@ -597,6 +597,7 @@ router.get('/studio/clients/:companyId/report-vigilanza.pdf', verifyStudioJwt, a
     _sv.push('warning');
 
   const semaforo      = _sv.includes('critical') ? 'rosso' : _sv.includes('warning') ? 'giallo' : 'verde';
+  const hasIssues     = _sv.length > 0;
   const semaforoLabel = { verde: 'CONFORME', giallo: 'ATTENZIONE', rosso: 'NON CONFORME' }[semaforo];
 
   const certRows = (certs || []).map(c => {
