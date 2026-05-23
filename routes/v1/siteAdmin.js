@@ -136,10 +136,10 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
   } = req.body || {};
 
-  // Verifica ownership + non eliminato
+  // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
   const { data: site, error: siteErr } = await supabase
     .from('sites')
-    .select('id, name, status')
+    .select('id, name, status, start_date, contract_days, days_type')
     .eq('id', siteId)
     .eq('company_id', req.companyId)
     .neq('status', 'eliminato')
@@ -173,10 +173,10 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
 
   if (start_date !== undefined) updates.start_date = start_date || null;
 
-  // Calcola end_date dai giorni contratto; altrimenti usa il valore passato esplicitamente
-  const effectiveStartDate    = updates.start_date    ?? null;
-  const effectiveContractDays = updates.contract_days ?? null;
-  const effectiveDaysType     = updates.days_type     ?? 'solari';
+  // Calcola end_date dai giorni contratto con fallback ai valori già salvati nel DB
+  const effectiveStartDate    = updates.start_date    ?? site.start_date    ?? null;
+  const effectiveContractDays = updates.contract_days ?? site.contract_days ?? null;
+  const effectiveDaysType     = updates.days_type     ?? site.days_type     ?? 'solari';
 
   if (effectiveStartDate && effectiveContractDays) {
     const { data: suspRows } = await supabase
