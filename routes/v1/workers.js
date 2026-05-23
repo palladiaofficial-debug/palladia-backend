@@ -203,24 +203,41 @@ router.post('/sites/:siteId/workers', verifySupabaseJwt, async (req, res) => {
     return res.status(403).json({ error: 'Worker non trovato o non appartiene alla tua azienda' });
   }
 
-  // Upsert senza .single() — se il lavoratore era già assegnato riattiva status 'active'
-  const { error: upsertErr } = await supabase
+  // Verifica se l'assegnazione esiste già (upsert manuale — più robusto di onConflict)
+  const { data: existing } = await supabase
     .from('worksite_workers')
-    .upsert(
-      [{
+    .select('id')
+    .eq('site_id', siteId)
+    .eq('worker_id', worker_id)
+    .maybeSingle();
+
+  if (existing) {
+    // Riattiva se era stato rimosso
+    const { error: updErr } = await supabase
+      .from('worksite_workers')
+      .update({ status: 'active', start_date: start_date || null, end_date: end_date || null })
+      .eq('site_id', siteId)
+      .eq('worker_id', worker_id)
+      .eq('company_id', req.companyId);
+    if (updErr) {
+      console.error('[workers] update worksite_workers error:', updErr.message, updErr.code);
+      return res.status(400).json({ error: updErr.message });
+    }
+  } else {
+    const { error: insErr } = await supabase
+      .from('worksite_workers')
+      .insert([{
         company_id: req.companyId,
         site_id:    siteId,
         worker_id,
         status:     'active',
         start_date: start_date || null,
         end_date:   end_date   || null,
-      }],
-      { onConflict: 'site_id,worker_id' }
-    );
-
-  if (upsertErr) {
-    console.error('[workers] upsert worksite_workers error:', upsertErr.message, upsertErr.code);
-    return res.status(400).json({ error: upsertErr.message });
+      }]);
+    if (insErr) {
+      console.error('[workers] insert worksite_workers error:', insErr.message, insErr.code);
+      return res.status(400).json({ error: insErr.message });
+    }
   }
 
   auditLog({
