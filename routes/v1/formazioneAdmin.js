@@ -128,7 +128,9 @@ router.patch('/admin/providers/:id/approve', async (req, res) => {
 
   if (updateErr) return res.status(500).json({ error: 'DB_ERROR', detail: updateErr.message });
 
-  await sendProviderApprovedEmail({ to: provider.email, providerName: provider.name });
+  sendProviderApprovedEmail({ to: provider.email, providerName: provider.name }).catch(e =>
+    console.error('[admin] sendProviderApprovedEmail error:', e.message)
+  );
 
   console.log(`[admin] provider ${id} (${provider.name}) approvato`);
   res.json({ ok: true });

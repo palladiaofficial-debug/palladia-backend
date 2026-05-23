@@ -101,11 +101,13 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
     supabase
       .from('workers')
       .select('id, full_name, first_name, last_name')
-      .in('id', workerIds),
+      .in('id', workerIds)
+      .eq('company_id', req.companyId),
     supabase
       .from('sites')
       .select('id, name')
-      .in('id', siteIds),
+      .in('id', siteIds)
+      .eq('company_id', req.companyId),
   ]);
 
   // Mappa id → oggetto per lookup O(1)

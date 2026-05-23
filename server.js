@@ -15,6 +15,8 @@ const { generateDvrHtml }  = require('./dvr-html-generator');
 const { generatePimusHtml } = require('./pimus-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
+const { verifySupabaseJwt } = require('./middleware/verifyJwt');
+const { apiLimiter } = require('./middleware/rateLimit');
 const v1Router = require('./routes/v1');
 const { startMissingExitCron }      = require('./services/missingExitCron');
 const { startDailySummaryCron }     = require('./services/dailySummaryCron');
@@ -504,6 +506,25 @@ const supabase = createClient(
   process.env.SUPABASE_KEY
 );
 
+// JWT-only auth: verifica il Bearer token senza richiedere X-Company-Id.
+// Usato per gli endpoint AI/PDF legacy che operano fuori dal contesto /api/v1.
+async function verifyJwtOnly(req, res, next) {
+  const auth = req.headers['authorization'];
+  if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Non autorizzato' });
+  try {
+    const { data, error } = await supabase.auth.getUser(auth.slice(7));
+    if (error || !data?.user) return res.status(401).json({ error: 'Token non valido o scaduto' });
+    req.user = { id: data.user.id, email: data.user.email };
+    next();
+  } catch (e) {
+    console.error('[verifyJwtOnly]', e.message);
+    res.status(401).json({ error: 'Autenticazione fallita' });
+  }
+}
+
+// Rate limiter stretto per le chiamate AI (Anthropic è costoso)
+const aiLimiter = rateLimit({ windowMs: 60000, max: 10, message: { error: 'AI_RATE_LIMIT' } });
+
 // --- Helper: build the POS mega-prompt ---
 function buildPosPrompt(posData, revision) {
   return `Sei il miglior Coordinatore per la Sicurezza in Italia con 30 anni di esperienza. Genera un Piano Operativo di Sicurezza PROFESSIONALE e COMPLETO conforme al D.lgs 81/2008.
@@ -736,51 +757,15 @@ app.get('/api/health', (req, res) => {
   res.json({ ok: true, service: 'palladia', ts: new Date().toISOString() });
 });
 
-// --- Sites CRUD ---
-app.get('/api/sites', async (req, res) => {
-  try {
-    const { data, error } = await supabase.from('sites').select('*');
-    if (error) throw error;
-    res.status(200).json(data);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.post('/api/sites', async (req, res) => {
-  try {
-    const { data, error } = await supabase.from('sites').insert([req.body]).select();
-    if (error) throw error;
-    res.status(201).json(data[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.put('/api/sites/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { data, error } = await supabase.from('sites').update(req.body).eq('id', id).select();
-    if (error) throw error;
-    res.json(data[0]);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.delete('/api/sites/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { error } = await supabase.from('sites').delete().eq('id', id);
-    if (error) throw error;
-    res.json({ message: 'Site deleted successfully' });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+// --- Sites CRUD legacy — DEPRECATI: usa /api/v1/sites ---
+// Restituiscono 410 Gone perché non filtrano per company_id (data leak).
+app.get('/api/sites',        (_, res) => res.status(410).json({ error: 'Usa /api/v1/sites' }));
+app.post('/api/sites',       (_, res) => res.status(410).json({ error: 'Usa /api/v1/sites' }));
+app.put('/api/sites/:id',    (_, res) => res.status(410).json({ error: 'Usa /api/v1/sites' }));
+app.delete('/api/sites/:id', (_, res) => res.status(410).json({ error: 'Usa /api/v1/sites' }));
 
 // --- POS Generation (non-streaming, original endpoint) ---
-app.post('/api/sites/:id/generate-pos', async (req, res) => {
+app.post('/api/sites/:id/generate-pos', verifyJwtOnly, aiLimiter, async (req, res) => {
   try {
     const { id: siteId } = req.params;
     const posData = req.body;
@@ -822,7 +807,7 @@ app.post('/api/sites/:id/generate-pos', async (req, res) => {
 });
 
 // --- POS Generation (SSE streaming) ---
-app.post('/api/sites/:id/generate-pos-stream', async (req, res) => {
+app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
   try {
     const { id: siteId } = req.params;
     const posData = req.body;
@@ -899,7 +884,7 @@ app.post('/api/sites/:id/generate-pos-stream', async (req, res) => {
 });
 
 // --- Standalone POS Generation (SSE streaming, no siteId required) ---
-app.post('/api/generate-pos-stream', async (req, res) => {
+app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
   try {
     const posData = req.body;
     const siteId = posData.siteId || null;
@@ -982,7 +967,7 @@ app.post('/api/generate-pos-stream', async (req, res) => {
 });
 
 // --- PDF Export (direct, from content in request body) — HTML+Puppeteer pipeline ---
-app.post('/api/generate-pdf', async (req, res) => {
+app.post('/api/generate-pdf', verifyJwtOnly, apiLimiter, async (req, res) => {
   try {
     const { content, siteName, revision, posData } = req.body;
     if (!posData) {
@@ -1009,7 +994,7 @@ app.post('/api/generate-pdf', async (req, res) => {
 });
 
 // --- POS Documents: list by site ---
-app.get('/api/sites/:id/pos', async (req, res) => {
+app.get('/api/sites/:id/pos', verifyJwtOnly, async (req, res) => {
   try {
     const { id: siteId } = req.params;
     const { data, error } = await supabase
@@ -1025,7 +1010,7 @@ app.get('/api/sites/:id/pos', async (req, res) => {
 });
 
 // --- POS Documents: get single ---
-app.get('/api/pos/:posId', async (req, res) => {
+app.get('/api/pos/:posId', verifyJwtOnly, async (req, res) => {
   try {
     const { posId } = req.params;
     const { data, error } = await supabase
@@ -1041,7 +1026,7 @@ app.get('/api/pos/:posId', async (req, res) => {
 });
 
 // --- PDF Export da posId — HTML+Puppeteer pipeline ---
-app.get('/api/pos/:posId/pdf', async (req, res) => {
+app.get('/api/pos/:posId/pdf', verifyJwtOnly, async (req, res) => {
   try {
     const { posId } = req.params;
     const { data: pos, error } = await supabase
@@ -1079,7 +1064,7 @@ app.get('/api/pos/:posId/pdf', async (req, res) => {
 });
 
 // --- POS Template Generation (non-streaming, hybrid mode) ---
-app.post('/api/generate-pos-template', async (req, res) => {
+app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res) => {
   try {
     const posData = req.body;
     const siteId = posData.siteId || null;
@@ -1146,7 +1131,7 @@ function sseWrite(res, data) {
 }
 
 // --- POS Template Generation (SSE streaming for progress feedback) ---
-app.post('/api/generate-pos-template-stream', async (req, res) => {
+app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
   console.log('[template-stream] request received');
 
   // Attach error handlers to socket/res so write errors don't crash the process
@@ -1338,7 +1323,7 @@ Sii tecnico, preciso, conforme D.Lgs 81/2008. Livelli di rischio realistici per 
 }
 
 // --- DVR Generation SSE: standalone ---
-app.post('/api/generate-dvr-stream', async (req, res) => {
+app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
   res.on('error', (e) => console.error('[dvr-stream] res error:', e.message));
   if (req.socket) { req.socket.setNoDelay(true); req.socket.setTimeout(0); }
 
@@ -1429,7 +1414,7 @@ app.post('/api/generate-dvr-stream', async (req, res) => {
 });
 
 // --- DVR PDF download ---
-app.get('/api/dvr/:dvrId/pdf', async (req, res) => {
+app.get('/api/dvr/:dvrId/pdf', verifyJwtOnly, async (req, res) => {
   try {
     const { dvrId } = req.params;
     const { data: dvr, error } = await supabase
@@ -1455,7 +1440,7 @@ app.get('/api/dvr/:dvrId/pdf', async (req, res) => {
 });
 
 // --- DVR HTML preview ---
-app.get('/api/dvr/:dvrId/html', async (req, res) => {
+app.get('/api/dvr/:dvrId/html', verifyJwtOnly, async (req, res) => {
   try {
     const { dvrId } = req.params;
     const { data: dvr, error } = await supabase
@@ -1555,7 +1540,7 @@ Sii preciso, conforme alla norma. Rispondi SOLO con il contenuto delle sezioni, 
 }
 
 // --- PIMUS Generation SSE ---
-app.post('/api/generate-pimus-stream', async (req, res) => {
+app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
   res.on('error', (e) => console.error('[pimus-stream] res error:', e.message));
   if (req.socket) { req.socket.setNoDelay(true); req.socket.setTimeout(0); }
 
@@ -1642,7 +1627,7 @@ app.post('/api/generate-pimus-stream', async (req, res) => {
 });
 
 // --- PIMUS PDF download ---
-app.get('/api/pimus/:pimusId/pdf', async (req, res) => {
+app.get('/api/pimus/:pimusId/pdf', verifyJwtOnly, async (req, res) => {
   try {
     const { data: pimus, error } = await supabase
       .from('pimus_documents').select('*').eq('id', req.params.pimusId).single();
@@ -1666,7 +1651,7 @@ app.get('/api/pimus/:pimusId/pdf', async (req, res) => {
 
 // ── PDF HTML v2: da body (content già pronto) ─────────────────────────────────
 // Equivalente di /api/generate-pdf ma usa il nuovo pipeline HTML+Puppeteer.
-app.post('/api/generate-pdf-html', async (req, res) => {
+app.post('/api/generate-pdf-html', verifyJwtOnly, apiLimiter, async (req, res) => {
   try {
     const { content, siteName, revision, posData } = req.body;
     if (!posData) return res.status(400).json({ error: 'posData is required' });
@@ -1689,7 +1674,7 @@ app.post('/api/generate-pdf-html', async (req, res) => {
 });
 
 // ── PDF HTML v2: da posId salvato su Supabase ─────────────────────────────────
-app.get('/api/pos/:posId/pdf-html', async (req, res) => {
+app.get('/api/pos/:posId/pdf-html', verifyJwtOnly, async (req, res) => {
   try {
     const { posId } = req.params;
     const { data: pos, error } = await supabase
@@ -1728,7 +1713,7 @@ app.get('/api/pos/:posId/pdf-html', async (req, res) => {
 });
 
 // ── PDF HTML v2: genera HTML (debug/preview) ──────────────────────────────────
-app.post('/api/generate-pos-html', async (req, res) => {
+app.post('/api/generate-pos-html', verifyJwtOnly, async (req, res) => {
   try {
     const posData  = req.body;
     const revision = posData.revision || 1;
@@ -1743,7 +1728,7 @@ app.post('/api/generate-pos-html', async (req, res) => {
 });
 
 // ── HTML Preview: renderizza POS come HTML navigabile (per iframe frontend) ────
-app.get('/api/pos/:posId/html', async (req, res) => {
+app.get('/api/pos/:posId/html', verifyJwtOnly, async (req, res) => {
   try {
     const { posId } = req.params;
     const { data: pos, error } = await supabase

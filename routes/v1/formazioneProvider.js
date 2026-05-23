@@ -553,6 +553,7 @@ router.patch('/formazione/provider/:token/bookings/:bookingId/complete', async (
     .from('course_bookings')
     .select(`
       id, status, worker_id,
+      workers(company_id),
       course_sessions(
         id, course_id,
         marketplace_courses(
@@ -587,12 +588,13 @@ router.patch('/formazione/provider/:token/bookings/:bookingId/complete', async (
       .select('id, status'),
     (course?.course_type_id && booking.worker_id)
       ? supabase.from('worker_certificates').insert({
-          worker_id:        booking.worker_id,
-          course_type_id:   course.course_type_id,
-          issue_date:       issueDate,
-          expiry_date:      expiryDate,
+          worker_id:          booking.worker_id,
+          company_id:         booking.workers?.company_id || null,
+          course_type_id:     course.course_type_id,
+          issue_date:         issueDate,
+          expiry_date:        expiryDate,
           certificate_number: certificate_number || null,
-          notes:            notes ? String(notes).trim() : null,
+          notes:              notes ? String(notes).trim() : null,
         }).select('id')
       : Promise.resolve({ data: null }),
   ]);

@@ -1244,7 +1244,7 @@ router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, a
   <div class="letterhead">
     <div>
       <div class="studio-name">${esc(studio?.studio_name || 'Studio CDL')}</div>
-      <div class="studio-sub">Studio di Consulenza del Lavoro${studio?.registration_number ? ' · Albo n. ' + studio.registration_number : ''}</div>
+      <div class="studio-sub">Studio di Consulenza del Lavoro${studio?.registration_number ? ' · Albo n. ' + esc(studio.registration_number) : ''}</div>
     </div>
     <div class="studio-meta">
       ${studio?.vat_number ? `P.IVA ${esc(studio.vat_number)}<br>` : ''}
@@ -1416,7 +1416,7 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
   for (const c of clients) {
     metrics[c.company_id] = {
       company_id:               c.company_id,
-      company_name:             c.companies.name,
+      company_name:             c.companies?.name || '—',
       owned_by_studio:          c.owned_by_studio || false,
       cantieri_attivi:          0,
       lavoratori_totali:        0,
@@ -1705,7 +1705,7 @@ router.get('/studio/scadenziario', verifyStudioJwt, async (req, res) => {
   if (!clients?.length) return res.json({ items: [], total_critical: 0 });
 
   const companyIds  = clients.map(c => c.company_id);
-  const companyMap  = Object.fromEntries(clients.map(c => [c.company_id, c.companies.name]));
+  const companyMap  = Object.fromEntries(clients.map(c => [c.company_id, c.companies?.name || '—']));
   const now         = new Date();
   const in90        = new Date(now.getTime() + 90 * 86_400_000);
   const oneYearAgo  = new Date(now.getTime() - 365 * 86_400_000);

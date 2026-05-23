@@ -205,8 +205,10 @@ async function getFullSiteData(invite) {
 
   const safetyStatus   = computeSafetyStatus(workers, ncList);
   const activeIssues   = buildActiveIssues(workers, ncList);
-  const todayPresences = await getTodayPresences(siteId, companyId, workers);
-  const documentStatus = await getDocumentStatus(siteId, companyId);
+  const [todayPresences, documentStatus] = await Promise.all([
+    getTodayPresences(siteId, companyId, workers),
+    getDocumentStatus(siteId, companyId),
+  ]);
 
   // Documenti aziendali con status calcolato
   const companyDocuments = (companyDocsR.data || []).map(d => ({

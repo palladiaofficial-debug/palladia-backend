@@ -64,6 +64,14 @@ router.delete('/pimus/:id', verifySupabaseJwt, async (req, res) => {
   if (!['owner', 'admin'].includes(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
+  const { data: existing } = await supabase
+    .from('pimus_documents')
+    .select('id')
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+  if (!existing) return res.status(404).json({ error: 'NOT_FOUND' });
+
   const { error } = await supabase
     .from('pimus_documents')
     .delete()
