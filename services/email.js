@@ -1573,6 +1573,182 @@ async function sendStudioExpiryAlertToCompany({ to, companyName, studioName, iss
   });
 }
 
+// ── sendDailyAlertDigest ──────────────────────────────────────────────────────
+// Email digest giornaliera unica — raggruppa tutti gli alert in un'unica email per company.
+// sections: { missingDocs?, workerExpiry?, companyExpiry?, equipmentExpiry? }
+async function sendDailyAlertDigest({ to, companyName, dashboardUrl, sections }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtDate(d) {
+    if (!d) return '—';
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  }
+  function sevColor(s) { return s === 'critical' ? '#ef4444' : s === 'warning' ? '#f59e0b' : '#3b82f6'; }
+  function sevLabel(days) {
+    if (days === null) return '';
+    if (days < 0) return `scaduto ${Math.abs(days)}gg fa`;
+    if (days === 0) return 'scade oggi';
+    return `scade in ${days}gg`;
+  }
+
+  const sectionHtml = [];
+  let totalIssues = 0;
+  let hasCritical = false;
+
+  // ── Sezione 1: Documenti obbligatori mancanti ────────────────────────────
+  if (sections.missingDocs?.length) {
+    const items = sections.missingDocs;
+    totalIssues += items.length;
+    hasCritical = true;
+    const rows = items.map(w => `<tr>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(w.full_name)}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#ef4444;">${esc((w.missingTypes || []).join(', '))}</td>
+    </tr>`).join('');
+    sectionHtml.push(`
+      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ef4444;">
+        Documenti obbligatori mancanti (${items.length})
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="border:1px solid #fca5a5;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
+        <thead><tr style="background:#fef2f2;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#ef4444;text-transform:uppercase;letter-spacing:0.05em;">Documenti mancanti</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`);
+  }
+
+  // ── Sezione 2: Documenti lavoratori in scadenza ──────────────────────────
+  if (sections.workerExpiry?.length) {
+    const items = sections.workerExpiry;
+    totalIssues += items.length;
+    if (items.some(d => d.severity === 'critical')) hasCritical = true;
+    const rows = items.map(d => {
+      const color = sevColor(d.severity);
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(d.worker?.full_name || '')}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(d.typeLabel || d.doc_type)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right;">
+          <span style="color:${color};font-weight:700;">${fmtDate(d.expiry_date)}</span>
+          <br><span style="font-size:10px;color:${color};">${esc(sevLabel(d.days))}</span>
+        </td>
+      </tr>`;
+    }).join('');
+    sectionHtml.push(`
+      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#f59e0b;">
+        Documenti lavoratori in scadenza (${items.length})
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Tipo</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Scadenza</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`);
+  }
+
+  // ── Sezione 3: Documenti aziendali in scadenza ───────────────────────────
+  if (sections.companyExpiry?.length) {
+    const items = sections.companyExpiry;
+    totalIssues += items.length;
+    if (items.some(d => d.severity === 'critical')) hasCritical = true;
+    const rows = items.map(d => {
+      const color = sevColor(d.severity);
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(d.name)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(d.catLabel || d.category)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right;">
+          <span style="color:${color};font-weight:700;">${fmtDate(d.ai_expiry_date)}</span>
+          <br><span style="font-size:10px;color:${color};">${esc(sevLabel(d.days))}</span>
+        </td>
+      </tr>`;
+    }).join('');
+    sectionHtml.push(`
+      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">
+        Documenti aziendali in scadenza (${items.length})
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Documento</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Categoria</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Scadenza</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`);
+  }
+
+  // ── Sezione 4: Scadenze mezzi ────────────────────────────────────────────
+  if (sections.equipmentExpiry?.length) {
+    const items = sections.equipmentExpiry;
+    totalIssues += items.reduce((n, eq) => n + (eq.issues?.length || 0), 0);
+    if (items.some(eq => eq.issues?.some(i => i.severity === 'critical'))) hasCritical = true;
+    const rows = items.flatMap(eq => {
+      const name = esc([eq.type, eq.model, eq.plate_or_serial].filter(Boolean).join(' — '));
+      return (eq.issues || []).map((issue, idx) => {
+        const color = sevColor(issue.severity);
+        return `<tr>
+          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:${idx === 0 ? '700' : '400'};color:${idx === 0 ? '#1a1a1a' : '#9ca3af'};">${idx === 0 ? name : ''}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(issue.label)}</td>
+          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right;">
+            <span style="color:${color};font-weight:700;">${fmtDate(issue.date)}</span>
+            <br><span style="font-size:10px;color:${color};">${esc(sevLabel(issue.days))}</span>
+          </td>
+        </tr>`;
+      });
+    }).join('');
+    sectionHtml.push(`
+      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">
+        Scadenze mezzi (${items.length})
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Mezzo</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Tipo scadenza</th>
+          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Data</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`);
+  }
+
+  if (!sectionHtml.length) return; // nessun problema → nessuna email
+
+  const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', day: '2-digit', month: 'long' });
+  const subjectPrefix = hasCritical ? '⚠️ ' : '';
+  const subjectSummary = sections.missingDocs?.length
+    ? `${sections.missingDocs.length} doc. obbligatori mancanti`
+    : `${totalIssues} alert di conformità`;
+
+  const body = `
+    <p style="margin:0 0 4px;font-size:13px;color:#9ca3af;">${esc(today)}</p>
+    <p style="margin:0 0 28px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Riepilogo giornaliero per <strong style="color:#1a1a1a;">${esc(companyName)}</strong>.
+      ${totalIssues === 1
+        ? 'C\'è <strong style="color:#1a1a1a;">1 problema</strong> che richiede attenzione.'
+        : `Ci sono <strong style="color:#1a1a1a;">${totalIssues} problemi</strong> che richiedono attenzione.`
+      }
+    </p>
+
+    ${sectionHtml.join('')}
+
+    ${btn('Apri la dashboard →', dashboardUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Questo riepilogo viene inviato ogni mattina e riassume tutti i problemi di conformità attivi.<br>
+      Rosso = già scaduto · Arancione = in scadenza entro 7 giorni · Blu = entro 30 giorni.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   Array.isArray(to) ? to : [to],
+    subject: `Palladia ${subjectPrefix}— ${subjectSummary} | ${esc(companyName)}`,
+    html:    layout('Riepilogo conformità', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1591,6 +1767,7 @@ module.exports = {
   sendEquipmentExpiryAlert,
   sendCompanyDocExpiryAlert,
   sendWorkerMissingDocsAlert,
+  sendDailyAlertDigest,
   sendExpiryAlert,
   sendBookingConfirmation,
   sendBookingConfirmedConsultant,

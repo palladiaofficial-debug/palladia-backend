@@ -23,7 +23,7 @@ const {
 const {
   notifyExpiryAlert, notifyResolved, buildMissingDocsMessage,
 } = require('./telegramNotifications');
-const { sendWorkerMissingDocsAlert } = require('./email');
+// Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 
 const REQUIRED_TYPES = ['idoneita_medica', 'formazione_sicurezza'];
 const REQUIRED_LABELS = {
@@ -119,16 +119,7 @@ async function runWorkerMissingDocsCheck() {
         await notifyResolved(companyId, resolved, 'Documenti obbligatori caricati').catch(() => {});
       }
 
-      // Email
-      const emails      = await getCompanyAdminEmails(companyId);
-      const companyName = await getCompanyName(companyId);
-      if (emails.length) {
-        await sendWorkerMissingDocsAlert({
-          to: emails, companyName, workers: workersMissing,
-          dashboardUrl: (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
-        });
-        console.log(`[workerMissingDocs] ${companyId}: ${workersMissing.length} lavoratori, email → ${emails.length}, risolti → ${resolved.length}`);
-      }
+      console.log(`[workerMissingDocs] ${companyId}: ${workersMissing.length} lavoratori, risolti → ${resolved.length}`);
     } catch (e) {
       console.error(`[workerMissingDocs] errore company ${companyId}:`, e.message);
     }

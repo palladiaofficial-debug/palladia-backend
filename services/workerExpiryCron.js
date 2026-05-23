@@ -18,7 +18,7 @@ const {
   getCompanyName, getCompanyAdminEmails,
   upsertNotification, shouldSendTelegram, pruneNotifications,
 } = require('./expiryHelper');
-const { sendWorkerDocExpiryAlert } = require('./email');
+// Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
   notifyExpiryAlert, notifyResolved,
   buildWorkerDocExpiryMessage,
@@ -110,16 +110,7 @@ async function runWorkerExpiryCheck() {
         await notifyResolved(companyId, resolved, 'Documenti lavoratori aggiornati').catch(() => {});
       }
 
-      // ── Email ─────────────────────────────────────────────────────────────
-      const emails      = await getCompanyAdminEmails(companyId);
-      const companyName = await getCompanyName(companyId);
-      if (emails.length) {
-        await sendWorkerDocExpiryAlert({
-          to: emails, companyName, docs: items, docTypeLabels: DOC_TYPE_LABELS,
-          dashboardUrl: (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
-        });
-        console.log(`[workerExpiry] ${companyId}: email → ${emails.length} dest., Telegram → ${telegramDocs.length} docs, risolti → ${resolved.length}`);
-      }
+      console.log(`[workerExpiry] ${companyId}: Telegram → ${telegramDocs.length} docs, risolti → ${resolved.length}`);
     } catch (e) {
       console.error(`[workerExpiry] errore company ${companyId}:`, e.message);
     }

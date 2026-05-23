@@ -24,6 +24,7 @@ const { startWorkerExpiryCron }     = require('./services/workerExpiryCron');
 const { startEquipmentExpiryCron }   = require('./services/equipmentExpiryCron');
 const { startCompanyDocExpiryCron }  = require('./services/companyDocExpiryCron');
 const { startWorkerMissingDocsCron } = require('./services/workerMissingDocsCron');
+const { startDailyDigestCron }       = require('./services/dailyDigestCron');
 const { startLadiaProactiveCron }   = require('./services/ladiaProactive');
 const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
 const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
@@ -2052,6 +2053,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startReminderCron();
     startStudioDigestCron();
     startWeatherLogCron();
+    startDailyDigestCron();
 
     // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti
     runFormazioneMigration().catch(e => console.error('[migration] formazione:', e.message));

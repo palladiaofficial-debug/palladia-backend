@@ -11,7 +11,7 @@ const {
   getCompanyName, getCompanyAdminEmails,
   upsertNotification, shouldSendTelegram, pruneNotifications,
 } = require('./expiryHelper');
-const { sendEquipmentExpiryAlert } = require('./email');
+// Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
   notifyExpiryAlert, notifyResolved, buildEquipmentExpiryMessage,
 } = require('./telegramNotifications');
@@ -84,15 +84,7 @@ async function runEquipmentExpiryCheck() {
         await notifyResolved(companyId, resolved, 'Scadenze mezzi aggiornate').catch(() => {});
       }
 
-      const emails      = await getCompanyAdminEmails(companyId);
-      const companyName = await getCompanyName(companyId);
-      if (emails.length) {
-        await sendEquipmentExpiryAlert({
-          to: emails, companyName, items,
-          dashboardUrl: (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse',
-        });
-        console.log(`[equipmentExpiry] ${companyId}: email → ${emails.length} dest., Telegram → ${telegramItems.length} mezzi`);
-      }
+      console.log(`[equipmentExpiry] ${companyId}: Telegram → ${telegramItems.length} mezzi`);
     } catch (e) {
       console.error(`[equipmentExpiry] errore company ${companyId}:`, e.message);
     }
