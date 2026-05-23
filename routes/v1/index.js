@@ -11,6 +11,7 @@ router.use('/', require('./dashboard'));
 router.use('/', require('./sitesOverview'));
 router.use('/', require('./siteAdmin'));
 router.use('/', require('./siteSchedule'));
+router.use('/', require('./siteWeather'));
 router.use('/', require('./workers'));
 router.use('/', require('./sessions'));
 router.use('/', require('./qr'));

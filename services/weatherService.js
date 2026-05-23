@@ -74,4 +74,58 @@ async function getWeatherSummary(lat, lon) {
   }
 }
 
-module.exports = { getForecast, getWeatherSummary, isRainy };
+/**
+ * Recupera dati meteo REALI per una data passata (o recente).
+ * Usa Archive API per date > 7 giorni fa, Forecast API per i più recenti.
+ * Restituisce { precipitation_mm, wind_max_kmh, temp_min, temp_max, weather_code, weather_desc }
+ */
+async function getActualWeather(lat, lon, dateISO) {
+  const dayMs     = 86_400_000;
+  const targetTs  = new Date(dateISO).getTime();
+  const nowTs     = Date.now();
+  const daysAgo   = Math.floor((nowTs - targetTs) / dayMs);
+
+  // Open-Meteo Archive copre fino a ieri (con 1-2gg di latenza).
+  // Forecast API copre i 2 mesi recenti con `start_date/end_date`.
+  const base = daysAgo >= 10
+    ? 'https://archive-api.open-meteo.com/v1/archive'
+    : 'https://api.open-meteo.com/v1/forecast';
+
+  const url =
+    `${base}?latitude=${lat}&longitude=${lon}` +
+    `&daily=precipitation_sum,wind_speed_10m_max,temperature_2m_max,temperature_2m_min,weather_code` +
+    `&timezone=Europe%2FRome` +
+    `&start_date=${dateISO}&end_date=${dateISO}`;
+
+  const res = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!res.ok) throw new Error(`Open-Meteo HTTP ${res.status}`);
+
+  const json = await res.json();
+  const d    = json.daily;
+  if (!d?.time?.length) throw new Error('Open-Meteo: risposta vuota');
+
+  const code = d.weather_code?.[0] ?? 0;
+  return {
+    precipitation_mm: Number(d.precipitation_sum?.[0]   ?? 0),
+    wind_max_kmh:     Number(d.wind_speed_10m_max?.[0]  ?? 0),
+    temp_min:         d.temperature_2m_min?.[0] ?? null,
+    temp_max:         d.temperature_2m_max?.[0] ?? null,
+    weather_code:     code,
+    weather_desc:     WMO[code] ?? 'variabile',
+  };
+}
+
+/**
+ * Valuta se i dati meteo superano le soglie per suggerire sospensione.
+ * Restituisce { exceeded, reason } oppure { exceeded: false }.
+ */
+function evalThresholds(data) {
+  const { precipitation_mm, wind_max_kmh, weather_code } = data;
+  if (weather_code >= 95)                                return { exceeded: true, reason: 'temporale' };
+  if ([71,73,75,77,85,86].includes(weather_code))       return { exceeded: true, reason: 'neve' };
+  if (precipitation_mm >= 10)                           return { exceeded: true, reason: 'pioggia' };
+  if (wind_max_kmh >= 50)                               return { exceeded: true, reason: 'vento' };
+  return { exceeded: false, reason: null };
+}
+
+module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, evalThresholds, WMO };
