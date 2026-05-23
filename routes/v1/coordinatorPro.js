@@ -41,6 +41,77 @@ async function resolveProSession(token) {
   return data || null;
 }
 
+// ── GET /api/v1/coordinator/pro/me — profilo del professionista ───────────────
+router.get('/coordinator/pro/:token/me', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const { data: profile } = await supabase
+    .from('coordinator_profiles')
+    .select('email, full_name, qualifica, azienda, piva, phone, updated_at')
+    .eq('email', session.email)
+    .maybeSingle();
+
+  // Conta i cantieri attivi
+  const { data: invites } = await supabase
+    .from('site_coordinator_invites')
+    .select('id, site_id')
+    .eq('coordinator_email', session.email)
+    .eq('is_active', true)
+    .gt('expires_at', new Date().toISOString());
+
+  res.json({
+    email:          session.email,
+    full_name:      profile?.full_name    || null,
+    qualifica:      profile?.qualifica    || 'Altro',
+    azienda:        profile?.azienda      || null,
+    piva:           profile?.piva         || null,
+    phone:          profile?.phone        || null,
+    updated_at:     profile?.updated_at   || null,
+    active_sites:   (invites || []).length,
+    session_id:     session.id,
+  });
+});
+
+// ── PATCH /api/v1/coordinator/pro/:token/me — aggiorna profilo ────────────────
+router.patch('/coordinator/pro/:token/me', async (req, res) => {
+  const session = await resolveProSession(req.params.token);
+  if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
+
+  const VALID_QUALIFICHE = ['CSE', 'CSP', 'Direttore Lavori', 'RUP', 'RSPP', 'Altro'];
+  const ALLOWED = ['full_name', 'qualifica', 'azienda', 'piva', 'phone'];
+  const updates = {};
+  for (const k of ALLOWED) {
+    if (req.body[k] !== undefined) updates[k] = req.body[k] ? String(req.body[k]).trim() : null;
+  }
+  if (updates.full_name && updates.full_name.length < 2) {
+    return res.status(400).json({ error: 'NAME_TOO_SHORT' });
+  }
+  if (updates.qualifica && !VALID_QUALIFICHE.includes(updates.qualifica)) {
+    updates.qualifica = 'Altro';
+  }
+  if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'NO_FIELDS' });
+
+  updates.updated_at = new Date().toISOString();
+
+  const { error } = await supabase
+    .from('coordinator_profiles')
+    .upsert({ email: session.email, ...updates }, { onConflict: 'email' });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  // Sincronizza full_name su tutti gli invite attivi di questo coordinatore
+  if (updates.full_name) {
+    supabase.from('site_coordinator_invites')
+      .update({ coordinator_name: updates.full_name })
+      .eq('coordinator_email', session.email)
+      .eq('is_active', true)
+      .then(() => {});
+  }
+
+  res.json({ ok: true });
+});
+
 // ── POST /api/v1/coordinator/pro/register ─────────────────────────────────────
 // Registrazione autonoma professionista — funziona anche senza inviti esistenti.
 // Salva il profilo, genera sessione, invia magic link.

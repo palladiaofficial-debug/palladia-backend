@@ -594,6 +594,40 @@ async function renderVerbalePdf(res, invite, data) {
   }
 }
 
+// ── GET /api/v1/coordinator/portal/:token/site/:siteId/verbale ───────────────
+// Portale unificato: funziona sia con token CSE che con token Pro
+router.get('/coordinator/portal/:token/site/:siteId/verbale', coordinatorLimiter, async (req, res) => {
+  const crypto2 = require('crypto');
+  function hash2(t) { return crypto2.createHash('sha256').update(t).digest('hex'); }
+  function isValid(t) { return typeof t === 'string' && t.length === 64 && /^[0-9a-f]+$/i.test(t); }
+
+  const rawToken = req.params.token;
+  const siteId   = req.params.siteId;
+  if (!isValid(rawToken)) return res.status(401).json({ error: 'TOKEN_INVALID' });
+  const h = hash2(rawToken);
+
+  // Prova Pro session prima
+  const { data: proSession } = await supabase
+    .from('coordinator_pro_sessions')
+    .select('id, email')
+    .eq('token_hash', h)
+    .gt('expires_at', new Date().toISOString())
+    .maybeSingle();
+
+  if (proSession) {
+    const invite = await resolveProInviteForSite(proSession.email, siteId);
+    if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
+    const data = await buildVerbaleData(invite);
+    return renderVerbalePdf(res, invite, data);
+  }
+
+  // Fallback: token CSE diretto
+  const invite = await resolveInvite(rawToken);
+  if (!invite || invite.site_id !== siteId) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
+  const data = await buildVerbaleData(invite);
+  return renderVerbalePdf(res, invite, data);
+});
+
 // ── GET /api/v1/coordinator/:token/verbale ────────────────────────────────────
 // CSE: scarica il verbale del suo cantiere
 router.get('/coordinator/:token/verbale', coordinatorLimiter, async (req, res) => {

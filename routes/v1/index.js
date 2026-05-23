@@ -134,6 +134,9 @@ router.use('/', require('./certificates'));
 // Formazione: raccomandazioni corsi intelligenti (scadenze → corsi disponibili)
 router.use('/', require('./formazioneRecommend'));
 
+// Portale Enti Formazione: auto-registrazione, magic link, gestione corsi/sessioni/prenotazioni
+router.use('/', require('./formazioneProvider'));
+
 // Formazione: OCR upload attestati (richiede multer — DEVE stare prima di altri middleware body)
 router.use('/', require('./certificateOcr'));
 

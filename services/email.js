@@ -1749,6 +1749,200 @@ async function sendDailyAlertDigest({ to, companyName, dashboardUrl, sections })
   });
 }
 
+// ─── Email: Provider Formazione — Magic Link ──────────────────────────────────
+
+async function sendProviderMagicLinkEmail({ to, name, accessUrl }) {
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Accedi al tuo portale</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Ciao <strong style="color:#1a1a1a;">${esc(name)}</strong>, ecco il tuo link di accesso al portale
+      Enti Formazione di Palladia. Valido per 365 giorni.
+    </p>
+    ${btn('Accedi al portale →', accessUrl)}
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Se non hai richiesto questo link, ignoralo. Non è richiesta nessuna azione.
+    </p>
+  `;
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: 'Accedi al portale Enti Formazione — Palladia',
+      html: layout('Accesso portale formazione', body),
+    });
+  } catch (e) { console.error('[email] sendProviderMagicLinkEmail:', e.message); }
+}
+
+// ─── Email: Registrazione ente formazione (admin + provider) ─────────────────
+
+async function sendProviderRegistrationEmail({ to, providerName, email, city, province, accCode, isProvider }) {
+  const body = isProvider
+    ? `
+      <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+        Grazie per aver registrato <strong>${esc(providerName)}</strong> su Palladia!<br/>
+        Il team Palladia verificherà la tua richiesta e ti risponderà entro 1-2 giorni lavorativi.
+        Riceverai un link di accesso al portale non appena il tuo profilo sarà approvato.
+      </p>
+      <p style="margin:0;font-size:12px;color:#9ca3af;">
+        Per accelerare l'approvazione assicurati di avere a portata: codice di accreditamento regionale e
+        estremi ATECO dell'ente.
+      </p>`
+    : `
+      <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+        Nuova registrazione ente formazione in attesa di approvazione:
+      </p>
+      <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;">
+        <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;width:140px;">Ente</td><td style="font-size:13px;font-weight:700;">${esc(providerName)}</td></tr>
+        <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Email</td><td style="font-size:13px;">${esc(email)}</td></tr>
+        <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Sede</td><td style="font-size:13px;">${esc(city)} (${esc(province)})</td></tr>
+        ${accCode ? `<tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Accreditamento</td><td style="font-size:13px;">${esc(accCode)}</td></tr>` : ''}
+      </table>
+      ${btn('Approva nel pannello admin →', `${APP_URL}/formazione/admin`)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: isProvider ? 'Richiesta ricevuta — in attesa di approvazione' : `[Admin] Nuovo ente formazione: ${providerName}`,
+      html: layout(isProvider ? 'Richiesta in lavorazione' : 'Nuova registrazione ente', body),
+    });
+  } catch (e) { console.error('[email] sendProviderRegistrationEmail:', e.message); }
+}
+
+// ─── Email: Provider in attesa (già registrato, non ancora approvato) ─────────
+
+async function sendProviderPendingEmail({ to, name }) {
+  const body = `
+    <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
+      Ciao <strong>${esc(name)}</strong>, il tuo profilo è ancora in fase di revisione da parte del team Palladia.
+      Riceverai un link di accesso non appena sarà approvato. Non è necessaria nessuna altra azione da parte tua.
+    </p>`;
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: 'Il tuo profilo Palladia è in fase di approvazione',
+      html: layout('Profilo in approvazione', body),
+    });
+  } catch (e) { console.error('[email] sendProviderPendingEmail:', e.message); }
+}
+
+// ─── Email: Prenotazione confermata (dal provider) ────────────────────────────
+
+async function sendBookingConfirmedEmail({ bookingId }) {
+  // Recupera dati prenotazione e manda email al lavoratore/azienda
+  // Fire-and-forget — errori non bloccano il flusso
+  try {
+    const supabase = require('../lib/supabase');
+    const { data: booking } = await supabase
+      .from('course_bookings')
+      .select(`
+        id, worker_id,
+        workers(full_name),
+        course_sessions(
+          start_date,
+          marketplace_courses(title, training_providers(name))
+        )
+      `)
+      .eq('id', bookingId)
+      .maybeSingle();
+    if (!booking) return;
+
+    const courseName   = booking.course_sessions?.marketplace_courses?.title || 'Corso';
+    const providerName = booking.course_sessions?.marketplace_courses?.training_providers?.name || 'Ente';
+    const sessionDate  = booking.course_sessions?.start_date;
+    const workerName   = booking.workers?.full_name || 'Lavoratore';
+
+    // Non abbiamo l'email del worker direttamente — skip per ora
+    // In futuro integrare con company_users
+    console.log(`[email] Booking ${bookingId} confirmed — ${workerName} su ${courseName} (${providerName}) il ${sessionDate}`);
+  } catch (e) { console.error('[email] sendBookingConfirmedEmail:', e.message); }
+}
+
+// ─── Email: Richiesta documento CDL → cliente ─────────────────────────────────
+
+async function sendDocumentRequestEmail({ to, studioName, companyName, title, description, dueDate, uploadUrl }) {
+  function fmtDate(d) {
+    if (!d) return null;
+    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
+  }
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Documento richiesto</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Lo Studio <strong style="color:#1a1a1a;">${esc(studioName)}</strong> ha richiesto un documento
+      per l'impresa <strong style="color:#1a1a1a;">${esc(companyName)}</strong>.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="width:100%;background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;">
+      <tr><td style="padding:20px 24px;">
+        <p style="margin:0 0 4px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Documento richiesto</p>
+        <p style="margin:0 0 12px;font-size:16px;font-weight:700;color:#1a1a1a;">${esc(title)}</p>
+        ${description ? `<p style="margin:0 0 12px;font-size:13px;color:#6b7280;line-height:1.6;">${esc(description)}</p>` : ''}
+        ${dueDate ? `<p style="margin:0;font-size:13px;color:#f59e0b;font-weight:600;">Scadenza: ${fmtDate(dueDate)}</p>` : ''}
+      </td></tr>
+    </table>
+    ${btn('Carica il documento →', uploadUrl)}
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Puoi caricare il documento cliccando il pulsante sopra. Non è richiesto nessun account.
+    </p>`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: `${studioName} richiede un documento: ${title}`,
+      html: layout('Richiesta documento', body),
+    });
+  } catch (e) { console.error('[email] sendDocumentRequestEmail:', e.message); }
+}
+
+// ─── Email: Documento caricato dal cliente → CDL ──────────────────────────────
+
+async function sendDocumentUploadedEmail({ to, studioName, companyName, title, portalUrl }) {
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Documento caricato</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      L'impresa <strong style="color:#1a1a1a;">${esc(companyName)}</strong> ha caricato il documento
+      richiesto: <strong style="color:#1a1a1a;">${esc(title)}</strong>.
+    </p>
+    ${btn('Vedi nel portale →', portalUrl)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: `Documento caricato: ${title} — ${companyName}`,
+      html: layout('Documento ricevuto', body),
+    });
+  } catch (e) { console.error('[email] sendDocumentUploadedEmail:', e.message); }
+}
+
+// ─── Email: Notifica al CSE (NC risolta, documento aggiornato) ────────────────
+
+async function sendCseNotificationEmail({ to, coordinatorName, siteName, eventType, details, accessUrl }) {
+  const LABELS = {
+    nc_resolved:       'Non Conformità Risolta',
+    doc_updated:       'Documento Aggiornato',
+    worker_added:      'Nuovo Lavoratore Aggiunto',
+    expiry_reminder:   'Scadenze in Arrivo',
+  };
+  const label = LABELS[eventType] || 'Aggiornamento Cantiere';
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">${esc(label)}</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Aggiornamento per il cantiere <strong style="color:#1a1a1a;">${esc(siteName)}</strong>.
+    </p>
+    <p style="margin:0 0 24px;font-size:14px;color:#374151;line-height:1.6;">${esc(details)}</p>
+    ${btn('Vedi nel portale →', accessUrl)}`;
+
+  try {
+    await getResend().emails.send({
+      from: FROM, to,
+      subject: `${label} — ${siteName}`,
+      html: layout(label, body),
+    });
+  } catch (e) { console.error('[email] sendCseNotificationEmail:', e.message); }
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1781,4 +1975,11 @@ module.exports = {
   sendStudioPendingInviteEmail,
   sendStudioWeeklyDigest,
   sendStudioExpiryAlertToCompany,
+  sendProviderMagicLinkEmail,
+  sendProviderRegistrationEmail,
+  sendProviderPendingEmail,
+  sendBookingConfirmedEmail,
+  sendDocumentRequestEmail,
+  sendDocumentUploadedEmail,
+  sendCseNotificationEmail,
 };

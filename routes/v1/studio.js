@@ -2087,4 +2087,333 @@ router.post('/studio/claim-company', async (req, res) => {
   });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// RICHIESTE DOCUMENTI — CDL invia richiesta, cliente carica tramite link pubblico
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/v1/studio/clients/:companyId/document-requests
+router.get('/studio/clients/:companyId/document-requests', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+  const access = await checkStudioAccess(studio.id, req.params.companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { data, error } = await supabase
+    .from('studio_document_requests')
+    .select('id, title, description, document_type, due_date, status, upload_token, response_url, response_filename, response_notes, reviewer_notes, response_uploaded_at, reviewed_at, created_at')
+    .eq('studio_id', studio.id)
+    .eq('company_id', req.params.companyId)
+    .order('created_at', { ascending: false });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json(data || []);
+});
+
+// POST /api/v1/studio/clients/:companyId/document-requests
+router.post('/studio/clients/:companyId/document-requests', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+  const access = await checkStudioAccess(studio.id, req.params.companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { title, description, document_type, due_date } = req.body || {};
+  if (!title || String(title).trim().length < 3) {
+    return res.status(400).json({ error: 'TITLE_REQUIRED' });
+  }
+
+  const VALID_TYPES = ['durc', 'visura', 'dvr', 'polizza', 'certificato', 'idoneita', 'verbale', 'contratto', 'altro'];
+  const safeType = VALID_TYPES.includes(document_type) ? document_type : 'altro';
+  const safeDate = due_date && /^\d{4}-\d{2}-\d{2}$/.test(due_date) ? due_date : null;
+
+  const { data, error } = await supabase
+    .from('studio_document_requests')
+    .insert({
+      studio_id:     studio.id,
+      company_id:    req.params.companyId,
+      title:         String(title).trim().slice(0, 200),
+      description:   description ? String(description).trim().slice(0, 1000) : null,
+      document_type: safeType,
+      due_date:      safeDate,
+    })
+    .select('id, title, document_type, due_date, status, upload_token, created_at')
+    .single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+
+  // Invia email al cliente (best-effort)
+  try {
+    const { data: company } = await supabase
+      .from('companies')
+      .select('name')
+      .eq('id', req.params.companyId)
+      .maybeSingle();
+
+    // Recupera email owner/admin dell'impresa
+    const { data: members } = await supabase
+      .from('company_users')
+      .select('user_id')
+      .eq('company_id', req.params.companyId)
+      .in('role', ['owner', 'admin']);
+
+    if (members && members.length > 0) {
+      const emails = [];
+      for (const m of members) {
+        const { data: { user } } = await supabase.auth.admin.getUserById(m.user_id).catch(() => ({ data: {} }));
+        if (user?.email) emails.push(user.email);
+      }
+      if (emails.length > 0) {
+        const appUrlBase = (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
+        const { sendDocumentRequestEmail } = require('../../services/email');
+        await sendDocumentRequestEmail({
+          to:          emails[0],
+          studioName:  studio.studio_name,
+          companyName: company?.name || 'La tua impresa',
+          title:       data.title,
+          description: data.description,
+          dueDate:     data.due_date,
+          uploadUrl:   `${appUrlBase}/studio/upload/${data.upload_token}`,
+        });
+      }
+    }
+  } catch (e) {
+    console.error('[studio] document-request email error:', e.message);
+  }
+
+  res.status(201).json({ ok: true, request: data });
+});
+
+// PATCH /api/v1/studio/clients/:companyId/document-requests/:reqId/review
+router.patch('/studio/clients/:companyId/document-requests/:reqId/review', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+  const access = await checkStudioAccess(studio.id, req.params.companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { status, reviewer_notes } = req.body || {};
+  const VALID = ['reviewed', 'rejected'];
+  if (!VALID.includes(status)) return res.status(400).json({ error: 'INVALID_STATUS' });
+
+  const { data, error } = await supabase
+    .from('studio_document_requests')
+    .update({ status, reviewer_notes: reviewer_notes || null, reviewed_at: new Date().toISOString() })
+    .eq('id', req.params.reqId)
+    .eq('studio_id', studio.id)
+    .eq('company_id', req.params.companyId)
+    .select('id, status')
+    .single();
+
+  if (error || !data) return res.status(404).json({ error: 'REQUEST_NOT_FOUND' });
+  res.json({ ok: true, request: data });
+});
+
+// DELETE /api/v1/studio/clients/:companyId/document-requests/:reqId
+router.delete('/studio/clients/:companyId/document-requests/:reqId', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+  const access = await checkStudioAccess(studio.id, req.params.companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { error } = await supabase
+    .from('studio_document_requests')
+    .delete()
+    .eq('id', req.params.reqId)
+    .eq('studio_id', studio.id)
+    .eq('company_id', req.params.companyId);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.status(204).end();
+});
+
+// ── Upload pubblico (cliente carica documento tramite token) ──────────────────
+// GET  /api/v1/studio/upload/:token  — info sulla richiesta
+// POST /api/v1/studio/upload/:token  — carica URL/filename del documento
+
+router.get('/studio/upload/:token', async (req, res) => {
+  const { data, error } = await supabase
+    .from('studio_document_requests')
+    .select('id, title, description, document_type, due_date, status, studio_id, company_id')
+    .eq('upload_token', req.params.token)
+    .maybeSingle();
+
+  if (error || !data) return res.status(404).json({ error: 'TOKEN_NOT_FOUND' });
+  if (data.status !== 'pending') return res.status(409).json({ error: 'ALREADY_UPLOADED', status: data.status });
+
+  // Recupera nome studio e impresa (senza dati sensibili)
+  const [studioRes, companyRes] = await Promise.all([
+    supabase.from('studio_partners').select('studio_name').eq('id', data.studio_id).maybeSingle(),
+    supabase.from('companies').select('name').eq('id', data.company_id).maybeSingle(),
+  ]);
+
+  res.json({
+    id:            data.id,
+    title:         data.title,
+    description:   data.description,
+    document_type: data.document_type,
+    due_date:      data.due_date,
+    studio_name:   studioRes.data?.studio_name || '—',
+    company_name:  companyRes.data?.name || '—',
+  });
+});
+
+router.post('/studio/upload/:token', async (req, res) => {
+  const { response_url, response_filename, response_notes } = req.body || {};
+  if (!response_url && !response_filename) {
+    return res.status(400).json({ error: 'URL_OR_FILENAME_REQUIRED' });
+  }
+
+  const { data, error } = await supabase
+    .from('studio_document_requests')
+    .update({
+      status:               'uploaded',
+      response_url:         response_url    || null,
+      response_filename:    response_filename || null,
+      response_notes:       response_notes  || null,
+      response_uploaded_at: new Date().toISOString(),
+      updated_at:           new Date().toISOString(),
+    })
+    .eq('upload_token', req.params.token)
+    .eq('status', 'pending')
+    .select('id, title, studio_id, company_id')
+    .single();
+
+  if (error || !data) return res.status(409).json({ error: 'ALREADY_UPLOADED_OR_NOT_FOUND' });
+
+  // Notifica il CDL
+  try {
+    const [studioRes, companyRes] = await Promise.all([
+      supabase.from('studio_partners').select('studio_name, user_id').eq('id', data.studio_id).maybeSingle(),
+      supabase.from('companies').select('name').eq('id', data.company_id).maybeSingle(),
+    ]);
+    if (studioRes.data?.user_id) {
+      const { data: { user } } = await supabase.auth.admin.getUserById(studioRes.data.user_id);
+      if (user?.email) {
+        const appUrlBase = (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
+        const { sendDocumentUploadedEmail } = require('../../services/email');
+        await sendDocumentUploadedEmail({
+          to:          user.email,
+          studioName:  studioRes.data.studio_name,
+          companyName: companyRes.data?.name || '—',
+          title:       data.title,
+          portalUrl:   `${appUrlBase}/studio`,
+        });
+      }
+    }
+  } catch (e) {
+    console.error('[studio] upload notify error:', e.message);
+  }
+
+  res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TEAM MANAGEMENT — aggiungi/rimuovi collaboratori dello studio
+// (La tabella studio_users esiste già dalla migration 063)
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/v1/studio/team
+router.get('/studio/team', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+
+  const { data, error } = await supabase
+    .from('studio_users')
+    .select('id, user_id, role, invited_at, joined_at')
+    .eq('studio_id', studio.id)
+    .order('invited_at');
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  // Arricchisce con email degli utenti
+  const members = [];
+  for (const m of data || []) {
+    let email = null, name = null;
+    try {
+      const { data: { user } } = await supabase.auth.admin.getUserById(m.user_id);
+      email = user?.email || null;
+      name  = user?.user_metadata?.full_name || user?.user_metadata?.name || null;
+    } catch { /* ignora */ }
+    members.push({ ...m, email, name });
+  }
+  res.json(members);
+});
+
+// POST /api/v1/studio/team/invite — invita collaboratore per email
+router.post('/studio/team/invite', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+
+  const email = (req.body?.email || '').trim().toLowerCase();
+  const role  = ['admin', 'collaborator'].includes(req.body?.role) ? req.body.role : 'collaborator';
+
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'EMAIL_REQUIRED' });
+
+  // Trova l'utente Palladia con questa email
+  const { data: { users } } = await supabase.auth.admin.listUsers({ filter: `email.eq.${email}` }).catch(() => ({ data: { users: [] } }));
+  const targetUser = users?.[0];
+  if (!targetUser) {
+    return res.status(404).json({ error: 'USER_NOT_FOUND', message: 'Nessun account Palladia trovato per questa email.' });
+  }
+
+  // Evita duplicati
+  const { data: existing } = await supabase
+    .from('studio_users')
+    .select('id')
+    .eq('studio_id', studio.id)
+    .eq('user_id', targetUser.id)
+    .maybeSingle();
+
+  if (existing) return res.status(409).json({ error: 'ALREADY_IN_TEAM' });
+
+  // Evita che il proprietario dello studio inviti sé stesso
+  if (targetUser.id === studio.user_id) {
+    return res.status(400).json({ error: 'CANNOT_INVITE_SELF' });
+  }
+
+  const { data, error } = await supabase
+    .from('studio_users')
+    .insert({ studio_id: studio.id, user_id: targetUser.id, role })
+    .select('id, role, invited_at')
+    .single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  res.status(201).json({ ok: true, member: { ...data, email, user_id: targetUser.id } });
+});
+
+// PATCH /api/v1/studio/team/:memberId/role — modifica ruolo collaboratore
+router.patch('/studio/team/:memberId/role', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+  const role   = req.body?.role;
+  if (!['admin', 'collaborator'].includes(role)) return res.status(400).json({ error: 'INVALID_ROLE' });
+
+  const { data, error } = await supabase
+    .from('studio_users')
+    .update({ role })
+    .eq('id', req.params.memberId)
+    .eq('studio_id', studio.id)
+    .select('id, role')
+    .single();
+
+  if (error || !data) return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+  res.json({ ok: true, member: data });
+});
+
+// DELETE /api/v1/studio/team/:memberId — rimuovi collaboratore
+router.delete('/studio/team/:memberId', verifyStudioJwt, async (req, res) => {
+  const studio = req.studio;
+
+  // Non può rimuovere sé stesso (l'owner)
+  const { data: member } = await supabase
+    .from('studio_users')
+    .select('id, user_id')
+    .eq('id', req.params.memberId)
+    .eq('studio_id', studio.id)
+    .maybeSingle();
+
+  if (!member) return res.status(404).json({ error: 'MEMBER_NOT_FOUND' });
+  if (member.user_id === studio.user_id) return res.status(400).json({ error: 'CANNOT_REMOVE_OWNER' });
+
+  const { error } = await supabase
+    .from('studio_users')
+    .delete()
+    .eq('id', req.params.memberId)
+    .eq('studio_id', studio.id);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.status(204).end();
+});
+
 module.exports = router;
