@@ -203,7 +203,8 @@ router.post('/sites/:siteId/workers', verifySupabaseJwt, async (req, res) => {
     return res.status(403).json({ error: 'Worker non trovato o non appartiene alla tua azienda' });
   }
 
-  const { data, error } = await supabase
+  // Upsert senza .single() — se il lavoratore era già assegnato riattiva status 'active'
+  const { error: upsertErr } = await supabase
     .from('worksite_workers')
     .upsert(
       [{
@@ -215,11 +216,12 @@ router.post('/sites/:siteId/workers', verifySupabaseJwt, async (req, res) => {
         end_date:   end_date   || null,
       }],
       { onConflict: 'site_id,worker_id' }
-    )
-    .select()
-    .single();
+    );
 
-  if (error) return res.status(400).json({ error: error.message });
+  if (upsertErr) {
+    console.error('[workers] upsert worksite_workers error:', upsertErr.message, upsertErr.code);
+    return res.status(400).json({ error: upsertErr.message });
+  }
 
   auditLog({
     companyId:  req.companyId,
@@ -232,7 +234,7 @@ router.post('/sites/:siteId/workers', verifySupabaseJwt, async (req, res) => {
     req,
   });
 
-  res.status(201).json(data);
+  res.status(201).json({ ok: true, worker_id, site_id: siteId });
 });
 
 // ── DELETE /api/v1/sites/:siteId/workers/:workerId — rimuovi lavoratore ───────
