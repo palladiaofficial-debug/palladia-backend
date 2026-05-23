@@ -16,19 +16,6 @@ const upload = multer({
   limits:  { fileSize: 10 * 1024 * 1024 },  // 10 MB
 });
 
-const TYPE_ICONS = {
-  'Escavatore':       '🚜',
-  'Gru':              '🏗️',
-  'Ponteggio':        '🧱',
-  'Autocarro':        '🚛',
-  'Betoniera':        '🔄',
-  'Autovettura':      '🚗',
-  'Furgone':          '🚐',
-  'Motociclo/Scooter':'🛵',
-  'Trattore':         '🚜',
-  'Sollevatore':      '🔼',
-  'Altro':            '🔧',
-};
 
 function calcStatus(row) {
   const today = new Date().toISOString().slice(0, 10);
@@ -44,7 +31,6 @@ function toApi(row) {
     id:                   row.id,
     type:                 row.type,
     model:                row.model               || '',
-    icon:                 TYPE_ICONS[row.type]    || '🔧',
     plateOrSerial:        row.plate_or_serial     || '',
     ownership:            row.ownership,
     status:               calcStatus(row),
@@ -406,7 +392,6 @@ router.get('/sites/:siteId/equipment', verifySupabaseJwt, async (req, res) => {
       assigned_at:  r.assigned_at,
       type:         r.equipment?.type        || '',
       model:        r.equipment?.model       || '',
-      icon:         TYPE_ICONS[r.equipment?.type] || '🔧',
       plateOrSerial: r.equipment?.plate_or_serial || '',
       ownership:    r.equipment?.ownership   || '',
       status:       calcStatus(r.equipment   || {}),

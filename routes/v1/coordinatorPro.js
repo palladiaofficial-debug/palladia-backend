@@ -450,14 +450,12 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
   // Calcola status mezzi
   const today = new Date().toISOString().slice(0, 10);
   const in30  = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
-  const TYPE_ICONS = { 'Escavatore': '🚜', 'Gru': '🏗️', 'Ponteggio': '🧱', 'Autocarro': '🚛', 'Betoniera': '🔄', 'Altro': '🔧' };
-
   const equipment = (equipR.data || []).map(e => {
     const dates = [e.inspection_date, e.insurance_expiry, e.maintenance_date].filter(Boolean);
     const status = dates.some(d => d < today) ? 'expired'
       : dates.some(d => d >= today && d <= in30) ? 'expiring' : 'ok';
     return {
-      id: e.id, type: e.type, model: e.model || '', icon: TYPE_ICONS[e.type] || '🔧',
+      id: e.id, type: e.type, model: e.model || '',
       plateOrSerial: e.plate_or_serial || '', ownership: e.ownership, status,
       maintenance: { inspection: e.inspection_date, insurance: e.insurance_expiry, scheduled: e.maintenance_date },
       notes: e.notes,
