@@ -54,8 +54,9 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   ? 'compat'
   : 'strict';
 
-// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA ─────────────────────────────
+// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (solo dev) ──────────────────
 router.get('/scan/identify-diag', async (req, res) => {
+  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'NOT_FOUND' });
   const { worksite_id } = req.query;
   const steps = {};
   const cleanup = [];
@@ -550,7 +551,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     event_type:         eventType,
     timestamp_server:   tsServer,
     distance_m:         distanceM,
-    gps_accuracy_m:     Math.round(accuracyM),
+    gps_accuracy_m:     accuracyM != null ? Math.round(accuracyM) : null,
     gps_accuracy_m_raw: accuracyM
   });
 

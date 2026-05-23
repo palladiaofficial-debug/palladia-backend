@@ -334,7 +334,8 @@ router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
     .select(WORKER_SELECT)
     .single();
 
-  if (error || !data) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
   auditLog({
     companyId:  req.companyId,

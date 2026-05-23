@@ -39,7 +39,7 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
     is_expired:    isExpired,
     period_end:    data.subscription_current_period_end,
     has_customer:  !!data.stripe_customer_id,
-    site_limit:    getSiteLimit(effectiveStatus === 'trial_expired' ? 'trial' : plan),
+    site_limit:    getSiteLimit(effectiveStatus === 'trial_expired' ? 'trial' : (plan || 'trial')),
   });
 });
 

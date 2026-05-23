@@ -269,6 +269,8 @@ router.patch('/admin/bookings/:id/complete', async (req, res) => {
 
   if (!ct) return res.status(500).json({ error: 'COURSE_TYPE_NOT_FOUND' });
 
+  if (!ct.validity_years) return res.status(400).json({ error: 'VALIDITY_NOT_SET', message: 'Validità del corso non configurata' });
+
   // Compute expiry
   const expiryD = new Date(issue_date);
   expiryD.setFullYear(expiryD.getFullYear() + ct.validity_years);
@@ -293,10 +295,15 @@ router.patch('/admin/bookings/:id/complete', async (req, res) => {
   if (cErr) return res.status(500).json({ error: 'DB_ERROR', detail: cErr.message });
 
   // Update booking
-  await supabase
+  const { error: bErr } = await supabase
     .from('course_bookings')
     .update({ status: 'completed', completed_at: new Date().toISOString(), new_certificate_id: cert.id })
     .eq('id', id);
+
+  if (bErr) {
+    console.error('[admin] booking complete update error:', bErr.message);
+    return res.status(500).json({ error: 'BOOKING_UPDATE_ERROR', certificate_id: cert.id });
+  }
 
   res.json({ ok: true, certificate: cert });
 });

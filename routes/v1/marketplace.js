@@ -458,13 +458,13 @@ router.post('/marketplace/providers/register', async (req, res) => {
     return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
   }
 
-  // Notifica admin
+  // Notifica admin (fire-and-forget — non blocca la risposta)
   const adminEmails = (process.env.SUPER_ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
   for (const adminEmail of adminEmails) {
-    await sendProviderApplicationAlert({
+    sendProviderApplicationAlert({
       adminEmail, providerName: name, city: location_city, province: location_province,
       email, phone, accreditationCode: accreditation_code, notes,
-    });
+    }).catch(e => console.error('[marketplace] sendProviderApplicationAlert error:', e.message));
   }
 
   res.status(201).json({ ok: true, provider_id: data.id, message: 'Candidatura inviata — ti contatteremo entro 48 ore' });

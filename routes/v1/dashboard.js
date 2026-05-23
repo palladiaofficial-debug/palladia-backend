@@ -85,7 +85,7 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
 
   const activeSites = sites.filter(s => s.status === 'attivo');
 
-  const today10 = new Date().toISOString().slice(0, 10);
+  const today10 = todayRome;
   const allDocAlerts = (docsResult.data || []).filter(d => d.worker?.is_active !== false);
   const expiredDocs  = allDocAlerts.filter(d => d.expiry_date < today10);
   const expiringDocs = allDocAlerts.filter(d => d.expiry_date >= today10);
