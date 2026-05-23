@@ -64,7 +64,7 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   const today   = todayUtcStart();
 
   // 2. Query batch parallele
-  const [presRes, ncRes, cseRes, siteDocsRes, companyDocsRes, workersRes] = await Promise.all([
+  const [presRes, ncRes, cseRes, siteDocsRes, companyDocsRes, workersRes, suspRes] = await Promise.all([
     // Timbrature di oggi (per live presences)
     supabase
       .from('presence_logs')
@@ -111,6 +111,13 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
       .eq('company_id', companyId)
       .in('site_id', siteIds)
       .eq('status', 'active'),
+
+    // Giorni di sospensione per cantiere
+    supabase
+      .from('site_suspension_days')
+      .select('site_id')
+      .eq('company_id', companyId)
+      .in('site_id', siteIds),
   ]);
 
   // 3. Indicizza i risultati per siteId
@@ -120,6 +127,11 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   const siteDocs       = siteDocsRes.data || [];
   const companyDocs    = companyDocsRes.data || [];
   const siteWorkers    = workersRes.data || [];
+  const suspDays       = suspRes.data   || [];
+
+  // Conteggio sospensioni per cantiere
+  const suspCountBySite = {};
+  for (const s of suspDays) suspCountBySite[s.site_id] = (suspCountBySite[s.site_id] ?? 0) + 1;
 
   // Categorie aziendali presenti
   const companyDocCategories = new Set(companyDocs.map(d => d.category));
@@ -194,6 +206,7 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
       referenteTecnicoName:  site.referente_tecnico_name ?? null,
       suoloOccupazione:      site.suolo_occupazione ?? false,
       suoloOccupazioneEnd:   site.suolo_occupazione_end ?? null,
+      suspensionDaysCount:   suspCountBySite[site.id] ?? 0,
     };
   });
 
