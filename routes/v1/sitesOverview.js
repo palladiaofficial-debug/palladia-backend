@@ -52,7 +52,7 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   // 1. Tutti i cantieri non eliminati
   const { data: sites, error: sitesErr } = await supabase
     .from('sites')
-    .select('id, name, address, status, client, start_date, end_date, budget_totale, sal_percentuale')
+    .select('id, name, address, status, client, start_date, end_date, budget_totale, sal_percentuale, contract_days, days_type, referente_tecnico_name, suolo_occupazione, suolo_occupazione_end')
     .eq('company_id', companyId)
     .neq('status', 'eliminato')
     .order('name');
@@ -186,9 +186,14 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
       totalWorkers:    assignedWorkers.length,
       openNc,
       hasActiveCse,
-      cseName:         cse?.coordinator_name ?? null,
-      safetyStatus:    safety,
+      cseName:               cse?.coordinator_name ?? null,
+      safetyStatus:          safety,
       missingDocs,
+      contractDays:          site.contract_days,
+      daysType:              site.days_type ?? 'solari',
+      referenteTecnicoName:  site.referente_tecnico_name ?? null,
+      suoloOccupazione:      site.suolo_occupazione ?? false,
+      suoloOccupazioneEnd:   site.suolo_occupazione_end ?? null,
     };
   });
 

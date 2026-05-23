@@ -4,9 +4,34 @@ const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { auditLog }          = require('../../lib/audit');
 const { getSiteLimit }      = require('../../services/stripe');
+const { calcEndDate }       = require('../../lib/calcEndDate');
 
 // Tutti gli endpoint richiedono JWT + membership verificata
 // req.companyId è già stato verificato da verifySupabaseJwt
+
+function formatSite(s) {
+  return {
+    id:                        s.id,
+    name:                      s.name,
+    address:                   s.address,
+    status:                    s.status ?? 'attivo',
+    client:                    s.client,
+    startDate:                 s.start_date,
+    endDate:                   s.end_date,
+    contractDays:              s.contract_days,
+    daysType:                  s.days_type ?? 'solari',
+    referenteTecnicoId:        s.referente_tecnico_id,
+    referenteTecnicoName:      s.referente_tecnico_name,
+    suoloOccupazione:          s.suolo_occupazione ?? false,
+    suoloOccupazioneStart:     s.suolo_occupazione_start,
+    suoloOccupazioneEnd:       s.suolo_occupazione_end,
+    suoloOccupazioneNotes:     s.suolo_occupazione_notes,
+    latitude:                  s.latitude,
+    longitude:                 s.longitude,
+    geofence_radius_m:         s.geofence_radius_m,
+    has_geofence:              s.latitude != null && s.longitude != null,
+  };
+}
 
 // Status operativi (visibili in dashboard, pesano sul limite piano)
 const ACTIVE_STATUSES   = ['attivo', 'sospeso'];
@@ -18,28 +43,18 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, async (req, res) => {
+  const SELECT_COLS = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes';
+
   const { data, error } = await supabase
     .from('sites')
-    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m')
+    .select(SELECT_COLS)
     .eq('company_id', req.companyId)
     .neq('status', 'eliminato')
     .order('name');
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
-  res.json(data.map(s => ({
-    id:                s.id,
-    name:              s.name,
-    address:           s.address,
-    status:            s.status ?? 'attivo',
-    client:            s.client,
-    startDate:         s.start_date,
-    endDate:           s.end_date,
-    latitude:          s.latitude,
-    longitude:         s.longitude,
-    geofence_radius_m: s.geofence_radius_m,
-    has_geofence:      s.latitude != null && s.longitude != null
-  })));
+  res.json(data.map(formatSite));
 });
 
 // ── GET /api/v1/sites/deleted — lista cantieri eliminati (cestino) ────────────
@@ -112,8 +127,14 @@ router.post('/sites/:siteId/restore', verifySupabaseJwt, async (req, res) => {
 
 // ── PATCH /api/v1/sites/:siteId — aggiorna campi e/o stato del cantiere ───────
 router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
-  const { siteId }    = req.params;
-  const { name, address, client, start_date, end_date, status } = req.body || {};
+  const { siteId } = req.params;
+  const {
+    name, address, client, status,
+    start_date, end_date,
+    contract_days, days_type,
+    referente_tecnico_id, referente_tecnico_name,
+    suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
+  } = req.body || {};
 
   // Verifica ownership + non eliminato
   const { data: site, error: siteErr } = await supabase
@@ -136,10 +157,37 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     }
     updates.name = trimmed;
   }
-  if (address    !== undefined) updates.address    = address    ? String(address).trim()    : null;
-  if (client     !== undefined) updates.client     = client     ? String(client).trim()     : null;
+  if (address !== undefined) updates.address = address ? String(address).trim() : null;
+  if (client  !== undefined) updates.client  = client  ? String(client).trim()  : null;
+
+  if (contract_days !== undefined) updates.contract_days = contract_days ? Number(contract_days) : null;
+  if (days_type     !== undefined) updates.days_type     = days_type === 'lavorativi' ? 'lavorativi' : 'solari';
+
+  if (referente_tecnico_id   !== undefined) updates.referente_tecnico_id   = referente_tecnico_id   || null;
+  if (referente_tecnico_name !== undefined) updates.referente_tecnico_name = referente_tecnico_name || null;
+
+  if (suolo_occupazione       !== undefined) updates.suolo_occupazione       = Boolean(suolo_occupazione);
+  if (suolo_occupazione_start !== undefined) updates.suolo_occupazione_start = suolo_occupazione_start || null;
+  if (suolo_occupazione_end   !== undefined) updates.suolo_occupazione_end   = suolo_occupazione_end   || null;
+  if (suolo_occupazione_notes !== undefined) updates.suolo_occupazione_notes = suolo_occupazione_notes || null;
+
   if (start_date !== undefined) updates.start_date = start_date || null;
-  if (end_date   !== undefined) updates.end_date   = end_date   || null;
+
+  // Calcola end_date dai giorni contratto; altrimenti usa il valore passato esplicitamente
+  const effectiveStartDate    = updates.start_date    ?? null;
+  const effectiveContractDays = updates.contract_days ?? null;
+  const effectiveDaysType     = updates.days_type     ?? 'solari';
+
+  if (effectiveStartDate && effectiveContractDays) {
+    const { data: suspRows } = await supabase
+      .from('site_suspension_days')
+      .select('day')
+      .eq('site_id', siteId);
+    const suspDays = (suspRows || []).map(r => r.day);
+    updates.end_date = calcEndDate(effectiveStartDate, effectiveContractDays, effectiveDaysType, suspDays);
+  } else if (end_date !== undefined) {
+    updates.end_date = end_date || null;
+  }
 
   if (status !== undefined) {
     if (!ALLOWED_STATUSES.includes(status)) {
@@ -194,12 +242,14 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     return res.status(400).json({ error: 'NO_FIELDS', message: 'Nessun campo da aggiornare.' });
   }
 
+  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes';
+
   const { data, error } = await supabase
     .from('sites')
     .update(updates)
     .eq('id', siteId)
     .eq('company_id', req.companyId)
-    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m')
+    .select(SELECT_COLS_PATCH)
     .single();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
@@ -215,19 +265,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     req,
   });
 
-  res.json({
-    id:                data.id,
-    name:              data.name,
-    address:           data.address,
-    status:            data.status,
-    client:            data.client,
-    startDate:         data.start_date,
-    endDate:           data.end_date,
-    latitude:          data.latitude,
-    longitude:         data.longitude,
-    geofence_radius_m: data.geofence_radius_m,
-    has_geofence:      data.latitude != null && data.longitude != null,
-  });
+  res.json(formatSite(data));
 });
 
 // ── PATCH /api/v1/sites/:siteId/coords ───────────────────────────────────────
@@ -286,7 +324,13 @@ router.patch('/sites/:siteId/coords', verifySupabaseJwt, async (req, res) => {
 
 // ── POST /api/v1/sites — crea cantiere ───────────────────────────────────────
 router.post('/sites', verifySupabaseJwt, async (req, res) => {
-  const { name, address, client, start_date, end_date, status } = req.body || {};
+  const {
+    name, address, client, status,
+    start_date, end_date,
+    contract_days, days_type,
+    referente_tecnico_id, referente_tecnico_name,
+    suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
+  } = req.body || {};
 
   if (!name || typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 200) {
     return res.status(400).json({
@@ -329,7 +373,15 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
     }
   }
 
-  const siteStatus = ALLOWED_STATUSES.includes(status) ? status : 'attivo';
+  const siteStatus   = ALLOWED_STATUSES.includes(status) ? status : 'attivo';
+  const contractDays = contract_days ? Number(contract_days) : null;
+  const daysTypeVal  = days_type === 'lavorativi' ? 'lavorativi' : 'solari';
+
+  // Calcola end_date dai giorni contratto se non passata esplicitamente
+  let computedEndDate = end_date || null;
+  if (!computedEndDate && start_date && contractDays) {
+    computedEndDate = calcEndDate(start_date, contractDays, daysTypeVal, []);
+  }
 
   const { data, error } = await supabase
     .from('sites')
@@ -338,11 +390,19 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
       address:    address ? String(address).trim() : null,
       client:     client  ? String(client).trim()  : null,
       start_date: start_date || null,
-      end_date:   end_date   || null,
+      end_date:   computedEndDate,
       status:     siteStatus,
-      company_id: req.companyId
+      company_id: req.companyId,
+      contract_days:             contractDays,
+      days_type:                 daysTypeVal,
+      referente_tecnico_id:      referente_tecnico_id      || null,
+      referente_tecnico_name:    referente_tecnico_name    || null,
+      suolo_occupazione:         suolo_occupazione         ?? false,
+      suolo_occupazione_start:   suolo_occupazione_start   || null,
+      suolo_occupazione_end:     suolo_occupazione_end     || null,
+      suolo_occupazione_notes:   suolo_occupazione_notes   || null,
     })
-    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m')
+    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes')
     .single();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
@@ -358,19 +418,7 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
     req
   });
 
-  res.status(201).json({
-    id:                data.id,
-    name:              data.name,
-    address:           data.address,
-    status:            data.status,
-    client:            data.client,
-    startDate:         data.start_date,
-    endDate:           data.end_date,
-    latitude:          data.latitude,
-    longitude:         data.longitude,
-    geofence_radius_m: data.geofence_radius_m,
-    has_geofence:      data.latitude != null && data.longitude != null
-  });
+  res.status(201).json(formatSite(data));
 });
 
 // ── DELETE /api/v1/sites/:siteId ──────────────────────────────────────────────
