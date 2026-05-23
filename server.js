@@ -29,6 +29,7 @@ const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
 const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
 const { startReminderCron }         = require('./services/reminderCron');
 const { startStudioDigestCron }     = require('./services/studioDigestCron');
+const { runFormazioneMigration }    = require('./services/formazioneMigration');
 const { PNG }                       = require('pngjs');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
@@ -2049,6 +2050,9 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startLadiaLiveCron();
     startReminderCron();
     startStudioDigestCron();
+
+    // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti
+    runFormazioneMigration().catch(e => console.error('[migration] formazione:', e.message));
   }
 });
 
