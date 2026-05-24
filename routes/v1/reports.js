@@ -342,6 +342,117 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
   res.send(pdfBuffer);
 });
 
+// ── GET /api/v1/reports/presenze-referente?referenteId=&from=&to= ─────────────
+// CSV aggregato di tutte le presenze dei cantieri assegnati a un referente tecnico.
+// referenteId opzionale: se omesso restituisce tutti i cantieri della company.
+router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) => {
+  const { referenteId, from, to } = req.query;
+
+  if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to)) {
+    return res.status(400).json({ error: 'from e to obbligatori (YYYY-MM-DD)' });
+  }
+  if (from > to) return res.status(400).json({ error: 'from deve essere <= to' });
+  const daysDiff = (new Date(to) - new Date(from)) / 86400000;
+  if (daysDiff > 366) return res.status(400).json({ error: 'Intervallo massimo 366 giorni' });
+
+  // 1. Recupera cantieri filtrati per referente (o tutti se non specificato)
+  let sitesQuery = supabase
+    .from('sites')
+    .select('id, name')
+    .eq('company_id', req.companyId)
+    .neq('status', 'eliminato');
+
+  if (referenteId) sitesQuery = sitesQuery.eq('referente_tecnico_id', referenteId);
+
+  const { data: sites, error: sitesErr } = await sitesQuery;
+  if (sitesErr) return res.status(500).json({ error: sitesErr.message });
+  if (!sites?.length) {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="presenze-referente-${from}-${to}.csv"`);
+    return res.send('﻿' + 'data,cantiere,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,ore_totali,anomalie\r\n');
+  }
+
+  const siteIds  = sites.map(s => s.id);
+  const siteMap  = Object.fromEntries(sites.map(s => [s.id, s.name]));
+
+  // 2. Presenze su tutti quei cantieri nel range
+  const { data: logs, error: logsErr } = await supabase
+    .from('presence_logs')
+    .select('worker_id, event_type, timestamp_server, site_id, worker:workers(full_name, fiscal_code)')
+    .eq('company_id', req.companyId)
+    .in('site_id', siteIds)
+    .gte('timestamp_server', `${from}T00:00:00.000Z`)
+    .lte('timestamp_server', `${to}T23:59:59.999Z`)
+    .order('site_id',         { ascending: true })
+    .order('worker_id',       { ascending: true })
+    .order('timestamp_server',{ ascending: true })
+    .limit(200000);
+
+  if (logsErr) return res.status(500).json({ error: logsErr.message });
+  const limitReached = (logs || []).length === 200000;
+
+  // 3. Raggruppa per cantiere + worker + giorno
+  const byKey = new Map();
+  for (const log of (logs || [])) {
+    if (!log.worker) continue;
+    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    const key = `${log.site_id}::${log.worker_id}::${dateKey}`;
+    if (!byKey.has(key)) byKey.set(key, { siteId: log.site_id, worker: log.worker, dateKey, logs: [] });
+    byKey.get(key).logs.push(log);
+  }
+
+  const fmtTime = ts => new Date(ts).toLocaleTimeString('it-IT', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
+  });
+
+  const sortedKeys = Array.from(byKey.keys()).sort((a, b) => {
+    const [sA, , dA] = a.split('::'); const [sB, , dB] = b.split('::');
+    if (sA !== sB) return siteMap[sA]?.localeCompare(siteMap[sB] || '') || 0;
+    if (dA !== dB) return dA.localeCompare(dB);
+    return byKey.get(a).worker.full_name.localeCompare(byKey.get(b).worker.full_name);
+  });
+
+  const csvRows = ['data,cantiere,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,ore_totali,anomalie'];
+  for (const key of sortedKeys) {
+    const { siteId, worker, dateKey, logs: dayLogs } = byKey.get(key);
+    const anomalies = [];
+    let hoursTotal = 0;
+    let intervals  = 0;
+    let i = 0;
+    while (i < dayLogs.length) {
+      const l = dayLogs[i];
+      if (l.event_type === 'ENTRY') {
+        const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
+        if (next && next.event_type === 'EXIT') {
+          hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3600000);
+          intervals++;
+          i += 2;
+        } else { anomalies.push('Uscita mancante'); i += 1; }
+      } else { anomalies.push('Uscita senza entrata'); i += 1; }
+    }
+    const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
+    const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+    csvRows.push([
+      dateKey,
+      `"${(siteMap[siteId] || '').replace(/"/g, '""')}"`,
+      `"${worker.full_name.replace(/"/g, '""')}"`,
+      worker.fiscal_code,
+      entries.length > 0 ? fmtTime(entries[0].timestamp_server) : '',
+      exits.length   > 0 ? fmtTime(exits[exits.length - 1].timestamp_server) : '',
+      hoursTotal > 0 ? hoursTotal.toFixed(2) : '',
+      `"${anomalies.join('; ').replace(/"/g, '""')}"`,
+    ].join(','));
+  }
+
+  if (limitReached) csvRows.unshift('# ATTENZIONE: dati troncati a 200.000 righe raw — export parziale');
+
+  const filename = `presenze-referente-${referenteId || 'tutti'}-${from}-${to}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  if (limitReached) res.setHeader('X-Palladia-Truncated', 'true');
+  res.send('﻿' + csvRows.join('\r\n'));
+});
+
 // ── Worker Hours Report endpoints ─────────────────────────────────────────────
 // Parametri comuni: siteId (uuid), from (YYYY-MM-DD), to (YYYY-MM-DD), workerId? (uuid)
 // Max range: 366 giorni (export annuale)

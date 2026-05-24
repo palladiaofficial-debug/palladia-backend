@@ -172,10 +172,15 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
         .eq('user_id', referente_tecnico_id)
         .maybeSingle();
       if (!member) return res.status(400).json({ error: 'INVALID_REFERENTE', message: 'referente_tecnico_id non appartiene al team.' });
+      // Nome derivato automaticamente dal profilo auth — non accettato dal client
+      const { data: authData } = await supabase.auth.admin.getUserById(referente_tecnico_id);
+      const u = authData?.user;
+      updates.referente_tecnico_name = u?.user_metadata?.full_name || u?.email || null;
+    } else {
+      updates.referente_tecnico_name = null;
     }
     updates.referente_tecnico_id = referente_tecnico_id || null;
   }
-  if (referente_tecnico_name !== undefined) updates.referente_tecnico_name = referente_tecnico_name || null;
 
   if (suolo_occupazione       !== undefined) updates.suolo_occupazione       = Boolean(suolo_occupazione);
   if (suolo_occupazione_start !== undefined) updates.suolo_occupazione_start = suolo_occupazione_start || null;
@@ -339,7 +344,7 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
     name, address, client, status,
     start_date, end_date,
     contract_days, days_type,
-    referente_tecnico_id, referente_tecnico_name,
+    referente_tecnico_id,
     suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
   } = req.body || {};
 
@@ -388,6 +393,21 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
   const contractDays = contract_days ? Number(contract_days) : null;
   const daysTypeVal  = days_type === 'lavorativi' ? 'lavorativi' : 'solari';
 
+  // Valida referente e deriva il nome dal profilo auth
+  let referenteName = null;
+  if (referente_tecnico_id) {
+    const { data: member } = await supabase
+      .from('company_users')
+      .select('user_id')
+      .eq('company_id', req.companyId)
+      .eq('user_id', referente_tecnico_id)
+      .maybeSingle();
+    if (!member) return res.status(400).json({ error: 'INVALID_REFERENTE', message: 'referente_tecnico_id non appartiene al team.' });
+    const { data: authData } = await supabase.auth.admin.getUserById(referente_tecnico_id);
+    const u = authData?.user;
+    referenteName = u?.user_metadata?.full_name || u?.email || null;
+  }
+
   // Calcola end_date dai giorni contratto se non passata esplicitamente
   let computedEndDate = end_date || null;
   if (!computedEndDate && start_date && contractDays) {
@@ -406,8 +426,8 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
       company_id: req.companyId,
       contract_days:             contractDays,
       days_type:                 daysTypeVal,
-      referente_tecnico_id:      referente_tecnico_id      || null,
-      referente_tecnico_name:    referente_tecnico_name    || null,
+      referente_tecnico_id:      referente_tecnico_id || null,
+      referente_tecnico_name:    referenteName,
       suolo_occupazione:         suolo_occupazione         ?? false,
       suolo_occupazione_start:   suolo_occupazione_start   || null,
       suolo_occupazione_end:     suolo_occupazione_end     || null,

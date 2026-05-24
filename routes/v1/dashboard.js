@@ -130,4 +130,43 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
   });
 });
 
+/**
+ * GET /api/v1/dashboard/expiry-summary
+ * Riepilogo unificato di tutte le notifiche di scadenza attive per la company.
+ * Raggruppa per severity e per type — permette al frontend un cruscotto allerta centrale.
+ */
+router.get('/dashboard/expiry-summary', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('id, type, severity, title, body, entity_type, entity_id, updated_at, read_by')
+    .eq('company_id', req.companyId)
+    .order('updated_at', { ascending: false })
+    .limit(500);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const notifications = data || [];
+
+  const bySeverity = { critical: 0, warning: 0, info: 0 };
+  for (const n of notifications) {
+    if (bySeverity[n.severity] !== undefined) bySeverity[n.severity]++;
+  }
+
+  const byType = {};
+  for (const n of notifications) {
+    if (!byType[n.type]) byType[n.type] = [];
+    byType[n.type].push(n);
+  }
+
+  const unread = notifications.filter(n => !Array.isArray(n.read_by) || n.read_by.length === 0);
+
+  res.json({
+    total:       notifications.length,
+    unread:      unread.length,
+    by_severity: bySeverity,
+    by_type:     byType,
+    all:         notifications,
+  });
+});
+
 module.exports = router;

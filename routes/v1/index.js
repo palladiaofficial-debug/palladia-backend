@@ -107,6 +107,9 @@ router.use('/', require('./chat'));
 router.use('/', require('./telegram'));
 router.use('/', require('./siteNotes'));
 
+// Export archivio cantiere: XLSX multi-foglio (cantiere, lavoratori, presenze, subappaltatori)
+router.use('/', require('./siteExport'));
+
 // SAL — Stato Avanzamento Lavori: budget, costi, ricavi per cantiere
 router.use('/', require('./economia'));
 
