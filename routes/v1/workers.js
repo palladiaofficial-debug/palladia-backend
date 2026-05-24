@@ -351,4 +351,132 @@ router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
   res.json(data);
 });
 
+// ── GET /api/v1/workers/export — XLSX organico aziendale ─────────────────────
+router.get('/workers/export', verifySupabaseJwt, async (req, res) => {
+  const ExcelJS = require('exceljs');
+
+  const includeInactive = req.query.all === 'true';
+  let query = supabase
+    .from('workers')
+    .select(`${WORKER_SELECT}, subcontractor_id, subcontractors(company_name)`)
+    .eq('company_id', req.companyId)
+    .order('full_name', { ascending: true });
+
+  if (!includeInactive) query = query.eq('is_active', true);
+
+  const { data: workers, error } = await query;
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const today = Date.now();
+
+  function certStatus(expiry) {
+    if (!expiry) return null;
+    const days = Math.ceil((new Date(expiry) - today) / 86400000);
+    if (days < 0)  return 'expired';
+    if (days <= 30) return 'expiring';
+    return 'valid';
+  }
+
+  function overallCompliance(w) {
+    const s = [certStatus(w.safety_training_expiry), certStatus(w.health_fitness_expiry)];
+    if (s.includes('expired'))  return { label: 'Non conforme', bg: 'FFDC2626', fg: 'FFFFFFFF' };
+    if (s.includes('expiring')) return { label: 'In scadenza',  bg: 'FFF59E0B', fg: 'FF000000' };
+    if (s.every(x => x === 'valid')) return { label: 'Conforme',    bg: 'FF16A34A', fg: 'FFFFFFFF' };
+    return { label: 'Incompleto', bg: 'FF6B7280', fg: 'FFFFFFFF' };
+  }
+
+  function fmtDate(d) {
+    if (!d) return '';
+    const [y, m, day] = String(d).slice(0, 10).split('-');
+    return `${day}/${m}/${y}`;
+  }
+
+  const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+  const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' };
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Palladia';
+  wb.created = new Date();
+
+  const sh = wb.addWorksheet('Organico');
+  sh.columns = [
+    { header: 'Nome',               key: 'name',       width: 28 },
+    { header: 'Codice Fiscale',     key: 'cf',         width: 18 },
+    { header: 'Data di Nascita',    key: 'birth',      width: 14 },
+    { header: 'Luogo di Nascita',   key: 'birthplace', width: 20 },
+    { header: 'Data Assunzione',    key: 'hire',       width: 14 },
+    { header: 'Qualifica',          key: 'qual',       width: 22 },
+    { header: 'Ruolo',              key: 'role',       width: 16 },
+    { header: 'Datore di Lavoro',   key: 'employer',   width: 22 },
+    { header: 'Subappaltatore',     key: 'sub',        width: 22 },
+    { header: 'Form. scadenza',     key: 'form',       width: 14 },
+    { header: 'Idoneità scadenza',  key: 'idon',       width: 14 },
+    { header: 'Stato',              key: 'stato',      width: 16 },
+  ];
+
+  // Stile header
+  const hRow = sh.getRow(1);
+  hRow.height = 24;
+  hRow.eachCell(cell => {
+    cell.fill = HEADER_FILL;
+    cell.font = HEADER_FONT;
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FF334E7C' } } };
+  });
+
+  // Freeze header + filtro automatico
+  sh.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+  sh.autoFilter = { from: 'A1', to: 'L1' };
+
+  for (const w of (workers || [])) {
+    const compliance = overallCompliance(w);
+    const row = sh.addRow({
+      name:       w.full_name,
+      cf:         w.fiscal_code,
+      birth:      fmtDate(w.birth_date),
+      birthplace: w.birth_place    || '',
+      hire:       fmtDate(w.hire_date),
+      qual:       w.qualification  || '',
+      role:       w.role           || '',
+      employer:   w.employer_name  || '',
+      sub:        w.subcontractors?.company_name || '',
+      form:       fmtDate(w.safety_training_expiry),
+      idon:       fmtDate(w.health_fitness_expiry),
+      stato:      compliance.label,
+    });
+
+    row.height = 20;
+    row.getCell('stato').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: compliance.bg } };
+    row.getCell('stato').font = { bold: true, color: { argb: compliance.fg }, name: 'Calibri', size: 10 };
+    row.getCell('stato').alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Colora in giallo/rosso le date di scadenza se problematiche
+    const formSt = certStatus(w.safety_training_expiry);
+    if (formSt === 'expired')  row.getCell('form').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECACA' } };
+    if (formSt === 'expiring') row.getCell('form').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+    const idonSt = certStatus(w.health_fitness_expiry);
+    if (idonSt === 'expired')  row.getCell('idon').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECACA' } };
+    if (idonSt === 'expiring') row.getCell('idon').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+
+    // Zebra stripes sulle righe pari
+    const rowIdx = row.number;
+    if (rowIdx % 2 === 0) {
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        if (colNum !== 12) { // skip stato (ha già colore)
+          if (!cell.fill || cell.fill.type !== 'pattern' || cell.fill.fgColor?.argb === 'FFFFFFFF' || !cell.fill.fgColor) {
+            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          }
+        }
+      });
+    }
+  }
+
+  const date = new Date().toISOString().slice(0, 10);
+  const filename = `organico-${date}.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 module.exports = router;

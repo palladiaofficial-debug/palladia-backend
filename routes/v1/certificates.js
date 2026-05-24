@@ -336,9 +336,12 @@ router.patch('/formazione/notifications/:id/read', verifySupabaseJwt, async (req
   res.json({ ok: true });
 });
 
-// ── GET /api/v1/formazione/export-csv ────────────────────────────────────────
+// ── GET /api/v1/formazione/export-csv — XLSX attestati formazione ─────────────
+// Alias mantenuto per retrocompatibilità: risponde con XLSX (non più CSV).
 
 router.get('/formazione/export-csv', verifySupabaseJwt, async (req, res) => {
+  const ExcelJS = require('exceljs');
+
   const { data: certs, error } = await supabase
     .from('worker_certificates')
     .select(`
@@ -351,28 +354,93 @@ router.get('/formazione/export-csv', verifySupabaseJwt, async (req, res) => {
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
-  const rows = (certs || []).map(c => {
-    const status = certStatus(c.expiry_date);
-    return [
-      `"${c.workers?.full_name || ''}"`,
-      `"${c.workers?.fiscal_code || ''}"`,
-      `"${c.course_types?.name || ''}"`,
-      `"${c.course_types?.risk_level || ''}"`,
-      `"${c.issue_date || ''}"`,
-      `"${c.expiry_date || ''}"`,
-      `"${c.issuing_body || ''}"`,
-      `"${c.certificate_number || ''}"`,
-      `"${status}"`,
-      `"${daysLeft(c.expiry_date)}"`,
-    ].join(',');
+  function fmtDate(d) {
+    if (!d) return '';
+    const [y, m, day] = String(d).slice(0, 10).split('-');
+    return `${day}/${m}/${y}`;
+  }
+
+  const STATUS_STYLE = {
+    valid:    { label: 'Valido',      bg: 'FF16A34A', fg: 'FFFFFFFF' },
+    expiring: { label: 'In scadenza', bg: 'FFF59E0B', fg: 'FF000000' },
+    expired:  { label: 'Scaduto',     bg: 'FFDC2626', fg: 'FFFFFFFF' },
+    none:     { label: '—',           bg: 'FF6B7280', fg: 'FFFFFFFF' },
+  };
+
+  const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+  const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11, name: 'Calibri' };
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Palladia';
+  wb.created = new Date();
+
+  const sh = wb.addWorksheet('Formazione');
+  sh.columns = [
+    { header: 'Lavoratore',       width: 28 },
+    { header: 'Codice Fiscale',   width: 18 },
+    { header: 'Tipo Corso',       width: 32 },
+    { header: 'Livello Rischio',  width: 14 },
+    { header: 'Data Rilascio',    width: 13 },
+    { header: 'Data Scadenza',    width: 13 },
+    { header: 'Ente Erogatore',   width: 22 },
+    { header: 'N. Attestato',     width: 16 },
+    { header: 'Stato',            width: 14 },
+    { header: 'Giorni Rimanenti', width: 14 },
+  ];
+
+  const hRow = sh.getRow(1);
+  hRow.height = 24;
+  hRow.eachCell(cell => {
+    cell.fill = HEADER_FILL;
+    cell.font = HEADER_FONT;
+    cell.alignment = { vertical: 'middle', horizontal: 'center' };
+    cell.border = { bottom: { style: 'thin', color: { argb: 'FF334E7C' } } };
   });
 
-  const header = ['Lavoratore','Codice Fiscale','Tipo Corso','Rischio','Data Rilascio','Data Scadenza','Ente Erogatore','N. Attestato','Stato','Giorni Rimanenti'].join(',');
-  const csv = '﻿' + header + '\n' + rows.join('\n');
+  sh.views = [{ state: 'frozen', xSplit: 0, ySplit: 1 }];
+  sh.autoFilter = { from: 'A1', to: 'J1' };
 
-  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="formazione-${new Date().toISOString().slice(0,10)}.csv"`);
-  res.send(csv);
+  for (const c of (certs || [])) {
+    const st = certStatus(c.expiry_date);
+    const style = STATUS_STYLE[st] || STATUS_STYLE.none;
+    const days  = daysLeft(c.expiry_date);
+
+    const row = sh.addRow([
+      c.workers?.full_name      || '',
+      c.workers?.fiscal_code    || '',
+      c.course_types?.name      || '',
+      c.course_types?.risk_level || '',
+      fmtDate(c.issue_date),
+      fmtDate(c.expiry_date),
+      c.issuing_body            || '',
+      c.certificate_number      || '',
+      style.label,
+      typeof days === 'number' ? days : '',
+    ]);
+
+    row.height = 20;
+    const statoCell = row.getCell(9);
+    statoCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: style.bg } };
+    statoCell.font = { bold: true, color: { argb: style.fg }, name: 'Calibri', size: 10 };
+    statoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    if (st === 'expired')  row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECACA' } };
+    if (st === 'expiring') row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+
+    if (row.number % 2 === 0) {
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        if (colNum !== 9 && (!cell.fill?.fgColor || cell.fill.fgColor.argb === 'FFFFFFFF')) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+        }
+      });
+    }
+  }
+
+  const date = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="formazione-${date}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
 });
 
 // ── GET /api/v1/formazione/coverage ──────────────────────────────────────────
