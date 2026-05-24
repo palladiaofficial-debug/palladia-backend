@@ -146,6 +146,15 @@ router.use('/', require('./formazioneProvider'));
 // Formazione: OCR upload attestati (richiede multer — DEVE stare prima di altri middleware body)
 router.use('/', require('./certificateOcr'));
 
+// OCR scadenze documenti (DURC, idoneità, assicurazioni) via Claude Vision
+router.use('/', require('./ocrExpiry'));
+
+// Scadenzario unificato: lavoratori, subappaltatori, azienda, cantieri
+router.use('/', require('./expiryCalendar'));
+
+// Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
+router.use('/', require('./workerInvite'));
+
 
 // Marketplace corsi di formazione (provider + consulenti)
 router.use('/', require('./marketplace'));

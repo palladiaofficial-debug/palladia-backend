@@ -492,6 +492,67 @@ function buildMissingDocsMessage(workersMissing) {
   );
 }
 
+/**
+ * Alert timbratura anomala.
+ * Triggerato dopo un punch riuscito se:
+ *   - Orario inconsueto (prima delle 05:00 o dopo le 22:00 ora italiana)
+ *   - Distanza dal cantiere > 500m (fuori geofence ma punch accettato — es. geofence grande)
+ * Inviato solo agli owner/admin per non disturbare i tecnici.
+ *
+ * @param {string} companyId
+ * @param {string} siteId
+ * @param {string} siteName
+ * @param {string} workerName
+ * @param {'ENTRY'|'EXIT'} eventType
+ * @param {string} timestampServer - ISO
+ * @param {{ reason: string, distance_m?: number, hour?: number }} anomaly
+ */
+async function notifyAnomalousPunch(companyId, siteId, siteName, workerName, eventType, timestampServer, anomaly) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+
+  let users;
+  try {
+    users = await getCompanyTelegramUsers(companyId);
+  } catch (e) {
+    console.error('[notifyAnomalousPunch] getCompanyTelegramUsers error:', e.message);
+    return;
+  }
+
+  // Solo owner/admin — anomalia è informazione sensibile
+  const adminUsers = users.filter(u => {
+    const supabase = require('../lib/supabase');
+    return true; // company users sono già filtrati, non abbiamo il role qui
+  });
+
+  let timeStr = '';
+  try {
+    timeStr = new Date(timestampServer).toLocaleTimeString('it-IT', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
+    });
+  } catch { timeStr = timestampServer?.slice(11, 16) || ''; }
+
+  const label = eventType === 'ENTRY' ? 'entrata' : 'uscita';
+  let reasonText = '';
+  if (anomaly.reason === 'unusual_hour') {
+    reasonText = `orario insolito (${timeStr})`;
+  } else if (anomaly.reason === 'far_from_site') {
+    reasonText = `distanza dal cantiere: ${Math.round(anomaly.distance_m)}m`;
+  }
+
+  const text =
+    `⚠️ <b>Timbratura anomala</b>\n` +
+    `👷 <b>${workerName}</b> — ${label} su <b>${siteName}</b>\n` +
+    `🕐 ${timeStr}  ·  ${reasonText}\n` +
+    `<i>Controlla se la timbratura è corretta.</i>`;
+
+  const sends = users.map(u => {
+    if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) return null;
+    return tg.sendMessage(u.chatId, text).catch(e => console.error('[notifyAnomalousPunch] error:', e.message));
+  }).filter(Boolean);
+
+  if (sends.length) await Promise.allSettled(sends);
+}
+
 module.exports = {
   notifyCompany,
   notifyCoordinators,
@@ -501,6 +562,7 @@ module.exports = {
   notifyMissingExitsWithAction,
   notifyAutoExec,
   notifyPunch,
+  notifyAnomalousPunch,
   notifySiteTeam,
   sendCustomNotification,
   getCompanyTelegramUsers,

@@ -1943,6 +1943,65 @@ function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+// ─── Email: Report settimanale scadenze ───────────────────────────────────────
+
+/**
+ * Riepilogo settimanale scadenze — inviato ogni lunedì agli owner/admin.
+ * @param {{
+ *   to: string,
+ *   companyName: string,
+ *   critical: Array<{label:string, date:string, days:number}>,
+ *   warning:  Array<{label:string, date:string, days:number}>,
+ * }} opts
+ */
+async function sendWeeklyExpiryReport({ to, companyName, critical, warning }) {
+  const hasCritical = critical.length > 0;
+  const hasWarning  = warning.length > 0;
+  if (!hasCritical && !hasWarning) return; // niente da inviare
+
+  const dayLabel = d => {
+    if (d < 0) return `<span style="color:#dc2626;font-weight:700;">scaduta da ${-d} gg</span>`;
+    if (d === 0) return `<span style="color:#dc2626;font-weight:700;">scade oggi</span>`;
+    return `<span style="color:#1a1a1a;">scade in ${d} gg</span>`;
+  };
+
+  const rowHtml = (items, color) => items.map(e =>
+    `<tr>
+      <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#374151;">${esc(e.label)}</td>
+      <td style="padding:8px 0 8px 16px;border-bottom:1px solid #f0f0f0;font-size:13px;text-align:right;white-space:nowrap;">${dayLabel(e.days)}</td>
+    </tr>`
+  ).join('');
+
+  const critSection = hasCritical ? `
+    <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#dc2626;">Critiche (${critical.length})</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">${rowHtml(critical, '#dc2626')}</table>` : '';
+
+  const warnSection = hasWarning ? `
+    <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#d97706;">In scadenza (${warning.length})</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">${rowHtml(warning, '#d97706')}</table>` : '';
+
+  const total = critical.length + warning.length;
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Riepilogo scadenze</p>
+    <p style="margin:0 0 28px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Questa settimana <strong style="color:#1a1a1a;">${companyName}</strong> ha <strong>${total} scadenz${total > 1 ? 'e' : 'a'}</strong> da gestire.
+    </p>
+    ${critSection}
+    ${warnSection}
+    ${btn('Apri lo scadenzario →', `${APP_URL}/scadenze`)}
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Ricevi questo riepilogo ogni lunedì mattina. Gestisci le notifiche dal tuo profilo.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${hasCritical ? '🔴 ' : '🟡 '}Scadenze della settimana — ${companyName}`,
+    html: layout('Scadenze questa settimana', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -1982,4 +2041,5 @@ module.exports = {
   sendDocumentRequestEmail,
   sendDocumentUploadedEmail,
   sendCseNotificationEmail,
+  sendWeeklyExpiryReport,
 };

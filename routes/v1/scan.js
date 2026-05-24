@@ -3,7 +3,7 @@ const crypto      = require('crypto');
 const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter } = require('../../middleware/rateLimit');
-const { notifyPunch } = require('../../services/telegramNotifications');
+const { notifyPunch, notifyAnomalousPunch } = require('../../services/telegramNotifications');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -556,14 +556,43 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   });
 
   // ── Telegram punch notification (fire-and-forget) ─────────────────────────
+  const workerName = session.worker?.full_name || session.worker_id;
   notifyPunch(
     site.company_id,
     worksite_id,
     site.name,
-    session.worker?.full_name || session.worker_id,
+    workerName,
     eventType,
     tsServer
   ).catch(e => console.error('[punch] notifyPunch error:', e.message));
+
+  // ── Alert timbratura anomala ──────────────────────────────────────────────
+  // Orario: anomalo prima delle 05:00 o dopo le 22:00 (Europe/Rome)
+  // Distanza: > 500m dal cantiere anche se il punch è stato accettato
+  (() => {
+    try {
+      const hourRome = parseInt(
+        new Date(tsServer).toLocaleString('it-IT', { hour: '2-digit', timeZone: 'Europe/Rome', hour12: false }).replace(/\D/g, ''),
+        10
+      );
+      const isUnusualHour = hourRome < 5 || hourRome >= 22;
+      const isFarFromSite = distanceM != null && distanceM > 500;
+
+      if (isUnusualHour) {
+        notifyAnomalousPunch(
+          site.company_id, worksite_id, site.name, workerName, eventType, tsServer,
+          { reason: 'unusual_hour', hour: hourRome }
+        ).catch(e => console.error('[punch] anomaly-hour alert error:', e.message));
+      } else if (isFarFromSite) {
+        notifyAnomalousPunch(
+          site.company_id, worksite_id, site.name, workerName, eventType, tsServer,
+          { reason: 'far_from_site', distance_m: distanceM }
+        ).catch(e => console.error('[punch] anomaly-distance alert error:', e.message));
+      }
+    } catch (e) {
+      console.error('[punch] anomaly check error:', e.message);
+    }
+  })();
 });
 
 // ── POST /api/v1/scan/note — PUBBLICO ─────────────────────────────────────────
