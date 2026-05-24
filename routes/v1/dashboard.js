@@ -31,13 +31,11 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
       .eq('company_id', req.companyId)
       .eq('is_active', true),
 
+    // Nessun join embedded — evita errori PostgREST se la FK non è nel cache schema.
+    // Worker e site vengono risolti in seguito con query separate per gli ID presenti.
     supabase
       .from('presence_logs')
-      .select(`
-        worker_id, site_id, event_type, timestamp_server,
-        worker:workers (full_name),
-        site:sites (name)
-      `)
+      .select('worker_id, site_id, event_type, timestamp_server')
       .eq('company_id', req.companyId)
       .gte('timestamp_server', fromUtc)
       .order('timestamp_server', { ascending: false })
@@ -60,8 +58,8 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
     console.error('[dashboard] presence query error:', presenceResult.error.message, presenceResult.error.details);
   }
 
-  const sites     = sitesResult.data  || [];
-  const allLogs   = presenceResult.data || [];
+  const sites   = sitesResult.data  || [];
+  const allLogs = presenceResult.data || [];
 
   // Filtra solo le timbrature di oggi nel fuso Roma
   const todayLogs = allLogs.filter(p => {
@@ -75,17 +73,34 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
     if (!lastByWorker.has(p.worker_id)) lastByWorker.set(p.worker_id, p);
   }
 
-  const presentNow = [...lastByWorker.values()]
-    .filter(p => p.event_type === 'ENTRY')
-    .map(p => ({
-      worker_id: p.worker_id,
-      site_id:   p.site_id,
-      name:      p.worker?.full_name ?? '—',
-      site:      p.site?.name        ?? '—',
-      entrata:   new Date(p.timestamp_server).toLocaleTimeString('it-IT', {
-        hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
-      }),
-    }));
+  // Risolvi nomi worker e siti solo per chi è attualmente presente (max 50 lookup)
+  const presentEntries = [...lastByWorker.values()].filter(p => p.event_type === 'ENTRY');
+  const presentWorkerIds = [...new Set(presentEntries.map(p => p.worker_id))];
+  const presentSiteIds   = [...new Set(presentEntries.map(p => p.site_id))];
+
+  const [wNamesRes, sNamesRes] = await Promise.all([
+    presentWorkerIds.length > 0
+      ? supabase.from('workers').select('id, full_name').in('id', presentWorkerIds).eq('company_id', req.companyId)
+      : { data: [] },
+    presentSiteIds.length > 0
+      ? supabase.from('sites').select('id, name').in('id', presentSiteIds).eq('company_id', req.companyId)
+      : { data: [] },
+  ]);
+
+  const workerNameMap = {};
+  for (const w of (wNamesRes.data || [])) workerNameMap[w.id] = w.full_name;
+  const siteNameMap = {};
+  for (const s of (sNamesRes.data || [])) siteNameMap[s.id] = s.name;
+
+  const presentNow = presentEntries.map(p => ({
+    worker_id: p.worker_id,
+    site_id:   p.site_id,
+    name:      workerNameMap[p.worker_id] ?? '—',
+    site:      siteNameMap[p.site_id]     ?? '—',
+    entrata:   new Date(p.timestamp_server).toLocaleTimeString('it-IT', {
+      hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
+    }),
+  }));
 
   const activeSites = sites.filter(s => s.status === 'attivo');
 
