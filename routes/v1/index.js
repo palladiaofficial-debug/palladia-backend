@@ -5,6 +5,9 @@ const { apiLimiter, chatLimiter } = require('../../middleware/rateLimit');
 // Rate limit globale su tutto /api/v1/
 router.use(apiLimiter);
 
+// Ricerca globale (JWT)
+router.use('/', require('./search'));
+
 // Route private (JWT + company membership)
 router.use('/', require('./workerDocs'));
 router.use('/', require('./dashboard'));

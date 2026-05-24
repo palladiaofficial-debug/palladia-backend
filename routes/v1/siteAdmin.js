@@ -452,6 +452,97 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
   res.status(201).json(formatSite(data));
 });
 
+// ── POST /api/v1/sites/:siteId/duplicate — duplica cantiere ──────────────────
+router.post('/sites/:siteId/duplicate', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { name } = req.body || {};
+
+  const { data: orig, error: origErr } = await supabase
+    .from('sites')
+    .select('*')
+    .eq('id', siteId)
+    .eq('company_id', req.companyId)
+    .neq('status', 'eliminato')
+    .maybeSingle();
+
+  if (origErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!orig)   return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
+
+  // Controllo limite piano
+  const { data: company, error: compErr } = await supabase
+    .from('companies')
+    .select('subscription_plan, subscription_status, trial_ends_at')
+    .eq('id', req.companyId)
+    .single();
+
+  if (compErr || !company) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const now = Date.now();
+  const trialExpired = company.subscription_status === 'trial' &&
+    company.trial_ends_at && new Date(company.trial_ends_at).getTime() < now;
+  const effectivePlan = trialExpired ? 'trial' : company.subscription_plan;
+  const siteLimit = getSiteLimit(effectivePlan);
+
+  if (siteLimit !== null) {
+    const { count, error: cntErr } = await supabase
+      .from('sites')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', req.companyId)
+      .in('status', BILLABLE_STATUSES);
+    if (cntErr) return res.status(500).json({ error: 'DB_ERROR' });
+    if (count >= siteLimit) {
+      return res.status(403).json({
+        error:      'SITE_LIMIT_REACHED',
+        message:    `Il tuo piano consente massimo ${siteLimit} cantieri attivi.`,
+        site_limit: siteLimit,
+        current:    count,
+      });
+    }
+  }
+
+  const newName = name?.trim() || `${orig.name} (copia)`;
+
+  const { data, error } = await supabase
+    .from('sites')
+    .insert({
+      company_id:                req.companyId,
+      name:                      newName,
+      address:                   orig.address,
+      client:                    orig.client,
+      status:                    'attivo',
+      start_date:                orig.start_date,
+      end_date:                  orig.end_date,
+      contract_days:             orig.contract_days,
+      days_type:                 orig.days_type,
+      referente_tecnico_id:      orig.referente_tecnico_id,
+      referente_tecnico_name:    orig.referente_tecnico_name,
+      latitude:                  orig.latitude,
+      longitude:                 orig.longitude,
+      geofence_radius_m:         orig.geofence_radius_m,
+      suolo_occupazione:         orig.suolo_occupazione,
+      suolo_occupazione_start:   orig.suolo_occupazione_start,
+      suolo_occupazione_end:     orig.suolo_occupazione_end,
+      suolo_occupazione_notes:   orig.suolo_occupazione_notes,
+    })
+    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes')
+    .single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'site.duplicate',
+    targetType: 'site',
+    targetId:   data.id,
+    payload:    { source_id: siteId, name: data.name },
+    req,
+  });
+
+  res.status(201).json(formatSite(data));
+});
+
 // ── DELETE /api/v1/sites/:siteId ──────────────────────────────────────────────
 // • Nessun log di presenza → hard delete (rimuove tutto dal DB)
 // • Ha log di presenza    → soft delete (status = 'eliminato', dati storici preservati)

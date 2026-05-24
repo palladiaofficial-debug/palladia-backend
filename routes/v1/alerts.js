@@ -73,8 +73,11 @@ router.post('/alerts/check-missing-exits', verifySupabaseJwt, apiLimiter, async 
 });
 
 // ── Helper: trova lavoratori con ENTRY come ultimo evento nel giorno ──────────
+// Raggruppa per worker_id GLOBALE (non per worker+cantiere) — evita di segnalare
+// due volte un lavoratore che si è spostato tra cantieri nella stessa giornata.
+// Un lavoratore è "missing exit" solo se il suo ULTIMO evento del giorno (su
+// qualsiasi cantiere) è un ENTRY.
 async function findMissingExits(companyId, siteId, date) {
-  // 1. Presenza logs — NO join site:sites (nessuna FK dichiarata in schema cache)
   let query = supabase
     .from('presence_logs')
     .select(`
@@ -92,17 +95,15 @@ async function findMissingExits(companyId, siteId, date) {
   const { data: logs, error } = await query;
   if (error) return { error: error.message };
 
-  // 2. Raggruppa per worker_id + site_id → trova l'ultimo evento
-  const lastByWorkerSite = new Map();
-  const siteIds = new Set();
+  // Ultimo evento PER LAVORATORE (globale, non per cantiere)
+  const lastByWorker = new Map();
+  const siteIds      = new Set();
 
   for (const log of (logs || [])) {
-    const key = `${log.worker_id}::${log.site_id}`;
-    lastByWorkerSite.set(key, log);
+    lastByWorker.set(log.worker_id, log); // logs ordinati asc → l'ultimo sovrascrive
     siteIds.add(log.site_id);
   }
 
-  // 3. Fetch nomi cantieri in una sola query (evita il join non supportato)
   const siteMap = {};
   if (siteIds.size > 0) {
     const { data: sitesData } = await supabase
@@ -113,7 +114,7 @@ async function findMissingExits(companyId, siteId, date) {
   }
 
   const missing = [];
-  for (const [, log] of lastByWorkerSite) {
+  for (const [, log] of lastByWorker) {
     if (log.event_type === 'ENTRY') {
       const site = siteMap[log.site_id];
       missing.push({

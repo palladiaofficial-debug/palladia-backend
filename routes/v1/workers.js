@@ -292,6 +292,117 @@ router.delete('/sites/:siteId/workers/:workerId', verifySupabaseJwt, async (req,
   res.status(204).end();
 });
 
+// ── POST /api/v1/sites/:siteId/workers/bulk — assegnazione massiva ───────────
+// body: { worker_ids: string[], action: 'add' | 'remove' }
+router.post('/sites/:siteId/workers/bulk', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { worker_ids, action = 'add' } = req.body || {};
+
+  if (!Array.isArray(worker_ids) || worker_ids.length === 0) {
+    return res.status(400).json({ error: 'worker_ids deve essere un array non vuoto' });
+  }
+  if (worker_ids.length > 200) {
+    return res.status(400).json({ error: 'Massimo 200 lavoratori per operazione' });
+  }
+  if (!['add', 'remove'].includes(action)) {
+    return res.status(400).json({ error: 'action deve essere "add" o "remove"' });
+  }
+
+  // Verifica che il cantiere appartenga alla company
+  const { data: site, error: siteErr } = await supabase
+    .from('sites')
+    .select('id')
+    .eq('id', siteId)
+    .eq('company_id', req.companyId)
+    .neq('status', 'eliminato')
+    .maybeSingle();
+
+  if (siteErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!site)   return res.status(403).json({ error: 'Cantiere non trovato o non autorizzato' });
+
+  // Verifica che tutti i worker_ids appartengano alla company
+  const { data: validWorkers, error: wErr } = await supabase
+    .from('workers')
+    .select('id')
+    .eq('company_id', req.companyId)
+    .in('id', worker_ids);
+
+  if (wErr) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const validIds = new Set((validWorkers || []).map(w => w.id));
+  const invalidIds = worker_ids.filter(id => !validIds.has(id));
+  if (invalidIds.length > 0) {
+    return res.status(400).json({ error: 'INVALID_WORKER_IDS', invalid: invalidIds });
+  }
+
+  let added = 0, removed = 0, skipped = 0;
+
+  if (action === 'add') {
+    // Fetch assegnazioni esistenti per questo cantiere
+    const { data: existing } = await supabase
+      .from('worksite_workers')
+      .select('worker_id, status')
+      .eq('site_id', siteId)
+      .eq('company_id', req.companyId)
+      .in('worker_id', worker_ids);
+
+    const existingMap = new Map((existing || []).map(e => [e.worker_id, e]));
+
+    const toInsert = [];
+    const toReactivate = [];
+
+    for (const wid of worker_ids) {
+      const ex = existingMap.get(wid);
+      if (!ex) {
+        toInsert.push({ company_id: req.companyId, site_id: siteId, worker_id: wid, status: 'active' });
+      } else if (ex.status !== 'active') {
+        toReactivate.push(wid);
+      } else {
+        skipped++;
+      }
+    }
+
+    if (toInsert.length > 0) {
+      const { error: insErr } = await supabase.from('worksite_workers').insert(toInsert);
+      if (insErr) return res.status(500).json({ error: 'DB_ERROR', message: insErr.message });
+      added += toInsert.length;
+    }
+
+    for (const wid of toReactivate) {
+      const { error: updErr } = await supabase
+        .from('worksite_workers')
+        .update({ status: 'active' })
+        .eq('site_id', siteId)
+        .eq('worker_id', wid)
+        .eq('company_id', req.companyId);
+      if (!updErr) added++;
+    }
+  } else {
+    const { error: delErr, count } = await supabase
+      .from('worksite_workers')
+      .delete({ count: 'exact' })
+      .eq('site_id', siteId)
+      .eq('company_id', req.companyId)
+      .in('worker_id', worker_ids);
+
+    if (delErr) return res.status(500).json({ error: 'DB_ERROR', message: delErr.message });
+    removed = count ?? worker_ids.length;
+  }
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     `worker.bulk_${action}`,
+    targetType: 'site',
+    targetId:   siteId,
+    payload:    { worker_ids, added, removed, skipped },
+    req,
+  });
+
+  res.json({ ok: true, action, added, removed, skipped });
+});
+
 // ── PATCH /api/v1/workers/:workerId — aggiorna lavoratore ────────────────────
 router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
   const { workerId } = req.params;
