@@ -74,13 +74,12 @@ router.post('/alerts/check-missing-exits', verifySupabaseJwt, apiLimiter, async 
 
 // ── Helper: trova lavoratori con ENTRY come ultimo evento nel giorno ──────────
 async function findMissingExits(companyId, siteId, date) {
-  // Prende tutti i log del giorno per la company (+ eventuale filtro cantiere)
+  // 1. Presenza logs — NO join site:sites (nessuna FK dichiarata in schema cache)
   let query = supabase
     .from('presence_logs')
     .select(`
       worker_id, event_type, timestamp_server, site_id,
-      worker:workers (id, full_name, fiscal_code),
-      site:sites (id, name, address)
+      worker:workers (id, full_name, fiscal_code)
     `)
     .eq('company_id', companyId)
     .gte('timestamp_server', `${date}T00:00:00.000Z`)
@@ -93,25 +92,37 @@ async function findMissingExits(companyId, siteId, date) {
   const { data: logs, error } = await query;
   if (error) return { error: error.message };
 
-  // Raggruppa per worker_id + site_id → trova l'ultimo evento
-  // Se l'ultimo è ENTRY → uscita mancante
+  // 2. Raggruppa per worker_id + site_id → trova l'ultimo evento
   const lastByWorkerSite = new Map();
+  const siteIds = new Set();
 
   for (const log of (logs || [])) {
     const key = `${log.worker_id}::${log.site_id}`;
-    lastByWorkerSite.set(key, log);  // sovrascrive → last wins (logs ordinati asc)
+    lastByWorkerSite.set(key, log);
+    siteIds.add(log.site_id);
+  }
+
+  // 3. Fetch nomi cantieri in una sola query (evita il join non supportato)
+  const siteMap = {};
+  if (siteIds.size > 0) {
+    const { data: sitesData } = await supabase
+      .from('sites')
+      .select('id, name, address')
+      .in('id', Array.from(siteIds));
+    for (const s of (sitesData || [])) siteMap[s.id] = s;
   }
 
   const missing = [];
   for (const [, log] of lastByWorkerSite) {
     if (log.event_type === 'ENTRY') {
+      const site = siteMap[log.site_id];
       missing.push({
         worker_id:       log.worker?.id,
         worker_name:     log.worker?.full_name,
         fiscal_code:     log.worker?.fiscal_code,
         site_id:         log.site_id,
-        site_name:       log.site?.name,
-        site_address:    log.site?.address,
+        site_name:       site?.name,
+        site_address:    site?.address,
         last_entry_time: log.timestamp_server
       });
     }

@@ -77,8 +77,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     .from('presence_logs')
     .select(`
       worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, site_id,
-      worker:workers (id, full_name, fiscal_code),
-      site:sites (id, name, address)
+      worker:workers (id, full_name, fiscal_code)
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
