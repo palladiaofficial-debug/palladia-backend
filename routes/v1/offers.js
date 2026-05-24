@@ -377,47 +377,138 @@ router.get('/offers/:id/export.pdf', async (req, res) => {
   }
 });
 
-// ── GET /api/v1/offers/:id/export.csv ────────────────────────────────────────
-router.get('/offers/:id/export.csv', async (req, res) => {
+// ── GET /api/v1/offers/:id/export.xlsx ───────────────────────────────────────
+// Alias retrocompat: risponde xlsx anche se chiamato con .csv
+router.get('/offers/:id/export.csv',  handleOfferXlsx);
+router.get('/offers/:id/export.xlsx', handleOfferXlsx);
+
+async function handleOfferXlsx(req, res) {
+  const ExcelJS = require('exceljs');
   const { companyId } = req;
   const { id }        = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
 
-  const { data: offer } = await supabase
-    .from('offers').select('id, nome').eq('id', id).eq('company_id', companyId).maybeSingle();
+  const [{ data: offer }, { data: items }, { data: company }] = await Promise.all([
+    supabase.from('offers')
+      .select('id, nome, cliente, oggetto, totale_offerta, created_at')
+      .eq('id', id).eq('company_id', companyId).maybeSingle(),
+    supabase.from('offer_items')
+      .select('tipo, codice, descrizione, unita_misura, quantita, prezzo_ref, prezzo_offerta, importo_offerta')
+      .eq('offer_id', id).order('sort_order', { ascending: true }),
+    supabase.from('companies').select('name').eq('id', companyId).maybeSingle(),
+  ]);
   if (!offer) return res.status(404).json({ error: 'NOT_FOUND' });
 
-  const { data: items } = await supabase
-    .from('offer_items')
-    .select('tipo, codice, descrizione, unita_misura, quantita, prezzo_ref, prezzo_offerta, importo_offerta')
-    .eq('offer_id', id).order('sort_order', { ascending: true });
+  const fmtEur  = v => v != null ? parseFloat(Number(v).toFixed(2)) : null;
+  const dateStr = new Date(offer.created_at || Date.now()).toLocaleDateString('it-IT');
 
-  const q  = s => (s == null ? '' : `"${String(s).replace(/"/g, '""')}"`);
-  const n  = v => (v == null ? '' : String(Number(v).toFixed(2)).replace('.', ','));
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Palladia';
+  wb.created = new Date();
 
-  const rows = [
-    ['Tipo', 'Codice', 'Descrizione', 'UM', 'Quantità', 'Prezzo rif.', 'Prezzo offerta', 'Importo offerta'].join(';'),
+  const ws = wb.addWorksheet('Offerta');
+
+  const NAVY  = { argb: 'FF1E3A5F' };
+  const WHITE = { argb: 'FFFFFFFF' };
+  const LIGHT = { argb: 'FFF8FAFC' };
+  const CAT_BG = { argb: 'FFE8EDF3' };
+
+  // ── Header documento ─────────────────────────────────────────────────────────
+  ws.columns = [
+    { width: 12 }, // tipo
+    { width: 16 }, // codice
+    { width: 50 }, // descrizione
+    { width: 8  }, // um
+    { width: 10 }, // quantità
+    { width: 14 }, // prezzo rif.
+    { width: 14 }, // prezzo offerta
+    { width: 16 }, // importo offerta
   ];
+
+  const addMergedRow = (text, rowH, fillArgb, fontOpts) => {
+    const r = ws.addRow([text]);
+    r.height = rowH;
+    const c = r.getCell(1);
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fillArgb } };
+    c.font = { name: 'Calibri', ...fontOpts };
+    c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    ws.mergeCells(r.number, 1, r.number, 8);
+    return r;
+  };
+
+  addMergedRow(company?.name || 'PALLADIA', 16, 'FFE8EDF3', { size: 9, color: { argb: 'FF6B7280' } });
+  addMergedRow(`OFFERTA: ${offer.nome || '—'}`, 26, 'FF1E3A5F', { size: 13, bold: true, color: WHITE });
+  if (offer.cliente) addMergedRow(`Cliente: ${offer.cliente}`, 17, 'FFE8EDF3', { size: 9.5, italic: true });
+  if (offer.oggetto) addMergedRow(`Oggetto: ${offer.oggetto}`, 17, 'FFE8EDF3', { size: 9.5 });
+  addMergedRow(`Data: ${dateStr}`, 15, 'FFE8EDF3', { size: 9, color: { argb: 'FF6B7280' } });
+  ws.addRow([]).height = 6;
+
+  // ── Header tabella voci ───────────────────────────────────────────────────────
+  const COLS = ['Codice', 'Descrizione', 'UM', 'Quantità', 'Prezzo rif.', 'Prezzo offerta', 'Importo offerta'];
+  const hRow = ws.addRow(['', ...COLS]);
+  hRow.height = 22;
+  hRow.eachCell((cell, col) => {
+    if (col < 2) return;
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: NAVY };
+    cell.font = { bold: true, color: WHITE, size: 9.5, name: 'Calibri' };
+    cell.alignment = { vertical: 'middle', horizontal: col <= 3 ? 'left' : 'right' };
+    cell.border = { bottom: { style: 'thin', color: NAVY } };
+  });
+
+  // ── Voci ─────────────────────────────────────────────────────────────────────
+  let dataRowCount = 0;
   for (const item of (items || [])) {
-    rows.push([
-      item.tipo === 'categoria' ? 'CATEGORIA' : 'VOCE',
-      q(item.codice),
-      q(item.descrizione),
-      q(item.unita_misura),
-      n(item.quantita),
-      n(item.prezzo_ref),
-      n(item.prezzo_offerta),
-      n(item.importo_offerta),
-    ].join(';'));
+    if (item.tipo === 'categoria') {
+      const r = ws.addRow(['', item.codice || '', item.descrizione || '', '', '', '', '', '']);
+      r.height = 20;
+      r.eachCell({ includeEmpty: true }, cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: CAT_BG };
+        cell.font = { bold: true, size: 10, name: 'Calibri', color: { argb: 'FF1E3A5F' } };
+        cell.alignment = { vertical: 'middle' };
+      });
+      r.getCell(3).alignment = { vertical: 'middle', horizontal: 'left' };
+    } else {
+      dataRowCount++;
+      const even = dataRowCount % 2 === 0;
+      const r = ws.addRow([
+        '',
+        item.codice || '',
+        item.descrizione || '',
+        item.unita_misura || '',
+        fmtEur(item.quantita),
+        fmtEur(item.prezzo_ref),
+        fmtEur(item.prezzo_offerta),
+        fmtEur(item.importo_offerta),
+      ]);
+      r.height = 18;
+      r.eachCell({ includeEmpty: true }, (cell, col) => {
+        if (even) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: LIGHT };
+        cell.font = { size: 9.5, name: 'Calibri' };
+        cell.alignment = { vertical: 'middle', horizontal: col >= 5 ? 'right' : 'left' };
+        if (col >= 6) cell.numFmt = '#,##0.00 "€"';
+      });
+    }
   }
 
-  const csv      = '﻿' + rows.join('\r\n'); // BOM per Excel italiano
+  // ── Totale ────────────────────────────────────────────────────────────────────
+  ws.addRow([]).height = 4;
+  const totRow = ws.addRow(['', '', 'TOTALE OFFERTA', '', '', '', '', fmtEur(offer.totale_offerta)]);
+  totRow.height = 22;
+  totRow.eachCell({ includeEmpty: true }, (cell, col) => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: NAVY };
+    cell.font = { bold: true, color: WHITE, size: 10, name: 'Calibri' };
+    cell.alignment = { vertical: 'middle', horizontal: col >= 5 ? 'right' : 'left' };
+    if (col === 8) cell.numFmt = '#,##0.00 "€"';
+  });
+
   const safeName = (offer.nome || 'offerta').replace(/[^a-z0-9_-]/gi, '_').slice(0, 60);
   res.set({
-    'Content-Type':        'text/csv; charset=utf-8',
-    'Content-Disposition': `attachment; filename="Offerta_${safeName}.csv"`,
+    'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'Content-Disposition': `attachment; filename="Offerta_${safeName}.xlsx"`,
+    'Cache-Control':       'no-store',
   });
-  res.send(csv);
-});
+  await wb.xlsx.write(res);
+  res.end();
+}
 
 module.exports = router;

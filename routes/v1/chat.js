@@ -1079,69 +1079,143 @@ function buildReportHtml(report) {
 </html>`;
 }
 
-// ── Excel workbook ────────────────────────────────────────────────────────────
-function buildReportExcel(report) {
-  const wb  = XLSX.utils.book_new();
+// ── Excel workbook (ExcelJS — styled) ────────────────────────────────────────
+async function buildReportExcel(report) {
+  const ExcelJS = require('exceljs');
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Palladia';
+  wb.created = new Date();
+
+  const ws = wb.addWorksheet('Report');
+
   const now = new Date().toLocaleDateString('it-IT', {
-    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Rome'
+    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Rome',
   });
 
-  // Sheet principale
-  const aoa = [];
+  const NAVY   = { argb: 'FF1E3A5F' };
+  const ACCENT = { argb: 'FF334E7C' };
+  const WHITE  = { argb: 'FFFFFFFF' };
+  const LIGHT  = { argb: 'FFF8FAFC' };
+  const GRAY   = { argb: 'FF6B7280' };
+  const MERGE_COLS = 8; // merge orizzontale max colonne
 
-  // Intestazione
-  aoa.push([`PALLADIA — ${report.title || 'Report'}`]);
-  if (report.subtitle) aoa.push([report.subtitle]);
-  aoa.push([`Generato il ${now} da Pal · Assistente IA Palladia`]);
-  aoa.push([]);
+  // Calcola larghezze colonne in base al contenuto delle tabelle
+  const colWidths = Array(MERGE_COLS).fill(14);
+  colWidths[0] = 36;
 
-  // Sommario
-  if (report.summary) {
-    aoa.push(['SOMMARIO']);
-    aoa.push([report.summary]);
-    aoa.push([]);
+  function mergeRow(rowNum) {
+    try { ws.mergeCells(rowNum, 1, rowNum, MERGE_COLS); } catch {}
   }
 
-  // KPI
-  if (report.kpis && report.kpis.length) {
-    aoa.push(['KPI']);
-    aoa.push(['Valore', 'Indicatore']);
-    report.kpis.forEach(k => aoa.push([k.value, k.label]));
-    aoa.push([]);
+  function addBanner(text, size = 13) {
+    const r = ws.addRow([text]);
+    r.height = 28;
+    const c = r.getCell(1);
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: NAVY };
+    c.font = { bold: true, color: WHITE, size, name: 'Calibri' };
+    c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    mergeRow(r.number);
   }
 
-  // Sezioni
-  (report.sections || []).forEach(s => {
-    aoa.push([s.title || '']);
+  function addMeta(text, bg = 'FFE8EDF3', italic = false) {
+    const r = ws.addRow([text]);
+    r.height = 17;
+    const c = r.getCell(1);
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+    c.font = { size: 9.5, name: 'Calibri', italic, color: { argb: italic ? 'FF374151' : GRAY.argb } };
+    c.alignment = { vertical: 'middle', indent: 1, wrapText: false };
+    mergeRow(r.number);
+  }
 
-    if (s.text) {
-      aoa.push([s.text]);
-      aoa.push([]);
-    }
+  function addSection(text) {
+    const r = ws.addRow([text]);
+    r.height = 20;
+    const c = r.getCell(1);
+    c.fill = { type: 'pattern', pattern: 'solid', fgColor: ACCENT };
+    c.font = { bold: true, color: WHITE, size: 10, name: 'Calibri' };
+    c.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+    mergeRow(r.number);
+  }
 
-    if (s.table && s.table.headers && s.table.rows) {
-      aoa.push(s.table.headers);
-      s.table.rows.forEach(row => aoa.push(row));
-    }
-
-    aoa.push([]);
-  });
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // Larghezze colonne automatiche (stima max 50 caratteri per colonna)
-  const colWidths = [];
-  aoa.forEach(row => {
-    row.forEach((cell, ci) => {
-      const len = Math.min(String(cell ?? '').length + 2, 50);
-      colWidths[ci] = Math.max(colWidths[ci] || 10, len);
+  function addTableHeader(headers) {
+    const r = ws.addRow(headers);
+    r.height = 20;
+    headers.forEach((h, i) => {
+      const c = r.getCell(i + 1);
+      c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2D4A6B' } };
+      c.font = { bold: true, color: WHITE, size: 9.5, name: 'Calibri' };
+      c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+      c.border = { bottom: { style: 'thin', color: NAVY } };
+      colWidths[i] = Math.max(colWidths[i] || 12, Math.min(String(h).length + 4, 40));
     });
-  });
-  ws['!cols'] = colWidths.map(w => ({ wch: w }));
+  }
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Report');
+  function addDataRow(values, even) {
+    const r = ws.addRow(values);
+    r.height = 18;
+    values.forEach((v, i) => {
+      const c = r.getCell(i + 1);
+      if (even) c.fill = { type: 'pattern', pattern: 'solid', fgColor: LIGHT };
+      c.font = { size: 9.5, name: 'Calibri' };
+      c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+      colWidths[i] = Math.max(colWidths[i] || 12, Math.min(String(v ?? '').length + 4, 45));
+    });
+  }
 
-  return XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' });
+  function addParagraph(text) {
+    const r = ws.addRow([text]);
+    r.height = 18;
+    const c = r.getCell(1);
+    c.font = { size: 9.5, name: 'Calibri' };
+    c.alignment = { wrapText: true, vertical: 'top' };
+    mergeRow(r.number);
+  }
+
+  // ── Intestazione ─────────────────────────────────────────────────────────────
+  addBanner(`PALLADIA — ${report.title || 'Report'}`, 13);
+  if (report.subtitle) addMeta(report.subtitle, 'FFE8EDF3', true);
+  addMeta(`Generato il ${now} · Pal, Assistente IA Palladia`, 'FFE8EDF3');
+  ws.addRow([]).height = 6;
+
+  // ── Sommario ─────────────────────────────────────────────────────────────────
+  if (report.summary) {
+    addSection('SOMMARIO');
+    addParagraph(report.summary);
+    ws.addRow([]).height = 6;
+  }
+
+  // ── KPI ──────────────────────────────────────────────────────────────────────
+  if (report.kpis?.length) {
+    addSection('INDICATORI CHIAVE');
+    addTableHeader(['Valore', 'Indicatore']);
+    report.kpis.forEach((k, i) => {
+      const r = ws.addRow([k.value, k.label]);
+      r.height = 18;
+      if (i % 2 === 1) r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: LIGHT }; });
+      r.getCell(1).font = { bold: true, size: 10, name: 'Calibri' };
+      r.getCell(2).font = { size: 9.5, name: 'Calibri' };
+    });
+    ws.addRow([]).height = 6;
+  }
+
+  // ── Sezioni ───────────────────────────────────────────────────────────────────
+  for (const s of (report.sections || [])) {
+    if (s.title) addSection(s.title);
+    if (s.text) {
+      addParagraph(s.text);
+    }
+    if (s.table?.headers?.length && s.table?.rows?.length) {
+      if (!s.text) ws.addRow([]).height = 4;
+      addTableHeader(s.table.headers);
+      s.table.rows.forEach((row, i) => addDataRow(row, i % 2 === 1));
+    }
+    ws.addRow([]).height = 6;
+  }
+
+  // Applica larghezze calcolate
+  ws.columns = colWidths.slice(0, MERGE_COLS).map(w => ({ width: w }));
+
+  return wb.xlsx.writeBuffer();
 }
 
 // ── Chat history helpers ──────────────────────────────────────────────────────
@@ -1315,7 +1389,7 @@ router.post('/chat/export', verifySupabaseJwt, async (req, res) => {
     }
 
     // Excel
-    const buf = buildReportExcel(report);
+    const buf = await buildReportExcel(report);
     res.set({
       'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="palladia-report-${ts}.xlsx"`,
