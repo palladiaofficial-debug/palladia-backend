@@ -163,7 +163,18 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   if (contract_days !== undefined) updates.contract_days = contract_days ? Number(contract_days) : null;
   if (days_type     !== undefined) updates.days_type     = days_type === 'lavorativi' ? 'lavorativi' : 'solari';
 
-  if (referente_tecnico_id   !== undefined) updates.referente_tecnico_id   = referente_tecnico_id   || null;
+  if (referente_tecnico_id !== undefined) {
+    if (referente_tecnico_id) {
+      const { data: member } = await supabase
+        .from('company_users')
+        .select('user_id')
+        .eq('company_id', req.companyId)
+        .eq('user_id', referente_tecnico_id)
+        .maybeSingle();
+      if (!member) return res.status(400).json({ error: 'INVALID_REFERENTE', message: 'referente_tecnico_id non appartiene al team.' });
+    }
+    updates.referente_tecnico_id = referente_tecnico_id || null;
+  }
   if (referente_tecnico_name !== undefined) updates.referente_tecnico_name = referente_tecnico_name || null;
 
   if (suolo_occupazione       !== undefined) updates.suolo_occupazione       = Boolean(suolo_occupazione);
