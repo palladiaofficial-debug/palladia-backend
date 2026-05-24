@@ -34,7 +34,7 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
     supabase
       .from('presence_logs')
       .select(`
-        worker_id, event_type, timestamp_server,
+        worker_id, site_id, event_type, timestamp_server,
         worker:workers (full_name),
         site:sites (name)
       `)
@@ -55,7 +55,10 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
 
   if (sitesResult.error)   return res.status(500).json({ error: sitesResult.error.message });
   if (workersResult.error) return res.status(500).json({ error: workersResult.error.message });
-  // presenceResult e docsResult non bloccano: dashboard graceful degradation
+
+  if (presenceResult.error) {
+    console.error('[dashboard] presence query error:', presenceResult.error.message, presenceResult.error.details);
+  }
 
   const sites     = sitesResult.data  || [];
   const allLogs   = presenceResult.data || [];
@@ -76,6 +79,7 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
     .filter(p => p.event_type === 'ENTRY')
     .map(p => ({
       worker_id: p.worker_id,
+      site_id:   p.site_id,
       name:      p.worker?.full_name ?? '—',
       site:      p.site?.name        ?? '—',
       entrata:   new Date(p.timestamp_server).toLocaleTimeString('it-IT', {

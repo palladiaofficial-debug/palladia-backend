@@ -31,10 +31,13 @@ function daysRemaining(endDateStr) {
   return Math.ceil((end - now) / 86400000);
 }
 
-function todayUtcStart() {
-  const d = new Date();
-  d.setUTCHours(0, 0, 0, 0);
-  return d.toISOString();
+function todayRomeStart() {
+  // Mezzanotte Roma = UTC-2 (CEST) → andiamo 2h prima di UTC midnight per sicurezza.
+  // Il filtro preciso viene fatto in-memory sul campo timestamp_server.
+  const romeDate = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' }); // YYYY-MM-DD
+  const d = new Date(`${romeDate}T00:00:00Z`);
+  d.setUTCHours(d.getUTCHours() - 2);
+  return { utcFrom: d.toISOString(), romeDate };
 }
 
 function safetyLevel(openNc, hasActiveCse, totalWorkers) {
@@ -61,17 +64,17 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   if (!sites || sites.length === 0) return res.json([]);
 
   const siteIds = sites.map(s => s.id);
-  const today   = todayUtcStart();
+  const { utcFrom, romeDate } = todayRomeStart();
 
   // 2. Query batch parallele
   const [presRes, ncRes, cseRes, siteDocsRes, companyDocsRes, workersRes, suspRes] = await Promise.all([
-    // Timbrature di oggi (per live presences)
+    // Timbrature di oggi (per live presences) — range allargato di 2h, filtro preciso in-memory
     supabase
       .from('presence_logs')
       .select('site_id, worker_id, event_type, timestamp_server')
       .eq('company_id', companyId)
       .in('site_id', siteIds)
-      .gte('timestamp_server', today)
+      .gte('timestamp_server', utcFrom)
       .order('timestamp_server', { ascending: false }),
 
     // NC non chiuse
@@ -121,7 +124,11 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   ]);
 
   // 3. Indicizza i risultati per siteId
-  const presenceLogs   = presRes.data   || [];
+  // Filtra precisamente per il giorno Roma (gestisce CET/CEST)
+  const presenceLogs   = (presRes.data || []).filter(log => {
+    const d = new Date(log.timestamp_server).toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
+    return d === romeDate;
+  });
   const allNc          = ncRes.data     || [];
   const cseInvites     = cseRes.data    || [];
   const siteDocs       = siteDocsRes.data || [];

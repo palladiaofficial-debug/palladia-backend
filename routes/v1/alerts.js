@@ -78,6 +78,12 @@ router.post('/alerts/check-missing-exits', verifySupabaseJwt, apiLimiter, async 
 // Un lavoratore è "missing exit" solo se il suo ULTIMO evento del giorno (su
 // qualsiasi cantiere) è un ENTRY.
 async function findMissingExits(companyId, siteId, date) {
+  // Range allargato di 2h per coprire CET/CEST; filtro preciso in-memory
+  const fromUtc = new Date(`${date}T00:00:00Z`);
+  fromUtc.setUTCHours(fromUtc.getUTCHours() - 2);
+  const toUtc = new Date(`${date}T23:59:59Z`);
+  toUtc.setUTCHours(toUtc.getUTCHours() + 2);
+
   let query = supabase
     .from('presence_logs')
     .select(`
@@ -85,15 +91,21 @@ async function findMissingExits(companyId, siteId, date) {
       worker:workers (id, full_name, fiscal_code)
     `)
     .eq('company_id', companyId)
-    .gte('timestamp_server', `${date}T00:00:00.000Z`)
-    .lte('timestamp_server', `${date}T23:59:59.999Z`)
+    .gte('timestamp_server', fromUtc.toISOString())
+    .lte('timestamp_server', toUtc.toISOString())
     .order('timestamp_server', { ascending: true })
     .limit(10000);
 
   if (siteId) query = query.eq('site_id', siteId);
 
-  const { data: logs, error } = await query;
+  const { data: rawLogs, error } = await query;
   if (error) return { error: error.message };
+
+  // Filtra precisamente per giorno Roma
+  const logs = (rawLogs || []).filter(log => {
+    const d = new Date(log.timestamp_server).toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
+    return d === date;
+  });
 
   // Ultimo evento PER LAVORATORE (globale, non per cantiere)
   const lastByWorker = new Map();
