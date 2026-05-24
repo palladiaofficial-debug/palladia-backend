@@ -282,7 +282,9 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     return res.status(403).json({ error: 'COMPANY_MISMATCH' });
   }
 
-  // Verifica che il lavoratore sia assegnato al cantiere
+  // Verifica o auto-crea associazione worker ↔ cantiere
+  // Coerente con il flusso QR scan (identify auto-assegna).
+  // Blocca solo se l'associazione esiste ma è esplicitamente inactive.
   const { data: assoc } = await supabase
     .from('worksite_workers')
     .select('status')
@@ -290,8 +292,17 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     .eq('worker_id', worker.id)
     .maybeSingle();
 
-  if (!assoc || assoc.status !== 'active') {
+  if (assoc && assoc.status !== 'active') {
     return res.status(403).json({ error: 'WORKER_NOT_AUTHORIZED_ON_SITE' });
+  }
+  if (!assoc) {
+    const { error: assocErr } = await supabase
+      .from('worksite_workers')
+      .insert([{ company_id: worker.company_id, site_id, worker_id: worker.id, status: 'active' }]);
+    if (assocErr && assocErr.code !== '23505') {
+      console.error('[badge-punch] auto-assoc error:', assocErr.message);
+      return res.status(500).json({ error: 'DB_ERROR' });
+    }
   }
 
   // Geofence check
@@ -481,7 +492,7 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
   if (siteErr) return res.status(500).json({ error: 'DB_ERROR' });
   if (!site)   return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
 
-  // Verifica assegnazione lavoratore al cantiere
+  // Verifica o auto-crea associazione lavoratore ↔ cantiere
   const { data: assoc } = await supabase
     .from('worksite_workers')
     .select('status')
@@ -489,8 +500,17 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
     .eq('worker_id', worker.id)
     .maybeSingle();
 
-  if (!assoc || assoc.status !== 'active') {
+  if (assoc && assoc.status !== 'active') {
     return res.status(403).json({ error: 'WORKER_NOT_AUTHORIZED_ON_SITE' });
+  }
+  if (!assoc) {
+    const { error: assocErr } = await supabase
+      .from('worksite_workers')
+      .insert([{ company_id: req.companyId, site_id, worker_id: worker.id, status: 'active' }]);
+    if (assocErr && assocErr.code !== '23505') {
+      console.error('[capocantiere-punch] auto-assoc error:', assocErr.message);
+      return res.status(500).json({ error: 'DB_ERROR' });
+    }
   }
 
   // Distanza GPS (solo per log — il capocantiere si muove, non blocchiamo)
