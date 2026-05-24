@@ -80,7 +80,10 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
 
   const [wNamesRes, sNamesRes] = await Promise.all([
     presentWorkerIds.length > 0
-      ? supabase.from('workers').select('id, full_name').in('id', presentWorkerIds).eq('company_id', req.companyId)
+      ? supabase.from('workers').select('id, full_name')
+          .in('id', presentWorkerIds)
+          .eq('company_id', req.companyId)
+          .eq('is_active', true)   // escludi lavoratori eliminati/disattivati
       : { data: [] },
     presentSiteIds.length > 0
       ? supabase.from('sites').select('id, name').in('id', presentSiteIds).eq('company_id', req.companyId)
@@ -92,7 +95,8 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
   const siteNameMap = {};
   for (const s of (sNamesRes.data || [])) siteNameMap[s.id] = s.name;
 
-  const presentNow = presentEntries.map(p => ({
+  // Filtra via i lavoratori eliminati (non presenti nel workerNameMap dopo is_active=true)
+  const presentNow = presentEntries.filter(p => workerNameMap[p.worker_id]).map(p => ({
     worker_id: p.worker_id,
     site_id:   p.site_id,
     name:      workerNameMap[p.worker_id] ?? '—',
