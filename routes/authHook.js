@@ -1,16 +1,19 @@
 'use strict';
 /**
- * routes/authHook.js
- * Supabase "Send Email" Auth Hook — Standard Webhooks v1,whsec_<base64>
+ * routes/authHook.js — Supabase "Send Email" Auth Hook
  *
- * Montato con express.raw() PRIMA di express.json() per preservare il raw body
- * necessario alla verifica HMAC-SHA256.
+ * Standard Webhooks spec (https://www.standardwebhooks.com/):
+ *   webhook-id:        <message-id>
+ *   webhook-timestamp: <unix-seconds>
+ *   webhook-signature: v1,<base64-hmac-sha256>
  *
- * Configurazione Supabase Dashboard:
- *   Authentication → Hooks → Send Email Hook → HTTPS
+ * HMAC input: "<webhook-id>.<webhook-timestamp>.<raw-body>"
+ * Key:        base64-decode(whsec_part) da SUPABASE_HOOK_SECRET=v1,whsec_<base64>
+ *
+ * Supabase Dashboard:
+ *   Authentication → Hooks → Send Email → HTTPS
  *   URL:    https://palladia-backend-production.up.railway.app/api/auth/hook/send-email
- *   Secret: clicca "Generate secret" → copia il valore → incollalo anche su Railway
- *           come SUPABASE_HOOK_SECRET (stesso identico valore, es. v1,whsec_xxx...)
+ *   Secret: copiare da "Generate secret" → stesso valore in Railway SUPABASE_HOOK_SECRET
  */
 
 const crypto = require('crypto');
@@ -22,65 +25,77 @@ const {
 } = require('../services/email');
 
 const SUPABASE_URL = (process.env.SUPABASE_URL || '').replace(/\/$/, '');
-const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 const HOOK_SECRET  = process.env.SUPABASE_HOOK_SECRET || '';
 
-// ── Verifica firma Standard Webhooks ─────────────────────────────────────────
-// Supabase firma il raw body con HMAC-SHA256 usando la chiave decodificata da
-// v1,whsec_<base64>. La firma è nell'header Authorization come "Bearer v1=<hex>".
-function verifySignature(rawBody, authHeader, secret) {
-  if (!secret) return true; // nessun segreto configurato → skip (solo dev)
-
-  // Estrai la chiave raw dalla stringa v1,whsec_<base64>
-  const whsecMatch = secret.match(/^v1,whsec_(.+)$/);
-  if (!whsecMatch) {
-    console.warn('[auth-hook] SUPABASE_HOOK_SECRET non nel formato v1,whsec_<base64> — skip verifica');
+// ── Standard Webhooks verification ───────────────────────────────────────────
+function verifyStandardWebhook(rawBody, headers, secret) {
+  if (!secret) {
+    console.warn('[auth-hook] SUPABASE_HOOK_SECRET non configurato — verifica saltata');
     return true;
   }
-  const keyBytes = Buffer.from(whsecMatch[1], 'base64');
 
-  // Estrai la firma ricevuta dall'header: "Bearer v1=<hex>"
-  const sigMatch = (authHeader || '').match(/Bearer\s+v1=([0-9a-f]+)/i);
-  if (!sigMatch) {
-    console.warn('[auth-hook] Authorization header assente o non nel formato Bearer v1=<hex>');
-    return false;
-  }
-  const receivedHex = sigMatch[1];
+  const msgId        = headers['webhook-id'];
+  const msgTimestamp = headers['webhook-timestamp'];
+  const msgSig       = headers['webhook-signature'];
 
-  let computedHex;
-  try {
-    computedHex = crypto.createHmac('sha256', keyBytes)
-      .update(rawBody)
-      .digest('hex');
-  } catch (e) {
-    console.error('[auth-hook] errore HMAC:', e.message);
+  if (!msgId || !msgTimestamp || !msgSig) {
+    console.warn('[auth-hook] header Standard Webhooks mancanti', { msgId: !!msgId, msgTimestamp: !!msgTimestamp, msgSig: !!msgSig });
+    // Log tutti gli header ricevuti per debug
+    console.warn('[auth-hook] header ricevuti:', JSON.stringify(Object.keys(headers)));
     return false;
   }
 
-  // timing-safe compare
-  const a = Buffer.from(computedHex, 'hex');
-  const b = Buffer.from(receivedHex.padEnd(computedHex.length, '0'), 'hex');
-  if (a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
+  // Anti-replay: rifiuta messaggi più vecchi di 5 minuti
+  const ts  = parseInt(msgTimestamp, 10);
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - ts) > 300) {
+    console.warn('[auth-hook] timestamp fuori finestra (replay attack?):', ts, 'now:', now);
+    return false;
+  }
+
+  // Estrai chiave raw da v1,whsec_<base64>
+  const match = secret.match(/^v1,whsec_(.+)$/);
+  if (!match) {
+    console.warn('[auth-hook] SUPABASE_HOOK_SECRET non nel formato v1,whsec_<base64>');
+    return false;
+  }
+  const keyBytes = Buffer.from(match[1], 'base64');
+
+  // HMAC input: "<id>.<timestamp>.<raw-body>"
+  const toSign  = `${msgId}.${msgTimestamp}.${rawBody.toString('utf8')}`;
+  const computed = crypto.createHmac('sha256', keyBytes).update(toSign).digest('base64');
+
+  // webhook-signature può contenere più firme separate da spazio: "v1,sig1 v1,sig2"
+  const receivedSigs = msgSig.split(' ').map(s => s.replace(/^v1,/, ''));
+  const match2 = receivedSigs.some(sig => {
+    try {
+      const a = Buffer.from(computed, 'base64');
+      const b = Buffer.from(sig, 'base64');
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    } catch { return false; }
+  });
+
+  if (!match2) {
+    console.warn('[auth-hook] firma non valida. computed:', computed, 'received:', receivedSigs);
+  }
+  return match2;
 }
 
-// ── Costruisce URL di verifica Supabase ───────────────────────────────────────
+// ── URL di verifica Supabase ──────────────────────────────────────────────────
 function buildVerifyUrl(tokenHash, type, redirectTo) {
   const dest = redirectTo || `${FRONTEND_URL}/login`;
   return `${SUPABASE_URL}/auth/v1/verify?token=${tokenHash}&type=${type}&redirect_to=${encodeURIComponent(dest)}`;
 }
 
-// ── Handler (esportato direttamente — express.raw() è già applicato in server.js) ──
+// ── Handler principale ────────────────────────────────────────────────────────
 module.exports = async function authHookHandler(req, res) {
-  const rawBody = req.body; // Buffer (grazie a express.raw)
+  const rawBody = req.body; // Buffer (express.raw applicato in server.js)
 
-  // Verifica firma
-  if (!verifySignature(rawBody, req.headers['authorization'], HOOK_SECRET)) {
-    console.warn('[auth-hook] firma non valida — IP:', req.ip);
+  if (!verifyStandardWebhook(rawBody, req.headers, HOOK_SECRET)) {
     return res.status(401).json({ error: 'UNAUTHORIZED' });
   }
 
-  // Parsa il body JSON manualmente (raw body = Buffer)
   let payload;
   try {
     payload = JSON.parse(rawBody.toString('utf8'));
@@ -90,7 +105,7 @@ module.exports = async function authHookHandler(req, res) {
 
   const { user, email_data } = payload || {};
   if (!user?.email || !email_data?.email_action_type) {
-    console.error('[auth-hook] payload malformato:', JSON.stringify(payload).slice(0, 200));
+    console.error('[auth-hook] payload malformato:', JSON.stringify(payload).slice(0, 300));
     return res.status(400).json({ error: 'INVALID_PAYLOAD' });
   }
 
@@ -98,7 +113,7 @@ module.exports = async function authHookHandler(req, res) {
   const to   = user.email;
   const name = user.user_metadata?.full_name || user.user_metadata?.name || null;
 
-  console.log(`[auth-hook] type=${email_action_type} to=${to}`);
+  console.log(`[auth-hook] ✓ type=${email_action_type} to=${to}`);
 
   try {
     switch (email_action_type) {
@@ -129,7 +144,6 @@ module.exports = async function authHookHandler(req, res) {
       }
 
       case 'invite':
-        // Palladia usa il proprio sistema inviti — ignora silenziosamente
         console.log('[auth-hook] invite ignorato (Palladia usa inviti custom)');
         break;
 
