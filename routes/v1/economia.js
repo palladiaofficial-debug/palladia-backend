@@ -231,6 +231,126 @@ router.delete('/sites/:siteId/economia/voci/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /api/v1/sites/:siteId/economia/pnl ───────────────────────────────────
+// P&L completo per cantiere: contratto, costo MO auto, costi diretti, margine.
+
+router.get('/sites/:siteId/economia/pnl', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  // Fetch parallelo: computo + timbrature + costi + lavoratori
+  const [computoRes, logsRes, costsRes, workersRes] = await Promise.all([
+    supabase.from('site_computo')
+      .select('id, totale_contratto')
+      .eq('site_id', siteId).eq('company_id', companyId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('presence_logs')
+      .select('worker_id, event_type, timestamp_server')
+      .eq('site_id', siteId).eq('company_id', companyId)
+      .order('worker_id').order('timestamp_server'),
+    supabase.from('site_costs')
+      .select('importo, tipo, categoria')
+      .eq('site_id', siteId).eq('company_id', companyId),
+    supabase.from('workers')
+      .select('id, full_name, tariffa_oraria')
+      .eq('company_id', companyId),
+  ]);
+
+  // 1. Contratto (da ComputoTab → fallback su budget manuale)
+  let totale_contratto = null, importo_maturato = null, sal_percentuale = 0;
+
+  if (computoRes.data?.id) {
+    totale_contratto = computoRes.data.totale_contratto
+      ? Number(computoRes.data.totale_contratto) : null;
+
+    const { data: voci } = await supabase
+      .from('site_computo_voci')
+      .select('importo, sal_percentuale')
+      .eq('computo_id', computoRes.data.id).eq('tipo', 'voce');
+
+    const allVoci = voci || [];
+    const sumImporti = allVoci.reduce((s, v) => s + Number(v.importo || 0), 0);
+    const maturato   = allVoci.reduce((s, v) =>
+      s + Number(v.importo || 0) * Number(v.sal_percentuale || 0) / 100, 0);
+    importo_maturato = Math.round(maturato * 100) / 100;
+    sal_percentuale  = sumImporti > 0
+      ? Math.round((maturato / sumImporti) * 1000) / 10 : 0;
+
+  } else if (site.budget_totale !== null) {
+    totale_contratto = Number(site.budget_totale);
+    sal_percentuale  = Number(site.sal_percentuale) || 0;
+    importo_maturato = Math.round(totale_contratto * sal_percentuale / 100 * 100) / 100;
+  }
+
+  // 2. Costo manodopera: accoppia ENTRY/EXIT per lavoratore
+  const workerMap = {};
+  for (const w of (workersRes.data || [])) workerMap[w.id] = w;
+
+  const sessions = {};
+  for (const log of (logsRes.data || [])) {
+    const wid = log.worker_id;
+    if (!sessions[wid]) sessions[wid] = { pending: null, hours: 0 };
+    const s = sessions[wid];
+    if (log.event_type === 'ENTRY') {
+      s.pending = new Date(log.timestamp_server).getTime();
+    } else if (log.event_type === 'EXIT' && s.pending) {
+      const h = (new Date(log.timestamp_server).getTime() - s.pending) / 3600000;
+      s.hours += Math.max(0, Math.min(h, 24)); // cap 24h per sessione (anti-anomalie)
+      s.pending = null;
+    }
+  }
+
+  let totale_mo = 0, workers_no_tariffa = 0;
+  const mo_breakdown = [];
+  for (const [wid, s] of Object.entries(sessions)) {
+    if (s.hours < 0.01) continue;
+    const w = workerMap[wid];
+    if (!w) continue;
+    const t = parseFloat(w.tariffa_oraria) || 0;
+    if (!t) workers_no_tariffa++;
+    const costo = Math.round(s.hours * t * 100) / 100;
+    totale_mo += costo;
+    mo_breakdown.push({
+      worker_id:      wid,
+      full_name:      w.full_name,
+      ore_totali:     Math.round(s.hours * 100) / 100,
+      tariffa_oraria: t,
+      costo_totale:   costo,
+    });
+  }
+  mo_breakdown.sort((a, b) => b.ore_totali - a.ore_totali);
+  totale_mo = Math.round(totale_mo * 100) / 100;
+
+  // 3. Costi diretti (da site_costs)
+  const costs = costsRes.data || [];
+  const totale_diretti = Math.round(
+    costs.reduce((s, c) => s + Number(c.importo || 0), 0) * 100) / 100;
+  const per_tipo = {}, per_categoria = {};
+  for (const c of costs) {
+    per_tipo[c.tipo] = (per_tipo[c.tipo] || 0) + Number(c.importo);
+    const cat = c.categoria || 'Altro';
+    per_categoria[cat] = (per_categoria[cat] || 0) + Number(c.importo);
+  }
+
+  // 4. P&L
+  const totale_costi = Math.round((totale_mo + totale_diretti) * 100) / 100;
+  const margine      = importo_maturato !== null
+    ? Math.round((importo_maturato - totale_costi) * 100) / 100 : null;
+  const margine_pct  = margine !== null && importo_maturato > 0
+    ? Math.round((margine / importo_maturato) * 1000) / 10 : null;
+
+  res.json({
+    contratto: { totale_contratto, importo_maturato, sal_percentuale },
+    costo_mo:  { totale: totale_mo, breakdown: mo_breakdown, workers_no_tariffa },
+    costi_diretti: { totale: totale_diretti, per_tipo, per_categoria },
+    margine:   { valore: margine, percentuale: margine_pct },
+    totale_costi,
+  });
+});
+
 // ── GET /api/v1/sites/:siteId/economia/sal-pdf ───────────────────────────────
 // Genera il PDF del SAL da scaricare e inviare al committente.
 

@@ -50,7 +50,8 @@ function isValidDate(val) {
 const WORKER_SELECT =
   'id, full_name, fiscal_code, is_active, created_at, badge_code, ' +
   'photo_url, hire_date, birth_date, qualification, role, employer_name, ' +
-  'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place';
+  'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place, ' +
+  'tariffa_oraria';
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, async (req, res) => {
@@ -408,7 +409,7 @@ router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
   const { workerId } = req.params;
 
   const ALLOWED = [
-    'full_name', 'is_active',
+    'full_name', 'is_active', 'tariffa_oraria',
     ...BADGE_FIELDS,
   ];
 
@@ -428,6 +429,13 @@ router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
     }
     // Converti stringa vuota in null
     if (updates[f] === '') updates[f] = null;
+  }
+
+  // Validazione tariffa oraria
+  if (updates.tariffa_oraria !== undefined) {
+    const t = parseFloat(updates.tariffa_oraria);
+    if (isNaN(t) || t < 0) return res.status(400).json({ error: 'tariffa_oraria deve essere >= 0' });
+    updates.tariffa_oraria = t;
   }
 
   // Normalizza stringhe testuali

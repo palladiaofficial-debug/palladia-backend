@@ -126,6 +126,7 @@ router.post('/sites/:siteId/costs',
       tipo:               body.tipo || 'fattura',
       numero_documento:   body.numero_documento?.trim() || null,
       file_url,
+      categoria:          body.categoria?.trim() || null,
       note:               body.note?.trim() || null,
       created_by:         `web:${req.user.id}`,
     }).select().single();
@@ -143,7 +144,7 @@ router.patch('/sites/:siteId/costs/:costId', verifySupabaseJwt, async (req, res)
 
   const allowed = ['descrizione', 'fornitore', 'quantita', 'unita_misura', 'prezzo_unitario',
                    'importo', 'data_documento', 'tipo', 'numero_documento', 'phase_id',
-                   'capitolato_voce_id', 'note'];
+                   'capitolato_voce_id', 'categoria', 'note'];
   const updates = {};
   for (const k of allowed) {
     if (k in req.body) updates[k] = req.body[k] || null;
