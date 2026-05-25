@@ -145,7 +145,7 @@ router.patch('/sites/:siteId/costs/:costId', verifySupabaseJwt, async (req, res)
   const allowed = ['descrizione', 'fornitore', 'quantita', 'unita_misura', 'prezzo_unitario',
                    'importo', 'data_documento', 'tipo', 'numero_documento', 'phase_id',
                    'capitolato_voce_id', 'categoria', 'note'];
-  const numeric = new Set(['quantita', 'unita_misura', 'prezzo_unitario', 'importo']);
+  const numeric = new Set(['quantita', 'prezzo_unitario', 'importo']);
   const updates = {};
   for (const k of allowed) {
     if (!(k in req.body)) continue;
