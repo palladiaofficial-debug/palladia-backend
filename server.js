@@ -163,6 +163,13 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id', 'X-Hint-Company-Id']
 }));
+// ── Supabase Auth Hook — DEVE stare prima di express.json() ─────────────────
+// La verifica HMAC-SHA256 richiede il raw body (Standard Webhooks v1,whsec_...)
+app.post('/api/auth/hook/send-email',
+  require('express').raw({ type: 'application/json' }),
+  require('./routes/authHook')
+);
+
 // ── Stripe Webhook — DEVE stare prima di express.json() ────────────────────
 // Stripe invia il body come raw bytes; la verifica firma richiede il raw body.
 app.post('/api/webhooks/stripe',
@@ -364,10 +371,6 @@ app.use(compression({
 
 // ── Telegram Bot Webhook ─────────────────────────────────────────────────────
 app.use('/api/telegram', require('./routes/telegram'));
-
-// ── Supabase Auth Hook — email branded Palladia ──────────────────────────────
-// Intercetta signup / recovery / magiclink / email_change e invia via Resend.
-app.use('/api', require('./routes/authHook'));
 
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
