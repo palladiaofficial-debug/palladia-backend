@@ -2002,6 +2002,103 @@ async function sendWeeklyExpiryReport({ to, companyName, critical, warning }) {
   });
 }
 
+// ─── Email: Conferma account (Auth Hook Supabase) ─────────────────────────────
+
+/**
+ * Inviata dal Supabase Auth Hook invece della conferma email di default.
+ * @param {{ to: string, confirmUrl: string, name?: string }} opts
+ */
+async function sendConfirmEmail({ to, confirmUrl, name }) {
+  const firstName = name ? name.split(' ')[0] : null;
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">
+      ${firstName ? `Ciao ${firstName},` : 'Benvenuto su Palladia.'}
+    </p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Clicca il pulsante qui sotto per confermare il tuo indirizzo email e attivare l'account.
+      Il link è valido per <strong style="color:#1a1a1a;">24 ore</strong>.
+    </p>
+
+    ${btn('Conferma il tuo account →', confirmUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Se non hai creato un account su Palladia, ignora questa email in tutta sicurezza.
+      Nessuna azione è richiesta da parte tua.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: 'Conferma il tuo account Palladia',
+    html: layout('Conferma account', body),
+  });
+}
+
+// ─── Email: Reset password via Auth Hook ──────────────────────────────────────
+
+/**
+ * Sovrascrive la funzione di reset esistente (ora usata anche dall'Auth Hook).
+ * Già definita sopra come sendPasswordResetEmail — alias per chiarezza nel hook.
+ */
+
+// ─── Email: Magic link login (Auth Hook Supabase) ─────────────────────────────
+
+/**
+ * @param {{ to: string, magicUrl: string }} opts
+ */
+async function sendMagicLinkEmail({ to, magicUrl }) {
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Accedi a Palladia</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Hai richiesto un link di accesso rapido. Clicca il pulsante qui sotto per entrare nella dashboard.
+      Il link è valido per <strong style="color:#1a1a1a;">60 minuti</strong> e può essere usato una sola volta.
+    </p>
+
+    ${btn('Accedi a Palladia →', magicUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Se non hai richiesto questo link, ignora questa email. Il tuo account è al sicuro.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: 'Il tuo link di accesso a Palladia',
+    html: layout('Accesso rapido', body),
+  });
+}
+
+// ─── Email: Cambio email (Auth Hook Supabase) ─────────────────────────────────
+
+/**
+ * @param {{ to: string, changeUrl: string }} opts
+ */
+async function sendEmailChangeEmail({ to, changeUrl }) {
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Conferma cambio email</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Hai richiesto di cambiare l'indirizzo email del tuo account Palladia.
+      Clicca il pulsante qui sotto per confermare il nuovo indirizzo.
+    </p>
+
+    ${btn('Conferma il nuovo indirizzo →', changeUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Se non hai richiesto il cambio email, contatta immediatamente il supporto Palladia.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: 'Conferma cambio email — Palladia',
+    html: layout('Cambio indirizzo email', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
@@ -2042,4 +2139,7 @@ module.exports = {
   sendDocumentUploadedEmail,
   sendCseNotificationEmail,
   sendWeeklyExpiryReport,
+  sendConfirmEmail,
+  sendMagicLinkEmail,
+  sendEmailChangeEmail,
 };

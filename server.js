@@ -365,6 +365,10 @@ app.use(compression({
 // ── Telegram Bot Webhook ─────────────────────────────────────────────────────
 app.use('/api/telegram', require('./routes/telegram'));
 
+// ── Supabase Auth Hook — email branded Palladia ──────────────────────────────
+// Intercetta signup / recovery / magiclink / email_change e invia via Resend.
+app.use('/api', require('./routes/authHook'));
+
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 
