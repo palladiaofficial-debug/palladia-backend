@@ -165,9 +165,26 @@ app.use(cors({
 // ── Supabase Auth Hook — DEVE stare prima di express.json() ─────────────────
 // La verifica HMAC-SHA256 richiede il raw body (Standard Webhooks v1,whsec_...)
 app.post('/api/auth/hook/send-email',
-  require('express').raw({ type: 'application/json' }),
+  require('express').raw({ type: '*/*' }), // accetta qualsiasi content-type Supabase manda
   require('./routes/authHook')
 );
+
+// Diagnostico hook — GET pubblico, mostra solo presenza/assenza delle env vars
+app.get('/api/auth/hook/diag', (req, res) => {
+  const secret = process.env.SUPABASE_HOOK_SECRET || '';
+  res.json({
+    env: {
+      SUPABASE_URL:         process.env.SUPABASE_URL         ? '✓' : '✗ MANCANTE',
+      SUPABASE_HOOK_SECRET: secret
+        ? (secret.startsWith('v1,whsec_') ? '✓ formato corretto' : '✗ formato sbagliato (serve v1,whsec_...)')
+        : '✗ MANCANTE',
+      RESEND_API_KEY:       process.env.RESEND_API_KEY       ? '✓' : '✗ MANCANTE',
+      RESEND_FROM:          process.env.RESEND_FROM          ? `✓ ${process.env.RESEND_FROM}` : '✗ MANCANTE (fallback: onboarding@resend.dev)',
+      FRONTEND_URL:         process.env.FRONTEND_URL         ? `✓ ${process.env.FRONTEND_URL}` : '✗ MANCANTE',
+    },
+    hook_url: 'https://palladia-backend-production.up.railway.app/api/auth/hook/send-email',
+  });
+});
 
 // ── Stripe Webhook — DEVE stare prima di express.json() ────────────────────
 // Stripe invia il body come raw bytes; la verifica firma richiede il raw body.
