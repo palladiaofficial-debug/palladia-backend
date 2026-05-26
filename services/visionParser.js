@@ -10,7 +10,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const { extractPdfText } = require('../lib/pdfExtract');
 
-const MODEL         = 'claude-haiku-4-5-20251001';
+const MODEL         = 'claude-sonnet-4-6';
 const MAX_PDF_BYTES = 30 * 1024 * 1024;
 
 // ─── Normalizzazione ──────────────────────────────────────────────────────────
@@ -81,20 +81,20 @@ function parseJsonSafe(raw) {
 }
 
 // ─── System prompt — lettura visiva PDF ───────────────────────────────────────
-const VISION_SYSTEM = `Sei un esperto di offerte economiche, computi metrici e capitolati d'appalto italiani.
-Il tuo unico compito è estrarre TUTTE le voci di lavorazione da questo documento.
+const VISION_SYSTEM = `Sei un esperto di offerte economiche, computi metrici estimativi (CME) e capitolati speciali d'appalto italiani (edilizia civile, industriale, infrastrutture).
+Il tuo unico compito è estrarre TUTTE le voci di lavorazione da questo documento con la massima precisione.
 
 Il documento può avere QUALSIASI formato:
-- Tabella con colonne (descrizione | UM | quantità | prezzo | importo)
-- Testo narrativo con voci numerate o con punti elenco
-- Descrizioni lunghe su più righe con prezzo in fondo
-- Prezzi all'inizio, nel mezzo o alla fine di ogni voce
-- Prezzi raccolti tutti in fondo al documento in un riepilogo
-- Formato prezzario (solo descrizione + UM + prezzo unitario, senza quantità)
-- Tabelle in colonne non allineate, dati sparsi sulla pagina
+- Tabella strutturata con colonne (Codice | Descrizione | U.M. | Quantità | Prezzo unitario | Importo)
+- Testo narrativo con voci numerate (es. "A.1", "1.1", "Art. 1") o con punti elenco
+- Descrizioni lunghe su più righe con quantità e prezzo in fondo o a lato
+- Prezzi raccolti in un riepilogo finale separato dalle descrizioni
+- Formato prezzario/listino (solo descrizione + UM + prezzo unitario, senza quantità)
+- Tabelle multi-colonna con celle unite, dati su più righe per voce
 - Mix di tabelle e testo libero nello stesso documento
+- Formato Primus, Comprix, o altri software italiani di computo metrico
 
-PER OGNI VOCE restituisci un oggetto JSON con questi campi esatti:
+PER OGNI ELEMENTO restituisci:
 {
   "tipo": "categoria" | "voce",
   "codice": string | null,
@@ -105,16 +105,22 @@ PER OGNI VOCE restituisci un oggetto JSON con questi campi esatti:
   "importo": number | null
 }
 
-REGOLE ASSOLUTE:
-1. Includi TUTTE le voci, anche quelle senza prezzo o senza quantità
-2. Converti i numeri dal formato italiano: "1.234,56" → 1234.56 | "42,50" → 42.50
-3. NON inventare valori numerici — metti null se non è scritto esplicitamente nel documento
+REGOLE CRITICHE:
+1. Includi TUTTE le voci, anche quelle senza prezzo o senza quantità (lascia null)
+2. CONVERSIONE NUMERI ITALIANI (obbligatoria):
+   - "1.234,56" → 1234.56 (punto = separatore migliaia, virgola = decimale)
+   - "42,50" → 42.50
+   - "1.500" → 1500 (se non seguito da virgola+decimali)
+   - "€ 1.234,56" → 1234.56 (ignora il simbolo €)
+3. NON inventare valori — usa null se il dato non è esplicitamente presente nel testo
 4. Mantieni l'ordine esatto del documento
-5. Se ci sono categorie o capitoli, inseriscili come tipo:"categoria" prima delle voci relative
-6. Per voci con prezzi in fondo al documento, collegali alle descrizioni corrispondenti
-7. IGNORA: intestazioni, numeri di pagina, totali generali, note legali, firme, data, bolli
+5. Categorie: inseriscile come tipo:"categoria" immediatamente prima delle voci che le compongono
+6. Per voci con formula di calcolo (es. "c.ca 50 mq × 35,00 €/mq = 1.750,00 €"):
+   - unita_misura: "mq", quantita: 50, prezzo_unitario: 35.00, importo: 1750.00
+7. Per voci "a corpo" o "compenso fisso": unita_misura: "corpo", quantita: null, prezzo_unitario: l'importo
+8. Ignora: intestazioni pagina, numeri di pagina, totali di sezione/capitolo, note legali, firme, data, timbri, articoli normativi senza prezzo
 
-Restituisci SOLO l'array JSON. Zero testo aggiuntivo, zero markdown.`;
+Restituisci SOLO l'array JSON grezzo. Zero testo aggiuntivo, zero markdown, zero commenti.`;
 
 // ─── Parse via documento nativo (percorso principale) ────────────────────────
 async function parseWithVision(buffer) {
@@ -151,10 +157,10 @@ async function parseWithVision(buffer) {
 }
 
 // ─── System prompt — text fallback ───────────────────────────────────────────
-const TEXT_SYSTEM = `Sei un esperto di offerte economiche e computi metrici italiani.
-Estrai TUTTE le voci di lavorazione dal testo seguente (estratto da PDF, potrebbe essere imperfetto).
+const TEXT_SYSTEM = `Sei un esperto di computi metrici estimativi (CME), capitolati speciali d'appalto e offerte economiche italiani.
+Analizza il testo estratto da un PDF (potrebbe contenere artefatti di estrazione) ed estrai TUTTE le voci di lavorazione.
 
-PER OGNI VOCE restituisci:
+PER OGNI ELEMENTO restituisci:
 {
   "tipo": "categoria" | "voce",
   "codice": string | null,
@@ -165,9 +171,13 @@ PER OGNI VOCE restituisci:
   "importo": number | null
 }
 
-Converti numeri italiani: "1.234,56" → 1234.56
-Includi TUTTE le voci anche senza prezzo. NON inventare numeri.
-Restituisci SOLO l'array JSON.`;
+REGOLE:
+- Numeri italiani: "1.234,56" → 1234.56 | "42,50" → 42.50 | "€ 85" → 85
+- Includi TUTTE le voci anche senza prezzo (metti null, non inventare)
+- Per voci con formula: estrai UM, quantita, prezzo_unitario, importo
+- Categorie = intestazioni di capitolo o sezione: tipo:"categoria"
+- Ignora: totali di sezione, numeri di pagina, note legali, articoli senza prezzo
+Restituisci SOLO l'array JSON grezzo.`;
 
 async function parseTextChunk(text, client, idx, total) {
   console.log(`[visionParser/text] chunk ${idx}/${total} (${text.length} char)`);

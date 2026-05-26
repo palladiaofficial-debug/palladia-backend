@@ -21,16 +21,18 @@ async function extractTextFromPDF(buffer) {
   return extractPdfText(buffer, { maxPages: 80 });
 }
 
-const PARSE_SYSTEM = `Sei un esperto di capitolati speciali d'appalto italiani (edilizia civile e industriale).
-Il tuo compito è estrarre le VOCI DI LAVORO dal testo del capitolato fornito.
+const PARSE_SYSTEM = `Sei un esperto di capitolati speciali d'appalto e computi metrici italiani (edilizia civile, industriale, infrastrutture, impiantistica).
+Il tuo compito è estrarre con la massima precisione TUTTE le VOCI DI LAVORO quantificate dal testo fornito.
 
 REGOLE:
-- Estrai SOLO voci quantificate con prezzo unitario (ignora articoli normativi, prescrizioni tecniche, norme)
-- Identifica la CATEGORIA/FASE a cui appartiene ogni voce (es. "Demolizioni", "Strutture in c.a.", "Impermeabilizzazioni", "Finiture", ecc.)
-- Normalizza le unità di misura: mq, mc, ml, kg, t, h, corpo, cad, €
-- Se l'importo non è esplicitamente scritto, calcolalo: quantita × prezzo_unitario
-- Le categorie devono essere RAGGRUPPAMENTI LOGICI di fasi di lavoro (5-15 categorie per un capitolato medio)
-- Il campo "codice" può essere vuoto se non presente nel documento
+- Estrai OGNI voce che ha almeno UN valore numerico (prezzo, quantità o importo) — anche se mancano altri dati
+- Includi anche voci con prezzo unitario ma senza quantità (formato prezzario/listino)
+- Identifica la CATEGORIA/CAPITOLO di appartenenza (es. "Demolizioni", "Strutture c.a.", "Impermeabilizzazioni")
+- Normalizza UM: mq, mc, ml, kg, t, h, corpo, cad — e lascia null se assente
+- CONVERSIONE NUMERI ITALIANI (critica): "1.234,56" → 1234.56 | "42,50" → 42.50 | "€ 85" → 85
+- Se importo_contratto manca ma hai quantita × prezzo_unitario, calcolalo
+- NON inventare valori numerici — usa null se non scritto esplicitamente
+- Ignora: intestazioni capitolato, articoli normativi/prescrizioni senza prezzo, note legali, firme
 
 OUTPUT: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza markdown, senza testo prima o dopo:
 {
@@ -38,14 +40,14 @@ OUTPUT: Rispondi ESCLUSIVAMENTE con un oggetto JSON valido, senza markdown, senz
     {
       "codice": "A.1.1",
       "categoria": "Demolizioni e rimozioni",
-      "descrizione": "Demolizione di muratura...",
+      "descrizione": "Demolizione di muratura in mattoni piena, con mezzo meccanico",
       "unita_misura": "mc",
       "quantita": 12.5,
       "prezzo_unitario": 45.00,
       "importo_contratto": 562.50
     }
   ],
-  "summary": "Capitolato per [tipo lavori] a [luogo]. Comprende [N] categorie principali: [elenco]. Importo totale contrattuale: €[X]. Fasi principali: [elenco].",
+  "summary": "Capitolato per [tipo lavori] a [luogo]. Comprende [N] categorie: [elenco]. Importo totale: €[X].",
   "note": "eventuali note sul documento"
 }`;
 
@@ -126,17 +128,30 @@ async function parseCapitolatoPDF(buffer, siteId, companyId, onProgress) {
   const { voci, summary } = await extractVociFromText(text, onProgress);
 
   // Normalizzazione
-  const voceNorm = voci.map(v => ({
-    codice:            String(v.codice || '').trim() || null,
-    categoria:         String(v.categoria || 'Lavorazioni generali').trim(),
-    descrizione:       String(v.descrizione || '').trim(),
-    unita_misura:      String(v.unita_misura || '').trim() || null,
-    quantita:          parseFloat(v.quantita) || null,
-    prezzo_unitario:   parseFloat(v.prezzo_unitario) || null,
-    importo_contratto: v.importo_contratto
-      ? parseFloat(v.importo_contratto)
-      : (v.quantita && v.prezzo_unitario ? parseFloat(v.quantita) * parseFloat(v.prezzo_unitario) : null),
-  })).filter(v => v.descrizione.length > 3);
+  const safeFloat = (raw) => {
+    if (raw === null || raw === undefined || raw === '') return null;
+    // Converti formato italiano se stringa (1.234,56 → 1234.56)
+    const s = typeof raw === 'string'
+      ? raw.trim().replace(/[€\s]/g, '').replace(/\.(?=\d{3}[,.])/g, '').replace(',', '.')
+      : String(raw);
+    const n = parseFloat(s);
+    return isNaN(n) ? null : n;
+  };
+
+  const voceNorm = voci.map(v => {
+    const qty = safeFloat(v.quantita);
+    const pu  = safeFloat(v.prezzo_unitario);
+    const imp = safeFloat(v.importo_contratto) ?? (qty != null && pu != null ? Math.round(qty * pu * 100) / 100 : null);
+    return {
+      codice:            String(v.codice || '').trim() || null,
+      categoria:         String(v.categoria || 'Lavorazioni generali').trim(),
+      descrizione:       String(v.descrizione || '').trim(),
+      unita_misura:      String(v.unita_misura || '').trim() || null,
+      quantita:          qty,
+      prezzo_unitario:   pu,
+      importo_contratto: imp,
+    };
+  }).filter(v => v.descrizione.length > 3);
 
   const categorie    = [...new Set(voceNorm.map(v => v.categoria))];
   const importoTot   = voceNorm.reduce((s, v) => s + (v.importo_contratto || 0), 0);

@@ -20,8 +20,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const xlsx      = require('xlsx');
 const { extractPdfText } = require('../lib/pdfExtract');
 
-const MODEL      = 'claude-haiku-4-5-20251001';
-const MAX_TOKENS = 4000;
+const MODEL      = 'claude-sonnet-4-6';
+const MAX_TOKENS = 8192;
 
 // ─── Pre-filtro ───────────────────────────────────────────────────────────────
 function preFilter(rawLines) {
@@ -602,6 +602,91 @@ async function parsePdf(buffer) {
   return { nome: 'Capitolato speciale d\'appalto', voci, totale_contratto: totale };
 }
 
+// ─── Excel: parser column-aware ──────────────────────────────────────────────
+// Pattern per identificare le intestazioni di colonna nei CME italiani
+const HEADER_PATTERNS = {
+  codice:          /^(cod(ice)?|n[°o.]?|art\.?|voce|pos\.?)$/i,
+  descrizione:     /desc|lavora|voce|articolo|denominaz|lavorazione|oggetto/i,
+  unita_misura:    /^(u\.?m\.?|unit[àa]\s*(di\s*)?mis|misura)$/i,
+  quantita:        /^(qt[à.]?|qnt|quant(it[àa])?|nr\.?)$/i,
+  prezzo_unitario: /^(p\.?u\.?|prezzo\s*(unit|u\.?)|costo\s*unit)/i,
+  importo:         /^(imp(orto)?|tot(ale)?|€|eur)/i,
+};
+
+function detectHeaderRow(rows) {
+  for (let ri = 0; ri < Math.min(20, rows.length); ri++) {
+    const row = rows[ri];
+    const nonEmpty = row.filter(c => c != null && String(c).trim().length > 0);
+    if (nonEmpty.length < 3) continue;
+
+    const map = {};
+    for (let ci = 0; ci < row.length; ci++) {
+      const cell = String(row[ci] ?? '').trim();
+      if (!cell) continue;
+      for (const [field, regex] of Object.entries(HEADER_PATTERNS)) {
+        if (regex.test(cell) && !(field in map)) { map[field] = ci; break; }
+      }
+    }
+    // Header valido: deve avere almeno "descrizione" + 1 campo numerico
+    if (map.descrizione !== undefined &&
+        (map.quantita !== undefined || map.prezzo_unitario !== undefined || map.importo !== undefined)) {
+      return { headerRow: ri, colMap: map };
+    }
+  }
+  return null;
+}
+
+function parseNum(v) {
+  if (v === null || v === undefined || v === '') return null;
+  if (typeof v === 'number') return isNaN(v) ? null : v;
+  // Formato italiano: rimuovi separatore migliaia, converti virgola in punto
+  const s = String(v).trim().replace(/[€\s]/g, '').replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? null : n;
+}
+
+function excelColumnParse(rows, headerRow, colMap) {
+  const result = [];
+  let sortOrder = 0;
+  let lastCat = null;
+
+  for (let ri = headerRow + 1; ri < rows.length; ri++) {
+    const row = rows[ri];
+    const desc = String(row[colMap.descrizione] ?? '').trim();
+    if (!desc || desc.length < 2) continue;
+
+    const cod = colMap.codice !== undefined ? String(row[colMap.codice] ?? '').trim() || null : null;
+    const um  = colMap.unita_misura !== undefined ? normUM(String(row[colMap.unita_misura] ?? '').trim()) : null;
+    const qty = parseNum(colMap.quantita !== undefined ? row[colMap.quantita] : undefined);
+    const pu  = parseNum(colMap.prezzo_unitario !== undefined ? row[colMap.prezzo_unitario] : undefined);
+    let   imp = parseNum(colMap.importo !== undefined ? row[colMap.importo] : undefined);
+
+    if (imp == null && qty != null && pu != null) imp = r2(qty * pu);
+
+    // Riga categoria: nessun dato numerico + nessuna UM
+    const isCat = !um && qty == null && pu == null && imp == null;
+
+    if (isCat) {
+      lastCat = cod || desc.slice(0, 30);
+      result.push({
+        tipo: 'categoria', codice: cod, parent_codice: null,
+        descrizione: desc.slice(0, 400), unita_misura: null,
+        quantita: null, prezzo_unitario: null, importo: null, sort_order: sortOrder++,
+      });
+    } else {
+      result.push({
+        tipo: 'voce', codice: cod, parent_codice: lastCat,
+        descrizione: desc.slice(0, 400), unita_misura: um,
+        quantita: qty,
+        prezzo_unitario: pu != null ? r2(pu) : null,
+        importo: imp != null ? r2(imp) : null,
+        sort_order: sortOrder++,
+      });
+    }
+  }
+  return result;
+}
+
 // ─── Excel ────────────────────────────────────────────────────────────────────
 async function parseExcel(buffer) {
   const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true });
@@ -612,9 +697,33 @@ async function parseExcel(buffer) {
     const cells = (range.e.r - range.s.r + 1) * (range.e.c - range.s.c + 1);
     if (cells > maxCells) { maxCells = cells; bestSheet = name; }
   }
+  console.log(`[computoParser/parseExcel] "${bestSheet}"`);
+
+  // Leggi come array-of-arrays mantenendo la struttura colonne
+  const rows = xlsx.utils.sheet_to_json(workbook.Sheets[bestSheet], {
+    header: 1, defval: '', raw: false,
+  });
+
+  // Tenta parsing column-aware
+  const detected = detectHeaderRow(rows);
+  if (detected) {
+    console.log(`[computoParser/parseExcel] header trovato a riga ${detected.headerRow}, colonne: ${JSON.stringify(detected.colMap)}`);
+    const voci = excelColumnParse(rows, detected.headerRow, detected.colMap);
+    const nVoci = voci.filter(v => v.tipo === 'voce').length;
+    console.log(`[computoParser/parseExcel] column-parse → ${voci.length} elementi (${nVoci} voci)`);
+    if (nVoci >= 3) {
+      voci.forEach((v, idx) => { v.sort_order = idx; });
+      const totale = r2(voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo || 0), 0));
+      return { nome: 'Computo metrico', voci, totale_contratto: totale };
+    }
+    console.log(`[computoParser/parseExcel] column-parse < 3 voci, fallback AI`);
+  } else {
+    console.log(`[computoParser/parseExcel] header non trovato, fallback AI`);
+  }
+
+  // Fallback: CSV → AI full parse
   const csv   = xlsx.utils.sheet_to_csv(workbook.Sheets[bestSheet], { blankrows: false });
   const lines = csv.split('\n').filter(l => l.replace(/,+/g, '').trim().length > 2);
-  console.log(`[computoParser/parseExcel] "${bestSheet}", ${lines.length} righe`);
   return runParse(lines, 'parseExcel');
 }
 
