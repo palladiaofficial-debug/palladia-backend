@@ -40,7 +40,7 @@ router.get('/expiry-calendar', verifySupabaseJwt, async (req, res) => {
   const fromParam = req.query.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const toParam   = req.query.to   || new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
 
-  const [workersRes, subsRes, companyRes, sitesRes] = await Promise.all([
+  const [workersRes, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
     supabase
       .from('workers')
       .select('id, full_name, safety_training_expiry, health_fitness_expiry')
@@ -65,6 +65,13 @@ router.get('/expiry-calendar', verifySupabaseJwt, async (req, res) => {
       .select('id, name, suolo_occupazione_end, end_date, suolo_occupazione')
       .eq('company_id', companyId)
       .neq('status', 'eliminato'),
+
+    supabase
+      .from('site_sal_history')
+      .select('id, site_id, sal_number, importo_maturato, data_pagamento_prevista, sites(name)')
+      .eq('company_id', companyId)
+      .is('pagato_il', null)
+      .not('data_pagamento_prevista', 'is', null),
   ]);
 
   const events = [];
@@ -117,6 +124,24 @@ router.get('/expiry-calendar', verifySupabaseJwt, async (req, res) => {
     }
   }
 
+  // SAL non incassati
+  for (const sal of (salRes.data || [])) {
+    const d = fmtDate(sal.data_pagamento_prevista);
+    const siteName = sal.sites?.name || 'Cantiere';
+    const imp = sal.importo_maturato != null
+      ? ` — € ${Number(sal.importo_maturato).toLocaleString('it-IT', { maximumFractionDigits: 0 })}` : '';
+    events.push({
+      date: d,
+      days: daysFrom(d),
+      type: 'sal_pagamento',
+      label: `Incasso SAL N.${sal.sal_number}${imp} — ${siteName}`,
+      entity: siteName,
+      entity_id: sal.site_id,
+      entity_type: 'site',
+      severity: severity(daysFrom(d)),
+    });
+  }
+
   // Filtra per finestra e ordina per data
   const filtered = events
     .filter(e => e.date && e.date >= fromParam && e.date <= toParam)
@@ -138,11 +163,12 @@ router.get('/expiry-calendar/summary', verifySupabaseJwt, async (req, res) => {
   };
 
   // Call with a fake next to avoid complexity — just duplicate the aggregation
-  const [workersRes, subsRes, companyRes, sitesRes] = await Promise.all([
+  const [workersRes, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
     supabase.from('workers').select('id, safety_training_expiry, health_fitness_expiry').eq('company_id', req.companyId).eq('is_active', true),
     supabase.from('subcontractors').select('id, durc_expiry, insurance_expiry, soa_expiry').eq('company_id', req.companyId),
     supabase.from('companies').select('id, durc_expiry').eq('id', req.companyId).maybeSingle(),
     supabase.from('sites').select('id, suolo_occupazione_end, end_date, suolo_occupazione').eq('company_id', req.companyId).neq('status', 'eliminato'),
+    supabase.from('site_sal_history').select('data_pagamento_prevista').eq('company_id', req.companyId).is('pagato_il', null).not('data_pagamento_prevista', 'is', null),
   ]);
 
   const counts = { critical: 0, warning: 0, info: 0, total: 0 };
@@ -153,6 +179,7 @@ router.get('/expiry-calendar/summary', verifySupabaseJwt, async (req, res) => {
   for (const s of (subsRes.data || [])) { pushDate(s.durc_expiry); pushDate(s.insurance_expiry); pushDate(s.soa_expiry); }
   if (companyRes.data?.durc_expiry) pushDate(companyRes.data.durc_expiry);
   for (const s of (sitesRes.data || [])) { if (s.suolo_occupazione) pushDate(s.suolo_occupazione_end); }
+  for (const sal of (salRes.data || [])) { pushDate(sal.data_pagamento_prevista); }
 
   for (const d of allDates) {
     if (!d) continue;

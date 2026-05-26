@@ -727,26 +727,32 @@ router.post('/sites/:siteId/economia/sal-history', async (req, res) => {
     return res.status(500).json({ error: 'STORAGE_ERROR', detail: uploadError.message });
   }
 
+  // Scadenza incasso: +30 giorni dall'emissione
+  const paymentDue = new Date(now);
+  paymentDue.setDate(paymentDue.getDate() + 30);
+  const dataPagamentoPrevista = paymentDue.toISOString().slice(0, 10);
+
   // Save snapshot row
   const { contratto, costo_mo, costi_diretti, margine, totale_costi } = pnl;
   const { data: row, error: insertError } = await supabase
     .from('site_sal_history')
     .insert({
-      company_id:         companyId,
-      site_id:            siteId,
-      sal_number:         salNumber,
-      sal_percentuale:    contratto.sal_percentuale,
-      data_emissione:     dateISO,
-      totale_contratto:   contratto.totale_contratto,
-      importo_maturato:   contratto.importo_maturato,
-      costo_mo:           costo_mo.totale,
-      costi_diretti:      costi_diretti.totale,
+      company_id:              companyId,
+      site_id:                 siteId,
+      sal_number:              salNumber,
+      sal_percentuale:         contratto.sal_percentuale,
+      data_emissione:          dateISO,
+      totale_contratto:        contratto.totale_contratto,
+      importo_maturato:        contratto.importo_maturato,
+      costo_mo:                costo_mo.totale,
+      costi_diretti:           costi_diretti.totale,
       totale_costi,
-      margine:            margine.valore,
-      margine_percentuale: margine.percentuale,
-      note:               note ? String(note).trim().slice(0, 1000) : null,
-      pdf_url:            storagePath,
-      created_by:         user.id,
+      margine:                 margine.valore,
+      margine_percentuale:     margine.percentuale,
+      note:                    note ? String(note).trim().slice(0, 1000) : null,
+      pdf_url:                 storagePath,
+      created_by:              user.id,
+      data_pagamento_prevista: dataPagamentoPrevista,
     })
     .select()
     .single();
@@ -764,6 +770,39 @@ router.post('/sites/:siteId/economia/sal-history', async (req, res) => {
     .createSignedUrl(storagePath, SIGNED_URL_TTL);
 
   res.status(201).json({ ...row, pdf_signed_url: signed?.signedUrl ?? null });
+});
+
+// ── PATCH /api/v1/sites/:siteId/economia/sal-history/:id ─────────────────────
+// Marca come incassato (pagato_il = oggi) o annulla (pagato_il = null).
+router.patch('/sites/:siteId/economia/sal-history/:id', async (req, res) => {
+  const { companyId } = req;
+  const { siteId, id } = req.params;
+
+  if (!isUuid(id)) return res.status(400).json({ error: 'id non valido' });
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  const { pagato_il } = req.body;
+
+  // pagato_il può essere una data YYYY-MM-DD oppure null
+  let value = null;
+  if (pagato_il !== null && pagato_il !== undefined) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(pagato_il)) {
+      return res.status(400).json({ error: 'pagato_il deve essere YYYY-MM-DD o null' });
+    }
+    value = pagato_il;
+  }
+
+  const { error } = await supabase
+    .from('site_sal_history')
+    .update({ pagato_il: value })
+    .eq('id', id)
+    .eq('site_id', siteId)
+    .eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  res.json({ ok: true, pagato_il: value });
 });
 
 // ── DELETE /api/v1/sites/:siteId/economia/sal-history/:id ────────────────────
