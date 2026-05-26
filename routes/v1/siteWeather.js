@@ -2,7 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, evalThresholds, WMO } = require('../../services/weatherService');
+const { getActualWeather, getWeatherRange, evalThresholds, WMO } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const ExcelJS                            = require('exceljs');
 
@@ -108,6 +108,73 @@ router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, async (req, r
   }
 
   res.json({ results });
+});
+
+// ── POST /api/v1/sites/:siteId/weather-log/backfill ──────────────────────────
+// Scarica TUTTO lo storico meteo dall'inizio cantiere a ieri in un'unica chiamata ERA5.
+// Idempotente: sicuro da richiamare più volte (upsert). Non sovrascrive sospensioni già confermate.
+router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+
+  const site = await getSiteOrFail(siteId, req.companyId, res);
+  if (!site) return;
+
+  if (!site.latitude || !site.longitude)
+    return res.status(400).json({ error: 'NO_COORDS', message: 'Imposta le coordinate GPS del cantiere prima.' });
+  if (!site.start_date)
+    return res.status(400).json({ error: 'NO_START_DATE', message: 'Il cantiere non ha una data di inizio lavori.' });
+
+  const TZ = 'Europe/Rome';
+  const yesterday = (() => {
+    const d = new Date(new Date().toLocaleDateString('sv-SE', { timeZone: TZ }));
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  })();
+
+  if (site.start_date > yesterday)
+    return res.json({ inserted: 0, suspension_alerts: 0, message: 'Cantiere non ancora iniziato — nessuno storico disponibile.' });
+
+  try {
+    const weatherData = await getWeatherRange(site.latitude, site.longitude, site.start_date, yesterday);
+
+    if (!weatherData.length)
+      return res.json({ inserted: 0, suspension_alerts: 0 });
+
+    const rows = weatherData.map(w => {
+      const { exceeded, reason } = evalThresholds(w);
+      return {
+        company_id:         req.companyId,
+        site_id:            siteId,
+        log_date:           w.date,
+        precipitation_mm:   w.precipitation_mm,
+        wind_max_kmh:       w.wind_max_kmh,
+        temp_min_c:         w.temp_min,
+        temp_max_c:         w.temp_max,
+        weather_code:       w.weather_code,
+        weather_desc:       w.weather_desc,
+        threshold_exceeded: exceeded,
+        threshold_reason:   reason ?? null,
+        fetched_at:         new Date().toISOString(),
+      };
+    });
+
+    // Upsert bulk — non sovrascrive suspension_confirmed/dismissed già esistenti
+    const { error: upsertErr } = await supabase
+      .from('site_weather_logs')
+      .upsert(rows, {
+        onConflict:        'site_id,log_date',
+        ignoreDuplicates:  false,
+      });
+
+    if (upsertErr) return res.status(500).json({ error: 'DB_ERROR', message: upsertErr.message });
+
+    const suspDays = rows.filter(r => r.threshold_exceeded).length;
+    res.json({ inserted: rows.length, suspension_alerts: suspDays });
+
+  } catch (err) {
+    console.error('[weatherBackfill]', err.message);
+    res.status(502).json({ error: 'WEATHER_API_ERROR', message: err.message });
+  }
 });
 
 // ── POST /api/v1/sites/:siteId/weather-log/:date/confirm ─────────────────────

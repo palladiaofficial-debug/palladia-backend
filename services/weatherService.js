@@ -116,6 +116,65 @@ async function getActualWeather(lat, lon, dateISO) {
 }
 
 /**
+ * Recupera dati meteo REALI per un intero range di date in una singola chiamata API.
+ * Usa archive API (ERA5) per range storici, poi forecast API per gli ultimi 10 giorni.
+ * Restituisce un array ordinato per data: [{ date, precipitation_mm, wind_max_kmh, ... }]
+ */
+async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
+  const TZ = 'Europe/Rome';
+  // Calcola ieri in ora italiana come limite massimo per archive
+  const nowRome = new Date().toLocaleDateString('sv-SE', { timeZone: TZ });
+  const yest    = (() => { const d = new Date(nowRome); d.setDate(d.getDate() - 1); return d.toISOString().split('T')[0]; })();
+  const archiveEnd  = endDateISO  < yest ? endDateISO  : yest;
+  const archiveStart = startDateISO;
+
+  function parseRangeJson(json) {
+    const d = json.daily;
+    if (!d?.time?.length) return [];
+    return d.time.map((date, i) => {
+      const code = d.weather_code?.[i] ?? 0;
+      return {
+        date,
+        precipitation_mm: Number(d.precipitation_sum?.[i]    ?? 0),
+        wind_max_kmh:     Number(d.wind_speed_10m_max?.[i]   ?? 0),
+        temp_min:         d.temperature_2m_min?.[i] ?? null,
+        temp_max:         d.temperature_2m_max?.[i] ?? null,
+        weather_code:     code,
+        weather_desc:     WMO[code] ?? 'variabile',
+      };
+    });
+  }
+
+  const DAILY = 'precipitation_sum,wind_speed_10m_max,temperature_2m_max,temperature_2m_min,weather_code';
+  const byDate = new Map();
+
+  // Chiamata archive (ERA5) per tutto il range storico
+  if (archiveStart <= archiveEnd) {
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
+      `&daily=${DAILY}&timezone=Europe%2FRome&start_date=${archiveStart}&end_date=${archiveEnd}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error(`Open-Meteo Archive HTTP ${res.status}`);
+    const json = await res.json();
+    for (const r of parseRangeJson(json)) byDate.set(r.date, r);
+  }
+
+  // Chiamata forecast per gli ultimi giorni non coperti da archive (latenza ERA5 ~5gg)
+  const tenDaysAgo = (() => { const d = new Date(nowRome); d.setDate(d.getDate() - 10); return d.toISOString().split('T')[0]; })();
+  const forecastStart = startDateISO > tenDaysAgo ? startDateISO : tenDaysAgo;
+  if (forecastStart <= endDateISO && forecastStart <= yest) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+      `&daily=${DAILY}&timezone=Europe%2FRome&start_date=${forecastStart}&end_date=${endDateISO < yest ? endDateISO : yest}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+    if (res.ok) {
+      const json = await res.json();
+      for (const r of parseRangeJson(json)) byDate.set(r.date, r); // forecast sovrascrive archive per date recenti
+    }
+  }
+
+  return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
  * Valuta se i dati meteo superano le soglie per suggerire sospensione.
  * Restituisce { exceeded, reason } oppure { exceeded: false }.
  */
@@ -128,4 +187,4 @@ function evalThresholds(data) {
   return { exceeded: false, reason: null };
 }
 
-module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, evalThresholds, WMO };
+module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, WMO };
