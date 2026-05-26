@@ -231,17 +231,9 @@ router.delete('/sites/:siteId/economia/voci/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// ── GET /api/v1/sites/:siteId/economia/pnl ───────────────────────────────────
-// P&L completo per cantiere: contratto, costo MO auto, costi diretti, margine.
-
-router.get('/sites/:siteId/economia/pnl', async (req, res) => {
-  const { companyId } = req;
-  const { siteId }    = req.params;
-
-  const site = await resolveSite(siteId, companyId);
-  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
-
-  // Fetch parallelo: computo + timbrature + costi + lavoratori
+// ── Shared P&L calculation ────────────────────────────────────────────────────
+// Riutilizzato da /pnl e /sal-pdf per evitare duplicazione logica.
+async function calcPnl(siteId, companyId, site) {
   const [computoRes, logsRes, costsRes, workersRes] = await Promise.all([
     supabase.from('site_computo')
       .select('id, totale_contratto')
@@ -252,40 +244,40 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
       .eq('site_id', siteId).eq('company_id', companyId)
       .order('worker_id').order('timestamp_server'),
     supabase.from('site_costs')
-      .select('importo, tipo, categoria')
-      .eq('site_id', siteId).eq('company_id', companyId),
+      .select('id, descrizione, fornitore, importo, tipo, categoria, data_documento, numero_documento')
+      .eq('site_id', siteId).eq('company_id', companyId)
+      .order('categoria').order('data_documento', { ascending: false }),
     supabase.from('workers')
       .select('id, full_name, tariffa_oraria')
       .eq('company_id', companyId),
   ]);
 
-  // 1. Contratto (da ComputoTab → fallback su budget manuale)
-  let totale_contratto = null, importo_maturato = null, sal_percentuale = 0;
+  // 1. Contratto
+  let source = 'none', totale_contratto = null, importo_maturato = null, sal_percentuale = 0;
 
   if (computoRes.data?.id) {
+    source = 'computo';
     totale_contratto = computoRes.data.totale_contratto
       ? Number(computoRes.data.totale_contratto) : null;
-
     const { data: voci } = await supabase
       .from('site_computo_voci')
       .select('importo, sal_percentuale')
       .eq('computo_id', computoRes.data.id).eq('tipo', 'voce');
-
-    const allVoci = voci || [];
+    const allVoci    = voci || [];
     const sumImporti = allVoci.reduce((s, v) => s + Number(v.importo || 0), 0);
     const maturato   = allVoci.reduce((s, v) =>
       s + Number(v.importo || 0) * Number(v.sal_percentuale || 0) / 100, 0);
     importo_maturato = Math.round(maturato * 100) / 100;
     sal_percentuale  = sumImporti > 0
       ? Math.round((maturato / sumImporti) * 1000) / 10 : 0;
-
   } else if (site.budget_totale !== null) {
+    source = 'manual';
     totale_contratto = Number(site.budget_totale);
     sal_percentuale  = Number(site.sal_percentuale) || 0;
     importo_maturato = Math.round(totale_contratto * sal_percentuale / 100 * 100) / 100;
   }
 
-  // 2. Costo manodopera: accoppia ENTRY/EXIT per lavoratore
+  // 2. Costo manodopera
   const workerMap = {};
   for (const w of (workersRes.data || [])) workerMap[w.id] = w;
 
@@ -298,7 +290,7 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
       s.pending = new Date(log.timestamp_server).getTime();
     } else if (log.event_type === 'EXIT' && s.pending) {
       const h = (new Date(log.timestamp_server).getTime() - s.pending) / 3600000;
-      s.hours += Math.max(0, Math.min(h, 24)); // cap 24h per sessione (anti-anomalie)
+      s.hours += Math.max(0, Math.min(h, 24));
       s.pending = null;
     }
   }
@@ -312,7 +304,7 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
     const t = parseFloat(w.tariffa_oraria) || 0;
     if (!t) workers_no_tariffa++;
     const costo = Math.round(s.hours * t * 100) / 100;
-    totale_mo += costo;
+    totale_mo  += costo;
     mo_breakdown.push({
       worker_id:      wid,
       full_name:      w.full_name,
@@ -324,7 +316,7 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
   mo_breakdown.sort((a, b) => b.ore_totali - a.ore_totali);
   totale_mo = Math.round(totale_mo * 100) / 100;
 
-  // 3. Costi diretti (da site_costs)
+  // 3. Costi diretti
   const costs = costsRes.data || [];
   const totale_diretti = Math.round(
     costs.reduce((s, c) => s + Number(c.importo || 0), 0) * 100) / 100;
@@ -342,18 +334,34 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
   const margine_pct  = margine !== null && importo_maturato > 0
     ? Math.round((margine / importo_maturato) * 1000) / 10 : null;
 
-  res.json({
+  return {
+    source,
+    settings: {
+      budget_totale:   site.budget_totale !== null ? Number(site.budget_totale) : null,
+      sal_percentuale: Number(site.sal_percentuale) || 0,
+    },
     contratto: { totale_contratto, importo_maturato, sal_percentuale },
     costo_mo:  { totale: totale_mo, breakdown: mo_breakdown, workers_no_tariffa },
-    costi_diretti: { totale: totale_diretti, per_tipo, per_categoria },
+    costi_diretti: { totale: totale_diretti, per_tipo, per_categoria, rows: costs },
     margine:   { valore: margine, percentuale: margine_pct },
     totale_costi,
-  });
+  };
+}
+
+// ── GET /api/v1/sites/:siteId/economia/pnl ───────────────────────────────────
+router.get('/sites/:siteId/economia/pnl', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+  const pnl = await calcPnl(siteId, companyId, site);
+  // Non esporre le righe complete nel pnl (sono già in /costs)
+  const { costi_diretti: { rows, ...costiSummary }, ...rest } = pnl;
+  res.json({ ...rest, costi_diretti: costiSummary });
 });
 
 // ── GET /api/v1/sites/:siteId/economia/sal-pdf ───────────────────────────────
-// Genera il PDF del SAL da scaricare e inviare al committente.
-
+// PDF SAL con dati reali: costi da site_costs + manodopera da timbrature.
 router.get('/sites/:siteId/economia/sal-pdf', async (req, res) => {
   const { companyId } = req;
   const { siteId }    = req.params;
@@ -361,189 +369,236 @@ router.get('/sites/:siteId/economia/sal-pdf', async (req, res) => {
   const site = await resolveSite(siteId, companyId);
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
-  // Dati cantiere + azienda
-  const [{ data: siteData }, { data: company }, { data: voci }] = await Promise.all([
-    supabase.from('sites').select('name, address, client, status').eq('id', siteId).maybeSingle(),
+  const [{ data: siteData }, { data: company }, pnl] = await Promise.all([
+    supabase.from('sites').select('name, address, client').eq('id', siteId).maybeSingle(),
     supabase.from('companies').select('name').eq('id', companyId).maybeSingle(),
-    supabase.from('site_economia_voci')
-      .select('id, tipo, categoria, voce, importo, data_competenza, note')
-      .eq('site_id', siteId).eq('company_id', companyId)
-      .order('tipo').order('categoria').order('data_competenza', { ascending: false }),
+    calcPnl(siteId, companyId, site),
   ]);
 
   const siteName    = siteData?.name    || 'Cantiere';
   const siteAddress = siteData?.address || '';
   const client      = siteData?.client  || '';
   const companyName = company?.name     || '';
-  const budget      = site.budget_totale   !== null ? Number(site.budget_totale)   : null;
-  const salPct      = site.sal_percentuale !== null ? Number(site.sal_percentuale) : 0;
-  const importoMaturato = budget !== null ? (budget * salPct / 100) : null;
-
-  const costi  = (voci || []).filter(v => v.tipo === 'costo');
-  const ricavi = (voci || []).filter(v => v.tipo === 'ricavo');
-  const totCosti  = costi.reduce((s, v)  => s + Number(v.importo), 0);
-  const totRicavi = ricavi.reduce((s, v) => s + Number(v.importo), 0);
-  const utile     = totRicavi - totCosti;
-
-  const now       = new Date();
+  const now         = new Date();
   const dataEmissione = now.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
-  const safeName  = siteName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
+  const safeName    = siteName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
+
+  const { contratto, costo_mo, costi_diretti, margine, totale_costi } = pnl;
+  const salPct   = contratto.sal_percentuale;
+  const maturato = contratto.importo_maturato;
 
   function fmtEur(n) {
-    return '€ ' + Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (n == null) return '—';
+    return '€ ' + Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fmtOre(h) {
+    const hh = Math.floor(h); const mm = Math.round((h - hh) * 60);
+    return `${hh}h${mm > 0 ? ` ${mm}m` : ''}`;
   }
 
-  function voceRows(list) {
-    if (!list.length) return '<tr><td colspan="3" style="padding:12px 16px;color:#6b7280;font-style:italic;font-size:12px">Nessuna voce registrata</td></tr>';
-    const grouped = {};
-    list.forEach(v => { (grouped[v.categoria] = grouped[v.categoria] || []).push(v); });
-    let rows = '';
-    for (const [cat, items] of Object.entries(grouped)) {
-      rows += `<tr style="background:#f9fafb"><td colspan="2" style="padding:8px 16px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151">${cat}</td><td style="padding:8px 16px;text-align:right;font-size:11px;font-weight:700;color:#374151">${fmtEur(items.reduce((s,i)=>s+Number(i.importo),0))}</td></tr>`;
-      items.forEach(v => {
-        rows += `<tr><td style="padding:7px 16px 7px 28px;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6">${v.voce}</td><td style="padding:7px 16px;font-size:12px;color:#6b7280;border-bottom:1px solid #f3f4f6">${v.data_competenza ? new Date(v.data_competenza).toLocaleDateString('it-IT') : ''}</td><td style="padding:7px 16px;text-align:right;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6">${fmtEur(v.importo)}</td></tr>`;
-      });
+  // Costi diretti raggruppati per categoria
+  const costiPerCat = {};
+  for (const c of (costi_diretti.rows || [])) {
+    const cat = c.categoria || 'Altro';
+    if (!costiPerCat[cat]) costiPerCat[cat] = [];
+    costiPerCat[cat].push(c);
+  }
+
+  function costiRows() {
+    if (!costi_diretti.rows?.length) return '<tr><td colspan="4" style="padding:12px 16px;color:#6b7280;font-style:italic;font-size:11px">Nessun costo diretto registrato</td></tr>';
+    let html = '';
+    for (const [cat, items] of Object.entries(costiPerCat)) {
+      const tot = items.reduce((s, i) => s + Number(i.importo), 0);
+      html += `<tr style="background:#f9fafb"><td colspan="3" style="padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151">${cat}</td><td style="padding:7px 16px;text-align:right;font-size:10px;font-weight:700;color:#374151">${fmtEur(tot)}</td></tr>`;
+      for (const c of items) {
+        html += `<tr><td style="padding:6px 16px 6px 28px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${c.descrizione}</td><td style="padding:6px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${c.fornitore || '—'}</td><td style="padding:6px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${c.data_documento ? new Date(c.data_documento+'T12:00:00').toLocaleDateString('it-IT') : '—'}</td><td style="padding:6px 16px;text-align:right;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${fmtEur(Number(c.importo))}</td></tr>`;
+      }
     }
-    return rows;
+    return html;
   }
 
-  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8">
-<style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; color:#111827; background:#fff; }
-  .page { padding: 14mm 16mm 10mm; }
-  .header { display:flex; justify-content:space-between; align-items:flex-start; padding-bottom:12px; border-bottom:3px solid #111827; margin-bottom:20px; }
-  .header-left h1 { font-size:22px; font-weight:800; letter-spacing:-.02em; }
-  .header-left p { font-size:12px; color:#6b7280; margin-top:2px; }
-  .header-right { text-align:right; }
-  .header-right .badge { display:inline-block; background:#111827; color:#fff; font-size:10px; font-weight:700; padding:3px 10px; border-radius:20px; letter-spacing:.06em; text-transform:uppercase; }
-  .header-right .date { font-size:11px; color:#6b7280; margin-top:5px; }
-  .section { margin-bottom:20px; }
-  .section-title { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:#6b7280; margin-bottom:10px; padding-bottom:5px; border-bottom:1px solid #e5e7eb; }
-  .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-  .info-item label { font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:.05em; display:block; margin-bottom:2px; }
-  .info-item span { font-size:13px; font-weight:600; color:#111827; }
-  .kpi-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
-  .kpi { background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px; padding:14px 16px; }
-  .kpi label { font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:.05em; display:block; margin-bottom:4px; }
-  .kpi .val { font-size:18px; font-weight:800; color:#111827; }
-  .kpi .sub { font-size:10px; color:#9ca3af; margin-top:2px; }
-  .kpi.accent { background:#111827; border-color:#111827; }
-  .kpi.accent label, .kpi.accent .sub { color:#9ca3af; }
-  .kpi.accent .val { color:#fff; }
-  .kpi.green { background:#f0fdf4; border-color:#bbf7d0; }
-  .kpi.green .val { color:#15803d; }
-  .kpi.red { background:#fef2f2; border-color:#fecaca; }
-  .kpi.red .val { color:#dc2626; }
-  .progress-bar { background:#e5e7eb; border-radius:99px; height:10px; overflow:hidden; margin:8px 0 4px; }
-  .progress-fill { height:100%; border-radius:99px; background:#111827; }
-  table { width:100%; border-collapse:collapse; }
-  .tbl-head { background:#111827; }
-  .tbl-head th { padding:9px 16px; font-size:11px; font-weight:700; color:#fff; text-align:left; }
-  .tbl-head th:last-child { text-align:right; }
-  .tbl-foot { background:#f9fafb; }
-  .tbl-foot td { padding:10px 16px; font-size:12px; font-weight:700; color:#111827; }
-  .tbl-foot td:last-child { text-align:right; }
-  .signature-grid { display:grid; grid-template-columns:1fr 1fr; gap:30px; margin-top:30px; }
-  .sig-box { border-top:2px solid #e5e7eb; padding-top:10px; }
-  .sig-box label { font-size:10px; color:#9ca3af; text-transform:uppercase; letter-spacing:.05em; }
-  .doc-footer { margin-top:16px; padding:8px 0; font-size:9px; color:#9ca3af; display:flex; justify-content:space-between; border-top:1px solid #e5e7eb; }
-  @page { size:A4; margin:0; }
+  function moRows() {
+    if (!costo_mo.breakdown.length) return '<tr><td colspan="4" style="padding:12px 16px;color:#6b7280;font-style:italic;font-size:11px">Nessuna timbratura registrata</td></tr>';
+    return costo_mo.breakdown.map(w => `<tr><td style="padding:7px 16px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${w.full_name}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${fmtOre(w.ore_totali)}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${w.tariffa_oraria ? `€ ${w.tariffa_oraria.toFixed(2)}/h` : '<i>N/D</i>'}</td><td style="padding:7px 16px;text-align:right;font-size:11px;font-weight:600;color:#374151;border-bottom:1px solid #f3f4f6">${w.costo_totale > 0 ? fmtEur(w.costo_totale) : '<span style="color:#d97706">N/D</span>'}</td></tr>`).join('');
+  }
+
+  const margineClass = margine.valore == null ? '' : margine.valore >= 0 ? 'green' : 'red';
+
+  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#111827;background:#fff;font-size:12px}
+.page{padding:12mm 14mm 10mm}
+.header{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:10px;border-bottom:2.5px solid #111827;margin-bottom:16px}
+.header-left h1{font-size:20px;font-weight:800;letter-spacing:-.02em}
+.header-left p{font-size:11px;color:#6b7280;margin-top:2px}
+.badge{display:inline-block;background:#111827;color:#fff;font-size:9px;font-weight:700;padding:2px 9px;border-radius:20px;letter-spacing:.08em;text-transform:uppercase}
+.date{font-size:10px;color:#6b7280;margin-top:4px;text-align:right}
+.section{margin-bottom:16px}
+.section-title{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b7280;margin-bottom:8px;padding-bottom:4px;border-bottom:1px solid #e5e7eb}
+.info-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px}
+.info-item label{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:2px}
+.info-item span{font-size:12px;font-weight:600;color:#111827}
+.kpi-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.kpi{background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px}
+.kpi label{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:3px}
+.kpi .val{font-size:15px;font-weight:800;color:#111827}
+.kpi .sub{font-size:9px;color:#9ca3af;margin-top:2px}
+.kpi.accent{background:#111827;border-color:#111827}
+.kpi.accent label,.kpi.accent .sub{color:#9ca3af}
+.kpi.accent .val{color:#fff}
+.kpi.green{background:#f0fdf4;border-color:#bbf7d0}
+.kpi.green .val{color:#15803d}
+.kpi.red{background:#fef2f2;border-color:#fecaca}
+.kpi.red .val{color:#dc2626}
+.progress-bar{background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden;margin:8px 0 3px}
+.progress-fill{height:100%;border-radius:99px;background:#111827}
+table{width:100%;border-collapse:collapse}
+.tbl-head{background:#111827}
+.tbl-head th{padding:7px 16px;font-size:10px;font-weight:700;color:#fff;text-align:left}
+.tbl-foot{background:#f1f5f9}
+.tbl-foot td{padding:8px 16px;font-size:11px;font-weight:700;color:#111827}
+.signature-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px}
+.sig-box{border-top:1.5px solid #e5e7eb;padding-top:8px}
+.sig-box label{font-size:9px;color:#9ca3af;text-transform:uppercase;letter-spacing:.05em}
+.doc-footer{margin-top:12px;padding:6px 0;font-size:8px;color:#9ca3af;display:flex;justify-content:space-between;border-top:1px solid #e5e7eb}
+@page{size:A4;margin:0}
 </style></head><body>
 <div class="page">
 
-  <div class="header">
-    <div class="header-left">
-      <h1>${companyName || 'Impresa'}</h1>
-      <p>Stato Avanzamento Lavori — ${siteName}</p>
-    </div>
-    <div class="header-right">
-      <div class="badge">SAL</div>
-      <div class="date">Emesso il ${dataEmissione}</div>
-    </div>
+<div class="header">
+  <div class="header-left">
+    <h1>${companyName || 'Impresa'}</h1>
+    <p>Stato Avanzamento Lavori &mdash; ${siteName}</p>
   </div>
-
-  <div class="section">
-    <div class="section-title">Dati cantiere</div>
-    <div class="info-grid">
-      <div class="info-item"><label>Cantiere</label><span>${siteName}</span></div>
-      <div class="info-item"><label>Committente</label><span>${client || '—'}</span></div>
-      <div class="info-item"><label>Indirizzo</label><span>${siteAddress || '—'}</span></div>
-      <div class="info-item"><label>Impresa esecutrice</label><span>${companyName || '—'}</span></div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">Riepilogo SAL</div>
-    <div class="kpi-grid">
-      <div class="kpi">
-        <label>Budget contrattuale</label>
-        <div class="val">${budget !== null ? fmtEur(budget) : '—'}</div>
-        <div class="sub">valore contratto</div>
-      </div>
-      <div class="kpi accent">
-        <label>Avanzamento lavori</label>
-        <div class="val">${salPct.toFixed(1)}%</div>
-        <div class="sub">completamento</div>
-      </div>
-      <div class="kpi ${importoMaturato !== null && importoMaturato >= 0 ? 'green' : ''}">
-        <label>Importo maturato</label>
-        <div class="val">${importoMaturato !== null ? fmtEur(importoMaturato) : '—'}</div>
-        <div class="sub">al ${salPct.toFixed(1)}%</div>
-      </div>
-      <div class="kpi ${utile >= 0 ? 'green' : 'red'}">
-        <label>Risultato economico</label>
-        <div class="val">${fmtEur(utile)}</div>
-        <div class="sub">${totRicavi > 0 ? `margine ${Math.round((utile/totRicavi)*100)}%` : 'ricavi/costi'}</div>
-      </div>
-    </div>
-    ${budget !== null ? `
-    <div style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;font-size:11px;color:#6b7280;margin-bottom:4px">
-        <span>Avanzamento</span><span>${salPct.toFixed(1)}%</span>
-      </div>
-      <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(salPct,100)}%"></div></div>
-      <div style="font-size:10px;color:#9ca3af">${fmtEur(importoMaturato)} di ${fmtEur(budget)}</div>
-    </div>` : ''}
-  </div>
-
-  ${ricavi.length > 0 ? `
-  <div class="section">
-    <div class="section-title">Ricavi</div>
-    <table>
-      <thead class="tbl-head"><tr><th>Voce</th><th>Data</th><th style="text-align:right">Importo</th></tr></thead>
-      <tbody>${voceRows(ricavi)}</tbody>
-      <tfoot class="tbl-foot"><tr><td colspan="2">Totale ricavi</td><td style="text-align:right">${fmtEur(totRicavi)}</td></tr></tfoot>
-    </table>
-  </div>` : ''}
-
-  ${costi.length > 0 ? `
-  <div class="section">
-    <div class="section-title">Costi</div>
-    <table>
-      <thead class="tbl-head"><tr><th>Voce</th><th>Data</th><th style="text-align:right">Importo</th></tr></thead>
-      <tbody>${voceRows(costi)}</tbody>
-      <tfoot class="tbl-foot"><tr><td colspan="2">Totale costi</td><td style="text-align:right">${fmtEur(totCosti)}</td></tr></tfoot>
-    </table>
-  </div>` : ''}
-
-  <div class="signature-grid">
-    <div class="sig-box">
-      <label>Firma Direttore Lavori</label>
-      <div style="height:40px"></div>
-    </div>
-    <div class="sig-box">
-      <label>Firma Impresa (${companyName || 'Esecutrice'})</label>
-      <div style="height:40px"></div>
-    </div>
-  </div>
-
-  <div class="doc-footer">
-    <span>${siteName} — SAL emesso il ${dataEmissione}</span>
-    <span>Generato con Palladia · palladia.it</span>
+  <div>
+    <div class="badge">SAL</div>
+    <div class="date">Emesso il ${dataEmissione}</div>
   </div>
 </div>
-</body></html>`;
+
+<div class="section">
+  <div class="section-title">Dati cantiere</div>
+  <div class="info-grid">
+    <div class="info-item"><label>Cantiere</label><span>${siteName}</span></div>
+    <div class="info-item"><label>Committente</label><span>${client || '—'}</span></div>
+    <div class="info-item"><label>Indirizzo</label><span>${siteAddress || '—'}</span></div>
+    <div class="info-item"><label>Impresa esecutrice</label><span>${companyName || '—'}</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Riepilogo economico</div>
+  <div class="kpi-grid">
+    <div class="kpi">
+      <label>Contratto</label>
+      <div class="val">${fmtEur(contratto.totale_contratto)}</div>
+      <div class="sub">valore appalto</div>
+    </div>
+    <div class="kpi accent">
+      <label>Avanzamento</label>
+      <div class="val">${salPct.toFixed(1)}%</div>
+      <div class="sub">SAL corrente</div>
+    </div>
+    <div class="kpi">
+      <label>Importo maturato</label>
+      <div class="val">${fmtEur(maturato)}</div>
+      <div class="sub">al ${salPct.toFixed(1)}%</div>
+    </div>
+    <div class="kpi">
+      <label>Costi totali</label>
+      <div class="val">${fmtEur(totale_costi)}</div>
+      <div class="sub">MO + diretti</div>
+    </div>
+    <div class="kpi ${margineClass}">
+      <label>Margine</label>
+      <div class="val">${fmtEur(margine.valore)}</div>
+      <div class="sub">${margine.percentuale != null ? `${margine.percentuale.toFixed(1)}% sul maturato` : 'dati incompleti'}</div>
+    </div>
+  </div>
+  ${contratto.totale_contratto ? `
+  <div style="margin-top:10px">
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:#6b7280;margin-bottom:3px">
+      <span>Avanzamento lavori</span><span>${salPct.toFixed(1)}%</span>
+    </div>
+    <div class="progress-bar"><div class="progress-fill" style="width:${Math.min(salPct,100)}%"></div></div>
+    <div style="font-size:9px;color:#9ca3af">${fmtEur(maturato)} maturati su ${fmtEur(contratto.totale_contratto)} contrattuali</div>
+  </div>` : ''}
+</div>
+
+<div class="section">
+  <div class="section-title">Costi diretti (fatture, DDT, subappalti)</div>
+  <table>
+    <thead class="tbl-head">
+      <tr>
+        <th>Descrizione</th>
+        <th>Fornitore</th>
+        <th>Data doc.</th>
+        <th style="text-align:right">Importo</th>
+      </tr>
+    </thead>
+    <tbody>${costiRows()}</tbody>
+    <tfoot class="tbl-foot">
+      <tr>
+        <td colspan="3">Totale costi diretti</td>
+        <td style="text-align:right">${fmtEur(costi_diretti.totale)}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+
+<div class="section">
+  <div class="section-title">Costo manodopera (da timbrature badge)</div>
+  <table>
+    <thead class="tbl-head">
+      <tr>
+        <th>Lavoratore</th>
+        <th style="text-align:right">Ore totali</th>
+        <th style="text-align:right">Tariffa/h</th>
+        <th style="text-align:right">Costo</th>
+      </tr>
+    </thead>
+    <tbody>${moRows()}</tbody>
+    <tfoot class="tbl-foot">
+      <tr>
+        <td colspan="3">Totale manodopera</td>
+        <td style="text-align:right">${fmtEur(costo_mo.totale)}</td>
+      </tr>
+    </tfoot>
+  </table>
+  ${costo_mo.workers_no_tariffa > 0 ? `<p style="font-size:9px;color:#d97706;margin-top:5px">⚠ ${costo_mo.workers_no_tariffa} lavorator${costo_mo.workers_no_tariffa>1?'i':''} senza tariffa oraria — costo parzialmente stimato.</p>` : ''}
+</div>
+
+<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280">Totale costi</span>
+    <span style="font-size:15px;font-weight:800">${fmtEur(totale_costi)}</span>
+  </div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280">Importo maturato</span>
+    <span style="font-size:15px;font-weight:800">${fmtEur(maturato)}</span>
+  </div>
+  <div style="border-top:1px solid #e5e7eb;padding-top:6px;display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:${margine.valore == null ? '#9ca3af' : margine.valore >= 0 ? '#15803d' : '#dc2626'}">Margine</span>
+    <span style="font-size:17px;font-weight:800;color:${margine.valore == null ? '#9ca3af' : margine.valore >= 0 ? '#15803d' : '#dc2626'}">${fmtEur(margine.valore)}${margine.percentuale != null ? ` <span style="font-size:12px;font-weight:600">(${margine.percentuale.toFixed(1)}%)</span>` : ''}</span>
+  </div>
+</div>
+
+<div class="signature-grid">
+  <div class="sig-box">
+    <label>Firma Direttore Lavori</label>
+    <div style="height:36px"></div>
+  </div>
+  <div class="sig-box">
+    <label>Firma Impresa esecutrice (${companyName || '—'})</label>
+    <div style="height:36px"></div>
+  </div>
+</div>
+
+<div class="doc-footer">
+  <span>${siteName} &mdash; SAL emesso il ${dataEmissione}</span>
+  <span>Generato con Palladia &mdash; palladia.it</span>
+</div>
+</div></body></html>`;
 
   try {
     const { rendererPool } = require('../../pdf-renderer');
