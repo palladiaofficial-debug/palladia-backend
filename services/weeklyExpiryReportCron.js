@@ -31,7 +31,7 @@ async function buildExpiryEvents(companyId) {
   const from30  = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const to30    = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
-  const [workersRes, subsRes, companyRes, sitesRes] = await Promise.all([
+  const [workersRes, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
     supabase.from('workers')
       .select('id, full_name, safety_training_expiry, health_fitness_expiry')
       .eq('company_id', companyId).eq('is_active', true),
@@ -47,6 +47,12 @@ async function buildExpiryEvents(companyId) {
     supabase.from('sites')
       .select('id, name, suolo_occupazione_end, end_date, suolo_occupazione')
       .eq('company_id', companyId).neq('status', 'eliminato'),
+
+    supabase.from('site_sal_history')
+      .select('id, sal_number, importo_maturato, data_pagamento_prevista, sites(name)')
+      .eq('company_id', companyId)
+      .is('pagato_il', null)
+      .not('data_pagamento_prevista', 'is', null),
   ]);
 
   const events = [];
@@ -75,6 +81,13 @@ async function buildExpiryEvents(companyId) {
   for (const s of (sitesRes.data || [])) {
     if (s.suolo_occupazione && s.suolo_occupazione_end)
       push(s.suolo_occupazione_end, `Suolo pubblico — ${s.name}`);
+  }
+  for (const sal of (salRes.data || [])) {
+    const siteName = sal.sites?.name || 'Cantiere';
+    const imp = sal.importo_maturato != null
+      ? ` (€ ${Number(sal.importo_maturato).toLocaleString('it-IT', { maximumFractionDigits: 0 })})`
+      : '';
+    push(sal.data_pagamento_prevista, `Incasso SAL N.${sal.sal_number}${imp} — ${siteName}`);
   }
 
   events.sort((a, b) => a.date.localeCompare(b.date));
