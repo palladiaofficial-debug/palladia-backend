@@ -75,9 +75,41 @@ function parseJsonSafe(raw) {
   const clean = (raw || '').trim()
     .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
   const start = clean.indexOf('[');
-  const end   = clean.lastIndexOf(']');
-  if (start === -1 || end === -1) return [];
-  try { return JSON.parse(clean.slice(start, end + 1)); } catch { return []; }
+  if (start === -1) return [];
+
+  // Percorso normale: array completo
+  const end = clean.lastIndexOf(']');
+  if (end !== -1) {
+    try { return JSON.parse(clean.slice(start, end + 1)); } catch { /* fallthrough */ }
+  }
+
+  // Percorso recupero parziale: JSON troncato (output token limit)
+  // Estrae gli oggetti completi già presenti nell'array parziale
+  const partial = clean.slice(start + 1);
+  const items = [];
+  let depth = 0, inStr = false, escaped = false, objStart = -1;
+  for (let i = 0; i < partial.length; i++) {
+    const ch = partial[i];
+    if (escaped)        { escaped = false; continue; }
+    if (ch === '\\')    { escaped = true; continue; }
+    if (ch === '"')     { inStr = !inStr; continue; }
+    if (inStr)          continue;
+    if (ch === '{') { if (depth === 0) objStart = i; depth++; }
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        try {
+          const obj = JSON.parse(partial.slice(objStart, i + 1));
+          if (obj && typeof obj === 'object') items.push(obj);
+        } catch { /* skip malformed */ }
+        objStart = -1;
+      }
+    }
+  }
+  if (items.length > 0) {
+    console.warn(`[visionParser] JSON troncato recuperato: ${items.length} elementi`);
+  }
+  return items;
 }
 
 // ─── System prompt — lettura visiva PDF ───────────────────────────────────────
@@ -131,7 +163,7 @@ async function parseWithVision(buffer) {
 
   const resp = await client.messages.create({
     model:      MODEL,
-    max_tokens: 8192,
+    max_tokens: 16000,
     system:     VISION_SYSTEM,
     messages: [{
       role: 'user',
@@ -152,8 +184,12 @@ async function parseWithVision(buffer) {
     }],
   });
 
-  console.log(`[visionParser] token usati: input=${resp.usage?.input_tokens} output=${resp.usage?.output_tokens}`);
-  return parseJsonSafe(resp.content[0]?.text?.trim() || '[]');
+  const rawText = resp.content[0]?.text?.trim() || '[]';
+  console.log(`[visionParser] token usati: input=${resp.usage?.input_tokens} output=${resp.usage?.output_tokens} stop=${resp.stop_reason}`);
+  if (resp.stop_reason === 'max_tokens') console.warn('[visionParser] output TRONCATO — attivo recupero JSON parziale');
+  const items = parseJsonSafe(rawText);
+  console.log(`[visionParser] vision → ${items.length} elementi estratti (${items.filter(v=>v.tipo==='voce').length} voci)`);
+  return items;
 }
 
 // ─── System prompt — text fallback ───────────────────────────────────────────
@@ -183,11 +219,13 @@ async function parseTextChunk(text, client, idx, total) {
   console.log(`[visionParser/text] chunk ${idx}/${total} (${text.length} char)`);
   const resp = await client.messages.create({
     model:      MODEL,
-    max_tokens: 8192,
+    max_tokens: 16000,
     system:     TEXT_SYSTEM,
     messages: [{ role: 'user', content: text }],
   });
-  return parseJsonSafe(resp.content[0]?.text?.trim() || '[]');
+  const rawText = resp.content[0]?.text?.trim() || '[]';
+  if (resp.stop_reason === 'max_tokens') console.warn(`[visionParser/text] chunk ${idx} troncato — recupero parziale`);
+  return parseJsonSafe(rawText);
 }
 
 async function parseWithText(buffer) {
