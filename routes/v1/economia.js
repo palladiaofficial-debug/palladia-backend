@@ -3,11 +3,15 @@
  * routes/v1/economia.js
  * SAL — Stato Avanzamento Lavori: budget, costi, ricavi per cantiere.
  *
- * GET    /api/v1/sites/:siteId/economia           — riepilogo + voci
- * PATCH  /api/v1/sites/:siteId/economia/settings  — aggiorna budget + SAL %
- * POST   /api/v1/sites/:siteId/economia/voci      — aggiungi voce
- * PATCH  /api/v1/sites/:siteId/economia/voci/:id  — modifica voce
- * DELETE /api/v1/sites/:siteId/economia/voci/:id  — elimina voce
+ * GET    /api/v1/sites/:siteId/economia                   — riepilogo + voci
+ * PATCH  /api/v1/sites/:siteId/economia/settings          — aggiorna budget + SAL %
+ * POST   /api/v1/sites/:siteId/economia/voci              — aggiungi voce
+ * PATCH  /api/v1/sites/:siteId/economia/voci/:id          — modifica voce
+ * DELETE /api/v1/sites/:siteId/economia/voci/:id          — elimina voce
+ * GET    /api/v1/sites/:siteId/economia/sal-pdf           — PDF on-demand
+ * GET    /api/v1/sites/:siteId/economia/sal-history       — storico SAL
+ * POST   /api/v1/sites/:siteId/economia/sal-history       — emetti + salva SAL
+ * DELETE /api/v1/sites/:siteId/economia/sal-history/:id  — elimina SAL
  */
 
 const router   = require('express').Router();
@@ -17,6 +21,9 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 router.use(verifySupabaseJwt);
 
 const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+const STORAGE_BUCKET = 'site-media';
+const SIGNED_URL_TTL = 3600; // 1h
 
 // Verifica che il cantiere appartenga alla company dell'utente
 async function resolveSite(siteId, companyId) {
@@ -58,7 +65,6 @@ router.get('/sites/:siteId/economia', async (req, res) => {
   const totRicavi = ricavi.reduce((s, v) => s + Number(v.importo), 0);
   const utile     = totRicavi - totCosti;
 
-  // Aggregazione per categoria
   const costiPerCategoria   = {};
   const ricaviPerCategoria  = {};
   costi.forEach(v  => { costiPerCategoria[v.categoria]  = (costiPerCategoria[v.categoria]  || 0) + Number(v.importo); });
@@ -232,7 +238,6 @@ router.delete('/sites/:siteId/economia/voci/:id', async (req, res) => {
 });
 
 // ── Shared P&L calculation ────────────────────────────────────────────────────
-// Riutilizzato da /pnl e /sal-pdf per evitare duplicazione logica.
 async function calcPnl(siteId, companyId, site) {
   const [computoRes, logsRes, costsRes, workersRes] = await Promise.all([
     supabase.from('site_computo')
@@ -355,48 +360,25 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
   const site = await resolveSite(siteId, companyId);
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
   const pnl = await calcPnl(siteId, companyId, site);
-  // Non esporre le righe complete nel pnl (sono già in /costs)
   const { costi_diretti: { rows, ...costiSummary }, ...rest } = pnl;
   res.json({ ...rest, costi_diretti: costiSummary });
 });
 
-// ── GET /api/v1/sites/:siteId/economia/sal-pdf ───────────────────────────────
-// PDF SAL con dati reali: costi da site_costs + manodopera da timbrature.
-router.get('/sites/:siteId/economia/sal-pdf', async (req, res) => {
-  const { companyId } = req;
-  const { siteId }    = req.params;
-
-  const site = await resolveSite(siteId, companyId);
-  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
-
-  const [{ data: siteData }, { data: company }, pnl] = await Promise.all([
-    supabase.from('sites').select('name, address, client').eq('id', siteId).maybeSingle(),
-    supabase.from('companies').select('name').eq('id', companyId).maybeSingle(),
-    calcPnl(siteId, companyId, site),
-  ]);
-
-  const siteName    = siteData?.name    || 'Cantiere';
-  const siteAddress = siteData?.address || '';
-  const client      = siteData?.client  || '';
-  const companyName = company?.name     || '';
-  const now         = new Date();
-  const dataEmissione = now.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
-  const safeName    = siteName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
-
+// ── Shared PDF HTML builder ───────────────────────────────────────────────────
+function buildSalPdfHtml({ siteName, siteAddress, client, companyName, pnl, salNumber, dataEmissione }) {
   const { contratto, costo_mo, costi_diretti, margine, totale_costi } = pnl;
   const salPct   = contratto.sal_percentuale;
   const maturato = contratto.importo_maturato;
 
   function fmtEur(n) {
     if (n == null) return '—';
-    return '€ ' + Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return '€ ' + Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
   function fmtOre(h) {
     const hh = Math.floor(h); const mm = Math.round((h - hh) * 60);
     return `${hh}h${mm > 0 ? ` ${mm}m` : ''}`;
   }
 
-  // Costi diretti raggruppati per categoria
   const costiPerCat = {};
   for (const c of (costi_diretti.rows || [])) {
     const cat = c.categoria || 'Altro';
@@ -422,9 +404,10 @@ router.get('/sites/:siteId/economia/sal-pdf', async (req, res) => {
     return costo_mo.breakdown.map(w => `<tr><td style="padding:7px 16px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${w.full_name}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${fmtOre(w.ore_totali)}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${w.tariffa_oraria ? `€ ${w.tariffa_oraria.toFixed(2)}/h` : '<i>N/D</i>'}</td><td style="padding:7px 16px;text-align:right;font-size:11px;font-weight:600;color:#374151;border-bottom:1px solid #f3f4f6">${w.costo_totale > 0 ? fmtEur(w.costo_totale) : '<span style="color:#d97706">N/D</span>'}</td></tr>`).join('');
   }
 
+  const salLabel    = salNumber != null ? `SAL N. ${salNumber}` : 'SAL';
   const margineClass = margine.valore == null ? '' : margine.valore >= 0 ? 'green' : 'red';
 
-  const html = `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><style>
+  return `<!DOCTYPE html><html lang="it"><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;color:#111827;background:#fff;font-size:12px}
 .page{padding:12mm 14mm 10mm}
@@ -471,7 +454,7 @@ table{width:100%;border-collapse:collapse}
     <p>Stato Avanzamento Lavori &mdash; ${siteName}</p>
   </div>
   <div>
-    <div class="badge">SAL</div>
+    <div class="badge">${salLabel}</div>
     <div class="date">Emesso il ${dataEmissione}</div>
   </div>
 </div>
@@ -595,10 +578,35 @@ table{width:100%;border-collapse:collapse}
 </div>
 
 <div class="doc-footer">
-  <span>${siteName} &mdash; SAL emesso il ${dataEmissione}</span>
+  <span>${siteName} &mdash; ${salLabel} emesso il ${dataEmissione}</span>
   <span>Generato con Palladia &mdash; palladia.it</span>
 </div>
 </div></body></html>`;
+}
+
+// ── GET /api/v1/sites/:siteId/economia/sal-pdf ───────────────────────────────
+router.get('/sites/:siteId/economia/sal-pdf', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  const [{ data: siteData }, { data: company }, pnl] = await Promise.all([
+    supabase.from('sites').select('name, address, client').eq('id', siteId).maybeSingle(),
+    supabase.from('companies').select('name').eq('id', companyId).maybeSingle(),
+    calcPnl(siteId, companyId, site),
+  ]);
+
+  const siteName    = siteData?.name    || 'Cantiere';
+  const siteAddress = siteData?.address || '';
+  const client      = siteData?.client  || '';
+  const companyName = company?.name     || '';
+  const now         = new Date();
+  const dataEmissione = now.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
+  const safeName    = siteName.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40);
+
+  const html = buildSalPdfHtml({ siteName, siteAddress, client, companyName, pnl, salNumber: null, dataEmissione });
 
   try {
     const { rendererPool } = require('../../pdf-renderer');
@@ -614,6 +622,190 @@ table{width:100%;border-collapse:collapse}
     console.error('[economia/sal-pdf]', e.message);
     res.status(500).json({ error: 'PDF_GENERATION_ERROR', detail: e.message });
   }
+});
+
+// ── GET /api/v1/sites/:siteId/economia/sal-history ───────────────────────────
+router.get('/sites/:siteId/economia/sal-history', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  const { data: rows, error } = await supabase
+    .from('site_sal_history')
+    .select('*')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .order('sal_number', { ascending: false });
+
+  if (error) {
+    console.error('[sal-history/get]', error.message);
+    return res.status(500).json({ error: 'INTERNAL' });
+  }
+
+  // Generate signed URLs for each PDF
+  const result = await Promise.all((rows || []).map(async row => {
+    let pdf_signed_url = null;
+    if (row.pdf_url) {
+      const { data: signed } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .createSignedUrl(row.pdf_url, SIGNED_URL_TTL);
+      pdf_signed_url = signed?.signedUrl ?? null;
+    }
+    return { ...row, pdf_signed_url };
+  }));
+
+  res.json({ sal_history: result });
+});
+
+// ── POST /api/v1/sites/:siteId/economia/sal-history ──────────────────────────
+router.post('/sites/:siteId/economia/sal-history', async (req, res) => {
+  const { companyId, user } = req;
+  const { siteId }          = req.params;
+  const { note }            = req.body;
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  // Determine next SAL number for this site
+  const { data: lastSal } = await supabase
+    .from('site_sal_history')
+    .select('sal_number')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .order('sal_number', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const salNumber = (lastSal?.sal_number ?? 0) + 1;
+
+  // Fetch P&L + site info in parallel
+  const [{ data: siteData }, { data: company }, pnl] = await Promise.all([
+    supabase.from('sites').select('name, address, client').eq('id', siteId).maybeSingle(),
+    supabase.from('companies').select('name').eq('id', companyId).maybeSingle(),
+    calcPnl(siteId, companyId, site),
+  ]);
+
+  const siteName    = siteData?.name    || 'Cantiere';
+  const siteAddress = siteData?.address || '';
+  const client      = siteData?.client  || '';
+  const companyName = company?.name     || '';
+  const now         = new Date();
+  const dateISO     = now.toISOString().slice(0, 10);
+  const dataEmissione = now.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  // Generate PDF
+  const html = buildSalPdfHtml({ siteName, siteAddress, client, companyName, pnl, salNumber, dataEmissione });
+
+  let pdfBuffer;
+  try {
+    const { rendererPool } = require('../../pdf-renderer');
+    pdfBuffer = await rendererPool.render(html, {
+      docTitle: `SAL N.${salNumber} — ${siteName}`,
+      revision: salNumber,
+      noHeaderFooter: true,
+    });
+  } catch (e) {
+    console.error('[sal-history/post] PDF error', e.message);
+    return res.status(500).json({ error: 'PDF_GENERATION_ERROR', detail: e.message });
+  }
+
+  // Upload PDF to storage
+  const salNumPadded = String(salNumber).padStart(2, '0');
+  const storagePath  = `${companyId}/${siteId}/sal/SAL-${salNumPadded}-${dateISO}.pdf`;
+
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(storagePath, pdfBuffer, {
+      contentType:  'application/pdf',
+      upsert:       false,
+    });
+
+  if (uploadError) {
+    console.error('[sal-history/post] Storage upload error', uploadError.message);
+    return res.status(500).json({ error: 'STORAGE_ERROR', detail: uploadError.message });
+  }
+
+  // Save snapshot row
+  const { contratto, costo_mo, costi_diretti, margine, totale_costi } = pnl;
+  const { data: row, error: insertError } = await supabase
+    .from('site_sal_history')
+    .insert({
+      company_id:         companyId,
+      site_id:            siteId,
+      sal_number:         salNumber,
+      sal_percentuale:    contratto.sal_percentuale,
+      data_emissione:     dateISO,
+      totale_contratto:   contratto.totale_contratto,
+      importo_maturato:   contratto.importo_maturato,
+      costo_mo:           costo_mo.totale,
+      costi_diretti:      costi_diretti.totale,
+      totale_costi,
+      margine:            margine.valore,
+      margine_percentuale: margine.percentuale,
+      note:               note ? String(note).trim().slice(0, 1000) : null,
+      pdf_url:            storagePath,
+      created_by:         user.id,
+    })
+    .select()
+    .single();
+
+  if (insertError) {
+    console.error('[sal-history/post] Insert error', insertError.message);
+    // Attempt cleanup of uploaded PDF
+    await supabase.storage.from(STORAGE_BUCKET).remove([storagePath]);
+    return res.status(500).json({ error: 'INTERNAL', detail: insertError.message });
+  }
+
+  // Return with signed URL
+  const { data: signed } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .createSignedUrl(storagePath, SIGNED_URL_TTL);
+
+  res.status(201).json({ ...row, pdf_signed_url: signed?.signedUrl ?? null });
+});
+
+// ── DELETE /api/v1/sites/:siteId/economia/sal-history/:id ────────────────────
+router.delete('/sites/:siteId/economia/sal-history/:id', async (req, res) => {
+  const { companyId } = req;
+  const { siteId, id } = req.params;
+
+  if (!isUuid(id)) return res.status(400).json({ error: 'id non valido' });
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  // Fetch the row first to get pdf_url
+  const { data: row, error: fetchErr } = await supabase
+    .from('site_sal_history')
+    .select('id, pdf_url')
+    .eq('id', id)
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (fetchErr || !row) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  // Delete PDF from storage
+  if (row.pdf_url) {
+    const { error: storageErr } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([row.pdf_url]);
+    if (storageErr) console.error('[sal-history/delete] Storage remove error', storageErr.message);
+  }
+
+  // Delete the row
+  const { error } = await supabase
+    .from('site_sal_history')
+    .delete()
+    .eq('id', id)
+    .eq('site_id', siteId)
+    .eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+
+  res.json({ ok: true });
 });
 
 module.exports = router;
