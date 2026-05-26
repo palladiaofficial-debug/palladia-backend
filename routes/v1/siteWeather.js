@@ -25,7 +25,7 @@ function toItShort(iso) {
 async function getSiteOrFail(siteId, companyId, res) {
   const { data } = await supabase
     .from('sites')
-    .select('id, name, address, client, start_date, end_date, contract_days, days_type, latitude, longitude')
+    .select('id, name, address, comune, client, start_date, end_date, contract_days, days_type, latitude, longitude')
     .eq('id', siteId)
     .eq('company_id', companyId)
     .neq('status', 'eliminato')
@@ -163,7 +163,7 @@ router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, async
   // Ricalcola end_date del cantiere
   const { data: suspRows } = await supabase
     .from('site_suspension_days').select('day').eq('site_id', siteId);
-  const newEnd = calcEndDate(site.start_date, site.contract_days, site.days_type, (suspRows||[]).map(r=>r.day));
+  const newEnd = calcEndDate(site.start_date, site.contract_days, site.days_type, (suspRows||[]).map(r=>r.day), site.comune ?? null);
   if (newEnd) await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
 
   // Aggiorna notifica (rimuovi questo giorno dal conteggio pendenti)

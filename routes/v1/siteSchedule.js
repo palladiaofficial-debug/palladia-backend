@@ -10,7 +10,7 @@ const VALID_REASONS = ['pioggia', 'vento', 'neve', 'altro'];
 async function recalcEndDate(siteId, companyId) {
   const { data: site } = await supabase
     .from('sites')
-    .select('start_date, contract_days, days_type')
+    .select('start_date, contract_days, days_type, comune')
     .eq('id', siteId)
     .eq('company_id', companyId)
     .maybeSingle();
@@ -23,7 +23,7 @@ async function recalcEndDate(siteId, companyId) {
     .eq('site_id', siteId);
 
   const suspDays = (suspRows || []).map(r => r.day);
-  const newEnd = calcEndDate(site.start_date, site.contract_days, site.days_type, suspDays);
+  const newEnd = calcEndDate(site.start_date, site.contract_days, site.days_type, suspDays, site.comune ?? null);
 
   if (newEnd) {
     await supabase

@@ -14,6 +14,7 @@ function formatSite(s) {
     id:                        s.id,
     name:                      s.name,
     address:                   s.address,
+    comune:                    s.comune ?? null,
     status:                    s.status ?? 'attivo',
     client:                    s.client,
     startDate:                 s.start_date,
@@ -43,7 +44,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, async (req, res) => {
-  const SELECT_COLS = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes';
+  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes';
 
   const { data, error } = await supabase
     .from('sites')
@@ -129,7 +130,7 @@ router.post('/sites/:siteId/restore', verifySupabaseJwt, async (req, res) => {
 router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
   const {
-    name, address, client, status,
+    name, address, comune, client, status,
     start_date, end_date,
     contract_days, days_type,
     referente_tecnico_id, referente_tecnico_name,
@@ -139,7 +140,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
   const { data: site, error: siteErr } = await supabase
     .from('sites')
-    .select('id, name, status, start_date, contract_days, days_type')
+    .select('id, name, status, start_date, contract_days, days_type, comune')
     .eq('id', siteId)
     .eq('company_id', req.companyId)
     .neq('status', 'eliminato')
@@ -158,6 +159,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     updates.name = trimmed;
   }
   if (address !== undefined) updates.address = address ? String(address).trim() : null;
+  if (comune  !== undefined) updates.comune  = comune  ? String(comune).trim()  : null;
   if (client  !== undefined) updates.client  = client  ? String(client).trim()  : null;
 
   if (contract_days !== undefined) updates.contract_days = contract_days ? Number(contract_days) : null;
@@ -193,6 +195,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   const effectiveStartDate    = updates.start_date    ?? site.start_date    ?? null;
   const effectiveContractDays = updates.contract_days ?? site.contract_days ?? null;
   const effectiveDaysType     = updates.days_type     ?? site.days_type     ?? 'solari';
+  const effectiveComune       = updates.comune        ?? site.comune        ?? null;
 
   if (effectiveStartDate && effectiveContractDays) {
     const { data: suspRows } = await supabase
@@ -200,7 +203,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
       .select('day')
       .eq('site_id', siteId);
     const suspDays = (suspRows || []).map(r => r.day);
-    updates.end_date = calcEndDate(effectiveStartDate, effectiveContractDays, effectiveDaysType, suspDays);
+    updates.end_date = calcEndDate(effectiveStartDate, effectiveContractDays, effectiveDaysType, suspDays, effectiveComune);
   } else if (end_date !== undefined) {
     updates.end_date = end_date || null;
   }
@@ -341,7 +344,7 @@ router.patch('/sites/:siteId/coords', verifySupabaseJwt, async (req, res) => {
 // ── POST /api/v1/sites — crea cantiere ───────────────────────────────────────
 router.post('/sites', verifySupabaseJwt, async (req, res) => {
   const {
-    name, address, client, status,
+    name, address, comune, client, status,
     start_date, end_date,
     contract_days, days_type,
     referente_tecnico_id,
@@ -409,9 +412,10 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
   }
 
   // Calcola end_date dai giorni contratto se non passata esplicitamente
+  const comuneVal = comune ? String(comune).trim() : null;
   let computedEndDate = end_date || null;
   if (!computedEndDate && start_date && contractDays) {
-    computedEndDate = calcEndDate(start_date, contractDays, daysTypeVal, []);
+    computedEndDate = calcEndDate(start_date, contractDays, daysTypeVal, [], comuneVal);
   }
 
   const { data, error } = await supabase
@@ -419,6 +423,7 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
     .insert({
       name:       name.trim(),
       address:    address ? String(address).trim() : null,
+      comune:     comuneVal,
       client:     client  ? String(client).trim()  : null,
       start_date: start_date || null,
       end_date:   computedEndDate,
@@ -433,7 +438,7 @@ router.post('/sites', verifySupabaseJwt, async (req, res) => {
       suolo_occupazione_end:     suolo_occupazione_end     || null,
       suolo_occupazione_notes:   suolo_occupazione_notes   || null,
     })
-    .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes')
+    .select('id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes')
     .single();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
