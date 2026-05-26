@@ -1,9 +1,16 @@
 'use strict';
-const path     = require('path');
-const multer   = require('multer');
-const router   = require('express').Router();
-const supabase = require('../../lib/supabase');
+const path      = require('path');
+const multer    = require('multer');
+const router    = require('express').Router();
+const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const Anthropic = require('@anthropic-ai/sdk');
+
+let _ai = null;
+function getAI() {
+  if (!_ai) _ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _ai;
+}
 
 const BUCKET   = 'site-media';
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -144,14 +151,18 @@ router.patch('/sites/:siteId/costs/:costId', verifySupabaseJwt, async (req, res)
 
   const allowed = ['descrizione', 'fornitore', 'quantita', 'unita_misura', 'prezzo_unitario',
                    'importo', 'data_documento', 'tipo', 'numero_documento', 'phase_id',
-                   'capitolato_voce_id', 'categoria', 'note'];
+                   'capitolato_voce_id', 'categoria', 'note', 'pagato_il'];
   const numeric = new Set(['quantita', 'prezzo_unitario', 'importo']);
+  const nullable = new Set(['pagato_il', 'data_documento', 'fornitore', 'numero_documento',
+                            'note', 'categoria', 'phase_id', 'capitolato_voce_id', 'unita_misura']);
   const updates = {};
   for (const k of allowed) {
     if (!(k in req.body)) continue;
     if (numeric.has(k)) {
       const n = parseFloat(req.body[k]);
       updates[k] = isNaN(n) ? null : n;
+    } else if (nullable.has(k)) {
+      updates[k] = req.body[k] || null;
     } else {
       updates[k] = req.body[k] || null;
     }
@@ -191,5 +202,70 @@ router.delete('/sites/:siteId/costs/:costId', verifySupabaseJwt, async (req, res
 
   res.json({ ok: true });
 });
+
+// ── POST /api/v1/sites/:siteId/costs/ocr ─────────────────────────────────────
+// Legge una fattura (PDF o immagine) con Claude Vision e restituisce i campi
+// pre-compilati. Non salva nulla — il frontend usa i dati per riempire il form.
+router.post('/sites/:siteId/costs/ocr',
+  verifySupabaseJwt,
+  (req, res, next) => upload.single('file')(req, res, err => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const { siteId } = req.params;
+    if (!await requireSiteOwnership(siteId, req.companyId, res)) return;
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const buf      = req.file.buffer;
+    const mime     = req.file.mimetype;
+    const b64      = buf.toString('base64');
+    const isPdf    = mime === 'application/pdf';
+
+    const contentBlock = isPdf
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
+      : { type: 'image',    source: { type: 'base64', media_type: mime,               data: b64 } };
+
+    const prompt = `Sei un assistente per la gestione cantieri edili. Leggi questo documento (fattura, DDT o ricevuta) ed estrai le informazioni in JSON con questi campi:
+- descrizione: breve descrizione del bene/servizio (max 100 caratteri, in italiano)
+- importo: importo totale del documento come numero decimale (usa il punto come separatore, non la virgola). Se non trovi un importo totale chiaro, usa null.
+- fornitore: nome del fornitore/emittente. Null se non presente.
+- numero_documento: numero fattura/DDT (es. "2025/0042"). Null se non presente.
+- data_documento: data del documento in formato YYYY-MM-DD. Null se non presente.
+- tipo: uno tra "fattura", "ddt", "acconto", "ritenuta", "altro"
+- categoria: una tra "Materiali", "Subappalto", "Nolo", "Manodopera extra", "Trasporti", "Forniture", "Oneri sicurezza", "Altro"
+
+Rispondi SOLO con JSON valido, nessun testo aggiuntivo.`;
+
+    try {
+      const ai  = getAI();
+      const msg = await ai.messages.create({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
+      });
+
+      const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
+      const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim() : raw;
+      const data = JSON.parse(json);
+
+      res.json({
+        descrizione:      typeof data.descrizione      === 'string'  ? data.descrizione.slice(0, 100)  : '',
+        importo:          typeof data.importo          === 'number'   ? String(data.importo)             : '',
+        fornitore:        typeof data.fornitore        === 'string'  ? data.fornitore.slice(0, 100)     : '',
+        numero_documento: typeof data.numero_documento === 'string'  ? data.numero_documento.slice(0,50): '',
+        data_documento:   typeof data.data_documento   === 'string'  ? data.data_documento               : '',
+        tipo:             ['fattura','ddt','acconto','ritenuta','altro'].includes(data.tipo) ? data.tipo : 'fattura',
+        categoria:        ['Materiali','Subappalto','Nolo','Manodopera extra','Trasporti','Forniture','Oneri sicurezza','Altro'].includes(data.categoria)
+                            ? data.categoria : 'Altro',
+      });
+    } catch (err) {
+      console.error('[siteCosts/ocr] AI error:', err?.message || err);
+      res.status(500).json({ error: 'OCR_FAILED', message: 'Impossibile leggere il documento.' });
+    }
+  }
+);
 
 module.exports = router;

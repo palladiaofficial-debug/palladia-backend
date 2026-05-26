@@ -11,12 +11,19 @@
  * DELETE /api/v1/sites/:siteId/computo/:id       — elimina computo
  */
 
-const router  = require('express').Router();
-const multer  = require('multer');
-const supabase = require('../../lib/supabase');
+const router    = require('express').Router();
+const multer    = require('multer');
+const Anthropic = require('@anthropic-ai/sdk');
+const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { parsePdf, parseExcel } = require('../../services/computoParser');
 const { generateComputoPdf } = require('../../services/computoPdfGenerator');
+
+let _ai = null;
+function getAI() {
+  if (!_ai) _ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _ai;
+}
 
 // ── Multer: in-memory, max 25MB, PDF + Excel ──────────────────
 const upload = multer({
@@ -87,6 +94,114 @@ router.post('/sites/:siteId/computo/parse',
       console.error('[computo/parse] ERROR:', msg, err?.stack || '');
       const isUserError = msg.includes('non contiene') || msg.includes('Nessuna voce') || msg.includes('non parsabile') || msg.includes('grande');
       res.status(isUserError ? 422 : 500).json({ error: isUserError ? 'PARSE_FAILED' : 'INTERNAL', message: msg });
+    }
+  }
+);
+
+// ── POST /api/v1/sites/:siteId/computo/parse-generic ─────────
+// Parsa UN QUALSIASI PDF preventivo/offerta con Claude puro (nessun regex).
+// Utile per documenti non-strutturati: computi artigianali, preventivi liberi, ecc.
+// Restituisce lo stesso formato di /parse per il flow di revisione identico.
+
+router.post('/sites/:siteId/computo/parse-generic',
+  (req, res, next) => upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: 'UPLOAD_ERROR', message: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const { companyId } = req;
+    const { siteId }    = req.params;
+
+    const site = await resolveSite(siteId, companyId);
+    if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const { mimetype, buffer, originalname } = req.file;
+    if (mimetype !== 'application/pdf')
+      return res.status(400).json({ error: 'PDF_ONLY', message: 'Carica un PDF per il preventivo libero.' });
+
+    const b64 = buffer.toString('base64');
+
+    const prompt = `Sei un esperto di computi metrici edili italiani. Analizza questo documento (può essere un preventivo, un computo, un'offerta, un capitolato sintetico) ed estrai TUTTE le voci di lavoro presenti.
+
+Per ogni voce fornisci:
+- categoria: categoria/sezione di appartenza (es. "Demolizioni", "Strutture", "Finiture", ecc.)
+- codice: codice della voce se presente, altrimenti null
+- descrizione: descrizione della lavorazione (non troncare)
+- unita_misura: unità di misura (m, m², m³, kg, cad, corpo, ecc.) o null
+- quantita: numero come float, null se assente
+- prezzo_unitario: prezzo unitario come float, null se assente
+- importo: quantita × prezzo_unitario come float, o importo diretto se presente, null se non calcolabile
+
+Regole:
+1. Le CATEGORIE vanno estratte come oggetti con tipo "categoria"
+2. Le VOCI SINGOLE di lavoro vanno estratte come oggetti con tipo "voce"
+3. Ogni voce deve avere parent_codice uguale al codice della categoria di appartenenza
+4. Se non ci sono categorie esplicite nel documento, creane una chiamata "Lavori"
+5. Ignora totali, subtotali, condizioni di pagamento, firme, intestazioni aziendali
+
+Rispondi SOLO con un oggetto JSON in questo formato (nessun testo fuori dal JSON):
+{
+  "nome": "titolo del documento o 'Preventivo'",
+  "voci": [
+    { "tipo": "categoria", "codice": "A", "descrizione": "Nome categoria", "sort_order": 0 },
+    { "tipo": "voce", "parent_codice": "A", "codice": "A.1", "descrizione": "...", "unita_misura": "m²", "quantita": 120.5, "prezzo_unitario": 45.00, "importo": 5422.50, "sort_order": 1 }
+  ]
+}`;
+
+    try {
+      const ai  = getAI();
+      const msg = await ai.messages.create({
+        model:      'claude-sonnet-4-6',
+        max_tokens: 8192,
+        messages: [{
+          role:    'user',
+          content: [
+            { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } },
+            { type: 'text', text: prompt },
+          ],
+        }],
+      });
+
+      const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
+      const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim() : raw;
+      const data = JSON.parse(json);
+
+      if (!Array.isArray(data.voci) || data.voci.length === 0)
+        return res.status(422).json({ error: 'PARSE_FAILED', message: 'Nessuna voce trovata nel documento.' });
+
+      const voci = data.voci.map((v, i) => ({
+        tipo:            v.tipo === 'categoria' ? 'categoria' : 'voce',
+        parent_codice:   v.parent_codice || null,
+        codice:          v.codice        || null,
+        descrizione:     String(v.descrizione || '').slice(0, 500),
+        unita_misura:    v.unita_misura   || null,
+        quantita:        v.quantita       != null ? Number(v.quantita)       : null,
+        prezzo_unitario: v.prezzo_unitario != null ? Number(v.prezzo_unitario): null,
+        importo:         v.importo        != null ? Number(v.importo)        : null,
+        sort_order:      Number(v.sort_order ?? i),
+      }));
+
+      const totale = voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (v.importo || 0), 0);
+      const nome   = String(data.nome || originalname?.replace(/\.pdf$/i, '') || 'Preventivo').slice(0, 200);
+
+      res.json({
+        nome,
+        totale_contratto: Math.round(totale * 100) / 100,
+        n_voci:           voci.filter(v => v.tipo === 'voce').length,
+        n_categorie:      voci.filter(v => v.tipo === 'categoria').length,
+        fonte:            'pdf',
+        voci,
+      });
+    } catch (err) {
+      console.error('[computo/parse-generic] ERROR:', err?.message || err);
+      const isJson = err instanceof SyntaxError;
+      res.status(isJson ? 422 : 500).json({
+        error:   isJson ? 'PARSE_FAILED' : 'INTERNAL',
+        message: isJson ? 'Il modello non ha restituito JSON valido. Riprova.' : 'Errore durante l\'analisi.',
+      });
     }
   }
 );
