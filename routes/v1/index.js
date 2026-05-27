@@ -149,6 +149,9 @@ router.use('/', require('./ocrExpiry'));
 // Scadenzario unificato: lavoratori, subappaltatori, azienda, cantieri
 router.use('/', require('./expiryCalendar'));
 
+// Diario di cantiere: voce giornaliera, meteo auto, presenze, PDF
+router.use('/', require('./diary'));
+
 // Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
 router.use('/', require('./workerInvite'));
 
