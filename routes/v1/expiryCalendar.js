@@ -36,8 +36,8 @@ function fmtDate(d) {
 router.get('/expiry-calendar', verifySupabaseJwt, async (req, res) => {
   const companyId = req.companyId;
 
-  // Finestra: default prossimi 90 giorni + già scaduti ultimi 30
-  const fromParam = req.query.from || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  // Finestra: tutti gli scaduti + prossimi 90 giorni
+  const fromParam = req.query.from || '2000-01-01';
   const toParam   = req.query.to   || new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
 
   const [workersRes, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
@@ -45,9 +45,7 @@ router.get('/expiry-calendar', verifySupabaseJwt, async (req, res) => {
       .from('workers')
       .select('id, full_name, safety_training_expiry, health_fitness_expiry')
       .eq('company_id', companyId)
-      .eq('is_active', true)
-      .or(`safety_training_expiry.gte.${fromParam},health_fitness_expiry.gte.${fromParam}`)
-      .or(`safety_training_expiry.lte.${toParam},health_fitness_expiry.lte.${toParam}`),
+      .eq('is_active', true),
 
     supabase
       .from('subcontractors')
