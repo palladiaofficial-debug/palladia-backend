@@ -33,11 +33,13 @@ router.get('/my-company', async (req, res) => {
     // hint non valido → continua con fallback
   }
 
-  // Fallback: restituisce la prima company trovata ordinata per ruolo
-  // (owner > admin > tech > viewer) così il proprietario vede sempre la sua company
+  // Fallback: restituisce la company più "sana" tra quelle dell'utente.
+  // Ordine: abbonamento attivo > trial valido > trial scaduto/canceled, poi per ruolo.
+  // Questo evita che un utente membro di un team Pro (come tech) venga mandato
+  // sulla propria company con trial scaduto dopo un login da nuovo dispositivo.
   const { data: memberships } = await supabase
     .from('company_users')
-    .select('company_id, role')
+    .select('company_id, role, companies(subscription_status, trial_ends_at)')
     .eq('user_id', userId);
 
   if (!memberships || memberships.length === 0) {
@@ -45,9 +47,25 @@ router.get('/my-company', async (req, res) => {
   }
 
   const ROLE_ORDER = { owner: 0, admin: 1, tech: 2, viewer: 3 };
-  memberships.sort((a, b) => (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9));
-  const best = memberships[0];
 
+  function subScore(m) {
+    const s = m.companies?.subscription_status;
+    if (s === 'active') return 0;
+    if (s === 'trial') {
+      const trialEnd = m.companies?.trial_ends_at;
+      return trialEnd && new Date(trialEnd) > new Date() ? 1 : 3;
+    }
+    if (s === 'past_due') return 2;
+    return 3; // canceled / expired
+  }
+
+  memberships.sort((a, b) => {
+    const sDiff = subScore(a) - subScore(b);
+    if (sDiff !== 0) return sDiff;
+    return (ROLE_ORDER[a.role] ?? 9) - (ROLE_ORDER[b.role] ?? 9);
+  });
+
+  const best = memberships[0];
   res.json({ company_id: best.company_id, role: best.role });
 });
 
