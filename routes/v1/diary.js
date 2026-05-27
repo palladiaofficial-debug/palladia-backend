@@ -4,13 +4,28 @@
 // GET  /api/v1/sites/:siteId/diary/prefill/:date  — dati pre-compilati (no save)
 // GET  /api/v1/sites/:siteId/diary/:date          — voce singola
 // POST /api/v1/sites/:siteId/diary                — crea/aggiorna (upsert)
+// POST /api/v1/sites/:siteId/diary/photos         — upload foto (multipart)
+// DELETE /api/v1/sites/:siteId/diary/photos       — elimina foto da storage
 // DELETE /api/v1/sites/:siteId/diary/:date        — elimina
 // GET  /api/v1/sites/:siteId/diary/:date/pdf      — export PDF
 // ─────────────────────────────────────────────────────────────────────────────
+const crypto   = require('crypto');
+const path     = require('path');
+const multer   = require('multer');
 const router   = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { getActualWeather }   = require('../../services/weatherService');
+
+const BUCKET = 'site-documents';
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Solo immagini consentite (JPG, PNG, WebP).'));
+  },
+});
 
 // ── GET /api/v1/sites/:siteId/diary ──────────────────────────────────────────
 router.get('/sites/:siteId/diary', verifySupabaseJwt, async (req, res) => {
@@ -210,6 +225,58 @@ router.delete('/sites/:siteId/diary/:date', verifySupabaseJwt, async (req, res) 
     .eq('site_id', siteId).eq('company_id', req.companyId).eq('entry_date', date);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json({ ok: true });
+});
+
+// ── POST /api/v1/sites/:siteId/diary/photos ───────────────────────────────────
+// Carica una foto e restituisce { url, path }
+router.post('/sites/:siteId/diary/photos',
+  verifySupabaseJwt,
+  (req, res, next) => upload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const { siteId }  = req.params;
+    const { date }    = req.body;
+
+    const site = await getSiteOrFail(siteId, req.companyId, res);
+    if (!site) return;
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const safeDate = (date || new Date().toISOString().slice(0, 10)).replace(/[^0-9-]/g, '');
+    const ext      = path.extname(req.file.originalname) || '.jpg';
+    const fileId   = crypto.randomUUID();
+    const filePath = `${req.companyId}/diary/${siteId}/${safeDate}/${fileId}${ext}`;
+
+    const { error: storageErr } = await supabase.storage
+      .from(BUCKET).upload(filePath, req.file.buffer, {
+        contentType: req.file.mimetype, upsert: false,
+      });
+
+    if (storageErr) return res.status(500).json({ error: 'UPLOAD_ERROR', detail: storageErr.message });
+
+    const { data: signed } = await supabase.storage
+      .from(BUCKET).createSignedUrl(filePath, 60 * 60 * 24 * 365 * 10);
+
+    res.json({ url: signed?.signedUrl || null, path: filePath });
+  }
+);
+
+// ── DELETE /api/v1/sites/:siteId/diary/photos ──────────────────────────────────
+// Elimina una foto dallo storage. Body: { path }
+router.delete('/sites/:siteId/diary/photos', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const { path: filePath } = req.body;
+
+  const site = await getSiteOrFail(siteId, req.companyId, res);
+  if (!site) return;
+  if (!filePath || !String(filePath).startsWith(req.companyId + '/diary/'))
+    return res.status(400).json({ error: 'INVALID_PATH' });
+
+  await supabase.storage.from(BUCKET).remove([filePath]);
   res.json({ ok: true });
 });
 
