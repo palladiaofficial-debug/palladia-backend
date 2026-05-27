@@ -214,20 +214,6 @@ router.post('/sites/:siteId/diary', verifySupabaseJwt, async (req, res) => {
   res.json(data);
 });
 
-// ── DELETE /api/v1/sites/:siteId/diary/:date ──────────────────────────────────
-router.delete('/sites/:siteId/diary/:date', verifySupabaseJwt, async (req, res) => {
-  const { siteId, date } = req.params;
-  const site = await getSiteOrFail(siteId, req.companyId, res);
-  if (!site) return;
-
-  const { error } = await supabase
-    .from('site_diary_entries').delete()
-    .eq('site_id', siteId).eq('company_id', req.companyId).eq('entry_date', date);
-
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json({ ok: true });
-});
-
 // ── POST /api/v1/sites/:siteId/diary/photos ───────────────────────────────────
 // Carica una foto e restituisce { url, path }
 router.post('/sites/:siteId/diary/photos',
@@ -266,6 +252,7 @@ router.post('/sites/:siteId/diary/photos',
 );
 
 // ── DELETE /api/v1/sites/:siteId/diary/photos ──────────────────────────────────
+// DEVE stare PRIMA di DELETE /:date — altrimenti Express matcha "photos" come :date
 // Elimina una foto dallo storage. Body: { path }
 router.delete('/sites/:siteId/diary/photos', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
@@ -277,6 +264,20 @@ router.delete('/sites/:siteId/diary/photos', verifySupabaseJwt, async (req, res)
     return res.status(400).json({ error: 'INVALID_PATH' });
 
   await supabase.storage.from(BUCKET).remove([filePath]);
+  res.json({ ok: true });
+});
+
+// ── DELETE /api/v1/sites/:siteId/diary/:date ──────────────────────────────────
+router.delete('/sites/:siteId/diary/:date', verifySupabaseJwt, async (req, res) => {
+  const { siteId, date } = req.params;
+  const site = await getSiteOrFail(siteId, req.companyId, res);
+  if (!site) return;
+
+  const { error } = await supabase
+    .from('site_diary_entries').delete()
+    .eq('site_id', siteId).eq('company_id', req.companyId).eq('entry_date', date);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.json({ ok: true });
 });
 
@@ -299,10 +300,7 @@ router.get('/sites/:siteId/diary/:date/pdf', verifySupabaseJwt, async (req, res)
 
   try {
     const { renderHtmlToPdf } = require('../../pdf-renderer');
-    const pdfBuf = await renderHtmlToPdf(html, {
-      format: 'A4',
-      margin: { top: '20mm', bottom: '20mm', left: '0', right: '0' },
-    });
+    const pdfBuf = await renderHtmlToPdf(html, { noHeaderFooter: true });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="diario_${date}.pdf"`);
     res.send(pdfBuf);
