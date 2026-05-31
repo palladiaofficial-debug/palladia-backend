@@ -176,7 +176,14 @@ router.get('/expiry-calendar/summary', verifySupabaseJwt, async (req, res) => {
   for (const w of (workersRes.data || [])) { pushDate(w.safety_training_expiry); pushDate(w.health_fitness_expiry); }
   for (const s of (subsRes.data || [])) { pushDate(s.durc_expiry); pushDate(s.insurance_expiry); pushDate(s.soa_expiry); }
   if (companyRes.data?.durc_expiry) pushDate(companyRes.data.durc_expiry);
-  for (const s of (sitesRes.data || [])) { if (s.suolo_occupazione) pushDate(s.suolo_occupazione_end); }
+  for (const s of (sitesRes.data || [])) {
+    if (s.suolo_occupazione) pushDate(s.suolo_occupazione_end);
+    if (s.end_date) {
+      const d = fmtDate(s.end_date);
+      const sev = severity(daysFrom(d));
+      if (sev === 'critical' || sev === 'warning') allDates.push(d);
+    }
+  }
   for (const sal of (salRes.data || [])) { pushDate(sal.data_pagamento_prevista); }
 
   for (const d of allDates) {
