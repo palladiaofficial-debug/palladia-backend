@@ -169,8 +169,8 @@ app.post('/api/auth/hook/send-email',
   require('./routes/authHook')
 );
 
-// Diagnostico hook — GET pubblico, mostra solo presenza/assenza delle env vars
-app.get('/api/auth/hook/diag', (req, res) => {
+// Diagnostico hook — richiede JWT per evitare info disclosure
+app.get('/api/auth/hook/diag', verifyJwtOnly, (req, res) => {
   const secret = process.env.SUPABASE_HOOK_SECRET || '';
   res.json({
     env: {
@@ -546,6 +546,20 @@ async function verifyJwtOnly(req, res, next) {
     console.error('[verifyJwtOnly]', e.message);
     res.status(401).json({ error: 'Autenticazione fallita' });
   }
+}
+
+// Verifica ownership generica per documenti con company_id diretto (DVR, PIMUS).
+async function checkDocOwnership(req, res, tableName, docId) {
+  const companyId = req.headers['x-company-id'];
+  if (!companyId) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+  const { data: membership } = await supabase
+    .from('company_users').select('company_id')
+    .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+  if (!membership) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+  const { data: doc, error } = await supabase
+    .from(tableName).select('*').eq('id', docId).eq('company_id', companyId).single();
+  if (error || !doc) { res.status(404).json({ error: 'NOT_FOUND' }); return null; }
+  return doc;
 }
 
 // Verifica che un pos_document appartenga alla company dell'utente loggato.
@@ -1058,6 +1072,15 @@ app.post('/api/generate-pdf', verifyJwtOnly, apiLimiter, async (req, res) => {
 app.get('/api/sites/:id/pos', verifyJwtOnly, async (req, res) => {
   try {
     const { id: siteId } = req.params;
+    const companyId = req.headers['x-company-id'];
+    if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
+    const { data: membership } = await supabase
+      .from('company_users').select('company_id')
+      .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+    if (!membership) return res.status(403).json({ error: 'FORBIDDEN' });
+    const { data: site } = await supabase
+      .from('sites').select('id').eq('id', siteId).eq('company_id', companyId).maybeSingle();
+    if (!site) return res.status(403).json({ error: 'FORBIDDEN' });
     const { data, error } = await supabase
       .from('pos_documents')
       .select('id, site_id, revision, created_at, created_by')
@@ -1383,13 +1406,21 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
   try {
     const dvrData = req.body;
     const siteId  = dvrData.siteId || null;
-    let companyId = dvrData.companyId || null;
-
-    // Se companyId non fornito ma siteId sì, derivalo dal cantiere
-    if (!companyId && siteId) {
+    // Non fidarsi mai del companyId dal body — derivarlo sempre dal DB o dall'header verificato
+    let companyId = null;
+    if (siteId) {
       const { data: siteRow } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
-      if (siteRow?.company_id) companyId = siteRow.company_id;
+      companyId = siteRow?.company_id || null;
     }
+    if (!companyId) {
+      companyId = req.headers['x-company-id'] || null;
+      if (companyId) {
+        const { data: m } = await supabase.from('company_users').select('company_id')
+          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+        if (!m) companyId = null;
+      }
+    }
+    if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
 
     const revision = await getNextDvrRevision(siteId, companyId);
 
@@ -1466,10 +1497,8 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
 // --- DVR PDF download ---
 app.get('/api/dvr/:dvrId/pdf', verifyJwtOnly, async (req, res) => {
   try {
-    const { dvrId } = req.params;
-    const { data: dvr, error } = await supabase
-      .from('dvr_documents').select('*').eq('id', dvrId).single();
-    if (error || !dvr) return res.status(404).json({ error: 'DVR not found' });
+    const dvr = await checkDocOwnership(req, res, 'dvr_documents', req.params.dvrId);
+    if (!dvr) return;
 
     const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
 
@@ -1492,10 +1521,8 @@ app.get('/api/dvr/:dvrId/pdf', verifyJwtOnly, async (req, res) => {
 // --- DVR HTML preview ---
 app.get('/api/dvr/:dvrId/html', verifyJwtOnly, async (req, res) => {
   try {
-    const { dvrId } = req.params;
-    const { data: dvr, error } = await supabase
-      .from('dvr_documents').select('*').eq('id', dvrId).single();
-    if (error || !dvr) return res.status(404).json({ error: 'DVR not found' });
+    const dvr = await checkDocOwnership(req, res, 'dvr_documents', req.params.dvrId);
+    if (!dvr) return;
 
     const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -1599,13 +1626,22 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
 
   try {
     const pimusData = req.body;
-    const siteId    = pimusData.siteId  || null;
-    let companyId   = pimusData.companyId || null;
-
-    if (!companyId && siteId) {
+    const siteId    = pimusData.siteId || null;
+    // Non fidarsi mai del companyId dal body — derivarlo sempre dal DB o dall'header verificato
+    let companyId = null;
+    if (siteId) {
       const { data: sr } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
-      if (sr?.company_id) companyId = sr.company_id;
+      companyId = sr?.company_id || null;
     }
+    if (!companyId) {
+      companyId = req.headers['x-company-id'] || null;
+      if (companyId) {
+        const { data: m } = await supabase.from('company_users').select('company_id')
+          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+        if (!m) companyId = null;
+      }
+    }
+    if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
 
     const revision = await getNextPimusRevision(siteId, companyId);
 
@@ -1679,9 +1715,8 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
 // --- PIMUS PDF download ---
 app.get('/api/pimus/:pimusId/pdf', verifyJwtOnly, async (req, res) => {
   try {
-    const { data: pimus, error } = await supabase
-      .from('pimus_documents').select('*').eq('id', req.params.pimusId).single();
-    if (error || !pimus) return res.status(404).json({ error: 'PIMUS not found' });
+    const pimus = await checkDocOwnership(req, res, 'pimus_documents', req.params.pimusId);
+    if (!pimus) return;
 
     const html     = generatePimusHtml(pimus.pimus_data || {}, pimus.revision, pimus.content || '');
     const ragSoc   = pimus.pimus_data?.ragioneSociale || 'Azienda';
@@ -1774,14 +1809,8 @@ app.post('/api/generate-pos-html', verifyJwtOnly, async (req, res) => {
 // ── HTML Preview: renderizza POS come HTML navigabile (per iframe frontend) ────
 app.get('/api/pos/:posId/html', verifyJwtOnly, async (req, res) => {
   try {
-    const { posId } = req.params;
-    const { data: pos, error } = await supabase
-      .from('pos_documents')
-      .select('*')
-      .eq('id', posId)
-      .single();
-    if (error) throw error;
-    if (!pos) return res.status(404).json({ error: 'POS not found' });
+    const pos = await checkPosOwnership(req, res, req.params.posId);
+    if (!pos) return;
 
     const signs = selectSigns(pos.pos_data || {});
     const html  = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);

@@ -93,7 +93,10 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
     .lte('timestamp_server', `${rangeTo}T23:59:59.999Z`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
-    .limit(200000);
+    .limit(50001);
+
+  if ((logs || []).length > 50000)
+    return res.status(400).json({ error: 'TOO_MANY_ROWS', message: 'Export limitato a 50.000 timbrature. Riduci l\'intervallo di date.' });
 
   // ── Costruzione workbook ──────────────────────────────────────────────────
   const wb = new ExcelJS.Workbook();

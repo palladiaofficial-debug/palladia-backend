@@ -1180,9 +1180,9 @@ async function sendBookingConfirmedConsultant(to, { companyName, courseName, par
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
       <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:130px;">Corso</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${courseName}</td></tr>
       <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Data sessione</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${dateStr}</td></tr>
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Partecipanti</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${participants}</td></tr>
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Totale incassato</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:15px;color:#1a1a1a;font-weight:700;">€ ${total}</td></tr>
-      <tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;">Tuo guadagno netto</td><td style="padding:10px 0;font-size:15px;color:#16a34a;font-weight:700;">€ ${payout}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Partecipanti</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${esc(String(participants))}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Totale incassato</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:15px;color:#1a1a1a;font-weight:700;">€ ${esc(String(total))}</td></tr>
+      <tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;">Tuo guadagno netto</td><td style="padding:10px 0;font-size:15px;color:#16a34a;font-weight:700;">€ ${esc(String(payout))}</td></tr>
     </table>
     ${btn('Vedi dettaglio prenotazione', `${APP_URL}/consulente/prenotazioni/${bookingId}`)}`;
 
@@ -1258,10 +1258,10 @@ async function sendQuoteRequestConsultant({ to, consultantName, companyName, cou
       Ciao ${consultantName}, <strong>${companyName}</strong> ha richiesto un preventivo per il corso <strong>${courseName}</strong>.
     </p>
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:130px;">Partecipanti</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${participants}</td></tr>
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Cantiere</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${address}</td></tr>
-      ${preferredDates ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Date preferite</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${preferredDates}</td></tr>` : ''}
-      ${notes ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Note</td><td style="padding:10px 0;font-size:14px;color:#374151;">${notes}</td></tr>` : ''}
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:130px;">Partecipanti</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${esc(String(participants))}</td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Cantiere</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${esc(address)}</td></tr>
+      ${preferredDates ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Date preferite</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${esc(preferredDates)}</td></tr>` : ''}
+      ${notes ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Note</td><td style="padding:10px 0;font-size:14px;color:#374151;">${esc(notes)}</td></tr>` : ''}
     </table>
     ${btn('Rispondi al preventivo', quoteUrl)}`;
 
@@ -1307,10 +1307,10 @@ async function sendProviderApplicationAlert({ adminEmail, providerName, city, pr
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:24px;">
       <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;width:140px;">Ente</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#1a1a1a;font-weight:600;">${providerName}</td></tr>
       <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Città</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${city}${province ? ', ' + province : ''}</td></tr>
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Email</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${email}</td></tr>
-      ${phone ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Telefono</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${phone}</td></tr>` : ''}
-      ${accreditationCode ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Accreditamento</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${accreditationCode}</td></tr>` : ''}
-      ${notes ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Note</td><td style="padding:10px 0;font-size:14px;color:#374151;">${notes}</td></tr>` : ''}
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Email</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${esc(email)}</td></tr>
+      ${phone ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Telefono</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${esc(phone)}</td></tr>` : ''}
+      ${accreditationCode ? `<tr><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#9ca3af;">Accreditamento</td><td style="padding:10px 0;border-bottom:1px solid #f0f0f0;font-size:14px;color:#374151;">${esc(accreditationCode)}</td></tr>` : ''}
+      ${notes ? `<tr><td style="padding:10px 0;font-size:13px;color:#9ca3af;vertical-align:top;">Note</td><td style="padding:10px 0;font-size:14px;color:#374151;">${esc(notes)}</td></tr>` : ''}
     </table>
     ${btn('Approva nella dashboard admin', `${APP_URL}/admin/formazione/providers`)}`;
 

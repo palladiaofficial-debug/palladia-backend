@@ -260,7 +260,7 @@ router.delete('/sites/:siteId/diary/photos', verifySupabaseJwt, async (req, res)
 
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
-  if (!filePath || !String(filePath).startsWith(req.companyId + '/diary/'))
+  if (!filePath || !String(filePath).startsWith(`${req.companyId}/diary/${siteId}/`))
     return res.status(400).json({ error: 'INVALID_PATH' });
 
   await supabase.storage.from(BUCKET).remove([filePath]);
