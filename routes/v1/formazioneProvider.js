@@ -34,7 +34,7 @@ function isValidToken(t) {
   return typeof t === 'string' && t.length === 64 && /^[0-9a-f]+$/i.test(t);
 }
 function appUrl() {
-  return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
+  return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 }
 
 // Risolve la sessione provider dal token

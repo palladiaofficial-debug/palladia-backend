@@ -20,7 +20,7 @@ function isValidToken(t) {
 }
 
 function appUrl() {
-  return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
+  return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 }
 
 // complianceStatus importato da lib/compliance.js

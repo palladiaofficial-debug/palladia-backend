@@ -520,6 +520,7 @@ router.post('/notifications/check-expiries', async (req, res) => {
 
   let sent = 0;
   const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const companiesWithNew = new Set(); // company_id con nuove notifiche questa run
 
   for (const cert of certs || []) {
     const days = daysLeft(cert.expiry_date);
@@ -549,11 +550,14 @@ router.post('/notifications/check-expiries', async (req, res) => {
     });
 
     sent++;
+    companiesWithNew.add(cert.company_id);
   }
 
-  // Group by company and send email to company owner
+  // Group by company and send email SOLO alle company con nuove notifiche questa run.
+  // Evita spam giornaliero verso company con scadenze già note ma non cambiate.
   const companiesMap = {};
   for (const cert of certs || []) {
+    if (!companiesWithNew.has(cert.company_id)) continue;
     if (!companiesMap[cert.company_id]) companiesMap[cert.company_id] = [];
     companiesMap[cert.company_id].push(cert);
   }
@@ -603,15 +607,16 @@ router.post('/notifications/check-expiries', async (req, res) => {
       for (const [consultantId, links] of Object.entries(byConsultant)) {
         // Crea notifica in-app per il consulente
         for (const link of links) {
-          const count = (certs || []).filter(c => c.company_id === link.company_id).length;
-          if (count > 0) {
-            await supabase.from('expiry_notifications').insert({
-              certificate_id:    (certs || []).find(c => c.company_id === link.company_id)?.id,
-              worker_id:         (certs || []).find(c => c.company_id === link.company_id)?.worker_id,
-              company_id:        link.company_id,
-              notification_type: '30_days',
-            }).catch(() => null);
-          }
+          // Salta se non ci sono nuove notifiche per questa company in questa run
+          if (!companiesWithNew.has(link.company_id)) continue;
+          const cert = (certs || []).find(c => c.company_id === link.company_id);
+          if (!cert?.id) continue; // null-guard: nessun cert trovato per questa company
+          await supabase.from('expiry_notifications').insert({
+            certificate_id:    cert.id,
+            worker_id:         cert.worker_id,
+            company_id:        link.company_id,
+            notification_type: '30_days',
+          }).catch(() => null);
         }
       }
     }

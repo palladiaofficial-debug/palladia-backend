@@ -132,7 +132,7 @@ router.post('/coordinator/:token/nonconformities', coordinatorLimiter, async (re
     severity:        safeSeverity,
     category:        safeCategory,
     title:           String(title).trim().slice(0, 300),
-    siteUrl:         `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cantieri/${invite.site_id}`,
+    siteUrl:         `${process.env.FRONTEND_URL || 'https://palladia.net'}/cantieri/${invite.site_id}`,
   }).catch(e => console.error('[nc] email error:', e.message));
 
   res.status(201).json({ ok: true, nonconformity: nc });
@@ -239,7 +239,7 @@ router.post('/coordinator/pro/:token/site/:siteId/nonconformities', coordinatorL
     severity:        safeSeverity,
     category:        safeCategory,
     title:           String(title).trim().slice(0, 300),
-    siteUrl:         `${process.env.FRONTEND_URL || 'http://localhost:5173'}/cantieri/${invite.site_id}`,
+    siteUrl:         `${process.env.FRONTEND_URL || 'https://palladia.net'}/cantieri/${invite.site_id}`,
   }).catch(e => console.error('[nc] email error:', e.message));
 
   res.status(201).json({ ok: true, nonconformity: nc });
@@ -385,7 +385,7 @@ router.patch('/nonconformities/:id', verifySupabaseJwt, async (req, res) => {
         ncTitle:         nc.title || '(senza titolo)',
         newStatus:       'risolta',
         resolutionNotes: updates.resolution_notes || '',
-        accessUrl:       `${process.env.FRONTEND_URL || 'http://localhost:5173'}`,
+        accessUrl:       `${process.env.FRONTEND_URL || 'https://palladia.net'}`,
       }).catch(e => console.error('[nc] notify coordinator error:', e.message));
     }
   }

@@ -4,7 +4,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
-const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
+const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 

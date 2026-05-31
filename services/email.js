@@ -7,7 +7,7 @@ const FROM = process.env.RESEND_FROM || 'Palladia <onboarding@resend.dev>';
 
 // URL frontend — usato nei link delle email (es. "Apri la dashboard").
 // Configura FRONTEND_URL su Railway. Es: https://palladia.net
-const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
+const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
 // Inizializzazione lazy: evita crash al boot se RESEND_API_KEY non è impostata.
 function getResend() {

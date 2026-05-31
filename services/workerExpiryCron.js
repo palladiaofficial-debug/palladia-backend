@@ -48,11 +48,19 @@ async function runWorkerExpiryCheck() {
     .select(`id, company_id, worker_id, doc_type, name, expiry_date,
              worker:workers ( full_name, is_active )`)
     .not('expiry_date', 'is', null)
-    .lte('expiry_date', t30);
+    .order('expiry_date', { ascending: false });
 
   if (error) { console.error('[workerExpiry] fetch error:', error.message); return; }
 
-  const relevant = (docs || []).filter(d => d.worker?.is_active);
+  // Dedup per (worker_id, doc_type): tieni solo il doc con expiry massima.
+  // Evita alert su versioni vecchie scadute quando esiste un rinnovo valido.
+  const latestByKey = new Map();
+  for (const d of (docs || [])) {
+    if (!d.worker?.is_active) continue;
+    const key = `${d.worker_id}:${d.doc_type}`;
+    if (!latestByKey.has(key)) latestByKey.set(key, d); // già ordinati DESC
+  }
+  const relevant = [...latestByKey.values()].filter(d => d.expiry_date <= t30);
   if (!relevant.length) { console.log('[workerExpiry] nessuna scadenza — skip.'); return; }
 
   const docsWithMeta = relevant.map(d => ({

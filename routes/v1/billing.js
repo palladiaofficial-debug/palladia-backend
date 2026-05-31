@@ -6,7 +6,7 @@ const { getStripe, getPriceId, getSiteLimit } = require('../../services/stripe')
 
 // FRONTEND_URL = URL Vercel del frontend (per redirect Stripe)
 // APP_BASE_URL è usato da qr.js/asl.js per URL backend — NON usarlo qui.
-const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
 
 // ── GET /api/v1/billing/status ─────────────────────────────────────────────
 // Restituisce stato abbonamento corrente della company.

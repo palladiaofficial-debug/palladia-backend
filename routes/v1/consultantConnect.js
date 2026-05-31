@@ -12,7 +12,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt } = require('../../middleware/verifyConsultant');
 
-const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/$/, '');
+const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
 
 function getStripe() {
   const key = process.env.STRIPE_SECRET_KEY;

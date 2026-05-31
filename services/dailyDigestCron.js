@@ -123,9 +123,19 @@ async function runDailyDigest() {
   }, {});
 
   // ── 2. Documenti lavoratori in scadenza ───────────────────────────────────
-  const expiryByCompany = {};
+  // Dedup per (worker_id, doc_type): tieni solo il doc con expiry massima.
+  // Evita che un doc vecchio scaduto generi alert quando esiste un rinnovo valido.
+  const latestByKey = new Map();
   for (const d of workerDocs) {
     if (!d.worker?.is_active) continue;
+    const key = `${d.worker_id}:${d.doc_type}`;
+    if (!latestByKey.has(key) || d.expiry_date > latestByKey.get(key).expiry_date) {
+      latestByKey.set(key, d);
+    }
+  }
+  const expiryByCompany = {};
+  for (const d of latestByKey.values()) {
+    if (d.expiry_date > t30) continue; // il rinnovo è valido oltre 30gg — non segnalare
     const days     = daysUntil(d.expiry_date);
     if (days === null) continue;
     const severity = severityFor(days);
