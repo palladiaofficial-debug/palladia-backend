@@ -122,6 +122,9 @@ router.post('/sites/:siteId/computo/parse-generic',
     if (mimetype !== 'application/pdf')
       return res.status(400).json({ error: 'PDF_ONLY', message: 'Carica un PDF per il preventivo libero.' });
 
+    if (buffer.length > 15 * 1024 * 1024)
+      return res.status(422).json({ error: 'FILE_TOO_LARGE_FOR_AI', message: 'Il PDF è troppo grande per l\'analisi AI (max 15 MB). Comprimi il file e riprova.' });
+
     const b64 = buffer.toString('base64');
 
     const prompt = `Sei un esperto di computi metrici edili italiani. Analizza questo documento (può essere un preventivo, un computo, un'offerta, un capitolato sintetico) ed estrai TUTTE le voci di lavoro presenti.
@@ -196,12 +199,25 @@ Rispondi SOLO con un oggetto JSON in questo formato (nessun testo fuori dal JSON
         voci,
       });
     } catch (err) {
-      console.error('[computo/parse-generic] ERROR:', err?.message || err);
-      const isJson = err instanceof SyntaxError;
-      res.status(isJson ? 422 : 500).json({
-        error:   isJson ? 'PARSE_FAILED' : 'INTERNAL',
-        message: isJson ? 'Il modello non ha restituito JSON valido. Riprova.' : 'Errore durante l\'analisi.',
-      });
+      const msg = err?.message || String(err);
+      console.error('[computo/parse-generic] ERROR:', msg, err?.status ?? '', err?.stack || '');
+
+      if (err instanceof SyntaxError)
+        return res.status(422).json({ error: 'PARSE_FAILED', message: 'Il modello non ha restituito JSON valido. Riprova.' });
+
+      if (err?.status === 529 || /overload/i.test(msg))
+        return res.status(503).json({ error: 'AI_OVERLOADED', message: 'Il servizio AI è temporaneamente sovraccarico. Riprova tra qualche secondo.' });
+
+      if (err?.status === 413 || /too large|request entity/i.test(msg))
+        return res.status(422).json({ error: 'FILE_TOO_LARGE_FOR_AI', message: 'Il PDF è troppo grande per essere analizzato. Comprimi il file (max 15 MB) e riprova.' });
+
+      if (/credit balance|billing|quota/i.test(msg))
+        return res.status(503).json({ error: 'AI_QUOTA', message: 'Servizio AI temporaneamente non disponibile. Riprova più tardi.' });
+
+      if (err?.status === 401 || /api.key|authentication/i.test(msg))
+        return res.status(500).json({ error: 'AI_CONFIG', message: 'Configurazione AI non disponibile. Contatta il supporto.' });
+
+      res.status(500).json({ error: 'INTERNAL', message: 'Errore durante l\'analisi. Riprova.' });
     }
   }
 );
