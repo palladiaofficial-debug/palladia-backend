@@ -27,6 +27,7 @@ const {
   sendCoordinatorNoteAlert,
   sendNonconformityAlert,
 } = require('../../services/email');
+const { complianceStatus } = require('../../lib/compliance');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -36,13 +37,7 @@ function hashToken(t) {
 function isValidToken(t) {
   return typeof t === 'string' && t.length === 64 && /^[0-9a-f]+$/i.test(t);
 }
-function complianceStatus(expiry) {
-  if (!expiry) return 'not_set';
-  const days = (new Date(expiry) - Date.now()) / 86400000;
-  if (days < 0) return 'expired';
-  if (days <= 30) return 'expiring';
-  return 'ok';
-}
+// complianceStatus importato da lib/compliance.js
 
 // Risolve token → { type:'pro', session } oppure { type:'cse', invite } oppure null
 async function resolvePortalToken(rawToken) {

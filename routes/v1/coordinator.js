@@ -19,6 +19,7 @@ const rateLimit                = require('express-rate-limit');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { coordinatorLimiter }   = require('../../middleware/rateLimit');
 const { auditLog }             = require('../../lib/audit');
+const { complianceStatus, overallCompliance } = require('../../lib/compliance');
 const {
   sendCoordinatorInviteEmail,
   sendCoordinatorNoteAlert,
@@ -48,26 +49,7 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
-// Calcola stato compliance da data di scadenza
-function complianceStatus(expiryDate) {
-  if (!expiryDate) return 'not_set';
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const expiry = new Date(expiryDate);
-  if (expiry < today) return 'expired';
-  const in30 = new Date(today);
-  in30.setDate(in30.getDate() + 30);
-  if (expiry <= in30) return 'expiring';
-  return 'ok';
-}
-
-function overallCompliance(safety, health) {
-  const statuses = [safety, health];
-  if (statuses.includes('expired'))  return 'non_compliant';
-  if (statuses.includes('expiring')) return 'expiring';
-  if (statuses.includes('not_set'))  return 'incomplete';
-  return 'compliant';
-}
+// complianceStatus e overallCompliance importati da lib/compliance.js
 
 // ── POST /api/v1/sites/:siteId/coordinator-invites ───────────────────────────
 router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, async (req, res) => {

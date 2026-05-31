@@ -28,6 +28,7 @@ const {
   getDocumentStatus,
   buildTimeline,
 } = require('../../lib/coordinatorUtils');
+const { complianceStatus, overallCompliance } = require('../../lib/compliance');
 
 // ── Helpers token ─────────────────────────────────────────────────────────────
 
@@ -90,20 +91,7 @@ async function buildVerificationSnapshot(invite) {
       .limit(100),
   ]);
 
-  function complianceStatus(expiry) {
-    if (!expiry) return 'not_set';
-    const days = (new Date(expiry) - Date.now()) / 86_400_000;
-    if (days < 0) return 'expired';
-    if (days <= 30) return 'expiring';
-    return 'ok';
-  }
-  function overallCompliance(s, h) {
-    const sts = [s, h];
-    if (sts.includes('expired'))  return 'non_compliant';
-    if (sts.includes('expiring')) return 'expiring';
-    if (sts.includes('not_set'))  return 'incomplete';
-    return 'compliant';
-  }
+  // complianceStatus e overallCompliance importati da lib/compliance.js
 
   const workers = (wwRes.data || [])
     .filter(r => r.worker && r.worker.is_active)

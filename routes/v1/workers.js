@@ -4,6 +4,7 @@ const router  = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { auditLog }          = require('../../lib/audit');
+const { complianceStatus }  = require('../../lib/compliance');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -486,21 +487,11 @@ router.get('/workers/export', verifySupabaseJwt, async (req, res) => {
   const { data: workers, error } = await query;
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
-  const today = Date.now();
-
-  function certStatus(expiry) {
-    if (!expiry) return null;
-    const days = Math.ceil((new Date(expiry) - today) / 86400000);
-    if (days < 0)  return 'expired';
-    if (days <= 30) return 'expiring';
-    return 'valid';
-  }
-
   function overallCompliance(w) {
-    const s = [certStatus(w.safety_training_expiry), certStatus(w.health_fitness_expiry)];
+    const s = [complianceStatus(w.safety_training_expiry), complianceStatus(w.health_fitness_expiry)];
     if (s.includes('expired'))  return { label: 'Non conforme', bg: 'FFDC2626', fg: 'FFFFFFFF' };
     if (s.includes('expiring')) return { label: 'In scadenza',  bg: 'FFF59E0B', fg: 'FF000000' };
-    if (s.every(x => x === 'valid')) return { label: 'Conforme',    bg: 'FF16A34A', fg: 'FFFFFFFF' };
+    if (s.every(x => x === 'ok')) return { label: 'Conforme',    bg: 'FF16A34A', fg: 'FFFFFFFF' };
     return { label: 'Incompleto', bg: 'FF6B7280', fg: 'FFFFFFFF' };
   }
 
@@ -570,10 +561,10 @@ router.get('/workers/export', verifySupabaseJwt, async (req, res) => {
     row.getCell('stato').alignment = { horizontal: 'center', vertical: 'middle' };
 
     // Colora in giallo/rosso le date di scadenza se problematiche
-    const formSt = certStatus(w.safety_training_expiry);
+    const formSt = complianceStatus(w.safety_training_expiry);
     if (formSt === 'expired')  row.getCell('form').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECACA' } };
     if (formSt === 'expiring') row.getCell('form').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
-    const idonSt = certStatus(w.health_fitness_expiry);
+    const idonSt = complianceStatus(w.health_fitness_expiry);
     if (idonSt === 'expired')  row.getCell('idon').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFECACA' } };
     if (idonSt === 'expiring') row.getCell('idon').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
 

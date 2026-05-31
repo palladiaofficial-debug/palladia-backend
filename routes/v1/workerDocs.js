@@ -72,14 +72,26 @@ async function verifyWorker(workerId, companyId) {
   return !!data;
 }
 
-async function syncWorkerExpiry(docType, expiryDate, workerId, companyId) {
-  if (!expiryDate) return;
+async function syncWorkerExpiry(docType, workerId, companyId) {
   const field = docType === 'idoneita_medica'      ? 'health_fitness_expiry'
     : docType === 'formazione_sicurezza' ? 'safety_training_expiry'
     : null;
   if (!field) return;
+  // Calcola la scadenza massima tra tutti i documenti attivi di quel tipo.
+  // NON usare la data del singolo documento: se esistono più versioni (es. rinnovo
+  // + versione vecchia), workers deve riflettere quella più recente.
+  const { data } = await supabase
+    .from('worker_documents')
+    .select('expiry_date')
+    .eq('worker_id',  workerId)
+    .eq('company_id', companyId)
+    .eq('doc_type',   docType)
+    .not('expiry_date', 'is', null)
+    .order('expiry_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
   await supabase.from('workers')
-    .update({ [field]: expiryDate })
+    .update({ [field]: data?.expiry_date || null })
     .eq('id', workerId)
     .eq('company_id', companyId);
 }
@@ -177,7 +189,7 @@ router.post('/workers/:workerId/documents',
       return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
     }
 
-    await syncWorkerExpiry(data.doc_type, data.expiry_date, workerId, req.companyId);
+    await syncWorkerExpiry(data.doc_type, workerId, req.companyId);
 
     // Sync immediato verso Formazione (dati manuali — senza AI)
     syncToFormazione(
@@ -225,7 +237,11 @@ router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (re
 
   if (error || !data) return res.status(404).json({ error: 'DOC_NOT_FOUND' });
 
-  await syncWorkerExpiry(data.doc_type, data.expiry_date, workerId, req.companyId);
+  // Risincronizza ENTRAMBI i tipi critici: se l'utente ha cambiato doc_type
+  // (es. da idoneita_medica a formazione_sicurezza), workers deve ricalcolare
+  // sia il vecchio che il nuovo campo.
+  await syncWorkerExpiry('idoneita_medica',      workerId, req.companyId);
+  await syncWorkerExpiry('formazione_sicurezza', workerId, req.companyId);
 
   syncToFormazione(
     data.id, workerId, req.companyId,
@@ -243,7 +259,7 @@ router.delete('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (r
 
   const { data: doc } = await supabase
     .from('worker_documents')
-    .select('id, file_path')
+    .select('id, doc_type, file_path')
     .eq('id',         docId)
     .eq('worker_id',  workerId)
     .eq('company_id', req.companyId)
@@ -263,6 +279,11 @@ router.delete('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (r
     .eq('company_id', req.companyId);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  // Ricalcola il campo del worker dopo la cancellazione: se era il documento
+  // più recente, workers deve scalare alla versione precedente (o null).
+  await syncWorkerExpiry(doc.doc_type, workerId, req.companyId);
+
   res.status(204).end();
 });
 

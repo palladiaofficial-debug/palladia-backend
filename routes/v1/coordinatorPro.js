@@ -7,6 +7,7 @@ const {
   buildActiveIssues,
   getDocumentStatus,
 } = require('../../lib/coordinatorUtils');
+const { complianceStatus } = require('../../lib/compliance');
 
 const PRO_TOKEN_TTL_DAYS = 365;
 
@@ -22,13 +23,7 @@ function appUrl() {
   return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'http://localhost:5173').replace(/\/$/, '');
 }
 
-function complianceStatus(expiry) {
-  if (!expiry) return 'not_set';
-  const days = (new Date(expiry) - Date.now()) / 86400000;
-  if (days < 0) return 'expired';
-  if (days <= 30) return 'expiring';
-  return 'ok';
-}
+// complianceStatus importato da lib/compliance.js
 
 async function resolveProSession(token) {
   if (!isValidToken(token)) return null;

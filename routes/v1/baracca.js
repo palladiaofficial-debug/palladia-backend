@@ -4,6 +4,7 @@ const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }   = require('../../pdf-renderer');
+const { complianceStatus, overallStatus } = require('../../lib/compliance');
 
 let _anthropic = null;
 function getClient() {
@@ -13,23 +14,7 @@ function getClient() {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const today = () => new Date().toISOString().slice(0, 10);
-const in30  = () => new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
-
-function complianceStatus(expiry) {
-  if (!expiry) return 'not_set';
-  if (expiry < today()) return 'expired';
-  if (expiry <= in30()) return 'expiring';
-  return 'ok';
-}
-
-function overallStatus(worker) {
-  const s = [complianceStatus(worker.safety_training_expiry), complianceStatus(worker.health_fitness_expiry)];
-  if (s.includes('expired'))  return 'non_compliant';
-  if (s.includes('expiring')) return 'expiring';
-  if (s.includes('not_set'))  return 'incomplete';
-  return 'compliant';
-}
+// complianceStatus e overallStatus importati da lib/compliance.js
 
 function fmtDate(d) {
   if (!d) return '—';

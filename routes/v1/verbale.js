@@ -18,6 +18,7 @@ const { coordinatorLimiter } = require('../../middleware/rateLimit');
 
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
+const { complianceStatus } = require('../../lib/compliance');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,13 +74,7 @@ async function resolveProInviteForSite(email, siteId) {
   return data || null;
 }
 
-function complianceStatus(expiry) {
-  if (!expiry) return 'not_set';
-  const days = (new Date(expiry) - Date.now()) / 86400000;
-  if (days < 0) return 'expired';
-  if (days <= 30) return 'expiring';
-  return 'ok';
-}
+// complianceStatus importato da lib/compliance.js
 
 /**
  * Raccoglie tutti i dati per il verbale

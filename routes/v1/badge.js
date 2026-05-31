@@ -13,6 +13,7 @@ const rateLimit = require('express-rate-limit');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
+const { complianceStatus, overallStatus } = require('../../lib/compliance');
 
 // Rate limit specifico per la verifica pubblica del badge
 // 60/min per IP — abbastanza generoso per ispezioni multiple
@@ -24,42 +25,7 @@ const badgeLimiter = rateLimit({
   message: { error: 'RATE_LIMIT_EXCEEDED' },
 });
 
-// ── Logica compliance ─────────────────────────────────────────────────────────
-
-/**
- * Ritorna lo stato di conformità di un documento con scadenza.
- * - not_set  → scadenza non impostata
- * - ok       → valida, scade tra più di 30 giorni
- * - expiring → valida, scade entro 30 giorni
- * - expired  → scaduta
- */
-function complianceStatus(expiryDate) {
-  if (!expiryDate) return 'not_set';
-  const daysLeft = Math.floor((new Date(expiryDate) - Date.now()) / 86_400_000);
-  if (daysLeft < 0)   return 'expired';
-  if (daysLeft <= 30) return 'expiring';
-  return 'ok';
-}
-
-/**
- * Stato globale del lavoratore basato su is_active + compliance.
- * - inactive      → lavoratore disattivato
- * - non_compliant → almeno un documento scaduto
- * - expiring      → almeno un documento in scadenza (<=30gg)
- * - incomplete    → almeno un documento non impostato
- * - compliant     → tutto OK
- */
-function overallStatus(worker) {
-  if (!worker.is_active) return 'inactive';
-  const statuses = [
-    complianceStatus(worker.safety_training_expiry),
-    complianceStatus(worker.health_fitness_expiry),
-  ];
-  if (statuses.includes('expired'))  return 'non_compliant';
-  if (statuses.includes('expiring')) return 'expiring';
-  if (statuses.includes('not_set'))  return 'incomplete';
-  return 'compliant';
-}
+// complianceStatus e overallStatus importati da lib/compliance.js
 
 // ── GET /api/v1/badge/:code — verifica badge (PUBBLICO) ──────────────────────
 router.get('/badge/:code', badgeLimiter, async (req, res) => {
