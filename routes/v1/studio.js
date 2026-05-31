@@ -200,7 +200,7 @@ router.post('/studio/clients/invite', verifyStudioJwt, async (req, res) => {
     company_name,   // nome azienda (opzionale, per pending invite)
   } = req.body || {};
 
-  const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+  const APP_BASE_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
   // ── Risolvi company da P.IVA o UUID ────────────────────────────────────────
   let company = null;

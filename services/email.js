@@ -1443,7 +1443,7 @@ async function sendStudioPendingInviteEmail({ to, studioName, companyNameHint, a
  */
 async function sendStudioWeeklyDigest({ to, studioName, summary, issues }) {
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+  const APP_BASE_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
   const semRow = (label, count, color) =>
     `<td style="text-align:center;padding:16px 24px;border-right:1px solid #f0f0f0;">
@@ -1518,7 +1518,7 @@ async function sendStudioWeeklyDigest({ to, studioName, summary, issues }) {
  */
 async function sendStudioExpiryAlertToCompany({ to, companyName, studioName, issues }) {
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  const APP_BASE_URL = (process.env.APP_BASE_URL || 'https://palladia-kappa.vercel.app').replace(/\/$/, '');
+  const APP_BASE_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
   const criticalCount = (issues || []).filter(i => i.severity === 'critical').length;
   const warningCount  = (issues || []).filter(i => i.severity === 'warning').length;
