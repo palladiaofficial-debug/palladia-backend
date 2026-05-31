@@ -188,9 +188,14 @@ router.get('/expiry-calendar/summary', verifySupabaseJwt, async (req, res) => {
 
   for (const d of allDates) {
     if (!d) continue;
-    const sev = severity(daysFrom(d));
-    if (sev === 'critical' || sev === 'warning' || sev === 'info') {
+    const days = daysFrom(d);
+    const sev  = severity(days);
+    if (sev === 'critical' || sev === 'warning') {
       counts[sev]++;
+      counts.total++;
+    } else if (sev === 'info' && days <= 90) {
+      // "ENTRO 90 GG": solo scadenze entro 90 giorni, non anni futuri
+      counts.info++;
       counts.total++;
     }
   }
