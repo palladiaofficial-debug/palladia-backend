@@ -85,8 +85,8 @@ const apiLimiter = rateLimit({
 
 // ── Rate limiter per GET /api/v1/asl/:token ───────────────────────────────────
 const aslLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max: 10,
+  windowMs: 60 * 60 * 1000, // 1 ora
+  max: 30,                   // 30 verifiche/ora per IP — sufficiente per un'ispezione reale
   standardHeaders: true,
   legacyHeaders:   false,
   message: { error: 'RATE_LIMIT_EXCEEDED' },

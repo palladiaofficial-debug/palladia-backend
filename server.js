@@ -391,8 +391,8 @@ app.use('/api/telegram', require('./routes/telegram'));
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 
-// ── Parse diagnostics (public, temporaneo) ──────────────────────────────────
-app.get('/api/parse-diag', async (req, res) => {
+// ── Parse diagnostics (richiede JWT — non più pubblico) ──────────────────────
+app.get('/api/parse-diag', verifyJwtOnly, async (req, res) => {
   const steps = {};
   try {
     const { PDFDocument } = require('pdf-lib');
@@ -546,6 +546,41 @@ async function verifyJwtOnly(req, res, next) {
     console.error('[verifyJwtOnly]', e.message);
     res.status(401).json({ error: 'Autenticazione fallita' });
   }
+}
+
+// Verifica che un pos_document appartenga alla company dell'utente loggato.
+// Usato dagli endpoint /api/pos/:posId/* che usano verifyJwtOnly (senza X-Company-Id automatico).
+// Ritorna { pos } se ok, oppure ha già inviato la risposta 403/404.
+async function checkPosOwnership(req, res, posId) {
+  const companyId = req.headers['x-company-id'];
+  if (!companyId) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+
+  const { data: membership } = await supabase
+    .from('company_users')
+    .select('company_id')
+    .eq('user_id', req.user.id)
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (!membership) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+
+  const { data: pos, error } = await supabase
+    .from('pos_documents')
+    .select('*')
+    .eq('id', posId)
+    .single();
+  if (error || !pos) { res.status(404).json({ error: 'POS not found' }); return null; }
+
+  if (pos.site_id) {
+    const { data: site } = await supabase
+      .from('sites')
+      .select('company_id')
+      .eq('id', pos.site_id)
+      .eq('company_id', companyId)
+      .maybeSingle();
+    if (!site) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+  }
+
+  return pos;
 }
 
 // Rate limiter stretto per le chiamate AI (Anthropic è costoso)
@@ -1038,14 +1073,9 @@ app.get('/api/sites/:id/pos', verifyJwtOnly, async (req, res) => {
 // --- POS Documents: get single ---
 app.get('/api/pos/:posId', verifyJwtOnly, async (req, res) => {
   try {
-    const { posId } = req.params;
-    const { data, error } = await supabase
-      .from('pos_documents')
-      .select('*')
-      .eq('id', posId)
-      .single();
-    if (error) throw error;
-    res.json(data);
+    const pos = await checkPosOwnership(req, res, req.params.posId);
+    if (!pos) return;
+    res.json(pos);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -1054,14 +1084,8 @@ app.get('/api/pos/:posId', verifyJwtOnly, async (req, res) => {
 // --- PDF Export da posId — HTML+Puppeteer pipeline ---
 app.get('/api/pos/:posId/pdf', verifyJwtOnly, async (req, res) => {
   try {
-    const { posId } = req.params;
-    const { data: pos, error } = await supabase
-      .from('pos_documents')
-      .select('*')
-      .eq('id', posId)
-      .single();
-    if (error) throw error;
-    if (!pos) return res.status(404).json({ error: 'POS not found' });
+    const pos = await checkPosOwnership(req, res, req.params.posId);
+    if (!pos) return;
 
     let siteName = 'Cantiere';
     if (pos.site_id) {
@@ -1702,14 +1726,8 @@ app.post('/api/generate-pdf-html', verifyJwtOnly, apiLimiter, async (req, res) =
 // ── PDF HTML v2: da posId salvato su Supabase ─────────────────────────────────
 app.get('/api/pos/:posId/pdf-html', verifyJwtOnly, async (req, res) => {
   try {
-    const { posId } = req.params;
-    const { data: pos, error } = await supabase
-      .from('pos_documents')
-      .select('*')
-      .eq('id', posId)
-      .single();
-    if (error) throw error;
-    if (!pos) return res.status(404).json({ error: 'POS not found' });
+    const pos = await checkPosOwnership(req, res, req.params.posId);
+    if (!pos) return;
 
     let siteName = 'Cantiere';
     if (pos.site_id) {
