@@ -66,13 +66,13 @@ async function linkAccount(chatId, token, from) {
   const { error } = await supabase
     .from('telegram_users')
     .upsert({
-      user_id:           linkToken.user_id,
-      company_id:        linkToken.company_id,
-      telegram_chat_id:  chatId,
-      telegram_username: from?.username || null,
-      telegram_name:     [from?.first_name, from?.last_name].filter(Boolean).join(' ') || null,
-      linked_at:         new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+      user_id:              linkToken.user_id,
+      company_id:           linkToken.company_id,
+      telegram_chat_id:     chatId,
+      telegram_username:    from?.username   || null,
+      telegram_first_name:  from?.first_name || null,
+      linked_at:            new Date().toISOString(),
+    }, { onConflict: 'telegram_chat_id' });
 
   await supabase.from('telegram_link_tokens').delete().eq('token', token);
 
