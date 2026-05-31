@@ -46,9 +46,8 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
       .select('id, worker_id, doc_type, name, expiry_date, worker:workers(full_name, is_active)')
       .eq('company_id', req.companyId)
       .not('expiry_date', 'is', null)
-      .lte('expiry_date', thirtyDaysLater)
-      .order('expiry_date', { ascending: true })
-      .limit(100),
+      .order('expiry_date', { ascending: false })
+      .limit(1000),
   ]);
 
   if (sitesResult.error)   return res.status(500).json({ error: sitesResult.error.message });
@@ -109,7 +108,16 @@ router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
   const activeSites = sites.filter(s => s.status === 'attivo');
 
   const today10 = todayRome;
-  const allDocAlerts = (docsResult.data || []).filter(d => d.worker?.is_active !== false);
+
+  // Per ogni (worker_id, doc_type) tieni solo il documento con expiry massima.
+  // Evita che un doc vecchio scaduto gonfi i contatori quando esiste una versione più recente.
+  const latestByKey = new Map();
+  for (const d of (docsResult.data || [])) {
+    if (d.worker?.is_active === false) continue;
+    const key = `${d.worker_id}:${d.doc_type}`;
+    if (!latestByKey.has(key)) latestByKey.set(key, d); // già ordinati DESC per expiry_date
+  }
+  const allDocAlerts = [...latestByKey.values()].filter(d => d.expiry_date <= thirtyDaysLater);
   const expiredDocs  = allDocAlerts.filter(d => d.expiry_date < today10);
   const expiringDocs = allDocAlerts.filter(d => d.expiry_date >= today10);
 
