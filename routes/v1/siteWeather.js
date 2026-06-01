@@ -498,10 +498,22 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
     addStat('Giorni sospensione applicati', confirmedDays);
   }
   ws2.addRow([]);
+  ws2.addRow(['Soglie condizioni avverse applicate']).getCell(1).font = { bold: true };
+  ws2.addRow(['Pioggia: precipitazioni ≥ 10 mm/giorno (dati giornalieri cumulati)']);
+  ws2.addRow(['Vento: raffica max ≥ 50 km/h']);
+  ws2.addRow(['Neve: WMO codes 71, 73, 75, 77, 85, 86 (qualsiasi intensità)']);
+  ws2.addRow(['Temporale/grandine: WMO codes ≥ 95']);
+  ws2.addRow([]);
   ws2.addRow(['Fonte dati']).getCell(1).font = { bold: true };
-  ws2.addRow(['Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF)']);
+  ws2.addRow(['Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF) per dati storici (> 10 giorni fa)']);
+  ws2.addRow(['Open-Meteo.com — Forecast API per dati recenti (ultimi 10 giorni, soggetti a revisione ERA5)']);
+  ws2.addRow(['ERA5 è il dataset ufficiale del Centro Europeo per le Previsioni Meteorologiche a Medio Termine (ECMWF)']);
+  ws2.addRow(['Dati verificabili pubblicamente su open-meteo.com e archive-api.open-meteo.com']);
+  ws2.addRow([]);
   ws2.addRow([`Generato da Palladia il ${new Date().toLocaleDateString('it-IT')} alle ${new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`]);
-  ws2.addRow(['Documento valido come prova documentale per contratti di appalto (D.Lgs. 50/2016)']);
+  ws2.addRow(['Documento valido come prova documentale per richieste di proroga per cause di forza maggiore']);
+  ws2.addRow(['Riferimenti normativi: D.Lgs. 36/2023 art. 107 (sospensione lavori) · D.M. 49/2018 art. 10 · art. 1664 c.c.'])
+    .getCell(1).font = { italic: true, color: { argb: 'FF555555' } };
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="meteo_${siteId}_${Date.now()}.xlsx"`);
@@ -626,6 +638,16 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
     </div>` : ''}
   </div>
 
+  <div style="margin-bottom:4mm;padding:3mm 4mm;background:#f0f4ff;border-left:3px solid #3b5bdb;border-radius:3px;font-size:7.5pt;color:#333">
+    <strong>Soglie condizioni avverse:</strong>
+    🌧️ Pioggia ≥ 10 mm/giorno &nbsp;·&nbsp;
+    💨 Vento ≥ 50 km/h &nbsp;·&nbsp;
+    ❄️ Neve (WMO 71-86) &nbsp;·&nbsp;
+    ⛈️ Temporale/grandine (WMO ≥ 95)
+    &nbsp;&nbsp;|&nbsp;&nbsp;
+    <em>Dati ERA5 confermati per date &gt; 10 gg fa. Dati recenti da Forecast API, soggetti a revisione.</em>
+  </div>
+
   <table>
     <thead><tr>
       <th>Data</th><th>G.</th><th>Condizioni</th>
@@ -636,8 +658,8 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
   </table>
 
   <div class="footer">
-    <span>Fonte dati: <strong>Open-Meteo.com · ERA5 Climate Reanalysis (ECMWF)</strong> — dati verificabili pubblicamente</span>
-    <span>Palladia · Documento valido come prova documentale (D.Lgs. 50/2016)</span>
+    <span>Fonte: <strong>Open-Meteo / ERA5 (ECMWF)</strong> — storico confermato per date &gt; 10 giorni fa; Forecast API per dati recenti (soggetti a revisione ERA5). Dati verificabili su open-meteo.com</span>
+    <span>Palladia · Prova documentale forza maggiore · D.Lgs. 36/2023 art. 107 · D.M. 49/2018 art. 10 · art. 1664 c.c.</span>
   </div>
 </div></body></html>`;
 
