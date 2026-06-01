@@ -67,7 +67,7 @@ async function processCompany(companyId, dateISO) {
   // Cantieri attivi con GPS
   const { data: sites } = await supabase
     .from('sites')
-    .select('id, name, address, latitude, longitude')
+    .select('id, name, address, latitude, longitude, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
     .eq('company_id', companyId)
     .in('status', ['attivo', 'sospeso'])
     .not('latitude', 'is', null)
@@ -78,7 +78,13 @@ async function processCompany(companyId, dateISO) {
   for (const site of sites) {
     try {
       const weather  = await getActualWeather(site.latitude, site.longitude, dateISO);
-      const { exceeded, reason } = evalThresholds(weather);
+      const siteThresholds = {
+        rain_mm:       site.weather_rain_mm,
+        wind_kmh:      site.weather_wind_kmh,
+        snow:          site.weather_snow,
+        thunderstorm:  site.weather_thunderstorm,
+      };
+      const { exceeded, reason } = evalThresholds(weather, siteThresholds);
 
       // Upsert log meteo
       await supabase

@@ -31,6 +31,10 @@ function formatSite(s) {
     longitude:                 s.longitude,
     geofence_radius_m:         s.geofence_radius_m,
     has_geofence:              s.latitude != null && s.longitude != null,
+    weatherRainMm:             s.weather_rain_mm      ?? 10,
+    weatherWindKmh:            s.weather_wind_kmh     ?? 50,
+    weatherSnow:               s.weather_snow         ?? true,
+    weatherThunderstorm:       s.weather_thunderstorm ?? true,
   };
 }
 
@@ -44,7 +48,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, async (req, res) => {
-  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes';
+  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm';
 
   const { data, error } = await supabase
     .from('sites')
@@ -135,6 +139,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     contract_days, days_type,
     referente_tecnico_id, referente_tecnico_name,
     suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
+    weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm,
   } = req.body || {};
 
   // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
@@ -188,6 +193,19 @@ router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   if (suolo_occupazione_start !== undefined) updates.suolo_occupazione_start = suolo_occupazione_start || null;
   if (suolo_occupazione_end   !== undefined) updates.suolo_occupazione_end   = suolo_occupazione_end   || null;
   if (suolo_occupazione_notes !== undefined) updates.suolo_occupazione_notes = suolo_occupazione_notes || null;
+
+  if (weather_rain_mm !== undefined) {
+    const mm = Number(weather_rain_mm);
+    if (isNaN(mm) || mm < 1 || mm > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_rain_mm: 1-200 mm' });
+    updates.weather_rain_mm = mm;
+  }
+  if (weather_wind_kmh !== undefined) {
+    const kmh = Number(weather_wind_kmh);
+    if (isNaN(kmh) || kmh < 10 || kmh > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_wind_kmh: 10-200 km/h' });
+    updates.weather_wind_kmh = kmh;
+  }
+  if (weather_snow         !== undefined) updates.weather_snow         = Boolean(weather_snow);
+  if (weather_thunderstorm !== undefined) updates.weather_thunderstorm = Boolean(weather_thunderstorm);
 
   if (start_date !== undefined) updates.start_date = start_date || null;
 

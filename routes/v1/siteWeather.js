@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
@@ -7,6 +7,16 @@ const { calcEndDate }                    = require('../../lib/calcEndDate');
 const ExcelJS                            = require('exceljs');
 
 // ── Utility ────────────────────────────────────────────────────────────────────
+
+/** Costruisce l'oggetto soglie dal record site (usa default se colonne null) */
+function siteThresholds(site) {
+  return {
+    rain_mm:      site.weather_rain_mm      ?? 10,
+    wind_kmh:     site.weather_wind_kmh     ?? 50,
+    snow:         site.weather_snow         ?? true,
+    thunderstorm: site.weather_thunderstorm ?? true,
+  };
+}
 
 function toItDate(iso) {
   if (!iso) return '—';
@@ -25,7 +35,7 @@ function toItShort(iso) {
 async function getSiteOrFail(siteId, companyId, res) {
   const { data } = await supabase
     .from('sites')
-    .select('id, name, address, comune, client, start_date, end_date, contract_days, days_type, latitude, longitude')
+    .select('id, name, address, comune, client, start_date, end_date, contract_days, days_type, latitude, longitude, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
     .eq('id', siteId)
     .eq('company_id', companyId)
     .neq('status', 'eliminato')
@@ -80,7 +90,7 @@ router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, async (req, r
   for (const d of targetDates) {
     try {
       const weather  = await getActualWeather(site.latitude, site.longitude, d);
-      const { exceeded, reason } = evalThresholds(weather);
+      const { exceeded, reason } = evalThresholds(weather, siteThresholds(site));
 
       const { data: row } = await supabase
         .from('site_weather_logs')
@@ -141,7 +151,7 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
       return res.json({ inserted: 0, suspension_alerts: 0 });
 
     const rows = weatherData.map(w => {
-      const { exceeded, reason } = evalThresholds(w);
+      const { exceeded, reason } = evalThresholds(w, siteThresholds(site));
       return {
         company_id:         req.companyId,
         site_id:            siteId,
@@ -497,12 +507,13 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
     addStat('Data fine contratto originale', toItShort(site.end_date));
     addStat('Giorni sospensione applicati', confirmedDays);
   }
+  const thr = siteThresholds(site);
   ws2.addRow([]);
   ws2.addRow(['Soglie condizioni avverse applicate']).getCell(1).font = { bold: true };
-  ws2.addRow(['Pioggia: precipitazioni ≥ 10 mm/giorno (dati giornalieri cumulati)']);
-  ws2.addRow(['Vento: raffica max ≥ 50 km/h']);
-  ws2.addRow(['Neve: WMO codes 71, 73, 75, 77, 85, 86 (qualsiasi intensità)']);
-  ws2.addRow(['Temporale/grandine: WMO codes ≥ 95']);
+  ws2.addRow([`Pioggia: precipitazioni ≥ ${thr.rain_mm} mm/giorno (dati giornalieri cumulati)`]);
+  ws2.addRow([`Vento: raffica max ≥ ${thr.wind_kmh} km/h`]);
+  ws2.addRow([thr.snow ? 'Neve: WMO codes 71, 73, 75, 77, 85, 86 (qualsiasi intensità) — ABILITATA' : 'Neve: DISABILITATA per questo cantiere']);
+  ws2.addRow([thr.thunderstorm ? 'Temporale/grandine: WMO codes ≥ 95 — ABILITATA' : 'Temporale/grandine: DISABILITATA per questo cantiere']);
   ws2.addRow([]);
   ws2.addRow(['Fonte dati']).getCell(1).font = { bold: true };
   ws2.addRow(['Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF) per dati storici (> 10 giorni fa)']);
@@ -640,10 +651,10 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
 
   <div style="margin-bottom:4mm;padding:3mm 4mm;background:#f0f4ff;border-left:3px solid #3b5bdb;border-radius:3px;font-size:7.5pt;color:#333">
     <strong>Soglie condizioni avverse:</strong>
-    🌧️ Pioggia ≥ 10 mm/giorno &nbsp;·&nbsp;
-    💨 Vento ≥ 50 km/h &nbsp;·&nbsp;
-    ❄️ Neve (WMO 71-86) &nbsp;·&nbsp;
-    ⛈️ Temporale/grandine (WMO ≥ 95)
+    🌧️ Pioggia ≥ ${(site.weather_rain_mm ?? 10)} mm/giorno &nbsp;·&nbsp;
+    💨 Vento ≥ ${(site.weather_wind_kmh ?? 50)} km/h &nbsp;·&nbsp;
+    ${(site.weather_snow ?? true) ? '❄️ Neve (WMO 71-86) abilitata' : '❄️ Neve disabilitata'} &nbsp;·&nbsp;
+    ${(site.weather_thunderstorm ?? true) ? '⛈️ Temporale (WMO ≥ 95) abilitato' : '⛈️ Temporale disabilitato'}
     &nbsp;&nbsp;|&nbsp;&nbsp;
     <em>Dati ERA5 confermati per date &gt; 10 gg fa. Dati recenti da Forecast API, soggetti a revisione.</em>
   </div>

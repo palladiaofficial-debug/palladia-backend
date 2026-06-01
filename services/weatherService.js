@@ -176,14 +176,21 @@ async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
 
 /**
  * Valuta se i dati meteo superano le soglie per suggerire sospensione.
- * Restituisce { exceeded, reason } oppure { exceeded: false }.
+ * @param {object} data       - { precipitation_mm, wind_max_kmh, weather_code }
+ * @param {object} thresholds - soglie custom del cantiere (opzionali, fallback ai default)
+ * @returns {{ exceeded: boolean, reason: string|null }}
  */
-function evalThresholds(data) {
+function evalThresholds(data, thresholds = {}) {
   const { precipitation_mm, wind_max_kmh, weather_code } = data;
-  if (weather_code >= 95)                                return { exceeded: true, reason: 'temporale' };
-  if ([71,73,75,77,85,86].includes(weather_code))       return { exceeded: true, reason: 'neve' };
-  if (precipitation_mm >= 10)                           return { exceeded: true, reason: 'pioggia' };
-  if (wind_max_kmh >= 50)                               return { exceeded: true, reason: 'vento' };
+  const rainMm    = thresholds.rain_mm    != null ? Number(thresholds.rain_mm)    : 10;
+  const windKmh   = thresholds.wind_kmh   != null ? Number(thresholds.wind_kmh)   : 50;
+  const snowOn    = thresholds.snow       != null ? Boolean(thresholds.snow)       : true;
+  const thunderOn = thresholds.thunderstorm != null ? Boolean(thresholds.thunderstorm) : true;
+
+  if (thunderOn && weather_code >= 95)                        return { exceeded: true, reason: 'temporale' };
+  if (snowOn && [71,73,75,77,85,86].includes(weather_code))  return { exceeded: true, reason: 'neve' };
+  if (precipitation_mm >= rainMm)                             return { exceeded: true, reason: 'pioggia' };
+  if (wind_max_kmh >= windKmh)                                return { exceeded: true, reason: 'vento' };
   return { exceeded: false, reason: null };
 }
 
