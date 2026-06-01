@@ -1,18 +1,35 @@
 'use strict';
 /**
  * routes/v1/siteNotes.js
- * API note cantiere (da Telegram + future fonti web).
+ * API note cantiere.
  *
+ * POST   /api/v1/site-notes           — crea nota (testo + foto opzionale)
  * GET    /api/v1/site-notes           — lista note con signed URL per media
  * GET    /api/v1/site-notes/stats     — statistiche aggregate
  * GET    /api/v1/site-notes/:id       — singola nota
  * GET    /api/v1/site-notes/:id/media — redirect signed URL per scaricare media (1h)
+ * PATCH  /api/v1/site-notes/:id       — modifica nota
  * DELETE /api/v1/site-notes/:id       — elimina nota
  */
 
+const path     = require('path');
+const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+
+const VALID_CATEGORIES = ['nota','foto','non_conformita','verbale','presenza','incidente','documento','altro'];
+const VALID_URGENCIES  = ['normale','alta','critica'];
+const MAX_MEDIA_SIZE   = 10 * 1024 * 1024; // 10 MB
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_MEDIA_SIZE },
+  fileFilter: (_req, file, cb) => {
+    const ok = file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf';
+    cb(ok ? null : new Error('FILE_TYPE_NOT_ALLOWED'), ok);
+  },
+});
 
 router.use(verifySupabaseJwt);
 
@@ -42,6 +59,81 @@ async function attachSignedUrls(notes) {
 
   return notes;
 }
+
+// ── Crea nota (web) ─────────────────────────────────────────
+// multipart/form-data: site_id, content, category, urgency, file (opzionale)
+
+router.post('/site-notes',
+  verifySupabaseJwt,
+  (req, res, next) => upload.single('file')(req, res, err => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    try {
+      const { companyId } = req;
+      const { site_id, content, category = 'nota', urgency = 'normale' } = req.body;
+
+      if (!site_id) return res.status(400).json({ error: 'SITE_ID_REQUIRED' });
+      if (!content?.trim() && !req.file)
+        return res.status(400).json({ error: 'CONTENT_OR_MEDIA_REQUIRED', message: 'Inserisci almeno un testo o una foto.' });
+
+      // Verifica che il cantiere appartenga alla company
+      const { data: site } = await supabase
+        .from('sites').select('id').eq('id', site_id).eq('company_id', companyId).maybeSingle();
+      if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+      // Upload file se presente
+      let media_path = null, media_type = null, media_filename = null, media_size_bytes = null;
+      if (req.file) {
+        const ext  = path.extname(req.file.originalname || '').toLowerCase() || '.bin';
+        const dest = `${companyId}/${site_id}/notes/${Date.now()}${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from('site-media')
+          .upload(dest, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
+        if (!upErr) {
+          media_path      = dest;
+          media_type      = req.file.mimetype;
+          media_filename  = req.file.originalname || 'allegato';
+          media_size_bytes = req.file.size;
+        }
+      }
+
+      // Nome autore dal profilo auth
+      const { data: authData } = await supabase.auth.admin.getUserById(req.user.id).catch(() => ({ data: null }));
+      const author_name = authData?.user?.user_metadata?.full_name || authData?.user?.email || 'App';
+
+      const { data: note, error: insErr } = await supabase
+        .from('site_notes')
+        .insert({
+          company_id:      companyId,
+          site_id,
+          author_id:       req.user.id,
+          author_name,
+          source:          'web',
+          category:        VALID_CATEGORIES.includes(category) ? category : 'nota',
+          content:         content?.trim() || null,
+          urgency:         VALID_URGENCIES.includes(urgency)   ? urgency  : 'normale',
+          media_path,
+          media_type,
+          media_filename,
+          media_size_bytes,
+        })
+        .select()
+        .maybeSingle();
+
+      if (insErr) throw insErr;
+
+      const [result] = await attachSignedUrls([note]);
+      res.status(201).json(result);
+    } catch (err) {
+      console.error('[site-notes POST]', err.message);
+      res.status(500).json({ error: 'INTERNAL', detail: err.message });
+    }
+  }
+);
 
 // ── Lista note ───────────────────────────────────────────────
 
