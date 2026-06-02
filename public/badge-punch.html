@@ -32,14 +32,15 @@
       --surface:  #ffffff;
       --border:   #e4e7ec;
       --text:     #1a1a1a;
-      --muted:    #71717a;
+      --muted:    #6b7280;
+      --subtle:   #9ca3af;
       --green:    #16a34a;
       --green-dk: #15803d;
       --red:      #dc2626;
       --red-dk:   #b91c1c;
       --amber:    #d97706;
-      --blue:     #2563eb;
-      --radius:   16px;
+      --accent:   #2563eb;
+      --radius:   12px;
     }
 
     html, body {
@@ -107,7 +108,7 @@
       width: 52px;
       height: 52px;
       border-radius: 50%;
-      background: var(--blue);
+      background: var(--accent);
       color: #fff;
       display: flex;
       align-items: center;
@@ -257,7 +258,7 @@
       text-align: left;
       margin-bottom: 8px;
     }
-    .site-btn:hover  { border-color: var(--blue); background: rgba(37,99,235,.06); }
+    .site-btn:hover  { border-color: var(--accent); background: rgba(37,99,235,.06); }
     .site-btn:active { transform: scale(0.98); }
     .site-btn-name { font-size: 17px; font-weight: 700; color: var(--text); }
     .site-btn-addr { font-size: 13px; color: var(--muted); }
@@ -288,7 +289,7 @@
       width: 40px;
       height: 40px;
       border: 3px solid var(--border);
-      border-top-color: var(--blue);
+      border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin .8s linear infinite;
       margin: 0 auto;
@@ -653,11 +654,11 @@
     INVALID_BADGE_CODE:           { icon: '🚫', title: 'Codice non valido',       sub: 'Il QR potrebbe essere danneggiato. Avvisa il responsabile.' },
     WORKER_NOT_AUTHORIZED_ON_SITE:{ icon: '⛔', title: 'Non autorizzato',         sub: 'Non risulti assegnato a questo cantiere. Avvisa il responsabile.' },
     COMPANY_MISMATCH:             { icon: '⛔', title: 'Cantiere non valido',     sub: 'Avvisa il responsabile.' },
-    NO_SITES:                     { icon: '📍', title: 'Nessun cantiere trovato', sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
+    NO_SITES:                     { icon: '○', title: 'Nessun cantiere trovato', sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
     GPS_REQUIRED:                 { icon: '📡', title: 'Posizione richiesta',     sub: 'Attiva la geolocalizzazione per registrare la presenza.' },
-    OUTSIDE_GEOFENCE:             { icon: '📍', title: 'Sei troppo lontano',      sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
+    OUTSIDE_GEOFENCE:             { icon: '!', title: 'Sei troppo lontano',      sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
     PUNCH_TOO_SOON:               { icon: '⏳', title: 'Timbratura già registrata', sub: 'Hai già timbrato di recente. Riprova tra qualche minuto.' },
-    SERVER_ERROR:                 { icon: '⚠️', title: 'Errore temporaneo',       sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
+    SERVER_ERROR:                 { icon: '!', title: 'Errore temporaneo',       sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
     NETWORK_ERROR:                { icon: '📶', title: 'Nessuna connessione',      sub: 'Controlla la connessione a internet e riprova.' },
   };
 
@@ -762,7 +763,7 @@
   function renderSuccess(eventType, tsServer, siteName) {
     stopGps();
     const isEntry   = eventType === 'ENTRY';
-    const icon      = isEntry ? '✅' : '⏹️';
+    const icon      = isEntry ? '✓' : '■';
     const titleText = isEntry ? 'Entrata registrata' : 'Uscita registrata';
     const color     = isEntry ? '#22c55e' : '#ef4444';
 
@@ -1003,7 +1004,7 @@
     _pwaPrompt = e;
     // Aggiorna il bottone se la guida è già aperta
     var btn = document.getElementById('pwa-btn-primary');
-    if (btn) { btn.textContent = '📲 Installa ora'; }
+    if (btn) { btn.textContent = 'Installa ora'; }
   });
 
   window.addEventListener('appinstalled', function () {
@@ -1027,27 +1028,27 @@
     ios: [
       { n: '1', icon: '⬆️', text: 'Tocca il pulsante <strong>Condividi</strong> — l\'icona con la freccia verso l\'alto, nella barra in basso di Safari' },
       { n: '2', icon: '➕', text: 'Scorri l\'elenco verso il basso e tocca <strong>"Aggiungi a schermata Home"</strong>' },
-      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> in alto a destra — l\'icona di Timbratura apparirà sul tuo telefono' },
+      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> in alto a destra — l\'icona di Timbratura apparirà sul tuo telefono' },
     ],
     samsung: [
       { n: '1', icon: '☰', text: 'Tocca le <strong>tre linee</strong> in basso a destra (menu del browser)' },
       { n: '2', icon: '➕', text: 'Tocca <strong>"Aggiungi pagina a"</strong> e poi <strong>"Schermata Home"</strong>' },
-      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> — l\'icona apparirà sul tuo telefono' },
+      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> — l\'icona apparirà sul tuo telefono' },
     ],
     firefox: [
       { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso a destra (menu del browser)' },
-      { n: '2', icon: '📲', text: 'Tocca <strong>"Installa"</strong> — comparirà un\'anteprima dell\'app' },
-      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
+      { n: '2', icon: '↓', text: 'Tocca <strong>"Installa"</strong> — comparirà un\'anteprima dell\'app' },
+      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
     ],
     opera: [
       { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso (menu)' },
       { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
-      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
+      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
     ],
     chrome: [
       { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in alto a destra (menu del browser)' },
       { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
-      { n: '3', icon: '✅', text: 'Tocca <strong>Aggiungi</strong> per confermare — l\'icona apparirà sul tuo telefono' },
+      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare — l\'icona apparirà sul tuo telefono' },
     ],
   };
 
@@ -1087,7 +1088,7 @@
 
     // Se il prompt nativo è già disponibile (Android Chrome) cambia il bottone
     if (btnEl && _pwaPrompt) {
-      btnEl.textContent = '📲 Installa ora';
+      btnEl.textContent = 'Installa ora';
     }
   }
 

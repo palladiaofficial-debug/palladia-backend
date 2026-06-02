@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0f172a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <title>Palladia — Il registro presenze digitale per cantieri</title>
   <meta name="description" content="Registro presenze GPS per cantieri edili. Timbrature da smartphone, esportazione PDF conforme D.Lgs 81/2008. Nessuna app da installare. Da 79€/mese.">
   <style>
@@ -32,10 +35,11 @@
     body {
       background: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       font-size: 16px;
       line-height: 1.6;
       overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
     }
 
     a { text-decoration: none; color: inherit; }
@@ -420,7 +424,7 @@
     }
 
     .doc-header {
-      background: #1B3A5C;
+      background: rgba(59,130,246,.18);
       border-radius: 10px;
       padding: 20px;
       margin-bottom: 16px;
@@ -674,19 +678,19 @@
   <div class="proof-strip">
     <div class="proof-strip-inner">
       <div class="proof-item">
-        <span class="icon">📍</span>
+        <span class="icon"><svg style="width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
         <span>Geofence <strong>GPS obbligatoria</strong> — nessuna timbratura fuori cantiere</span>
       </div>
       <div class="proof-item">
-        <span class="icon">📄</span>
+        <span class="icon"><svg style="width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span>
         <span>Export PDF <strong>audit-ready</strong> in un clic</span>
       </div>
       <div class="proof-item">
-        <span class="icon">🔒</span>
+        <span class="icon"><svg style="width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
         <span>Registro <strong>append-only</strong> — nessun operaio può modificare le timbrature</span>
       </div>
       <div class="proof-item">
-        <span class="icon">⚡</span>
+        <span class="icon"><svg style="width:18px;height:18px;stroke:var(--accent);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></span>
         <span><strong>Attivazione rapida</strong> — zero installazioni</span>
       </div>
     </div>
@@ -704,7 +708,7 @@
       <div class="steps">
         <div class="step">
           <div class="step-num">1</div>
-          <span class="step-icon">📱</span>
+          <span class="step-icon"><svg style="width:32px;height:32px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg></span>
           <h3>L'operaio apre il link sul telefono</h3>
           <p>
             Nessuna app. Il capo cantiere condivide un link unico (o QR code) via WhatsApp.
@@ -714,7 +718,7 @@
 
         <div class="step">
           <div class="step-num">2</div>
-          <span class="step-icon">📍</span>
+          <span class="step-icon"><svg style="width:32px;height:32px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
           <h3>Timbratura GPS — entrata e uscita</h3>
           <p>
             Il browser rileva la posizione GPS. Il server verifica che l'operaio sia
@@ -724,7 +728,7 @@
 
         <div class="step">
           <div class="step-num">3</div>
-          <span class="step-icon">📄</span>
+          <span class="step-icon"><svg style="width:32px;height:32px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span>
           <h3>Export PDF — registro pronto per l'ispettore</h3>
           <p>
             Con un clic esporti il <strong>Registro Presenze Cantiere</strong>: orari, ore totali,
@@ -747,7 +751,7 @@
 
       <div class="features-grid">
         <div class="feature-card">
-          <span class="feature-icon">🌐</span>
+          <span class="feature-icon"><svg style="width:28px;height:28px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
           <h3>Zero app — funziona nel browser</h3>
           <p>
             Nessun Play Store, nessun App Store. L'operaio apre un link e timbra.
@@ -756,7 +760,7 @@
         </div>
 
         <div class="feature-card">
-          <span class="feature-icon">📲</span>
+          <span class="feature-icon"><svg style="width:28px;height:28px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/><polyline points="9 9 12 6 15 9"/></svg></span>
           <h3>QR code per cantiere</h3>
           <p>
             Stampa il QR del cantiere e appendilo all'ingresso. L'operaio inquadra,
@@ -765,7 +769,7 @@
         </div>
 
         <div class="feature-card">
-          <span class="feature-icon">📍</span>
+          <span class="feature-icon"><svg style="width:28px;height:28px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg></span>
           <h3>Geofence configurabile per cantiere</h3>
           <p>
             Imposta il raggio di geofence (default 100m). Il server blocca
@@ -774,7 +778,7 @@
         </div>
 
         <div class="feature-card">
-          <span class="feature-icon">📊</span>
+          <span class="feature-icon"><svg style="width:28px;height:28px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span>
           <h3>PDF ispettivo — pronto all'ispezione</h3>
           <p>
             Export PDF con prima entrata, ultima uscita, ore totali e numero
@@ -783,7 +787,7 @@
         </div>
 
         <div class="feature-card">
-          <span class="feature-icon">🔐</span>
+          <span class="feature-icon"><svg style="width:28px;height:28px;stroke:var(--accent);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
           <h3>Registro immutabile — append-only</h3>
           <p>
             Il database è append-only a livello di trigger SQL. Nessun operaio,
@@ -792,7 +796,7 @@
         </div>
 
         <div class="feature-card">
-          <span class="feature-icon">⚠️</span>
+          <span class="feature-icon"><svg style="width:28px;height:28px;stroke:var(--amber);fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
           <h3>Anomalie evidenziate automaticamente</h3>
           <p>
             Uscita mancante, entrata senza uscita, intervalli inconsistenti:
@@ -889,7 +893,7 @@
         <div class="price-period">al mese · IVA esclusa</div>
 
         <div style="background: rgba(245,158,11,0.12); border: 1px solid rgba(245,158,11,0.35); border-radius: 8px; padding: 10px 14px; margin-bottom: 24px; font-size: 13px; color: #fbbf24; text-align: left;">
-          🎁 <strong>Offerta lancio:</strong> 49€/mese per i primi 6 mesi · prime 5 imprese
+          <strong>Offerta lancio:</strong> 49€/mese per i primi 6 mesi · prime 5 imprese
         </div>
 
         <ul class="pricing-features">
