@@ -19,8 +19,10 @@ function validate(schema) {
   return (req, res, next) => {
     const result = schema.safeParse(req.body ?? {});
     if (!result.success) {
-      const first = result.error.errors[0];
-      const field = first.path.length ? first.path.join('.') : undefined;
+      // Zod v4 usa .issues (v3 usava .errors)
+      const issues = result.error.issues ?? result.error.errors ?? [];
+      const first  = issues[0] ?? { path: [], message: 'Dati non validi' };
+      const field  = first.path?.length ? first.path.join('.') : undefined;
       return res.status(400).json({
         error:   'VALIDATION_ERROR',
         ...(field && { field }),
