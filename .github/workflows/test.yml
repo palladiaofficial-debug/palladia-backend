@@ -40,7 +40,6 @@ jobs:
       # Variabili minime per avviare il server senza crash
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       JWT_SECRET: test-secret-ci
       QR_SIGNING_SECRET: test-qr-secret-ci
       PIN_SIGNING_SECRET: test-pin-secret-ci
