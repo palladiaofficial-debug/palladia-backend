@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node scripts/selftest_api.js",
+    "test:scan": "node scripts/selftest_scan.js"
   },
   "keywords": [],
   "author": "",
@@ -36,7 +37,8 @@
     "resend": "^6.9.3",
     "sharp": "^0.34.5",
     "stripe": "^20.4.1",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "pdf-parse": "^2.4.5"

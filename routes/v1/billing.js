@@ -2,7 +2,14 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate, z }        = require('../../middleware/validate');
 const { getStripe, getPriceId, getSiteLimit } = require('../../services/stripe');
+
+const checkoutSchema = z.object({
+  plan: z.enum(['starter', 'grow', 'pro', 'business'], {
+    errorMap: () => ({ message: 'plan deve essere starter, grow, pro o business' }),
+  }),
+});
 
 // FRONTEND_URL = URL Vercel del frontend (per redirect Stripe)
 // APP_BASE_URL è usato da qr.js/asl.js per URL backend — NON usarlo qui.
@@ -47,7 +54,7 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
 // Crea una Stripe Checkout Session per il piano richiesto.
 // Body: { plan: 'starter' | 'grow' | 'pro' }
 // Returns: { url }
-router.post('/billing/checkout', verifySupabaseJwt, async (req, res) => {
+router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), async (req, res) => {
   if (req.userRole !== 'owner') {
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo il proprietario può gestire l\'abbonamento.' });
   }

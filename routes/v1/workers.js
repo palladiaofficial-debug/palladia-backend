@@ -2,7 +2,9 @@
 const crypto  = require('crypto');
 const router  = require('express').Router();
 const supabase = require('../../lib/supabase');
-const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { verifySupabaseJwt }                    = require('../../middleware/verifyJwt');
+const { validate }                             = require('../../middleware/validate');
+const { createWorkerSchema, patchWorkerSchema } = require('../../lib/schemas/worker');
 const { auditLog }          = require('../../lib/audit');
 const { complianceStatus }  = require('../../lib/compliance');
 
@@ -55,7 +57,7 @@ const WORKER_SELECT =
   'tariffa_oraria';
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
-router.post('/workers', verifySupabaseJwt, async (req, res) => {
+router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (req, res) => {
   const {
     full_name, fiscal_code,
     photo_url, hire_date, birth_date, qualification, role,
@@ -406,7 +408,7 @@ router.post('/sites/:siteId/workers/bulk', verifySupabaseJwt, async (req, res) =
 });
 
 // ── PATCH /api/v1/workers/:workerId — aggiorna lavoratore ────────────────────
-router.patch('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
+router.patch('/workers/:workerId', verifySupabaseJwt, validate(patchWorkerSchema), async (req, res) => {
   const { workerId } = req.params;
 
   const ALLOWED = [

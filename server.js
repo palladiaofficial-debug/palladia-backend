@@ -386,6 +386,26 @@ app.use(compression({
   threshold: 1024, // comprimi solo risposte > 1KB
 }));
 
+// ── Sentry: cattura risposte 5xx inviate direttamente (non via next(err)) ────
+// Intercetta res.json prima che la route handler risponda.
+app.use((req, res, next) => {
+  const _json = res.json.bind(res);
+  res.json = function (body) {
+    if (res.statusCode >= 500) {
+      Sentry.withScope(scope => {
+        scope.setTag('http.method',  req.method);
+        scope.setTag('http.status',  res.statusCode);
+        scope.setContext('request', { method: req.method, path: req.path, query: req.query });
+        if (body?.error) scope.setExtra('error_code', body.error);
+        if (body?.message) scope.setExtra('error_message', body.message);
+        Sentry.captureMessage(`${res.statusCode} ${req.method} ${req.path}`, 'error');
+      });
+    }
+    return _json(body);
+  };
+  next();
+});
+
 // ── Telegram Bot Webhook ─────────────────────────────────────────────────────
 app.use('/api/telegram', require('./routes/telegram'));
 

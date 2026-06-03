@@ -1,7 +1,9 @@
 'use strict';
 const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
-const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { verifySupabaseJwt }          = require('../../middleware/verifyJwt');
+const { validate }                   = require('../../middleware/validate');
+const { createSiteSchema, patchSiteSchema } = require('../../lib/schemas/site');
 const { auditLog }          = require('../../lib/audit');
 const { getSiteLimit }      = require('../../services/stripe');
 const { calcEndDate }       = require('../../lib/calcEndDate');
@@ -131,7 +133,7 @@ router.post('/sites/:siteId/restore', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── PATCH /api/v1/sites/:siteId — aggiorna campi e/o stato del cantiere ───────
-router.patch('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
+router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), async (req, res) => {
   const { siteId } = req.params;
   const {
     name, address, comune, client, status,
@@ -373,7 +375,7 @@ router.patch('/sites/:siteId/coords', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── POST /api/v1/sites — crea cantiere ───────────────────────────────────────
-router.post('/sites', verifySupabaseJwt, async (req, res) => {
+router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req, res) => {
   const {
     name, address, comune, client, status,
     start_date, end_date,
