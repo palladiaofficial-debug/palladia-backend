@@ -4,6 +4,8 @@ const multer    = require('multer');
 const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { createEquipmentSchema, patchEquipmentSchema, assignEquipmentSchema } = require('../../lib/schemas/equipment');
 
 let _anthropic = null;
 function getClient() {
@@ -139,7 +141,7 @@ IMPORTANTE:
 });
 
 // ── POST /api/v1/equipment ────────────────────────────────────────────────────
-router.post('/equipment', verifySupabaseJwt, async (req, res) => {
+router.post('/equipment', verifySupabaseJwt, validate(createEquipmentSchema), async (req, res) => {
   const {
     type, model, plateOrSerial, ownership,
     purchaseDate, inspectionDate, insuranceExpiry, maintenanceDate, notes,
@@ -175,7 +177,7 @@ router.post('/equipment', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── PATCH /api/v1/equipment/:id ───────────────────────────────────────────────
-router.patch('/equipment/:id', verifySupabaseJwt, async (req, res) => {
+router.patch('/equipment/:id', verifySupabaseJwt, validate(patchEquipmentSchema), async (req, res) => {
   const { id } = req.params;
 
   const { data: existing } = await supabase
@@ -400,7 +402,7 @@ router.get('/sites/:siteId/equipment', verifySupabaseJwt, async (req, res) => {
   res.json(result);
 });
 
-router.post('/sites/:siteId/equipment', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/equipment', verifySupabaseJwt, validate(assignEquipmentSchema), async (req, res) => {
   const { siteId } = req.params;
   const { equipment_id } = req.body;
   if (!equipment_id) return res.status(400).json({ error: 'EQUIPMENT_ID_REQUIRED' });

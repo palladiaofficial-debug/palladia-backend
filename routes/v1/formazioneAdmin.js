@@ -18,6 +18,15 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendProviderApprovedEmail } = require('../../services/email');
 const { syncToFormazione } = require('../../services/documentAI');
+const { validate } = require('../../middleware/validate');
+const {
+  createAdminProviderSchema,
+  putAdminProviderSchema,
+  createAdminCourseSchema,
+  putAdminCourseSchema,
+  createAdminSessionSchema,
+  completeAdminBookingSchema,
+} = require('../../lib/schemas/formazioneAdmin');
 
 // ── Super-admin guard ─────────────────────────────────────────────────────────
 
@@ -51,7 +60,7 @@ router.get('/admin/providers', async (req, res) => {
 
 // ── POST /api/v1/admin/providers ──────────────────────────────────────────────
 
-router.post('/admin/providers', async (req, res) => {
+router.post('/admin/providers', validate(createAdminProviderSchema), async (req, res) => {
   const {
     name, description, logo_url, location_city, location_province, address,
     phone, email, website, accreditation_code, accreditation_region,
@@ -83,7 +92,7 @@ router.post('/admin/providers', async (req, res) => {
 
 // ── PUT /api/v1/admin/providers/:id ──────────────────────────────────────────
 
-router.put('/admin/providers/:id', async (req, res) => {
+router.put('/admin/providers/:id', validate(putAdminProviderSchema), async (req, res) => {
   const { id } = req.params;
   const allowed = [
     'name','description','logo_url','location_city','location_province','address',
@@ -138,7 +147,7 @@ router.patch('/admin/providers/:id/approve', async (req, res) => {
 
 // ── POST /api/v1/admin/providers/:id/courses ──────────────────────────────────
 
-router.post('/admin/providers/:id/courses', async (req, res) => {
+router.post('/admin/providers/:id/courses', validate(createAdminCourseSchema), async (req, res) => {
   const { id: provider_id } = req.params;
   const {
     course_type_id, title, description, price_cents, delivery_mode,
@@ -169,7 +178,7 @@ router.post('/admin/providers/:id/courses', async (req, res) => {
 
 // ── PUT /api/v1/admin/courses/:id ─────────────────────────────────────────────
 
-router.put('/admin/courses/:id', async (req, res) => {
+router.put('/admin/courses/:id', validate(putAdminCourseSchema), async (req, res) => {
   const { id } = req.params;
   const allowed = [
     'title','description','price_cents','delivery_mode','location_city','location_address',
@@ -189,7 +198,7 @@ router.put('/admin/courses/:id', async (req, res) => {
 
 // ── POST /api/v1/admin/courses/:id/sessions ───────────────────────────────────
 
-router.post('/admin/courses/:id/sessions', async (req, res) => {
+router.post('/admin/courses/:id/sessions', validate(createAdminSessionSchema), async (req, res) => {
   const { id: course_id } = req.params;
   const { start_date, end_date, available_spots, location_override, notes } = req.body || {};
 
@@ -235,7 +244,7 @@ router.get('/admin/bookings', async (req, res) => {
 
 // ── PATCH /api/v1/admin/bookings/:id/complete ─────────────────────────────────
 
-router.patch('/admin/bookings/:id/complete', async (req, res) => {
+router.patch('/admin/bookings/:id/complete', validate(completeAdminBookingSchema), async (req, res) => {
   const { id } = req.params;
   const {
     issue_date, issuing_body, certificate_number, pdf_url,

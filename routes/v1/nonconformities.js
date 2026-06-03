@@ -25,6 +25,12 @@ const {
   sendNonconformityAlert,
   sendNonconformityUpdate,
 } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const {
+  createNonconformitySchema,
+  closeNonconformitySchema,
+  patchNonconformitySchema,
+} = require('../../lib/schemas/nonconformities');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -84,7 +90,7 @@ async function resolveProInviteForSite(email, siteId) {
 
 // ── POST /api/v1/coordinator/:token/nonconformities ───────────────────────────
 // CSE apre una non conformità su un cantiere
-router.post('/coordinator/:token/nonconformities', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/:token/nonconformities', coordinatorLimiter, validate(createNonconformitySchema), async (req, res) => {
   const invite = await resolveInvite(req.params.token);
   if (!invite) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -156,7 +162,7 @@ router.get('/coordinator/:token/nonconformities', coordinatorLimiter, async (req
 
 // ── PATCH /api/v1/coordinator/:token/nonconformities/:id/close ────────────────
 // CSE chiude (o riapre) una NC — dopo che l'impresa l'ha risolta
-router.patch('/coordinator/:token/nonconformities/:id/close', coordinatorLimiter, async (req, res) => {
+router.patch('/coordinator/:token/nonconformities/:id/close', coordinatorLimiter, validate(closeNonconformitySchema), async (req, res) => {
   const invite = await resolveInvite(req.params.token);
   if (!invite) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -192,7 +198,7 @@ router.patch('/coordinator/:token/nonconformities/:id/close', coordinatorLimiter
 
 // ── POST /api/v1/coordinator/pro/:token/site/:siteId/nonconformities ──────────
 // Pro apre NC su un cantiere
-router.post('/coordinator/pro/:token/site/:siteId/nonconformities', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/pro/:token/site/:siteId/nonconformities', coordinatorLimiter, validate(createNonconformitySchema), async (req, res) => {
   const session = await resolveProSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -267,7 +273,7 @@ router.get('/coordinator/pro/:token/site/:siteId/nonconformities', coordinatorLi
 
 // ── PATCH /api/v1/coordinator/pro/:token/nonconformities/:id/close ────────────
 // Pro chiude una NC
-router.patch('/coordinator/pro/:token/nonconformities/:id/close', coordinatorLimiter, async (req, res) => {
+router.patch('/coordinator/pro/:token/nonconformities/:id/close', coordinatorLimiter, validate(closeNonconformitySchema), async (req, res) => {
   const session = await resolveProSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -327,7 +333,7 @@ router.get('/sites/:siteId/nonconformities', verifySupabaseJwt, async (req, res)
 
 // ── PATCH /api/v1/nonconformities/:id ─────────────────────────────────────────
 // Impresa: aggiorna stato e/o aggiunge note di risoluzione
-router.patch('/nonconformities/:id', verifySupabaseJwt, async (req, res) => {
+router.patch('/nonconformities/:id', verifySupabaseJwt, validate(patchNonconformitySchema), async (req, res) => {
   const { status, resolution_notes } = req.body || {};
 
   const COMPANY_STATUSES = ['in_lavorazione', 'risolta'];

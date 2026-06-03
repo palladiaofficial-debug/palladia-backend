@@ -2,6 +2,8 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { activateLadiaSchema } = require('../../lib/schemas/ladiaConfig');
 
 // Piani con accesso a Ladia In Cantiere
 const LADIA_PLANS = new Set(['grow', 'pro', 'business', 'enterprise']);
@@ -91,7 +93,7 @@ router.get('/sites/:siteId/ladia', verifySupabaseJwt, async (req, res) => {
 
 // ── POST /api/v1/sites/:siteId/ladia/activate ─────────────────────────────────
 // Attiva Ladia sul cantiere. Piano gate: Grow+.
-router.post('/sites/:siteId/ladia/activate', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/ladia/activate', verifySupabaseJwt, validate(activateLadiaSchema), async (req, res) => {
   const { siteId }    = req.params;
   const { companyId } = req;
 

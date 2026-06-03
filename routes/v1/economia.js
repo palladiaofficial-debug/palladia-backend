@@ -17,6 +17,14 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const {
+  patchEconomiaSettingsSchema,
+  createVoceSchema,
+  patchVoceSchema,
+  createSalHistorySchema,
+  patchSalHistorySchema,
+} = require('../../lib/schemas/economia');
 
 router.use(verifySupabaseJwt);
 
@@ -89,7 +97,7 @@ router.get('/sites/:siteId/economia', async (req, res) => {
 
 // ── PATCH /api/v1/sites/:siteId/economia/settings ────────────────────────────
 
-router.patch('/sites/:siteId/economia/settings', async (req, res) => {
+router.patch('/sites/:siteId/economia/settings', validate(patchEconomiaSettingsSchema), async (req, res) => {
   const { companyId } = req;
   const { siteId }    = req.params;
 
@@ -122,7 +130,7 @@ router.patch('/sites/:siteId/economia/settings', async (req, res) => {
 
 // ── POST /api/v1/sites/:siteId/economia/voci ─────────────────────────────────
 
-router.post('/sites/:siteId/economia/voci', async (req, res) => {
+router.post('/sites/:siteId/economia/voci', validate(createVoceSchema), async (req, res) => {
   const { companyId, user } = req;
   const { siteId }          = req.params;
 
@@ -171,7 +179,7 @@ router.post('/sites/:siteId/economia/voci', async (req, res) => {
 
 // ── PATCH /api/v1/sites/:siteId/economia/voci/:id ────────────────────────────
 
-router.patch('/sites/:siteId/economia/voci/:id', async (req, res) => {
+router.patch('/sites/:siteId/economia/voci/:id', validate(patchVoceSchema), async (req, res) => {
   const { companyId } = req;
   const { siteId, id } = req.params;
 
@@ -660,7 +668,7 @@ router.get('/sites/:siteId/economia/sal-history', async (req, res) => {
 });
 
 // ── POST /api/v1/sites/:siteId/economia/sal-history ──────────────────────────
-router.post('/sites/:siteId/economia/sal-history', async (req, res) => {
+router.post('/sites/:siteId/economia/sal-history', validate(createSalHistorySchema), async (req, res) => {
   const { companyId, user } = req;
   const { siteId }          = req.params;
   const { note }            = req.body;
@@ -774,7 +782,7 @@ router.post('/sites/:siteId/economia/sal-history', async (req, res) => {
 
 // ── PATCH /api/v1/sites/:siteId/economia/sal-history/:id ─────────────────────
 // Marca come incassato (pagato_il = oggi) o annulla (pagato_il = null).
-router.patch('/sites/:siteId/economia/sal-history/:id', async (req, res) => {
+router.patch('/sites/:siteId/economia/sal-history/:id', validate(patchSalHistorySchema), async (req, res) => {
   const { companyId } = req;
   const { siteId, id } = req.params;
 

@@ -4,6 +4,13 @@ const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const {
+  createSubcontractorSchema,
+  patchSubcontractorSchema,
+  assignSubcontractorSchema,
+  linkSubcontractorSchema,
+} = require('../../lib/schemas/subcontractors');
 
 // ── Upload configurazione documenti subappaltatori ────────────────────────────
 const BUCKET       = 'site-documents'; // stesso bucket usato da companyDocuments e documents
@@ -95,7 +102,7 @@ router.get('/subcontractors', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── POST /api/v1/subcontractors ───────────────────────────────────────────────
-router.post('/subcontractors', verifySupabaseJwt, async (req, res) => {
+router.post('/subcontractors', verifySupabaseJwt, validate(createSubcontractorSchema), async (req, res) => {
   const {
     company_name, piva, legal_address, contact_person,
     phone, email, durc_expiry, visura_date, insurance_expiry,
@@ -136,7 +143,7 @@ router.post('/subcontractors', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── PATCH /api/v1/subcontractors/:id ─────────────────────────────────────────
-router.patch('/subcontractors/:id', verifySupabaseJwt, async (req, res) => {
+router.patch('/subcontractors/:id', verifySupabaseJwt, validate(patchSubcontractorSchema), async (req, res) => {
   const { id } = req.params;
 
   const { data: existing } = await supabase
@@ -227,7 +234,7 @@ router.get('/sites/:siteId/subcontractors', verifySupabaseJwt, async (req, res) 
   res.json(result);
 });
 
-router.post('/sites/:siteId/subcontractors', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/subcontractors', verifySupabaseJwt, validate(assignSubcontractorSchema), async (req, res) => {
   const { siteId } = req.params;
   const { subcontractor_id, role } = req.body;
   if (!subcontractor_id) return res.status(400).json({ error: 'SUBCONTRACTOR_ID_REQUIRED' });
@@ -406,7 +413,7 @@ router.get('/subcontractors/:id/workers', verifySupabaseJwt, async (req, res) =>
 });
 
 // PATCH /api/v1/workers/:workerId/subcontractor — collega un lavoratore a un sub
-router.patch('/workers/:workerId/subcontractor', verifySupabaseJwt, async (req, res) => {
+router.patch('/workers/:workerId/subcontractor', verifySupabaseJwt, validate(linkSubcontractorSchema), async (req, res) => {
   const { subcontractor_id } = req.body;
 
   // Verifica che il lavoratore appartenga alla company

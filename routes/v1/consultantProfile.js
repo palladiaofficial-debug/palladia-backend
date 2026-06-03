@@ -18,10 +18,17 @@ const crypto  = require('crypto');
 const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt, verifyConsultantOrCreate } = require('../../middleware/verifyConsultant');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const {
+  onboardConsultantSchema,
+  putConsultantProfileSchema,
+  inviteClientSchema,
+  putClientRelationSchema,
+} = require('../../lib/schemas/consultantProfile');
 
 // ── POST /api/v1/consultant/onboard ───────────────────────────────────────────
 
-router.post('/consultant/onboard', verifyConsultantOrCreate, async (req, res) => {
+router.post('/consultant/onboard', verifyConsultantOrCreate, validate(onboardConsultantSchema), async (req, res) => {
   const {
     company_name, vat_number, registration_number, operative_regions,
     bio, photo_url, accreditation_bodies, years_experience,
@@ -67,7 +74,7 @@ router.get('/consultant/me', verifyConsultantJwt, async (req, res) => {
 
 // ── PUT /api/v1/consultant/me ─────────────────────────────────────────────────
 
-router.put('/consultant/me', verifyConsultantJwt, async (req, res) => {
+router.put('/consultant/me', verifyConsultantJwt, validate(putConsultantProfileSchema), async (req, res) => {
   const allowed = [
     'company_name','vat_number','registration_number','operative_regions',
     'bio','photo_url','accreditation_bodies','years_experience',
@@ -145,7 +152,7 @@ router.get('/consultant/clients', verifyConsultantJwt, async (req, res) => {
 
 // ── POST /api/v1/consultant/clients/invite ────────────────────────────────────
 
-router.post('/consultant/clients/invite', verifyConsultantJwt, async (req, res) => {
+router.post('/consultant/clients/invite', verifyConsultantJwt, validate(inviteClientSchema), async (req, res) => {
   const { company_id, invite_email } = req.body || {};
 
   if (!company_id && !invite_email) {
@@ -186,7 +193,7 @@ router.post('/consultant/clients/invite', verifyConsultantJwt, async (req, res) 
 
 // ── PUT /api/v1/consultant/clients/:id ────────────────────────────────────────
 
-router.put('/consultant/clients/:id', verifyConsultantJwt, async (req, res) => {
+router.put('/consultant/clients/:id', verifyConsultantJwt, validate(putClientRelationSchema), async (req, res) => {
   const { id } = req.params;
   const allowed = ['status','can_view_workers','can_view_certificates','can_view_sites'];
   const updates = Object.fromEntries(

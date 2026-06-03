@@ -17,6 +17,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt } = require('../../middleware/verifyConsultant');
 const { sendBookingConfirmedConsultant, sendCertificatesUploaded } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { uploadCertificatesSchema } = require('../../lib/schemas/consultantBookings');
 
 router.use(verifyConsultantJwt);
 
@@ -225,7 +227,7 @@ router.patch('/consultant/bookings/:id/confirm', async (req, res) => {
 // Dopo il corso, il consulente carica gli attestati dei partecipanti.
 // Per ogni worker: crea worker_certificate + booking_certificate.
 
-router.post('/consultant/bookings/:id/certificates', async (req, res) => {
+router.post('/consultant/bookings/:id/certificates', validate(uploadCertificatesSchema), async (req, res) => {
   const { id: bookingId } = req.params;
   const { certificates } = req.body || {};
 

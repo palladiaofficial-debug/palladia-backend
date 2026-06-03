@@ -15,6 +15,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendProviderApplicationAlert } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { registerProviderSchema } = require('../../lib/schemas/marketplace');
 
 // course-types è pubblico (usato anche in form add-certificate senza marketplace)
 // I marketplace endpoint richiedono JWT per associare i lavoratori dell'impresa
@@ -416,7 +418,7 @@ router.get('/marketplace/consultant/:consultantId', verifySupabaseJwt, async (re
 // ── POST /api/v1/marketplace/providers/register ───────────────────────────────
 // Endpoint PUBBLICO — no JWT. L'ente si candida; parte in stato is_active=false.
 
-router.post('/marketplace/providers/register', async (req, res) => {
+router.post('/marketplace/providers/register', validate(registerProviderSchema), async (req, res) => {
   const {
     name, email, phone, location_city, location_province, address,
     website, description, accreditation_code, accreditation_region,

@@ -5,6 +5,13 @@ const XLSX      = require('xlsx');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
+const { validate } = require('../../middleware/validate');
+const {
+  chatMessageSchema,
+  chatExportSchema,
+  createConversationSchema,
+  patchConversationTitleSchema,
+} = require('../../lib/schemas/chat');
 
 // Lazy init — evita crash al boot se ANTHROPIC_API_KEY non è configurata
 let _anthropic = null;
@@ -1276,7 +1283,7 @@ async function autoTitle(conversationId, firstUserMessage, client) {
 // Se conversation_id è omesso viene creata una nuova conversazione automaticamente.
 // history (legacy) è ancora accettato ma ignorato se conversation_id è presente.
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/chat', verifySupabaseJwt, async (req, res) => {
+router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
@@ -1348,7 +1355,7 @@ router.post('/chat', verifySupabaseJwt, async (req, res) => {
 // Body: { messages: [{role, content}][], format: 'pdf'|'excel' }
 // Response: file download (application/pdf o .xlsx)
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/chat/export', verifySupabaseJwt, async (req, res) => {
+router.post('/chat/export', verifySupabaseJwt, validate(chatExportSchema), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
@@ -1605,7 +1612,7 @@ router.get('/chat/conversations', verifySupabaseJwt, async (req, res) => {
 // Crea una nuova conversazione vuota.
 // Body: { title?, context_type?, context_id? }
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/chat/conversations', verifySupabaseJwt, async (req, res) => {
+router.post('/chat/conversations', verifySupabaseJwt, validate(createConversationSchema), async (req, res) => {
   const { title, context_type = 'azienda', context_id } = req.body || {};
 
   const allowedTypes = ['azienda', 'cantiere'];
@@ -1664,7 +1671,7 @@ router.get('/chat/conversations/:id', verifySupabaseJwt, async (req, res) => {
 // Rinomina una conversazione.
 // Body: { title: string }
 // ─────────────────────────────────────────────────────────────────────────────
-router.patch('/chat/conversations/:id/title', verifySupabaseJwt, async (req, res) => {
+router.patch('/chat/conversations/:id/title', verifySupabaseJwt, validate(patchConversationTitleSchema), async (req, res) => {
   const { title } = req.body || {};
   if (!title || typeof title !== 'string' || !title.trim()) {
     return res.status(400).json({ error: 'TITLE_REQUIRED' });

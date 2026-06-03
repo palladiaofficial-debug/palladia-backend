@@ -29,6 +29,8 @@ const {
   buildTimeline,
 } = require('../../lib/coordinatorUtils');
 const { complianceStatus, overallCompliance } = require('../../lib/compliance');
+const { validate } = require('../../middleware/validate');
+const { createVerificationSchema } = require('../../lib/schemas/coordinatorVerifications');
 
 // ── Helpers token ─────────────────────────────────────────────────────────────
 
@@ -126,7 +128,7 @@ async function buildVerificationSnapshot(invite) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // POST /api/v1/coordinator/:token/verifications
-router.post('/coordinator/:token/verifications', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/:token/verifications', coordinatorLimiter, validate(createVerificationSchema), async (req, res) => {
   const invite = await resolveInvite(req.params.token);
   if (!invite) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -228,7 +230,7 @@ router.get('/coordinator/:token/timeline', coordinatorLimiter, async (req, res) 
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // POST /api/v1/coordinator/pro/:token/site/:siteId/verifications
-router.post('/coordinator/pro/:token/site/:siteId/verifications', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/pro/:token/site/:siteId/verifications', coordinatorLimiter, validate(createVerificationSchema), async (req, res) => {
   const session = await resolveProSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 

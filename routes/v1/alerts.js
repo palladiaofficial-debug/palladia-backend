@@ -13,6 +13,8 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { apiLimiter } = require('../../middleware/rateLimit');
 const { sendMissingExitAlert } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { checkMissingExitsSchema } = require('../../lib/schemas/alerts');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -33,7 +35,7 @@ router.get('/alerts/missing-exits', verifySupabaseJwt, async (req, res) => {
 
 // POST /api/v1/alerts/check-missing-exits — controlla e invia email
 // body: { siteId?, date, notify? }  (notify=false → solo check, no email)
-router.post('/alerts/check-missing-exits', verifySupabaseJwt, apiLimiter, async (req, res) => {
+router.post('/alerts/check-missing-exits', verifySupabaseJwt, apiLimiter, validate(checkMissingExitsSchema), async (req, res) => {
   const { siteId, date, notify = true } = req.body;
 
   if (!date || !DATE_RE.test(date)) {

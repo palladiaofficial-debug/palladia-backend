@@ -23,6 +23,8 @@ const {
   sendQuoteRequestConsultant,
   sendQuoteReceivedCompany,
 } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { requestQuoteSchema, respondQuoteSchema } = require('../../lib/schemas/courseQuotes');
 
 const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -34,7 +36,7 @@ function getStripe() {
 
 // ── POST /api/v1/marketplace/courses/:id/request-quote (impresa) ──────────────
 
-router.post('/marketplace/courses/:id/request-quote', verifySupabaseJwt, async (req, res) => {
+router.post('/marketplace/courses/:id/request-quote', verifySupabaseJwt, validate(requestQuoteSchema), async (req, res) => {
   const { id: courseId } = req.params;
   const { participants_count, site_address, preferred_dates, notes } = req.body || {};
 
@@ -292,7 +294,7 @@ router.get('/consultant/quotes', verifyConsultantJwt, async (req, res) => {
 
 // ── PATCH /api/v1/consultant/quotes/:id/respond (consulente) ─────────────────
 
-router.patch('/consultant/quotes/:id/respond', verifyConsultantJwt, async (req, res) => {
+router.patch('/consultant/quotes/:id/respond', verifyConsultantJwt, validate(respondQuoteSchema), async (req, res) => {
   const { quoted_price_cents, quoted_message } = req.body || {};
 
   if (!quoted_price_cents || quoted_price_cents < 100) {

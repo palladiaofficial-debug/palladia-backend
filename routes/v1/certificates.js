@@ -17,6 +17,12 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendExpiryAlert, sendSessionReminder } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const {
+  createCertificateSchema,
+  updateCertificateSchema,
+  patchNotificationReadSchema,
+} = require('../../lib/schemas/certificates');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -170,7 +176,7 @@ router.get('/workers/:workerId/certificates', verifySupabaseJwt, async (req, res
 
 // ── POST /api/v1/workers/:workerId/certificates ───────────────────────────────
 
-router.post('/workers/:workerId/certificates', verifySupabaseJwt, async (req, res) => {
+router.post('/workers/:workerId/certificates', verifySupabaseJwt, validate(createCertificateSchema), async (req, res) => {
   const { workerId } = req.params;
   const { course_type_id, site_id, issue_date, issuing_body, certificate_number, pdf_url } = req.body || {};
 
@@ -226,7 +232,7 @@ router.post('/workers/:workerId/certificates', verifySupabaseJwt, async (req, re
 
 // ── PUT /api/v1/certificates/:id ──────────────────────────────────────────────
 
-router.put('/certificates/:id', verifySupabaseJwt, async (req, res) => {
+router.put('/certificates/:id', verifySupabaseJwt, validate(updateCertificateSchema), async (req, res) => {
   const { id } = req.params;
   const { course_type_id, issue_date, issuing_body, certificate_number, pdf_url, site_id } = req.body || {};
 
@@ -322,7 +328,7 @@ router.get('/formazione/notifications', verifySupabaseJwt, async (req, res) => {
 
 // ── PATCH /api/v1/formazione/notifications/:id/read ──────────────────────────
 
-router.patch('/formazione/notifications/:id/read', verifySupabaseJwt, async (req, res) => {
+router.patch('/formazione/notifications/:id/read', verifySupabaseJwt, validate(patchNotificationReadSchema), async (req, res) => {
   const { id } = req.params;
   const { action_taken } = req.body || {};
 

@@ -3,6 +3,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { calcEndDate }       = require('../../lib/calcEndDate');
+const { validate } = require('../../middleware/validate');
+const { createSuspensionDaySchema } = require('../../lib/schemas/siteSchedule');
 
 const VALID_REASONS = ['pioggia', 'vento', 'neve', 'altro'];
 
@@ -60,7 +62,7 @@ router.get('/sites/:siteId/suspension-days', verifySupabaseJwt, async (req, res)
 });
 
 // ── POST /api/v1/sites/:siteId/suspension-days ─────────────────────────────────
-router.post('/sites/:siteId/suspension-days', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/suspension-days', verifySupabaseJwt, validate(createSuspensionDaySchema), async (req, res) => {
   const { siteId } = req.params;
   const { day, reason = 'pioggia', notes } = req.body || {};
 

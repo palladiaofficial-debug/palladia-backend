@@ -51,6 +51,28 @@ const {
   sendStudioPendingInviteEmail,
 } = require('../../services/email');
 const { rendererPool } = require('../../pdf-renderer');
+const { validate } = require('../../middleware/validate');
+const {
+  onboardSchema,
+  putStudioMeSchema,
+  inviteClientSchema,
+  createDirectClientSchema,
+  putClientProfileSchema,
+  createWorkerSchema,
+  putWorkerSchema,
+  putSorveglianzaSchema,
+  putComplianceSchema,
+  createCertificateSchema,
+  putCertificateSchema,
+  importCsvSchema,
+  createSafetyRoleSchema,
+  createDocumentRequestSchema,
+  reviewDocumentRequestSchema,
+  uploadDocumentSchema,
+  claimCompanySchema,
+  inviteTeamMemberSchema,
+  patchTeamRoleSchema,
+} = require('../../lib/schemas/studio');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -105,7 +127,7 @@ async function resolveOrCreateCourseType(name) {
 
 // ── Onboarding ────────────────────────────────────────────────────────────────
 
-router.post('/studio/onboard', verifyStudioOrCreate, async (req, res) => {
+router.post('/studio/onboard', verifyStudioOrCreate, validate(onboardSchema), async (req, res) => {
   const {
     studio_name, vat_number, registration_number,
     operative_regions, bio, logo_url, edil_connect_code,
@@ -150,7 +172,7 @@ router.get('/studio/me', verifyStudioOrCreate, async (req, res) => {
   res.json({ studio: req.studio });
 });
 
-router.put('/studio/me', verifyStudioJwt, async (req, res) => {
+router.put('/studio/me', verifyStudioJwt, validate(putStudioMeSchema), async (req, res) => {
   const allowed = ['studio_name','vat_number','registration_number','operative_regions','bio','logo_url','edil_connect_code'];
   const update  = {};
   for (const k of allowed) if (req.body[k] !== undefined) update[k] = req.body[k];
@@ -191,7 +213,7 @@ router.get('/studio/clients', verifyStudioJwt, async (req, res) => {
  *   - crea studio_pending_invites, invia email "registrati su Palladia"
  *   - quando l'impresa si registra e accetta il token, la relazione si attiva
  */
-router.post('/studio/clients/invite', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/invite', verifyStudioJwt, validate(inviteClientSchema), async (req, res) => {
   const {
     company_id,     // legacy — UUID diretto
     vat_number,     // P.IVA — cerca per corrispondenza
@@ -736,7 +758,7 @@ router.get('/studio/clients/:companyId/report-vigilanza.pdf', verifyStudioJwt, a
 // ── Crea impresa cliente direttamente (CDL data controller) ──────────────────
 // Non richiede che l'impresa sia su Palladia. Il CDL crea il profilo e poi
 // gestisce lavoratori e certificati in autonomia.
-router.post('/studio/clients/create-direct', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/create-direct', verifyStudioJwt, validate(createDirectClientSchema), async (req, res) => {
   const { company_name, piva, address, phone, contact_email, safety_manager } = req.body || {};
 
   if (!company_name?.trim()) {
@@ -807,7 +829,7 @@ router.post('/studio/clients/create-direct', verifyStudioJwt, async (req, res) =
 });
 
 // ── Aggiorna profilo impresa CDL-owned ────────────────────────────────────────
-router.put('/studio/clients/:companyId/profile', verifyStudioJwt, async (req, res) => {
+router.put('/studio/clients/:companyId/profile', verifyStudioJwt, validate(putClientProfileSchema), async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -846,7 +868,7 @@ router.get('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, re
   res.json({ workers: data || [], owned_by_studio: access.isOwner });
 });
 
-router.post('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/:companyId/workers', verifyStudioJwt, validate(createWorkerSchema), async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -871,7 +893,7 @@ router.post('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, r
   res.status(201).json({ worker: data });
 });
 
-router.put('/studio/clients/:companyId/workers/:workerId', verifyStudioJwt, async (req, res) => {
+router.put('/studio/clients/:companyId/workers/:workerId', verifyStudioJwt, validate(putWorkerSchema), async (req, res) => {
   const { companyId, workerId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -927,7 +949,7 @@ router.get('/studio/clients/:companyId/certificates', verifyStudioJwt, async (re
   res.json({ certificates: data || [], owned_by_studio: access.isOwner });
 });
 
-router.post('/studio/clients/:companyId/certificates', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/:companyId/certificates', verifyStudioJwt, validate(createCertificateSchema), async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -977,7 +999,7 @@ router.post('/studio/clients/:companyId/certificates', verifyStudioJwt, async (r
   res.status(201).json({ certificate: data });
 });
 
-router.put('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt, async (req, res) => {
+router.put('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt, validate(putCertificateSchema), async (req, res) => {
   const { companyId, certId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -1031,7 +1053,7 @@ router.delete('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt
 //   Mario Rossi,RSSMRA80A01H501Z,Formazione lavoratori - Rischio Alto,2026-06-30,Formedil MI
 //   Mario Rossi,RSSMRA80A01H501Z,Idoneità medica,2025-12-01,Dr. Bianchi
 //
-router.post('/studio/clients/:companyId/import-csv', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/:companyId/import-csv', verifyStudioJwt, validate(importCsvSchema), async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -1577,7 +1599,7 @@ router.get('/studio/clients/:companyId/sorveglianza', verifyStudioJwt, async (re
   res.json({ workers: data || [], owned_by_studio: access.isOwner });
 });
 
-router.put('/studio/clients/:companyId/workers/:workerId/sorveglianza', verifyStudioJwt, async (req, res) => {
+router.put('/studio/clients/:companyId/workers/:workerId/sorveglianza', verifyStudioJwt, validate(putSorveglianzaSchema), async (req, res) => {
   const { companyId, workerId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -1622,7 +1644,7 @@ router.get('/studio/clients/:companyId/compliance', verifyStudioJwt, async (req,
   });
 });
 
-router.put('/studio/clients/:companyId/compliance', verifyStudioJwt, async (req, res) => {
+router.put('/studio/clients/:companyId/compliance', verifyStudioJwt, validate(putComplianceSchema), async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -1647,7 +1669,7 @@ const SAFETY_ROLE_LABELS = {
   aspp: 'ASPP', addetto_ps: 'Addetto Primo Soccorso', addetto_antincendio: 'Addetto Antincendio',
 };
 
-router.post('/studio/clients/:companyId/safety-roles', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/:companyId/safety-roles', verifyStudioJwt, validate(createSafetyRoleSchema), async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId, true);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -2013,7 +2035,7 @@ ${(certs||[]).length>0?`<div class="sec">
 // della propria azienda, creato in precedenza dal CDL (owned_by_studio=true).
 // Dopo il claim, l'utente diventa owner e può gestire l'azienda autonomamente,
 // mentre il CDL mantiene la visibilità tramite studio_clients.
-router.post('/studio/claim-company', async (req, res) => {
+router.post('/studio/claim-company', validate(claimCompanySchema), async (req, res) => {
   const auth = req.headers['authorization'];
   if (!auth?.startsWith('Bearer ')) return res.status(401).json({ error: 'Missing Authorization header' });
   const jwt = auth.slice(7);
@@ -2110,7 +2132,7 @@ router.get('/studio/clients/:companyId/document-requests', verifyStudioJwt, asyn
 });
 
 // POST /api/v1/studio/clients/:companyId/document-requests
-router.post('/studio/clients/:companyId/document-requests', verifyStudioJwt, async (req, res) => {
+router.post('/studio/clients/:companyId/document-requests', verifyStudioJwt, validate(createDocumentRequestSchema), async (req, res) => {
   const studio = req.studio;
   const access = await checkStudioAccess(studio.id, req.params.companyId);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -2182,7 +2204,7 @@ router.post('/studio/clients/:companyId/document-requests', verifyStudioJwt, asy
 });
 
 // PATCH /api/v1/studio/clients/:companyId/document-requests/:reqId/review
-router.patch('/studio/clients/:companyId/document-requests/:reqId/review', verifyStudioJwt, async (req, res) => {
+router.patch('/studio/clients/:companyId/document-requests/:reqId/review', verifyStudioJwt, validate(reviewDocumentRequestSchema), async (req, res) => {
   const studio = req.studio;
   const access = await checkStudioAccess(studio.id, req.params.companyId);
   if (!access.ok) return res.status(access.status).json({ error: access.error });
@@ -2252,7 +2274,7 @@ router.get('/studio/upload/:token', async (req, res) => {
   });
 });
 
-router.post('/studio/upload/:token', async (req, res) => {
+router.post('/studio/upload/:token', validate(uploadDocumentSchema), async (req, res) => {
   const { response_url, response_filename, response_notes } = req.body || {};
   if (!response_url && !response_filename) {
     return res.status(400).json({ error: 'URL_OR_FILENAME_REQUIRED' });
@@ -2334,7 +2356,7 @@ router.get('/studio/team', verifyStudioJwt, async (req, res) => {
 });
 
 // POST /api/v1/studio/team/invite — invita collaboratore per email
-router.post('/studio/team/invite', verifyStudioJwt, async (req, res) => {
+router.post('/studio/team/invite', verifyStudioJwt, validate(inviteTeamMemberSchema), async (req, res) => {
   const studio = req.studio;
 
   const email = (req.body?.email || '').trim().toLowerCase();
@@ -2375,7 +2397,7 @@ router.post('/studio/team/invite', verifyStudioJwt, async (req, res) => {
 });
 
 // PATCH /api/v1/studio/team/:memberId/role — modifica ruolo collaboratore
-router.patch('/studio/team/:memberId/role', verifyStudioJwt, async (req, res) => {
+router.patch('/studio/team/:memberId/role', verifyStudioJwt, validate(patchTeamRoleSchema), async (req, res) => {
   const studio = req.studio;
   const role   = req.body?.role;
   if (!['admin', 'collaborator'].includes(role)) return res.status(400).json({ error: 'INVALID_ROLE' });

@@ -18,6 +18,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { analyzeWorkerDoc, analyzeDocumentBuffer, syncToFormazione } = require('../../services/documentAI');
+const { validate } = require('../../middleware/validate');
+const { createWorkerDocSchema, patchWorkerDocSchema } = require('../../lib/schemas/workerDocs');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -130,6 +132,7 @@ router.post('/workers/:workerId/documents',
     if (err) return res.status(400).json({ error: err.message });
     next();
   }),
+  validate(createWorkerDocSchema),
   async (req, res) => {
     const { workerId } = req.params;
     const { doc_type = 'altro', name, issued_date, expiry_date, notes } = req.body;
@@ -209,7 +212,7 @@ router.post('/workers/:workerId/documents',
 );
 
 // ── PATCH /api/v1/workers/:workerId/documents/:docId — modifica metadati ──────
-router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, async (req, res) => {
+router.patch('/workers/:workerId/documents/:docId', verifySupabaseJwt, validate(patchWorkerDocSchema), async (req, res) => {
   const { workerId, docId } = req.params;
   const allowed = ['doc_type', 'name', 'issued_date', 'expiry_date', 'notes'];
   const updates = {};

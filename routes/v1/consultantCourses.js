@@ -16,6 +16,14 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt } = require('../../middleware/verifyConsultant');
+const { validate } = require('../../middleware/validate');
+const {
+  createConsultantCourseSchema,
+  putConsultantCourseSchema,
+  createConsultantSessionSchema,
+  putConsultantSessionSchema,
+  cancelConsultantSessionSchema,
+} = require('../../lib/schemas/consultantCourses');
 
 const COMMISSION_RATE = 15; // % trattenuta da Palladia
 
@@ -73,7 +81,7 @@ router.get('/consultant/courses', async (req, res) => {
 
 // ── POST /api/v1/consultant/courses ───────────────────────────────────────────
 
-router.post('/consultant/courses', async (req, res) => {
+router.post('/consultant/courses', validate(createConsultantCourseSchema), async (req, res) => {
   const {
     course_type_id, title, description, price_cents, delivery_mode,
     location_city, location_address, duration_hours, max_participants,
@@ -150,7 +158,7 @@ router.post('/consultant/courses', async (req, res) => {
 
 // ── PUT /api/v1/consultant/courses/:id ───────────────────────────────────────
 
-router.put('/consultant/courses/:id', async (req, res) => {
+router.put('/consultant/courses/:id', validate(putConsultantCourseSchema), async (req, res) => {
   const { id } = req.params;
   const allowed = [
     'title','description','price_cents','delivery_mode','location_city','location_address',
@@ -192,7 +200,7 @@ router.delete('/consultant/courses/:id', async (req, res) => {
 
 // ── POST /api/v1/consultant/courses/:id/sessions ──────────────────────────────
 
-router.post('/consultant/courses/:id/sessions', async (req, res) => {
+router.post('/consultant/courses/:id/sessions', validate(createConsultantSessionSchema), async (req, res) => {
   const { id: course_id } = req.params;
   const { start_date, end_date, available_spots, location_override, notes } = req.body || {};
 
@@ -222,7 +230,7 @@ router.post('/consultant/courses/:id/sessions', async (req, res) => {
 
 // ── PUT /api/v1/consultant/sessions/:id ──────────────────────────────────────
 
-router.put('/consultant/sessions/:id', async (req, res) => {
+router.put('/consultant/sessions/:id', validate(putConsultantSessionSchema), async (req, res) => {
   const { id } = req.params;
 
   // Verifica che la sessione appartiene a un corso del consulente
@@ -261,7 +269,7 @@ router.put('/consultant/sessions/:id', async (req, res) => {
 
 // ── DELETE /api/v1/consultant/sessions/:id ────────────────────────────────────
 
-router.delete('/consultant/sessions/:id', async (req, res) => {
+router.delete('/consultant/sessions/:id', validate(cancelConsultantSessionSchema), async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body || {};
 

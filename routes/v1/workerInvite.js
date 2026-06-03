@@ -18,10 +18,12 @@ const crypto   = require('crypto');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { auditLog }          = require('../../lib/audit');
+const { validate } = require('../../middleware/validate');
+const { createInviteLinkSchema, approveWorkerSchema, onboardWorkerSchema } = require('../../lib/schemas/workerInvite');
 
 // ── PRIVATO: gestione link ────────────────────────────────────────────────────
 
-router.post('/worker-invite-links', verifySupabaseJwt, async (req, res) => {
+router.post('/worker-invite-links', verifySupabaseJwt, validate(createInviteLinkSchema), async (req, res) => {
   const companyId  = req.companyId;
   const { site_id, expires_in_days = 7, max_uses = 1 } = req.body || {};
 
@@ -99,7 +101,7 @@ router.get('/workers/pending', verifySupabaseJwt, async (req, res) => {
   res.json(data || []);
 });
 
-router.patch('/workers/:id/approve', verifySupabaseJwt, async (req, res) => {
+router.patch('/workers/:id/approve', verifySupabaseJwt, validate(approveWorkerSchema), async (req, res) => {
   const { id } = req.params;
   const { action } = req.body; // 'approve' | 'reject'
 
@@ -182,7 +184,7 @@ router.get('/onboard/:token', async (req, res) => {
   });
 });
 
-router.post('/onboard/:token', async (req, res) => {
+router.post('/onboard/:token', validate(onboardWorkerSchema), async (req, res) => {
   const { token } = req.params;
   const {
     full_name, fiscal_code, phone,

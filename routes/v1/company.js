@@ -3,6 +3,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendMemberRemovedEmail } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { patchCompanySchema, patchTeamMemberSchema, leaveCompanySchema } = require('../../lib/schemas/company');
 
 // GET /api/v1/my-company — JWT only, NO X-Company-Id richiesto
 // Header opzionale X-Hint-Company-Id: se fornito e valido per l'utente, lo preferisce.
@@ -110,7 +112,7 @@ router.get('/company', verifySupabaseJwt, async (req, res) => {
 });
 
 // PATCH /api/v1/company — aggiorna profilo azienda (owner/admin/tech)
-router.patch('/company', verifySupabaseJwt, async (req, res) => {
+router.patch('/company', verifySupabaseJwt, validate(patchCompanySchema), async (req, res) => {
   if (!['owner', 'admin', 'tech'].includes(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
@@ -223,7 +225,7 @@ router.delete('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
 });
 
 // PATCH /api/v1/team-members/:userId — modifica ruolo di un membro
-router.patch('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
+router.patch('/team-members/:userId', verifySupabaseJwt, validate(patchTeamMemberSchema), async (req, res) => {
   if (!['owner', 'admin'].includes(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
@@ -263,7 +265,7 @@ router.patch('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
 // POST /api/v1/leave-company — l'utente lascia una company (non quella corrente obbligatoriamente)
 // Body: { company_id }  — JWT only, no X-Company-Id obbligatorio
 // Blocca se l'utente è l'unico owner rimasto
-router.post('/leave-company', async (req, res) => {
+router.post('/leave-company', validate(leaveCompanySchema), async (req, res) => {
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ')) return res.status(401).json({ error: 'UNAUTHORIZED' });
   const jwt = auth.slice(7);

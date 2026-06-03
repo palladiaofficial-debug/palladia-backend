@@ -8,6 +8,13 @@ const {
   getDocumentStatus,
 } = require('../../lib/coordinatorUtils');
 const { complianceStatus } = require('../../lib/compliance');
+const { validate } = require('../../middleware/validate');
+const {
+  patchProMeSchema,
+  registerProSchema,
+  requestProSchema,
+  createProNoteSchema,
+} = require('../../lib/schemas/coordinatorPro');
 
 const PRO_TOKEN_TTL_DAYS = 365;
 
@@ -69,7 +76,7 @@ router.get('/coordinator/pro/:token/me', async (req, res) => {
 });
 
 // ── PATCH /api/v1/coordinator/pro/:token/me — aggiorna profilo ────────────────
-router.patch('/coordinator/pro/:token/me', async (req, res) => {
+router.patch('/coordinator/pro/:token/me', validate(patchProMeSchema), async (req, res) => {
   const session = await resolveProSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
 
@@ -111,7 +118,7 @@ router.patch('/coordinator/pro/:token/me', async (req, res) => {
 // Registrazione autonoma professionista — funziona anche senza inviti esistenti.
 // Salva il profilo, genera sessione, invia magic link.
 // Body: { email, full_name, qualifica, azienda?, piva? }
-router.post('/coordinator/pro/register', async (req, res) => {
+router.post('/coordinator/pro/register', validate(registerProSchema), async (req, res) => {
   const email     = (req.body?.email     || '').trim().toLowerCase();
   const fullName  = (req.body?.full_name || '').trim();
   const qualifica = (req.body?.qualifica || 'Altro').trim();
@@ -163,7 +170,7 @@ router.post('/coordinator/pro/register', async (req, res) => {
 // ── POST /api/v1/coordinator/pro/request ──────────────────────────────────────
 // Richiesta magic link per email già registrata (login successivo).
 // Risponde sempre OK (security: non rivela se email esiste).
-router.post('/coordinator/pro/request', async (req, res) => {
+router.post('/coordinator/pro/request', validate(requestProSchema), async (req, res) => {
   const email = (req.body?.email || '').trim().toLowerCase();
   if (!email || !email.includes('@') || email.length > 320) {
     return res.status(400).json({ error: 'EMAIL_REQUIRED' });
@@ -555,7 +562,7 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
 
 // ── POST /api/v1/coordinator/pro/:token/site/:siteId/notes ───────────────────
 // Il professionista aggiunge una nota su un cantiere
-router.post('/coordinator/pro/:token/site/:siteId/notes', async (req, res) => {
+router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNoteSchema), async (req, res) => {
   const session = await resolveProSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
 

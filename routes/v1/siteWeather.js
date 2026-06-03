@@ -5,6 +5,8 @@ const { verifySupabaseJwt }              = require('../../middleware/verifyJwt')
 const { getActualWeather, getWeatherRange, evalThresholds, WMO } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const ExcelJS                            = require('exceljs');
+const { validate } = require('../../middleware/validate');
+const { fetchWeatherSchema, confirmSuspensionSchema } = require('../../lib/schemas/siteWeather');
 
 // ── Utility ────────────────────────────────────────────────────────────────────
 
@@ -71,7 +73,7 @@ router.get('/sites/:siteId/weather-log', verifySupabaseJwt, async (req, res) => 
 // ── POST /api/v1/sites/:siteId/weather-log/fetch ──────────────────────────────
 // Fetch manuale dei dati meteo per una o più date (backfill o aggiornamento).
 // Body: { dates: ['YYYY-MM-DD', ...] }
-router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, validate(fetchWeatherSchema), async (req, res) => {
   const { siteId } = req.params;
   const { dates }  = req.body || {};
 
@@ -189,7 +191,7 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
 
 // ── POST /api/v1/sites/:siteId/weather-log/:date/confirm ─────────────────────
 // Conferma sospensione: crea il giorno in site_suspension_days + aggiorna log.
-router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, validate(confirmSuspensionSchema), async (req, res) => {
   const { siteId, date } = req.params;
   const { notes }        = req.body || {};
 

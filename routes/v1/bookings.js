@@ -14,6 +14,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendBookingConfirmation } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { checkoutBookingSchema, reviewBookingSchema } = require('../../lib/schemas/bookings');
 
 const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -46,7 +48,7 @@ router.use(verifySupabaseJwt);
 
 // ── POST /api/v1/bookings/checkout ────────────────────────────────────────────
 
-router.post('/bookings/checkout', async (req, res) => {
+router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, res) => {
   const { session_id, worker_ids, site_id, notes } = req.body || {};
 
   if (!session_id || !Array.isArray(worker_ids) || worker_ids.length === 0) {
@@ -303,7 +305,7 @@ router.get('/bookings/:id', async (req, res) => {
 
 // ── POST /api/v1/bookings/:id/review ─────────────────────────────────────────
 
-router.post('/bookings/:id/review', async (req, res) => {
+router.post('/bookings/:id/review', validate(reviewBookingSchema), async (req, res) => {
   const { id } = req.params;
   const { rating, comment } = req.body || {};
 

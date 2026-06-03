@@ -18,6 +18,8 @@ const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { parsePdf, parseExcel } = require('../../services/computoParser');
 const { generateComputoPdf } = require('../../services/computoPdfGenerator');
+const { validate } = require('../../middleware/validate');
+const { createComputoSchema, patchVoceSalSchema } = require('../../lib/schemas/computo');
 
 let _ai = null;
 function getAI() {
@@ -225,7 +227,7 @@ Rispondi SOLO con un oggetto JSON in questo formato (nessun testo fuori dal JSON
 // ── POST /api/v1/sites/:siteId/computo ────────────────────────
 // Salva il computo (confermato dall'utente dopo revisione).
 
-router.post('/sites/:siteId/computo', async (req, res) => {
+router.post('/sites/:siteId/computo', validate(createComputoSchema), async (req, res) => {
   const { companyId, user } = req;
   const { siteId }          = req.params;
   const { nome, fonte, voci } = req.body;
@@ -429,7 +431,7 @@ router.get('/sites/:siteId/computo', async (req, res) => {
 // ── PATCH /api/v1/computo/voci/:voceId/sal ────────────────────
 // Aggiorna SAL% di una singola voce (real-time dal frontend).
 
-router.patch('/computo/voci/:voceId/sal', async (req, res) => {
+router.patch('/computo/voci/:voceId/sal', validate(patchVoceSalSchema), async (req, res) => {
   const { companyId }  = req;
   const { voceId }     = req.params;
   const { sal_percentuale, sal_note } = req.body;

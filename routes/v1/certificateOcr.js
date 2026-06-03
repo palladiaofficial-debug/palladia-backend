@@ -12,6 +12,8 @@ const Anthropic = require('@anthropic-ai/sdk');
 const multer    = require('multer');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { extractCertificateSchema } = require('../../lib/schemas/certificateOcr');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -108,7 +110,7 @@ router.post('/workers/:workerId/certificates/upload', upload.single('file'), asy
 
 // ── POST /api/v1/workers/:workerId/certificates/extract ───────────────────────
 
-router.post('/workers/:workerId/certificates/extract', async (req, res) => {
+router.post('/workers/:workerId/certificates/extract', validate(extractCertificateSchema), async (req, res) => {
   const { workerId } = req.params;
   const { file_url, file_base64, mime_type } = req.body || {};
 

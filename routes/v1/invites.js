@@ -3,6 +3,8 @@ const crypto   = require('crypto');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { createInviteSchema } = require('../../lib/schemas/invites');
 
 const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -14,7 +16,7 @@ function isAdminOrOwner(role) {
 
 // ── POST /api/v1/invites — crea e invia invito ────────────────────────────────
 
-router.post('/invites', verifySupabaseJwt, async (req, res) => {
+router.post('/invites', verifySupabaseJwt, validate(createInviteSchema), async (req, res) => {
   if (!isAdminOrOwner(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo owner e admin possono invitare.' });
   }

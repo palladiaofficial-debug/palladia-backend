@@ -5,6 +5,8 @@ const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const Anthropic = require('@anthropic-ai/sdk');
+const { validate } = require('../../middleware/validate');
+const { patchCostSchema } = require('../../lib/schemas/siteCosts');
 
 let _ai = null;
 function getAI() {
@@ -144,7 +146,7 @@ router.post('/sites/:siteId/costs',
 );
 
 // ── PATCH /api/v1/sites/:siteId/costs/:costId ────────────────────────────────
-router.patch('/sites/:siteId/costs/:costId', verifySupabaseJwt, async (req, res) => {
+router.patch('/sites/:siteId/costs/:costId', verifySupabaseJwt, validate(patchCostSchema), async (req, res) => {
   const { siteId, costId } = req.params;
   if (!await requireSiteOwnership(siteId, req.companyId, res)) return;
   if (!isUuid(costId)) return res.status(400).json({ error: 'INVALID_COST_ID' });

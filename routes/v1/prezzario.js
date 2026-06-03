@@ -2,6 +2,8 @@
 const router   = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { createCompanyPrezzoSchema, patchCompanyPrezzoSchema } = require('../../lib/schemas/prezzario');
 
 // ── GET /api/v1/prezzario/regioni ─────────────────────────────────────────────
 // Restituisce regioni e anni disponibili nel prezzario.
@@ -152,7 +154,7 @@ router.get('/company-prezzi', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── POST /api/v1/company-prezzi ───────────────────────────────────────────────
-router.post('/company-prezzi', verifySupabaseJwt, async (req, res) => {
+router.post('/company-prezzi', verifySupabaseJwt, validate(createCompanyPrezzoSchema), async (req, res) => {
   const { descrizione, fornitore, um, prezzo, categoria, valid_from, valid_to, note } = req.body;
 
   if (!descrizione || !um || prezzo == null) {
@@ -185,7 +187,7 @@ router.post('/company-prezzi', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── PATCH /api/v1/company-prezzi/:id ─────────────────────────────────────────
-router.patch('/company-prezzi/:id', verifySupabaseJwt, async (req, res) => {
+router.patch('/company-prezzi/:id', verifySupabaseJwt, validate(patchCompanyPrezzoSchema), async (req, res) => {
   const { id } = req.params;
   const allowed = ['descrizione', 'fornitore', 'um', 'prezzo', 'categoria', 'valid_from', 'valid_to', 'note'];
   const updates = {};

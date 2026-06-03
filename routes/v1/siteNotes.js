@@ -17,6 +17,8 @@ const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { createReminderSchema, patchNoteSchema } = require('../../lib/schemas/siteNotes');
 
 const VALID_CATEGORIES = ['nota','foto','non_conformita','verbale','presenza','incidente','documento','altro'];
 const VALID_URGENCIES  = ['normale','alta','critica'];
@@ -267,7 +269,7 @@ router.get('/site-notes/:id/media', async (req, res) => {
 
 // ── Promemoria via Telegram ──────────────────────────────────
 
-router.post('/site-notes/:id/reminder', async (req, res) => {
+router.post('/site-notes/:id/reminder', validate(createReminderSchema), async (req, res) => {
   try {
     const { companyId } = req;
     const { id }        = req.params;
@@ -317,7 +319,7 @@ router.post('/site-notes/:id/reminder', async (req, res) => {
 
 // ── Modifica nota ────────────────────────────────────────────
 
-router.patch('/site-notes/:id', async (req, res) => {
+router.patch('/site-notes/:id', validate(patchNoteSchema), async (req, res) => {
   try {
     const { companyId, userRole } = req;
     const { id }                  = req.params;

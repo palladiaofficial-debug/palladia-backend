@@ -5,6 +5,8 @@ const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }   = require('../../pdf-renderer');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
+const { validate } = require('../../middleware/validate');
+const { patchChecklistSchema } = require('../../lib/schemas/baracca');
 
 let _anthropic = null;
 function getClient() {
@@ -91,7 +93,7 @@ router.get('/sites/:siteId/baracca', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── PATCH /api/v1/sites/:siteId/baracca/checklist ────────────────────────────
-router.patch('/sites/:siteId/baracca/checklist', verifySupabaseJwt, async (req, res) => {
+router.patch('/sites/:siteId/baracca/checklist', verifySupabaseJwt, validate(patchChecklistSchema), async (req, res) => {
   const { siteId } = req.params;
   const { item_key, checked } = req.body;
   if (!item_key) return res.status(400).json({ error: 'item_key required' });

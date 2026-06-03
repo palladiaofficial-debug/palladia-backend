@@ -24,6 +24,17 @@
 const crypto   = require('crypto');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
+const { validate } = require('../../middleware/validate');
+const {
+  registerProviderSchema,
+  requestLinkSchema,
+  patchProviderProfileSchema,
+  createProviderCourseSchema,
+  putProviderCourseSchema,
+  createProviderSessionSchema,
+  patchProviderSessionSchema,
+  completeProviderBookingSchema,
+} = require('../../lib/schemas/formazioneProvider');
 
 const PROVIDER_TOKEN_TTL_DAYS = 365;
 
@@ -81,7 +92,7 @@ router.get('/formazione/course-types', async (req, res) => {
 });
 
 // ── POST /api/v1/formazione/provider/register ─────────────────────────────────
-router.post('/formazione/provider/register', async (req, res) => {
+router.post('/formazione/provider/register', validate(registerProviderSchema), async (req, res) => {
   const email     = (req.body?.email              || '').trim().toLowerCase();
   const name      = (req.body?.name               || '').trim();
   const city      = (req.body?.city               || '').trim();
@@ -154,7 +165,7 @@ router.post('/formazione/provider/register', async (req, res) => {
 });
 
 // ── POST /api/v1/formazione/provider/request-link ────────────────────────────
-router.post('/formazione/provider/request-link', async (req, res) => {
+router.post('/formazione/provider/request-link', validate(requestLinkSchema), async (req, res) => {
   const email = (req.body?.email || '').trim().toLowerCase();
   if (!email || !email.includes('@') || email.length > 320) {
     return res.status(400).json({ error: 'EMAIL_REQUIRED' });
@@ -191,7 +202,7 @@ router.get('/formazione/provider/:token/profile', async (req, res) => {
 });
 
 // ── PATCH /api/v1/formazione/provider/:token/profile ─────────────────────────
-router.patch('/formazione/provider/:token/profile', async (req, res) => {
+router.patch('/formazione/provider/:token/profile', validate(patchProviderProfileSchema), async (req, res) => {
   const session = await resolveProviderSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -301,7 +312,7 @@ router.get('/formazione/provider/:token/courses', async (req, res) => {
 });
 
 // ── POST /api/v1/formazione/provider/:token/courses ──────────────────────────
-router.post('/formazione/provider/:token/courses', async (req, res) => {
+router.post('/formazione/provider/:token/courses', validate(createProviderCourseSchema), async (req, res) => {
   const session = await resolveProviderSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -336,7 +347,7 @@ router.post('/formazione/provider/:token/courses', async (req, res) => {
 });
 
 // ── PUT /api/v1/formazione/provider/:token/courses/:courseId ─────────────────
-router.put('/formazione/provider/:token/courses/:courseId', async (req, res) => {
+router.put('/formazione/provider/:token/courses/:courseId', validate(putProviderCourseSchema), async (req, res) => {
   const session = await resolveProviderSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -380,7 +391,7 @@ router.delete('/formazione/provider/:token/courses/:courseId', async (req, res) 
 });
 
 // ── POST /api/v1/formazione/provider/:token/courses/:courseId/sessions ────────
-router.post('/formazione/provider/:token/courses/:courseId/sessions', async (req, res) => {
+router.post('/formazione/provider/:token/courses/:courseId/sessions', validate(createProviderSessionSchema), async (req, res) => {
   const session = await resolveProviderSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -418,7 +429,7 @@ router.post('/formazione/provider/:token/courses/:courseId/sessions', async (req
 });
 
 // ── PATCH /api/v1/formazione/provider/:token/courses/:courseId/sessions/:sessionId ─
-router.patch('/formazione/provider/:token/courses/:courseId/sessions/:sessionId', async (req, res) => {
+router.patch('/formazione/provider/:token/courses/:courseId/sessions/:sessionId', validate(patchProviderSessionSchema), async (req, res) => {
   const pSession = await resolveProviderSession(req.params.token);
   if (!pSession) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -543,7 +554,7 @@ router.patch('/formazione/provider/:token/bookings/:bookingId/confirm', async (r
 });
 
 // ── PATCH /api/v1/formazione/provider/:token/bookings/:bookingId/complete ─────
-router.patch('/formazione/provider/:token/bookings/:bookingId/complete', async (req, res) => {
+router.patch('/formazione/provider/:token/bookings/:bookingId/complete', validate(completeProviderBookingSchema), async (req, res) => {
   const session = await resolveProviderSession(req.params.token);
   if (!session) return res.status(401).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 

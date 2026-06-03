@@ -39,6 +39,12 @@ const {
   getTodayPresences,
   getDocumentStatus,
 } = require('../../lib/coordinatorUtils');
+const { validate } = require('../../middleware/validate');
+const {
+  createCoordinatorInviteSchema,
+  createCoordinatorNoteSchema,
+  requestLinkSchema,
+} = require('../../lib/schemas/coordinator');
 
 const COORD_TTL_DAYS_DEFAULT = 90;
 
@@ -52,7 +58,7 @@ function hashToken(token) {
 // complianceStatus e overallCompliance importati da lib/compliance.js
 
 // ── POST /api/v1/sites/:siteId/coordinator-invites ───────────────────────────
-router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, validate(createCoordinatorInviteSchema), async (req, res) => {
   const { siteId } = req.params;
   const { coordinator_name, coordinator_email, coordinator_company, ttl_days } = req.body;
 
@@ -535,7 +541,7 @@ router.get('/coordinator/:token/notes', coordinatorLimiter, async (req, res) => 
 });
 
 // ── POST /api/v1/coordinator/:token/notes ────────────────────────────────────
-router.post('/coordinator/:token/notes', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/:token/notes', coordinatorLimiter, validate(createCoordinatorNoteSchema), async (req, res) => {
   const invite = await resolveInvite(req.params.token);
   if (!invite) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -587,7 +593,7 @@ router.post('/coordinator/:token/notes', coordinatorLimiter, async (req, res) =>
 // ── POST /api/v1/coordinator/request-link — recupero link via email (PUBBLICO) ─
 // Rate limit: 3/ora per IP. Risponde sempre 200 per evitare enumerazione email.
 // Rigenera il token per ogni invito attivo → invalida link precedenti → invia email.
-router.post('/coordinator/request-link', recoveryLimiter, async (req, res) => {
+router.post('/coordinator/request-link', recoveryLimiter, validate(requestLinkSchema), async (req, res) => {
   const { email } = req.body || {};
   const safeEmail = typeof email === 'string' ? email.trim().toLowerCase().slice(0, 200) : '';
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(safeEmail);

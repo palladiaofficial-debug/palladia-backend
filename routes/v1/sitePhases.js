@@ -2,6 +2,8 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { createPhaseSchema, patchPhaseSchema, assignWorkersSchema } = require('../../lib/schemas/sitePhases');
 
 function isUuid(v) {
   return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
@@ -61,7 +63,7 @@ router.get('/sites/:siteId/phases', verifySupabaseJwt, async (req, res) => {
 
 // ── POST /api/v1/sites/:siteId/phases ────────────────────────────────────────
 // Crea una nuova fase.
-router.post('/sites/:siteId/phases', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/phases', verifySupabaseJwt, validate(createPhaseSchema), async (req, res) => {
   const { siteId } = req.params;
   if (!await requireSiteOwnership(siteId, req.companyId, res)) return;
 
@@ -91,7 +93,7 @@ router.post('/sites/:siteId/phases', verifySupabaseJwt, async (req, res) => {
 
 // ── PATCH /api/v1/sites/:siteId/phases/:phaseId ──────────────────────────────
 // Aggiorna stato, progresso, date, note.
-router.patch('/sites/:siteId/phases/:phaseId', verifySupabaseJwt, async (req, res) => {
+router.patch('/sites/:siteId/phases/:phaseId', verifySupabaseJwt, validate(patchPhaseSchema), async (req, res) => {
   const { siteId, phaseId } = req.params;
   if (!await requireSiteOwnership(siteId, req.companyId, res)) return;
   if (!isUuid(phaseId)) return res.status(400).json({ error: 'INVALID_PHASE_ID' });
@@ -144,7 +146,7 @@ router.delete('/sites/:siteId/phases/:phaseId', verifySupabaseJwt, async (req, r
 
 // ── POST /api/v1/sites/:siteId/phases/:phaseId/workers ───────────────────────
 // Assegna uno o più lavoratori a una fase.
-router.post('/sites/:siteId/phases/:phaseId/workers', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/phases/:phaseId/workers', verifySupabaseJwt, validate(assignWorkersSchema), async (req, res) => {
   const { siteId, phaseId } = req.params;
   if (!await requireSiteOwnership(siteId, req.companyId, res)) return;
   if (!isUuid(phaseId)) return res.status(400).json({ error: 'INVALID_PHASE_ID' });

@@ -18,6 +18,8 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { validate } = require('../../middleware/validate');
+const { patchFeatureFlagSchema } = require('../../lib/schemas/featureFlags');
 
 // Features supportate e i loro default da env
 const FEATURES = {
@@ -63,7 +65,7 @@ router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── PATCH /api/v1/feature-flags/:feature — solo master company ────────────────
-router.patch('/feature-flags/:feature', verifySupabaseJwt, async (req, res) => {
+router.patch('/feature-flags/:feature', verifySupabaseJwt, validate(patchFeatureFlagSchema), async (req, res) => {
   if (!MASTER_IDS.has(req.companyId))
     return res.status(403).json({ error: 'FORBIDDEN' });
 

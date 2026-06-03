@@ -1,2 +1,8 @@
-node_modules/ 
-.env 
+node_modules/
+.env
+*.local.json
+# File temporanei di sistema (mai committare)
+C*AppData*
+C*Users*Temp*
+*.tmp
+*.temp

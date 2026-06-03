@@ -16,6 +16,8 @@ const router   = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { getActualWeather }   = require('../../services/weatherService');
+const { validate } = require('../../middleware/validate');
+const { upsertDiarySchema, deletePhotoSchema } = require('../../lib/schemas/diary');
 
 const BUCKET = 'site-documents';
 const upload = multer({
@@ -167,7 +169,7 @@ router.get('/sites/:siteId/diary/:date', verifySupabaseJwt, async (req, res) => 
 });
 
 // ── POST /api/v1/sites/:siteId/diary ──────────────────────────────────────────
-router.post('/sites/:siteId/diary', verifySupabaseJwt, async (req, res) => {
+router.post('/sites/:siteId/diary', verifySupabaseJwt, validate(upsertDiarySchema), async (req, res) => {
   const { siteId } = req.params;
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
@@ -254,7 +256,7 @@ router.post('/sites/:siteId/diary/photos',
 // ── DELETE /api/v1/sites/:siteId/diary/photos ──────────────────────────────────
 // DEVE stare PRIMA di DELETE /:date — altrimenti Express matcha "photos" come :date
 // Elimina una foto dallo storage. Body: { path }
-router.delete('/sites/:siteId/diary/photos', verifySupabaseJwt, async (req, res) => {
+router.delete('/sites/:siteId/diary/photos', verifySupabaseJwt, validate(deletePhotoSchema), async (req, res) => {
   const { siteId } = req.params;
   const { path: filePath } = req.body;
 

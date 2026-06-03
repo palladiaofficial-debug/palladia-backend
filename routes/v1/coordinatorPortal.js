@@ -28,6 +28,12 @@ const {
   sendNonconformityAlert,
 } = require('../../services/email');
 const { complianceStatus } = require('../../lib/compliance');
+const { validate } = require('../../middleware/validate');
+const {
+  createPortalNoteSchema,
+  createNonconformitySchema,
+  createVerificationSchema,
+} = require('../../lib/schemas/coordinatorPortal');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -418,7 +424,7 @@ router.get('/coordinator/portal/:token/site/:siteId', coordinatorLimiter, async 
 });
 
 // ── POST /coordinator/portal/:token/site/:siteId/notes ───────────────────────
-router.post('/coordinator/portal/:token/site/:siteId/notes', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/portal/:token/site/:siteId/notes', coordinatorLimiter, validate(createPortalNoteSchema), async (req, res) => {
   const result = await getInviteForSite(req.params.token, req.params.siteId);
   if (!result) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -458,7 +464,7 @@ router.post('/coordinator/portal/:token/site/:siteId/notes', coordinatorLimiter,
 });
 
 // ── POST /coordinator/portal/:token/site/:siteId/nonconformities ─────────────
-router.post('/coordinator/portal/:token/site/:siteId/nonconformities', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/portal/:token/site/:siteId/nonconformities', coordinatorLimiter, validate(createNonconformitySchema), async (req, res) => {
   const result = await getInviteForSite(req.params.token, req.params.siteId);
   if (!result) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
@@ -531,7 +537,7 @@ router.patch('/coordinator/portal/:token/site/:siteId/nonconformities/:ncId/clos
 });
 
 // ── POST /coordinator/portal/:token/site/:siteId/verifications ───────────────
-router.post('/coordinator/portal/:token/site/:siteId/verifications', coordinatorLimiter, async (req, res) => {
+router.post('/coordinator/portal/:token/site/:siteId/verifications', coordinatorLimiter, validate(createVerificationSchema), async (req, res) => {
   const result = await getInviteForSite(req.params.token, req.params.siteId);
   if (!result) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 

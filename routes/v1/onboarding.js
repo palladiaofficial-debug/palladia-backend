@@ -2,6 +2,8 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { sendWelcomeEmail } = require('../../services/email');
+const { validate } = require('../../middleware/validate');
+const { setupCompanySchema } = require('../../lib/schemas/onboarding');
 
 /**
  * verifyJwtOnly — verifica solo il JWT Supabase senza check company membership.
@@ -72,7 +74,7 @@ router.get('/me', verifyJwtOnly, async (req, res) => {
 });
 
 // POST /api/v1/onboarding/setup — crea la prima company per l'utente autenticato
-router.post('/onboarding/setup', verifyJwtOnly, async (req, res) => {
+router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), async (req, res) => {
   const { company_name, full_name } = req.body || {};
 
   // Validazione
