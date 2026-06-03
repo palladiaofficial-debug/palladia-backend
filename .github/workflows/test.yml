@@ -48,11 +48,9 @@ jobs:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
       FRONTEND_URL: http://localhost:5173
       APP_BASE_URL: http://localhost:3001
-      # Autenticati — opzionali: se non impostati i test autenticati vengono saltati
-      TEST_JWT: ${{ secrets.TEST_JWT }}
-      TEST_COMPANY_ID: ${{ secrets.TEST_COMPANY_ID }}
-      TEST_SITE_ID: ${{ secrets.TEST_SITE_ID }}
-      TEST_WORKER_ID: ${{ secrets.TEST_WORKER_ID }}
+      # Autenticati — solo TEST_CI_PASSWORD è obbligatoria per i test autenticati
+      # Gli ID sono hardcoded come default nel test script (generati da setup-ci-user.js)
+      TEST_CI_PASSWORD: ${{ secrets.TEST_CI_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
