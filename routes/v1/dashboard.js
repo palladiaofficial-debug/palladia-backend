@@ -2,6 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { cache } = require('../../middleware/cache');
 
 /**
  * GET /api/v1/dashboard
@@ -10,7 +11,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
  *   - conteggio lavoratori attivi
  *   - timbrature di oggi (Roma tz) + chi è presente adesso
  */
-router.get('/dashboard', verifySupabaseJwt, async (req, res) => {
+router.get('/dashboard', verifySupabaseJwt, cache(60), async (req, res) => {
   // Data di oggi nel fuso orario Italia
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' }); // "YYYY-MM-DD"
   // Finestra di 30h per coprire DST e mezzanotte

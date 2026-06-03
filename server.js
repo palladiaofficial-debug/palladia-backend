@@ -2,6 +2,9 @@ require('dotenv').config();
 // Sentry DEVE essere il primo require — cattura errori di tutti i moduli successivi
 const Sentry      = require('./lib/sentry');
 const errorBuffer = require('./lib/errorBuffer');
+const logger = require('./lib/logger');
+const requestLogger = require('./middleware/requestLogger');
+const { requestId } = require('./middleware/requestId');
 const express    = require('express');
 const cors       = require('cors');
 const helmet     = require('helmet');
@@ -42,11 +45,11 @@ const { PNG }                       = require('pngjs');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
-  console.error('[PROCESS] uncaughtException — kept alive:', err.message, err.stack);
+  logger.error({ err }, 'uncaughtException');
   Sentry.captureException(err);
 });
 process.on('unhandledRejection', (reason) => {
-  console.error('[PROCESS] unhandledRejection — kept alive:', reason);
+  logger.error({ reason }, 'unhandledRejection');
   Sentry.captureException(reason instanceof Error ? reason : new Error(String(reason)));
 });
 
@@ -156,13 +159,14 @@ app.use(cors({
       typeof rule === 'string' ? rule === origin : rule.test(origin)
     );
     if (allowed) return callback(null, true);
-    console.warn('[CORS] blocked origin:', origin);
+    logger.warn({ origin }, 'CORS blocked');
     callback(new Error(`CORS: origin not allowed — ${origin}`));
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id', 'X-Hint-Company-Id']
 }));
+app.use(requestLogger);
 // ── Supabase Auth Hook — DEVE stare prima di express.json() ─────────────────
 // La verifica HMAC-SHA256 richiede il raw body (Standard Webhooks v1,whsec_...)
 app.post('/api/auth/hook/send-email',
@@ -386,6 +390,9 @@ app.use(compression({
   threshold: 1024, // comprimi solo risposte > 1KB
 }));
 
+// ── X-Request-ID — ogni richiesta ha un ID univoco tracciabile ───────────────
+app.use(requestId);
+
 // ── Sentry: cattura risposte 5xx inviate direttamente (non via next(err)) ────
 // Intercetta res.json prima che la route handler risponda.
 app.use((req, res, next) => {
@@ -411,6 +418,14 @@ app.use('/api/telegram', require('./routes/telegram'));
 
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
+
+// ── Swagger UI — documentazione API interattiva ──────────────────────────────
+const swaggerUi   = require('swagger-ui-express');
+const openApiSpec = require('./docs/openapi');
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(openApiSpec, {
+  customSiteTitle: 'Palladia API Docs',
+  swaggerOptions: { persistAuthorization: true },
+}));
 
 // ── Parse diagnostics (richiede JWT — non più pubblico) ──────────────────────
 app.get('/api/parse-diag', verifyJwtOnly, async (req, res) => {
@@ -2085,7 +2100,7 @@ app.get('/api/pdf-smoke', async (req, res) => {
 // ── App-level error handler ───────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  console.error('[app-error]', req.method, req.path, err.message);
+  logger.error({ err, requestId: req.id, method: req.method, path: req.path }, 'app error');
   // Invia a Sentry solo errori 5xx non previsti (non errori client 4xx)
   if (!err.status || err.status >= 500) {
     Sentry.captureException(err, { extra: { method: req.method, path: req.path } });
@@ -2113,8 +2128,8 @@ supabaseAdmin.storage.createBucket('site-documents', {
 }).catch((e) => console.warn('[storage] Bucket init error:', e.message));
 
 const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log('ROUTES OK: /api/ping, /api/health, /api/pdf-diag, /api/pdf-smoke');
+  logger.info({ port: PORT }, 'Server avviato');
+  logger.info('Routes OK');
 
   // Avvia cron — solo in produzione o se esplicitamente abilitato
   if (process.env.NODE_ENV !== 'test') {
@@ -2148,18 +2163,18 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 // Chiudiamo il server HTTP (no nuove connessioni) e attendiamo le richieste in corso.
 // Puppeteer viene chiuso dopo per liberare la memoria di Chromium.
 process.on('SIGTERM', () => {
-  console.log('[SIGTERM] ricevuto — avvio graceful shutdown...');
+  logger.info('[SIGTERM] ricevuto — avvio graceful shutdown...');
 
   server.close(async () => {
-    console.log('[SIGTERM] server HTTP chiuso — cleanup...');
+    logger.info('[SIGTERM] server HTTP chiuso — cleanup...');
     try { await rendererPool.close(); } catch { /* ignore */ }
-    console.log('[SIGTERM] Puppeteer chiuso — processo terminato.');
+    logger.info('[SIGTERM] Puppeteer chiuso — processo terminato.');
     process.exit(0);
   });
 
   // Se non riusciamo a chiudere entro 30s, forziamo l'uscita
   setTimeout(() => {
-    console.error('[SIGTERM] force exit — timeout 30s superato');
+    logger.error('[SIGTERM] force exit — timeout 30s superato');
     process.exit(1);
   }, 30000);
 });

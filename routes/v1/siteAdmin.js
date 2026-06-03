@@ -3,6 +3,7 @@ const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }          = require('../../middleware/verifyJwt');
 const { validate }                   = require('../../middleware/validate');
+const { cache, invalidate }          = require('../../middleware/cache');
 const { createSiteSchema, patchSiteSchema } = require('../../lib/schemas/site');
 const { auditLog }          = require('../../lib/audit');
 const { getSiteLimit }      = require('../../services/stripe');
@@ -49,7 +50,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
-router.get('/sites', verifySupabaseJwt, async (req, res) => {
+router.get('/sites', verifySupabaseJwt, cache(20), async (req, res) => {
   const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm';
 
   const { data, error } = await supabase
@@ -317,6 +318,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     req,
   });
 
+  invalidate(req.companyId, '/sites');
   res.json(formatSite(data));
 });
 

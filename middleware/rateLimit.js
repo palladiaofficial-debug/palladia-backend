@@ -74,11 +74,19 @@ const identifyLimiter = rateLimit({
 });
 
 // ── Rate limiter generico per tutte le route /api/v1/ ─────────────────────────
+// Key: company_id quando disponibile (dopo JWT), altrimenti IP
+// Questo previene che un singolo account spammi l'API anche con VPN/Tor
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 120,
   standardHeaders: true,
   legacyHeaders:   false,
+  keyGenerator: (req) => {
+    // req.companyId è impostato da verifySupabaseJwt
+    if (req.companyId) return `company:${req.companyId}`;
+    const ip = req.ip || '';
+    return ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown';
+  },
   message: { error: 'TOO_MANY_REQUESTS' },
   ...makeStore(),
 });
