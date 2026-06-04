@@ -361,6 +361,59 @@ async function calcPnl(siteId, companyId, site) {
   };
 }
 
+// ── GET /api/v1/economia/overview — P&L aggregato tutti i cantieri ───────────
+router.get('/economia/overview', async (req, res) => {
+  const { companyId } = req;
+
+  const { data: sites, error } = await supabase
+    .from('sites')
+    .select('id, name, status, budget_totale, sal_percentuale, address, comune')
+    .eq('company_id', companyId)
+    .neq('status', 'eliminato')
+    .order('name');
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!sites?.length) return res.json({ sites: [], totali: null });
+
+  const results = await Promise.all(
+    sites.map(async (site) => {
+      try {
+        const pnl = await calcPnl(site.id, companyId, site);
+        const { costi_diretti, costo_mo, contratto, margine, source } = pnl;
+        return {
+          id:      site.id,
+          name:    site.name,
+          status:  site.status,
+          address: site.address,
+          comune:  site.comune,
+          source,
+          contratto: {
+            totale_contratto: contratto.totale_contratto,
+            importo_maturato: contratto.importo_maturato,
+            sal_percentuale:  contratto.sal_percentuale,
+          },
+          costo_mo:      { totale: costo_mo.totale, workers_no_tariffa: costo_mo.workers_no_tariffa },
+          costi_diretti: { totale: costi_diretti.totale },
+          totale_costi:  pnl.totale_costi,
+          margine:       { valore: margine.valore, percentuale: margine.percentuale },
+        };
+      } catch {
+        return { id: site.id, name: site.name, status: site.status, error: true };
+      }
+    })
+  );
+
+  const validi = results.filter(s => !s.error && s.contratto?.totale_contratto != null);
+  const totali = validi.length > 0 ? {
+    totale_contratto: validi.reduce((s, x) => s + (x.contratto.totale_contratto ?? 0), 0),
+    importo_maturato: validi.reduce((s, x) => s + (x.contratto.importo_maturato ?? 0), 0),
+    totale_spese:     results.reduce((s, x) => s + (x.totale_costi ?? 0), 0),
+    margine:          validi.reduce((s, x) => s + (x.margine?.valore ?? 0), 0),
+  } : null;
+
+  res.json({ sites: results, totali });
+});
+
 // ── GET /api/v1/sites/:siteId/economia/pnl ───────────────────────────────────
 router.get('/sites/:siteId/economia/pnl', async (req, res) => {
   const { companyId } = req;
