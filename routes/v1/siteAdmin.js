@@ -202,23 +202,15 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
   if (suolo_occupazione_end   !== undefined) updates.suolo_occupazione_end   = suolo_occupazione_end   || null;
   if (suolo_occupazione_notes !== undefined) updates.suolo_occupazione_notes = suolo_occupazione_notes || null;
 
-  if (weather_rain_mm !== undefined) {
-    if (weather_rain_mm === null || weather_rain_mm === '') {
-      updates.weather_rain_mm = null;
-    } else {
-      const mm = Number(weather_rain_mm);
-      if (isNaN(mm) || mm < 1 || mm > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_rain_mm: 1-200 mm' });
-      updates.weather_rain_mm = mm;
-    }
+  if (weather_rain_mm !== undefined && weather_rain_mm !== null && weather_rain_mm !== '') {
+    const mm = Number(weather_rain_mm);
+    if (isNaN(mm) || mm < 1 || mm > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_rain_mm: 1-200 mm' });
+    updates.weather_rain_mm = mm;
   }
-  if (weather_wind_kmh !== undefined) {
-    if (weather_wind_kmh === null || weather_wind_kmh === '') {
-      updates.weather_wind_kmh = null;
-    } else {
-      const kmh = Number(weather_wind_kmh);
-      if (isNaN(kmh) || kmh < 10 || kmh > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_wind_kmh: 10-200 km/h' });
-      updates.weather_wind_kmh = kmh;
-    }
+  if (weather_wind_kmh !== undefined && weather_wind_kmh !== null && weather_wind_kmh !== '') {
+    const kmh = Number(weather_wind_kmh);
+    if (isNaN(kmh) || kmh < 10 || kmh > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_wind_kmh: 10-200 km/h' });
+    updates.weather_wind_kmh = kmh;
   }
   if (weather_snow         !== undefined) updates.weather_snow         = Boolean(weather_snow);
   if (weather_thunderstorm !== undefined) updates.weather_thunderstorm = Boolean(weather_thunderstorm);
