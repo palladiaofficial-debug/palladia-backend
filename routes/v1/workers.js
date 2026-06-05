@@ -591,4 +591,102 @@ router.get('/workers/export', verifySupabaseJwt, async (req, res) => {
   res.end();
 });
 
+// ── POST /api/v1/workers/import — importa CSV lavoratori (PRIVATO) ───────────
+router.post('/workers/import', verifySupabaseJwt, async (req, res) => {
+  const { csv_text } = req.body || {};
+  if (!csv_text || typeof csv_text !== 'string') {
+    return res.status(400).json({ error: 'csv_text obbligatorio' });
+  }
+
+  const lines = csv_text.trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) {
+    return res.status(400).json({ error: 'CSV deve contenere almeno una riga di dati' });
+  }
+
+  // Auto-detect separatore
+  const sep = lines[0].split(';').length > lines[0].split(',').length ? ';' : ',';
+  const col = (v) => (v || '').trim().replace(/^"(.*)"$/, '$1').trim();
+
+  // Converti date GG/MM/AAAA → YYYY-MM-DD
+  const parseDate = (v) => {
+    if (!v) return null;
+    const s = col(v);
+    if (!s) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+    return null;
+  };
+
+  const companyId = req.companyId;
+  const errors = [];
+  let created = 0, updated = 0;
+
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(sep);
+    const full_name   = col(parts[0]);
+    const fiscal_code = col(parts[1]);
+
+    if (!full_name || !fiscal_code) {
+      errors.push({ row: i + 1, error: 'Nome o CF mancante' });
+      continue;
+    }
+    if (!isValidFiscalCode(fiscal_code)) {
+      errors.push({ row: i + 1, error: `CF non valido: ${fiscal_code}` });
+      continue;
+    }
+
+    const birth_date              = parseDate(parts[2]);
+    const hire_date               = parseDate(parts[3]);
+    const qualification           = col(parts[4]) || null;
+    const role                    = col(parts[5]) || null;
+    const safety_training_expiry  = parseDate(parts[6]);
+    const health_fitness_expiry   = parseDate(parts[7]);
+
+    // Cerca worker esistente per questa company
+    const { data: existing } = await supabase
+      .from('workers')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('fiscal_code', fiscal_code.toUpperCase())
+      .maybeSingle();
+
+    if (existing) {
+      // Aggiorna
+      await supabase.from('workers').update({
+        full_name,
+        ...(birth_date             !== null && { birth_date }),
+        ...(hire_date              !== null && { hire_date }),
+        ...(qualification          !== null && { qualification }),
+        ...(role                   !== null && { role }),
+        ...(safety_training_expiry !== null && { safety_training_expiry }),
+        ...(health_fitness_expiry  !== null && { health_fitness_expiry }),
+      }).eq('id', existing.id);
+      updated++;
+    } else {
+      // Crea
+      const { first_name, last_name } = parseFullName(full_name);
+      await supabase.from('workers').insert({
+        company_id: companyId,
+        full_name,
+        first_name,
+        last_name,
+        fiscal_code: fiscal_code.toUpperCase(),
+        is_active: true,
+        badge_code: generateBadgeCode(),
+        ...(birth_date             && { birth_date }),
+        ...(hire_date              && { hire_date }),
+        ...(qualification          && { qualification }),
+        ...(role                   && { role }),
+        ...(safety_training_expiry && { safety_training_expiry }),
+        ...(health_fitness_expiry  && { health_fitness_expiry }),
+      });
+      created++;
+    }
+  }
+
+  const imported = created + updated;
+  return res.json({ ok: true, imported, created, updated, errors, total_rows: lines.length - 1 });
+});
+
 module.exports = router;
