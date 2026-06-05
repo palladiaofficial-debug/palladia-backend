@@ -218,13 +218,20 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
 router.get('/bookings/active-workers', async (req, res) => {
   const { data } = await supabase
     .from('course_bookings')
-    .select('worker_id')
+    .select('worker_id, workers_data')
     .eq('company_id', req.companyId)
-    .in('status', ['pending', 'confirmed'])
-    .not('worker_id', 'is', null);
+    .in('status', ['pending', 'confirmed']);
 
-  const workerIds = [...new Set((data || []).map(b => b.worker_id).filter(Boolean))];
-  res.json({ worker_ids: workerIds });
+  const ids = new Set();
+  for (const b of data || []) {
+    if (b.worker_id) ids.add(b.worker_id);
+    if (Array.isArray(b.workers_data)) {
+      for (const w of b.workers_data) {
+        if (w?.worker_id) ids.add(w.worker_id);
+      }
+    }
+  }
+  res.json({ worker_ids: [...ids] });
 });
 
 // ── GET /api/v1/bookings ──────────────────────────────────────────────────────
