@@ -41,7 +41,7 @@ router.get('/my-company', async (req, res) => {
   // sulla propria company con trial scaduto dopo un login da nuovo dispositivo.
   const { data: memberships } = await supabase
     .from('company_users')
-    .select('company_id, role, companies(subscription_status, trial_ends_at)')
+    .select('company_id, role, companies(subscription_status, trial_ends_at, account_type)')
     .eq('user_id', userId);
 
   if (!memberships || memberships.length === 0) {
@@ -68,7 +68,11 @@ router.get('/my-company', async (req, res) => {
   });
 
   const best = memberships[0];
-  res.json({ company_id: best.company_id, role: best.role });
+  res.json({
+    company_id:   best.company_id,
+    role:         best.role,
+    account_type: best.companies?.account_type || 'impresa',
+  });
 });
 
 // GET /api/v1/my-companies — lista tutte le membership dell'utente con nome azienda
