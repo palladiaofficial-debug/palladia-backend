@@ -41,7 +41,7 @@ async function verifyJwtOnly(req, res, next) {
 router.get('/me', verifyJwtOnly, async (req, res) => {
   const { data, error } = await supabase
     .from('company_users')
-    .select('company_id, role, companies(name)')
+    .select('company_id, role, companies(name, account_type)')
     .eq('user_id', req.user.id)
     .order('role', { ascending: false }); // owner > admin > tech > viewer
 
@@ -59,6 +59,7 @@ router.get('/me', verifyJwtOnly, async (req, res) => {
   const memberships = data.map(m => ({
     company_id:   m.company_id,
     company_name: m.companies?.name ?? null,
+    account_type: m.companies?.account_type ?? 'impresa',
     role:         m.role,
   }));
 
@@ -75,7 +76,7 @@ router.get('/me', verifyJwtOnly, async (req, res) => {
 
 // POST /api/v1/onboarding/setup — crea la prima company per l'utente autenticato
 router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), async (req, res) => {
-  const { company_name, full_name } = req.body || {};
+  const { company_name, full_name, account_type = 'impresa' } = req.body || {};
 
   // Validazione
   if (
@@ -111,9 +112,10 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
     const existing = existingRows[0];
     console.log(`[onboarding] utente ${req.user.id} ha già company owner ${existing.company_id} — restituita`);
     return res.status(200).json({
-      ok:           true,
-      company_id:   existing.company_id,
-      company_name: existing.companies?.name ?? cleanName,
+      ok:              true,
+      company_id:      existing.company_id,
+      company_name:    existing.companies?.name ?? cleanName,
+      account_type:    existing.companies?.account_type ?? 'impresa',
       already_existed: true,
     });
   }
@@ -121,8 +123,8 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
   // Crea la company
   const { data: company, error: compErr } = await supabase
     .from('companies')
-    .insert({ name: cleanName })
-    .select('id, name')
+    .insert({ name: cleanName, account_type })
+    .select('id, name, account_type')
     .single();
 
   if (compErr) {
@@ -146,7 +148,32 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
     return res.status(500).json({ error: 'DB_ERROR', message: memberErr.message });
   }
 
-  console.log(`[onboarding] company creata: ${company.id} (${cleanName}) per user ${req.user.id}`);
+  console.log(`[onboarding] company creata: ${company.id} (${cleanName}) type=${account_type} per user ${req.user.id}`);
+
+  // Se Studio CDL: crea subito studio_partners + studio_users (owner)
+  if (account_type === 'studio_cdl') {
+    try {
+      const { data: studio, error: stErr } = await supabase
+        .from('studio_partners')
+        .insert({ user_id: req.user.id, studio_name: cleanName, onboarding_completed: false })
+        .select('id')
+        .single();
+
+      if (!stErr && studio) {
+        await supabase.from('studio_users').insert({
+          studio_id: studio.id,
+          user_id:   req.user.id,
+          role:      'owner',
+          joined_at: new Date().toISOString(),
+        });
+        console.log(`[onboarding] studio_partners creato: ${studio.id} per user ${req.user.id}`);
+      } else {
+        console.error('[onboarding] studio_partners insert error:', stErr?.message);
+      }
+    } catch (e) {
+      console.error('[onboarding] studio init exception:', e.message);
+    }
+  }
 
   // Invia email di benvenuto (best-effort: non blocca la risposta)
   if (!process.env.RESEND_API_KEY) {
@@ -171,7 +198,8 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
   res.status(201).json({
     ok:           true,
     company_id:   company.id,
-    company_name: company.name
+    company_name: company.name,
+    account_type: company.account_type,
   });
 });
 
