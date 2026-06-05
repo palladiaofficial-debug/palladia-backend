@@ -371,12 +371,50 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       return res.status(500).json({ error: 'SESSION_CREATE_ERROR' });
     }
 
+    // Controlla se c'è un POS attivo per questo cantiere non ancora firmato dal lavoratore
+    let posAck = null;
+    try {
+      const { data: latestPos } = await supabase
+        .from('pos_documents')
+        .select('id, pos_data')
+        .eq('site_id', worksite_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (latestPos) {
+        const { data: existingAck } = await supabase
+          .from('pos_acknowledgments')
+          .select('id')
+          .eq('pos_id', latestPos.id)
+          .eq('worker_id', workerId)
+          .maybeSingle();
+
+        if (!existingAck) {
+          const d = latestPos.pos_data || {};
+          const works = (d.selectedWorks || []).slice(0, 3);
+          const risks  = (d.rischiSpecifici || []).slice(0, 2);
+          const keyPoints = [...works, ...risks].filter(Boolean).slice(0, 5);
+          posAck = {
+            pos_id:     latestPos.id,
+            title:      d.workType || d.siteAddress || 'Piano Operativo di Sicurezza',
+            key_points: keyPoints.length > 0
+              ? keyPoints
+              : ['Rispettare tutte le misure di sicurezza indicate nel POS'],
+          };
+        }
+      }
+    } catch (e) {
+      console.error('[identify] pos ack check skipped:', e.message);
+    }
+
     res.json({
-      session_token:   sessionToken,
-      worker_name:     workerName,
-      worker_id:       workerId,
-      session_id:      session.id,
-      expires_in_days: 60
+      session_token:    sessionToken,
+      worker_name:      workerName,
+      worker_id:        workerId,
+      session_id:       session.id,
+      expires_in_days:  60,
+      ...(posAck ? { requires_pos_ack: true, pos_summary: posAck } : {}),
     });
 
   } catch (err) {
@@ -385,6 +423,51 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       res.status(500).json({ error: 'INTERNAL_ERROR' });
     }
   }
+});
+
+// ── POST /api/v1/scan/acknowledge-pos — PUBBLICO ──────────────────────────────
+// Il lavoratore conferma la lettura del POS durante la timbratura.
+// Non blocca la timbratura se fallisce — il consenso è idempotente.
+router.post('/scan/acknowledge-pos', scanLimiter, async (req, res) => {
+  const { worksite_id, session_token, pos_id } = req.body || {};
+
+  if (!worksite_id || !session_token || !pos_id) {
+    return res.status(400).json({ error: 'MISSING_FIELDS' });
+  }
+  if (typeof session_token !== 'string' || session_token.length !== 64) {
+    return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
+  }
+
+  const tokenHash = hashToken(session_token);
+  const now       = new Date().toISOString();
+
+  const { data: sess } = await supabase
+    .from('worker_device_sessions')
+    .select('id, worker_id, company_id')
+    .eq('token_hash', tokenHash)
+    .is('revoked_at', null)
+    .gt('expires_at', now)
+    .maybeSingle();
+
+  if (!sess) return res.status(401).json({ error: 'SESSION_EXPIRED' });
+
+  const { error: ackErr } = await supabase
+    .from('pos_acknowledgments')
+    .upsert({
+      pos_id,
+      worker_id:  sess.worker_id,
+      company_id: sess.company_id,
+      site_id:    worksite_id,
+      ip:         req.ip,
+      ua:         (req.get('user-agent') || '').slice(0, 200),
+    }, { onConflict: 'pos_id,worker_id' });
+
+  if (ackErr) {
+    console.error('[acknowledge-pos] upsert error:', ackErr.message);
+    return res.status(500).json({ error: 'ACK_ERROR' });
+  }
+
+  res.json({ ok: true });
 });
 
 // ── POST /api/v1/scan/punch — PUBBLICO ────────────────────────────────────────

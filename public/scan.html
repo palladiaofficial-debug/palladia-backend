@@ -281,6 +281,21 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* POS Acknowledgment */
+    #state-pos-ack { width: 100%; display: flex; flex-direction: column; align-items: center; }
+    .pos-ack-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 12px; box-shadow: var(--shadow); width: 100%; max-width: 440px; }
+    .pos-ack-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 20px; padding: 3px 10px; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .pos-ack-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; line-height: 1.3; }
+    .pos-ack-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+    .pos-key-points { list-style: none; margin-bottom: 16px; }
+    .pos-key-points li { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; color: var(--text); padding: 7px 0; border-bottom: 1px solid var(--border); line-height: 1.4; }
+    .pos-key-points li:last-child { border-bottom: none; }
+    .pos-key-points li::before { content: '⚠'; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+    .pos-ack-confirm-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
+    .pos-ack-confirm-box label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+    .pos-ack-confirm-box input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; accent-color: var(--green); cursor: pointer; }
+    .pos-ack-confirm-box span { font-size: 13px; color: var(--text); line-height: 1.5; font-weight: 500; }
+
     .hidden { display: none !important; }
     .w-full { width: 100%; max-width: 440px; }
     .text-center { text-align: center; }
@@ -356,6 +371,23 @@
     </div>
   </div>
 
+  <!-- STATO: lettura e firma POS -->
+  <div id="state-pos-ack" class="hidden">
+    <div class="pos-ack-card fade-in">
+      <div class="pos-ack-badge">⚠ Sicurezza cantiere</div>
+      <div class="pos-ack-title" id="pos-ack-title">Piano Operativo di Sicurezza</div>
+      <div class="pos-ack-subtitle">Leggi i punti di sicurezza prima di accedere al cantiere</div>
+      <ul class="pos-key-points" id="pos-key-points"></ul>
+      <div class="pos-ack-confirm-box">
+        <label>
+          <input type="checkbox" id="pos-ack-checkbox">
+          <span>Ho letto il Piano Operativo di Sicurezza e mi impegno a rispettare tutte le misure di sicurezza indicate</span>
+        </label>
+      </div>
+      <button class="btn btn-primary" id="btn-confirm-pos" disabled>Confermo e accedo al cantiere</button>
+    </div>
+  </div>
+
   <!-- STATO: identificazione -->
   <div id="state-identify" class="hidden w-full" style="display:flex;flex-direction:column;align-items:center;">
     <div class="card fade-in">
@@ -397,6 +429,7 @@
   let gpsWatcher      = null;
   let maxAccuracyM    = 80;
   let punchInProgress = false;
+  let pendingPosAck   = null; // { pos_id, worker_name, session_token }
 
   // Stato punch: 'loading' | 'entry' | 'exit' | 'done'
   // 'entry' = può timbrare entrata | 'exit' = deve timbrare uscita | 'done' = uscita già registrata
@@ -405,7 +438,7 @@
   const $ = id => document.getElementById(id);
 
   function showState(name) {
-    ['loading','active','identify','privacy'].forEach(s => {
+    ['loading','active','identify','privacy','pos-ack'].forEach(s => {
       const el = $(`state-${s}`);
       el.classList.toggle('hidden', s !== name);
       if (s === name) el.style.display = name === 'loading' ? 'block' : 'flex';
@@ -722,6 +755,51 @@
     showState('identify');
   }
 
+  // ── POS Acknowledgment ────────────────────────────────────────────────────
+  function showPosAck(summary, name, token) {
+    pendingPosAck = { pos_id: summary.pos_id, worker_name: name, session_token: token };
+
+    $('pos-ack-title').textContent = summary.title;
+
+    const ul = $('pos-key-points');
+    ul.innerHTML = '';
+    (summary.key_points || []).forEach(pt => {
+      const li = document.createElement('li');
+      li.textContent = pt;
+      ul.appendChild(li);
+    });
+
+    $('pos-ack-checkbox').checked = false;
+    $('btn-confirm-pos').disabled  = true;
+    showState('pos-ack');
+  }
+
+  $('pos-ack-checkbox').addEventListener('change', e => {
+    $('btn-confirm-pos').disabled = !e.target.checked;
+  });
+
+  $('btn-confirm-pos').addEventListener('click', async () => {
+    if (!pendingPosAck) return;
+    const btn = $('btn-confirm-pos');
+    btn.disabled  = true;
+    btn.innerHTML = '<span class="spin"></span>Salvataggio…';
+
+    try {
+      await apiFetch('POST', '/api/v1/scan/acknowledge-pos', {
+        worksite_id:   WSITE_ID,
+        session_token: pendingPosAck.session_token,
+        pos_id:        pendingPosAck.pos_id,
+      });
+    } catch (e) {
+      // Non bloccante — proseguiamo comunque
+    }
+
+    sessionToken = pendingPosAck.session_token;
+    localStorage.setItem(LS_KEY_TOK, sessionToken);
+    activateSession(pendingPosAck.worker_name);
+    pendingPosAck = null;
+  });
+
   // ── Identify ──────────────────────────────────────────────────────────────
   let nameRequired = false;
 
@@ -753,6 +831,11 @@
       const { status, body } = await apiFetch('POST', '/api/v1/scan/identify', payload);
 
       if (status === 200) {
+        if (body.requires_pos_ack && body.pos_summary) {
+          // Non salvare ancora il token in localStorage — attendi la firma del POS
+          showPosAck(body.pos_summary, body.worker_name, body.session_token);
+          return;
+        }
         sessionToken = body.session_token;
         localStorage.setItem(LS_KEY_TOK, sessionToken);
         activateSession(body.worker_name);

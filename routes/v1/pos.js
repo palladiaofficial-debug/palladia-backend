@@ -89,4 +89,110 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
   res.json(result);
 });
 
+/**
+ * GET /api/v1/pos/defaults
+ * Restituisce le figure di sicurezza dall'ultimo POS creato dall'azienda,
+ * per pre-popolare il form di un nuovo POS.
+ */
+router.get('/pos/defaults', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+
+  const { data: sites, error: sitesErr } = await supabase
+    .from('sites')
+    .select('id')
+    .eq('company_id', companyId);
+
+  if (sitesErr || !sites?.length) return res.json({ defaults: null });
+
+  const siteIds = sites.map(s => s.id);
+
+  const { data: doc } = await supabase
+    .from('pos_documents')
+    .select('pos_data')
+    .in('site_id', siteIds)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!doc?.pos_data) return res.json({ defaults: null });
+
+  const d = doc.pos_data;
+  const emptyPersona = (nome = '', tel = '', email = '', cf = '') =>
+    ({ nome, telefono: tel, email, codiceFiscale: cf });
+
+  res.json({
+    defaults: {
+      ragioneSocialeImpresa:   d.companyName  || '',
+      partitaIvaImpresa:       d.companyVat   || '',
+      responsabileLavori:      emptyPersona(d.responsabileLavori),
+      csp:                     emptyPersona(d.csp),
+      cse:                     emptyPersona(d.cse, d.cseTel, d.cseEmail, d.cseCf),
+      rspp:                    emptyPersona(d.rspp, d.rsppTel, d.rsppEmail, d.rsppCf),
+      rls:                     emptyPersona(d.rls, d.rlsTel),
+      medicoCompetente:        { ...emptyPersona(d.medico, d.medicoTel), firma: '' },
+      addettoPrimoSoccorso:    emptyPersona(d.primoSoccorso, d.primoSoccorsoTel),
+      addettoAntincendio:      emptyPersona(d.antincendio, d.antincendioTel),
+      direttoreTecnico:        emptyPersona(d.direttoreTecnico),
+      prepostoCantiere:        emptyPersona(d.preposto),
+    },
+  });
+});
+
+/**
+ * GET /api/v1/pos/:posId/acknowledgments
+ * Lista chi ha firmato e chi non ha ancora firmato per un dato POS.
+ * Richiede JWT + membership.
+ */
+router.get('/pos/:posId/acknowledgments', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+  const { posId } = req.params;
+
+  // Verifica ownership del POS
+  const { data: doc, error: docErr } = await supabase
+    .from('pos_documents')
+    .select('id, site_id')
+    .eq('id', posId)
+    .maybeSingle();
+
+  if (docErr || !doc) return res.status(404).json({ error: 'POS non trovato' });
+
+  const { data: site } = await supabase
+    .from('sites')
+    .select('id')
+    .eq('id', doc.site_id)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (!site) return res.status(403).json({ error: 'Accesso negato' });
+
+  // Lavoratori assegnati al cantiere
+  const { data: assigned } = await supabase
+    .from('worksite_workers')
+    .select('worker_id, workers(id, full_name)')
+    .eq('site_id', doc.site_id)
+    .eq('status', 'active');
+
+  // Ack già registrate
+  const { data: acks } = await supabase
+    .from('pos_acknowledgments')
+    .select('worker_id, acknowledged_at')
+    .eq('pos_id', posId);
+
+  const ackMap = Object.fromEntries((acks || []).map(a => [a.worker_id, a.acknowledged_at]));
+
+  const result = (assigned || []).map(a => {
+    const w = a.workers;
+    if (!w) return null;
+    const acked_at = ackMap[w.id] || null;
+    return {
+      worker_id:   w.id,
+      worker_name: w.full_name,
+      signed:      !!acked_at,
+      signed_at:   acked_at,
+    };
+  }).filter(Boolean);
+
+  res.json(result);
+});
+
 module.exports = router;
