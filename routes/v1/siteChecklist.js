@@ -100,7 +100,7 @@ router.get('/sites/:siteId/setup-checklist', verifySupabaseJwt, async (req, res)
     .from('site_setup_checklist')
     .select('id, category, title, description, priority, done, done_at, sort_order')
     .eq('site_id', siteId)
-    .order('priority', { ascending: false }) // high prima
+    .order('priority', { ascending: true }) // 'high' < 'normal' alfabeticamente → high prima
     .order('sort_order');
 
   if (error) return res.status(500).json({ error: error.message });
@@ -127,10 +127,7 @@ router.post('/sites/:siteId/setup-checklist/generate', verifySupabaseJwt, async 
     const items = await callAiChecklist(posData || {});
     if (!items.length) return res.status(500).json({ error: 'Nessun elemento generato' });
 
-    if (force) {
-      await supabase.from('site_setup_checklist').delete().eq('site_id', siteId).eq('done', false);
-    }
-
+    const insertTs = new Date().toISOString();
     const rows = items.map((item, i) => ({
       site_id:     siteId,
       company_id:  req.companyId,
@@ -143,13 +140,24 @@ router.post('/sites/:siteId/setup-checklist/generate', verifySupabaseJwt, async 
       sort_order:  i,
     }));
 
-    await supabase.from('site_setup_checklist').insert(rows);
+    // Insert nuovi item PRIMA di cancellare i vecchi:
+    // se insert fallisce, i vecchi item done=false sono ancora intatti.
+    const { error: insErr } = await supabase.from('site_setup_checklist').insert(rows);
+    if (insErr) return res.status(500).json({ error: insErr.message });
+
+    // Solo ora, a insert riuscito, rimuove i vecchi item done=false
+    if (force) {
+      await supabase.from('site_setup_checklist').delete()
+        .eq('site_id', siteId)
+        .eq('done', false)
+        .lt('created_at', insertTs);
+    }
 
     const { data: result } = await supabase
       .from('site_setup_checklist')
       .select('id, category, title, description, priority, done, done_at, sort_order')
       .eq('site_id', siteId)
-      .order('priority', { ascending: false })
+      .order('priority', { ascending: true })
       .order('sort_order');
 
     res.json(result || []);

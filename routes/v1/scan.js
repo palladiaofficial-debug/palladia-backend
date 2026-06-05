@@ -451,6 +451,16 @@ router.post('/scan/acknowledge-pos', scanLimiter, async (req, res) => {
 
   if (!sess) return res.status(401).json({ error: 'SESSION_EXPIRED' });
 
+  // Verifica che il POS appartenga effettivamente al cantiere dichiarato
+  const { data: posCheck } = await supabase
+    .from('pos_documents')
+    .select('id')
+    .eq('id', pos_id)
+    .eq('site_id', worksite_id)
+    .maybeSingle();
+
+  if (!posCheck) return res.status(400).json({ error: 'POS_SITE_MISMATCH' });
+
   const { error: ackErr } = await supabase
     .from('pos_acknowledgments')
     .upsert({
