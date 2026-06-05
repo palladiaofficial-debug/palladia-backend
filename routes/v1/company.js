@@ -25,12 +25,16 @@ router.get('/my-company', async (req, res) => {
   if (hint) {
     const { data: hinted } = await supabase
       .from('company_users')
-      .select('company_id, role')
+      .select('company_id, role, companies(account_type)')
       .eq('user_id', userId)
       .eq('company_id', hint)
       .maybeSingle();
     if (hinted) {
-      return res.json({ company_id: hinted.company_id, role: hinted.role });
+      return res.json({
+        company_id:   hinted.company_id,
+        role:         hinted.role,
+        account_type: hinted.companies?.account_type || 'impresa',
+      });
     }
     // hint non valido → continua con fallback
   }
