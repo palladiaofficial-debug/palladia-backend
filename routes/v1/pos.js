@@ -4,59 +4,19 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
 /**
- * GET /api/v1/pos/:id
- * Restituisce un singolo POS (pos_data + content) per la modalità modifica.
- */
-router.get('/pos/:id', verifySupabaseJwt, async (req, res) => {
-  const companyId = req.companyId;
-  const { id } = req.params;
-
-  const { data: doc, error } = await supabase
-    .from('pos_documents')
-    .select('id, site_id, revision, created_at, pos_data, content')
-    .eq('id', id)
-    .single();
-
-  if (error || !doc) return res.status(404).json({ error: 'POS non trovato' });
-
-  // Verifica ownership: se site_id presente, controlla che appartenga all'azienda
-  if (doc.site_id) {
-    const { data: site } = await supabase
-      .from('sites')
-      .select('id')
-      .eq('id', doc.site_id)
-      .eq('company_id', companyId)
-      .single();
-    if (!site) return res.status(403).json({ error: 'Accesso negato' });
-  }
-
-  res.json({
-    id:         doc.id,
-    site_id:    doc.site_id,
-    revision:   doc.revision,
-    created_at: doc.created_at,
-    pos_data:   doc.pos_data,
-    content:    doc.content,
-  });
-});
-
-/**
  * GET /api/v1/pos
  * Lista tutti i POS dell'azienda, con info cantiere.
- * Richiede JWT + company membership.
  */
 router.get('/pos', verifySupabaseJwt, async (req, res) => {
-  const companyId     = req.companyId;
-  const filterSiteId  = req.query.siteId || null;
+  const companyId    = req.companyId;
+  const filterSiteId = req.query.siteId || null;
 
-  // Recupera i cantieri dell'azienda
   const { data: sites, error: sitesErr } = await supabase
     .from('sites')
     .select('id, name')
     .eq('company_id', companyId);
 
   if (sitesErr) return res.status(500).json({ error: sitesErr.message });
-
   if (!sites || sites.length === 0) return res.json([]);
 
   const siteIds = filterSiteId
@@ -67,7 +27,6 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
 
   const siteMap = Object.fromEntries(sites.map(s => [s.id, s.name]));
 
-  // Recupera i POS collegati ai cantieri dell'azienda
   const { data: docs, error: docsErr } = await supabase
     .from('pos_documents')
     .select('id, site_id, revision, created_at, created_by, pos_data')
@@ -77,22 +36,20 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
 
   if (docsErr) return res.status(500).json({ error: docsErr.message });
 
-  const result = (docs || []).map(d => ({
+  res.json((docs || []).map(d => ({
     id:         d.id,
     site_id:    d.site_id,
     site_name:  siteMap[d.site_id] ?? '—',
     revision:   d.revision,
     created_at: d.created_at,
     title:      d.pos_data?.workType || d.pos_data?.siteAddress || `Rev. ${d.revision}`,
-  }));
-
-  res.json(result);
+  })));
 });
 
 /**
  * GET /api/v1/pos/defaults
- * Restituisce le figure di sicurezza dall'ultimo POS creato dall'azienda,
- * per pre-popolare il form di un nuovo POS.
+ * Figure di sicurezza dall'ultimo POS — per pre-popolare un nuovo form.
+ * DEVE stare prima di GET /pos/:id altrimenti Express cattura "defaults" come :id.
  */
 router.get('/pos/defaults', verifySupabaseJwt, async (req, res) => {
   const companyId = req.companyId;
@@ -117,37 +74,35 @@ router.get('/pos/defaults', verifySupabaseJwt, async (req, res) => {
   if (!doc?.pos_data) return res.json({ defaults: null });
 
   const d = doc.pos_data;
-  const emptyPersona = (nome = '', tel = '', email = '', cf = '') =>
+  const persona = (nome = '', tel = '', email = '', cf = '') =>
     ({ nome, telefono: tel, email, codiceFiscale: cf });
 
   res.json({
     defaults: {
-      ragioneSocialeImpresa:   d.companyName  || '',
-      partitaIvaImpresa:       d.companyVat   || '',
-      responsabileLavori:      emptyPersona(d.responsabileLavori),
-      csp:                     emptyPersona(d.csp),
-      cse:                     emptyPersona(d.cse, d.cseTel, d.cseEmail, d.cseCf),
-      rspp:                    emptyPersona(d.rspp, d.rsppTel, d.rsppEmail, d.rsppCf),
-      rls:                     emptyPersona(d.rls, d.rlsTel),
-      medicoCompetente:        { ...emptyPersona(d.medico, d.medicoTel), firma: '' },
-      addettoPrimoSoccorso:    emptyPersona(d.primoSoccorso, d.primoSoccorsoTel),
-      addettoAntincendio:      emptyPersona(d.antincendio, d.antincendioTel),
-      direttoreTecnico:        emptyPersona(d.direttoreTecnico),
-      prepostoCantiere:        emptyPersona(d.preposto),
+      ragioneSocialeImpresa:  d.companyName || '',
+      partitaIvaImpresa:      d.companyVat  || '',
+      responsabileLavori:     persona(d.responsabileLavori),
+      csp:                    persona(d.csp),
+      cse:                    persona(d.cse, d.cseTel, d.cseEmail, d.cseCf),
+      rspp:                   persona(d.rspp, d.rsppTel, d.rsppEmail, d.rsppCf),
+      rls:                    persona(d.rls, d.rlsTel),
+      medicoCompetente:       { ...persona(d.medico, d.medicoTel), firma: '' },
+      addettoPrimoSoccorso:   persona(d.primoSoccorso, d.primoSoccorsoTel),
+      addettoAntincendio:     persona(d.antincendio, d.antincendioTel),
+      direttoreTecnico:       persona(d.direttoreTecnico),
+      prepostoCantiere:       persona(d.preposto),
     },
   });
 });
 
 /**
  * GET /api/v1/pos/:posId/acknowledgments
- * Lista chi ha firmato e chi non ha ancora firmato per un dato POS.
- * Richiede JWT + membership.
+ * Lista chi ha firmato e chi no per un POS.
  */
 router.get('/pos/:posId/acknowledgments', verifySupabaseJwt, async (req, res) => {
   const companyId = req.companyId;
   const { posId } = req.params;
 
-  // Verifica ownership del POS
   const { data: doc, error: docErr } = await supabase
     .from('pos_documents')
     .select('id, site_id')
@@ -165,14 +120,12 @@ router.get('/pos/:posId/acknowledgments', verifySupabaseJwt, async (req, res) =>
 
   if (!site) return res.status(403).json({ error: 'Accesso negato' });
 
-  // Lavoratori assegnati al cantiere
   const { data: assigned } = await supabase
     .from('worksite_workers')
     .select('worker_id, workers(id, full_name)')
     .eq('site_id', doc.site_id)
     .eq('status', 'active');
 
-  // Ack già registrate
   const { data: acks } = await supabase
     .from('pos_acknowledgments')
     .select('worker_id, acknowledged_at')
@@ -180,19 +133,57 @@ router.get('/pos/:posId/acknowledgments', verifySupabaseJwt, async (req, res) =>
 
   const ackMap = Object.fromEntries((acks || []).map(a => [a.worker_id, a.acknowledged_at]));
 
-  const result = (assigned || []).map(a => {
-    const w = a.workers;
-    if (!w) return null;
-    const acked_at = ackMap[w.id] || null;
-    return {
-      worker_id:   w.id,
-      worker_name: w.full_name,
-      signed:      !!acked_at,
-      signed_at:   acked_at,
-    };
-  }).filter(Boolean);
+  res.json(
+    (assigned || [])
+      .map(a => {
+        const w = a.workers;
+        if (!w) return null;
+        return {
+          worker_id:   w.id,
+          worker_name: w.full_name,
+          signed:      !!ackMap[w.id],
+          signed_at:   ackMap[w.id] || null,
+        };
+      })
+      .filter(Boolean)
+  );
+});
 
-  res.json(result);
+/**
+ * GET /api/v1/pos/:id
+ * Singolo POS (pos_data + content) per la modalità modifica.
+ * DEVE stare dopo le route con path specifici (defaults, acknowledgments).
+ */
+router.get('/pos/:id', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+  const { id } = req.params;
+
+  const { data: doc, error } = await supabase
+    .from('pos_documents')
+    .select('id, site_id, revision, created_at, pos_data, content')
+    .eq('id', id)
+    .single();
+
+  if (error || !doc) return res.status(404).json({ error: 'POS non trovato' });
+
+  if (doc.site_id) {
+    const { data: site } = await supabase
+      .from('sites')
+      .select('id')
+      .eq('id', doc.site_id)
+      .eq('company_id', companyId)
+      .single();
+    if (!site) return res.status(403).json({ error: 'Accesso negato' });
+  }
+
+  res.json({
+    id:         doc.id,
+    site_id:    doc.site_id,
+    revision:   doc.revision,
+    created_at: doc.created_at,
+    pos_data:   doc.pos_data,
+    content:    doc.content,
+  });
 });
 
 module.exports = router;
