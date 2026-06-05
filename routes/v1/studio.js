@@ -1160,6 +1160,121 @@ router.post('/studio/clients/:companyId/import-csv', verifyStudioJwt, validate(i
   });
 });
 
+// ── Import anagrafica lavoratori ─────────────────────────────────────────────
+// POST /api/v1/studio/clients/:companyId/workers/import
+// Formato CSV (sep virgola o punto e virgola):
+//   nome_cognome,codice_fiscale[,data_nascita,data_assunzione,qualifica,ruolo,scad_formazione,scad_idoneita]
+// Prima riga = intestazione (saltata). Colonne opzionali: lasciarle vuote è OK.
+// Risposta: { imported, created, updated, skipped, errors }
+//
+router.post('/studio/clients/:companyId/workers/import', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { csv_text } = req.body || {};
+  if (!csv_text?.trim()) return res.status(400).json({ error: 'csv_text obbligatorio' });
+
+  const lines = csv_text.trim().split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return res.status(400).json({ error: 'CSV deve contenere almeno intestazione + 1 riga dati' });
+
+  const sep = (lines[0].split(';').length > lines[0].split(',').length) ? ';' : ',';
+
+  // Pre-carica CF esistenti per sapere se stiamo creando o aggiornando
+  const { data: existing } = await supabase
+    .from('workers')
+    .select('fiscal_code')
+    .eq('company_id', companyId);
+  const existingCFs = new Set((existing || []).map(w => w.fiscal_code.toUpperCase()));
+
+  const results = { imported: 0, created: 0, updated: 0, skipped: 0, errors: [] };
+
+  function parseCol(v) {
+    if (!v) return null;
+    const s = v.trim().replace(/^"(.*)"$/, '$1').trim();
+    return s || null;
+  }
+  function parseDate(v) {
+    if (!v) return null;
+    const s = String(v).trim();
+    if (!s) return null;
+    // Accetta YYYY-MM-DD o DD/MM/YYYY
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    return null;
+  }
+  function isValidCF(cf) {
+    return typeof cf === 'string' && /^[A-Z0-9]{16}$/i.test(cf.trim());
+  }
+  function generateBadgeCode() {
+    return require('crypto').randomBytes(9).toString('hex').toUpperCase();
+  }
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    const cols = line.split(sep).map(parseCol);
+    const [full_name_raw, cf_raw, birth_raw, hire_raw, qual_raw, role_raw, scad_form_raw, scad_idon_raw] = cols;
+
+    const full_name   = full_name_raw?.trim() || null;
+    const fiscal_code = cf_raw?.trim().toUpperCase() || null;
+
+    if (!full_name || !fiscal_code) {
+      results.errors.push({ row: i + 1, error: 'nome_cognome e codice_fiscale sono obbligatori' });
+      continue;
+    }
+    if (!isValidCF(fiscal_code)) {
+      results.errors.push({ row: i + 1, error: `Codice fiscale non valido: "${fiscal_code}"` });
+      continue;
+    }
+
+    const record = {
+      company_id:              companyId,
+      full_name:               full_name,
+      fiscal_code:             fiscal_code,
+      is_active:               true,
+      birth_date:              parseDate(birth_raw),
+      hire_date:               parseDate(hire_raw),
+      qualification:           qual_raw  || null,
+      role:                    role_raw  || null,
+      safety_training_expiry:  parseDate(scad_form_raw),
+      health_fitness_expiry:   parseDate(scad_idon_raw),
+    };
+
+    const isNew = !existingCFs.has(fiscal_code);
+    if (isNew) record.badge_code = generateBadgeCode();
+
+    try {
+      const { error } = await supabase
+        .from('workers')
+        .upsert(record, { onConflict: 'company_id,fiscal_code' });
+
+      if (error) {
+        results.errors.push({ row: i + 1, error: error.message });
+        continue;
+      }
+
+      results.imported++;
+      if (isNew) { results.created++; existingCFs.add(fiscal_code); }
+      else results.updated++;
+    } catch (err) {
+      results.errors.push({ row: i + 1, error: err.message });
+    }
+  }
+
+  res.json({
+    ok:       true,
+    imported: results.imported,
+    created:  results.created,
+    updated:  results.updated,
+    skipped:  results.skipped,
+    errors:   results.errors,
+    total_rows: lines.length - 1,
+  });
+});
+
 // ── Lettera formale scadenze ──────────────────────────────────────────────────
 // Genera una lettera professionale da stampare/inviare all'impresa cliente.
 router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, async (req, res) => {
