@@ -42,6 +42,7 @@ const { runFormazioneMigration }    = require('./services/formazioneMigration');
 const { startWeatherLogCron }       = require('./services/weatherLogCron');
 const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCron');
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
+const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
 const { PNG }                       = require('pngjs');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
@@ -2161,6 +2162,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startDailyDigestCron();
     startWeeklyExpiryReportCron();
     startCertificateExpiryCron();
+    startStudioDurcAlertCron();
 
     // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti
     runFormazioneMigration().catch(e => console.error('[migration] formazione:', e.message));

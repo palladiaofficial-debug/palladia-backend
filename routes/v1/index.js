@@ -77,6 +77,8 @@ router.use('/', require('./documents'));
 // NOTA: verifyStudioJwt NON usa X-Company-Id — montato PRIMA dei router con
 //       router.use(verifySupabaseJwt) globale per evitare 400 MISSING_X-COMPANY-ID
 router.use('/', require('./studio'));
+// Documenti condivisi CDL↔impresa e cedolini (upload multer, middleware per-route)
+router.use('/', require('./studioFiles'));
 
 // Consulente RSPP: profilo (middleware per-route, safe per tutti gli utenti)
 router.use('/', require('./consultantProfile'));

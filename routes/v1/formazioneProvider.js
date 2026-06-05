@@ -611,6 +611,16 @@ router.patch('/formazione/provider/:token/bookings/:bookingId/complete', validat
   ]);
 
   if (updateRes.error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  // Aggiorna safety_training_expiry sul lavoratore (best-effort — non blocca la risposta)
+  if (booking.worker_id && expiryDate) {
+    supabase.from('workers')
+      .update({ safety_training_expiry: expiryDate })
+      .eq('id', booking.worker_id)
+      .then(() => {})
+      .catch(() => {});
+  }
+
   res.json({ ok: true, booking: updateRes.data?.[0], certificate_issued: !!certRes.data });
 });
 

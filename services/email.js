@@ -2142,4 +2142,55 @@ module.exports = {
   sendConfirmEmail,
   sendMagicLinkEmail,
   sendEmailChangeEmail,
+  sendStudioDurcAlert,
 };
+
+// ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────
+
+async function sendStudioDurcAlert({ to, studioName, companies, dashboardUrl }) {
+  const rows = companies
+    .sort((a, b) => a.days - b.days)
+    .map(c => {
+      const daysLabel = c.days < 0 ? `scaduto da ${-c.days} gg` : c.days === 0 ? 'scade oggi' : `scade in ${c.days} gg`;
+      const color     = c.days < 0 ? '#ef4444' : c.days <= 7 ? '#f97316' : '#f59e0b';
+      const exp       = c.expiryDate ? new Date(c.expiryDate).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+      return `<tr>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e5e0;font-size:13px;font-weight:600;">${c.name}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e5e0;font-size:13px;color:#6b7280;">${exp}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e5e0;font-size:12px;font-weight:700;color:${color};">${daysLabel}</td>
+      </tr>`;
+    }).join('');
+
+  const body = `
+    <tr><td style="padding:0 40px 32px;">
+      <p style="margin:0 0 8px;font-size:15px;font-weight:600;color:#111;">Buongiorno ${studioName},</p>
+      <p style="margin:0 0 24px;font-size:14px;color:#555;">
+        ${companies.length === 1
+          ? `Hai 1 cliente con DURC in scadenza che richiede la tua attenzione.`
+          : `Hai ${companies.length} clienti con DURC in scadenza che richiedono la tua attenzione.`}
+      </p>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e5e0;border-radius:8px;overflow:hidden;">
+        <thead>
+          <tr style="background:#f5f5f0;">
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;">Cliente</th>
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;">Scadenza DURC</th>
+            <th style="padding:10px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#9ca3af;">Stato</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div style="margin-top:28px;">
+        <a href="${dashboardUrl}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;">
+          Apri dashboard studio →
+        </a>
+      </div>
+    </td></tr>`;
+
+  const resend = getResend();
+  await resend.emails.send({
+    from: FROM,
+    to,
+    subject: `DURC in scadenza — ${companies.length} client${companies.length === 1 ? 'e' : 'i'} da rinnovare`,
+    html: layout('Alert DURC clienti', body),
+  });
+}
