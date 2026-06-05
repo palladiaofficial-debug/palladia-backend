@@ -2554,4 +2554,126 @@ router.delete('/studio/team/:memberId', verifyStudioJwt, async (req, res) => {
   res.status(204).end();
 });
 
+// ── DURC Records ─────────────────────────────────────────────────────────────
+
+// GET /api/v1/studio/clients/:companyId/durc — storico DURC
+router.get('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { data, error } = await supabase
+    .from('durc_records')
+    .select('id, issue_date, expiry_date, protocol_number, notes, document_url, created_at')
+    .eq('company_id', companyId)
+    .order('expiry_date', { ascending: false });
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// POST /api/v1/studio/clients/:companyId/durc — aggiunge DURC
+router.post('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { issue_date, expiry_date, protocol_number, notes, document_url } = req.body || {};
+  if (!issue_date || !expiry_date) {
+    return res.status(400).json({ error: 'issue_date e expiry_date obbligatori' });
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(issue_date) || !/^\d{4}-\d{2}-\d{2}$/.test(expiry_date)) {
+    return res.status(400).json({ error: 'Date in formato YYYY-MM-DD' });
+  }
+  if (expiry_date <= issue_date) {
+    return res.status(400).json({ error: 'expiry_date deve essere successivo a issue_date' });
+  }
+
+  // Recupera studio_id
+  const { data: studio } = await supabase
+    .from('studio_partners').select('id').eq('user_id', req.studioId).maybeSingle();
+  if (!studio) return res.status(403).json({ error: 'STUDIO_NOT_FOUND' });
+
+  const { data, error } = await supabase
+    .from('durc_records')
+    .insert({
+      company_id:      companyId,
+      studio_id:       studio.id,
+      issue_date,
+      expiry_date,
+      protocol_number: protocol_number?.trim() || null,
+      notes:           notes?.trim() || null,
+      document_url:    document_url?.trim() || null,
+      created_by:      req.studioId,
+    })
+    .select('id, issue_date, expiry_date, protocol_number, notes, document_url, created_at')
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
+});
+
+// DELETE /api/v1/studio/clients/:companyId/durc/:id
+router.delete('/studio/clients/:companyId/durc/:id', verifyStudioJwt, async (req, res) => {
+  const { companyId, id } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId, true);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { error } = await supabase
+    .from('durc_records')
+    .delete()
+    .eq('id', id)
+    .eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(204).end();
+});
+
+// GET /api/v1/studio/durc-overview — tutti i clienti con stato DURC
+router.get('/studio/durc-overview', verifyStudioJwt, async (req, res) => {
+  const { data: studio } = await supabase
+    .from('studio_partners').select('id').eq('user_id', req.studioId).maybeSingle();
+  if (!studio) return res.status(403).json({ error: 'STUDIO_NOT_FOUND' });
+
+  // Prendo tutte le aziende collegate allo studio
+  const { data: relations } = await supabase
+    .from('studio_client_relations')
+    .select('company_id, companies(id, name, durc_expiry_date)')
+    .eq('studio_id', studio.id)
+    .eq('status', 'active');
+
+  const today  = new Date().toISOString().slice(0, 10);
+  const in30   = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
+  const in90   = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+
+  const rows = (relations || []).map(r => {
+    const co  = r.companies as any;
+    const exp = co?.durc_expiry_date || null;
+    let status = 'missing';
+    if (exp) {
+      if (exp < today)  status = 'expired';
+      else if (exp < in30) status = 'expiring_30';
+      else if (exp < in90) status = 'expiring_90';
+      else status = 'ok';
+    }
+    return {
+      company_id:     co?.id,
+      company_name:   co?.name,
+      durc_expiry_date: exp,
+      status,
+    };
+  });
+
+  // Ordine: scaduti → scadenza 30gg → scadenza 90gg → mancante → ok
+  const ORDER = { expired: 0, expiring_30: 1, expiring_90: 2, missing: 3, ok: 4 };
+  rows.sort((a, b) => {
+    const diff = (ORDER[a.status] ?? 5) - (ORDER[b.status] ?? 5);
+    if (diff !== 0) return diff;
+    if (a.durc_expiry_date && b.durc_expiry_date) return a.durc_expiry_date.localeCompare(b.durc_expiry_date);
+    return 0;
+  });
+
+  res.json(rows);
+});
+
 module.exports = router;
