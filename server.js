@@ -21,6 +21,7 @@ const rateLimit = require('express-rate-limit');
 const { verifySupabaseJwt } = require('./middleware/verifyJwt');
 const { apiLimiter } = require('./middleware/rateLimit');
 const v1Router = require('./routes/v1');
+const { generateAndSave: generateSiteChecklist } = require('./routes/v1/siteChecklist');
 const { startMissingExitCron }      = require('./services/missingExitCron');
 const { startDailySummaryCron }     = require('./services/dailySummaryCron');
 const { startEveningSummaryCron }   = require('./services/eveningSummaryCron');
@@ -1334,6 +1335,14 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
       } else {
         posId = saved?.id || null;
         console.log('[template-stream] saved posId:', posId, 'siteId:', siteId || 'none');
+        // Genera checklist preparazione cantiere in background (non-blocking)
+        if (siteId) {
+          const companyId = req.headers['x-company-id'];
+          if (companyId) {
+            generateSiteChecklist(siteId, companyId, posId, posData)
+              .catch(e => console.error('[checklist] auto-gen failed:', e.message));
+          }
+        }
       }
     } catch (dbErr) {
       console.error('[template-stream] Supabase exception:', dbErr.message);

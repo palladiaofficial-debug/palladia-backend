@@ -44,6 +44,9 @@ router.use('/', require('./billing'));
 // POS — lista documenti azienda (JWT richiesto)
 router.use('/', require('./pos'));
 
+// Checklist preparazione cantiere AI (JWT richiesto)
+router.use('/', require('./siteChecklist'));
+
 // DVR — Documento di Valutazione dei Rischi (JWT richiesto)
 router.use('/', require('./dvr'));
 
