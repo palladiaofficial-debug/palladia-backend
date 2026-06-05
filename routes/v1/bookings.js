@@ -212,6 +212,21 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
   res.status(201).json({ checkout_url: checkoutUrl, booking_ids: bookings.map(b => b.id) });
 });
 
+// ── GET /api/v1/bookings/active-workers ──────────────────────────────────────
+// Ritorna i worker_id con prenotazioni pending/confirmed (per Scadenzario)
+
+router.get('/bookings/active-workers', async (req, res) => {
+  const { data } = await supabase
+    .from('course_bookings')
+    .select('worker_id')
+    .eq('company_id', req.companyId)
+    .in('status', ['pending', 'confirmed'])
+    .not('worker_id', 'is', null);
+
+  const workerIds = [...new Set((data || []).map(b => b.worker_id).filter(Boolean))];
+  res.json({ worker_ids: workerIds });
+});
+
 // ── GET /api/v1/bookings ──────────────────────────────────────────────────────
 
 router.get('/bookings', async (req, res) => {
@@ -239,7 +254,18 @@ router.get('/bookings', async (req, res) => {
 
   const { data, error, count } = await query;
   if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
-  res.json({ bookings: data || [], total: count || 0, limit, offset });
+
+  // Arricchisci con has_review per mostrare prompt recensione
+  let reviewedIds = new Set();
+  if (data?.length) {
+    const { data: reviews } = await supabase
+      .from('course_reviews')
+      .select('booking_id')
+      .eq('company_id', req.companyId);
+    reviewedIds = new Set((reviews || []).map(r => r.booking_id));
+  }
+  const bookings = (data || []).map(b => ({ ...b, has_review: reviewedIds.has(b.id) }));
+  res.json({ bookings, total: count || 0, limit, offset });
 });
 
 // ── GET /api/v1/bookings/:id/ics ─────────────────────────────────────────────

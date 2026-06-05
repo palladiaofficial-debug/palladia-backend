@@ -123,6 +123,19 @@ router.post('/studio/clients/:companyId/shared-docs', verifyStudioJwt, multerUpl
     supabase.storage.from(BUCKET).remove([filePath]).catch(() => {});
     return res.status(500).json({ error: 'DB_ERROR' });
   }
+
+  // Notifica in-app all'impresa
+  supabase.from('notifications').insert([{
+    company_id:  req.params.companyId,
+    type:        'studio_doc',
+    severity:    'info',
+    title:       'Nuovo documento dal CDL',
+    body:        `"${docName}" è disponibile in Documenti Aziendali`,
+    entity_type: 'studio_doc',
+    entity_id:   doc.id,
+    read_by:     [],
+  }]).then(() => {}).catch(() => {});
+
   res.status(201).json({ ok: true, document: doc });
 });
 
@@ -199,6 +212,21 @@ router.post('/studio/clients/:companyId/payslips', verifyStudioJwt, multerUpload
     supabase.storage.from(BUCKET).remove([filePath]).catch(() => {});
     return res.status(500).json({ error: 'DB_ERROR' });
   }
+
+  // Notifica in-app all'impresa
+  const monthNames = ['Gen','Feb','Mar','Apr','Mag','Giu','Lug','Ago','Set','Ott','Nov','Dic'];
+  const periodLabel = `${monthNames[month - 1]} ${year}`;
+  supabase.from('notifications').insert([{
+    company_id:  req.params.companyId,
+    type:        'studio_payslip',
+    severity:    'info',
+    title:       `Cedolino ${periodLabel}`,
+    body:        `Il cedolino di ${periodLabel} è disponibile in Documenti Aziendali`,
+    entity_type: 'studio_payslip',
+    entity_id:   slip.id,
+    read_by:     [],
+  }]).then(() => {}).catch(() => {});
+
   res.status(201).json({ ok: true, payslip: slip });
 });
 
