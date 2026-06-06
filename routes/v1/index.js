@@ -29,6 +29,9 @@ router.use('/', require('./onboarding'));
 // Company profile
 router.use('/', require('./company'));
 
+// Founder Mode — auto-provisioning identità per tutte le viste (JWT only)
+router.use('/', require('./founder'));
+
 // Subappaltatori: CRUD completo (JWT richiesto)
 router.use('/', require('./subcontractors'));
 

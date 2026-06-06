@@ -5,6 +5,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendMemberRemovedEmail } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { patchCompanySchema, patchTeamMemberSchema, leaveCompanySchema } = require('../../lib/schemas/company');
+const { isFounder } = require('../../lib/founder');
 
 // GET /api/v1/my-company — JWT only, NO X-Company-Id richiesto
 // Header opzionale X-Hint-Company-Id: se fornito e valido per l'utente, lo preferisce.
@@ -34,6 +35,7 @@ router.get('/my-company', async (req, res) => {
         company_id:   hinted.company_id,
         role:         hinted.role,
         account_type: hinted.companies?.account_type || 'impresa',
+        is_founder:   isFounder(userId),
       });
     }
     // hint non valido → continua con fallback
@@ -76,6 +78,7 @@ router.get('/my-company', async (req, res) => {
     company_id:   best.company_id,
     role:         best.role,
     account_type: best.companies?.account_type || 'impresa',
+    is_founder:   isFounder(userId),
   });
 });
 
