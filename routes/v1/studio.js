@@ -2647,7 +2647,7 @@ router.get('/studio/durc-overview', verifyStudioJwt, async (req, res) => {
   const in90   = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
 
   const rows = (relations || []).map(r => {
-    const co  = r.companies as any;
+    const co  = r.companies;
     const exp = co?.durc_expiry_date || null;
     let status = 'missing';
     if (exp) {
