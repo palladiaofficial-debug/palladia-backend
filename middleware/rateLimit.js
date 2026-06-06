@@ -81,6 +81,7 @@ const apiLimiter = rateLimit({
   max: 120,
   standardHeaders: true,
   legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
   keyGenerator: (req) => {
     // req.companyId è impostato da verifySupabaseJwt
     if (req.companyId) return `company:${req.companyId}`;
