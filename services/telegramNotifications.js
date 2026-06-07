@@ -12,6 +12,7 @@
 
 const tg       = require('./telegram');
 const supabase = require('../lib/supabase');
+const { sendPushToCompany } = require('./pushNotifications');
 
 // ── Cooldown NC: max 1 notifica per cantiere ogni 30 minuti ──
 // In-memory: va bene per server single-instance (Railway)
@@ -215,6 +216,12 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
   const [companyResult] = await Promise.all([
     notifySiteTeam(companyId, siteId, text, { excludeChatId }),
     notifyCoordinators(siteId, text, { excludeChatId }).catch(() => {}),
+    sendPushToCompany(companyId, {
+      title: urgency === 'critica' ? 'Non Conformità critica' : 'Non Conformità',
+      body:  `${siteName} — ${description.slice(0, 100)}`,
+      tag:   `nc-${siteId}`,
+      url:   `/cantieri/${siteId}`,
+    }).catch(() => {}),
   ]);
 
   // Segna cooldown solo per NC 'alta' (non 'critica')
@@ -233,7 +240,16 @@ async function notifyIncidente(companyId, siteId, siteName, description, authorN
     `🚨 <b>INCIDENTE — ${siteName}</b>\n\n` +
     `${description}` +
     (authorName ? `\nDa: ${authorName}` : '');
-  return notifySiteTeam(companyId, siteId, text, { excludeChatId });
+  const [result] = await Promise.all([
+    notifySiteTeam(companyId, siteId, text, { excludeChatId }),
+    sendPushToCompany(companyId, {
+      title: 'Incidente',
+      body:  `${siteName} — ${description.slice(0, 100)}`,
+      tag:   `incident-${siteId}`,
+      url:   `/cantieri/${siteId}`,
+    }).catch(() => {}),
+  ]);
+  return result;
 }
 
 /**
@@ -292,6 +308,14 @@ async function notifyMissingExitsWithAction(companyId, siteId, siteName, workerN
   if (failed) {
     console.error(`[telegramNotifications] notifyMissingExitsWithAction: ${failed}/${chatIds.length} falliti`);
   }
+
+  sendPushToCompany(companyId, {
+    title: 'Uscite mancanti',
+    body:  `${siteName} — ${count} lavorator${count > 1 ? 'i' : 'e'} senza uscita registrata`,
+    tag:   `exits-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  }).catch(() => {});
+
   return { sent: chatIds.length - failed, failed };
 }
 
@@ -371,6 +395,16 @@ async function notifyPunch(companyId, siteId, siteName, workerName, eventType, t
   }
 
   if (sends.length) await Promise.allSettled(sends);
+
+  // Push solo per ENTRY (coerente con il livello "balanced" Telegram)
+  if (isEntry) {
+    sendPushToCompany(companyId, {
+      title: siteName,
+      body:  `${workerName} — entrata ${timeStr}`,
+      tag:   `punch-${siteId}`,
+      url:   `/cantieri/${siteId}`,
+    }).catch(() => {});
+  }
 }
 
 /**
@@ -402,16 +436,24 @@ const FRONTEND_URL_TG = (process.env.FRONTEND_URL || process.env.APP_BASE_URL ||
  * @param {string} text - testo HTML già formattato
  */
 async function notifyExpiryAlert(companyId, text) {
-  return notifyCompany(companyId, text);
+  // Estrai la prima riga del testo (senza HTML) come body push
+  const bodyPlain = text.replace(/<[^>]+>/g, '').split('\n').filter(Boolean).slice(1, 3).join(' · ');
+  await Promise.all([
+    notifyCompany(companyId, text),
+    sendPushToCompany(companyId, {
+      title: 'Palladia — Documenti',
+      body:  bodyPlain.slice(0, 120),
+      tag:   'palladia-docs',
+      url:   '/risorse',
+    }).catch(() => {}),
+  ]);
 }
 
 /**
  * Invia "✅ Risolto" per una lista di notifiche risolte.
- * Raggruppa i titoli risolti in un unico messaggio se sono più di uno.
  */
 async function notifyResolved(companyId, resolvedItems, sectionLabel) {
   if (!resolvedItems?.length) return;
-  if (!process.env.TELEGRAM_BOT_TOKEN) return;
 
   const list = resolvedItems.map(r => `• ${r.title}`).join('\n');
   const text =
@@ -419,7 +461,15 @@ async function notifyResolved(companyId, resolvedItems, sectionLabel) {
     `${sectionLabel}:\n${list}\n\n` +
     `Nessuna azione richiesta.`;
 
-  return notifyCompany(companyId, text);
+  await Promise.all([
+    process.env.TELEGRAM_BOT_TOKEN ? notifyCompany(companyId, text) : Promise.resolve(),
+    sendPushToCompany(companyId, {
+      title: 'Palladia — Risolto',
+      body:  `${sectionLabel}: ${resolvedItems.map(r => r.title).join(', ').slice(0, 100)}`,
+      tag:   'palladia-resolved',
+      url:   '/risorse',
+    }).catch(() => {}),
+  ]);
 }
 
 /**

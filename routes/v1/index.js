@@ -95,6 +95,9 @@ router.use('/', require('./companyDocuments'));
 // Notifiche in-app scadenze (JWT)
 router.use('/', require('./notifications'));
 
+// Web Push: subscribe/unsubscribe/vapid-public-key
+router.use('/', require('./push'));
+
 // Portale coordinatore unificato (Pro + CSE) — DEVE stare PRIMA di coordinator
 router.use('/', require('./coordinatorPortal'));
 
