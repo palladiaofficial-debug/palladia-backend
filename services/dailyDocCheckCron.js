@@ -16,6 +16,7 @@ const {
 const {
   notifyExpiryAlert, notifyResolved,
 } = require('./telegramNotifications');
+const { sendPushToCompany } = require('./pushNotifications');
 
 const REQUIRED_TYPES = ['idoneita_medica', 'formazione_sicurezza'];
 
@@ -211,12 +212,68 @@ async function runDailyDocCheck() {
   console.log('[dailyDocCheck] completato.');
 }
 
+async function runBirthdayCheck() {
+  const today = new Date();
+  const mm    = today.getMonth() + 1;
+  const dd    = today.getDate();
+
+  const { data: workers, error } = await supabase
+    .from('workers')
+    .select('id, company_id, full_name, birth_date')
+    .eq('is_active', true)
+    .not('birth_date', 'is', null);
+
+  if (error) { console.error('[birthday] fetch workers:', error.message); return; }
+  if (!workers?.length) return;
+
+  const todayWorkers = workers.filter(w => {
+    const parts = w.birth_date.split('-').map(Number);
+    return parts[1] === mm && parts[2] === dd;
+  });
+
+  if (!todayWorkers.length) { console.log('[birthday] nessun compleanno oggi.'); return; }
+
+  const byCompany = new Map();
+  for (const w of todayWorkers) {
+    if (!byCompany.has(w.company_id)) byCompany.set(w.company_id, []);
+    byCompany.get(w.company_id).push(w);
+  }
+
+  for (const [companyId, bWorkers] of byCompany) {
+    const names  = bWorkers.map(w => w.full_name).join(', ');
+    const single = bWorkers.length === 1;
+
+    await sendPushToCompany(companyId, {
+      title: single
+        ? `🎂 Compleanno di ${bWorkers[0].full_name}`
+        : `🎂 ${bWorkers.length} compleanni oggi`,
+      body: single
+        ? `Oggi è il compleanno di ${bWorkers[0].full_name} — un augurio fa sempre piacere!`
+        : `Compleanni oggi: ${names}`,
+      tag: 'birthday',
+      url: '/risorse',
+    }).catch(() => {});
+
+    const tgMsg = [
+      `🎂 <b>Compleanno${single ? '' : 'i'} di oggi</b>`,
+      '',
+      ...bWorkers.map(w => `🎉 ${w.full_name}`),
+      '',
+      'Un augurio fa sempre piacere! 🎉',
+    ].join('\n');
+
+    await notifyExpiryAlert(companyId, tgMsg).catch(() => {});
+
+    console.log(`[birthday] ${companyId}: ${names}`);
+  }
+}
+
 function startDailyDocCheckCron() {
   cron.schedule('5 7 * * *', async () => {
-    try { await runDailyDocCheck(); }
+    try { await Promise.all([runDailyDocCheck(), runBirthdayCheck()]); }
     catch (e) { console.error('[dailyDocCheck] errore cron:', e.message); }
   }, { timezone: 'Europe/Rome' });
   console.log('[cron] daily-doc-check attivo — 07:05 Europe/Rome');
 }
 
-module.exports = { startDailyDocCheckCron, runDailyDocCheck };
+module.exports = { startDailyDocCheckCron, runDailyDocCheck, runBirthdayCheck };
