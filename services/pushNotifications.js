@@ -58,8 +58,8 @@ async function _dispatch(subs, payload) {
   const message = JSON.stringify({
     title:              payload.title              || 'Palladia',
     body:               payload.body               || '',
-    icon:               payload.icon               || '/icons/pwa-192.png',
-    badge:              '/icons/pwa-192.png',
+    icon:               payload.icon               || '/icon-192.png',
+    badge:              '/icon-192.png',
     tag:                payload.tag                || 'palladia',
     requireInteraction: payload.requireInteraction || false,
     silent:             payload.silent             || false,
