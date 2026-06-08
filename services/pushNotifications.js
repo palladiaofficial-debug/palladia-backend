@@ -10,7 +10,8 @@ const supabase = require('../lib/supabase');
 
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
-const VAPID_EMAIL   = process.env.VAPID_EMAIL || 'mailto:admin@palladia.net';
+const _vapidEmail   = process.env.VAPID_EMAIL || 'admin@palladia.net';
+const VAPID_EMAIL   = _vapidEmail.startsWith('mailto:') ? _vapidEmail : `mailto:${_vapidEmail}`;
 
 let ready = false;
 if (VAPID_PUBLIC && VAPID_PRIVATE) {
