@@ -61,4 +61,23 @@ router.delete('/push/unsubscribe', async (req, res) => {
   res.json({ ok: true });
 });
 
+// Test push — invia una notifica di test all'utente corrente (owner/admin only)
+router.post('/push/test', async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+  try {
+    const { sendPushToUser } = require('../../services/pushNotifications');
+    await sendPushToUser(req.user.id, {
+      title: 'Palladia — Test notifica',
+      body:  'Le notifiche funzionano correttamente su questo dispositivo.',
+      tag:   'test',
+      url:   '/settings',
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

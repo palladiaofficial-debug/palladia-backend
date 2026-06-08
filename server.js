@@ -417,6 +417,15 @@ app.use((req, res, next) => {
 // ── Telegram Bot Webhook ─────────────────────────────────────────────────────
 app.use('/api/telegram', require('./routes/telegram'));
 
+// ── VAPID public key — endpoint pubblico, PRIMA del v1Router che ha JWT globale ─
+// Necessario perché alcuni sub-router in v1 applicano router.use(verifySupabaseJwt)
+// senza path, intercettando tutte le richieste non autenticate.
+app.get('/api/v1/push/vapid-public-key', (req, res) => {
+  const key = process.env.VAPID_PUBLIC_KEY;
+  if (!key) return res.status(503).json({ error: 'PUSH_NOT_CONFIGURED' });
+  res.json({ vapidPublicKey: key });
+});
+
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 
