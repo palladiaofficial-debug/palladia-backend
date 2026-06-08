@@ -217,10 +217,11 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
     notifySiteTeam(companyId, siteId, text, { excludeChatId }),
     notifyCoordinators(siteId, text, { excludeChatId }).catch(() => {}),
     sendPushToCompany(companyId, {
-      title: urgency === 'critica' ? 'Non Conformità critica' : 'Non Conformità',
-      body:  `${siteName} — ${description.slice(0, 100)}`,
-      tag:   `nc-${siteId}`,
-      url:   `/cantieri/${siteId}`,
+      title:              urgency === 'critica' ? '🔴 Non Conformità critica' : 'Non Conformità',
+      body:               `${siteName} — ${description.slice(0, 100)}`,
+      tag:                `nc-${siteId}`,
+      url:                `/cantieri/${siteId}`,
+      requireInteraction: urgency === 'critica',
     }).catch(() => {}),
   ]);
 
@@ -243,10 +244,11 @@ async function notifyIncidente(companyId, siteId, siteName, description, authorN
   const [result] = await Promise.all([
     notifySiteTeam(companyId, siteId, text, { excludeChatId }),
     sendPushToCompany(companyId, {
-      title: 'Incidente',
-      body:  `${siteName} — ${description.slice(0, 100)}`,
-      tag:   `incident-${siteId}`,
-      url:   `/cantieri/${siteId}`,
+      title:              '🚨 Incidente',
+      body:               `${siteName} — ${description.slice(0, 100)}`,
+      tag:                `incident-${siteId}`,
+      url:                `/cantieri/${siteId}`,
+      requireInteraction: true,
     }).catch(() => {}),
   ]);
   return result;
@@ -310,8 +312,8 @@ async function notifyMissingExitsWithAction(companyId, siteId, siteName, workerN
   }
 
   sendPushToCompany(companyId, {
-    title: 'Uscite mancanti',
-    body:  `${siteName} — ${count} lavorator${count > 1 ? 'i' : 'e'} senza uscita registrata`,
+    title: 'Uscite non registrate',
+    body:  `${siteName} — ${count} lavorator${count > 1 ? 'i non hanno' : 'e non ha'} timbrato l'uscita`,
     tag:   `exits-${siteId}`,
     url:   `/cantieri/${siteId}`,
   }).catch(() => {});
@@ -399,8 +401,8 @@ async function notifyPunch(companyId, siteId, siteName, workerName, eventType, t
   // Push solo per ENTRY (coerente con il livello "balanced" Telegram)
   if (isEntry) {
     sendPushToCompany(companyId, {
-      title: siteName,
-      body:  `${workerName} — entrata ${timeStr}`,
+      title: workerName,
+      body:  `Entrata registrata · ${siteName} · ${timeStr}`,
       tag:   `punch-${siteId}`,
       url:   `/cantieri/${siteId}`,
     }).catch(() => {});
@@ -441,7 +443,7 @@ async function notifyExpiryAlert(companyId, text) {
   await Promise.all([
     notifyCompany(companyId, text),
     sendPushToCompany(companyId, {
-      title: 'Palladia — Documenti',
+      title: 'Documenti in scadenza',
       body:  bodyPlain.slice(0, 120),
       tag:   'palladia-docs',
       url:   '/risorse',
@@ -464,7 +466,7 @@ async function notifyResolved(companyId, resolvedItems, sectionLabel) {
   await Promise.all([
     process.env.TELEGRAM_BOT_TOKEN ? notifyCompany(companyId, text) : Promise.resolve(),
     sendPushToCompany(companyId, {
-      title: 'Palladia — Risolto',
+      title: 'Tutto a posto',
       body:  `${sectionLabel}: ${resolvedItems.map(r => r.title).join(', ').slice(0, 100)}`,
       tag:   'palladia-resolved',
       url:   '/risorse',

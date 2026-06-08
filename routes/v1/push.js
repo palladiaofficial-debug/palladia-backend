@@ -69,8 +69,8 @@ router.post('/push/test', async (req, res) => {
   try {
     const { sendPushToUser } = require('../../services/pushNotifications');
     await sendPushToUser(req.user.id, {
-      title: 'Palladia — Test notifica',
-      body:  'Le notifiche funzionano correttamente su questo dispositivo.',
+      title: 'Notifiche attive',
+      body:  'Palladia è configurato per avvisarti in tempo reale — scadenze, presenze e cantieri.',
       tag:   'test',
       url:   '/settings',
     });

@@ -53,13 +53,18 @@ async function sendPushToUser(userId, payload) {
 async function _dispatch(subs, payload) {
   if (!subs.length) return;
 
+  const actions     = payload.actions     ?? [{ action: 'open', title: 'Apri' }];
+  const actionUrls  = payload.actionUrls  ?? {};
   const message = JSON.stringify({
-    title: payload.title || 'Palladia',
-    body:  payload.body  || '',
-    icon:  payload.icon  || '/icons/pwa-192.png',
-    badge: '/icons/pwa-192.png',
-    tag:   payload.tag   || 'palladia',
-    data:  { url: payload.url || '/' },
+    title:              payload.title              || 'Palladia',
+    body:               payload.body               || '',
+    icon:               payload.icon               || '/icons/pwa-192.png',
+    badge:              '/icons/pwa-192.png',
+    tag:                payload.tag                || 'palladia',
+    requireInteraction: payload.requireInteraction || false,
+    silent:             payload.silent             || false,
+    actions,
+    data: { url: payload.url || '/', actionUrls },
   });
 
   const stale = [];
