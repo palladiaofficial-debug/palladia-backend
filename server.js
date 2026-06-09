@@ -571,7 +571,13 @@ app.get('/pro/accesso/:token', (req, res) => {
 app.get('/demo', (req, res) => {
   res.sendFile('demo.html', { root: __dirname + '/public' });
 });
-app.use(express.static(__dirname + '/public'));
+app.use(express.static(__dirname + '/public', {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    }
+  },
+}));
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
