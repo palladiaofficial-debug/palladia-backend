@@ -1,9 +1,27 @@
 'use strict';
+const multer   = require('multer');
 const router   = require('express').Router();
 const supabase  = require('../../lib/supabase');
+const Anthropic = require('@anthropic-ai/sdk');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createCompanyPrezzoSchema, patchCompanyPrezzoSchema } = require('../../lib/schemas/prezzario');
+
+let _ai = null;
+function getAI() {
+  if (!_ai) _ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _ai;
+}
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: 15 * 1024 * 1024 },
+  fileFilter(_req, file, cb) {
+    const ok = ['application/pdf','image/jpeg','image/png','image/webp','image/heic'];
+    if (ok.includes(file.mimetype)) return cb(null, true);
+    cb(new Error('Usa PDF o immagini (JPG, PNG, WEBP, HEIC).'));
+  },
+});
 
 // ── GET /api/v1/prezzario/regioni ─────────────────────────────────────────────
 // Restituisce regioni e anni disponibili nel prezzario.
@@ -226,5 +244,113 @@ router.delete('/company-prezzi/:id', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });
+
+// ── POST /api/v1/company-prezzi/bulk ─────────────────────────────────────────
+// Salva più voci in una volta sola (dopo la review del parsing AI).
+router.post('/company-prezzi/bulk', verifySupabaseJwt, async (req, res) => {
+  const { items } = req.body;
+  if (!Array.isArray(items) || items.length === 0)
+    return res.status(400).json({ error: 'MISSING_ITEMS' });
+
+  const today = new Date().toISOString().split('T')[0];
+  const rows = items
+    .filter(it => it.descrizione?.trim() && it.prezzo != null && !isNaN(parseFloat(it.prezzo)))
+    .map(it => ({
+      company_id: req.companyId,
+      descrizione: it.descrizione.trim().slice(0, 300),
+      fornitore:   it.fornitore?.trim().slice(0, 100) || null,
+      um:          it.um?.trim().slice(0, 20)         || null,
+      prezzo:      parseFloat(it.prezzo),
+      categoria:   it.categoria?.trim()               || null,
+      note:        it.note?.trim()                    || null,
+      valid_from:  today,
+    }));
+
+  if (rows.length === 0) return res.status(400).json({ error: 'NO_VALID_ITEMS' });
+
+  const { data, error } = await supabase.from('company_prezzi').insert(rows).select();
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json({ saved: data.length, items: data });
+});
+
+// ── POST /api/v1/company-prezzi/parse-offerta ─────────────────────────────────
+// Carica un'offerta/preventivo fornitore (PDF o immagine) → AI estrae tutte
+// le righe di prezzo → ritorna array per review utente (NON salva nulla).
+router.post('/company-prezzi/parse-offerta',
+  verifySupabaseJwt,
+  (req, res, next) => upload.single('file')(req, res, err => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const buf  = req.file.buffer;
+    const mime = req.file.mimetype;
+    const b64  = buf.toString('base64');
+    const isPdf = mime === 'application/pdf';
+
+    const fileBlock = isPdf
+      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
+      : { type: 'image',    source: { type: 'base64', media_type: mime,               data: b64 } };
+
+    const prompt = `Analizza questo documento (offerta, preventivo o listino prezzi di un fornitore edile).
+Estrai TUTTE le voci di prezzo unitario presenti, ignorando subtotali e totali complessivi.
+
+Per ogni voce restituisci:
+- descrizione: descrizione del materiale/prodotto/servizio (chiara, max 200 caratteri)
+- um: unità di misura (mq, ml, m², m³, pz, kg, t, ora, g, mc, l, set) — null se assente
+- prezzo: prezzo UNITARIO come numero decimale con punto (es. 42.50). null se non leggibile.
+- categoria: scegli tra Materiali | Manodopera | Noli | Trasporti | Subappalto | Forniture | Altro
+
+Rispondi SOLO con questo JSON (nessun testo fuori):
+{
+  "fornitore": "Nome Fornitore Srl o null",
+  "data_offerta": "YYYY-MM-DD o null",
+  "items": [
+    { "descrizione": "...", "um": "mq", "prezzo": 42.50, "categoria": "Materiali" }
+  ]
+}
+
+Includi solo righe con prezzo unitario numerico leggibile. Max 300 voci.`;
+
+    try {
+      const msg = await getAI().messages.create({
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 8192,
+        messages:   [{ role: 'user', content: [fileBlock, { type: 'text', text: prompt }] }],
+      });
+
+      const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
+      const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim() : raw;
+      const parsed = JSON.parse(json);
+
+      const CATEGORIE = ['Materiali','Manodopera','Noli','Trasporti','Subappalto','Forniture','Altro'];
+      const items = (parsed.items || [])
+        .filter(it => it.descrizione?.trim() && it.prezzo != null && !isNaN(parseFloat(it.prezzo)))
+        .map(it => ({
+          descrizione: it.descrizione.trim().slice(0, 200),
+          um:          it.um?.trim() || null,
+          prezzo:      parseFloat(it.prezzo),
+          categoria:   CATEGORIE.includes(it.categoria) ? it.categoria : 'Altro',
+          fornitore:   (it.fornitore || parsed.fornitore || '').trim().slice(0, 100) || null,
+        }));
+
+      if (items.length === 0)
+        return res.status(422).json({ error: 'NO_ITEMS', message: 'Nessun prezzo unitario leggibile nel documento.' });
+
+      res.json({
+        fornitore:    parsed.fornitore || null,
+        data_offerta: parsed.data_offerta || null,
+        items,
+      });
+    } catch (err) {
+      console.error('[prezzario/parse-offerta]', err?.message || err);
+      res.status(500).json({ error: 'PARSE_FAILED', message: 'Errore AI. Riprova.' });
+    }
+  }
+);
 
 module.exports = router;
