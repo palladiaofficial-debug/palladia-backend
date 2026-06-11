@@ -456,6 +456,47 @@ router.patch('/computo/voci/:voceId/sal', validate(patchVoceSalSchema), async (r
   res.json({ ok: true, sal_percentuale: sal });
 });
 
+// ── PATCH /api/v1/computo/voci/:voceId/prezzo ────────────────
+// Aggiorna prezzo_unitario (e unita_misura) di una voce; ricalcola importo.
+
+router.patch('/computo/voci/:voceId/prezzo', async (req, res) => {
+  const { companyId }  = req;
+  const { voceId }     = req.params;
+  const { prezzo_unitario, unita_misura } = req.body;
+
+  if (!isUuid(voceId)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  const prezzoNum = parseFloat(prezzo_unitario);
+  if (isNaN(prezzoNum) || prezzoNum < 0)
+    return res.status(400).json({ error: 'INVALID_PRICE' });
+
+  const { data: voce } = await supabase
+    .from('site_computo_voci')
+    .select('quantita')
+    .eq('id', voceId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (!voce) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const importo = voce.quantita != null
+    ? Math.round(voce.quantita * prezzoNum * 100) / 100
+    : null;
+
+  const patch = { prezzo_unitario: prezzoNum };
+  if (unita_misura !== undefined) patch.unita_misura = unita_misura?.trim() || null;
+  if (importo != null) patch.importo = importo;
+
+  const { error } = await supabase
+    .from('site_computo_voci')
+    .update(patch)
+    .eq('id', voceId)
+    .eq('company_id', companyId);
+
+  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  res.json({ ok: true, prezzo_unitario: prezzoNum, unita_misura: patch.unita_misura ?? null, importo });
+});
+
 // ── DELETE /api/v1/sites/:siteId/computo/:id ──────────────────
 
 router.delete('/sites/:siteId/computo/:id', async (req, res) => {
