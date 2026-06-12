@@ -170,7 +170,7 @@ function normalizeDate(val) {
     return null;
   }
   // Formato italiano DD/MM/YYYY o DD-MM-YYYY
-  const itMatch = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  const itMatch = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
   if (itMatch) {
     const iso = `${itMatch[3]}-${itMatch[2].padStart(2,'0')}-${itMatch[1].padStart(2,'0')}`;
     const d = new Date(iso);

@@ -261,7 +261,7 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
   }
 
   // ── Risposta ─────────────────────────────────────────────────────────────
-  const safeName = (site.name || 'cantiere').replace(/[^a-z0-9_\-]/gi, '_').slice(0, 40);
+  const safeName = (site.name || 'cantiere').replace(/[^a-z0-9_-]/gi, '_').slice(0, 40);
   const filename = `archivio-${safeName}-${rangeFrom}-${rangeTo}.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

@@ -96,7 +96,6 @@ async function buildEveningSummary(companyId) {
 
   // ── Azioni Ladia per cantiere ──
   const actionsBySite = {};
-  const globalActions = []; // azioni senza site_id
   for (const a of actions) {
     const label = ACTION_LABELS[a.action_type]?.(a.action_params || {});
     if (!label) continue;

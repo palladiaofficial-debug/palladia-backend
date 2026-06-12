@@ -2,7 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, getWeatherRange, evalThresholds, WMO } = require('../../services/weatherService');
+const { getActualWeather, getWeatherRange, evalThresholds } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const ExcelJS                            = require('exceljs');
 const { validate } = require('../../middleware/validate');
@@ -18,13 +18,6 @@ function siteThresholds(site) {
     snow:         site.weather_snow         ?? true,
     thunderstorm: site.weather_thunderstorm ?? true,
   };
-}
-
-function toItDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('it-IT', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
-  });
 }
 
 function toItShort(iso) {

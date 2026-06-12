@@ -32,11 +32,6 @@ const MAIN_MENU = tg.buildInlineKeyboard([
   { text: '⚙️ Stato Sistema',     callbackData: 'owner:status'  },
 ], 2);
 
-const NAV_BUTTONS = tg.buildInlineKeyboard([
-  { text: '🔄 Aggiorna', callbackData: '__REFRESH__' }, // placeholder, sostituito dinamicamente
-  { text: '🏠 Menu',     callbackData: 'owner:menu'  },
-], 2);
-
 function navButtons(refreshCallback) {
   return tg.buildInlineKeyboard([
     { text: '🔄 Aggiorna', callbackData: refreshCallback },

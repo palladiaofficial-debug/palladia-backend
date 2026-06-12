@@ -30,7 +30,7 @@ function preFilter(rawLines) {
     let line = raw.trim();
     if (!line || line.length < 2)                                    continue;
     if (/^-+\s*pagina\s+\d+\s*-+$/i.test(line))                    continue;
-    if (/^\d+\s*[\/\-]\s*\d+$/.test(line))                          continue;
+    if (/^\d+\s*[/-]\s*\d+$/.test(line))                             continue;
     if (/^pagina\s+\d+$/i.test(line))                               continue;
     line = line.replace(/(?:[a-zA-ZÀ-ÿ&]\s){4,}[a-zA-ZÀ-ÿ]/g, ' ')
                .replace(/\s{2,}/g, ' ').trim();
@@ -44,7 +44,7 @@ function preFilter(rawLines) {
 }
 
 // ─── Pattern ──────────────────────────────────────────────────────────────────
-const RE_CAT       = /^([A-G])\s{1,6}([A-ZÀÈÉÌÒÙ][A-ZÀÈÉÌÒÙ\s\d,'àèéìòùì°.()\-]+)$/;
+const RE_CAT       = /^([A-G])\s{1,6}([A-ZÀÈÉÌÒÙ][A-ZÀÈÉÌÒÙ\s\d,'àèéìòùì°.()-]+)$/;
 const RE_VOCE      = /^([A-G])\.(\d+[a-z]?)\s{1,5}(.{4,})/;
 const RE_CCA       = /c\.?\s*ca\s+([\d,.]+)\s*(mq|mc|ml|kg|t\b|h\b|cad|n\b|nr\b)\s*x/i;
 const RE_N_X       = /n\.\s*([\d,]+)\s*x/i;

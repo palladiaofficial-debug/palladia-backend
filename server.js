@@ -10,7 +10,6 @@ const cors       = require('cors');
 const helmet     = require('helmet');
 const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
-const { generatePdf } = require('./pdf-generator');
 const { buildPosDocument } = require('./pos-template');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
@@ -18,7 +17,6 @@ const { generateDvrHtml }  = require('./dvr-html-generator');
 const { generatePimusHtml } = require('./pimus-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const rateLimit = require('express-rate-limit');
-const { verifySupabaseJwt } = require('./middleware/verifyJwt');
 const { apiLimiter } = require('./middleware/rateLimit');
 const v1Router = require('./routes/v1');
 const { generateAndSave: generateSiteChecklist } = require('./routes/v1/siteChecklist');
@@ -93,7 +91,6 @@ req.path.includes('/ai-import');             // smart filing singolo documento (
 // Railway usa questo endpoint per capire se il container è sano.
 // Configurare su Railway: Health Check Path = /api/health
 app.get('/api/health', async (req, res) => {
-  const mem    = process.memoryUsage();
   const uptime = Math.round(process.uptime());
 
   // Ping DB — verifica connettività Supabase
@@ -103,11 +100,6 @@ app.get('/api/health', async (req, res) => {
     .select('id')
     .limit(1)
     .maybeSingle();
-
-  // PDF queue depth — quanti render sono in attesa o in corso
-  const { pdfSemaphore } = require('./pdf-renderer');
-  const pdfRunning = pdfSemaphore._running;
-  const pdfQueued  = pdfSemaphore._queue.length;
 
   const status = dbErr ? 'degraded' : 'ok';
 
@@ -1185,12 +1177,12 @@ app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res
     const risksPrompt = buildRisksPrompt(posData);
     const aiRisks = await callAnthropicHaiku(risksPrompt);
 
-    // Step 2: Assemble the full document with template + AI risks
+    // Step 2: Build document (usato solo per validazione — il salvataggio usa aiRisks)
     const signs = selectSigns(posData);
-    const fullText = buildPosDocument(posData, revision, aiRisks, signs);
+    buildPosDocument(posData, revision, aiRisks, signs);
 
     // Step 3: Save to Supabase
-    // NOTA: salviamo aiRisks (non fullText) — il template HTML viene rigenerato al volo
+    // NOTA: salviamo aiRisks (non il documento completo) — il template HTML viene rigenerato al volo
     // da pos_data. Se salvassimo fullText (intero markdown), pdf-html lo passerebbe come
     // aiRisks e tutta la sezione 5 conterrebbe l'intero documento invece dei soli rischi.
     let posId = null;

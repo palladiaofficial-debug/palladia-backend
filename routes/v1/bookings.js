@@ -13,7 +13,6 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { sendBookingConfirmation } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { checkoutBookingSchema, reviewBookingSchema } = require('../../lib/schemas/bookings');
 

@@ -267,7 +267,7 @@ async function sendMissingExitAlert({ companyId, date, missingList }) {
 /**
  * @param {{ to: string, companyName: string, inviterName: string, role: string, inviteUrl: string }} opts
  */
-async function sendInviteEmail({ to, companyName, inviterName, role, inviteUrl }) {
+async function sendInviteEmail({ to, companyName, _inviterName, role, inviteUrl }) {
   const ROLE_LABELS = { admin: 'Amministratore', tech: 'Tecnico', viewer: 'Solo lettura' };
   const roleLabel = ROLE_LABELS[role] || role;
 
@@ -1200,7 +1200,7 @@ async function sendBookingConfirmedConsultant(to, { companyName, courseName, par
 
 // ─── Email: Attestati caricati (impresa) ───────────────────────────────────
 
-async function sendCertificatesUploaded(to, { certificates_count, booking_id }) {
+async function sendCertificatesUploaded(to, { certificates_count, booking_id: _booking_id }) {
   const body = `
     <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
       Il tuo consulente ha caricato <strong>${certificates_count} nuov${certificates_count > 1 ? 'i attestati' : 'o attestato'}</strong>
@@ -1276,7 +1276,7 @@ async function sendQuoteRequestConsultant({ to, consultantName, companyName, cou
   }
 }
 
-async function sendQuoteReceivedCompany({ to, companyName, consultantName, courseName, quotedPriceCents, quotedMessage, acceptUrl }) {
+async function sendQuoteReceivedCompany({ to, _companyName, consultantName, courseName, quotedPriceCents, quotedMessage, acceptUrl }) {
   const price = `€${(quotedPriceCents / 100).toFixed(2)}`;
   const body = `
     <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.6;">
@@ -1397,7 +1397,7 @@ async function sendStudioInviteEmail({ to, studioName, acceptUrl }) {
  * Invita un'impresa non ancora su Palladia a registrarsi e collegarsi allo studio.
  * @param {{ to: string, studioName: string, companyNameHint: string, acceptUrl: string, registerUrl: string }} opts
  */
-async function sendStudioPendingInviteEmail({ to, studioName, companyNameHint, acceptUrl, registerUrl }) {
+async function sendStudioPendingInviteEmail({ to, studioName, companyNameHint, acceptUrl, _registerUrl }) {
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   const body = `
@@ -1453,7 +1453,6 @@ async function sendStudioWeeklyDigest({ to, studioName, summary, issues }) {
 
   const issueRows = (issues || []).slice(0, 30).map(i => {
     const color   = i.severity === 'critical' ? '#ef4444' : '#f59e0b';
-    const border  = i.severity === 'critical' ? '#ef4444' : '#f59e0b';
     return `<tr>
       <td style="padding:10px 0;border-bottom:1px solid #f9f9f6;vertical-align:top;">
         <table cellpadding="0" cellspacing="0" width="100%">
@@ -1893,7 +1892,7 @@ async function sendDocumentRequestEmail({ to, studioName, companyName, title, de
 
 // ─── Email: Documento caricato dal cliente → CDL ──────────────────────────────
 
-async function sendDocumentUploadedEmail({ to, studioName, companyName, title, portalUrl }) {
+async function sendDocumentUploadedEmail({ to, _studioName, companyName, title, portalUrl }) {
   const body = `
     <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Documento caricato</p>
     <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
@@ -1913,7 +1912,7 @@ async function sendDocumentUploadedEmail({ to, studioName, companyName, title, p
 
 // ─── Email: Notifica al CSE (NC risolta, documento aggiornato) ────────────────
 
-async function sendCseNotificationEmail({ to, coordinatorName, siteName, eventType, details, accessUrl }) {
+async function sendCseNotificationEmail({ to, _coordinatorName, siteName, eventType, details, accessUrl }) {
   const LABELS = {
     nc_resolved:       'Non Conformità Risolta',
     doc_updated:       'Documento Aggiornato',
@@ -1965,7 +1964,7 @@ async function sendWeeklyExpiryReport({ to, companyName, critical, warning }) {
     return `<span style="color:#1a1a1a;">scade in ${d} gg</span>`;
   };
 
-  const rowHtml = (items, color) => items.map(e =>
+  const rowHtml = (items, _color) => items.map(e =>
     `<tr>
       <td style="padding:8px 0;border-bottom:1px solid #f0f0f0;font-size:13px;color:#374151;">${esc(e.label)}</td>
       <td style="padding:8px 0 8px 16px;border-bottom:1px solid #f0f0f0;font-size:13px;text-align:right;white-space:nowrap;">${dayLabel(e.days)}</td>

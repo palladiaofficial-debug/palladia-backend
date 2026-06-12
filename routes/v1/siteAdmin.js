@@ -41,8 +41,6 @@ function formatSite(s) {
   };
 }
 
-// Status operativi (visibili in dashboard, pesano sul limite piano)
-const ACTIVE_STATUSES   = ['attivo', 'sospeso'];
 // Status che contano nel limite abbonamento
 const BILLABLE_STATUSES = ['attivo', 'sospeso'];
 // Tutti i valori ammessi (escluso 'eliminato' — solo via DELETE)
@@ -140,7 +138,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     name, address, comune, client, status,
     start_date, end_date,
     contract_days, days_type,
-    referente_tecnico_id, referente_tecnico_name,
+    referente_tecnico_id,
     suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
     weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm,
   } = req.body || {};

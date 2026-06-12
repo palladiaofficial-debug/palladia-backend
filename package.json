@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "lint": "eslint routes/ lib/ middleware/ services/ server.js --max-warnings 20",
+    "lint:fix": "eslint routes/ lib/ middleware/ services/ server.js --fix",
     "test": "node scripts/selftest_api.js",
     "test:scan": "node scripts/selftest_scan.js"
   },
@@ -45,6 +47,9 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-plugin-n": "^18.1.0",
+    "eslint-plugin-security": "^4.0.1",
     "pdf-parse": "^2.4.5"
   }
 }

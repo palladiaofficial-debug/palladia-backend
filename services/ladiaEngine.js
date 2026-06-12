@@ -95,7 +95,7 @@ async function buildEnrichedContext(companyId, siteId) {
     try {
       weather = await Promise.race([
         getWeatherSummary(site.latitude, site.longitude),
-        new Promise(resolve => setTimeout(() => resolve(''), 3000)),
+        new Promise(resolve => { setTimeout(() => resolve(''), 3000); }),
       ]);
     } catch { /* noop */ }
   }
@@ -111,8 +111,6 @@ async function buildEnrichedContext(companyId, siteId) {
   const totalContratto = vociCap.reduce((s, v) => s + (parseFloat(v.importo_contratto) || 0), 0);
 
   // ── Analisi fasi proattiva ──
-  const fasiInCorso     = phases.filter(p => p.stato === 'in_corso');
-  const fasiCompletate  = phases.filter(p => p.stato === 'completata');
   const fasiNonInit     = phases.filter(p => p.stato === 'non_iniziata');
 
   // Fasi a rischio sforamento: costi reali > importo_contratto

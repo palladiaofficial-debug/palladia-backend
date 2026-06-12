@@ -150,16 +150,6 @@ router.get('/expiry-calendar', verifySupabaseJwt, async (req, res) => {
 
 // ── GET /api/v1/expiry-calendar/summary ──────────────────────────────────────
 router.get('/expiry-calendar/summary', verifySupabaseJwt, async (req, res) => {
-  const to90 = new Date(Date.now() + 90 * 86400000).toISOString().slice(0, 10);
-  const from30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
-
-  // Re-use main handler logic inline but only count
-  const req2 = { ...req, query: { from: from30, to: to90 } };
-  const mockRes = {
-    _data: null,
-    json(d) { this._data = d; }
-  };
-
   // Call with a fake next to avoid complexity — just duplicate the aggregation
   const [workersRes, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
     supabase.from('workers').select('id, safety_training_expiry, health_fitness_expiry').eq('company_id', req.companyId).eq('is_active', true),

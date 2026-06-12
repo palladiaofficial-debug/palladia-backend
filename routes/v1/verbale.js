@@ -31,10 +31,6 @@ function isValidToken(t) {
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
-function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
-}
 function fmtDateShort(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -147,7 +143,6 @@ function buildVerbaleHtml(invite, data) {
   const compliant   = workers.filter(w => w.safety === 'ok' && w.health === 'ok').length;
   const expiring    = workers.filter(w => (w.safety === 'expiring' || w.health === 'expiring') && w.safety !== 'expired' && w.health !== 'expired').length;
   const nonCompliant = workers.filter(w => w.safety === 'expired' || w.health === 'expired').length;
-  const incomplete  = workers.length - compliant - expiring - nonCompliant;
 
   const workerRows = workers.map((w, i) => {
     const safetyColor = w.safety === 'expired' ? '#ef4444' : w.safety === 'expiring' ? '#f59e0b' : w.safety === 'ok' ? '#22c55e' : '#9ca3af';

@@ -1976,7 +1976,6 @@ router.get('/studio/clients/:companyId/report-conformita.pdf', verifyStudioJwt, 
     { data: dvrs     },
     { data: certs    },
     { data: roles    },
-    { data: subDocs  },
   ] = await Promise.all([
     supabase.from('companies').select('*').eq('id', companyId).maybeSingle(),
     supabase.from('studio_partners').select('*').eq('id', req.studioId).maybeSingle(),
@@ -1984,7 +1983,6 @@ router.get('/studio/clients/:companyId/report-conformita.pdf', verifyStudioJwt, 
     supabase.from('dvr_documents').select('*').eq('company_id', companyId).order('created_at', { ascending: false }).limit(1),
     supabase.from('worker_certificates').select('*, workers(full_name, fiscal_code), course_types(name)').eq('company_id', companyId).order('expiry_date'),
     supabase.from('company_safety_roles').select('*').eq('company_id', companyId),
-    supabase.from('subcontractor_documents').select('*').eq('company_id', companyId),
   ]);
 
   function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

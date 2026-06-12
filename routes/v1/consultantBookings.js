@@ -16,7 +16,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt } = require('../../middleware/verifyConsultant');
-const { sendBookingConfirmedConsultant, sendCertificatesUploaded } = require('../../services/email');
+const { sendCertificatesUploaded } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { uploadCertificatesSchema } = require('../../lib/schemas/consultantBookings');
 

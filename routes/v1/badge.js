@@ -206,16 +206,6 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
 // Formato ISO ID-1: 85.6mm × 54mm (identico a patente / codice fiscale)
 // Fronte + retro sulla stessa pagina A4 — si ritaglia, si mette schiena a schiena, si plastifica
 
-function complianceDotInline(status) {
-  const map = {
-    ok:       { color: '#22c55e', label: 'Valida'       },
-    expiring: { color: '#f59e0b', label: 'In scadenza'  },
-    expired:  { color: '#ef4444', label: 'SCADUTA'      },
-    not_set:  { color: '#94a3b8', label: 'Non inserita' },
-  };
-  return map[status] || map.not_set;
-}
-
 // Estrae data di nascita dal codice fiscale italiano (encoding standard)
 function parseDobFromCf(cf) {
   if (!cf || cf.length < 11) return null;
@@ -245,7 +235,7 @@ function parseSexFromCf(cf) {
 
 
 function buildBadgePdfHtml({
-  worker, companyName, employerLabel, hireDateStr, dobStr, sexStr, birthPlace,
+  worker, companyName, dobStr, sexStr, birthPlace,
   qrTimbrataUrl, qrVerifyDataUrl,
 }) {
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
@@ -593,18 +583,6 @@ function buildBadgePdfHtml({
   </div>
 </body>
 </html>`;
-}
-
-function buildOverallPill(overall) {
-  const map = {
-    compliant:     { bg: '#22c55e', color: '#ffffff', label: '✓ Conforme'       },
-    expiring:      { bg: '#f59e0b', color: '#ffffff', label: '⚠ In scadenza'   },
-    non_compliant: { bg: '#ef4444', color: '#ffffff', label: '✗ Non conforme'   },
-    incomplete:    { bg: '#64748b', color: '#ffffff', label: '○ Incompleto'     },
-    inactive:      { bg: '#374151', color: '#94a3b8', label: '— Inattivo'       },
-  };
-  const { bg, color, label } = map[overall] || map.inactive;
-  return `<div class="overall-pill" style="background:${bg};color:${color};">${esc(label)}</div>`;
 }
 
 function esc(str) {

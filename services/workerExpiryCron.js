@@ -15,7 +15,6 @@ const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays,
   severityFor, severityLabel,
-  getCompanyName, getCompanyAdminEmails,
   upsertNotification, shouldSendTelegram, pruneNotifications,
 } = require('./expiryHelper');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)

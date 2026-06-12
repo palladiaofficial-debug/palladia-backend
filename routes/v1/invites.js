@@ -66,18 +66,6 @@ router.post('/invites', verifySupabaseJwt, validate(createInviteSchema), async (
   // Genera token sicuro (32 byte hex = 64 caratteri)
   const token = crypto.randomBytes(32).toString('hex');
 
-  // Recupera info dell'invitante
-  const inviterName = req.user.email;
-
-  // Recupera nome company
-  const { data: company } = await supabase
-    .from('companies')
-    .select('name')
-    .eq('id', req.companyId)
-    .single();
-
-  const companyName = company?.name || 'Palladia';
-
   // Inserisci invito nel DB
   const { data: invite, error: insertError } = await supabase
     .from('company_invites')

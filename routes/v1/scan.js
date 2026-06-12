@@ -141,7 +141,7 @@ router.get('/scan/identify-diag', async (req, res) => {
   }
 
   // Cleanup — esegui in ordine inverso (sessions → worksite_workers → workers)
-  for (const fn of cleanup.reverse()) { try { await fn(); } catch (_) {} }
+  for (const fn of cleanup.reverse()) { try { await fn(); } catch (_e) { /* cleanup errors ignored */ } }
 
   const allOk = Object.values(steps).filter(s => typeof s.ok === 'boolean').every(s => s.ok);
   res.json({ all_ok: allOk, steps });

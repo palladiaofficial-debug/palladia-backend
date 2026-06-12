@@ -27,7 +27,6 @@ function fmtDate(d) { return d ? String(d).slice(0, 10) : null; }
 // ── Aggregazione scadenze per una company ─────────────────────────────────────
 
 async function buildExpiryEvents(companyId) {
-  const today   = new Date().toISOString().slice(0, 10);
   const from30  = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const to30    = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 

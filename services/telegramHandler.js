@@ -37,7 +37,7 @@ async function handleMessage(msg) {
   return tg.sendMessage(chatId,
     `📲 <b>Palladia — Gestione Cantieri</b>\n\n` +
     `Questo canale invia avvisi automatici sulla tua impresa.\n\n` +
-    `Per gestire cantieri, lavoratori e documenti apri l\'app:\n` +
+    `Per gestire cantieri, lavoratori e documenti apri l'app:\n` +
     `<a href="${FRONTEND_URL}">${FRONTEND_URL}</a>`,
     { replyMarkup: tg.removeReplyKeyboard() }
   );
@@ -47,7 +47,7 @@ async function linkAccount(chatId, token, from) {
   if (!token) {
     return tg.sendMessage(chatId,
       `👋 Benvenuto su <b>Palladia</b>.\n\n` +
-      `Per collegare il tuo account apri l\'app e vai in\n<b>Impostazioni → Collega Telegram</b>.`
+      `Per collegare il tuo account apri l'app e vai in\n<b>Impostazioni → Collega Telegram</b>.`
     );
   }
 
@@ -59,7 +59,7 @@ async function linkAccount(chatId, token, from) {
 
   if (!linkToken || new Date(linkToken.expires_at) < new Date()) {
     return tg.sendMessage(chatId,
-      `❌ Link non valido o scaduto.\nGenera un nuovo link dall\'app Palladia.`
+      `❌ Link non valido o scaduto.\nGenera un nuovo link dall'app Palladia.`
     );
   }
 
@@ -77,7 +77,7 @@ async function linkAccount(chatId, token, from) {
   await supabase.from('telegram_link_tokens').delete().eq('token', token);
 
   if (error) {
-    return tg.sendMessage(chatId, `❌ Errore durante il collegamento. Riprova dall\'app.`);
+    return tg.sendMessage(chatId, `❌ Errore durante il collegamento. Riprova dall'app.`);
   }
 
   return tg.sendMessage(chatId,

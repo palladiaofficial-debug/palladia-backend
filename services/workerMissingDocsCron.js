@@ -17,7 +17,6 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
-  getCompanyName, getCompanyAdminEmails,
   upsertNotification, pruneNotifications,
 } = require('./expiryHelper');
 const {

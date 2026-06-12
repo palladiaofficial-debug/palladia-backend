@@ -22,10 +22,8 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
 const { getForecast }            = require('./weatherService');
-const { generateNcProposal,
-        generateBudgetProposal } = require('./ladiaSmartProposal');
-const { runComplianceChecks,
-        buildComplianceMessage } = require('./complianceEngine');
+const { generateBudgetProposal } = require('./ladiaSmartProposal');
+const { runComplianceChecks }    = require('./complianceEngine');
 
 // ── Costanti ──────────────────────────────────────────────────
 const RAIN_THRESHOLD    = 50;  // % probabilità pioggia per triggare alert
@@ -67,32 +65,6 @@ async function markSent(chatId, triggerType, triggerKey, companyId, siteId) {
     company_id:   companyId,
     site_id:      siteId || null,
   });
-}
-
-// ── Helper: recupera chatId target per un cantiere ────────────
-
-/**
- * Restituisce i chatId Telegram da notificare per un cantiere.
- * Prima tenta gli utenti con active_site_id = siteId.
- * Se nessuno ha quel sito attivo, cade su tutti gli utenti della company.
- */
-async function getChatIdsForSite(companyId, siteId) {
-  // Utenti con questo cantiere attivo
-  const { data: direct } = await supabase
-    .from('telegram_users')
-    .select('telegram_chat_id')
-    .eq('company_id', companyId)
-    .eq('active_site_id', siteId);
-
-  if (direct?.length) return direct.map(u => u.telegram_chat_id);
-
-  // Fallback: tutti gli utenti della company
-  const { data: all } = await supabase
-    .from('telegram_users')
-    .select('telegram_chat_id')
-    .eq('company_id', companyId);
-
-  return (all || []).map(u => u.telegram_chat_id);
 }
 
 /**

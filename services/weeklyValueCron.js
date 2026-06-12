@@ -86,14 +86,12 @@ async function buildWeeklyReport(companyId) {
 
   const actions    = actRes.data   || [];
   const presences  = presRes.data  || [];
-  const sites      = siteRes.data  || [];
+  const _sites     = siteRes.data  || [];
   const prevCount  = actPrevRes.count || 0;
   const alertCount = alertRes.count  || 0;
 
   // Niente da mostrare se nessuna attività
   if (!actions.length && !presences.length && !alertCount) return null;
-
-  const siteMap = new Map(sites.map(s => [s.id, s.name || s.address || 'Cantiere']));
 
   // ── Calcola metriche ──
   const actionCounts = {};

@@ -189,7 +189,6 @@ router.post('/onboard/:token', validate(onboardWorkerSchema), async (req, res) =
   const {
     full_name, fiscal_code, phone,
     qualification, hire_date,
-    photo_base64, // opzionale
   } = req.body || {};
 
   if (!full_name || !fiscal_code) {
@@ -231,7 +230,7 @@ router.post('/onboard/:token', validate(onboardWorkerSchema), async (req, res) =
     self_submitted_at: new Date().toISOString(),
   };
 
-  const { data: worker, error: wErr } = await supabase
+  const { error: wErr } = await supabase
     .from('workers')
     .insert(insertPayload)
     .select('id')

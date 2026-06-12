@@ -1,7 +1,6 @@
 'use strict';
 const router    = require('express').Router();
 const Anthropic = require('@anthropic-ai/sdk');
-const XLSX      = require('xlsx');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
@@ -753,48 +752,6 @@ async function executeTool(toolName, toolInput, companyId) {
   }
 }
 
-// ── Agentic loop riusabile ───────────────────────────────────────────────────
-async function runAgentLoop(client, messages, systemPrompt, tools, maxIter = 4) {
-  let response = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
-    max_tokens: 2048,
-    system:     systemPrompt,
-    tools:      tools || [],
-    messages,
-  });
-
-  const extra = [];
-  let iter = 0;
-
-  while (response.stop_reason === 'tool_use' && iter < maxIter) {
-    iter++;
-    const toolBlocks = response.content.filter(b => b.type === 'tool_use');
-
-    const toolResults = await Promise.all(
-      toolBlocks.map(async (block) => ({
-        type:        'tool_result',
-        tool_use_id: block.id,
-        content:     JSON.stringify(await executeTool(block.name, block.input, null)) // companyId overridden below
-      }))
-    );
-
-    extra.push(
-      { role: 'assistant', content: response.content },
-      { role: 'user',      content: toolResults }
-    );
-
-    response = await client.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 2048,
-      system:     systemPrompt,
-      tools:      tools || [],
-      messages:   [...messages, ...extra],
-    });
-  }
-
-  return response.content.find(b => b.type === 'text')?.text ?? '';
-}
-
 // ── Agentic loop con company_id (chat principale) ────────────────────────────
 async function runChatLoop(client, messages, companyId, model) {
   let response = await client.messages.create({
@@ -1111,7 +1068,7 @@ async function buildReportExcel(report) {
   colWidths[0] = 36;
 
   function mergeRow(rowNum) {
-    try { ws.mergeCells(rowNum, 1, rowNum, MERGE_COLS); } catch {}
+    try { ws.mergeCells(rowNum, 1, rowNum, MERGE_COLS); } catch (_e) { /* merge errors ignored */ }
   }
 
   function addBanner(text, size = 13) {

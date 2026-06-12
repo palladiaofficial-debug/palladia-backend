@@ -154,7 +154,7 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   const overview = sites.map(site => {
     // Live presences
     const onSite = [];
-    for (const [key, log] of latestByWorker) {
+    for (const [, log] of latestByWorker) {
       if (log.site_id === site.id && log.event_type === 'ENTRY') {
         onSite.push(log.worker_id);
       }

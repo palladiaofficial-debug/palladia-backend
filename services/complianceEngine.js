@@ -48,7 +48,6 @@ async function runComplianceChecks(siteId, companyId) {
   const todayObj = new Date(today + 'T00:00:00.000Z');
   const in7days  = new Date(todayObj.getTime() + 7 * 86_400_000).toLocaleDateString('sv-SE');
   const cutoff48 = new Date(Date.now() - 48 * 3_600_000).toISOString();
-  const cutoff7d = new Date(Date.now() - 7  * 86_400_000).toISOString();
 
   // Fetch cantiere per nome
   const { data: site } = await supabase

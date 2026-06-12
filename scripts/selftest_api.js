@@ -265,6 +265,69 @@ async function main() {
     }
   }
 
+  // ── 11. Security — fix specifici ───────────────────────────────────────────
+  header('11. Security — auth, SSRF, DoS cap');
+
+  // 11a. pdf-diag e pdf-smoke devono richiedere JWT (non più pubblici)
+  {
+    const r = await req('GET', '/api/pdf-diag');
+    check('GET /api/pdf-diag senza JWT → 401', r.status === 401, r);
+  }
+  {
+    const r = await req('GET', '/api/pdf-smoke');
+    check('GET /api/pdf-smoke senza JWT → 401', r.status === 401, r);
+  }
+
+  // 11b. Bulk prezzario — cap 500 items
+  if (!JWT) {
+    skip('Bulk prezzario cap 500', 'JWT non disponibile');
+  } else {
+    const items = Array.from({ length: 501 }, (_, i) => ({
+      code: `T${i}`, description: 'voce test', unit: 'mq', price: 10,
+    }));
+    const r = await req('POST', '/api/v1/company-prezzi/bulk', { items }, JWT, COMPANY_ID);
+    check('bulk 501 items → 400 TOO_MANY_ITEMS', r.status === 400, r);
+    check('errore TOO_MANY_ITEMS', r.body?.error === 'TOO_MANY_ITEMS', r.body);
+  }
+
+  // 11c. SSRF — certificate OCR rifiuta URL non-Supabase
+  if (!JWT || !WORKER_ID) {
+    skip('SSRF certificate extract', !JWT ? 'JWT non disponibile' : 'WORKER_ID mancante');
+  } else {
+    const r = await req(
+      'POST',
+      `/api/v1/workers/${WORKER_ID}/certificates/extract`,
+      { file_url: 'https://evil.com/malicious.pdf' },
+      JWT, COMPANY_ID,
+    );
+    check('URL non-Supabase → 400 INVALID_FILE_URL', r.status === 400, r);
+    check('errore INVALID_FILE_URL', r.body?.error === 'INVALID_FILE_URL', r.body);
+  }
+
+  // 11d. IDOR POS — fake ID di un'altra company → 404/403
+  if (!JWT) {
+    skip('IDOR POS cross-company', 'JWT non disponibile');
+  } else {
+    const fakePos = '00000000-0000-4000-8000-000000000099';
+    {
+      const r = await req('GET', `/api/v1/pos/${fakePos}`, undefined, JWT, COMPANY_ID);
+      check('GET /pos/fake → 404/403 (no leak)', r.status === 404 || r.status === 403, r);
+    }
+    {
+      const r = await req('POST', `/api/v1/pos/${fakePos}/acknowledgments`, { worker_id: WORKER_ID }, JWT, COMPANY_ID);
+      check('POST /pos/fake/acknowledgments → 404/403', r.status === 404 || r.status === 403, r);
+    }
+  }
+
+  // 11e. IDOR NC — fake ID → 404/403
+  if (!JWT) {
+    skip('IDOR NC cross-company', 'JWT non disponibile');
+  } else {
+    const fakeNc = '00000000-0000-4000-8000-000000000098';
+    const r = await req('PATCH', `/api/v1/nonconformities/${fakeNc}`, { status: 'chiusa' }, JWT, COMPANY_ID);
+    check('PATCH /nonconformities/fake → 404/403', r.status === 404 || r.status === 403, r);
+  }
+
   // ── Sommario ─────────────────────────────────────────────────────────────────
   console.log('\n─────────────────────────────────────────');
   if (failed === 0) {

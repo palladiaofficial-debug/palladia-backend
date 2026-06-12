@@ -417,7 +417,6 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
     const { siteId, worker, dateKey, logs: dayLogs } = byKey.get(key);
     const anomalies = [];
     let hoursTotal = 0;
-    let intervals  = 0;
     let i = 0;
     while (i < dayLogs.length) {
       const l = dayLogs[i];
@@ -425,7 +424,6 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
         const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
         if (next && next.event_type === 'EXIT') {
           hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3600000);
-          intervals++;
           i += 2;
         } else { anomalies.push('Uscita mancante'); i += 1; }
       } else { anomalies.push('Uscita senza entrata'); i += 1; }

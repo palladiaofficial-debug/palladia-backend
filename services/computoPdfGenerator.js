@@ -28,11 +28,6 @@ function fmtNum(n) {
   return Number(n).toLocaleString('it-IT', { maximumFractionDigits: 4 });
 }
 
-function fmtDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
 function salBarColor(pct) {
   if (pct >= 100) return '#10b981'; // emerald
   if (pct >= 60)  return '#3b82f6'; // blue

@@ -610,7 +610,7 @@ router.post('/notifications/check-expiries', async (req, res) => {
         byConsultant[link.consultant_id].push(link);
       }
 
-      for (const [consultantId, links] of Object.entries(byConsultant)) {
+      for (const [, links] of Object.entries(byConsultant)) {
         // Crea notifica in-app per il consulente
         for (const link of links) {
           // Salta se non ci sono nuove notifiche per questa company in questa run

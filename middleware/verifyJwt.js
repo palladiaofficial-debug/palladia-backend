@@ -60,7 +60,7 @@ async function verifySupabaseJwt(req, res, next) {
       console.error('[auth] membership check failed after retry:', memberErr.message);
       return res.status(503).json({ error: 'Service temporarily unavailable' });
     }
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => { setTimeout(r, 300); });
   }
 
   if (!membership) {

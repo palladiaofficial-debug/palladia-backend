@@ -128,7 +128,7 @@ async function runMorningBriefings() {
     await sendBriefingForSite(cfg);
     await markSent(cfg.company_id, cfg.site_id);
     // Pausa tra cantieri per non sovraccaricare l'API
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => { setTimeout(r, 2000); });
   }
 }
 

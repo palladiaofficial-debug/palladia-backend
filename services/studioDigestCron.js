@@ -64,7 +64,7 @@ async function processStudio(studio, now, in30, oneYearAgo) {
   const in30Str  = in30.toISOString().slice(0, 10);
 
   const [
-    { data: sites },
+    { data: _sites },
     { data: workers },
     { data: dvrs },
     { data: certExpired },
