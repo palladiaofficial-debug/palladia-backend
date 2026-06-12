@@ -14,6 +14,7 @@ const router    = require('express').Router();
 const Anthropic = require('@anthropic-ai/sdk');
 const multer    = require('multer');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { aiLimiter } = require('../../middleware/rateLimit');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -62,7 +63,7 @@ Regole:
 
 // ── POST /api/v1/ocr/expiry ───────────────────────────────────────────────────
 
-router.post('/ocr/expiry', verifySupabaseJwt, upload.single('file'), async (req, res) => {
+router.post('/ocr/expiry', verifySupabaseJwt, aiLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
   const docType = (req.query.doc_type || req.body?.doc_type || 'altro').toLowerCase();

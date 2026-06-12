@@ -2,7 +2,7 @@
 const crypto      = require('crypto');
 const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
-const { scanLimiter, identifyLimiter } = require('../../middleware/rateLimit');
+const { scanLimiter, identifyLimiter, publicScanLimiter } = require('../../middleware/rateLimit');
 const { notifyPunch, notifyAnomalousPunch } = require('../../services/telegramNotifications');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ router.get('/scan/identify-diag', async (req, res) => {
 });
 
 // ── GET /api/v1/scan/verify-qr — PUBBLICO ────────────────────────────────────
-router.get('/scan/verify-qr', async (req, res) => {
+router.get('/scan/verify-qr', publicScanLimiter, async (req, res) => {
   const { site, t, exp } = req.query;
   if (!site || !t || !exp) {
     return res.status(400).json({ valid: false, error: 'MISSING_PARAMS' });
@@ -179,7 +179,7 @@ router.get('/scan/verify-qr', async (req, res) => {
 });
 
 // ── GET /api/v1/scan/worksites/:worksiteId — PUBBLICO ─────────────────────────
-router.get('/scan/worksites/:worksiteId', async (req, res) => {
+router.get('/scan/worksites/:worksiteId', publicScanLimiter, async (req, res) => {
   const { worksiteId } = req.params;
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   if (!UUID_RE.test(worksiteId)) return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });

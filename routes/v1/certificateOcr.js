@@ -14,6 +14,7 @@ const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { extractCertificateSchema } = require('../../lib/schemas/certificateOcr');
+const { aiLimiter } = require('../../middleware/rateLimit');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -110,7 +111,7 @@ router.post('/workers/:workerId/certificates/upload', upload.single('file'), asy
 
 // ── POST /api/v1/workers/:workerId/certificates/extract ───────────────────────
 
-router.post('/workers/:workerId/certificates/extract', validate(extractCertificateSchema), async (req, res) => {
+router.post('/workers/:workerId/certificates/extract', aiLimiter, validate(extractCertificateSchema), async (req, res) => {
   const { workerId } = req.params;
   const { file_url, file_base64, mime_type } = req.body || {};
 
@@ -134,8 +135,12 @@ router.post('/workers/:workerId/certificates/extract', validate(extractCertifica
     const media = mime_type || 'image/jpeg';
     imageContent = { type: 'base64', media_type: media, data: file_base64 };
   } else {
-    // Scarica il file dall'URL per passarlo come base64
+    // Scarica il file dall'URL — solo domini Supabase Storage (whitelist SSRF)
     try {
+      const parsedUrl = new URL(file_url);
+      if (!parsedUrl.hostname.endsWith('.supabase.co')) {
+        return res.status(400).json({ error: 'INVALID_FILE_URL', message: 'Il file deve provenire da Supabase Storage.' });
+      }
       const resp = await fetch(file_url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const buf = await resp.arrayBuffer();

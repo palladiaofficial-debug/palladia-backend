@@ -33,7 +33,7 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
     .order('timestamp_server', { ascending: true })
     .limit(20000);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
   const rows = [
     'worker_id,full_name,fiscal_code,event_type,timestamp_server,distance_m,gps_accuracy_m,method',

@@ -653,7 +653,7 @@ router.post('/workers/import', verifySupabaseJwt, async (req, res) => {
 
     if (existing) {
       // Aggiorna
-      await supabase.from('workers').update({
+      const { error: updErr } = await supabase.from('workers').update({
         full_name,
         ...(birth_date             !== null && { birth_date }),
         ...(hire_date              !== null && { hire_date }),
@@ -662,11 +662,12 @@ router.post('/workers/import', verifySupabaseJwt, async (req, res) => {
         ...(safety_training_expiry !== null && { safety_training_expiry }),
         ...(health_fitness_expiry  !== null && { health_fitness_expiry }),
       }).eq('id', existing.id);
+      if (updErr) { errors.push({ row: i + 2, error: updErr.message }); continue; }
       updated++;
     } else {
       // Crea
       const { first_name, last_name } = parseFullName(full_name);
-      await supabase.from('workers').insert({
+      const { error: insErr } = await supabase.from('workers').insert({
         company_id: companyId,
         full_name,
         first_name,
@@ -681,6 +682,7 @@ router.post('/workers/import', verifySupabaseJwt, async (req, res) => {
         ...(safety_training_expiry && { safety_training_expiry }),
         ...(health_fitness_expiry  && { health_fitness_expiry }),
       });
+      if (insErr) { errors.push({ row: i + 2, error: insErr.message }); continue; }
       created++;
     }
   }

@@ -14,6 +14,10 @@ const tg       = require('./telegram');
 const supabase = require('../lib/supabase');
 const { sendPushToCompany } = require('./pushNotifications');
 
+function esc(s) {
+  return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
 // ── Cooldown NC: max 1 notifica per cantiere ogni 30 minuti ──
 // In-memory: va bene per server single-instance (Railway)
 const NC_COOLDOWN_MS = 30 * 60 * 1000; // 30 minuti
@@ -208,9 +212,9 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
 
   const urgIcon = urgency === 'critica' ? '🚨' : '⚠️';
   const text =
-    `${urgIcon} <b>Non Conformità — ${siteName}</b>\n\n` +
-    `${description}` +
-    (authorName ? `\nDa: ${authorName}` : '');
+    `${urgIcon} <b>Non Conformità — ${esc(siteName)}</b>\n\n` +
+    `${esc(description)}` +
+    (authorName ? `\nDa: ${esc(authorName)}` : '');
 
   // Notifica solo utenti assegnati a questo cantiere + coordinatori
   const [companyResult] = await Promise.all([
@@ -238,9 +242,9 @@ async function notifyNonConformita(companyId, siteId, siteName, description, aut
  */
 async function notifyIncidente(companyId, siteId, siteName, description, authorName, excludeChatId) {
   const text =
-    `🚨 <b>INCIDENTE — ${siteName}</b>\n\n` +
-    `${description}` +
-    (authorName ? `\nDa: ${authorName}` : '');
+    `🚨 <b>INCIDENTE — ${esc(siteName)}</b>\n\n` +
+    `${esc(description)}` +
+    (authorName ? `\nDa: ${esc(authorName)}` : '');
   const [result] = await Promise.all([
     notifySiteTeam(companyId, siteId, text, { excludeChatId }),
     sendPushToCompany(companyId, {
@@ -260,10 +264,10 @@ async function notifyIncidente(companyId, siteId, siteName, description, authorN
  */
 async function notifyMissingExits(companyId, siteName, workerNames) {
   if (!workerNames || !workerNames.length) return { sent: 0, failed: 0 };
-  const list  = workerNames.slice(0, 10).map(n => `• ${n}`).join('\n');
+  const list  = workerNames.slice(0, 10).map(n => `• ${esc(n)}`).join('\n');
   const extra = workerNames.length > 10 ? `\n…e altri ${workerNames.length - 10}` : '';
   const text =
-    `🔔 <b>Uscite mancanti — ${siteName}</b>\n\n` +
+    `🔔 <b>Uscite mancanti — ${esc(siteName)}</b>\n\n` +
     `I seguenti lavoratori non hanno registrato l'uscita:\n${list}${extra}\n\n` +
     `Verifica su <b>palladia.net</b>`;
   return notifyCompany(companyId, text);
@@ -283,12 +287,12 @@ async function notifyMissingExitsWithAction(companyId, siteId, siteName, workerN
   if (!workerNames?.length) return { sent: 0, failed: 0 };
   if (!process.env.TELEGRAM_BOT_TOKEN) return { sent: 0, failed: 0, skipped: true };
 
-  const list  = workerNames.slice(0, 10).map(n => `• ${n}`).join('\n');
+  const list  = workerNames.slice(0, 10).map(n => `• ${esc(n)}`).join('\n');
   const extra = workerNames.length > 10 ? `\n…e altri ${workerNames.length - 10}` : '';
   const count = workerNames.length;
 
   const text =
-    `🔔 <b>Uscite mancanti — ${siteName}</b>\n\n` +
+    `🔔 <b>Uscite mancanti — ${esc(siteName)}</b>\n\n` +
     `${count} lavorator${count > 1 ? 'i' : 'e'} senza uscita registrata:\n${list}${extra}\n\n` +
     `Vuoi che Ladia registri le uscite alle 18:00?`;
 
@@ -380,7 +384,7 @@ async function notifyPunch(companyId, siteId, siteName, workerName, eventType, t
   const isEntry = eventType === 'ENTRY';
   const icon    = isEntry ? '👷' : '🚪';
   const label   = isEntry ? 'entrata' : 'uscita';
-  const text    = `${icon} <b>${workerName}</b> — ${label}\n📍 ${siteName} · ${timeStr}`;
+  const text    = `${icon} <b>${esc(workerName)}</b> — ${label}\n📍 ${esc(siteName)} · ${timeStr}`;
 
   const sends = [];
   for (const u of users) {
@@ -570,12 +574,6 @@ async function notifyAnomalousPunch(companyId, siteId, siteName, workerName, eve
     return;
   }
 
-  // Solo owner/admin — anomalia è informazione sensibile
-  const adminUsers = users.filter(u => {
-    const supabase = require('../lib/supabase');
-    return true; // company users sono già filtrati, non abbiamo il role qui
-  });
-
   let timeStr = '';
   try {
     timeStr = new Date(timestampServer).toLocaleTimeString('it-IT', {
@@ -593,8 +591,8 @@ async function notifyAnomalousPunch(companyId, siteId, siteName, workerName, eve
 
   const text =
     `⚠️ <b>Timbratura anomala</b>\n` +
-    `👷 <b>${workerName}</b> — ${label} su <b>${siteName}</b>\n` +
-    `🕐 ${timeStr}  ·  ${reasonText}\n` +
+    `👷 <b>${esc(workerName)}</b> — ${label} su <b>${esc(siteName)}</b>\n` +
+    `🕐 ${timeStr}  ·  ${esc(reasonText)}\n` +
     `<i>Controlla se la timbratura è corretta.</i>`;
 
   const sends = users.map(u => {

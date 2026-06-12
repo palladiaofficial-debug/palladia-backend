@@ -304,7 +304,8 @@ router.patch('/coordinator/pro/:token/nonconformities/:id/close', coordinatorLim
   const { error } = await supabase
     .from('site_nonconformities')
     .update(updates)
-    .eq('id', req.params.id);
+    .eq('id', req.params.id)
+    .eq('site_id', nc.site_id);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.json({ ok: true, status: updates.status });
@@ -369,7 +370,8 @@ router.patch('/nonconformities/:id', verifySupabaseJwt, validate(patchNonconform
   const { error } = await supabase
     .from('site_nonconformities')
     .update(updates)
-    .eq('id', req.params.id);
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 

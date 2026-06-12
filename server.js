@@ -113,17 +113,8 @@ app.get('/api/health', async (req, res) => {
 
   res.status(dbErr ? 503 : 200).json({
     status,
-    uptime_s:   uptime,
-    memory: {
-      rss_mb:       Math.round(mem.rss        / 1024 / 1024),
-      heap_used_mb: Math.round(mem.heapUsed   / 1024 / 1024),
-      heap_total_mb:Math.round(mem.heapTotal  / 1024 / 1024),
-    },
-    pdf: {
-      running: pdfRunning,
-      queued:  pdfQueued,
-    },
-    db:        dbErr ? `error: ${dbErr.message}` : 'ok',
+    uptime_s:  uptime,
+    db:        dbErr ? 'error' : 'ok',
     timestamp: new Date().toISOString(),
     version:   process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
   });
@@ -633,18 +624,9 @@ async function checkPosOwnership(req, res, posId) {
     .from('pos_documents')
     .select('*')
     .eq('id', posId)
+    .eq('company_id', companyId)
     .single();
   if (error || !pos) { res.status(404).json({ error: 'POS not found' }); return null; }
-
-  if (pos.site_id) {
-    const { data: site } = await supabase
-      .from('sites')
-      .select('company_id')
-      .eq('id', pos.site_id)
-      .eq('company_id', companyId)
-      .maybeSingle();
-    if (!site) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
-  }
 
   return pos;
 }
@@ -1965,7 +1947,7 @@ function buildDiagHtml(step) {
 </html>`;
 }
 
-app.get('/api/pdf-diag', async (req, res) => {
+app.get('/api/pdf-diag', verifyJwtOnly, async (req, res) => {
   const step = parseInt(req.query.step) || 1;
   console.log(`[pdf-diag] step=${step}`);
 
@@ -2002,7 +1984,7 @@ app.get('/api/pdf-diag', async (req, res) => {
     }
   } catch (err) {
     console.error('[pdf-diag] ERROR:', err.message);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'PDF_RENDER_FAILED' });
   }
 });
 
@@ -2013,7 +1995,7 @@ app.get('/api/pdf-diag', async (req, res) => {
 //   - tabella con stringhe lunghissime
 //   - contenuto sufficiente per testare salti pagina e numerazione 2-pass
 // Usa il template POS reale — nessun endpoint separato di layout.
-app.get('/api/pdf-smoke', async (req, res) => {
+app.get('/api/pdf-smoke', verifyJwtOnly, async (req, res) => {
   try {
     // Worker con nomi lunghi → testano overflow laterale e tabelle spezzate
     const workers = Array.from({ length: 30 }, (_, i) => ({

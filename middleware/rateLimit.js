@@ -123,4 +123,31 @@ const chatLimiter = rateLimit({
   ...makeStore(),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter };
+// ── Rate limiter AI: 10 chiamate/minuto per company ──────────────────────────
+// Applicato a tutti gli endpoint che chiamano Anthropic (OCR, parse-offerta, ecc.)
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    if (req.companyId) return `ai:company:${req.companyId}`;
+    const ip = req.ip || '';
+    return `ai:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
+  },
+  message: { error: 'AI_RATE_LIMIT' },
+  ...makeStore(),
+});
+
+// ── Rate limiter per scan/verify-qr e scan/worksites (endpoint pubblici) ─────
+const publicScanLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'RATE_LIMIT_EXCEEDED' },
+  ...makeStore(),
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter };

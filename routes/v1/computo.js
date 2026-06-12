@@ -314,7 +314,10 @@ router.post('/sites/:siteId/computo', validate(createComputoSchema), async (req,
     const BATCH = 100;
     for (let i = 0; i < vociRows.length; i += BATCH) {
       const { error } = await supabase.from('site_computo_voci').insert(vociRows.slice(i, i + BATCH));
-      if (error) console.error('[computo/voci-batch]', error.message);
+      if (error) {
+        console.error('[computo/voci-batch]', error.message);
+        return res.status(500).json({ error: 'INTERNAL', detail: 'voci_insert_failed' });
+      }
     }
   }
 

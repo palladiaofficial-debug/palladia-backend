@@ -68,7 +68,7 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
   try { priceId = getPriceId(plan); }
   catch (e) {
     console.error('[billing] getPriceId error:', e.message);
-    return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED', message: e.message });
+    return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED' });
   }
 
   // Recupera email owner per pre-compilare checkout Stripe
@@ -95,7 +95,7 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
 
   let stripe;
   try { stripe = getStripe(); }
-  catch (e) { return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED', message: e.message }); }
+  catch (e) { return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED' }); }
 
   const sessionParams = {
     mode:                'subscription',
@@ -121,7 +121,7 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
     res.json({ url: session.url });
   } catch (e) {
     console.error('[billing] stripe.checkout.sessions.create error:', e.message);
-    res.status(500).json({ error: 'STRIPE_ERROR', message: e.message });
+    res.status(500).json({ error: 'STRIPE_ERROR' });
   }
 });
 
@@ -145,7 +145,7 @@ router.post('/billing/portal', verifySupabaseJwt, async (req, res) => {
 
   let stripe;
   try { stripe = getStripe(); }
-  catch (e) { return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED', message: e.message }); }
+  catch (e) { return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED' }); }
 
   try {
     const session = await stripe.billingPortal.sessions.create({
@@ -155,7 +155,7 @@ router.post('/billing/portal', verifySupabaseJwt, async (req, res) => {
     res.json({ url: session.url });
   } catch (e) {
     console.error('[billing] portal session error:', e.message);
-    res.status(500).json({ error: 'STRIPE_ERROR', message: e.message });
+    res.status(500).json({ error: 'STRIPE_ERROR' });
   }
 });
 

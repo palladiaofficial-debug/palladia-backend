@@ -107,18 +107,10 @@ router.get('/pos/:posId/acknowledgments', verifySupabaseJwt, async (req, res) =>
     .from('pos_documents')
     .select('id, site_id')
     .eq('id', posId)
-    .maybeSingle();
-
-  if (docErr || !doc) return res.status(404).json({ error: 'POS non trovato' });
-
-  const { data: site } = await supabase
-    .from('sites')
-    .select('id')
-    .eq('id', doc.site_id)
     .eq('company_id', companyId)
     .maybeSingle();
 
-  if (!site) return res.status(403).json({ error: 'Accesso negato' });
+  if (docErr || !doc) return res.status(404).json({ error: 'POS non trovato' });
 
   const { data: assigned } = await supabase
     .from('worksite_workers')

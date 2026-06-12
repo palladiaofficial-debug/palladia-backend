@@ -51,6 +51,9 @@ router.get('/workers/:workerId/sessions', verifySupabaseJwt, async (req, res) =>
 // DELETE /api/v1/sessions/:sessionId — revoca sessione (PRIVATO)
 // Usa case: operaio perde il telefono → admin revoca subito la sessione.
 router.delete('/sessions/:sessionId', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin', 'tech'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
   const { sessionId } = req.params;
 
   // Verifica ownership (company_id nel record — no cross-company)

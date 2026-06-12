@@ -6,6 +6,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createCompanyPrezzoSchema, patchCompanyPrezzoSchema } = require('../../lib/schemas/prezzario');
+const { aiLimiter } = require('../../middleware/rateLimit');
 
 let _ai = null;
 function getAI() {
@@ -251,6 +252,8 @@ router.post('/company-prezzi/bulk', verifySupabaseJwt, async (req, res) => {
   const { items } = req.body;
   if (!Array.isArray(items) || items.length === 0)
     return res.status(400).json({ error: 'MISSING_ITEMS' });
+  if (items.length > 500)
+    return res.status(400).json({ error: 'TOO_MANY_ITEMS', max: 500 });
 
   const today = new Date().toISOString().split('T')[0];
   const rows = items
@@ -278,6 +281,7 @@ router.post('/company-prezzi/bulk', verifySupabaseJwt, async (req, res) => {
 // le righe di prezzo → ritorna array per review utente (NON salva nulla).
 router.post('/company-prezzi/parse-offerta',
   verifySupabaseJwt,
+  aiLimiter,
   (req, res, next) => upload.single('file')(req, res, err => {
     if (err instanceof multer.MulterError)
       return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
