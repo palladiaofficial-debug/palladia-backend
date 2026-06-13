@@ -499,8 +499,8 @@ router.get('/formazione/coverage', verifySupabaseJwt, async (req, res) => {
 // Autenticazione via header X-Cron-Secret.
 
 router.post('/notifications/check-expiries', async (req, res) => {
-  const secret = req.headers['x-cron-secret'];
-  if (secret !== process.env.CRON_SECRET) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret || req.headers['x-cron-secret'] !== cronSecret) {
     return res.status(401).json({ error: 'UNAUTHORIZED' });
   }
 

@@ -644,6 +644,22 @@ async function verifySiteAccess(req, res, siteId) {
   return companyId;
 }
 
+// Verifica che la company abbia un abbonamento attivo (trial non scaduto o pagato).
+// Ritorna true se OK, false e invia 402 se scaduto/cancellato.
+async function checkBillingActive(companyId, res) {
+  const { data: company } = await supabase
+    .from('companies').select('subscription_status, trial_ends_at')
+    .eq('id', companyId).maybeSingle();
+  if (!company) return true; // DB error → non bloccare
+  const now = Date.now();
+  const trialExpired = company.subscription_status === 'trial' &&
+    company.trial_ends_at && new Date(company.trial_ends_at).getTime() < now;
+  if (company.subscription_status === 'active' ||
+      (company.subscription_status === 'trial' && !trialExpired)) return true;
+  res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' });
+  return false;
+}
+
 // --- Helper: build the POS mega-prompt ---
 function buildPosPrompt(posData, revision) {
   return `Sei il miglior Coordinatore per la Sicurezza in Italia con 30 anni di esperienza. Genera un Piano Operativo di Sicurezza PROFESSIONALE e COMPLETO conforme al D.lgs 81/2008.
@@ -886,7 +902,9 @@ app.post('/api/sites/:id/generate-pos', verifyJwtOnly, aiLimiter, async (req, re
     const { id: siteId } = req.params;
     const posData = req.body;
 
-    if (!await verifySiteAccess(req, res, siteId)) return;
+    const companyId = await verifySiteAccess(req, res, siteId);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
 
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
@@ -930,7 +948,9 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
     const { id: siteId } = req.params;
     const posData = req.body;
 
-    if (!await verifySiteAccess(req, res, siteId)) return;
+    const companyId = await verifySiteAccess(req, res, siteId);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
 
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
@@ -1009,7 +1029,9 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
     const posData = req.body;
     const siteId = posData.siteId || null;
 
-    if (!await verifySiteAccess(req, res, siteId)) return;
+    const companyId = await verifySiteAccess(req, res, siteId);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
 
     let revision = 1;
     if (siteId) {
@@ -1189,7 +1211,9 @@ app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res
     const posData = req.body;
     const siteId = posData.siteId || null;
 
-    if (!await verifySiteAccess(req, res, siteId)) return;
+    const companyId = await verifySiteAccess(req, res, siteId);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
 
     let revision = 1;
     if (siteId) {
@@ -1273,7 +1297,9 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
     const posData = req.body;
     const siteId = posData.siteId || null;
 
-    if (!await verifySiteAccess(req, res, siteId)) return;
+    const companyId = await verifySiteAccess(req, res, siteId);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
 
     let revision = 1;
     if (siteId) {
@@ -1486,6 +1512,7 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
       }
     }
     if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
+    if (!await checkBillingActive(companyId, res)) return;
 
     const revision = await getNextDvrRevision(siteId, companyId);
 
@@ -1713,6 +1740,7 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
       }
     }
     if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
+    if (!await checkBillingActive(companyId, res)) return;
 
     const revision = await getNextPimusRevision(siteId, companyId);
 
