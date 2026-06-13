@@ -594,7 +594,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   let distanceM = null;
   if (site.latitude != null && site.longitude != null) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
-    if (distanceM > site.geofence_radius_m) {
+    if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m) {
       return res.status(403).json({
         error:         'OUTSIDE_GEOFENCE',
         distance_m:    distanceM,
