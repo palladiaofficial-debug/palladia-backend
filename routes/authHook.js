@@ -31,8 +31,8 @@ const HOOK_SECRET  = process.env.SUPABASE_HOOK_SECRET || '';
 // ── Standard Webhooks verification ───────────────────────────────────────────
 function verifyStandardWebhook(rawBody, headers, secret) {
   if (!secret) {
-    console.warn('[auth-hook] SUPABASE_HOOK_SECRET non configurato — verifica saltata');
-    return true;
+    console.error('[auth-hook] SUPABASE_HOOK_SECRET non configurato — richiesta rifiutata');
+    return false;
   }
 
   const msgId        = headers['webhook-id'];

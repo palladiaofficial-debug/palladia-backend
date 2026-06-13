@@ -626,6 +626,24 @@ async function checkPosOwnership(req, res, posId) {
 // Rate limiter stretto per le chiamate AI (Anthropic è costoso)
 const aiLimiter = rateLimit({ windowMs: 60000, max: 10, message: { error: 'AI_RATE_LIMIT' } });
 
+// Verifica che l'utente autenticato (verifyJwtOnly) abbia accesso a un siteId tramite company.
+// Richiede X-Company-Id header. Se siteId è fornito, verifica anche che il cantiere
+// appartenga a quella company. Ritorna companyId oppure null (e ha già inviato 403).
+async function verifySiteAccess(req, res, siteId) {
+  const companyId = req.headers['x-company-id'];
+  if (!companyId) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+  const { data: membership } = await supabase
+    .from('company_users').select('company_id')
+    .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+  if (!membership) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+  if (siteId) {
+    const { data: site } = await supabase
+      .from('sites').select('id').eq('id', siteId).eq('company_id', companyId).maybeSingle();
+    if (!site) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
+  }
+  return companyId;
+}
+
 // --- Helper: build the POS mega-prompt ---
 function buildPosPrompt(posData, revision) {
   return `Sei il miglior Coordinatore per la Sicurezza in Italia con 30 anni di esperienza. Genera un Piano Operativo di Sicurezza PROFESSIONALE e COMPLETO conforme al D.lgs 81/2008.
@@ -854,9 +872,6 @@ app.get('/', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ ok: true, service: 'palladia', ts: new Date().toISOString() });
 });
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, service: 'palladia', ts: new Date().toISOString() });
-});
 
 // --- Sites CRUD legacy — DEPRECATI: usa /api/v1/sites ---
 // Restituiscono 410 Gone perché non filtrano per company_id (data leak).
@@ -870,6 +885,8 @@ app.post('/api/sites/:id/generate-pos', verifyJwtOnly, aiLimiter, async (req, re
   try {
     const { id: siteId } = req.params;
     const posData = req.body;
+
+    if (!await verifySiteAccess(req, res, siteId)) return;
 
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
@@ -912,6 +929,8 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
   try {
     const { id: siteId } = req.params;
     const posData = req.body;
+
+    if (!await verifySiteAccess(req, res, siteId)) return;
 
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
@@ -989,6 +1008,8 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
   try {
     const posData = req.body;
     const siteId = posData.siteId || null;
+
+    if (!await verifySiteAccess(req, res, siteId)) return;
 
     let revision = 1;
     if (siteId) {
@@ -1168,6 +1189,8 @@ app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res
     const posData = req.body;
     const siteId = posData.siteId || null;
 
+    if (!await verifySiteAccess(req, res, siteId)) return;
+
     let revision = 1;
     if (siteId) {
       revision = await getNextRevision(siteId);
@@ -1249,6 +1272,8 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
   try {
     const posData = req.body;
     const siteId = posData.siteId || null;
+
+    if (!await verifySiteAccess(req, res, siteId)) return;
 
     let revision = 1;
     if (siteId) {
@@ -1445,6 +1470,12 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
     if (siteId) {
       const { data: siteRow } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
       companyId = siteRow?.company_id || null;
+      // Verifica che l'utente sia membro della company del cantiere (no cross-company IDOR)
+      if (companyId) {
+        const { data: m } = await supabase.from('company_users').select('company_id')
+          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+        if (!m) companyId = null;
+      }
     }
     if (!companyId) {
       companyId = req.headers['x-company-id'] || null;
@@ -1666,6 +1697,12 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
     if (siteId) {
       const { data: sr } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
       companyId = sr?.company_id || null;
+      // Verifica che l'utente sia membro della company del cantiere (no cross-company IDOR)
+      if (companyId) {
+        const { data: m } = await supabase.from('company_users').select('company_id')
+          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
+        if (!m) companyId = null;
+      }
     }
     if (!companyId) {
       companyId = req.headers['x-company-id'] || null;

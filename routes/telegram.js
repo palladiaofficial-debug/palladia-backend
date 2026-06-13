@@ -45,7 +45,11 @@ router.post('/webhook', async (req, res) => {
   // 1. Verifica secret token Telegram
   const secret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const header = req.headers['x-telegram-bot-api-secret-token'];
-  if (secret && header !== secret) {
+  if (!secret) {
+    console.warn('[telegram-webhook] TELEGRAM_WEBHOOK_SECRET non configurato — webhook rifiutato');
+    return res.sendStatus(403);
+  }
+  if (header !== secret) {
     console.warn('[telegram-webhook] secret token non valido');
     return res.sendStatus(403);
   }

@@ -54,9 +54,12 @@ const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'com
   ? 'compat'
   : 'strict';
 
-// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (solo dev) ──────────────────
+// ── GET /api/v1/scan/identify-diag — DIAGNOSTICA (richiede X-Diag-Secret) ────
 router.get('/scan/identify-diag', async (req, res) => {
-  if (process.env.NODE_ENV === 'production') return res.status(404).json({ error: 'NOT_FOUND' });
+  const diagSecret = process.env.DIAG_SECRET;
+  if (!diagSecret || req.headers['x-diag-secret'] !== diagSecret) {
+    return res.status(404).json({ error: 'NOT_FOUND' });
+  }
   const { worksite_id } = req.query;
   const steps = {};
   const cleanup = [];

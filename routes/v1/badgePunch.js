@@ -17,19 +17,13 @@
 
 const crypto    = require('crypto');
 const router    = require('express').Router();
-const rateLimit = require('express-rate-limit');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
 const { notifyPunch }        = require('../../services/telegramNotifications');
+const { publicScanLimiter }  = require('../../middleware/rateLimit');
 
-// ── Rate limit specifico badge ─────────────────────────────────────────────────
-const badgePunchLimiter = rateLimit({
-  windowMs: 60 * 1000,
-  max:      30,
-  standardHeaders: true,
-  legacyHeaders:   false,
-  message: { error: 'RATE_LIMIT_EXCEEDED' },
-});
+// Riusa il publicScanLimiter centralizzato (Redis-aware quando REDIS_URL è configurata)
+const badgePunchLimiter = publicScanLimiter;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
