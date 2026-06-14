@@ -5,6 +5,8 @@ const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
+const { complianceStatus, overallStatus } = require('../../lib/compliance');
+const { getCompanyBrain } = require('../../lib/companyBrain');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -387,6 +389,62 @@ const TOOLS = [
       },
       required: ['query']
     }
+  },
+
+  // ── Tool compliance & organico ─────────────────────────────────────────────
+  {
+    name: 'get_compliance_overview',
+    description: 'Stato conformità documenti (formazione + idoneità medica) di tutti i lavoratori. Usa per: "chi ha documenti scaduti o in scadenza", "stato formazione organico", "lavoratori non conformi", "devo rinnovare qualcosa", "chi non è in regola".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        filter: {
+          type: 'string',
+          enum: ['all', 'issues', 'expiring_90', 'non_compliant'],
+          description: 'all=tutti | issues=chi ha problemi (default) | expiring_90=scade entro 90gg | non_compliant=già scaduti'
+        }
+      },
+      required: []
+    }
+  },
+
+  {
+    name: 'get_worker_detail',
+    description: 'Profilo completo di un lavoratore specifico: compliance documenti, date di scadenza, elenco documenti caricati, cantieri assegnati. Usa quando si chiede di UN lavoratore preciso.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_name: {
+          type: 'string',
+          description: 'Nome (anche parziale) del lavoratore da cercare'
+        },
+        worker_id: {
+          type: 'string',
+          description: 'UUID del lavoratore (se già noto)'
+        }
+      },
+      required: []
+    }
+  },
+
+  {
+    name: 'get_upcoming_deadlines',
+    description: 'Tutte le scadenze documentali in arrivo (formazione, idoneità medica, assicurazioni mezzi) entro un orizzonte configurabile. Usa per: "cosa scade questo mese", "scadenze prossimi 60 giorni", "pianifica i rinnovi", "calendario scadenze".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days: {
+          type: 'integer',
+          description: 'Giorni avanti da considerare (default 90, max 365)'
+        },
+        type: {
+          type: 'string',
+          enum: ['all', 'formazione', 'idoneita', 'mezzi'],
+          description: 'Filtra per tipo di scadenza. Default: all'
+        }
+      },
+      required: []
+    }
   }
 ];
 
@@ -744,6 +802,183 @@ async function executeTool(toolName, toolInput, companyId) {
         return { found: true, prezzi: data, n_risultati: data.length };
       }
 
+      // ── get_compliance_overview ────────────────────────────────────────────
+      case 'get_compliance_overview': {
+        const { filter = 'issues' } = toolInput;
+        const { data: workers, error } = await supabase
+          .from('workers')
+          .select('id, full_name, role, qualification, is_active, safety_training_expiry, health_fitness_expiry')
+          .eq('company_id', companyId)
+          .eq('is_active', true)
+          .limit(500);
+        if (error) return { error: error.message };
+
+        const today2 = new Date(); today2.setHours(0, 0, 0, 0);
+        const enriched = (workers || []).map(w => {
+          const ss = complianceStatus(w.safety_training_expiry);
+          const hs = complianceStatus(w.health_fitness_expiry);
+          const ov = overallStatus(w);
+          const sd = w.safety_training_expiry ? Math.ceil((new Date(w.safety_training_expiry) - today2) / 86400000) : null;
+          const hd = w.health_fitness_expiry  ? Math.ceil((new Date(w.health_fitness_expiry)  - today2) / 86400000) : null;
+          return { ...w, overall: ov, safetyStatus: ss, healthStatus: hs, safetyDays: sd, healthDays: hd };
+        });
+
+        let filtered = enriched;
+        if (filter === 'issues')        filtered = enriched.filter(w => w.overall !== 'compliant' && w.overall !== 'inactive');
+        else if (filter === 'expiring_90') filtered = enriched.filter(w => (w.safetyDays !== null && w.safetyDays <= 90) || (w.healthDays !== null && w.healthDays <= 90));
+        else if (filter === 'non_compliant') filtered = enriched.filter(w => w.overall === 'non_compliant');
+
+        return {
+          totale:        enriched.length,
+          conformi:      enriched.filter(w => w.overall === 'compliant').length,
+          in_scadenza:   enriched.filter(w => w.overall === 'expiring').length,
+          non_conformi:  enriched.filter(w => w.overall === 'non_compliant').length,
+          incompleti:    enriched.filter(w => w.overall === 'incomplete').length,
+          lavoratori: filtered.map(w => ({
+            nome:       w.full_name,
+            ruolo:      w.role,
+            stato:      w.overall,
+            formazione: { stato: w.safetyStatus, scadenza: w.safety_training_expiry, giorni: w.safetyDays },
+            idoneita:   { stato: w.healthStatus,  scadenza: w.health_fitness_expiry,  giorni: w.healthDays },
+          })),
+        };
+      }
+
+      // ── get_worker_detail ──────────────────────────────────────────────────
+      case 'get_worker_detail': {
+        const { worker_name, worker_id } = toolInput;
+        if (!worker_name && !worker_id) return { error: 'Specificare worker_name o worker_id' };
+
+        let q = supabase
+          .from('workers')
+          .select('id, full_name, role, qualification, is_active, safety_training_expiry, health_fitness_expiry, hire_date, fiscal_code, birth_date, employer_name')
+          .eq('company_id', companyId);
+
+        if (worker_id) {
+          q = q.eq('id', worker_id).limit(1);
+        } else {
+          q = q.ilike('full_name', `%${worker_name}%`).limit(3);
+        }
+
+        const { data: found, error: werr } = await q;
+        if (werr) return { error: werr.message };
+        if (!found || found.length === 0) return { error: `Nessun lavoratore trovato${worker_name ? ` per "${worker_name}"` : ''}` };
+
+        const results = await Promise.all(found.map(async w => {
+          const today3 = new Date(); today3.setHours(0,0,0,0);
+          const ss = complianceStatus(w.safety_training_expiry);
+          const hs = complianceStatus(w.health_fitness_expiry);
+
+          const [docsRes, assignRes] = await Promise.all([
+            supabase.from('worker_documents')
+              .select('doc_type, name, issued_date, expiry_date, notes')
+              .eq('worker_id', w.id)
+              .order('expiry_date', { ascending: false })
+              .limit(30),
+            supabase.from('worksite_workers')
+              .select('site_id, status, start_date')
+              .eq('worker_id', w.id)
+              .eq('company_id', companyId)
+              .eq('status', 'active')
+              .limit(10),
+          ]);
+
+          const siteIds = (assignRes.data || []).map(a => a.site_id);
+          let siteNames = {};
+          if (siteIds.length > 0) {
+            const { data: sd } = await supabase.from('sites').select('id, name').in('id', siteIds);
+            (sd || []).forEach(s => { siteNames[s.id] = s.name; });
+          }
+
+          return {
+            id:           w.id,
+            nome:         w.full_name,
+            ruolo:        w.role,
+            qualifica:    w.qualification,
+            attivo:       w.is_active,
+            codice_fiscale: w.fiscal_code,
+            datore:       w.employer_name,
+            compliance: {
+              stato_globale: overallStatus(w),
+              formazione: {
+                stato:    ss,
+                scadenza: w.safety_training_expiry,
+                giorni_rimasti: w.safety_training_expiry ? Math.ceil((new Date(w.safety_training_expiry) - today3) / 86400000) : null,
+              },
+              idoneita_medica: {
+                stato:    hs,
+                scadenza: w.health_fitness_expiry,
+                giorni_rimasti: w.health_fitness_expiry ? Math.ceil((new Date(w.health_fitness_expiry) - today3) / 86400000) : null,
+              },
+            },
+            documenti: (docsRes.data || []).map(d => ({
+              tipo:      d.doc_type,
+              nome:      d.name,
+              emesso:    d.issued_date,
+              scadenza:  d.expiry_date,
+              note:      d.notes,
+            })),
+            cantieri_attivi: (assignRes.data || []).map(a => ({
+              nome: siteNames[a.site_id] || a.site_id,
+              dal:  a.start_date,
+            })),
+          };
+        }));
+
+        return results.length === 1 ? results[0] : { lavoratori: results };
+      }
+
+      // ── get_upcoming_deadlines ─────────────────────────────────────────────
+      case 'get_upcoming_deadlines': {
+        const { days = 90, type = 'all' } = toolInput;
+        const horizon = Math.min(parseInt(days) || 90, 365);
+        const today4 = new Date(); today4.setHours(0,0,0,0);
+        const deadlines = [];
+
+        if (type === 'all' || type === 'formazione' || type === 'idoneita') {
+          const { data: wkrs } = await supabase
+            .from('workers')
+            .select('full_name, role, safety_training_expiry, health_fitness_expiry')
+            .eq('company_id', companyId)
+            .eq('is_active', true)
+            .limit(500);
+
+          (wkrs || []).forEach(w => {
+            if ((type === 'all' || type === 'formazione') && w.safety_training_expiry) {
+              const d = Math.ceil((new Date(w.safety_training_expiry) - today4) / 86400000);
+              if (d <= horizon) deadlines.push({ tipo: 'Formazione sicurezza', soggetto: w.full_name, ruolo: w.role, scadenza: w.safety_training_expiry, giorni_rimasti: d, urgenza: d < 0 ? 'SCADUTA' : d <= 30 ? 'CRITICA' : 'ATTENZIONE' });
+            }
+            if ((type === 'all' || type === 'idoneita') && w.health_fitness_expiry) {
+              const d = Math.ceil((new Date(w.health_fitness_expiry) - today4) / 86400000);
+              if (d <= horizon) deadlines.push({ tipo: 'Idoneità medica', soggetto: w.full_name, ruolo: w.role, scadenza: w.health_fitness_expiry, giorni_rimasti: d, urgenza: d < 0 ? 'SCADUTA' : d <= 30 ? 'CRITICA' : 'ATTENZIONE' });
+            }
+          });
+        }
+
+        if (type === 'all' || type === 'mezzi') {
+          const { data: equip } = await supabase
+            .from('equipment')
+            .select('nome, tipo, targa, data_scadenza_assicurazione')
+            .eq('company_id', companyId)
+            .limit(200);
+          (equip || []).forEach(eq => {
+            if (!eq.data_scadenza_assicurazione) return;
+            const d = Math.ceil((new Date(eq.data_scadenza_assicurazione) - today4) / 86400000);
+            if (d <= horizon) deadlines.push({ tipo: 'Assicurazione mezzo', soggetto: eq.nome || eq.tipo, targa: eq.targa, scadenza: eq.data_scadenza_assicurazione, giorni_rimasti: d, urgenza: d < 0 ? 'SCADUTA' : d <= 30 ? 'CRITICA' : 'ATTENZIONE' });
+          });
+        }
+
+        deadlines.sort((a, b) => a.giorni_rimasti - b.giorni_rimasti);
+        return {
+          orizzonte_giorni: horizon,
+          totale:    deadlines.length,
+          scadute:   deadlines.filter(d => d.giorni_rimasti < 0).length,
+          critiche:  deadlines.filter(d => d.giorni_rimasti >= 0 && d.giorni_rimasti <= 30).length,
+          attenzione: deadlines.filter(d => d.giorni_rimasti > 30).length,
+          scadenze:  deadlines,
+        };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -753,11 +988,12 @@ async function executeTool(toolName, toolInput, companyId) {
 }
 
 // ── Agentic loop con company_id (chat principale) ────────────────────────────
-async function runChatLoop(client, messages, companyId, model) {
+// systemPrompt: system prompt arricchito con company brain (o SYSTEM_PROMPT base)
+async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT) {
   let response = await client.messages.create({
     model,
     max_tokens: model === MODEL_SONNET ? 2048 : 1024,
-    system:     SYSTEM_PROMPT,
+    system:     systemPrompt,
     tools:      TOOLS,
     messages,
   });
@@ -785,7 +1021,7 @@ async function runChatLoop(client, messages, companyId, model) {
     response = await client.messages.create({
       model,
       max_tokens: model === MODEL_SONNET ? 2048 : 1024,
-      system:     SYSTEM_PROMPT,
+      system:     systemPrompt,
       tools:      TOOLS,
       messages:   [...messages, ...extra],
     });
@@ -1287,7 +1523,15 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
     }
 
     const messages = [...dbHistory, { role: 'user', content: message.trim() }];
-    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message));
+
+    // Arricchisci il system prompt con lo snapshot aziendale (company brain)
+    let systemPrompt = SYSTEM_PROMPT;
+    try {
+      const brain = await getCompanyBrain(supabase, req.companyId);
+      if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
+    } catch { /* non critico — Ladia funziona anche senza brain */ }
+
+    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt);
 
     // Salva asincrono — non blocca la risposta
     saveMessages(convId, message.trim(), reply).catch(e =>
@@ -1442,6 +1686,13 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
+  // Company brain — fetch prima dello stream loop
+  let systemPrompt = SYSTEM_PROMPT;
+  try {
+    const brain = await getCompanyBrain(supabase, req.companyId);
+    if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
+  } catch { /* non critico */ }
+
   try {
     const client = getClient();
     const model  = classifyQuery(message);
@@ -1455,7 +1706,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       const stream = client.messages.stream({
         model,
         max_tokens: model === MODEL_SONNET ? 2048 : 1024,
-        system:     SYSTEM_PROMPT,
+        system:     systemPrompt,
         tools:      TOOLS,
         messages,
       });
