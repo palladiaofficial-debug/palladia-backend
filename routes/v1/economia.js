@@ -261,7 +261,7 @@ async function calcPnl(siteId, companyId, site) {
       .eq('site_id', siteId).eq('company_id', companyId)
       .order('categoria').order('data_documento', { ascending: false }),
     supabase.from('workers')
-      .select('id, full_name, tariffa_oraria')
+      .select('id, full_name, tariffa_oraria, qualification, role')
       .eq('company_id', companyId),
   ]);
 
@@ -324,6 +324,8 @@ async function calcPnl(siteId, companyId, site) {
       ore_totali:     Math.round(s.hours * 100) / 100,
       tariffa_oraria: t,
       costo_totale:   costo,
+      qualification:  w.qualification || null,
+      role:           w.role || null,
     });
   }
   mo_breakdown.sort((a, b) => b.ore_totali - a.ore_totali);
@@ -422,7 +424,30 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
   const pnl = await calcPnl(siteId, companyId, site);
   const { costi_diretti: { rows, ...costiSummary }, ...rest } = pnl;
-  res.json({ ...rest, costi_diretti: costiSummary });
+
+  // Se nessun contratto impostato, cerca importoLavori nell'ultimo POS del cantiere
+  let pos_suggestion = null;
+  if (pnl.source === 'none') {
+    try {
+      const { data: posDoc } = await supabase
+        .from('pos_documents')
+        .select('pos_data')
+        .eq('site_id', siteId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (posDoc?.pos_data?.importoLavori) {
+        const raw     = String(posDoc.pos_data.importoLavori).replace(/[^\d,.]/g, '');
+        const cleaned = raw.replace(/\./g, '').replace(',', '.');
+        const parsed  = parseFloat(cleaned);
+        if (!isNaN(parsed) && parsed > 0) {
+          pos_suggestion = { importo_lavori: Math.round(parsed) };
+        }
+      }
+    } catch { /* non critico */ }
+  }
+
+  res.json({ ...rest, costi_diretti: costiSummary, pos_suggestion });
 });
 
 // ── Shared PDF HTML builder ───────────────────────────────────────────────────
