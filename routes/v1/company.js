@@ -122,6 +122,80 @@ router.get('/company', verifySupabaseJwt, async (req, res) => {
   res.json(data);
 });
 
+// GET /api/v1/company/defaults — profilo azienda + figure di sicurezza dall'ultimo POS
+// Usato da DVR, PIMUS, POS e tutti i generatori di documenti per pre-popolare i form.
+router.get('/company/defaults', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+
+  const [companyResult, figureResult] = await Promise.allSettled([
+    supabase
+      .from('companies')
+      .select('id, name, piva, address, phone, contact_email, safety_manager')
+      .eq('id', companyId)
+      .single(),
+
+    // Figura: estrai dall'ultimo POS dell'azienda
+    (async () => {
+      const { data: sites } = await supabase
+        .from('sites')
+        .select('id')
+        .eq('company_id', companyId)
+        .limit(500);
+      if (!sites?.length) return null;
+
+      const { data: doc } = await supabase
+        .from('pos_documents')
+        .select('pos_data')
+        .in('site_id', sites.map(s => s.id))
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return doc?.pos_data || null;
+    })(),
+  ]);
+
+  const company = companyResult.status === 'fulfilled' ? companyResult.value.data : null;
+  const posData = figureResult.status === 'fulfilled' ? figureResult.value : null;
+
+  const persona = (nome = '', tel = '', email = '', cf = '') =>
+    ({ nome, telefono: tel, email, codiceFiscale: cf });
+
+  let figure = null;
+  let hasFigureDefaults = false;
+
+  if (posData) {
+    figure = {
+      ragioneSocialeImpresa: posData.companyName || company?.name || '',
+      partitaIvaImpresa:     posData.companyVat  || company?.piva || '',
+      responsabileLavori:    persona(posData.responsabileLavori),
+      csp:                   persona(posData.csp),
+      cse:                   persona(posData.cse, posData.cseTel, posData.cseEmail, posData.cseCf),
+      rspp:                  persona(posData.rspp, posData.rsppTel, posData.rsppEmail, posData.rsppCf),
+      rls:                   persona(posData.rls, posData.rlsTel),
+      medicoCompetente:      { ...persona(posData.medico, posData.medicoTel), firma: '' },
+      addettoPrimoSoccorso:  persona(posData.primoSoccorso, posData.primoSoccorsoTel),
+      addettoAntincendio:    persona(posData.antincendio, posData.antincendioTel),
+      direttoreTecnico:      persona(posData.direttoreTecnico),
+      prepostoCantiere:      persona(posData.preposto),
+    };
+    hasFigureDefaults = !!(posData.rspp || posData.rls || posData.medico || posData.cse);
+  }
+
+  res.json({
+    company: company ? {
+      id:            company.id,
+      nome:          company.name          || '',
+      partitaIva:    company.piva          || '',
+      sedeLegale:    company.address       || '',
+      telefono:      company.phone         || '',
+      email:         company.contact_email || '',
+      safetyManager: company.safety_manager || '',
+    } : null,
+    figure,
+    hasFigureDefaults,
+  });
+});
+
 // PATCH /api/v1/company — aggiorna profilo azienda (owner/admin/tech)
 router.patch('/company', verifySupabaseJwt, validate(patchCompanySchema), async (req, res) => {
   if (!['owner', 'admin', 'tech'].includes(req.userRole)) {
