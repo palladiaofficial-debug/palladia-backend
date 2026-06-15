@@ -304,6 +304,52 @@
       line-height: 1.6;
     }
 
+    /* ── Buste paga ── */
+    .payslip-row {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .payslip-row:last-child { border-bottom: none; }
+    .payslip-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 17px;
+    }
+    .payslip-info { flex: 1; min-width: 0; }
+    .payslip-period { font-size: 14px; font-weight: 700; color: var(--text); }
+    .payslip-note   { font-size: 12px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .payslip-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+    .btn-payslip-view {
+      font-size: 12px; font-weight: 600; color: var(--accent);
+      background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25);
+      border-radius: 6px; padding: 5px 12px; cursor: pointer; white-space: nowrap;
+      transition: background 0.15s; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-payslip-view:hover:not(:disabled) { background: rgba(37,99,235,0.15); }
+    .btn-payslip-view:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-ack {
+      font-size: 12px; font-weight: 700; color: #fff;
+      background: var(--green); border: 1px solid var(--green);
+      border-radius: 6px; padding: 6px 14px; cursor: pointer; white-space: nowrap;
+      transition: opacity 0.15s; display: inline-flex; align-items: center; gap: 5px;
+    }
+    .btn-ack:hover:not(:disabled) { opacity: 0.85; }
+    .btn-ack:disabled { opacity: 0.5; cursor: not-allowed; }
+    .ack-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700; color: var(--green);
+      background: rgba(22,163,74,0.1); border: 1px solid rgba(22,163,74,0.25);
+      border-radius: 20px; padding: 3px 10px;
+    }
+    .payslips-empty {
+      padding: 28px 18px; text-align: center;
+      font-size: 13px; color: var(--muted);
+    }
+
     /* ── Pulsante visualizza documento ── */
     .btn-view-doc {
       font-size: 12px; font-weight: 600; color: var(--accent);
@@ -653,6 +699,75 @@
       }
     }
 
+    const MONTH_NAMES = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+    async function loadPayslips(code) {
+      try {
+        const apiBase = window.location.origin;
+        const resp = await fetch(`${apiBase}/api/v1/badge/${code}/payslips`);
+        if (!resp.ok) return [];
+        return await resp.json();
+      } catch { return []; }
+    }
+
+    async function openPayslipPdf(code, id, btn) {
+      btn.disabled = true;
+      const orig = btn.innerHTML;
+      btn.innerHTML = '…';
+      try {
+        const apiBase = window.location.origin;
+        const resp = await fetch(`${apiBase}/api/v1/badge/${code}/payslips/${id}/pdf`);
+        if (!resp.ok) throw new Error();
+        const { url } = await resp.json();
+        window.open(url, '_blank', 'noopener');
+      } catch { alert('Impossibile aprire il documento. Riprova.'); }
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+
+    async function acknowledgePayslip(code, id, btn, rowEl) {
+      if (!confirm('Confermi la presa visione di questa busta paga?\n\nQuesta azione verrà registrata con data e ora.')) return;
+      btn.disabled = true;
+      btn.innerHTML = '…';
+      try {
+        const apiBase = window.location.origin;
+        const resp = await fetch(`${apiBase}/api/v1/badge/${code}/payslips/${id}/acknowledge`, { method: 'POST' });
+        if (!resp.ok) throw new Error();
+        const actionsEl = rowEl.querySelector('.payslip-actions');
+        actionsEl.innerHTML = `<span class="ack-badge">✓ Firmata</span>`;
+      } catch { alert('Errore. Riprova.'); btn.disabled = false; btn.innerHTML = 'Firma →'; }
+    }
+
+    function renderPayslipsSection(payslips, code) {
+      if (!payslips || payslips.length === 0) return '';
+      const rows = payslips.map(p => {
+        const period   = `${MONTH_NAMES[p.period_month] || p.period_month} ${p.period_year}`;
+        const isAck    = p.status === 'acknowledged';
+        const ackDate  = p.acknowledged_at
+          ? new Date(p.acknowledged_at).toLocaleDateString('it-IT', { day:'2-digit', month:'short', year:'numeric' })
+          : '';
+        const actionsHtml = isAck
+          ? `<span class="ack-badge">✓ Firmata ${ackDate}</span>`
+          : `<button class="btn-ack" onclick="acknowledgePayslip('${esc(code)}','${esc(p.id)}',this,this.closest('.payslip-row'))">Firma →</button>`;
+        return `<div class="payslip-row" id="payslip-${esc(p.id)}">
+          <div class="payslip-icon">📄</div>
+          <div class="payslip-info">
+            <div class="payslip-period">${esc(period)}</div>
+            ${p.note ? `<div class="payslip-note">${esc(p.note)}</div>` : ''}
+          </div>
+          <div class="payslip-actions">
+            <button class="btn-payslip-view" onclick="openPayslipPdf('${esc(code)}','${esc(p.id)}',this)">&#128065; Apri PDF</button>
+            ${actionsHtml}
+          </div>
+        </div>`;
+      }).join('');
+
+      return `
+        <div class="section-label">Buste paga</div>
+        <div class="card">${rows}</div>`;
+    }
+
     async function main() {
       const code = getBadgeCodeFromUrl();
       if (!code || !/^[A-Fa-f0-9]{18}$/.test(code)) {
@@ -685,6 +800,14 @@
       }
 
       renderBadge(data);
+
+      // Carica buste paga in background e le inietta sotto la sezione autenticità
+      loadPayslips(code).then(payslips => {
+        const section = renderPayslipsSection(payslips, code);
+        if (!section) return;
+        const container = document.getElementById('container');
+        if (container) container.insertAdjacentHTML('beforeend', section);
+      });
     }
 
     main();

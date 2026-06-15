@@ -163,6 +163,9 @@ router.use('/', require('./expiryCalendar'));
 // Diario di cantiere: voce giornaliera, meteo auto, presenze, PDF
 router.use('/', require('./diary'));
 
+// Buste paga: upload CDL/datore → revisione → condivisione → firma lavoratore
+router.use('/', require('./payslips'));
+
 // Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
 router.use('/', require('./workerInvite'));
 
