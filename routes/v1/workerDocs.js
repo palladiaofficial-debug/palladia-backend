@@ -79,21 +79,23 @@ async function syncWorkerExpiry(docType, workerId, companyId) {
     : docType === 'formazione_sicurezza' ? 'safety_training_expiry'
     : null;
   if (!field) return;
-  // Calcola la scadenza massima tra tutti i documenti attivi di quel tipo.
-  // NON usare la data del singolo documento: se esistono più versioni (es. rinnovo
-  // + versione vecchia), workers deve riflettere quella più recente.
+  // Usa MAX(ai_expiry_date, expiry_date) coerente con BadgeModal.computeDocStatus.
+  // ai_expiry_date è più accurato quando l'AI ha analizzato il file.
   const { data } = await supabase
     .from('worker_documents')
-    .select('expiry_date')
+    .select('expiry_date, ai_expiry_date')
     .eq('worker_id',  workerId)
     .eq('company_id', companyId)
-    .eq('doc_type',   docType)
-    .not('expiry_date', 'is', null)
-    .order('expiry_date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq('doc_type',   docType);
+
+  const maxExpiry = (data || [])
+    .map(d => d.ai_expiry_date || d.expiry_date)
+    .filter(Boolean)
+    .sort()
+    .at(-1) || null;
+
   await supabase.from('workers')
-    .update({ [field]: data?.expiry_date || null })
+    .update({ [field]: maxExpiry })
     .eq('id', workerId)
     .eq('company_id', companyId);
 }
