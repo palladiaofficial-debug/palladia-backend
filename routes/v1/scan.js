@@ -616,7 +616,8 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     p_distance_m: distanceM,
     p_accuracy_m: accuracyM,
     p_ip:         ipAddress,
-    p_ua:         userAgent
+    p_ua:         userAgent,
+    p_method:     'personal_phone',
   });
 
   if (punchErr) {
