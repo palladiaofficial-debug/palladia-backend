@@ -80,7 +80,7 @@ async function syncWorkerExpiry(docType, workerId, companyId) {
     : null;
   if (!field) return;
   // Usa MAX(ai_expiry_date, expiry_date) coerente con BadgeModal.computeDocStatus.
-  // ai_expiry_date è più accurato quando l'AI ha analizzato il file.
+  // expiry_date (confermato dall'utente) ha priorità su ai_expiry_date (AI fallibile)
   const { data } = await supabase
     .from('worker_documents')
     .select('expiry_date, ai_expiry_date')
@@ -89,7 +89,7 @@ async function syncWorkerExpiry(docType, workerId, companyId) {
     .eq('doc_type',   docType);
 
   const maxExpiry = (data || [])
-    .map(d => d.ai_expiry_date || d.expiry_date)
+    .map(d => d.expiry_date || d.ai_expiry_date)
     .filter(Boolean)
     .sort()
     .at(-1) || null;
