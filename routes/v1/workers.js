@@ -63,6 +63,7 @@ router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (
     photo_url, hire_date, birth_date, qualification, role,
     employer_name, subcontracting_auth,
     safety_training_expiry, health_fitness_expiry,
+    tariffa_oraria,
   } = req.body;
 
   if (!full_name || String(full_name).trim().length < 2) {
@@ -103,6 +104,10 @@ router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (
   if (subcontracting_auth    !== undefined) record.subcontracting_auth    = Boolean(subcontracting_auth);
   if (safety_training_expiry !== undefined) record.safety_training_expiry = safety_training_expiry || null;
   if (health_fitness_expiry  !== undefined) record.health_fitness_expiry  = health_fitness_expiry  || null;
+  if (tariffa_oraria         !== undefined) {
+    const t = parseFloat(tariffa_oraria);
+    if (!isNaN(t) && t >= 0) record.tariffa_oraria = t;
+  }
 
   const { data, error } = await supabase
     .from('workers')
