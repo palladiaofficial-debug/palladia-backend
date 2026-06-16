@@ -17,6 +17,7 @@ const multer = require('multer');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { resolveWorkerByBadge } = require('../../lib/workerByBadge');
 
 const BUCKET   = 'site-documents';  // usa il bucket già esistente con prefisso payslips/
 const MAX_SIZE = 20 * 1024 * 1024;  // 20 MB
@@ -201,16 +202,6 @@ router.delete('/payslips/:id', verifySupabaseJwt, async (req, res) => {
 // ═════════════════════════════════════════════════════════════════════════════
 // ENDPOINT PUBBLICI (via badge code — no JWT)
 // ═════════════════════════════════════════════════════════════════════════════
-
-async function resolveWorkerByBadge(code) {
-  if (!/^[A-Fa-f0-9]{18}$/.test(code)) return null;
-  const { data } = await supabase
-    .from('workers')
-    .select('id, company_id, is_active')
-    .eq('badge_code', code.toUpperCase())
-    .maybeSingle();
-  return data;
-}
 
 // ── GET /api/v1/badge/:code/payslips ─────────────────────────────────────────
 router.get('/badge/:code/payslips', async (req, res) => {

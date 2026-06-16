@@ -14,6 +14,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
+const { resolveWorkerByBadge } = require('../../lib/workerByBadge');
 
 // Rate limit specifico per la verifica pubblica del badge
 // 60/min per IP — abbastanza generoso per ispezioni multiple
@@ -99,15 +100,7 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
 router.get('/badge/:code/document/:docId', badgeLimiter, async (req, res) => {
   const { code, docId } = req.params;
 
-  if (!/^[A-Fa-f0-9]{18}$/.test(code))
-    return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
-
-  const { data: worker } = await supabase
-    .from('workers')
-    .select('id, company_id, is_active')
-    .eq('badge_code', code.toUpperCase())
-    .maybeSingle();
-
+  const worker = await resolveWorkerByBadge(code);
   if (!worker)         return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
   if (!worker.is_active) return res.status(403).json({ error: 'WORKER_INACTIVE' });
 
@@ -130,6 +123,57 @@ router.get('/badge/:code/document/:docId', badgeLimiter, async (req, res) => {
     return res.status(500).json({ error: 'SIGN_ERROR' });
 
   res.json({ url: signed.signedUrl, name: doc.name, mime_type: doc.mime_type });
+});
+
+// ── GET /api/v1/badge/:code/presence-history — storico personale (PUBBLICO) ──
+// Restituisce le timbrature del lavoratore stesso, su tutti i cantieri della
+// company. Pensato per l'Area Lavoratore (tab "Storico").
+router.get('/badge/:code/presence-history', badgeLimiter, async (req, res) => {
+  const { code } = req.params;
+
+  const worker = await resolveWorkerByBadge(code);
+  if (!worker)          return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
+  if (!worker.is_active) return res.status(403).json({ error: 'WORKER_INACTIVE' });
+
+  const DATE_RE  = /^\d{4}-\d{2}-\d{2}$/;
+  const toDate   = req.query.to   || new Date().toISOString().split('T')[0];
+  const fromDate = req.query.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+  if (!DATE_RE.test(fromDate) || !DATE_RE.test(toDate)) {
+    return res.status(400).json({ error: 'INVALID_DATE_RANGE', message: 'from e to devono essere YYYY-MM-DD' });
+  }
+
+  const { data: logs, error: logsErr } = await supabase
+    .from('presence_logs')
+    .select('id, event_type, timestamp_server, site_id')
+    .eq('company_id', worker.company_id)
+    .eq('worker_id',  worker.id)
+    .gte('timestamp_server', `${fromDate}T00:00:00.000Z`)
+    .lte('timestamp_server', `${toDate}T23:59:59.999Z`)
+    .order('timestamp_server', { ascending: false })
+    .limit(1000);
+
+  if (logsErr) {
+    console.error('[badge/presence-history] logs error:', logsErr.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+  if (!logs || logs.length === 0) return res.json([]);
+
+  const siteIds = [...new Set(logs.map(l => l.site_id).filter(Boolean))];
+  const { data: sites } = await supabase
+    .from('sites')
+    .select('id, name')
+    .in('id', siteIds);
+
+  const siteMap = {};
+  for (const s of sites || []) siteMap[s.id] = s.name || '—';
+
+  res.json(logs.map(l => ({
+    id:               l.id,
+    event_type:       l.event_type,
+    timestamp_server: l.timestamp_server,
+    site_name:        siteMap[l.site_id] || '—',
+  })));
 });
 
 // ── GET /api/v1/workers/:workerId/badge-pdf — PDF badge stampabile (JWT) ──────
