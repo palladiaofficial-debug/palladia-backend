@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#f5f3ee">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -38,7 +38,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 24px 16px 72px;
+      padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(72px + env(safe-area-inset-bottom, 0px));
     }
 
     /* ── Brand ── */
@@ -49,7 +49,7 @@
       margin-bottom: 24px;
     }
     .brand-name {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
       letter-spacing: 0.22em;
       color: var(--muted);
@@ -57,7 +57,7 @@
     }
     .brand-sep { width: 1px; height: 14px; background: #d1d5db; }
     .brand-sub {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
       letter-spacing: 0.04em;
     }
@@ -179,9 +179,9 @@
     }
     .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     .tag {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
-      padding: 3px 10px;
+      padding: 4px 10px;
       border-radius: 20px;
       border: 1px solid var(--border);
       color: var(--muted);
@@ -195,7 +195,7 @@
 
     /* ── Section label ── */
     .section-label {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.14em;
       text-transform: uppercase;
@@ -263,7 +263,7 @@
     }
     .field-row:last-child { border-bottom: none; }
     .field-label {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
@@ -282,7 +282,7 @@
     /* ── Autenticità badge ── */
     .auth-card { padding: 16px 18px; }
     .auth-code-label {
-      font-size: 10px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.12em;
       text-transform: uppercase;
@@ -299,7 +299,7 @@
       margin-bottom: 8px;
     }
     .auth-hint {
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
       line-height: 1.6;
     }
@@ -327,7 +327,7 @@
     .btn-view-doc {
       font-size: 12px; font-weight: 600; color: var(--accent);
       background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25);
-      border-radius: 6px; padding: 5px 11px; cursor: pointer;
+      border-radius: 6px; padding: 10px 14px; cursor: pointer;
       flex-shrink: 0; white-space: nowrap; transition: background 0.15s;
       display: inline-flex; align-items: center; gap: 5px;
     }
@@ -338,13 +338,13 @@
     .page-footer {
       margin-top: 24px;
       text-align: center;
-      font-size: 11px;
+      font-size: 12px;
       color: #9ca3af;
       line-height: 1.8;
     }
     .verify-ts {
       margin-top: 4px;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
       font-weight: 600;
     }
@@ -486,6 +486,7 @@
           <div style="margin-bottom:14px;"><svg style="width:36px;height:36px;stroke:var(--amber);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
           <div class="state-title">${esc(title)}</div>
           <div class="state-sub">${esc(sub)}</div>
+          <button onclick="location.reload()" style="margin-top:18px;padding:14px 28px;font-size:16px;font-weight:700;background:var(--text);color:#fff;border:none;border-radius:10px;cursor:pointer;min-height:48px;">Riprova</button>
         </div>`;
     }
 

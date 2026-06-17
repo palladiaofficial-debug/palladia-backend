@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0f172a">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -34,10 +34,10 @@
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      padding: 24px 16px;
+      padding: calc(24px + env(safe-area-inset-top, 0px)) 16px calc(24px + env(safe-area-inset-bottom, 0px));
     }
     .logo {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 700;
       letter-spacing: 0.15em;
       color: var(--muted);
@@ -77,8 +77,8 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
-      font-size: 15px;
-      padding: 10px 12px;
+      font-size: 16px;
+      padding: 12px;
       outline: none;
       transition: border-color 0.15s;
     }
@@ -92,7 +92,8 @@
       border-radius: 8px;
       font-size: 15px;
       font-weight: 600;
-      padding: 12px;
+      padding: 14px;
+      min-height: 48px;
       margin-top: 20px;
       cursor: pointer;
       transition: opacity 0.15s;

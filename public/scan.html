@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#faf8f4">
   <title>Timbratura — Palladia</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -42,7 +42,7 @@
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 0 16px 48px;
+      padding: env(safe-area-inset-top, 0px) 16px calc(48px + env(safe-area-inset-bottom, 0px));
       min-height: 100%;
     }
 
@@ -83,7 +83,7 @@
       box-shadow: var(--shadow);
     }
     .card-label {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       color: var(--subtle);
       text-transform: uppercase;
@@ -244,7 +244,7 @@
     /* Toast */
     #toast {
       position: fixed;
-      bottom: 24px; left: 50%;
+      bottom: calc(24px + env(safe-area-inset-bottom, 0px)); left: 50%;
       transform: translateX(-50%) translateY(100px);
       background: var(--text); color: #fff;
       border-radius: 10px;
@@ -284,7 +284,7 @@
     /* POS Acknowledgment */
     #state-pos-ack { width: 100%; display: flex; flex-direction: column; align-items: center; }
     .pos-ack-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 12px; box-shadow: var(--shadow); width: 100%; max-width: 440px; }
-    .pos-ack-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 20px; padding: 3px 10px; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
+    .pos-ack-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: #b45309; background: #fef3c7; border: 1px solid #fde68a; border-radius: 20px; padding: 3px 10px; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.06em; }
     .pos-ack-title { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 6px; line-height: 1.3; }
     .pos-ack-subtitle { font-size: 12px; color: var(--muted); margin-bottom: 14px; }
     .pos-key-points { list-style: none; margin-bottom: 16px; }
@@ -293,7 +293,7 @@
     .pos-key-points li::before { content: '⚠'; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
     .pos-ack-confirm-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; margin-bottom: 16px; }
     .pos-ack-confirm-box label { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
-    .pos-ack-confirm-box input[type=checkbox] { width: 18px; height: 18px; flex-shrink: 0; margin-top: 2px; accent-color: var(--green); cursor: pointer; }
+    .pos-ack-confirm-box input[type=checkbox] { width: 24px; height: 24px; flex-shrink: 0; margin-top: 2px; accent-color: var(--green); cursor: pointer; }
     .pos-ack-confirm-box span { font-size: 13px; color: var(--text); line-height: 1.5; font-weight: 500; }
 
     .hidden { display: none !important; }
@@ -556,6 +556,7 @@
     if (status !== 200) {
       $('site-name').textContent    = 'Cantiere non trovato';
       $('site-address').textContent = `Errore: ${body.error || status}`;
+      $('site-address').insertAdjacentHTML('afterend', '<button onclick="location.reload()" style="margin-top:16px;padding:14px 28px;font-size:16px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:10px;cursor:pointer;min-height:48px;">Riprova</button>');
       return false;
     }
     siteInfo     = body;
@@ -875,6 +876,7 @@
     if (Date.now() / 1000 > Number(QR_EXP)) {
       $('site-name').textContent    = 'QR code scaduto';
       $('site-address').textContent = 'Questo QR non è più valido. Richiedere un nuovo QR all\'amministratore.';
+      $('site-address').insertAdjacentHTML('afterend', '<button onclick="location.reload()" style="margin-top:16px;padding:14px 28px;font-size:16px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:10px;cursor:pointer;min-height:48px;">Riprova</button>');
       return false;
     }
     const { status, body } = await apiFetch('GET',
@@ -884,6 +886,7 @@
       || `QR non valido (${body.error || status})`;
     $('site-name').textContent    = 'Accesso negato';
     $('site-address').textContent = errMsg;
+    $('site-address').insertAdjacentHTML('afterend', '<button onclick="location.reload()" style="margin-top:16px;padding:14px 28px;font-size:16px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:10px;cursor:pointer;min-height:48px;">Riprova</button>');
     return false;
   }
 

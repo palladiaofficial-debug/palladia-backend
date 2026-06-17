@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1a1a1a">
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
@@ -44,7 +44,7 @@
       min-height: 100dvh; display: flex; flex-direction: column;
       align-items: center; justify-content: center; padding: 24px 16px;
     }
-    .auth-brand { font-size: 11px; font-weight: 800; letter-spacing: 0.22em; color: var(--subtle); text-transform: uppercase; margin-bottom: 6px; }
+    .auth-brand { font-size: 12px; font-weight: 800; letter-spacing: 0.22em; color: var(--subtle); text-transform: uppercase; margin-bottom: 6px; }
     .auth-title { font-size: 22px; font-weight: 900; color: var(--text); margin-bottom: 24px; }
     .auth-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
     .auth-worker { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--border); background: #fafaf7; }
@@ -80,7 +80,7 @@
 
     .topbar {
       background: var(--text); color: #fff;
-      padding: 0 16px; height: 60px;
+      padding: env(safe-area-inset-top, 0px) 16px 0; min-height: 60px;
       display: flex; align-items: center; gap: 12px;
       position: sticky; top: 0; z-index: 50;
     }
@@ -88,14 +88,14 @@
     .tb-av img { width: 100%; height: 100%; object-fit: cover; }
     .tb-info { flex: 1; min-width: 0; }
     .tb-name { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tb-time { font-size: 12px; color: rgba(255,255,255,0.4); }
+    .tb-time { font-size: 12px; color: rgba(255,255,255,0.6); }
     .tb-exit {
       font-size: 14px; font-weight: 700; color: #fff;
       background: rgba(255,255,255,0.12); border: none;
       border-radius: 8px; padding: 8px 16px; cursor: pointer;
     }
 
-    .content { flex: 1; padding: 8px 12px 110px; max-width: 540px; width: 100%; margin: 0 auto; }
+    .content { flex: 1; padding: 8px 12px calc(110px + env(safe-area-inset-bottom, 0px)); max-width: 540px; width: 100%; margin: 0 auto; }
 
     /* ── Tabs ── */
     .tabs {
@@ -383,7 +383,7 @@
         }
         h+='</div>';
         p.innerHTML=h;
-      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3></div>';}
+      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3><p style="margin-top:12px"><button onclick="loadPayslips()" style="padding:12px 24px;font-size:15px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:12px;cursor:pointer;min-height:48px;">Riprova</button></p></div>';}
     }
 
     async function openSlip(id,btn){
@@ -433,7 +433,7 @@
         }
         h+='</div>';
         p.innerHTML=h;
-      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3></div>';}
+      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3><p style="margin-top:12px"><button onclick="loadDocumenti()" style="padding:12px 24px;font-size:15px;font-weight:700;background:var(--accent);color:#fff;border:none;border-radius:12px;cursor:pointer;min-height:48px;">Riprova</button></p></div>';}
     }
 
     async function openDoc(id,btn){
