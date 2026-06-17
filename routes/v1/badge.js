@@ -95,8 +95,44 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
   });
 });
 
-// Endpoint /badge/:code/document/:docId e /badge/:code/presence-history
-// RIMOSSI — ora in workerArea.js con autenticazione CF obbligatoria
+// ── GET /api/v1/badge/:code/document/:docId — URL firmato documento (PUBBLICO) ─
+// Documenti di compliance (formazione, idoneità) restano pubblici per ispezioni.
+// Dati personali (payslips, presenze) sono in workerArea.js con auth CF.
+router.get('/badge/:code/document/:docId', badgeLimiter, async (req, res) => {
+  const { code, docId } = req.params;
+  if (!/^[A-Fa-f0-9]{18}$/i.test(code)) return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
+
+  const { data: worker } = await supabase
+    .from('workers')
+    .select('id, company_id, is_active')
+    .eq('badge_code', code.toUpperCase())
+    .maybeSingle();
+
+  if (!worker)           return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
+  if (!worker.is_active) return res.status(403).json({ error: 'WORKER_INACTIVE' });
+
+  const { data: doc } = await supabase
+    .from('worker_documents')
+    .select('id, file_path, name, mime_type')
+    .eq('id',         docId)
+    .eq('worker_id',  worker.id)
+    .eq('company_id', worker.company_id)
+    .maybeSingle();
+
+  if (!doc || !doc.file_path)
+    return res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+
+  const { data: signed, error: signErr } = await supabase.storage
+    .from('site-documents')
+    .createSignedUrl(doc.file_path, 3600);
+
+  if (signErr || !signed?.signedUrl)
+    return res.status(500).json({ error: 'SIGN_ERROR' });
+
+  res.json({ url: signed.signedUrl, name: doc.name, mime_type: doc.mime_type });
+});
+
+// Endpoint /badge/:code/presence-history RIMOSSO — ora in workerArea.js con auth CF
 
 // ── GET /api/v1/workers/:workerId/badge-pdf — PDF badge stampabile (JWT) ──────
 router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) => {
