@@ -135,26 +135,6 @@
     .empty h3 { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
     .empty p { font-size: 15px; color: var(--muted); line-height: 1.5; }
 
-    /* ═══ Timbrature ═══ */
-    .day-h { font-size: 15px; font-weight: 800; color: var(--text); margin: 16px 0 6px 4px; text-transform: capitalize; }
-    .day-h:first-child { margin-top: 4px; }
-    .punch {
-      padding: 16px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 14px;
-    }
-    .punch:last-child { border-bottom: none; }
-    .p-badge {
-      width: 52px; height: 52px; border-radius: 12px;
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 900; letter-spacing: 0.04em;
-    }
-    .p-badge.in  { background: var(--green-bg); color: var(--green); border: 1.5px solid rgba(22,163,74,0.25); }
-    .p-badge.out { background: var(--red-bg);   color: var(--red);   border: 1.5px solid rgba(220,38,38,0.2); }
-    .p-badge svg { width: 18px; height: 18px; margin-bottom: 1px; }
-    .p-body { flex: 1; min-width: 0; }
-    .p-time { font-size: 20px; font-weight: 800; }
-    .p-site { font-size: 14px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
     /* ═══ Buste Paga ═══ */
     .slip {
       padding: 20px 16px; border-bottom: 1px solid var(--border);
@@ -252,17 +232,12 @@
     </div>
 
     <div class="content">
-      <div class="pane active" id="p-timb"></div>
-      <div class="pane" id="p-buste"></div>
+      <div class="pane active" id="p-buste"></div>
       <div class="pane" id="p-doc"></div>
     </div>
 
     <div class="tabs">
-      <button class="tab active" data-t="timb">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Timbrature
-      </button>
-      <button class="tab" data-t="buste">
+      <button class="tab active" data-t="buste">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Buste Paga
       </button>
@@ -354,7 +329,7 @@
       }catch(e){
         if(e.message==='EXP') return;
       }
-      loadTimbrature();
+      loadPayslips();
     }
 
     /* TABS */
@@ -364,44 +339,10 @@
         document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
         t.classList.add('active');
         document.getElementById('p-'+t.dataset.t).classList.add('active');
-        if(t.dataset.t==='timb')loadTimbrature();
         if(t.dataset.t==='buste')loadPayslips();
         if(t.dataset.t==='doc')loadDocumenti();
       });
     });
-
-    /* TIMBRATURE */
-    async function loadTimbrature(){
-      const p=document.getElementById('p-timb');p.innerHTML='<div class="spinner"></div>';
-      try{
-        const r=await api('/area/'+_code+'/presence');const logs=await r.json();
-        if(!logs.length){
-          p.innerHTML=`<div class="sec-title">Storico timbrature</div><div class="card"><div class="empty">
-            <div class="empty-ic"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-            <h3>Nessuna timbratura</h3><p>Le tue timbrature degli ultimi 30 giorni appariranno qui.</p>
-          </div></div>`;return;}
-        const g={};for(const l of logs){const d=l.timestamp_server.split('T')[0];(g[d]=g[d]||[]).push(l);}
-        let h='<div class="sec-title">Ultimi 30 giorni</div>';
-        for(const[day,ent]of Object.entries(g)){
-          h+=`<div class="day-h">${esc(fDay(day))}</div><div class="card">`;
-          for(const e of ent){
-            const isIn=e.event_type==='ENTRY';
-            h+=`<div class="punch">
-              <div class="p-badge ${isIn?'in':'out'}">
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${isIn?'<polyline points="7 12 12 7 17 12"/><line x1="12" y1="7" x2="12" y2="21"/>':'<polyline points="7 12 12 17 17 12"/><line x1="12" y1="17" x2="12" y2="3"/>'}</svg>
-                ${isIn?'ENT':'USC'}
-              </div>
-              <div class="p-body">
-                <div class="p-time">${esc(fT(e.timestamp_server))}</div>
-                <div class="p-site">${esc(e.site_name)}</div>
-              </div>
-            </div>`;
-          }
-          h+='</div>';
-        }
-        p.innerHTML=h;
-      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3><p>Riprova tra qualche secondo.</p></div>';}
-    }
 
     /* BUSTE PAGA */
     async function loadPayslips(){
