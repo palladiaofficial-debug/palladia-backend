@@ -73,6 +73,10 @@ router.use('/', require('./scan'));
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./badgePunch'));
 
+// Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
+// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
+router.use('/', require('./workerArea'));
+
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
@@ -165,9 +169,6 @@ router.use('/', require('./diary'));
 
 // Buste paga: upload CDL/datore → revisione → condivisione → firma lavoratore
 router.use('/', require('./payslips'));
-
-// Area Lavoratore: profilo, timbrature, buste paga, documenti (auth CF via badge code)
-router.use('/', require('./workerArea'));
 
 // Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
 router.use('/', require('./workerInvite'));
