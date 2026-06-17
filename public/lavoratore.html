@@ -28,183 +28,230 @@
     }
 
     html, body {
-      min-height: 100%; min-height: 100dvh;
+      min-height: 100dvh;
       background: var(--bg);
       color: var(--text);
       font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 16px; line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* ── Auth Screen ── */
-    .auth-screen {
+    /* ═══════════════════════ AUTH SCREEN ═══════════════════════ */
+    .auth-wrap {
       min-height: 100dvh;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
-      padding: 24px 20px;
+      padding: 24px 16px;
     }
     .auth-brand {
       font-size: 11px; font-weight: 800; letter-spacing: 0.22em;
-      color: var(--muted); text-transform: uppercase; margin-bottom: 8px;
+      color: var(--subtle); text-transform: uppercase; margin-bottom: 6px;
     }
     .auth-title {
-      font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 28px;
+      font-size: 20px; font-weight: 800; color: var(--text); margin-bottom: 24px;
     }
+
     .auth-card {
-      width: 100%; max-width: 380px;
+      width: 100%; max-width: 400px;
       background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); padding: 24px; text-align: center;
+      border-radius: var(--radius); overflow: hidden;
     }
-    .auth-worker-name {
-      font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 2px;
+    .auth-worker {
+      display: flex; align-items: center; gap: 14px;
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+      background: #fafaf7;
     }
-    .auth-company {
-      font-size: 13px; color: var(--muted); margin-bottom: 20px;
+    .auth-avatar {
+      width: 46px; height: 46px; border-radius: 50%;
+      background: var(--text); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; font-weight: 700; flex-shrink: 0;
     }
+    .auth-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .auth-wname { font-size: 16px; font-weight: 700; }
+    .auth-wcompany { font-size: 13px; color: var(--muted); margin-top: 1px; }
+
+    .auth-body { padding: 20px; }
     .auth-label {
       font-size: 12px; font-weight: 700; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.06em;
-      text-align: left; margin-bottom: 6px;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      margin-bottom: 6px;
     }
     .auth-input {
       width: 100%; padding: 12px 14px;
-      font-size: 16px; font-family: monospace; letter-spacing: 0.08em;
+      font-size: 16px; font-family: 'Inter', monospace; letter-spacing: 0.06em;
       text-transform: uppercase;
       border: 1.5px solid var(--border); border-radius: 8px;
       background: var(--bg); color: var(--text);
       outline: none; transition: border-color 0.15s;
     }
-    .auth-input:focus { border-color: var(--accent); }
-    .auth-input.error { border-color: var(--red); }
+    .auth-input:focus { border-color: var(--text); }
+    .auth-input.shake { animation: shake 0.4s; border-color: var(--red); }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20%,60% { transform: translateX(-6px); }
+      40%,80% { transform: translateX(6px); }
+    }
     .auth-btn {
-      width: 100%; margin-top: 16px; padding: 13px;
+      width: 100%; margin-top: 14px; padding: 13px;
       font-size: 15px; font-weight: 700; color: #fff;
       background: var(--text); border: none; border-radius: 8px;
       cursor: pointer; transition: opacity 0.15s;
     }
     .auth-btn:hover:not(:disabled) { opacity: 0.85; }
-    .auth-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .auth-btn:disabled { opacity: 0.35; cursor: not-allowed; }
     .auth-error {
-      margin-top: 12px; padding: 10px 12px;
+      margin-top: 10px; padding: 10px 12px;
       font-size: 13px; font-weight: 600; color: var(--red);
-      background: rgba(220,38,38,0.06); border: 1px solid rgba(220,38,38,0.2);
-      border-radius: 8px; display: none;
+      background: rgba(220,38,38,0.05); border: 1px solid rgba(220,38,38,0.15);
+      border-radius: 8px; display: none; text-align: center;
     }
-    .auth-hint {
-      margin-top: 16px; font-size: 11px; color: var(--subtle); line-height: 1.6;
+    .auth-footer {
+      padding: 14px 20px; border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; gap: 6px;
+      font-size: 11px; color: var(--subtle);
     }
-    .auth-hint svg { vertical-align: -2px; margin-right: 3px; }
+    .auth-footer svg { flex-shrink: 0; }
+    .auth-loading { padding: 32px 20px; text-align: center; }
 
-    /* ── App Shell ── */
+    /* ═══════════════════════ APP SHELL ═══════════════════════ */
     .app { display: none; flex-direction: column; min-height: 100dvh; }
     .app.active { display: flex; }
 
-    .top-bar {
+    .topbar {
       background: var(--text); color: #fff;
-      padding: 14px 18px; display: flex; align-items: center; gap: 12px;
+      padding: 0 20px; height: 56px;
+      display: flex; align-items: center; gap: 12px;
       position: sticky; top: 0; z-index: 50;
     }
-    .top-name { flex: 1; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .top-logout {
-      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.6);
-      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+    .topbar-avatar {
+      width: 34px; height: 34px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; flex-shrink: 0;
+    }
+    .topbar-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .topbar-info { flex: 1; min-width: 0; }
+    .topbar-name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .topbar-session { font-size: 11px; color: rgba(255,255,255,0.5); font-weight: 500; }
+    .topbar-session.warn { color: #fca5a5; }
+    .topbar-logout {
+      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55);
+      background: none; border: 1px solid rgba(255,255,255,0.15);
       border-radius: 6px; padding: 5px 12px; cursor: pointer;
-      transition: background 0.15s;
+      transition: all 0.15s;
     }
-    .top-logout:hover { background: rgba(255,255,255,0.2); color: #fff; }
+    .topbar-logout:hover { color: #fff; border-color: rgba(255,255,255,0.4); }
 
-    .tab-content {
-      flex: 1; padding: 16px 16px 100px; overflow-y: auto;
-      max-width: 560px; width: 100%; margin: 0 auto;
+    .content {
+      flex: 1; padding: 12px 16px 96px;
+      max-width: 520px; width: 100%; margin: 0 auto;
     }
 
-    .tab-bar {
+    /* ── Tab Bar ── */
+    .tabs {
       position: fixed; bottom: 0; left: 0; right: 0;
       background: var(--surface); border-top: 1px solid var(--border);
       display: flex; z-index: 50;
       padding-bottom: env(safe-area-inset-bottom, 0);
     }
-    .tab-btn {
-      flex: 1; padding: 10px 4px 8px; border: none; background: none;
-      font-size: 11px; font-weight: 600; color: var(--muted);
-      display: flex; flex-direction: column; align-items: center; gap: 3px;
+    .tab {
+      flex: 1; padding: 8px 4px 6px; border: none; background: none;
+      font-size: 11px; font-weight: 600; color: var(--subtle);
+      display: flex; flex-direction: column; align-items: center; gap: 2px;
       cursor: pointer; transition: color 0.15s;
+      position: relative;
     }
-    .tab-btn.active { color: var(--text); }
-    .tab-btn svg { width: 22px; height: 22px; stroke-width: 1.8; }
-
-    .tab-pane { display: none; }
-    .tab-pane.active { display: block; }
-
-    /* ── Common ── */
-    .section-title {
-      font-size: 11px; font-weight: 700; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.08em;
-      margin: 20px 0 8px; padding: 0 2px;
+    .tab.active { color: var(--text); }
+    .tab.active::before {
+      content: ''; position: absolute; top: 0; left: 20%; right: 20%;
+      height: 2px; background: var(--text); border-radius: 0 0 2px 2px;
     }
-    .section-title:first-child { margin-top: 4px; }
+    .tab svg { width: 22px; height: 22px; stroke-width: 1.7; }
+
+    .pane { display: none; }
+    .pane.active { display: block; }
+
+    /* ── Cards ── */
     .card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius); overflow: hidden;
     }
-    .empty-state {
-      padding: 32px 18px; text-align: center;
-      font-size: 13px; color: var(--muted);
+    .section-label {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin: 16px 0 8px 2px;
     }
-    .empty-state svg { display: block; margin: 0 auto 10px; stroke: var(--subtle); }
+    .section-label:first-child { margin-top: 0; }
+
+    /* ── Empty state ── */
+    .empty {
+      padding: 40px 24px; text-align: center;
+    }
+    .empty-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: var(--bg); border: 1px solid var(--border);
+      display: inline-flex; align-items: center; justify-content: center;
+      margin-bottom: 12px;
+    }
+    .empty-icon svg { stroke: var(--subtle); }
+    .empty-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .empty-sub { font-size: 13px; color: var(--muted); line-height: 1.5; }
 
     /* ── Timbrature ── */
-    .day-group { margin-bottom: 16px; }
-    .day-label {
-      font-size: 12px; font-weight: 700; color: var(--muted);
-      padding: 0 2px; margin-bottom: 6px;
+    .day-header {
+      font-size: 13px; font-weight: 700; color: var(--text);
+      margin: 16px 0 6px 2px;
+      text-transform: capitalize;
     }
+    .day-header:first-child { margin-top: 0; }
     .punch-row {
       padding: 12px 16px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 10px;
+      display: flex; align-items: center; gap: 12px;
     }
     .punch-row:last-child { border-bottom: none; }
-    .punch-icon {
-      width: 32px; height: 32px; border-radius: 8px;
+    .punch-badge {
+      width: 36px; height: 36px; border-radius: 8px;
       display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; font-size: 13px; font-weight: 800;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
     }
-    .punch-icon.entry { background: rgba(22,163,74,0.08); color: var(--green); border: 1px solid rgba(22,163,74,0.2); }
-    .punch-icon.exit  { background: rgba(220,38,38,0.06); color: var(--red);   border: 1px solid rgba(220,38,38,0.15); }
-    .punch-info { flex: 1; min-width: 0; }
-    .punch-time { font-size: 15px; font-weight: 700; color: var(--text); }
+    .punch-badge.in  { background: rgba(22,163,74,0.08); color: var(--green); border: 1px solid rgba(22,163,74,0.18); }
+    .punch-badge.out { background: rgba(220,38,38,0.06); color: var(--red);   border: 1px solid rgba(220,38,38,0.12); }
+    .punch-detail { flex: 1; min-width: 0; }
+    .punch-time { font-size: 15px; font-weight: 700; }
     .punch-site { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    /* ── Buste Paga ── */
-    .payslip-row {
+    /* ── Buste paga ── */
+    .slip-row {
       padding: 14px 16px; border-bottom: 1px solid var(--border);
       display: flex; align-items: center; gap: 12px;
     }
-    .payslip-row:last-child { border-bottom: none; }
-    .payslip-icon {
-      width: 36px; height: 36px; border-radius: 8px;
-      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
+    .slip-row:last-child { border-bottom: none; }
+    .slip-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.12);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .payslip-icon svg { width: 18px; height: 18px; stroke: var(--accent); }
-    .payslip-info { flex: 1; min-width: 0; }
-    .payslip-period { font-size: 14px; font-weight: 700; color: var(--text); }
-    .payslip-note { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .payslip-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
-    .btn-sm {
+    .slip-icon svg { stroke: var(--accent); }
+    .slip-body { flex: 1; min-width: 0; }
+    .slip-period { font-size: 15px; font-weight: 700; text-transform: capitalize; }
+    .slip-note { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .slip-actions { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; flex-shrink: 0; }
+    .btn {
       font-size: 12px; font-weight: 600; border-radius: 6px;
       padding: 6px 12px; cursor: pointer; white-space: nowrap;
       border: none; transition: opacity 0.15s;
       display: inline-flex; align-items: center; gap: 4px;
     }
-    .btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-view { color: var(--accent); background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); }
-    .btn-ack  { color: #fff; background: var(--green); font-weight: 700; }
-    .ack-badge {
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn-outline { color: var(--accent); background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.18); }
+    .btn-solid  { color: #fff; background: var(--green); font-weight: 700; }
+    .ack-pill {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 11px; font-weight: 700; color: var(--green);
-      background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.2);
+      background: rgba(22,163,74,0.07); border: 1px solid rgba(22,163,74,0.15);
       border-radius: 20px; padding: 4px 10px;
     }
 
@@ -214,84 +261,79 @@
       display: flex; align-items: center; gap: 12px;
     }
     .doc-row:last-child { border-bottom: none; }
-    .doc-icon-box {
-      width: 36px; height: 36px; border-radius: 8px;
-      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0; font-size: 16px;
+    .doc-chip {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--bg); border: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .doc-info { flex: 1; min-width: 0; }
-    .doc-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .doc-chip svg { stroke: var(--muted); }
+    .doc-body { flex: 1; min-width: 0; }
+    .doc-name { font-size: 14px; font-weight: 600; }
     .doc-exp  { font-size: 12px; color: var(--muted); margin-top: 1px; }
-    .doc-exp.expired { color: var(--red); }
+    .doc-exp.expired { color: var(--red); font-weight: 600; }
     .doc-exp.warning { color: var(--amber); }
 
-    /* ── Session timer ── */
-    .session-bar {
-      background: rgba(37,99,235,0.06); border-bottom: 1px solid rgba(37,99,235,0.12);
-      padding: 6px 18px; text-align: center;
-      font-size: 11px; font-weight: 600; color: var(--accent);
-    }
-    .session-bar.warning { background: rgba(220,38,38,0.06); border-color: rgba(220,38,38,0.12); color: var(--red); }
-
-    /* ── Loading ── */
+    /* ── Spinner ── */
     .spinner {
-      width: 24px; height: 24px; border: 2.5px solid var(--border);
+      width: 22px; height: 22px; border: 2.5px solid var(--border);
       border-top-color: var(--text); border-radius: 50%;
-      animation: spin 0.7s linear infinite; margin: 24px auto;
+      animation: spin 0.65s linear infinite; margin: 32px auto;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <!-- ══ Auth Screen ══ -->
-  <div class="auth-screen" id="auth-screen">
+  <!-- ═══ Auth ═══ -->
+  <div class="auth-wrap" id="auth-wrap">
     <div class="auth-brand">PALLADIA</div>
     <div class="auth-title">Area Lavoratore</div>
     <div class="auth-card">
-      <div id="auth-identity">
-        <div class="spinner"></div>
-      </div>
-      <div id="auth-form" style="display:none">
-        <div class="auth-label">Codice fiscale</div>
-        <input class="auth-input" id="cf-input" type="text" maxlength="16"
-               autocomplete="off" autocapitalize="characters" spellcheck="false"
-               placeholder="RSSMRA85M01H501Z">
-        <button class="auth-btn" id="auth-btn" disabled>Accedi</button>
-        <div class="auth-error" id="auth-error"></div>
-      </div>
-      <div class="auth-hint">
-        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-        Connessione cifrata · Sessione di 30 minuti · Max 5 tentativi ogni 15 min
+      <div id="auth-identity"><div class="auth-loading"><div class="spinner"></div></div></div>
+      <div id="auth-form-wrap" style="display:none">
+        <div class="auth-body">
+          <div class="auth-label">Codice fiscale</div>
+          <input class="auth-input" id="cf-input" type="text" maxlength="16"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false"
+                 placeholder="RSSMRA85M01H501Z" inputmode="text">
+          <button class="auth-btn" id="auth-btn" disabled>Accedi</button>
+          <div class="auth-error" id="auth-error"></div>
+        </div>
+        <div class="auth-footer">
+          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Connessione cifrata · Sessione 30 min · Max 5 tentativi / 15 min
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- ══ App Shell ══ -->
+  <!-- ═══ App ═══ -->
   <div class="app" id="app">
-    <div class="top-bar">
-      <div class="top-name" id="app-name">—</div>
-      <button class="top-logout" id="btn-logout">Esci</button>
-    </div>
-    <div class="session-bar" id="session-bar">Sessione attiva — 30:00</div>
-
-    <div class="tab-content">
-      <div class="tab-pane active" id="pane-timbrature"></div>
-      <div class="tab-pane" id="pane-buste"></div>
-      <div class="tab-pane" id="pane-documenti"></div>
+    <div class="topbar">
+      <div class="topbar-avatar" id="app-avatar"></div>
+      <div class="topbar-info">
+        <div class="topbar-name" id="app-name">—</div>
+        <div class="topbar-session" id="app-timer">30:00</div>
+      </div>
+      <button class="topbar-logout" id="btn-logout">Esci</button>
     </div>
 
-    <div class="tab-bar">
-      <button class="tab-btn active" data-tab="timbrature">
+    <div class="content">
+      <div class="pane active" id="pane-timbrature"></div>
+      <div class="pane" id="pane-buste"></div>
+      <div class="pane" id="pane-documenti"></div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="timbrature">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Timbrature
       </button>
-      <button class="tab-btn" data-tab="buste">
+      <button class="tab" data-tab="buste">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Buste Paga
       </button>
-      <button class="tab-btn" data-tab="documenti">
+      <button class="tab" data-tab="documenti">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Documenti
       </button>
@@ -300,404 +342,291 @@
 
   <script>
     'use strict';
+    const API = location.origin + '/api/v1';
+    let _token = null, _code = null, _expAt = null, _timer = null, _profile = null;
 
-    const API = window.location.origin + '/api/v1';
-    let _token = null;
-    let _code  = null;
-    let _expAt = null;
-    let _timerInterval = null;
+    function esc(s) { const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML; }
+    function getCode() { const p = location.pathname.split('/').filter(Boolean); const i = p.indexOf('lavoratore'); return i!==-1 ? (p[i+1]||'') : ''; }
+    function authH() { return { 'Authorization': 'WorkerArea ' + _token, 'Content-Type': 'application/json' }; }
+    function initials(name) { return (name||'').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
 
-    // ── Utils ──────────────────────────────────────────────────────────────────
-    function esc(s) {
-      const d = document.createElement('div');
-      d.textContent = String(s || '');
-      return d.innerHTML;
+    async function apiFetch(path, opts={}) {
+      const r = await fetch(API+path, { ...opts, headers: { ...authH(), ...(opts.headers||{}) } });
+      if (r.status===401) { logout(); throw new Error('SESSION_EXPIRED'); }
+      return r;
     }
 
-    function getBadgeCode() {
-      const parts = location.pathname.split('/').filter(Boolean);
-      const idx = parts.indexOf('lavoratore');
-      return idx !== -1 ? (parts[idx + 1] || '') : '';
-    }
+    const MO = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+    function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString('it-IT',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
+    function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—'; }
+    function fmtDay(iso) { return iso ? new Date(iso).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}) : '—'; }
 
-    function authHeaders() {
-      return { 'Authorization': 'WorkerArea ' + _token, 'Content-Type': 'application/json' };
-    }
-
-    async function apiFetch(path, opts = {}) {
-      const resp = await fetch(API + path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
-      if (resp.status === 401) { logout(); throw new Error('SESSION_EXPIRED'); }
-      return resp;
-    }
-
-    const MONTHS = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
-      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-
-    function fmtDate(iso) {
-      if (!iso) return '—';
-      return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
-    }
-    function fmtTime(iso) {
-      if (!iso) return '—';
-      return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
-    }
-    function fmtDay(iso) {
-      if (!iso) return '—';
-      return new Date(iso).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
-    }
-
-    // ── Auth Flow ──────────────────────────────────────────────────────────────
+    /* ── Auth ── */
     async function initAuth() {
-      _code = getBadgeCode();
+      _code = getCode();
       if (!_code || !/^[A-Fa-f0-9]{18}$/i.test(_code)) {
-        document.getElementById('auth-identity').innerHTML =
-          '<div style="color:var(--red);font-size:14px;font-weight:600">Codice badge non valido</div>';
+        document.getElementById('auth-identity').innerHTML = '<div class="auth-loading" style="color:var(--red);font-weight:600;font-size:14px;padding:28px 20px">Codice badge non valido</div>';
         return;
       }
-
       try {
-        const resp = await fetch(API + '/badge/' + _code);
-        if (!resp.ok) throw new Error();
-        const d = await resp.json();
+        const r = await fetch(API+'/badge/'+_code);
+        if (!r.ok) throw 0;
+        const d = await r.json();
+        const av = d.photo_url
+          ? `<img src="${esc(d.photo_url)}" alt="">`
+          : esc(initials(d.full_name));
         document.getElementById('auth-identity').innerHTML = `
-          <div class="auth-worker-name">${esc(d.full_name)}</div>
-          <div class="auth-company">${esc(d.company_name || '')}</div>`;
-        document.getElementById('auth-form').style.display = '';
+          <div class="auth-worker">
+            <div class="auth-avatar">${av}</div>
+            <div>
+              <div class="auth-wname">${esc(d.full_name)}</div>
+              <div class="auth-wcompany">${esc(d.company_name||'')}</div>
+            </div>
+          </div>`;
+        document.getElementById('auth-form-wrap').style.display = '';
       } catch {
-        document.getElementById('auth-identity').innerHTML =
-          '<div style="color:var(--red);font-size:14px;font-weight:600">Badge non trovato</div>';
+        document.getElementById('auth-identity').innerHTML = '<div class="auth-loading" style="color:var(--red);font-weight:600;font-size:14px;padding:28px 20px">Badge non trovato</div>';
       }
     }
 
     async function doLogin() {
-      const cfInput = document.getElementById('cf-input');
-      const errEl   = document.getElementById('auth-error');
-      const btn     = document.getElementById('auth-btn');
-      const cf      = cfInput.value.trim().toUpperCase();
-
-      if (cf.length !== 16) {
-        cfInput.classList.add('error');
-        errEl.textContent = 'Il codice fiscale deve avere 16 caratteri.';
-        errEl.style.display = '';
-        return;
-      }
-
-      btn.disabled = true;
-      btn.textContent = 'Verifica in corso…';
-      errEl.style.display = 'none';
-      cfInput.classList.remove('error');
-
+      const inp = document.getElementById('cf-input');
+      const err = document.getElementById('auth-error');
+      const btn = document.getElementById('auth-btn');
+      const cf = inp.value.trim().toUpperCase();
+      if (cf.length!==16) { inp.classList.add('shake'); setTimeout(()=>inp.classList.remove('shake'),500); return; }
+      btn.disabled = true; btn.textContent = 'Verifica…'; err.style.display = 'none';
       try {
-        const resp = await fetch(API + '/area/' + _code + '/auth', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cf }),
-        });
-        const body = await resp.json();
-
-        if (!resp.ok) {
-          cfInput.classList.add('error');
-          if (resp.status === 429) {
-            errEl.textContent = 'Troppi tentativi. Riprova tra 15 minuti.';
-          } else {
-            errEl.textContent = body.message || 'Codice fiscale non corretto.';
-          }
-          errEl.style.display = '';
-          btn.disabled = false;
-          btn.textContent = 'Accedi';
-          return;
+        const r = await fetch(API+'/area/'+_code+'/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cf}) });
+        const b = await r.json();
+        if (!r.ok) {
+          inp.classList.add('shake'); setTimeout(()=>inp.classList.remove('shake'),500);
+          err.textContent = r.status===429 ? 'Troppi tentativi. Riprova tra 15 minuti.' : (b.message||'Codice fiscale non corretto.');
+          err.style.display = ''; btn.disabled = false; btn.textContent = 'Accedi'; return;
         }
-
-        _token = body.token;
-        _expAt = Date.now() + (body.expires_in * 1000);
-        sessionStorage.setItem('wa_token', _token);
-        sessionStorage.setItem('wa_exp',   String(_expAt));
-        sessionStorage.setItem('wa_code',  _code);
+        _token = b.token; _expAt = Date.now()+(b.expires_in*1000);
+        sessionStorage.setItem('wa_t',_token); sessionStorage.setItem('wa_e',String(_expAt)); sessionStorage.setItem('wa_c',_code);
         enterApp();
-      } catch {
-        errEl.textContent = 'Errore di rete. Verifica la connessione.';
-        errEl.style.display = '';
-        btn.disabled = false;
-        btn.textContent = 'Accedi';
-      }
+      } catch { err.textContent='Errore di rete.'; err.style.display=''; btn.disabled=false; btn.textContent='Accedi'; }
     }
 
     function logout() {
-      _token = null; _expAt = null;
-      sessionStorage.removeItem('wa_token');
-      sessionStorage.removeItem('wa_exp');
-      sessionStorage.removeItem('wa_code');
-      if (_timerInterval) clearInterval(_timerInterval);
+      _token=null; _expAt=null; _profile=null;
+      sessionStorage.removeItem('wa_t'); sessionStorage.removeItem('wa_e'); sessionStorage.removeItem('wa_c');
+      if (_timer) clearInterval(_timer);
       document.getElementById('app').classList.remove('active');
-      document.getElementById('auth-screen').style.display = '';
-      document.getElementById('cf-input').value = '';
+      document.getElementById('auth-wrap').style.display = '';
+      const inp = document.getElementById('cf-input');
+      if (inp) { inp.value=''; }
       document.getElementById('auth-error').style.display = 'none';
       document.getElementById('auth-btn').disabled = true;
       document.getElementById('auth-btn').textContent = 'Accedi';
     }
 
-    function tryResumeSession() {
-      const t = sessionStorage.getItem('wa_token');
-      const e = sessionStorage.getItem('wa_exp');
-      const c = sessionStorage.getItem('wa_code');
-      if (t && e && c && parseInt(e) > Date.now() && c.toUpperCase() === _code.toUpperCase()) {
-        _token = t;
-        _expAt = parseInt(e);
-        return true;
-      }
+    function tryResume() {
+      const t=sessionStorage.getItem('wa_t'), e=sessionStorage.getItem('wa_e'), c=sessionStorage.getItem('wa_c');
+      if (t&&e&&c&&parseInt(e)>Date.now()&&c.toUpperCase()===_code.toUpperCase()) { _token=t; _expAt=parseInt(e); return true; }
       return false;
     }
 
-    // ── Session Timer ──────────────────────────────────────────────────────────
-    function startSessionTimer() {
-      const bar = document.getElementById('session-bar');
-      _timerInterval = setInterval(() => {
-        const left = Math.max(0, Math.floor((_expAt - Date.now()) / 1000));
-        if (left <= 0) { logout(); return; }
-        const m = Math.floor(left / 60);
-        const s = String(left % 60).padStart(2, '0');
-        bar.textContent = `Sessione attiva — ${m}:${s}`;
-        bar.className = left <= 120 ? 'session-bar warning' : 'session-bar';
+    function startTimer() {
+      const el = document.getElementById('app-timer');
+      _timer = setInterval(()=>{
+        const s = Math.max(0, Math.floor((_expAt-Date.now())/1000));
+        if (s<=0) { logout(); return; }
+        el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+        el.className = s<=120 ? 'topbar-session warn' : 'topbar-session';
       }, 1000);
     }
 
-    // ── App Entry ──────────────────────────────────────────────────────────────
     async function enterApp() {
-      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('auth-wrap').style.display = 'none';
       document.getElementById('app').classList.add('active');
-      startSessionTimer();
-
+      startTimer();
       try {
-        const resp = await apiFetch('/area/' + _code + '/profile');
-        const p = await resp.json();
-        document.getElementById('app-name').textContent = p.full_name || '—';
-      } catch { /* name stays — */ }
-
+        const r = await apiFetch('/area/'+_code+'/profile');
+        _profile = await r.json();
+        document.getElementById('app-name').textContent = _profile.full_name||'—';
+        const av = _profile.photo_url
+          ? `<img src="${esc(_profile.photo_url)}" alt="">`
+          : esc(initials(_profile.full_name));
+        document.getElementById('app-avatar').innerHTML = av;
+      } catch {}
       loadTimbrature();
     }
 
-    // ── Tab Navigation ─────────────────────────────────────────────────────────
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-        btn.classList.add('active');
-        const tab = btn.dataset.tab;
-        document.getElementById('pane-' + tab).classList.add('active');
-
-        if (tab === 'timbrature') loadTimbrature();
-        if (tab === 'buste')     loadPayslips();
-        if (tab === 'documenti') loadDocumenti();
+    /* ── Tabs ── */
+    document.querySelectorAll('.tab').forEach(t => {
+      t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
+        document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
+        t.classList.add('active');
+        document.getElementById('pane-'+t.dataset.tab).classList.add('active');
+        if (t.dataset.tab==='timbrature') loadTimbrature();
+        if (t.dataset.tab==='buste') loadPayslips();
+        if (t.dataset.tab==='documenti') loadDocumenti();
       });
     });
 
-    // ── Timbrature ─────────────────────────────────────────────────────────────
+    /* ── Timbrature ── */
     async function loadTimbrature() {
-      const pane = document.getElementById('pane-timbrature');
-      pane.innerHTML = '<div class="spinner"></div>';
-
+      const p = document.getElementById('pane-timbrature');
+      p.innerHTML = '<div class="spinner"></div>';
       try {
-        const resp = await apiFetch('/area/' + _code + '/presence');
-        const logs = await resp.json();
-
+        const r = await apiFetch('/area/'+_code+'/presence');
+        const logs = await r.json();
         if (!logs.length) {
-          pane.innerHTML = `<div class="section-title">Storico timbrature</div>
-            <div class="card"><div class="empty-state">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-              Nessuna timbratura negli ultimi 30 giorni
-            </div></div>`;
-          return;
+          p.innerHTML = `<div class="section-label">Storico timbrature</div><div class="card"><div class="empty">
+            <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <div class="empty-title">Nessuna timbratura</div>
+            <div class="empty-sub">Non ci sono timbrature negli ultimi 30 giorni.</div>
+          </div></div>`; return;
         }
-
-        const grouped = {};
-        for (const l of logs) {
-          const day = l.timestamp_server.split('T')[0];
-          if (!grouped[day]) grouped[day] = [];
-          grouped[day].push(l);
-        }
-
-        let html = '<div class="section-title">Storico timbrature · ultimi 30 giorni</div>';
-        for (const [day, entries] of Object.entries(grouped)) {
-          html += `<div class="day-group"><div class="day-label">${esc(fmtDay(day))}</div><div class="card">`;
+        const groups = {};
+        for (const l of logs) { const d=l.timestamp_server.split('T')[0]; (groups[d]=groups[d]||[]).push(l); }
+        let h = '<div class="section-label">Ultimi 30 giorni</div>';
+        for (const [day,entries] of Object.entries(groups)) {
+          h += `<div class="day-header">${esc(fmtDay(day))}</div><div class="card">`;
           for (const e of entries) {
-            const isEntry = e.event_type === 'ENTRY';
-            html += `<div class="punch-row">
-              <div class="punch-icon ${isEntry ? 'entry' : 'exit'}">${isEntry ? 'E' : 'U'}</div>
-              <div class="punch-info">
+            const isIn = e.event_type==='ENTRY';
+            h += `<div class="punch-row">
+              <div class="punch-badge ${isIn?'in':'out'}">${isIn?'ENT':'USC'}</div>
+              <div class="punch-detail">
                 <div class="punch-time">${esc(fmtTime(e.timestamp_server))}</div>
                 <div class="punch-site">${esc(e.site_name)}</div>
               </div>
             </div>`;
           }
-          html += '</div></div>';
+          h += '</div>';
         }
-        pane.innerHTML = html;
-      } catch { pane.innerHTML = '<div class="empty-state" style="color:var(--red)">Errore nel caricamento</div>'; }
+        p.innerHTML = h;
+      } catch { p.innerHTML = '<div class="empty" style="color:var(--red)">Errore nel caricamento</div>'; }
     }
 
-    // ── Buste Paga ─────────────────────────────────────────────────────────────
+    /* ── Buste Paga ── */
     async function loadPayslips() {
-      const pane = document.getElementById('pane-buste');
-      pane.innerHTML = '<div class="spinner"></div>';
-
+      const p = document.getElementById('pane-buste');
+      p.innerHTML = '<div class="spinner"></div>';
       try {
-        const resp = await apiFetch('/area/' + _code + '/payslips');
-        const list = await resp.json();
-
+        const r = await apiFetch('/area/'+_code+'/payslips');
+        const list = await r.json();
         if (!list.length) {
-          pane.innerHTML = `<div class="section-title">Buste paga</div>
-            <div class="card"><div class="empty-state">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              Nessuna busta paga disponibile
-            </div></div>`;
-          return;
+          p.innerHTML = `<div class="section-label">Buste paga</div><div class="card"><div class="empty">
+            <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div class="empty-title">Nessuna busta paga</div>
+            <div class="empty-sub">Le buste paga compariranno qui quando verranno condivise dall'azienda.</div>
+          </div></div>`; return;
         }
-
-        let html = '<div class="section-title">Buste paga</div><div class="card">';
-        for (const p of list) {
-          const period = `${MONTHS[p.period_month] || p.period_month} ${p.period_year}`;
-          const isAck  = p.status === 'acknowledged';
-          const ackDate = p.acknowledged_at ? fmtDate(p.acknowledged_at) : '';
-          const actions = isAck
-            ? `<span class="ack-badge">&#10003; Firmata ${esc(ackDate)}</span>`
-            : `<button class="btn-sm btn-ack" onclick="ackPayslip('${esc(p.id)}',this)">Firma &rarr;</button>`;
-
-          html += `<div class="payslip-row" id="ps-${esc(p.id)}">
-            <div class="payslip-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-            <div class="payslip-info">
-              <div class="payslip-period">${esc(period)}</div>
-              ${p.note ? `<div class="payslip-note">${esc(p.note)}</div>` : ''}
+        let h = '<div class="section-label">Buste paga</div><div class="card">';
+        for (const s of list) {
+          const period = `${MO[s.period_month]||s.period_month} ${s.period_year}`;
+          const isAck = s.status==='acknowledged';
+          const ackD = s.acknowledged_at ? fmtDate(s.acknowledged_at) : '';
+          const acts = isAck
+            ? `<span class="ack-pill">&#10003; Firmata</span>`
+            : `<button class="btn btn-solid" onclick="ackSlip('${esc(s.id)}',this)">Firma</button>`;
+          h += `<div class="slip-row" id="sl-${esc(s.id)}">
+            <div class="slip-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div class="slip-body">
+              <div class="slip-period">${esc(period)}</div>
+              ${s.note ? `<div class="slip-note">${esc(s.note)}</div>` : ''}
             </div>
-            <div class="payslip-actions">
-              <button class="btn-sm btn-view" onclick="openPayslip('${esc(p.id)}',this)">&#128065; PDF</button>
-              ${actions}
+            <div class="slip-actions">
+              <button class="btn btn-outline" onclick="openSlip('${esc(s.id)}',this)">Apri PDF</button>
+              ${acts}
             </div>
           </div>`;
         }
-        html += '</div>';
-        pane.innerHTML = html;
-      } catch { pane.innerHTML = '<div class="empty-state" style="color:var(--red)">Errore nel caricamento</div>'; }
+        h += '</div>';
+        p.innerHTML = h;
+      } catch { p.innerHTML = '<div class="empty" style="color:var(--red)">Errore nel caricamento</div>'; }
     }
 
-    async function openPayslip(id, btn) {
+    async function openSlip(id, btn) {
       btn.disabled = true;
-      try {
-        const resp = await apiFetch('/area/' + _code + '/payslips/' + id + '/pdf');
-        const { url } = await resp.json();
-        window.open(url, '_blank', 'noopener');
-      } catch { alert('Impossibile aprire il PDF.'); }
+      try { const r = await apiFetch('/area/'+_code+'/payslips/'+id+'/pdf'); const {url} = await r.json(); window.open(url,'_blank','noopener'); }
+      catch { alert('Impossibile aprire il PDF.'); }
       btn.disabled = false;
     }
 
-    async function ackPayslip(id, btn) {
-      if (!confirm('Confermi la presa visione di questa busta paga?\n\nData, ora e indirizzo IP verranno registrati.')) return;
-      btn.disabled = true;
-      btn.textContent = '…';
+    async function ackSlip(id, btn) {
+      if (!confirm('Confermi la presa visione?\n\nData, ora e IP verranno registrati.')) return;
+      btn.disabled = true; btn.textContent = '…';
       try {
-        const resp = await apiFetch('/area/' + _code + '/payslips/' + id + '/acknowledge', { method: 'POST' });
-        if (!resp.ok) throw new Error();
-        const row = document.getElementById('ps-' + id);
-        const acts = row?.querySelector('.payslip-actions');
-        if (acts) {
-          const ackBtn = acts.querySelector('.btn-ack');
-          if (ackBtn) ackBtn.replaceWith(Object.assign(document.createElement('span'), {
-            className: 'ack-badge', innerHTML: '&#10003; Firmata ora',
-          }));
-        }
-      } catch { alert('Errore. Riprova.'); btn.disabled = false; btn.textContent = 'Firma →'; }
+        const r = await apiFetch('/area/'+_code+'/payslips/'+id+'/acknowledge',{method:'POST'});
+        if (!r.ok) throw 0;
+        const row = document.getElementById('sl-'+id);
+        const acts = row?.querySelector('.slip-actions');
+        if (acts) { const ab = acts.querySelector('.btn-solid'); if (ab) ab.outerHTML = '<span class="ack-pill">&#10003; Firmata</span>'; }
+      } catch { alert('Errore. Riprova.'); btn.disabled=false; btn.textContent='Firma'; }
     }
 
-    // ── Documenti ──────────────────────────────────────────────────────────────
+    /* ── Documenti ── */
     const DOC_LABELS = {
-      idoneita_medica: 'Idoneità Sanitaria',
-      formazione_sicurezza: 'Formazione Sicurezza',
-      formazione_generale: 'Formazione Generale',
-      formazione_specifica: 'Formazione Specifica',
-      patentino: 'Patentino / Abilitazione',
-      unilav: 'UniLav',
-      documento_identita: 'Documento d\'Identità',
+      idoneita_medica:'Idoneità Sanitaria', formazione_sicurezza:'Formazione Sicurezza',
+      formazione_generale:'Formazione Generale', formazione_specifica:'Formazione Specifica',
+      patentino:'Patentino / Abilitazione', unilav:'UniLav', documento_identita:"Documento d'Identità",
     };
 
     async function loadDocumenti() {
-      const pane = document.getElementById('pane-documenti');
-      pane.innerHTML = '<div class="spinner"></div>';
-
+      const p = document.getElementById('pane-documenti');
+      p.innerHTML = '<div class="spinner"></div>';
       try {
-        const resp = await apiFetch('/area/' + _code + '/profile');
-        const p = await resp.json();
-        const docs = p.documents || [];
-
+        const pr = _profile || await (await apiFetch('/area/'+_code+'/profile')).json();
+        const docs = pr.documents || [];
         if (!docs.length) {
-          pane.innerHTML = `<div class="section-title">Documenti personali</div>
-            <div class="card"><div class="empty-state">
-              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-              Nessun documento caricato
-            </div></div>`;
-          return;
+          p.innerHTML = `<div class="section-label">Documenti</div><div class="card"><div class="empty">
+            <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+            <div class="empty-title">Nessun documento</div>
+            <div class="empty-sub">I documenti compariranno qui quando verranno caricati dall'azienda.</div>
+          </div></div>`; return;
         }
-
-        let html = '<div class="section-title">Documenti personali</div><div class="card">';
+        let h = '<div class="section-label">Documenti personali</div><div class="card">';
         for (const d of docs) {
-          const label = DOC_LABELS[d.doc_type] || d.name || d.doc_type;
-          let expClass = '', expText = '';
+          const label = DOC_LABELS[d.doc_type]||d.name||d.doc_type;
+          let expCls='', expTxt='';
           if (d.expiry_date) {
-            const exp = new Date(d.expiry_date);
-            const now = new Date();
-            const diff = (exp - now) / 86400000;
-            expClass = diff < 0 ? 'expired' : diff < 30 ? 'warning' : '';
-            expText = 'Scadenza: ' + fmtDate(d.expiry_date);
+            const diff = (new Date(d.expiry_date)-new Date())/86400000;
+            expCls = diff<0 ? 'expired' : diff<30 ? 'warning' : '';
+            expTxt = (diff<0?'Scaduto':'Scadenza')+' '+fmtDate(d.expiry_date);
           }
-          const viewBtn = d.has_file
-            ? `<button class="btn-sm btn-view" onclick="openDoc('${esc(d.id)}',this)">Apri</button>`
-            : '';
-
-          html += `<div class="doc-row">
-            <div class="doc-icon-box"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-            <div class="doc-info">
+          const btn = d.has_file ? `<button class="btn btn-outline" onclick="openDoc('${esc(d.id)}',this)">Apri</button>` : '';
+          h += `<div class="doc-row">
+            <div class="doc-chip"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div class="doc-body">
               <div class="doc-name">${esc(label)}</div>
-              ${expText ? `<div class="doc-exp ${expClass}">${esc(expText)}</div>` : ''}
+              ${expTxt ? `<div class="doc-exp ${expCls}">${esc(expTxt)}</div>` : ''}
             </div>
-            ${viewBtn}
+            ${btn}
           </div>`;
         }
-        html += '</div>';
-        pane.innerHTML = html;
-      } catch { pane.innerHTML = '<div class="empty-state" style="color:var(--red)">Errore nel caricamento</div>'; }
+        h += '</div>';
+        p.innerHTML = h;
+      } catch { p.innerHTML = '<div class="empty" style="color:var(--red)">Errore nel caricamento</div>'; }
     }
 
-    async function openDoc(docId, btn) {
+    async function openDoc(id, btn) {
       btn.disabled = true;
-      try {
-        const resp = await apiFetch('/area/' + _code + '/documents/' + docId);
-        const { url } = await resp.json();
-        window.open(url, '_blank', 'noopener');
-      } catch { alert('Impossibile aprire il documento.'); }
+      try { const r = await apiFetch('/area/'+_code+'/documents/'+id); const {url} = await r.json(); window.open(url,'_blank','noopener'); }
+      catch { alert('Impossibile aprire il documento.'); }
       btn.disabled = false;
     }
 
-    // ── Input handling ─────────────────────────────────────────────────────────
-    document.getElementById('cf-input').addEventListener('input', function () {
-      this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      document.getElementById('auth-btn').disabled = this.value.length !== 16;
-      this.classList.remove('error');
+    /* ── Input ── */
+    const cfIn = document.getElementById('cf-input');
+    cfIn.addEventListener('input', function() {
+      this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+      document.getElementById('auth-btn').disabled = this.value.length!==16;
       document.getElementById('auth-error').style.display = 'none';
     });
-
-    document.getElementById('cf-input').addEventListener('keydown', function (e) {
-      if (e.key === 'Enter' && this.value.length === 16) doLogin();
-    });
-
+    cfIn.addEventListener('keydown', function(e) { if (e.key==='Enter'&&this.value.length===16) doLogin(); });
     document.getElementById('auth-btn').addEventListener('click', doLogin);
     document.getElementById('btn-logout').addEventListener('click', logout);
 
-    // ── Boot ───────────────────────────────────────────────────────────────────
-    (async function () {
-      _code = getBadgeCode();
-      if (_code && tryResumeSession()) {
-        enterApp();
-      } else {
-        await initAuth();
-      }
+    /* ── Boot ── */
+    (async () => {
+      _code = getCode();
+      if (_code && tryResume()) enterApp(); else await initAuth();
     })();
   </script>
 </body>
