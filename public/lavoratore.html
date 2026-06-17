@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1a1a1a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <title>Area Lavoratore — Palladia</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #f5f3ee;
+      --surface: #ffffff;
+      --border:  #e4e7ec;
+      --text:    #1a1a1a;
+      --muted:   #6b7280;
+      --subtle:  #9ca3af;
+      --accent:  #2563eb;
+      --green:   #16a34a;
+      --red:     #dc2626;
+      --amber:   #d97706;
+      --radius:  12px;
+    }
+
+    html, body {
+      min-height: 100%; min-height: 100dvh;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 16px; line-height: 1.5;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* ── Auth Screen ── */
+    .auth-screen {
+      min-height: 100dvh;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px 20px;
+    }
+    .auth-brand {
+      font-size: 11px; font-weight: 800; letter-spacing: 0.22em;
+      color: var(--muted); text-transform: uppercase; margin-bottom: 8px;
+    }
+    .auth-title {
+      font-size: 22px; font-weight: 800; color: var(--text); margin-bottom: 28px;
+    }
+    .auth-card {
+      width: 100%; max-width: 380px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 24px; text-align: center;
+    }
+    .auth-worker-name {
+      font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 2px;
+    }
+    .auth-company {
+      font-size: 13px; color: var(--muted); margin-bottom: 20px;
+    }
+    .auth-label {
+      font-size: 12px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      text-align: left; margin-bottom: 6px;
+    }
+    .auth-input {
+      width: 100%; padding: 12px 14px;
+      font-size: 16px; font-family: monospace; letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      background: var(--bg); color: var(--text);
+      outline: none; transition: border-color 0.15s;
+    }
+    .auth-input:focus { border-color: var(--accent); }
+    .auth-input.error { border-color: var(--red); }
+    .auth-btn {
+      width: 100%; margin-top: 16px; padding: 13px;
+      font-size: 15px; font-weight: 700; color: #fff;
+      background: var(--text); border: none; border-radius: 8px;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .auth-btn:hover:not(:disabled) { opacity: 0.85; }
+    .auth-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .auth-error {
+      margin-top: 12px; padding: 10px 12px;
+      font-size: 13px; font-weight: 600; color: var(--red);
+      background: rgba(220,38,38,0.06); border: 1px solid rgba(220,38,38,0.2);
+      border-radius: 8px; display: none;
+    }
+    .auth-hint {
+      margin-top: 16px; font-size: 11px; color: var(--subtle); line-height: 1.6;
+    }
+    .auth-hint svg { vertical-align: -2px; margin-right: 3px; }
+
+    /* ── App Shell ── */
+    .app { display: none; flex-direction: column; min-height: 100dvh; }
+    .app.active { display: flex; }
+
+    .top-bar {
+      background: var(--text); color: #fff;
+      padding: 14px 18px; display: flex; align-items: center; gap: 12px;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .top-name { flex: 1; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .top-logout {
+      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.6);
+      background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 6px; padding: 5px 12px; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .top-logout:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+    .tab-content {
+      flex: 1; padding: 16px 16px 100px; overflow-y: auto;
+      max-width: 560px; width: 100%; margin: 0 auto;
+    }
+
+    .tab-bar {
+      position: fixed; bottom: 0; left: 0; right: 0;
+      background: var(--surface); border-top: 1px solid var(--border);
+      display: flex; z-index: 50;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .tab-btn {
+      flex: 1; padding: 10px 4px 8px; border: none; background: none;
+      font-size: 11px; font-weight: 600; color: var(--muted);
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      cursor: pointer; transition: color 0.15s;
+    }
+    .tab-btn.active { color: var(--text); }
+    .tab-btn svg { width: 22px; height: 22px; stroke-width: 1.8; }
+
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Common ── */
+    .section-title {
+      font-size: 11px; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.08em;
+      margin: 20px 0 8px; padding: 0 2px;
+    }
+    .section-title:first-child { margin-top: 4px; }
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .empty-state {
+      padding: 32px 18px; text-align: center;
+      font-size: 13px; color: var(--muted);
+    }
+    .empty-state svg { display: block; margin: 0 auto 10px; stroke: var(--subtle); }
+
+    /* ── Timbrature ── */
+    .day-group { margin-bottom: 16px; }
+    .day-label {
+      font-size: 12px; font-weight: 700; color: var(--muted);
+      padding: 0 2px; margin-bottom: 6px;
+    }
+    .punch-row {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .punch-row:last-child { border-bottom: none; }
+    .punch-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 13px; font-weight: 800;
+    }
+    .punch-icon.entry { background: rgba(22,163,74,0.08); color: var(--green); border: 1px solid rgba(22,163,74,0.2); }
+    .punch-icon.exit  { background: rgba(220,38,38,0.06); color: var(--red);   border: 1px solid rgba(220,38,38,0.15); }
+    .punch-info { flex: 1; min-width: 0; }
+    .punch-time { font-size: 15px; font-weight: 700; color: var(--text); }
+    .punch-site { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ── Buste Paga ── */
+    .payslip-row {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .payslip-row:last-child { border-bottom: none; }
+    .payslip-icon {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .payslip-icon svg { width: 18px; height: 18px; stroke: var(--accent); }
+    .payslip-info { flex: 1; min-width: 0; }
+    .payslip-period { font-size: 14px; font-weight: 700; color: var(--text); }
+    .payslip-note { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .payslip-actions { display: flex; flex-direction: column; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+    .btn-sm {
+      font-size: 12px; font-weight: 600; border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; white-space: nowrap;
+      border: none; transition: opacity 0.15s;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .btn-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-view { color: var(--accent); background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); }
+    .btn-ack  { color: #fff; background: var(--green); font-weight: 700; }
+    .ack-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 700; color: var(--green);
+      background: rgba(22,163,74,0.08); border: 1px solid rgba(22,163,74,0.2);
+      border-radius: 20px; padding: 4px 10px;
+    }
+
+    /* ── Documenti ── */
+    .doc-row {
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 12px;
+    }
+    .doc-row:last-child { border-bottom: none; }
+    .doc-icon-box {
+      width: 36px; height: 36px; border-radius: 8px;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: 16px;
+    }
+    .doc-info { flex: 1; min-width: 0; }
+    .doc-name { font-size: 14px; font-weight: 600; color: var(--text); }
+    .doc-exp  { font-size: 12px; color: var(--muted); margin-top: 1px; }
+    .doc-exp.expired { color: var(--red); }
+    .doc-exp.warning { color: var(--amber); }
+
+    /* ── Session timer ── */
+    .session-bar {
+      background: rgba(37,99,235,0.06); border-bottom: 1px solid rgba(37,99,235,0.12);
+      padding: 6px 18px; text-align: center;
+      font-size: 11px; font-weight: 600; color: var(--accent);
+    }
+    .session-bar.warning { background: rgba(220,38,38,0.06); border-color: rgba(220,38,38,0.12); color: var(--red); }
+
+    /* ── Loading ── */
+    .spinner {
+      width: 24px; height: 24px; border: 2.5px solid var(--border);
+      border-top-color: var(--text); border-radius: 50%;
+      animation: spin 0.7s linear infinite; margin: 24px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <!-- ══ Auth Screen ══ -->
+  <div class="auth-screen" id="auth-screen">
+    <div class="auth-brand">PALLADIA</div>
+    <div class="auth-title">Area Lavoratore</div>
+    <div class="auth-card">
+      <div id="auth-identity">
+        <div class="spinner"></div>
+      </div>
+      <div id="auth-form" style="display:none">
+        <div class="auth-label">Codice fiscale</div>
+        <input class="auth-input" id="cf-input" type="text" maxlength="16"
+               autocomplete="off" autocapitalize="characters" spellcheck="false"
+               placeholder="RSSMRA85M01H501Z">
+        <button class="auth-btn" id="auth-btn" disabled>Accedi</button>
+        <div class="auth-error" id="auth-error"></div>
+      </div>
+      <div class="auth-hint">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Connessione cifrata · Sessione di 30 minuti · Max 5 tentativi ogni 15 min
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ App Shell ══ -->
+  <div class="app" id="app">
+    <div class="top-bar">
+      <div class="top-name" id="app-name">—</div>
+      <button class="top-logout" id="btn-logout">Esci</button>
+    </div>
+    <div class="session-bar" id="session-bar">Sessione attiva — 30:00</div>
+
+    <div class="tab-content">
+      <div class="tab-pane active" id="pane-timbrature"></div>
+      <div class="tab-pane" id="pane-buste"></div>
+      <div class="tab-pane" id="pane-documenti"></div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="timbrature">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Timbrature
+      </button>
+      <button class="tab-btn" data-tab="buste">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        Buste Paga
+      </button>
+      <button class="tab-btn" data-tab="documenti">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+        Documenti
+      </button>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+
+    const API = window.location.origin + '/api/v1';
+    let _token = null;
+    let _code  = null;
+    let _expAt = null;
+    let _timerInterval = null;
+
+    // ── Utils ──────────────────────────────────────────────────────────────────
+    function esc(s) {
+      const d = document.createElement('div');
+      d.textContent = String(s || '');
+      return d.innerHTML;
+    }
+
+    function getBadgeCode() {
+      const parts = location.pathname.split('/').filter(Boolean);
+      const idx = parts.indexOf('lavoratore');
+      return idx !== -1 ? (parts[idx + 1] || '') : '';
+    }
+
+    function authHeaders() {
+      return { 'Authorization': 'WorkerArea ' + _token, 'Content-Type': 'application/json' };
+    }
+
+    async function apiFetch(path, opts = {}) {
+      const resp = await fetch(API + path, { ...opts, headers: { ...authHeaders(), ...(opts.headers || {}) } });
+      if (resp.status === 401) { logout(); throw new Error('SESSION_EXPIRED'); }
+      return resp;
+    }
+
+    const MONTHS = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno',
+      'Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+
+    function fmtDate(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' });
+    }
+    function fmtTime(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+    }
+    function fmtDay(iso) {
+      if (!iso) return '—';
+      return new Date(iso).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+    }
+
+    // ── Auth Flow ──────────────────────────────────────────────────────────────
+    async function initAuth() {
+      _code = getBadgeCode();
+      if (!_code || !/^[A-Fa-f0-9]{18}$/i.test(_code)) {
+        document.getElementById('auth-identity').innerHTML =
+          '<div style="color:var(--red);font-size:14px;font-weight:600">Codice badge non valido</div>';
+        return;
+      }
+
+      try {
+        const resp = await fetch(API + '/badge/' + _code);
+        if (!resp.ok) throw new Error();
+        const d = await resp.json();
+        document.getElementById('auth-identity').innerHTML = `
+          <div class="auth-worker-name">${esc(d.full_name)}</div>
+          <div class="auth-company">${esc(d.company_name || '')}</div>`;
+        document.getElementById('auth-form').style.display = '';
+      } catch {
+        document.getElementById('auth-identity').innerHTML =
+          '<div style="color:var(--red);font-size:14px;font-weight:600">Badge non trovato</div>';
+      }
+    }
+
+    async function doLogin() {
+      const cfInput = document.getElementById('cf-input');
+      const errEl   = document.getElementById('auth-error');
+      const btn     = document.getElementById('auth-btn');
+      const cf      = cfInput.value.trim().toUpperCase();
+
+      if (cf.length !== 16) {
+        cfInput.classList.add('error');
+        errEl.textContent = 'Il codice fiscale deve avere 16 caratteri.';
+        errEl.style.display = '';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Verifica in corso…';
+      errEl.style.display = 'none';
+      cfInput.classList.remove('error');
+
+      try {
+        const resp = await fetch(API + '/area/' + _code + '/auth', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cf }),
+        });
+        const body = await resp.json();
+
+        if (!resp.ok) {
+          cfInput.classList.add('error');
+          if (resp.status === 429) {
+            errEl.textContent = 'Troppi tentativi. Riprova tra 15 minuti.';
+          } else {
+            errEl.textContent = body.message || 'Codice fiscale non corretto.';
+          }
+          errEl.style.display = '';
+          btn.disabled = false;
+          btn.textContent = 'Accedi';
+          return;
+        }
+
+        _token = body.token;
+        _expAt = Date.now() + (body.expires_in * 1000);
+        sessionStorage.setItem('wa_token', _token);
+        sessionStorage.setItem('wa_exp',   String(_expAt));
+        sessionStorage.setItem('wa_code',  _code);
+        enterApp();
+      } catch {
+        errEl.textContent = 'Errore di rete. Verifica la connessione.';
+        errEl.style.display = '';
+        btn.disabled = false;
+        btn.textContent = 'Accedi';
+      }
+    }
+
+    function logout() {
+      _token = null; _expAt = null;
+      sessionStorage.removeItem('wa_token');
+      sessionStorage.removeItem('wa_exp');
+      sessionStorage.removeItem('wa_code');
+      if (_timerInterval) clearInterval(_timerInterval);
+      document.getElementById('app').classList.remove('active');
+      document.getElementById('auth-screen').style.display = '';
+      document.getElementById('cf-input').value = '';
+      document.getElementById('auth-error').style.display = 'none';
+      document.getElementById('auth-btn').disabled = true;
+      document.getElementById('auth-btn').textContent = 'Accedi';
+    }
+
+    function tryResumeSession() {
+      const t = sessionStorage.getItem('wa_token');
+      const e = sessionStorage.getItem('wa_exp');
+      const c = sessionStorage.getItem('wa_code');
+      if (t && e && c && parseInt(e) > Date.now() && c.toUpperCase() === _code.toUpperCase()) {
+        _token = t;
+        _expAt = parseInt(e);
+        return true;
+      }
+      return false;
+    }
+
+    // ── Session Timer ──────────────────────────────────────────────────────────
+    function startSessionTimer() {
+      const bar = document.getElementById('session-bar');
+      _timerInterval = setInterval(() => {
+        const left = Math.max(0, Math.floor((_expAt - Date.now()) / 1000));
+        if (left <= 0) { logout(); return; }
+        const m = Math.floor(left / 60);
+        const s = String(left % 60).padStart(2, '0');
+        bar.textContent = `Sessione attiva — ${m}:${s}`;
+        bar.className = left <= 120 ? 'session-bar warning' : 'session-bar';
+      }, 1000);
+    }
+
+    // ── App Entry ──────────────────────────────────────────────────────────────
+    async function enterApp() {
+      document.getElementById('auth-screen').style.display = 'none';
+      document.getElementById('app').classList.add('active');
+      startSessionTimer();
+
+      try {
+        const resp = await apiFetch('/area/' + _code + '/profile');
+        const p = await resp.json();
+        document.getElementById('app-name').textContent = p.full_name || '—';
+      } catch { /* name stays — */ }
+
+      loadTimbrature();
+    }
+
+    // ── Tab Navigation ─────────────────────────────────────────────────────────
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const tab = btn.dataset.tab;
+        document.getElementById('pane-' + tab).classList.add('active');
+
+        if (tab === 'timbrature') loadTimbrature();
+        if (tab === 'buste')     loadPayslips();
+        if (tab === 'documenti') loadDocumenti();
+      });
+    });
+
+    // ── Timbrature ─────────────────────────────────────────────────────────────
+    async function loadTimbrature() {
+      const pane = document.getElementById('pane-timbrature');
+      pane.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const resp = await apiFetch('/area/' + _code + '/presence');
+        const logs = await resp.json();
+
+        if (!logs.length) {
+          pane.innerHTML = `<div class="section-title">Storico timbrature</div>
+            <div class="card"><div class="empty-state">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              Nessuna timbratura negli ultimi 30 giorni
+            </div></div>`;
+          return;
+        }
+
+        const grouped = {};
+        for (const l of logs) {
+          const day = l.timestamp_server.split('T')[0];
+          if (!grouped[day]) grouped[day] = [];
+          grouped[day].push(l);
+        }
+
+        let html = '<div class="section-title">Storico timbrature · ultimi 30 giorni</div>';
+        for (const [day, entries] of Object.entries(grouped)) {
+          html += `<div class="day-group"><div class="day-label">${esc(fmtDay(day))}</div><div class="card">`;
+          for (const e of entries) {
+            const isEntry = e.event_type === 'ENTRY';
+            html += `<div class="punch-row">
+              <div class="punch-icon ${isEntry ? 'entry' : 'exit'}">${isEntry ? 'E' : 'U'}</div>
+              <div class="punch-info">
+                <div class="punch-time">${esc(fmtTime(e.timestamp_server))}</div>
+                <div class="punch-site">${esc(e.site_name)}</div>
+              </div>
+            </div>`;
+          }
+          html += '</div></div>';
+        }
+        pane.innerHTML = html;
+      } catch { pane.innerHTML = '<div class="empty-state" style="color:var(--red)">Errore nel caricamento</div>'; }
+    }
+
+    // ── Buste Paga ─────────────────────────────────────────────────────────────
+    async function loadPayslips() {
+      const pane = document.getElementById('pane-buste');
+      pane.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const resp = await apiFetch('/area/' + _code + '/payslips');
+        const list = await resp.json();
+
+        if (!list.length) {
+          pane.innerHTML = `<div class="section-title">Buste paga</div>
+            <div class="card"><div class="empty-state">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              Nessuna busta paga disponibile
+            </div></div>`;
+          return;
+        }
+
+        let html = '<div class="section-title">Buste paga</div><div class="card">';
+        for (const p of list) {
+          const period = `${MONTHS[p.period_month] || p.period_month} ${p.period_year}`;
+          const isAck  = p.status === 'acknowledged';
+          const ackDate = p.acknowledged_at ? fmtDate(p.acknowledged_at) : '';
+          const actions = isAck
+            ? `<span class="ack-badge">&#10003; Firmata ${esc(ackDate)}</span>`
+            : `<button class="btn-sm btn-ack" onclick="ackPayslip('${esc(p.id)}',this)">Firma &rarr;</button>`;
+
+          html += `<div class="payslip-row" id="ps-${esc(p.id)}">
+            <div class="payslip-icon"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div class="payslip-info">
+              <div class="payslip-period">${esc(period)}</div>
+              ${p.note ? `<div class="payslip-note">${esc(p.note)}</div>` : ''}
+            </div>
+            <div class="payslip-actions">
+              <button class="btn-sm btn-view" onclick="openPayslip('${esc(p.id)}',this)">&#128065; PDF</button>
+              ${actions}
+            </div>
+          </div>`;
+        }
+        html += '</div>';
+        pane.innerHTML = html;
+      } catch { pane.innerHTML = '<div class="empty-state" style="color:var(--red)">Errore nel caricamento</div>'; }
+    }
+
+    async function openPayslip(id, btn) {
+      btn.disabled = true;
+      try {
+        const resp = await apiFetch('/area/' + _code + '/payslips/' + id + '/pdf');
+        const { url } = await resp.json();
+        window.open(url, '_blank', 'noopener');
+      } catch { alert('Impossibile aprire il PDF.'); }
+      btn.disabled = false;
+    }
+
+    async function ackPayslip(id, btn) {
+      if (!confirm('Confermi la presa visione di questa busta paga?\n\nData, ora e indirizzo IP verranno registrati.')) return;
+      btn.disabled = true;
+      btn.textContent = '…';
+      try {
+        const resp = await apiFetch('/area/' + _code + '/payslips/' + id + '/acknowledge', { method: 'POST' });
+        if (!resp.ok) throw new Error();
+        const row = document.getElementById('ps-' + id);
+        const acts = row?.querySelector('.payslip-actions');
+        if (acts) {
+          const ackBtn = acts.querySelector('.btn-ack');
+          if (ackBtn) ackBtn.replaceWith(Object.assign(document.createElement('span'), {
+            className: 'ack-badge', innerHTML: '&#10003; Firmata ora',
+          }));
+        }
+      } catch { alert('Errore. Riprova.'); btn.disabled = false; btn.textContent = 'Firma →'; }
+    }
+
+    // ── Documenti ──────────────────────────────────────────────────────────────
+    const DOC_LABELS = {
+      idoneita_medica: 'Idoneità Sanitaria',
+      formazione_sicurezza: 'Formazione Sicurezza',
+      formazione_generale: 'Formazione Generale',
+      formazione_specifica: 'Formazione Specifica',
+      patentino: 'Patentino / Abilitazione',
+      unilav: 'UniLav',
+      documento_identita: 'Documento d\'Identità',
+    };
+
+    async function loadDocumenti() {
+      const pane = document.getElementById('pane-documenti');
+      pane.innerHTML = '<div class="spinner"></div>';
+
+      try {
+        const resp = await apiFetch('/area/' + _code + '/profile');
+        const p = await resp.json();
+        const docs = p.documents || [];
+
+        if (!docs.length) {
+          pane.innerHTML = `<div class="section-title">Documenti personali</div>
+            <div class="card"><div class="empty-state">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              Nessun documento caricato
+            </div></div>`;
+          return;
+        }
+
+        let html = '<div class="section-title">Documenti personali</div><div class="card">';
+        for (const d of docs) {
+          const label = DOC_LABELS[d.doc_type] || d.name || d.doc_type;
+          let expClass = '', expText = '';
+          if (d.expiry_date) {
+            const exp = new Date(d.expiry_date);
+            const now = new Date();
+            const diff = (exp - now) / 86400000;
+            expClass = diff < 0 ? 'expired' : diff < 30 ? 'warning' : '';
+            expText = 'Scadenza: ' + fmtDate(d.expiry_date);
+          }
+          const viewBtn = d.has_file
+            ? `<button class="btn-sm btn-view" onclick="openDoc('${esc(d.id)}',this)">Apri</button>`
+            : '';
+
+          html += `<div class="doc-row">
+            <div class="doc-icon-box"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <div class="doc-info">
+              <div class="doc-name">${esc(label)}</div>
+              ${expText ? `<div class="doc-exp ${expClass}">${esc(expText)}</div>` : ''}
+            </div>
+            ${viewBtn}
+          </div>`;
+        }
+        html += '</div>';
+        pane.innerHTML = html;
+      } catch { pane.innerHTML = '<div class="empty-state" style="color:var(--red)">Errore nel caricamento</div>'; }
+    }
+
+    async function openDoc(docId, btn) {
+      btn.disabled = true;
+      try {
+        const resp = await apiFetch('/area/' + _code + '/documents/' + docId);
+        const { url } = await resp.json();
+        window.open(url, '_blank', 'noopener');
+      } catch { alert('Impossibile aprire il documento.'); }
+      btn.disabled = false;
+    }
+
+    // ── Input handling ─────────────────────────────────────────────────────────
+    document.getElementById('cf-input').addEventListener('input', function () {
+      this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      document.getElementById('auth-btn').disabled = this.value.length !== 16;
+      this.classList.remove('error');
+      document.getElementById('auth-error').style.display = 'none';
+    });
+
+    document.getElementById('cf-input').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && this.value.length === 16) doLogin();
+    });
+
+    document.getElementById('auth-btn').addEventListener('click', doLogin);
+    document.getElementById('btn-logout').addEventListener('click', logout);
+
+    // ── Boot ───────────────────────────────────────────────────────────────────
+    (async function () {
+      _code = getBadgeCode();
+      if (_code && tryResumeSession()) {
+        enterApp();
+      } else {
+        await initAuth();
+      }
+    })();
+  </script>
+</body>
+</html>

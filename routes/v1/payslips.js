@@ -6,10 +6,7 @@
 // PATCH /api/v1/payslips/:id/unshare                — ritira condivisione (JWT)
 // DELETE /api/v1/payslips/:id                       — elimina (JWT)
 //
-// Endpoint pubblici (via badge code — no JWT):
-// GET  /api/v1/badge/:code/payslips                 — buste condivise per il lavoratore
-// GET  /api/v1/badge/:code/payslips/:id/pdf         — signed URL PDF
-// POST /api/v1/badge/:code/payslips/:id/acknowledge — lavoratore firma (presa visione)
+// Endpoint pubblici RIMOSSI — ora in workerArea.js (autenticazione CF obbligatoria)
 // ──────────────────────────────────────────────────────────────────────────────
 
 const path   = require('path');
@@ -17,7 +14,6 @@ const multer = require('multer');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { resolveWorkerByBadge } = require('../../lib/workerByBadge');
 
 const BUCKET   = 'site-documents';  // usa il bucket già esistente con prefisso payslips/
 const MAX_SIZE = 20 * 1024 * 1024;  // 20 MB
@@ -197,86 +193,6 @@ router.delete('/payslips/:id', verifySupabaseJwt, async (req, res) => {
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.status(204).end();
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// ENDPOINT PUBBLICI (via badge code — no JWT)
-// ═════════════════════════════════════════════════════════════════════════════
-
-// ── GET /api/v1/badge/:code/payslips ─────────────────────────────────────────
-router.get('/badge/:code/payslips', async (req, res) => {
-  const worker = await resolveWorkerByBadge(req.params.code);
-  if (!worker) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
-  if (!worker.is_active) return res.status(403).json({ error: 'WORKER_INACTIVE' });
-
-  const { data, error } = await supabase
-    .from('payslips')
-    .select('id, period_year, period_month, filename, status, note, shared_at, acknowledged_at')
-    .eq('company_id', worker.company_id)
-    .eq('worker_id',  worker.id)
-    .in('status', ['shared', 'acknowledged'])
-    .order('period_year',  { ascending: false })
-    .order('period_month', { ascending: false });
-
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json(data || []);
-});
-
-// ── GET /api/v1/badge/:code/payslips/:id/pdf — signed URL PDF ────────────────
-router.get('/badge/:code/payslips/:id/pdf', async (req, res) => {
-  const worker = await resolveWorkerByBadge(req.params.code);
-  if (!worker || !worker.is_active) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
-
-  const { data: row } = await supabase
-    .from('payslips')
-    .select('file_path, status')
-    .eq('id', req.params.id)
-    .eq('company_id', worker.company_id)
-    .eq('worker_id',  worker.id)
-    .in('status', ['shared', 'acknowledged'])
-    .maybeSingle();
-
-  if (!row) return res.status(404).json({ error: 'PAYSLIP_NOT_FOUND' });
-
-  const url = await signedUrl(row.file_path, 3600);
-  if (!url) return res.status(500).json({ error: 'SIGN_ERROR' });
-
-  res.json({ url });
-});
-
-// ── POST /api/v1/badge/:code/payslips/:id/acknowledge ────────────────────────
-router.post('/badge/:code/payslips/:id/acknowledge', async (req, res) => {
-  const worker = await resolveWorkerByBadge(req.params.code);
-  if (!worker || !worker.is_active) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
-
-  const { data: row } = await supabase
-    .from('payslips')
-    .select('id, status')
-    .eq('id', req.params.id)
-    .eq('company_id', worker.company_id)
-    .eq('worker_id',  worker.id)
-    .eq('status', 'shared')  // solo 'shared' può essere firmata
-    .maybeSingle();
-
-  if (!row) return res.status(404).json({ error: 'PAYSLIP_NOT_FOUND_OR_ALREADY_ACKNOWLEDGED' });
-
-  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
-  const ua = req.headers['user-agent'] || '';
-
-  const { error } = await supabase
-    .from('payslips')
-    .update({
-      status:          'acknowledged',
-      acknowledged_at: new Date().toISOString(),
-      acknowledged_ip: ip.slice(0, 100),
-      acknowledged_ua: ua.slice(0, 300),
-      updated_at:      new Date().toISOString(),
-    })
-    .eq('id', row.id)
-    .eq('company_id', worker.company_id);
-
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json({ ok: true, acknowledged_at: new Date().toISOString() });
 });
 
 module.exports = router;

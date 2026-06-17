@@ -475,6 +475,9 @@ app.get('/setup', (req, res) => {
 app.get('/badge/:code', (req, res) => {
   res.sendFile('badge.html', { root: __dirname + '/public' });
 });
+app.get('/lavoratore/:code', (req, res) => {
+  res.sendFile('lavoratore.html', { root: __dirname + '/public' });
+});
 // ── PWA: icone generate in-memory con pngjs ──────────────────────────────────
 let _iconCache = {};
 function buildSolidIcon(size) {

@@ -166,6 +166,9 @@ router.use('/', require('./diary'));
 // Buste paga: upload CDL/datore → revisione → condivisione → firma lavoratore
 router.use('/', require('./payslips'));
 
+// Area Lavoratore: profilo, timbrature, buste paga, documenti (auth CF via badge code)
+router.use('/', require('./workerArea'));
+
 // Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
 router.use('/', require('./workerInvite'));
 
