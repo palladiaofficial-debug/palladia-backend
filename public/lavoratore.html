@@ -88,8 +88,7 @@
     .tb-av img { width: 100%; height: 100%; object-fit: cover; }
     .tb-info { flex: 1; min-width: 0; }
     .tb-name { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .tb-time { font-size: 12px; color: rgba(255,255,255,0.45); }
-    .tb-time.warn { color: #fca5a5; }
+    .tb-time { font-size: 12px; color: rgba(255,255,255,0.4); }
     .tb-exit {
       font-size: 14px; font-weight: 700; color: #fff;
       background: rgba(255,255,255,0.12); border: none;
@@ -236,7 +235,7 @@
           <button class="auth-btn" id="auth-btn" disabled>Accedi</button>
           <div class="auth-error" id="auth-err"></div>
         </div>
-        <div class="auth-footer">Connessione sicura · Sessione di 30 minuti</div>
+        <div class="auth-footer">Connessione sicura · Resterai collegato su questo dispositivo</div>
       </div>
     </div>
   </div>
@@ -277,7 +276,7 @@
   <script>
     'use strict';
     const API = location.origin + '/api/v1';
-    let _tk=null, _code=null, _exp=null, _ti=null, _prof=null;
+    let _tk=null, _code=null, _prof=null;
 
     function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
     function getCode(){const p=location.pathname.split('/').filter(Boolean);const i=p.indexOf('lavoratore');return i!==-1?(p[i+1]||''):'';}
@@ -320,16 +319,15 @@
         if(!r.ok){inp.classList.add('shake');setTimeout(()=>inp.classList.remove('shake'),500);
           err.textContent=r.status===429?'Troppi tentativi. Riprova tra 15 minuti.':(b.message||'Codice fiscale non corretto.');
           err.style.display='';btn.disabled=false;btn.textContent='Accedi';return;}
-        _tk=b.token;_exp=Date.now()+(b.expires_in*1000);
-        sessionStorage.setItem('wa_t',_tk);sessionStorage.setItem('wa_e',String(_exp));sessionStorage.setItem('wa_c',_code);
+        _tk=b.token;
+        localStorage.setItem('wa_t',_tk);localStorage.setItem('wa_c',_code);
         enterApp();
       }catch{err.textContent='Errore di rete.';err.style.display='';btn.disabled=false;btn.textContent='Accedi';}
     }
 
     function logout(){
-      _tk=null;_exp=null;_prof=null;
-      sessionStorage.removeItem('wa_t');sessionStorage.removeItem('wa_e');sessionStorage.removeItem('wa_c');
-      if(_ti)clearInterval(_ti);
+      _tk=null;_prof=null;
+      localStorage.removeItem('wa_t');localStorage.removeItem('wa_c');
       document.getElementById('app').classList.remove('active');
       document.getElementById('auth-wrap').style.display='';
       document.getElementById('cf').value='';
@@ -339,31 +337,23 @@
     }
 
     function tryResume(){
-      const t=sessionStorage.getItem('wa_t'),e=sessionStorage.getItem('wa_e'),c=sessionStorage.getItem('wa_c');
-      if(t&&e&&c&&parseInt(e)>Date.now()&&c.toUpperCase()===_code.toUpperCase()){_tk=t;_exp=parseInt(e);return true;}
+      const t=localStorage.getItem('wa_t'),c=localStorage.getItem('wa_c');
+      if(t&&c&&c.toUpperCase()===_code.toUpperCase()){_tk=t;return true;}
       return false;
-    }
-
-    function startTimer(){
-      const el=document.getElementById('tb-time');
-      _ti=setInterval(()=>{
-        const s=Math.max(0,Math.floor((_exp-Date.now())/1000));
-        if(s<=0){logout();return;}
-        el.textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-        el.className=s<=120?'tb-time warn':'tb-time';
-      },1000);
     }
 
     async function enterApp(){
       document.getElementById('auth-wrap').style.display='none';
       document.getElementById('app').classList.add('active');
-      startTimer();
       try{
         const r=await api('/area/'+_code+'/profile');_prof=await r.json();
         document.getElementById('tb-name').textContent=_prof.full_name||'—';
+        document.getElementById('tb-time').textContent='Connesso';
         const av=_prof.photo_url?`<img src="${esc(_prof.photo_url)}">`:(esc(ini(_prof.full_name)));
         document.getElementById('tb-av').innerHTML=av;
-      }catch{}
+      }catch(e){
+        if(e.message==='EXP') return;
+      }
       loadTimbrature();
     }
 
