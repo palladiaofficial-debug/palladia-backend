@@ -8,7 +8,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <title>Area Lavoratore — Palladia</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,318 +22,252 @@
       --subtle:  #9ca3af;
       --accent:  #2563eb;
       --green:   #16a34a;
+      --green-bg:#f0fdf4;
       --red:     #dc2626;
+      --red-bg:  #fef2f2;
       --amber:   #d97706;
-      --radius:  12px;
+      --radius:  16px;
     }
 
     html, body {
       min-height: 100dvh;
       background: var(--bg);
       color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 16px; line-height: 1.5;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 18px; line-height: 1.4;
       -webkit-font-smoothing: antialiased;
       -webkit-tap-highlight-color: transparent;
     }
 
-    /* ═══════════════════════ AUTH SCREEN ═══════════════════════ */
+    /* ═══════════ AUTH ═══════════ */
     .auth-wrap {
-      min-height: 100dvh;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      padding: 24px 16px;
+      min-height: 100dvh; display: flex; flex-direction: column;
+      align-items: center; justify-content: center; padding: 24px 16px;
     }
-    .auth-brand {
-      font-size: 11px; font-weight: 800; letter-spacing: 0.22em;
-      color: var(--subtle); text-transform: uppercase; margin-bottom: 6px;
-    }
-    .auth-title {
-      font-size: 20px; font-weight: 800; color: var(--text); margin-bottom: 24px;
-    }
-
-    .auth-card {
-      width: 100%; max-width: 400px;
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); overflow: hidden;
-    }
-    .auth-worker {
-      display: flex; align-items: center; gap: 14px;
-      padding: 18px 20px;
-      border-bottom: 1px solid var(--border);
-      background: #fafaf7;
-    }
-    .auth-avatar {
-      width: 46px; height: 46px; border-radius: 50%;
-      background: var(--text); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 700; flex-shrink: 0;
-    }
-    .auth-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-    .auth-wname { font-size: 16px; font-weight: 700; }
-    .auth-wcompany { font-size: 13px; color: var(--muted); margin-top: 1px; }
-
+    .auth-brand { font-size: 11px; font-weight: 800; letter-spacing: 0.22em; color: var(--subtle); text-transform: uppercase; margin-bottom: 6px; }
+    .auth-title { font-size: 22px; font-weight: 900; color: var(--text); margin-bottom: 24px; }
+    .auth-card { width: 100%; max-width: 420px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .auth-worker { display: flex; align-items: center; gap: 14px; padding: 18px 20px; border-bottom: 1px solid var(--border); background: #fafaf7; }
+    .auth-av { width: 50px; height: 50px; border-radius: 50%; background: var(--text); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; flex-shrink: 0; }
+    .auth-av img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+    .auth-wn { font-size: 18px; font-weight: 700; }
+    .auth-wc { font-size: 14px; color: var(--muted); margin-top: 2px; }
     .auth-body { padding: 20px; }
-    .auth-label {
-      font-size: 12px; font-weight: 700; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.05em;
-      margin-bottom: 6px;
-    }
+    .auth-label { font-size: 14px; font-weight: 700; color: var(--muted); margin-bottom: 8px; }
     .auth-input {
-      width: 100%; padding: 12px 14px;
-      font-size: 16px; font-family: 'Inter', monospace; letter-spacing: 0.06em;
-      text-transform: uppercase;
-      border: 1.5px solid var(--border); border-radius: 8px;
-      background: var(--bg); color: var(--text);
-      outline: none; transition: border-color 0.15s;
+      width: 100%; padding: 16px; font-size: 18px; font-family: 'Inter', monospace;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      border: 2px solid var(--border); border-radius: 10px;
+      background: var(--bg); color: var(--text); outline: none;
     }
     .auth-input:focus { border-color: var(--text); }
     .auth-input.shake { animation: shake 0.4s; border-color: var(--red); }
-    @keyframes shake {
-      0%,100% { transform: translateX(0); }
-      20%,60% { transform: translateX(-6px); }
-      40%,80% { transform: translateX(6px); }
-    }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%,60%{transform:translateX(-6px)} 40%,80%{transform:translateX(6px)} }
     .auth-btn {
-      width: 100%; margin-top: 14px; padding: 13px;
-      font-size: 15px; font-weight: 700; color: #fff;
-      background: var(--text); border: none; border-radius: 8px;
-      cursor: pointer; transition: opacity 0.15s;
+      width: 100%; margin-top: 16px; padding: 16px;
+      font-size: 17px; font-weight: 800; color: #fff;
+      background: var(--text); border: none; border-radius: 10px;
+      cursor: pointer;
     }
-    .auth-btn:hover:not(:disabled) { opacity: 0.85; }
-    .auth-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    .auth-error {
-      margin-top: 10px; padding: 10px 12px;
-      font-size: 13px; font-weight: 600; color: var(--red);
-      background: rgba(220,38,38,0.05); border: 1px solid rgba(220,38,38,0.15);
-      border-radius: 8px; display: none; text-align: center;
-    }
-    .auth-footer {
-      padding: 14px 20px; border-top: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: center; gap: 6px;
-      font-size: 11px; color: var(--subtle);
-    }
-    .auth-footer svg { flex-shrink: 0; }
-    .auth-loading { padding: 32px 20px; text-align: center; }
+    .auth-btn:disabled { opacity: 0.3; }
+    .auth-error { margin-top: 12px; padding: 12px; font-size: 15px; font-weight: 700; color: var(--red); background: var(--red-bg); border-radius: 10px; display: none; text-align: center; }
+    .auth-footer { padding: 14px 20px; border-top: 1px solid var(--border); font-size: 12px; color: var(--subtle); text-align: center; }
+    .auth-load { padding: 40px 20px; text-align: center; }
 
-    /* ═══════════════════════ APP SHELL ═══════════════════════ */
+    /* ═══════════ APP ═══════════ */
     .app { display: none; flex-direction: column; min-height: 100dvh; }
     .app.active { display: flex; }
 
     .topbar {
       background: var(--text); color: #fff;
-      padding: 0 20px; height: 56px;
+      padding: 0 16px; height: 60px;
       display: flex; align-items: center; gap: 12px;
       position: sticky; top: 0; z-index: 50;
     }
-    .topbar-avatar {
-      width: 34px; height: 34px; border-radius: 50%;
-      background: rgba(255,255,255,0.15); color: #fff;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 13px; font-weight: 700; flex-shrink: 0;
-    }
-    .topbar-avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
-    .topbar-info { flex: 1; min-width: 0; }
-    .topbar-name { font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .topbar-session { font-size: 11px; color: rgba(255,255,255,0.5); font-weight: 500; }
-    .topbar-session.warn { color: #fca5a5; }
-    .topbar-logout {
-      font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55);
-      background: none; border: 1px solid rgba(255,255,255,0.15);
-      border-radius: 6px; padding: 5px 12px; cursor: pointer;
-      transition: all 0.15s;
-    }
-    .topbar-logout:hover { color: #fff; border-color: rgba(255,255,255,0.4); }
-
-    .content {
-      flex: 1; padding: 12px 16px 96px;
-      max-width: 520px; width: 100%; margin: 0 auto;
+    .tb-av { width: 38px; height: 38px; border-radius: 50%; background: rgba(255,255,255,0.15); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 700; flex-shrink: 0; overflow: hidden; }
+    .tb-av img { width: 100%; height: 100%; object-fit: cover; }
+    .tb-info { flex: 1; min-width: 0; }
+    .tb-name { font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .tb-time { font-size: 12px; color: rgba(255,255,255,0.45); }
+    .tb-time.warn { color: #fca5a5; }
+    .tb-exit {
+      font-size: 14px; font-weight: 700; color: #fff;
+      background: rgba(255,255,255,0.12); border: none;
+      border-radius: 8px; padding: 8px 16px; cursor: pointer;
     }
 
-    /* ── Tab Bar ── */
+    .content { flex: 1; padding: 8px 12px 110px; max-width: 540px; width: 100%; margin: 0 auto; }
+
+    /* ── Tabs ── */
     .tabs {
       position: fixed; bottom: 0; left: 0; right: 0;
-      background: var(--surface); border-top: 1px solid var(--border);
+      background: var(--surface); border-top: 1.5px solid var(--border);
       display: flex; z-index: 50;
       padding-bottom: env(safe-area-inset-bottom, 0);
     }
     .tab {
-      flex: 1; padding: 8px 4px 6px; border: none; background: none;
-      font-size: 11px; font-weight: 600; color: var(--subtle);
-      display: flex; flex-direction: column; align-items: center; gap: 2px;
-      cursor: pointer; transition: color 0.15s;
-      position: relative;
+      flex: 1; padding: 10px 4px 8px; border: none; background: none;
+      font-size: 12px; font-weight: 700; color: var(--subtle);
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      cursor: pointer; position: relative;
     }
     .tab.active { color: var(--text); }
-    .tab.active::before {
-      content: ''; position: absolute; top: 0; left: 20%; right: 20%;
-      height: 2px; background: var(--text); border-radius: 0 0 2px 2px;
-    }
-    .tab svg { width: 22px; height: 22px; stroke-width: 1.7; }
+    .tab.active::before { content:''; position:absolute; top:0; left:16%; right:16%; height:2.5px; background:var(--text); border-radius:0 0 3px 3px; }
+    .tab svg { width: 26px; height: 26px; stroke-width: 1.7; }
 
     .pane { display: none; }
     .pane.active { display: block; }
 
-    /* ── Cards ── */
-    .card {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--radius); overflow: hidden;
+    /* ── Section ── */
+    .sec-title {
+      font-size: 13px; font-weight: 800; color: var(--muted);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin: 16px 0 8px 4px;
     }
-    .section-label {
-      font-size: 11px; font-weight: 700; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.08em;
-      margin: 16px 0 8px 2px;
-    }
-    .section-label:first-child { margin-top: 0; }
+    .sec-title:first-child { margin-top: 4px; }
 
-    /* ── Empty state ── */
-    .empty {
-      padding: 40px 24px; text-align: center;
+    /* ── Cards ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+
+    /* ── Empty ── */
+    .empty { padding: 48px 24px; text-align: center; }
+    .empty-ic { width: 56px; height: 56px; border-radius: 14px; background: var(--bg); border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; margin-bottom: 14px; }
+    .empty-ic svg { stroke: var(--subtle); }
+    .empty h3 { font-size: 17px; font-weight: 800; margin-bottom: 6px; }
+    .empty p { font-size: 15px; color: var(--muted); line-height: 1.5; }
+
+    /* ═══ Timbrature ═══ */
+    .day-h { font-size: 15px; font-weight: 800; color: var(--text); margin: 16px 0 6px 4px; text-transform: capitalize; }
+    .day-h:first-child { margin-top: 4px; }
+    .punch {
+      padding: 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 14px;
     }
-    .empty-icon {
+    .punch:last-child { border-bottom: none; }
+    .p-badge {
+      width: 52px; height: 52px; border-radius: 12px;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-size: 11px; font-weight: 900; letter-spacing: 0.04em;
+    }
+    .p-badge.in  { background: var(--green-bg); color: var(--green); border: 1.5px solid rgba(22,163,74,0.25); }
+    .p-badge.out { background: var(--red-bg);   color: var(--red);   border: 1.5px solid rgba(220,38,38,0.2); }
+    .p-badge svg { width: 18px; height: 18px; margin-bottom: 1px; }
+    .p-body { flex: 1; min-width: 0; }
+    .p-time { font-size: 20px; font-weight: 800; }
+    .p-site { font-size: 14px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    /* ═══ Buste Paga ═══ */
+    .slip {
+      padding: 20px 16px; border-bottom: 1px solid var(--border);
+    }
+    .slip:last-child { border-bottom: none; }
+    .slip-head {
+      display: flex; align-items: center; gap: 12px; margin-bottom: 14px;
+    }
+    .slip-ic {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .slip-ic svg { stroke: var(--accent); }
+    .slip-period { font-size: 20px; font-weight: 800; text-transform: capitalize; }
+    .slip-note { font-size: 14px; color: var(--muted); margin-top: 2px; }
+    .slip-btns { display: flex; flex-direction: column; gap: 8px; }
+    .big-btn {
+      width: 100%; padding: 16px; font-size: 16px; font-weight: 800;
+      border: none; border-radius: 12px; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: opacity 0.15s;
+    }
+    .big-btn:disabled { opacity: 0.3; }
+    .big-btn.blue { background: var(--accent); color: #fff; }
+    .big-btn.green { background: var(--green); color: #fff; }
+    .big-btn svg { width: 20px; height: 20px; flex-shrink: 0; }
+    .ack-done {
+      width: 100%; padding: 14px; font-size: 15px; font-weight: 800;
+      border-radius: 12px; text-align: center;
+      color: var(--green); background: var(--green-bg);
+      border: 1.5px solid rgba(22,163,74,0.2);
+    }
+
+    /* ═══ Documenti ═══ */
+    .doc {
+      padding: 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 14px;
+    }
+    .doc:last-child { border-bottom: none; }
+    .doc-ic {
       width: 48px; height: 48px; border-radius: 12px;
       background: var(--bg); border: 1px solid var(--border);
-      display: inline-flex; align-items: center; justify-content: center;
-      margin-bottom: 12px;
-    }
-    .empty-icon svg { stroke: var(--subtle); }
-    .empty-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
-    .empty-sub { font-size: 13px; color: var(--muted); line-height: 1.5; }
-
-    /* ── Timbrature ── */
-    .day-header {
-      font-size: 13px; font-weight: 700; color: var(--text);
-      margin: 16px 0 6px 2px;
-      text-transform: capitalize;
-    }
-    .day-header:first-child { margin-top: 0; }
-    .punch-row {
-      padding: 12px 16px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 12px;
-    }
-    .punch-row:last-child { border-bottom: none; }
-    .punch-badge {
-      width: 36px; height: 36px; border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; font-weight: 800; letter-spacing: 0.03em;
-    }
-    .punch-badge.in  { background: rgba(22,163,74,0.08); color: var(--green); border: 1px solid rgba(22,163,74,0.18); }
-    .punch-badge.out { background: rgba(220,38,38,0.06); color: var(--red);   border: 1px solid rgba(220,38,38,0.12); }
-    .punch-detail { flex: 1; min-width: 0; }
-    .punch-time { font-size: 15px; font-weight: 700; }
-    .punch-site { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-    /* ── Buste paga ── */
-    .slip-row {
-      padding: 14px 16px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 12px;
-    }
-    .slip-row:last-child { border-bottom: none; }
-    .slip-icon {
-      width: 40px; height: 40px; border-radius: 10px;
-      background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.12);
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
-    .slip-icon svg { stroke: var(--accent); }
-    .slip-body { flex: 1; min-width: 0; }
-    .slip-period { font-size: 15px; font-weight: 700; text-transform: capitalize; }
-    .slip-note { font-size: 12px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .slip-actions { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; flex-shrink: 0; }
-    .btn {
-      font-size: 12px; font-weight: 600; border-radius: 6px;
-      padding: 6px 12px; cursor: pointer; white-space: nowrap;
-      border: none; transition: opacity 0.15s;
-      display: inline-flex; align-items: center; gap: 4px;
-    }
-    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
-    .btn-outline { color: var(--accent); background: rgba(37,99,235,0.06); border: 1px solid rgba(37,99,235,0.18); }
-    .btn-solid  { color: #fff; background: var(--green); font-weight: 700; }
-    .ack-pill {
-      display: inline-flex; align-items: center; gap: 4px;
-      font-size: 11px; font-weight: 700; color: var(--green);
-      background: rgba(22,163,74,0.07); border: 1px solid rgba(22,163,74,0.15);
-      border-radius: 20px; padding: 4px 10px;
-    }
-
-    /* ── Documenti ── */
-    .doc-row {
-      padding: 14px 16px; border-bottom: 1px solid var(--border);
-      display: flex; align-items: center; gap: 12px;
-    }
-    .doc-row:last-child { border-bottom: none; }
-    .doc-chip {
-      width: 40px; height: 40px; border-radius: 10px;
-      background: var(--bg); border: 1px solid var(--border);
-      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    }
-    .doc-chip svg { stroke: var(--muted); }
+    .doc-ic svg { stroke: var(--muted); }
     .doc-body { flex: 1; min-width: 0; }
-    .doc-name { font-size: 14px; font-weight: 600; }
-    .doc-exp  { font-size: 12px; color: var(--muted); margin-top: 1px; }
-    .doc-exp.expired { color: var(--red); font-weight: 600; }
-    .doc-exp.warning { color: var(--amber); }
-
-    /* ── Spinner ── */
-    .spinner {
-      width: 22px; height: 22px; border: 2.5px solid var(--border);
-      border-top-color: var(--text); border-radius: 50%;
-      animation: spin 0.65s linear infinite; margin: 32px auto;
+    .doc-name { font-size: 16px; font-weight: 700; }
+    .doc-exp { font-size: 13px; color: var(--muted); margin-top: 2px; }
+    .doc-exp.bad { color: var(--red); font-weight: 700; }
+    .doc-exp.soon { color: var(--amber); font-weight: 600; }
+    .doc-open {
+      padding: 12px 20px; font-size: 14px; font-weight: 800;
+      color: var(--accent); background: rgba(37,99,235,0.07);
+      border: 1.5px solid rgba(37,99,235,0.2); border-radius: 10px;
+      cursor: pointer; flex-shrink: 0;
     }
+    .doc-open:disabled { opacity: 0.3; }
+
+    .spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--text); border-radius: 50%; animation: spin 0.6s linear infinite; margin: 40px auto; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 
-  <!-- ═══ Auth ═══ -->
+  <!-- AUTH -->
   <div class="auth-wrap" id="auth-wrap">
     <div class="auth-brand">PALLADIA</div>
     <div class="auth-title">Area Lavoratore</div>
     <div class="auth-card">
-      <div id="auth-identity"><div class="auth-loading"><div class="spinner"></div></div></div>
-      <div id="auth-form-wrap" style="display:none">
+      <div id="auth-id"><div class="auth-load"><div class="spinner"></div></div></div>
+      <div id="auth-form" style="display:none">
         <div class="auth-body">
-          <div class="auth-label">Codice fiscale</div>
-          <input class="auth-input" id="cf-input" type="text" maxlength="16"
+          <div class="auth-label">Inserisci il tuo codice fiscale</div>
+          <input class="auth-input" id="cf" type="text" maxlength="16"
                  autocomplete="off" autocapitalize="characters" spellcheck="false"
                  placeholder="RSSMRA85M01H501Z" inputmode="text">
           <button class="auth-btn" id="auth-btn" disabled>Accedi</button>
-          <div class="auth-error" id="auth-error"></div>
+          <div class="auth-error" id="auth-err"></div>
         </div>
-        <div class="auth-footer">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          Connessione cifrata · Sessione 30 min · Max 5 tentativi / 15 min
-        </div>
+        <div class="auth-footer">Connessione sicura · Sessione di 30 minuti</div>
       </div>
     </div>
   </div>
 
-  <!-- ═══ App ═══ -->
+  <!-- APP -->
   <div class="app" id="app">
     <div class="topbar">
-      <div class="topbar-avatar" id="app-avatar"></div>
-      <div class="topbar-info">
-        <div class="topbar-name" id="app-name">—</div>
-        <div class="topbar-session" id="app-timer">30:00</div>
+      <div class="tb-av" id="tb-av"></div>
+      <div class="tb-info">
+        <div class="tb-name" id="tb-name">—</div>
+        <div class="tb-time" id="tb-time">30:00</div>
       </div>
-      <button class="topbar-logout" id="btn-logout">Esci</button>
+      <button class="tb-exit" id="btn-exit">Esci</button>
     </div>
 
     <div class="content">
-      <div class="pane active" id="pane-timbrature"></div>
-      <div class="pane" id="pane-buste"></div>
-      <div class="pane" id="pane-documenti"></div>
+      <div class="pane active" id="p-timb"></div>
+      <div class="pane" id="p-buste"></div>
+      <div class="pane" id="p-doc"></div>
     </div>
 
     <div class="tabs">
-      <button class="tab active" data-tab="timbrature">
+      <button class="tab active" data-t="timb">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         Timbrature
       </button>
-      <button class="tab" data-tab="buste">
+      <button class="tab" data-t="buste">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         Buste Paga
       </button>
-      <button class="tab" data-tab="documenti">
+      <button class="tab" data-t="doc">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
         Documenti
       </button>
@@ -343,291 +277,250 @@
   <script>
     'use strict';
     const API = location.origin + '/api/v1';
-    let _token = null, _code = null, _expAt = null, _timer = null, _profile = null;
+    let _tk=null, _code=null, _exp=null, _ti=null, _prof=null;
 
-    function esc(s) { const d = document.createElement('div'); d.textContent = String(s||''); return d.innerHTML; }
-    function getCode() { const p = location.pathname.split('/').filter(Boolean); const i = p.indexOf('lavoratore'); return i!==-1 ? (p[i+1]||'') : ''; }
-    function authH() { return { 'Authorization': 'WorkerArea ' + _token, 'Content-Type': 'application/json' }; }
-    function initials(name) { return (name||'').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
+    function esc(s){const d=document.createElement('div');d.textContent=String(s||'');return d.innerHTML;}
+    function getCode(){const p=location.pathname.split('/').filter(Boolean);const i=p.indexOf('lavoratore');return i!==-1?(p[i+1]||''):'';}
+    function hdr(){return{'Authorization':'WorkerArea '+_tk,'Content-Type':'application/json'};}
+    function ini(n){return(n||'').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2);}
 
-    async function apiFetch(path, opts={}) {
-      const r = await fetch(API+path, { ...opts, headers: { ...authH(), ...(opts.headers||{}) } });
-      if (r.status===401) { logout(); throw new Error('SESSION_EXPIRED'); }
+    async function api(path,opts={}){
+      const r=await fetch(API+path,{...opts,headers:{...hdr(),...(opts.headers||{})}});
+      if(r.status===401){logout();throw new Error('EXP');}
       return r;
     }
 
-    const MO = ['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
-    function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString('it-IT',{day:'2-digit',month:'short',year:'numeric'}) : '—'; }
-    function fmtTime(iso) { return iso ? new Date(iso).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}) : '—'; }
-    function fmtDay(iso) { return iso ? new Date(iso).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}) : '—'; }
+    const MO=['','Gennaio','Febbraio','Marzo','Aprile','Maggio','Giugno','Luglio','Agosto','Settembre','Ottobre','Novembre','Dicembre'];
+    function fD(iso){return iso?new Date(iso).toLocaleDateString('it-IT',{day:'2-digit',month:'short',year:'numeric'}):'—';}
+    function fT(iso){return iso?new Date(iso).toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'}):'—';}
+    function fDay(iso){return iso?new Date(iso).toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'}):'—';}
 
-    /* ── Auth ── */
-    async function initAuth() {
-      _code = getCode();
-      if (!_code || !/^[A-Fa-f0-9]{18}$/i.test(_code)) {
-        document.getElementById('auth-identity').innerHTML = '<div class="auth-loading" style="color:var(--red);font-weight:600;font-size:14px;padding:28px 20px">Codice badge non valido</div>';
-        return;
+    /* AUTH */
+    async function initAuth(){
+      _code=getCode();
+      if(!_code||!/^[A-Fa-f0-9]{18}$/i.test(_code)){
+        document.getElementById('auth-id').innerHTML='<div class="auth-load" style="color:var(--red);font-weight:700;font-size:16px">Codice badge non valido</div>';return;
       }
-      try {
-        const r = await fetch(API+'/badge/'+_code);
-        if (!r.ok) throw 0;
-        const d = await r.json();
-        const av = d.photo_url
-          ? `<img src="${esc(d.photo_url)}" alt="">`
-          : esc(initials(d.full_name));
-        document.getElementById('auth-identity').innerHTML = `
-          <div class="auth-worker">
-            <div class="auth-avatar">${av}</div>
-            <div>
-              <div class="auth-wname">${esc(d.full_name)}</div>
-              <div class="auth-wcompany">${esc(d.company_name||'')}</div>
-            </div>
-          </div>`;
-        document.getElementById('auth-form-wrap').style.display = '';
-      } catch {
-        document.getElementById('auth-identity').innerHTML = '<div class="auth-loading" style="color:var(--red);font-weight:600;font-size:14px;padding:28px 20px">Badge non trovato</div>';
-      }
+      try{
+        const r=await fetch(API+'/badge/'+_code);if(!r.ok)throw 0;const d=await r.json();
+        const av=d.photo_url?`<img src="${esc(d.photo_url)}">`:(esc(ini(d.full_name)));
+        document.getElementById('auth-id').innerHTML=`<div class="auth-worker"><div class="auth-av">${av}</div><div><div class="auth-wn">${esc(d.full_name)}</div><div class="auth-wc">${esc(d.company_name||'')}</div></div></div>`;
+        document.getElementById('auth-form').style.display='';
+      }catch{document.getElementById('auth-id').innerHTML='<div class="auth-load" style="color:var(--red);font-weight:700;font-size:16px">Badge non trovato</div>';}
     }
 
-    async function doLogin() {
-      const inp = document.getElementById('cf-input');
-      const err = document.getElementById('auth-error');
-      const btn = document.getElementById('auth-btn');
-      const cf = inp.value.trim().toUpperCase();
-      if (cf.length!==16) { inp.classList.add('shake'); setTimeout(()=>inp.classList.remove('shake'),500); return; }
-      btn.disabled = true; btn.textContent = 'Verifica…'; err.style.display = 'none';
-      try {
-        const r = await fetch(API+'/area/'+_code+'/auth', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({cf}) });
-        const b = await r.json();
-        if (!r.ok) {
-          inp.classList.add('shake'); setTimeout(()=>inp.classList.remove('shake'),500);
-          err.textContent = r.status===429 ? 'Troppi tentativi. Riprova tra 15 minuti.' : (b.message||'Codice fiscale non corretto.');
-          err.style.display = ''; btn.disabled = false; btn.textContent = 'Accedi'; return;
-        }
-        _token = b.token; _expAt = Date.now()+(b.expires_in*1000);
-        sessionStorage.setItem('wa_t',_token); sessionStorage.setItem('wa_e',String(_expAt)); sessionStorage.setItem('wa_c',_code);
+    async function doLogin(){
+      const inp=document.getElementById('cf'),err=document.getElementById('auth-err'),btn=document.getElementById('auth-btn');
+      const cf=inp.value.trim().toUpperCase();
+      if(cf.length!==16){inp.classList.add('shake');setTimeout(()=>inp.classList.remove('shake'),500);return;}
+      btn.disabled=true;btn.textContent='Verifica…';err.style.display='none';
+      try{
+        const r=await fetch(API+'/area/'+_code+'/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cf})});
+        const b=await r.json();
+        if(!r.ok){inp.classList.add('shake');setTimeout(()=>inp.classList.remove('shake'),500);
+          err.textContent=r.status===429?'Troppi tentativi. Riprova tra 15 minuti.':(b.message||'Codice fiscale non corretto.');
+          err.style.display='';btn.disabled=false;btn.textContent='Accedi';return;}
+        _tk=b.token;_exp=Date.now()+(b.expires_in*1000);
+        sessionStorage.setItem('wa_t',_tk);sessionStorage.setItem('wa_e',String(_exp));sessionStorage.setItem('wa_c',_code);
         enterApp();
-      } catch { err.textContent='Errore di rete.'; err.style.display=''; btn.disabled=false; btn.textContent='Accedi'; }
+      }catch{err.textContent='Errore di rete.';err.style.display='';btn.disabled=false;btn.textContent='Accedi';}
     }
 
-    function logout() {
-      _token=null; _expAt=null; _profile=null;
-      sessionStorage.removeItem('wa_t'); sessionStorage.removeItem('wa_e'); sessionStorage.removeItem('wa_c');
-      if (_timer) clearInterval(_timer);
+    function logout(){
+      _tk=null;_exp=null;_prof=null;
+      sessionStorage.removeItem('wa_t');sessionStorage.removeItem('wa_e');sessionStorage.removeItem('wa_c');
+      if(_ti)clearInterval(_ti);
       document.getElementById('app').classList.remove('active');
-      document.getElementById('auth-wrap').style.display = '';
-      const inp = document.getElementById('cf-input');
-      if (inp) { inp.value=''; }
-      document.getElementById('auth-error').style.display = 'none';
-      document.getElementById('auth-btn').disabled = true;
-      document.getElementById('auth-btn').textContent = 'Accedi';
+      document.getElementById('auth-wrap').style.display='';
+      document.getElementById('cf').value='';
+      document.getElementById('auth-err').style.display='none';
+      document.getElementById('auth-btn').disabled=true;
+      document.getElementById('auth-btn').textContent='Accedi';
     }
 
-    function tryResume() {
-      const t=sessionStorage.getItem('wa_t'), e=sessionStorage.getItem('wa_e'), c=sessionStorage.getItem('wa_c');
-      if (t&&e&&c&&parseInt(e)>Date.now()&&c.toUpperCase()===_code.toUpperCase()) { _token=t; _expAt=parseInt(e); return true; }
+    function tryResume(){
+      const t=sessionStorage.getItem('wa_t'),e=sessionStorage.getItem('wa_e'),c=sessionStorage.getItem('wa_c');
+      if(t&&e&&c&&parseInt(e)>Date.now()&&c.toUpperCase()===_code.toUpperCase()){_tk=t;_exp=parseInt(e);return true;}
       return false;
     }
 
-    function startTimer() {
-      const el = document.getElementById('app-timer');
-      _timer = setInterval(()=>{
-        const s = Math.max(0, Math.floor((_expAt-Date.now())/1000));
-        if (s<=0) { logout(); return; }
-        el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
-        el.className = s<=120 ? 'topbar-session warn' : 'topbar-session';
-      }, 1000);
+    function startTimer(){
+      const el=document.getElementById('tb-time');
+      _ti=setInterval(()=>{
+        const s=Math.max(0,Math.floor((_exp-Date.now())/1000));
+        if(s<=0){logout();return;}
+        el.textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+        el.className=s<=120?'tb-time warn':'tb-time';
+      },1000);
     }
 
-    async function enterApp() {
-      document.getElementById('auth-wrap').style.display = 'none';
+    async function enterApp(){
+      document.getElementById('auth-wrap').style.display='none';
       document.getElementById('app').classList.add('active');
       startTimer();
-      try {
-        const r = await apiFetch('/area/'+_code+'/profile');
-        _profile = await r.json();
-        document.getElementById('app-name').textContent = _profile.full_name||'—';
-        const av = _profile.photo_url
-          ? `<img src="${esc(_profile.photo_url)}" alt="">`
-          : esc(initials(_profile.full_name));
-        document.getElementById('app-avatar').innerHTML = av;
-      } catch {}
+      try{
+        const r=await api('/area/'+_code+'/profile');_prof=await r.json();
+        document.getElementById('tb-name').textContent=_prof.full_name||'—';
+        const av=_prof.photo_url?`<img src="${esc(_prof.photo_url)}">`:(esc(ini(_prof.full_name)));
+        document.getElementById('tb-av').innerHTML=av;
+      }catch{}
       loadTimbrature();
     }
 
-    /* ── Tabs ── */
-    document.querySelectorAll('.tab').forEach(t => {
-      t.addEventListener('click', () => {
+    /* TABS */
+    document.querySelectorAll('.tab').forEach(t=>{
+      t.addEventListener('click',()=>{
         document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
         document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
         t.classList.add('active');
-        document.getElementById('pane-'+t.dataset.tab).classList.add('active');
-        if (t.dataset.tab==='timbrature') loadTimbrature();
-        if (t.dataset.tab==='buste') loadPayslips();
-        if (t.dataset.tab==='documenti') loadDocumenti();
+        document.getElementById('p-'+t.dataset.t).classList.add('active');
+        if(t.dataset.t==='timb')loadTimbrature();
+        if(t.dataset.t==='buste')loadPayslips();
+        if(t.dataset.t==='doc')loadDocumenti();
       });
     });
 
-    /* ── Timbrature ── */
-    async function loadTimbrature() {
-      const p = document.getElementById('pane-timbrature');
-      p.innerHTML = '<div class="spinner"></div>';
-      try {
-        const r = await apiFetch('/area/'+_code+'/presence');
-        const logs = await r.json();
-        if (!logs.length) {
-          p.innerHTML = `<div class="section-label">Storico timbrature</div><div class="card"><div class="empty">
-            <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
-            <div class="empty-title">Nessuna timbratura</div>
-            <div class="empty-sub">Non ci sono timbrature negli ultimi 30 giorni.</div>
-          </div></div>`; return;
-        }
-        const groups = {};
-        for (const l of logs) { const d=l.timestamp_server.split('T')[0]; (groups[d]=groups[d]||[]).push(l); }
-        let h = '<div class="section-label">Ultimi 30 giorni</div>';
-        for (const [day,entries] of Object.entries(groups)) {
-          h += `<div class="day-header">${esc(fmtDay(day))}</div><div class="card">`;
-          for (const e of entries) {
-            const isIn = e.event_type==='ENTRY';
-            h += `<div class="punch-row">
-              <div class="punch-badge ${isIn?'in':'out'}">${isIn?'ENT':'USC'}</div>
-              <div class="punch-detail">
-                <div class="punch-time">${esc(fmtTime(e.timestamp_server))}</div>
-                <div class="punch-site">${esc(e.site_name)}</div>
+    /* TIMBRATURE */
+    async function loadTimbrature(){
+      const p=document.getElementById('p-timb');p.innerHTML='<div class="spinner"></div>';
+      try{
+        const r=await api('/area/'+_code+'/presence');const logs=await r.json();
+        if(!logs.length){
+          p.innerHTML=`<div class="sec-title">Storico timbrature</div><div class="card"><div class="empty">
+            <div class="empty-ic"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <h3>Nessuna timbratura</h3><p>Le tue timbrature degli ultimi 30 giorni appariranno qui.</p>
+          </div></div>`;return;}
+        const g={};for(const l of logs){const d=l.timestamp_server.split('T')[0];(g[d]=g[d]||[]).push(l);}
+        let h='<div class="sec-title">Ultimi 30 giorni</div>';
+        for(const[day,ent]of Object.entries(g)){
+          h+=`<div class="day-h">${esc(fDay(day))}</div><div class="card">`;
+          for(const e of ent){
+            const isIn=e.event_type==='ENTRY';
+            h+=`<div class="punch">
+              <div class="p-badge ${isIn?'in':'out'}">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">${isIn?'<polyline points="7 12 12 7 17 12"/><line x1="12" y1="7" x2="12" y2="21"/>':'<polyline points="7 12 12 17 17 12"/><line x1="12" y1="17" x2="12" y2="3"/>'}</svg>
+                ${isIn?'ENT':'USC'}
+              </div>
+              <div class="p-body">
+                <div class="p-time">${esc(fT(e.timestamp_server))}</div>
+                <div class="p-site">${esc(e.site_name)}</div>
               </div>
             </div>`;
           }
-          h += '</div>';
+          h+='</div>';
         }
-        p.innerHTML = h;
-      } catch { p.innerHTML = '<div class="empty" style="color:var(--red)">Errore nel caricamento</div>'; }
+        p.innerHTML=h;
+      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3><p>Riprova tra qualche secondo.</p></div>';}
     }
 
-    /* ── Buste Paga ── */
-    async function loadPayslips() {
-      const p = document.getElementById('pane-buste');
-      p.innerHTML = '<div class="spinner"></div>';
-      try {
-        const r = await apiFetch('/area/'+_code+'/payslips');
-        const list = await r.json();
-        if (!list.length) {
-          p.innerHTML = `<div class="section-label">Buste paga</div><div class="card"><div class="empty">
-            <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-            <div class="empty-title">Nessuna busta paga</div>
-            <div class="empty-sub">Le buste paga compariranno qui quando verranno condivise dall'azienda.</div>
-          </div></div>`; return;
-        }
-        let h = '<div class="section-label">Buste paga</div><div class="card">';
-        for (const s of list) {
-          const period = `${MO[s.period_month]||s.period_month} ${s.period_year}`;
-          const isAck = s.status==='acknowledged';
-          const ackD = s.acknowledged_at ? fmtDate(s.acknowledged_at) : '';
-          const acts = isAck
-            ? `<span class="ack-pill">&#10003; Firmata</span>`
-            : `<button class="btn btn-solid" onclick="ackSlip('${esc(s.id)}',this)">Firma</button>`;
-          h += `<div class="slip-row" id="sl-${esc(s.id)}">
-            <div class="slip-icon"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
-            <div class="slip-body">
-              <div class="slip-period">${esc(period)}</div>
-              ${s.note ? `<div class="slip-note">${esc(s.note)}</div>` : ''}
+    /* BUSTE PAGA */
+    async function loadPayslips(){
+      const p=document.getElementById('p-buste');p.innerHTML='<div class="spinner"></div>';
+      try{
+        const r=await api('/area/'+_code+'/payslips');const list=await r.json();
+        if(!list.length){
+          p.innerHTML=`<div class="sec-title">Buste paga</div><div class="card"><div class="empty">
+            <div class="empty-ic"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+            <h3>Nessuna busta paga</h3><p>Quando l'azienda condividerà le tue buste paga, le troverai qui.</p>
+          </div></div>`;return;}
+        let h='<div class="sec-title">Buste paga</div><div class="card">';
+        for(const s of list){
+          const per=`${MO[s.period_month]||s.period_month} ${s.period_year}`;
+          const isAck=s.status==='acknowledged';
+          const ackBtn=isAck
+            ? `<div class="ack-done">&#10003; Hai firmato questa busta paga</div>`
+            : `<button class="big-btn green" onclick="ackSlip('${esc(s.id)}',this)">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Firma presa visione
+              </button>`;
+          h+=`<div class="slip" id="sl-${esc(s.id)}">
+            <div class="slip-head">
+              <div class="slip-ic"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+              <div>
+                <div class="slip-period">${esc(per)}</div>
+                ${s.note?`<div class="slip-note">${esc(s.note)}</div>`:''}
+              </div>
             </div>
-            <div class="slip-actions">
-              <button class="btn btn-outline" onclick="openSlip('${esc(s.id)}',this)">Apri PDF</button>
-              ${acts}
+            <div class="slip-btns">
+              <button class="big-btn blue" onclick="openSlip('${esc(s.id)}',this)">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                Apri busta paga
+              </button>
+              ${ackBtn}
             </div>
           </div>`;
         }
-        h += '</div>';
-        p.innerHTML = h;
-      } catch { p.innerHTML = '<div class="empty" style="color:var(--red)">Errore nel caricamento</div>'; }
+        h+='</div>';
+        p.innerHTML=h;
+      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3></div>';}
     }
 
-    async function openSlip(id, btn) {
-      btn.disabled = true;
-      try { const r = await apiFetch('/area/'+_code+'/payslips/'+id+'/pdf'); const {url} = await r.json(); window.open(url,'_blank','noopener'); }
-      catch { alert('Impossibile aprire il PDF.'); }
-      btn.disabled = false;
+    async function openSlip(id,btn){
+      btn.disabled=true;const orig=btn.innerHTML;btn.innerHTML='Caricamento…';
+      try{const r=await api('/area/'+_code+'/payslips/'+id+'/pdf');const{url}=await r.json();window.open(url,'_blank','noopener');}
+      catch{alert('Impossibile aprire il PDF. Riprova.');}
+      btn.disabled=false;btn.innerHTML=orig;
     }
 
-    async function ackSlip(id, btn) {
-      if (!confirm('Confermi la presa visione?\n\nData, ora e IP verranno registrati.')) return;
-      btn.disabled = true; btn.textContent = '…';
-      try {
-        const r = await apiFetch('/area/'+_code+'/payslips/'+id+'/acknowledge',{method:'POST'});
-        if (!r.ok) throw 0;
-        const row = document.getElementById('sl-'+id);
-        const acts = row?.querySelector('.slip-actions');
-        if (acts) { const ab = acts.querySelector('.btn-solid'); if (ab) ab.outerHTML = '<span class="ack-pill">&#10003; Firmata</span>'; }
-      } catch { alert('Errore. Riprova.'); btn.disabled=false; btn.textContent='Firma'; }
+    async function ackSlip(id,btn){
+      if(!confirm('Confermi di aver visto questa busta paga?\n\nVerranno registrati data e ora della firma.'))return;
+      btn.disabled=true;btn.innerHTML='Invio firma…';
+      try{
+        const r=await api('/area/'+_code+'/payslips/'+id+'/acknowledge',{method:'POST'});
+        if(!r.ok)throw 0;
+        btn.outerHTML='<div class="ack-done">&#10003; Hai firmato questa busta paga</div>';
+      }catch{alert('Errore. Riprova.');btn.disabled=false;btn.innerHTML='Firma presa visione';}
     }
 
-    /* ── Documenti ── */
-    const DOC_LABELS = {
-      idoneita_medica:'Idoneità Sanitaria', formazione_sicurezza:'Formazione Sicurezza',
-      formazione_generale:'Formazione Generale', formazione_specifica:'Formazione Specifica',
-      patentino:'Patentino / Abilitazione', unilav:'UniLav', documento_identita:"Documento d'Identità",
-    };
+    /* DOCUMENTI */
+    const DL={idoneita_medica:'Idoneità Sanitaria',formazione_sicurezza:'Formazione Sicurezza',formazione_generale:'Formazione Generale',formazione_specifica:'Formazione Specifica',patentino:'Patentino / Abilitazione',unilav:'UniLav',documento_identita:"Documento d'Identità"};
 
-    async function loadDocumenti() {
-      const p = document.getElementById('pane-documenti');
-      p.innerHTML = '<div class="spinner"></div>';
-      try {
-        const pr = _profile || await (await apiFetch('/area/'+_code+'/profile')).json();
-        const docs = pr.documents || [];
-        if (!docs.length) {
-          p.innerHTML = `<div class="section-label">Documenti</div><div class="card"><div class="empty">
-            <div class="empty-icon"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
-            <div class="empty-title">Nessun documento</div>
-            <div class="empty-sub">I documenti compariranno qui quando verranno caricati dall'azienda.</div>
-          </div></div>`; return;
-        }
-        let h = '<div class="section-label">Documenti personali</div><div class="card">';
-        for (const d of docs) {
-          const label = DOC_LABELS[d.doc_type]||d.name||d.doc_type;
-          let expCls='', expTxt='';
-          if (d.expiry_date) {
-            const diff = (new Date(d.expiry_date)-new Date())/86400000;
-            expCls = diff<0 ? 'expired' : diff<30 ? 'warning' : '';
-            expTxt = (diff<0?'Scaduto':'Scadenza')+' '+fmtDate(d.expiry_date);
-          }
-          const btn = d.has_file ? `<button class="btn btn-outline" onclick="openDoc('${esc(d.id)}',this)">Apri</button>` : '';
-          h += `<div class="doc-row">
-            <div class="doc-chip"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
+    async function loadDocumenti(){
+      const p=document.getElementById('p-doc');p.innerHTML='<div class="spinner"></div>';
+      try{
+        const pr=_prof||await(await api('/area/'+_code+'/profile')).json();
+        const docs=pr.documents||[];
+        if(!docs.length){
+          p.innerHTML=`<div class="sec-title">Documenti</div><div class="card"><div class="empty">
+            <div class="empty-ic"><svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></div>
+            <h3>Nessun documento</h3><p>I tuoi documenti di sicurezza compariranno qui.</p>
+          </div></div>`;return;}
+        let h='<div class="sec-title">I tuoi documenti</div><div class="card">';
+        for(const d of docs){
+          const label=DL[d.doc_type]||d.name||d.doc_type;
+          let ec='',et='';
+          if(d.expiry_date){const diff=(new Date(d.expiry_date)-new Date())/86400000;ec=diff<0?'bad':diff<30?'soon':'';et=(diff<0?'SCADUTO ':'Scadenza ')+fD(d.expiry_date);}
+          const btn=d.has_file?`<button class="doc-open" onclick="openDoc('${esc(d.id)}',this)">Apri</button>`:'';
+          h+=`<div class="doc">
+            <div class="doc-ic"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></div>
             <div class="doc-body">
               <div class="doc-name">${esc(label)}</div>
-              ${expTxt ? `<div class="doc-exp ${expCls}">${esc(expTxt)}</div>` : ''}
+              ${et?`<div class="doc-exp ${ec}">${esc(et)}</div>`:''}
             </div>
             ${btn}
           </div>`;
         }
-        h += '</div>';
-        p.innerHTML = h;
-      } catch { p.innerHTML = '<div class="empty" style="color:var(--red)">Errore nel caricamento</div>'; }
+        h+='</div>';
+        p.innerHTML=h;
+      }catch{p.innerHTML='<div class="empty" style="color:var(--red)"><h3>Errore di caricamento</h3></div>';}
     }
 
-    async function openDoc(id, btn) {
-      btn.disabled = true;
-      try { const r = await apiFetch('/area/'+_code+'/documents/'+id); const {url} = await r.json(); window.open(url,'_blank','noopener'); }
-      catch { alert('Impossibile aprire il documento.'); }
-      btn.disabled = false;
+    async function openDoc(id,btn){
+      btn.disabled=true;
+      try{const r=await api('/area/'+_code+'/documents/'+id);const{url}=await r.json();window.open(url,'_blank','noopener');}
+      catch{alert('Impossibile aprire il documento.');}
+      btn.disabled=false;
     }
 
-    /* ── Input ── */
-    const cfIn = document.getElementById('cf-input');
-    cfIn.addEventListener('input', function() {
-      this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
-      document.getElementById('auth-btn').disabled = this.value.length!==16;
-      document.getElementById('auth-error').style.display = 'none';
-    });
-    cfIn.addEventListener('keydown', function(e) { if (e.key==='Enter'&&this.value.length===16) doLogin(); });
-    document.getElementById('auth-btn').addEventListener('click', doLogin);
-    document.getElementById('btn-logout').addEventListener('click', logout);
+    /* INPUT */
+    const cfIn=document.getElementById('cf');
+    cfIn.addEventListener('input',function(){this.value=this.value.toUpperCase().replace(/[^A-Z0-9]/g,'');document.getElementById('auth-btn').disabled=this.value.length!==16;document.getElementById('auth-err').style.display='none';});
+    cfIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&this.value.length===16)doLogin();});
+    document.getElementById('auth-btn').addEventListener('click',doLogin);
+    document.getElementById('btn-exit').addEventListener('click',logout);
 
-    /* ── Boot ── */
-    (async () => {
-      _code = getCode();
-      if (_code && tryResume()) enterApp(); else await initAuth();
-    })();
+    /* BOOT */
+    (async()=>{_code=getCode();if(_code&&tryResume())enterApp();else await initAuth();})();
   </script>
 </body>
 </html>
