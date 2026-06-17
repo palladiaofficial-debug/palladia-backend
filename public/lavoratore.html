@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#1a1a1a">
   <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -449,6 +450,29 @@
     cfIn.addEventListener('keydown',function(e){if(e.key==='Enter'&&this.value.length===16)doLogin();});
     document.getElementById('auth-btn').addEventListener('click',doLogin);
     document.getElementById('btn-exit').addEventListener('click',logout);
+
+    /* SERVICE WORKER + PUSH */
+    if('serviceWorker' in navigator){
+      navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});
+    }
+    function tryPush(){
+      if(!('PushManager' in window)||Notification.permission!=='default')return;
+      Notification.requestPermission().then(function(p){if(p==='granted')doPushSub();});
+    }
+    function doPushSub(){
+      navigator.serviceWorker.ready.then(function(reg){
+        fetch('/api/v1/push/vapid-public-key').then(function(r){return r.json();}).then(function(d){
+          if(!d.vapidPublicKey)return;
+          var raw=atob(d.vapidPublicKey.replace(/-/g,'+').replace(/_/g,'/'));
+          var k=new Uint8Array(raw.length);for(var i=0;i<raw.length;i++)k[i]=raw.charCodeAt(i);
+          return reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:k});
+        }).then(function(sub){
+          if(!sub)return;var j=sub.toJSON();
+          fetch('/api/v1/push/subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({endpoint:j.endpoint,keys:j.keys})}).catch(function(){});
+        }).catch(function(){});
+      });
+    }
+    if(Notification.permission==='granted')doPushSub();
 
     /* BOOT */
     (async()=>{_code=getCode();if(_code&&tryResume())enterApp();else await initAuth();})();

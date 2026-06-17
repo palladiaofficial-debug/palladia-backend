@@ -454,6 +454,26 @@ app.get('/api/parse-diag', verifyJwtOnly, async (req, res) => {
 // Favicon — evita 404 nei log
 app.get('/favicon.ico', (req, res) => res.status(204).end());
 
+// ── Digital Asset Links (TWA verification) ──────────────────────────────────
+app.get('/.well-known/assetlinks.json', (req, res) => {
+  const fingerprint = process.env.TWA_SHA256_FINGERPRINT || '';
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.json([{
+    relation: ['delegate_permission/common.handle_all_urls'],
+    target: {
+      namespace: 'android_app',
+      package_name: 'net.palladia.app',
+      sha256_cert_fingerprints: fingerprint ? [fingerprint] : [],
+    },
+  }]);
+});
+
+// ── Download app page ───────────────────────────────────────────────────────
+app.get('/app', (req, res) => {
+  res.sendFile('app.html', { root: __dirname + '/public' });
+});
+
 // ── Frontend badge (pagine statiche) ────────────────────────────────────────
 // Serve i file in /public (scan.html, setup.html)
 // Le route SPA sono dichiarate PRIMA di express.static per sicurezza esplicita.

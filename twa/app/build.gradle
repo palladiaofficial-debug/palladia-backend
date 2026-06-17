@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'net.palladia.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "net.palladia.app"
+        minSdk 19
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        manifestPlaceholders = [
+            hostName: "palladia-backend-production.up.railway.app",
+            defaultUrl: "https://palladia-backend-production.up.railway.app/",
+            launcherName: "Palladia",
+            assetStatements: '[{ "relation": ["delegate_permission/common.handle_all_urls"], ' +
+                '"target": { "namespace": "web", "site": "https://palladia-backend-production.up.railway.app" } }]'
+        ]
+    }
+
+    signingConfigs {
+        release {
+            def ksFile = file("${rootProject.projectDir}/palladia-keystore.jks")
+            if (ksFile.exists()) {
+                storeFile ksFile
+                storePassword System.getenv("KEYSTORE_PASSWORD") ?: "palladia2026"
+                keyAlias "palladia"
+                keyPassword System.getenv("KEYSTORE_PASSWORD") ?: "palladia2026"
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            signingConfig signingConfigs.release
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+}
+
+dependencies {
+    implementation 'androidx.browser:browser:1.8.0'
+}

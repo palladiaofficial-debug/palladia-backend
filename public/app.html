@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1a1a">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <title>Scarica Palladia</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body{
+      min-height:100dvh;background:#1a1a1a;color:#fff;
+      font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
+      font-size:17px;line-height:1.5;
+      -webkit-font-smoothing:antialiased;
+    }
+    body{
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      padding:calc(32px + env(safe-area-inset-top,0px)) 20px calc(32px + env(safe-area-inset-bottom,0px));
+      text-align:center;
+    }
+
+    .logo{font-size:12px;font-weight:800;letter-spacing:0.25em;color:rgba(255,255,255,0.4);text-transform:uppercase;margin-bottom:32px}
+    .icon-wrap{
+      width:96px;height:96px;border-radius:24px;
+      background:#fff;margin:0 auto 24px;
+      display:flex;align-items:center;justify-content:center;
+      box-shadow:0 8px 32px rgba(0,0,0,0.3);
+    }
+    .icon-wrap svg{width:48px;height:48px}
+    h1{font-size:28px;font-weight:900;margin-bottom:8px}
+    .sub{font-size:15px;color:rgba(255,255,255,0.55);margin-bottom:32px;max-width:340px;line-height:1.6}
+
+    .dl-btn{
+      display:flex;align-items:center;justify-content:center;gap:10px;
+      width:100%;max-width:360px;padding:18px 24px;
+      font-size:18px;font-weight:800;font-family:inherit;
+      color:#1a1a1a;background:#fff;border:none;border-radius:14px;
+      cursor:pointer;text-decoration:none;
+      transition:transform 0.1s,box-shadow 0.1s;
+    }
+    .dl-btn:active{transform:scale(0.97)}
+    .dl-btn svg{width:24px;height:24px;flex-shrink:0}
+    .dl-btn.green{background:#16a34a;color:#fff}
+
+    .or-sep{
+      margin:20px 0;font-size:13px;font-weight:600;color:rgba(255,255,255,0.3);
+      text-transform:uppercase;letter-spacing:0.1em;
+    }
+
+    .qr-wrap{
+      background:#fff;border-radius:16px;padding:16px;
+      display:inline-block;margin-bottom:16px;
+    }
+    .qr-wrap canvas{display:block}
+    .qr-label{font-size:13px;color:rgba(255,255,255,0.4);margin-bottom:24px}
+
+    .steps{
+      width:100%;max-width:360px;text-align:left;
+      background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);
+      border-radius:16px;padding:20px;margin-top:4px;
+    }
+    .steps-title{font-size:14px;font-weight:800;color:rgba(255,255,255,0.7);margin-bottom:14px;text-transform:uppercase;letter-spacing:0.06em}
+    .step{display:flex;gap:12px;margin-bottom:14px}
+    .step:last-child{margin-bottom:0}
+    .step-n{
+      width:28px;height:28px;border-radius:50%;
+      background:rgba(255,255,255,0.12);color:#fff;
+      display:flex;align-items:center;justify-content:center;
+      font-size:13px;font-weight:800;flex-shrink:0;margin-top:1px;
+    }
+    .step-t{font-size:15px;color:rgba(255,255,255,0.75);line-height:1.5}
+    .step-t strong{color:#fff}
+
+    #android-section,#ios-section,#desktop-section{display:none}
+    .show{display:block!important}
+  </style>
+</head>
+<body>
+
+  <div class="logo">PALLADIA</div>
+
+  <div class="icon-wrap">
+    <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="6" width="32" height="36" rx="4" stroke="#1a1a1a" stroke-width="3"/>
+      <path d="M16 18h16M16 24h16M16 30h10" stroke="#1a1a1a" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <h1>Palladia</h1>
+  <p class="sub">Timbratura, buste paga e documenti — tutto in un'app per il tuo cantiere.</p>
+
+  <!-- ANDROID -->
+  <div id="android-section">
+    <a class="dl-btn green" href="/palladia.apk" download>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      Scarica l'app
+    </a>
+    <div class="or-sep">oppure condividi questo QR</div>
+    <div class="qr-wrap"><canvas id="qr-canvas"></canvas></div>
+    <div class="qr-label">Inquadra con la fotocamera per scaricare</div>
+
+    <div class="steps">
+      <div class="steps-title">Come installare</div>
+      <div class="step"><div class="step-n">1</div><div class="step-t">Tocca <strong>"Scarica l'app"</strong> qui sopra</div></div>
+      <div class="step"><div class="step-n">2</div><div class="step-t">Apri il file scaricato e tocca <strong>"Installa"</strong></div></div>
+      <div class="step"><div class="step-n">3</div><div class="step-t">Se richiesto, consenti l'installazione da <strong>fonti sconosciute</strong></div></div>
+    </div>
+  </div>
+
+  <!-- iOS -->
+  <div id="ios-section">
+    <div class="dl-btn" onclick="void(0)" style="cursor:default;opacity:0.9">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M19 12l-7 7-7-7"/></svg>
+      Salva come app
+    </div>
+    <div style="height:16px"></div>
+    <div class="steps">
+      <div class="steps-title">Come installare su iPhone</div>
+      <div class="step"><div class="step-n">1</div><div class="step-t">Tocca l'icona <strong>Condividi</strong> (freccia in basso nella barra di Safari)</div></div>
+      <div class="step"><div class="step-n">2</div><div class="step-t">Scorri e tocca <strong>"Aggiungi a schermata Home"</strong></div></div>
+      <div class="step"><div class="step-n">3</div><div class="step-t">Tocca <strong>"Aggiungi"</strong> in alto a destra — fatto!</div></div>
+    </div>
+    <p style="margin-top:16px;font-size:13px;color:rgba(255,255,255,0.35)">Su iPhone è necessario usare Safari per questo passaggio.</p>
+  </div>
+
+  <!-- DESKTOP -->
+  <div id="desktop-section">
+    <div class="qr-wrap"><canvas id="qr-canvas-desktop"></canvas></div>
+    <div class="qr-label">Inquadra questo QR con il telefono per scaricare l'app</div>
+  </div>
+
+  <script>
+    // QR code generator — minimal implementation
+    // Uses the QR code API endpoint or inline generation
+    function drawQR(canvasId) {
+      var canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      var url = location.origin + '/app';
+      var img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = function() {
+        canvas.width = 200; canvas.height = 200;
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, 200, 200);
+      };
+      img.onerror = function() {
+        canvas.width = 200; canvas.height = 200;
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(0, 0, 200, 200);
+        ctx.fillStyle = '#999';
+        ctx.font = '12px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('QR non disponibile', 100, 100);
+      };
+      img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+    }
+
+    // Device detection
+    var ua = navigator.userAgent || '';
+    var isAndroid = /android/i.test(ua);
+    var isIOS = /iP(hone|ad|od)/i.test(ua);
+    var isMobile = isAndroid || isIOS;
+    var standalone = window.matchMedia('(display-mode: standalone)').matches
+                  || navigator.standalone === true;
+
+    if (standalone) {
+      // Already installed — redirect to timbratura
+      var saved = '';
+      try { saved = localStorage.getItem('palladia_badge_code') || ''; } catch(e){}
+      if (saved) { location.replace('/timbratura/' + saved); }
+      else { location.replace('/'); }
+    } else if (isAndroid) {
+      document.getElementById('android-section').classList.add('show');
+      drawQR('qr-canvas');
+    } else if (isIOS) {
+      document.getElementById('ios-section').classList.add('show');
+    } else {
+      document.getElementById('desktop-section').classList.add('show');
+      drawQR('qr-canvas-desktop');
+    }
+  </script>
+</body>
+</html>

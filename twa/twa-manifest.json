@@ -1,0 +1,15 @@
+{
+  "packageId": "net.palladia.app",
+  "host": "palladia-backend-production.up.railway.app",
+  "name": "Palladia",
+  "launcherName": "Palladia",
+  "themeColor": "#1a1a1a",
+  "backgroundColor": "#f5f3ee",
+  "startUrl": "/",
+  "iconUrl": "/icon-pwa-512.png",
+  "enableNotifications": true,
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "signingKeyAlias": "palladia",
+  "notes": "Usare build-twa.yml (GitHub Actions) per generare l'APK. Serve la variabile KEYSTORE_BASE64 nei secrets di GitHub."
+}

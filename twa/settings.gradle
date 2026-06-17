@@ -1,0 +1,2 @@
+rootProject.name = 'palladia-twa'
+include ':app'

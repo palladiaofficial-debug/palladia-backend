@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Palladia" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#FF1a1a1a</item>
+        <item name="android:navigationBarColor">#FF1a1a1a</item>
+        <item name="android:windowBackground">#FFF5F3EE</item>
+    </style>
+
+    <style name="Theme.Palladia.Splash" parent="Theme.Palladia">
+        <item name="android:windowBackground">#FFF5F3EE</item>
+    </style>
+</resources>

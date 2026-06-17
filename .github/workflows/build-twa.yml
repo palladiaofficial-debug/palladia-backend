@@ -1,0 +1,85 @@
+name: Build Palladia APK (TWA)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: twa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > palladia-keystore.jks
+          else
+            keytool -genkeypair -v \
+              -keystore palladia-keystore.jks \
+              -alias palladia \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "${KEYSTORE_PASSWORD:-palladia2026}" \
+              -keypass "${KEYSTORE_PASSWORD:-palladia2026}" \
+              -dname "CN=Palladia, O=Palladia, L=Italy, C=IT"
+          fi
+
+      - name: Copy PWA icon as launcher icon
+        run: |
+          mkdir -p app/src/main/res/mipmap-xxxhdpi
+          curl -sL "https://palladia-backend-production.up.railway.app/icon-pwa-192.png" \
+            -o app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          for d in mdpi hdpi xhdpi xxhdpi; do
+            mkdir -p "app/src/main/res/mipmap-$d"
+            cp app/src/main/res/mipmap-xxxhdpi/ic_launcher.png "app/src/main/res/mipmap-$d/ic_launcher.png"
+          done
+
+      - name: Set up Gradle wrapper
+        run: |
+          gradle wrapper --gradle-version 8.5 || true
+          chmod +x gradlew 2>/dev/null || true
+
+      - name: Build APK
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          chmod +x gradlew 2>/dev/null || true
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Print SHA-256 fingerprint
+        run: |
+          keytool -list -v \
+            -keystore palladia-keystore.jks \
+            -alias palladia \
+            -storepass "${KEYSTORE_PASSWORD:-palladia2026}" 2>/dev/null \
+            | grep SHA256 || true
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: palladia-apk
+          path: twa/app/build/outputs/apk/release/*.apk
+
+      - name: Upload to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: twa/app/build/outputs/apk/release/*.apk
