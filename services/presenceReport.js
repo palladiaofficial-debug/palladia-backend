@@ -778,13 +778,13 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
       <tr>
         <th>Data</th>
         <th>Lavoratore</th>
-        <th>C. Fiscale</th>
-        <th style="text-align:center;">P. Entrata</th>
-        <th style="text-align:center;">U. Uscita</th>
-        <th style="text-align:center;">Ore tot.</th>
-        <th style="text-align:center;">Int.</th>
-        <th style="text-align:center;">Dist.</th>
-        <th style="text-align:center;">GPS ±m</th>
+        <th>Codice Fiscale</th>
+        <th style="text-align:center;">Entrata</th>
+        <th style="text-align:center;">Uscita</th>
+        <th style="text-align:center;">Ore</th>
+        <th style="text-align:center;">N.</th>
+        <th style="text-align:center;">Dist. m</th>
+        <th style="text-align:center;">GPS m</th>
         <th style="text-align:center;">Metodo</th>
         <th>Anomalie</th>
       </tr>
