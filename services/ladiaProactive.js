@@ -23,6 +23,7 @@ const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
 const { getForecast }            = require('./weatherService');
 const { generateBudgetProposal } = require('./ladiaSmartProposal');
+const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 const { runComplianceChecks }    = require('./complianceEngine');
 
 // ── Costanti ──────────────────────────────────────────────────
@@ -78,16 +79,15 @@ async function fetchActiveSiteUsers() {
   let users, error;
   ({ data: users, error } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id, company_id, active_site_id, notification_level, last_interaction_at')
+    .select('telegram_chat_id, company_id, user_id, active_site_id, notification_level, last_interaction_at')
     .not('active_site_id', 'is', null)
     .limit(500));
 
   if (error) {
-    // Colonne non ancora presenti — fallback senza notification_level
     console.warn('[ladiaProactive] fetchActiveSiteUsers fallback (migration 035 non eseguita?):', error.message);
     ({ data: users, error } = await supabase
       .from('telegram_users')
-      .select('telegram_chat_id, company_id, active_site_id')
+      .select('telegram_chat_id, company_id, user_id, active_site_id')
       .not('active_site_id', 'is', null)
       .limit(500));
   }
@@ -106,7 +106,15 @@ async function fetchActiveSiteUsers() {
 
   const siteMap = new Map(sites.map(s => [s.id, s]));
 
+  // Filtra utenti che hanno disabilitato Telegram nelle preferenze
+  const companyIds = [...new Set(users.map(u => u.company_id))];
+  const prefsMaps = new Map();
+  await Promise.all(companyIds.map(async cid => {
+    prefsMaps.set(cid, await getPrefsMap(cid));
+  }));
+
   return users
+    .filter(u => isChannelEnabled(prefsMaps.get(u.company_id) || new Map(), u.user_id, 'telegram'))
     .map(u => {
       const site = siteMap.get(u.active_site_id);
       if (!site) return null;

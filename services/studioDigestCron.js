@@ -17,6 +17,7 @@ const {
   sendStudioWeeklyDigest,
   sendStudioExpiryAlertToCompany,
 } = require('./email');
+const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
 
 async function runStudioDigest() {
   console.log('[studioDigest] avvio elaborazione settimanale');
@@ -229,7 +230,7 @@ async function processStudio(studio, now, in30, oneYearAgo) {
         continue;
       }
 
-      // Impresa con account Palladia: usa owner/admin da company_users
+      // Impresa con account Palladia: usa owner/admin da company_users (rispetta preferenze)
       const { data: members } = await supabase
         .from('company_users')
         .select('user_id')
@@ -238,8 +239,11 @@ async function processStudio(studio, now, in30, oneYearAgo) {
 
       if (!members?.length) continue;
 
-      for (const member of members.slice(0, 2)) {
-        const { data: { user: companyUser } } = await supabase.auth.admin.getUserById(member.user_id);
+      const allMemberIds = members.map(m => m.user_id);
+      const enabledIds = await filterUserIdsByChannel(company.company_id, allMemberIds, 'email');
+
+      for (const uid of enabledIds.slice(0, 2)) {
+        const { data: { user: companyUser } } = await supabase.auth.admin.getUserById(uid);
         if (!companyUser?.email) continue;
 
         await sendStudioExpiryAlertToCompany({ to: companyUser.email, ...alertPayload })

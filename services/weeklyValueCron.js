@@ -19,6 +19,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
+const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 
 // Minuti risparmiati per tipo di azione
 const TIME_SAVED_MIN = {
@@ -159,7 +160,7 @@ async function runWeeklyReport() {
 
   const { data: tuUsers, error } = await supabase
     .from('telegram_users')
-    .select('company_id, telegram_chat_id')
+    .select('company_id, telegram_chat_id, user_id')
     .limit(1000);
 
   if (error) {
@@ -167,18 +168,24 @@ async function runWeeklyReport() {
     return;
   }
 
-  // Un report per company, inviato a tutti gli utenti collegati
+  // Un report per company, inviato a tutti gli utenti collegati (rispetta preferenze)
   const companyMap = new Map();
   for (const u of (tuUsers || [])) {
     if (!companyMap.has(u.company_id)) companyMap.set(u.company_id, []);
-    companyMap.get(u.company_id).push(u.telegram_chat_id);
+    companyMap.get(u.company_id).push(u);
   }
 
   let sent = 0;
-  for (const [companyId, chatIds] of companyMap) {
+  for (const [companyId, users] of companyMap) {
     try {
       const msg = await buildWeeklyReport(companyId);
       if (!msg) continue;
+
+      const prefsMap = await getPrefsMap(companyId);
+      const chatIds = users
+        .filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'))
+        .map(u => u.telegram_chat_id);
+      if (!chatIds.length) continue;
 
       await Promise.allSettled(chatIds.map(chatId => tg.sendMessage(chatId, msg)));
       sent++;

@@ -14,6 +14,7 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
 const { sendWeeklyExpiryReport } = require('./email');
+const { filterUserIdsByChannel, getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 
 const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -128,52 +129,58 @@ async function runWeeklyExpiryReport() {
       const { critical, warning, companyName } = await buildExpiryEvents(companyId);
       if (!critical.length && !warning.length) continue;
 
-      // ── Email agli owner/admin ──
-      const { data: emails } = await supabase
-        .from('auth_users_view')
-        .select('email')
-        .in('id', userIds)
-        .limit(10);
+      // ── Email agli owner/admin (rispetta preferenze) ──
+      const enabledEmailUserIds = await filterUserIdsByChannel(companyId, userIds, 'email');
 
-      const emailList = (emails || []).map(u => u.email).filter(Boolean);
+      if (enabledEmailUserIds.length) {
+        const { data: emails } = await supabase
+          .from('auth_users_view')
+          .select('email')
+          .in('id', enabledEmailUserIds)
+          .limit(10);
 
-      // Fallback: usa auth.users via RPC se la view non esiste
-      for (const email of emailList) {
-        try {
-          await sendWeeklyExpiryReport({ to: email, companyName, critical, warning });
-          sentEmail++;
-        } catch (e) {
-          console.error(`[weeklyExpiryReport] email error (${email}):`, e.message);
+        for (const { email } of (emails || []).filter(u => u.email)) {
+          try {
+            await sendWeeklyExpiryReport({ to: email, companyName, critical, warning });
+            sentEmail++;
+          } catch (e) {
+            console.error(`[weeklyExpiryReport] email error (${email}):`, e.message);
+          }
         }
       }
 
-      // ── Telegram ──
+      // ── Telegram (rispetta preferenze) ──
       const { data: tgUsers } = await supabase
         .from('telegram_users')
-        .select('telegram_chat_id')
+        .select('telegram_chat_id, user_id')
         .eq('company_id', companyId);
 
       if (tgUsers?.length) {
-        const total = critical.length + warning.length;
-        const critLines = critical.slice(0, 5).map(e =>
-          `🔴 ${e.label} — ${e.days <= 0 ? 'SCADUTA' : `${e.days}gg`}`
-        );
-        const warnLines = warning.slice(0, 3).map(e =>
-          `🟡 ${e.label} — ${e.days}gg`
-        );
+        const prefsMap = await getPrefsMap(companyId);
+        const enabledTgUsers = tgUsers.filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'));
 
-        let msg = `📅 <b>Scadenze della settimana — ${companyName}</b>\n`;
-        if (critLines.length) msg += `\n${critLines.join('\n')}`;
-        if (warnLines.length) msg += `\n${warnLines.join('\n')}`;
-        if (total > critLines.length + warnLines.length) {
-          msg += `\n<i>...e altre ${total - critLines.length - warnLines.length} scadenze</i>`;
+        if (enabledTgUsers.length) {
+          const total = critical.length + warning.length;
+          const critLines = critical.slice(0, 5).map(e =>
+            `🔴 ${e.label} — ${e.days <= 0 ? 'SCADUTA' : `${e.days}gg`}`
+          );
+          const warnLines = warning.slice(0, 3).map(e =>
+            `🟡 ${e.label} — ${e.days}gg`
+          );
+
+          let msg = `📅 <b>Scadenze della settimana — ${companyName}</b>\n`;
+          if (critLines.length) msg += `\n${critLines.join('\n')}`;
+          if (warnLines.length) msg += `\n${warnLines.join('\n')}`;
+          if (total > critLines.length + warnLines.length) {
+            msg += `\n<i>...e altre ${total - critLines.length - warnLines.length} scadenze</i>`;
+          }
+          msg += `\n\n→ <a href="${FRONTEND_URL}/scadenze">Apri lo scadenzario</a>`;
+
+          await Promise.allSettled(
+            enabledTgUsers.map(u => tg.sendMessage(u.telegram_chat_id, msg).catch(() => {}))
+          );
+          sentTg++;
         }
-        msg += `\n\n→ <a href="${FRONTEND_URL}/scadenze">Apri lo scadenzario</a>`;
-
-        await Promise.allSettled(
-          tgUsers.map(u => tg.sendMessage(u.telegram_chat_id, msg).catch(() => {}))
-        );
-        sentTg++;
       }
 
     } catch (e) {
