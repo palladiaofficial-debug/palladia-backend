@@ -19,6 +19,7 @@
 
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
+const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 
 // ── Utility: log azione ───────────────────────────────────────
 
@@ -206,15 +207,21 @@ async function sendRainNotification(siteId, companyId, chatId) {
 
   const siteName = site.name || site.address || 'Cantiere';
 
-  // Tutti gli utenti della company ESCLUSO chi ha confermato (già informato)
   const { data: users } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id')
+    .select('telegram_chat_id, user_id')
     .eq('company_id', companyId)
     .neq('telegram_chat_id', chatId);
 
   if (!users?.length) {
     await logAction(chatId, companyId, siteId, 'rain_notify', { siteId }, 'skipped', 'nessun altro utente collegato');
+    return { ok: true, sent: 0 };
+  }
+
+  const prefsMap = await getPrefsMap(companyId);
+  const filtered = users.filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'));
+  if (!filtered.length) {
+    await logAction(chatId, companyId, siteId, 'rain_notify', { siteId }, 'skipped', 'tutti gli utenti hanno disabilitato Telegram');
     return { ok: true, sent: 0 };
   }
 
@@ -227,7 +234,7 @@ async function sendRainNotification(siteId, companyId, chatId) {
     `— <i>Inviato da Ladia su conferma del responsabile</i>`;
 
   const results = await Promise.allSettled(
-    users.map(u => tg.sendMessage(u.telegram_chat_id, text))
+    filtered.map(u => tg.sendMessage(u.telegram_chat_id, text))
   );
 
   const sent   = results.filter(r => r.status === 'fulfilled').length;
@@ -281,16 +288,19 @@ async function sendExpiryReminder(workerId, docType, companyId, chatId) {
       ? `⚠️ SCADUTA ${Math.abs(daysLeft)} giorni fa`
       : `scade tra ${daysLeft} giorni`;
 
-  // Tutti gli utenti della company (incluso chi ha chiesto — serve a tutti)
   const { data: users } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id')
+    .select('telegram_chat_id, user_id')
     .eq('company_id', companyId);
 
   if (!users?.length) {
     await logAction(chatId, companyId, null, 'expiry_remind', { workerId, docType }, 'skipped', 'nessun utente collegato');
     return { ok: false, sent: 0 };
   }
+
+  const prefsMap = await getPrefsMap(companyId);
+  const filtered = users.filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'));
+  if (!filtered.length) return { ok: true, sent: 0 };
 
   const text =
     `📢 <b>Promemoria scadenza — ${docLabel}</b>\n\n` +
@@ -301,7 +311,7 @@ async function sendExpiryReminder(workerId, docType, companyId, chatId) {
     `— <i>Inviato da Ladia su conferma del responsabile</i>`;
 
   const results = await Promise.allSettled(
-    users.map(u => tg.sendMessage(u.telegram_chat_id, text))
+    filtered.map(u => tg.sendMessage(u.telegram_chat_id, text))
   );
 
   const sent = results.filter(r => r.status === 'fulfilled').length;
@@ -334,7 +344,7 @@ async function sendHeatNotification(siteId, companyId, chatId) {
 
   const { data: users } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id')
+    .select('telegram_chat_id, user_id')
     .eq('company_id', companyId)
     .neq('telegram_chat_id', chatId);
 
@@ -342,6 +352,10 @@ async function sendHeatNotification(siteId, companyId, chatId) {
     await logAction(chatId, companyId, siteId, 'heat_notify', { siteId }, 'skipped', 'nessun altro utente');
     return { ok: true, sent: 0 };
   }
+
+  const prefsMap = await getPrefsMap(companyId);
+  const filtered = users.filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'));
+  if (!filtered.length) return { ok: true, sent: 0 };
 
   const text =
     `🌡️ <b>Allerta caldo — ${siteName}</b>\n\n` +
@@ -352,7 +366,7 @@ async function sendHeatNotification(siteId, companyId, chatId) {
     `— <i>Inviato da Ladia su conferma del responsabile</i>`;
 
   const results = await Promise.allSettled(
-    users.map(u => tg.sendMessage(u.telegram_chat_id, text))
+    filtered.map(u => tg.sendMessage(u.telegram_chat_id, text))
   );
 
   const sent   = results.filter(r => r.status === 'fulfilled').length;
