@@ -498,14 +498,30 @@ router.delete('/companies/:companyId', async (req, res) => {
 
   console.log(`[delete-company] inizio cancellazione cascata company ${companyId} (owner: ${userId})`);
 
-  // Cancellazione in ordine FK-safe (dalla foglia alla radice)
+  // Cancellazione in ordine FK-safe (dalla foglia alla radice).
+  // Include sia tabelle SENZA ON DELETE CASCADE (obbligatorie) sia tabelle CON
+  // CASCADE (defense-in-depth: se la cascade DB fallisce per RLS/trigger, il
+  // cleanup esplicito garantisce la pulizia).
   const cleanup = [
+    // ── Foglie formazione (dipendono da course_bookings / workers) ──
+    'provider_reviews',           // FK course_bookings NO CASCADE, company_id NO CASCADE
+    'course_reviews',             // FK course_bookings CASCADE, ma company_id NO CASCADE
+    'expiry_notifications',       // FK workers NO CASCADE, company_id NO CASCADE
+    'course_bookings',            // FK workers NO CASCADE, company_id NO CASCADE
+    'course_quote_requests',      // company_id NO CASCADE
+
+    // ── Studio CDL ──
+    'studio_document_requests',   // company_id NO CASCADE
+
+    // ── Notifiche / messaging (hanno CASCADE, ma puliamo per sicurezza) ──
     'notification_preferences',
     'notifications',
     'push_subscriptions',
     'telegram_link_tokens',
     'telegram_users',
     'chat_history',
+
+    // ── Dati operativi (mix CASCADE / NO CASCADE) ──
     'ladia_proactive_log',
     'worker_documents',
     'worker_device_sessions',
@@ -516,8 +532,10 @@ router.delete('/companies/:companyId', async (req, res) => {
     'dvr_documents',
     'pimus_documents',
     'company_documents',
-    'workers',
-    'sites',
+
+    // ── Entità principali ──
+    'workers',                    // company_id NO CASCADE — cascade elimina worker_certificates, badges
+    'sites',                      // company_id NO CASCADE — cascade elimina site_*, economia, computo, diary, etc.
   ];
   for (const table of cleanup) {
     const { error: cleanErr } = await supabase.from(table).delete().eq('company_id', companyId);
