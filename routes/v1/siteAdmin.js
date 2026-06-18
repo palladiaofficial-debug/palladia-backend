@@ -628,7 +628,15 @@ router.delete('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     return res.json({ ok: true, method: 'soft_delete', message: `Il cantiere aveva ${count} timbrature: i dati storici sono stati preservati.` });
   }
 
-  // Hard delete — nessun log, rimuove tutto
+  // Hard delete — nessun log, rimuove tabelle figlie senza CASCADE poi il cantiere
+  const childTables = ['site_computo_voci', 'worker_certificates', 'course_bookings'];
+  for (const table of childTables) {
+    const { error: childErr } = await supabase.from(table).delete().eq('site_id', siteId);
+    if (childErr) {
+      console.error(`[siteAdmin] delete child ${table} error:`, childErr.message);
+    }
+  }
+
   const { error: delErr } = await supabase
     .from('sites')
     .delete()
