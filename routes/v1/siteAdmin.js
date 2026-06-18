@@ -580,7 +580,6 @@ router.post('/sites/:siteId/duplicate', verifySupabaseJwt, async (req, res) => {
 router.delete('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
 
-  // Verifica ownership
   const { data: site, error: siteErr } = await supabase
     .from('sites')
     .select('id, name, status')
@@ -595,68 +594,27 @@ router.delete('/sites/:siteId', verifySupabaseJwt, async (req, res) => {
     return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
   }
 
-  // Controlla se esistono log di presenza
-  const { count, error: logErr } = await supabase
-    .from('presence_logs')
-    .select('id', { count: 'exact', head: true })
-    .eq('site_id', siteId)
-    .eq('company_id', req.companyId);
-
-  if (logErr) return res.status(500).json({ error: 'DB_ERROR' });
-
-  if (count > 0) {
-    // Soft delete — preserva dati storici
-    const { error: softErr } = await supabase
-      .from('sites')
-      .update({ status: 'eliminato' })
-      .eq('id', siteId)
-      .eq('company_id', req.companyId);
-
-    if (softErr) return res.status(500).json({ error: 'DB_ERROR', message: softErr.message });
-
-    auditLog({
-      companyId:  req.companyId,
-      userId:     req.user?.id,
-      userRole:   req.userRole,
-      action:     'site.soft_delete',
-      targetType: 'site',
-      targetId:   siteId,
-      payload:    { name: site.name, presence_logs: count },
-      req,
-    });
-
-    return res.json({ ok: true, method: 'soft_delete', message: `Il cantiere aveva ${count} timbrature: i dati storici sono stati preservati.` });
-  }
-
-  // Hard delete — nessun log, rimuove tabelle figlie senza CASCADE poi il cantiere
-  const childTables = ['site_computo_voci', 'worker_certificates', 'course_bookings'];
-  for (const table of childTables) {
-    const { error: childErr } = await supabase.from(table).delete().eq('site_id', siteId);
-    if (childErr) {
-      console.error(`[siteAdmin] delete child ${table} error:`, childErr.message);
-    }
-  }
-
-  const { error: delErr } = await supabase
+  // Sempre soft delete — il cantiere finisce nel cestino, recuperabile
+  const { error: softErr } = await supabase
     .from('sites')
-    .delete()
+    .update({ status: 'eliminato' })
     .eq('id', siteId)
     .eq('company_id', req.companyId);
 
-  if (delErr) return res.status(500).json({ error: 'DB_ERROR', message: delErr.message });
+  if (softErr) return res.status(500).json({ error: 'DB_ERROR', message: softErr.message });
 
   auditLog({
     companyId:  req.companyId,
     userId:     req.user?.id,
     userRole:   req.userRole,
-    action:     'site.delete',
+    action:     'site.soft_delete',
     targetType: 'site',
     targetId:   siteId,
     payload:    { name: site.name },
     req,
   });
 
-  res.json({ ok: true, method: 'hard_delete' });
+  res.json({ ok: true, method: 'soft_delete' });
 });
 
 module.exports = router;
