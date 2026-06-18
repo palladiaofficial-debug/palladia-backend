@@ -181,8 +181,8 @@ async function sendPasswordResetEmail({ to, resetLink }) {
 async function sendMissingExitAlert({ companyId, date, missingList }) {
   if (!missingList || missingList.length === 0) return;
 
-  // Fetch admin users della company
   const supabase = require('../lib/supabase');
+  const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
   const { data: adminUsers } = await supabase
     .from('company_users')
     .select('user_id, role')
@@ -191,12 +191,13 @@ async function sendMissingExitAlert({ companyId, date, missingList }) {
 
   if (!adminUsers || adminUsers.length === 0) return;
 
-  // Recupera email per ogni admin via getUserById (service_role)
-  // Preferibile a listUsers() che restituisce TUTTI gli utenti della piattaforma
+  const allUserIds = adminUsers.map(u => u.user_id);
+  const enabledUserIds = await filterUserIdsByChannel(companyId, allUserIds, 'email');
+
   const adminEmails = [];
-  for (const { user_id } of adminUsers) {
+  for (const uid of enabledUserIds) {
     try {
-      const { data: { user } } = await supabase.auth.admin.getUserById(user_id);
+      const { data: { user } } = await supabase.auth.admin.getUserById(uid);
       if (user?.email) adminEmails.push(user.email);
     } catch { /* ignora errori singolo utente */ }
   }
@@ -400,17 +401,20 @@ async function sendCoordinatorNoteAlert({ companyId, siteName, coordinatorName, 
     return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  // Fetch admin users della company
   const supabase = require('../lib/supabase');
+  const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
   const { data: adminUsers } = await supabase
     .from('company_users').select('user_id, role')
     .eq('company_id', companyId).in('role', ['owner', 'admin']);
   if (!adminUsers || adminUsers.length === 0) return;
 
+  const allUserIds = adminUsers.map(u => u.user_id);
+  const enabledUserIds = await filterUserIdsByChannel(companyId, allUserIds, 'email');
+
   const adminEmails = [];
-  for (const { user_id } of adminUsers) {
+  for (const uid of enabledUserIds) {
     try {
-      const { data: { user } } = await supabase.auth.admin.getUserById(user_id);
+      const { data: { user } } = await supabase.auth.admin.getUserById(uid);
       if (user?.email) adminEmails.push(user.email);
     } catch { /* ignora */ }
   }
@@ -557,15 +561,19 @@ async function sendNonconformityAlert({ companyId, siteName, coordinatorName, se
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   const supabase = require('../lib/supabase');
+  const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
   const { data: adminUsers } = await supabase
     .from('company_users').select('user_id, role')
     .eq('company_id', companyId).in('role', ['owner', 'admin', 'tech']);
   if (!adminUsers?.length) return;
 
+  const allUserIds = adminUsers.map(u => u.user_id);
+  const enabledUserIds = await filterUserIdsByChannel(companyId, allUserIds, 'email');
+
   const adminEmails = [];
-  for (const { user_id } of adminUsers) {
+  for (const uid of enabledUserIds) {
     try {
-      const { data: { user } } = await supabase.auth.admin.getUserById(user_id);
+      const { data: { user } } = await supabase.auth.admin.getUserById(uid);
       if (user?.email) adminEmails.push(user.email);
     } catch { /* ignora */ }
   }

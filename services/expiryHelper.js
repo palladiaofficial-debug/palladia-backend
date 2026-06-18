@@ -5,6 +5,7 @@
  */
 
 const supabase = require('../lib/supabase');
+const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
 
 // ── Date helpers ───────────────────────────────────────────────────────────────
 
@@ -50,10 +51,13 @@ async function getCompanyAdminEmails(companyId) {
 
   if (!members?.length) return [];
 
+  const allUserIds = members.map(m => m.user_id);
+  const enabledUserIds = await filterUserIdsByChannel(companyId, allUserIds, 'email');
+
   const emails = [];
-  for (const m of members) {
+  for (const uid of enabledUserIds) {
     try {
-      const { data: { user } } = await supabase.auth.admin.getUserById(m.user_id);
+      const { data: { user } } = await supabase.auth.admin.getUserById(uid);
       if (user?.email) emails.push(user.email);
     } catch { /* singolo fallimento non blocca */ }
   }

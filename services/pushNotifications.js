@@ -7,6 +7,7 @@
 
 const webpush  = require('web-push');
 const supabase = require('../lib/supabase');
+const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 
 const VAPID_PUBLIC  = process.env.VAPID_PUBLIC_KEY;
 const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY;
@@ -36,9 +37,14 @@ async function sendPushToCompany(companyId, payload) {
   if (!ready) return;
   const { data: subs } = await supabase
     .from('push_subscriptions')
-    .select('id, endpoint, p256dh, auth')
+    .select('id, endpoint, p256dh, auth, user_id')
     .eq('company_id', companyId);
-  await _dispatch(subs || [], payload);
+
+  if (!subs?.length) return;
+
+  const prefsMap = await getPrefsMap(companyId);
+  const filtered = subs.filter(s => isChannelEnabled(prefsMap, s.user_id, 'push'));
+  await _dispatch(filtered, payload);
 }
 
 async function sendPushToUser(userId, payload) {

@@ -99,6 +99,9 @@ router.use('/', require('./companyDocuments'));
 // Notifiche in-app scadenze (JWT)
 router.use('/', require('./notifications'));
 
+// Preferenze notifiche per utente: opt-out email/telegram/push (JWT)
+router.use('/', require('./notificationPrefs'));
+
 // Web Push: subscribe/unsubscribe/vapid-public-key
 router.use('/', require('./push'));
 

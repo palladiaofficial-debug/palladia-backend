@@ -13,6 +13,7 @@
 const tg       = require('./telegram');
 const supabase = require('../lib/supabase');
 const { sendPushToCompany } = require('./pushNotifications');
+const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 
 function esc(s) {
   return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -38,7 +39,7 @@ function setNcCooldown(companyId, siteId) {
 async function getLinkedChatIds(companyId, excludeChatId = null) {
   const { data, error } = await supabase
     .from('telegram_users')
-    .select('telegram_chat_id')
+    .select('telegram_chat_id, user_id')
     .eq('company_id', companyId);
 
   if (error) {
@@ -46,7 +47,11 @@ async function getLinkedChatIds(companyId, excludeChatId = null) {
     return [];
   }
 
-  return (data || [])
+  const users = data || [];
+  const prefsMap = await getPrefsMap(companyId);
+
+  return users
+    .filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'))
     .map(u => u.telegram_chat_id)
     .filter(id => id !== excludeChatId);
 }
@@ -99,16 +104,20 @@ async function getCompanyTelegramUsers(companyId) {
     }
   }
 
-  return tuUsers.map(u => {
-    const role    = roleMap.get(u.user_id) || 'tech';
-    const isAdmin = role === 'owner' || role === 'admin';
-    return {
-      chatId:            u.telegram_chat_id,
-      userId:            u.user_id,
-      notificationLevel: u.notification_level || 'balanced',
-      allowedSiteIds:    isAdmin ? null : (assignmentsByUser.get(u.user_id) || []),
-    };
-  });
+  const prefsMap = await getPrefsMap(companyId);
+
+  return tuUsers
+    .filter(u => isChannelEnabled(prefsMap, u.user_id, 'telegram'))
+    .map(u => {
+      const role    = roleMap.get(u.user_id) || 'tech';
+      const isAdmin = role === 'owner' || role === 'admin';
+      return {
+        chatId:            u.telegram_chat_id,
+        userId:            u.user_id,
+        notificationLevel: u.notification_level || 'balanced',
+        allowedSiteIds:    isAdmin ? null : (assignmentsByUser.get(u.user_id) || []),
+      };
+    });
 }
 
 /**
