@@ -499,15 +499,31 @@ router.delete('/companies/:companyId', async (req, res) => {
   console.log(`[delete-company] inizio cancellazione cascata company ${companyId} (owner: ${userId})`);
 
   // Cancellazione in ordine FK-safe (dalla foglia alla radice)
-  // 1. Sessioni badge operai
-  await supabase.from('worker_device_sessions').delete().eq('company_id', companyId);
-  // 2. Assegnazioni operai-cantieri
-  await supabase.from('worksite_workers').delete().eq('company_id', companyId);
-  // 3. Operai
-  await supabase.from('workers').delete().eq('company_id', companyId);
-  // 4. Cantieri (cascade sui propri dati collegati via FK ON DELETE CASCADE)
-  await supabase.from('sites').delete().eq('company_id', companyId);
-  // 5. Company — cascade elimina automaticamente: company_users, company_invites
+  const cleanup = [
+    'notification_preferences',
+    'notifications',
+    'push_subscriptions',
+    'telegram_link_tokens',
+    'telegram_users',
+    'chat_history',
+    'ladia_proactive_log',
+    'worker_documents',
+    'worker_device_sessions',
+    'worksite_workers',
+    'equipment',
+    'subcontractors',
+    'pos_documents',
+    'dvr_documents',
+    'pimus_documents',
+    'company_documents',
+    'workers',
+    'sites',
+  ];
+  for (const table of cleanup) {
+    const { error: cleanErr } = await supabase.from(table).delete().eq('company_id', companyId);
+    if (cleanErr) console.warn(`[delete-company] ${table}:`, cleanErr.message);
+  }
+  // Company — cascade elimina automaticamente: company_users, company_invites
   const { error } = await supabase
     .from('companies')
     .delete()
