@@ -525,7 +525,6 @@ router.post('/notifications/check-expiries', async (req, res) => {
   }
 
   let sent = 0;
-  const sevenDaysAgo = new Date(today); sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
   const companiesWithNew = new Set(); // company_id con nuove notifiche questa run
 
   for (const cert of certs || []) {
@@ -536,24 +535,16 @@ router.post('/notifications/check-expiries', async (req, res) => {
     else if (days < 30) notifType = '30_days';
     else notifType = '90_days';
 
-    // Check if already sent in last 7 days
-    const { data: existing } = await supabase
-      .from('expiry_notifications')
-      .select('id')
-      .eq('certificate_id', cert.id)
-      .eq('notification_type', notifType)
-      .gte('sent_at', sevenDaysAgo.toISOString())
-      .maybeSingle();
-
-    if (existing) continue;
-
-    // Create in-app notification record
-    await supabase.from('expiry_notifications').insert({
-      certificate_id:    cert.id,
-      worker_id:         cert.worker_id,
-      company_id:        cert.company_id,
-      notification_type: notifType,
+    // Atomic upsert: skip if a notification was already sent in the last 7 days.
+    // Uses DB-level ON CONFLICT + WHERE to prevent race conditions between cron instances.
+    const { data: upsertResult } = await supabase.rpc('upsert_expiry_notification', {
+      p_certificate_id:    cert.id,
+      p_worker_id:         cert.worker_id,
+      p_company_id:        cert.company_id,
+      p_notification_type: notifType,
     });
+
+    if (!upsertResult) continue; // already sent within 7 days
 
     sent++;
     companiesWithNew.add(cert.company_id);
@@ -617,11 +608,11 @@ router.post('/notifications/check-expiries', async (req, res) => {
           if (!companiesWithNew.has(link.company_id)) continue;
           const cert = (certs || []).find(c => c.company_id === link.company_id);
           if (!cert?.id) continue; // null-guard: nessun cert trovato per questa company
-          await supabase.from('expiry_notifications').insert({
-            certificate_id:    cert.id,
-            worker_id:         cert.worker_id,
-            company_id:        link.company_id,
-            notification_type: '30_days',
+          await supabase.rpc('upsert_expiry_notification', {
+            p_certificate_id:    cert.id,
+            p_worker_id:         cert.worker_id,
+            p_company_id:        link.company_id,
+            p_notification_type: '30_days',
           }).catch(() => null);
         }
       }

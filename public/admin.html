@@ -127,14 +127,15 @@
       border-radius: 8px;
       font-size: 14px;
       font-weight: 600;
-      padding: 9px 16px;
+      padding: 12px 18px;
+      min-height: 44px;
       cursor: pointer;
       transition: opacity 0.15s;
       white-space: nowrap;
     }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-full { width: 100%; justify-content: center; padding: 11px; }
-    .btn-sm { font-size: 12px; padding: 6px 11px; border-radius: 6px; }
+    .btn-full { width: 100%; justify-content: center; padding: 13px; }
+    .btn-sm { font-size: 13px; padding: 8px 14px; border-radius: 6px; min-height: 36px; }
     .btn-ghost {
       background: transparent;
       border: 1px solid var(--border);
@@ -1065,7 +1066,7 @@ async function loadOverview() {
 // ── Cantieri ─────────────────────────────────────────────────────
 async function loadSites() {
   const { ok, body } = await api('GET', '/api/v1/sites');
-  if (!ok) { toast('Errore caricamento cantieri', 'error'); return; }
+  if (!ok) { toast('Impossibile caricare i cantieri — riprova', 'error'); return; }
   _sites = Array.isArray(body) ? body : [];
   renderSites();
 }
@@ -1073,7 +1074,7 @@ async function loadSites() {
 function renderSites() {
   const el = document.getElementById('sites-list');
   if (!_sites.length) {
-    el.innerHTML = '<div class="empty">Nessun cantiere. Crea il primo cantiere.</div>';
+    el.innerHTML = '<div class="empty" style="padding:32px 16px;text-align:center;"><p style="margin:0 0 12px;color:var(--muted);">Nessun cantiere ancora.</p><button class="btn" onclick="openModal(\'modal-new-site\')" style="margin:0 auto;">+ Crea il primo cantiere</button></div>';
     return;
   }
   el.innerHTML = _sites.map(s => `
@@ -1190,7 +1191,7 @@ async function downloadQrPdf(siteId, siteName) {
     URL.revokeObjectURL(url);
     toast('PDF QR scaricato');
   } catch (e) {
-    toast('Errore: ' + e.message, 'error');
+    toast('Operazione non riuscita — controlla la connessione e riprova', 'error');
   }
 }
 
@@ -1236,7 +1237,7 @@ async function loadWorkers() {
   let url = '/api/v1/workers';
   if (filterSite) url += `?siteId=${filterSite}`;
   const { ok, body } = await api('GET', url);
-  if (!ok) { toast('Errore caricamento lavoratori', 'error'); return; }
+  if (!ok) { toast('Impossibile caricare i lavoratori — riprova', 'error'); return; }
   _workers = Array.isArray(body) ? body : (body.workers || []);
 
   // Popola filter dropdown
@@ -1251,7 +1252,7 @@ async function loadWorkers() {
 function renderWorkers() {
   const tbody = document.getElementById('workers-body');
   if (!_workers.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty">Nessun lavoratore</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="empty" style="padding:24px;text-align:center;color:var(--muted);">Nessun lavoratore aggiunto. Vai sulla dashboard Palladia per aggiungerne.</td></tr>';
     return;
   }
   tbody.innerHTML = _workers.map(w => `
@@ -1424,7 +1425,7 @@ async function downloadPresenzePdf() {
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e) {
-    toast('Errore: ' + e.message, 'error');
+    toast('Operazione non riuscita — controlla la connessione e riprova', 'error');
   }
 }
 
@@ -1446,7 +1447,7 @@ async function downloadPresenzeCsv() {
     a.click();
     URL.revokeObjectURL(a.href);
   } catch (e) {
-    toast('Errore: ' + e.message, 'error');
+    toast('Operazione non riuscita — controlla la connessione e riprova', 'error');
   }
 }
 

@@ -423,16 +423,9 @@ router.post('/marketplace/providers/register', validate(registerProviderSchema),
     name, email, phone, location_city, location_province, address,
     website, description, accreditation_code, accreditation_region,
     notes,
-  } = req.body || {};
+  } = req.body;
 
-  if (!name || !email || !location_city || !location_province) {
-    return res.status(400).json({ error: 'MISSING_FIELDS', message: 'name, email, location_city, location_province obbligatori' });
-  }
-
-  const emailRx = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRx.test(email)) {
-    return res.status(400).json({ error: 'INVALID_EMAIL' });
-  }
+  // Validation handled by Zod schema via validate() middleware
 
   const { data, error } = await supabase
     .from('training_providers')

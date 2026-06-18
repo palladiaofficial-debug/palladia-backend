@@ -85,11 +85,11 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     .lte('timestamp_server', `${to}T23:59:59.999Z`)
     .order('worker_id',         { ascending: true })
     .order('timestamp_server',  { ascending: true })
-    .limit(200000);
+    .limit(50000);
 
   if (logsErr) return res.status(500).json({ error: logsErr.message });
 
-  const limitReached = (logs || []).length === 200000;
+  const limitReached = (logs || []).length === 50000;
 
   // Raggruppa per worker → giorno (timezone Europe/Rome)
   const byWorkerDay = new Map();
@@ -284,11 +284,11 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
       .lte('timestamp_server', `${to}T23:59:59.999Z`)
       .order('worker_id',        { ascending: true })
       .order('timestamp_server', { ascending: true })
-      .limit(200000);
+      .limit(50000);
 
     if (logsErr) return res.status(500).json({ error: logsErr.message });
 
-    const limitReached = (logs || []).length === 200000;
+    const limitReached = (logs || []).length === 50000;
     const rows = [
       'data,lavoratore,codice_fiscale,evento,timestamp,distanza_m,gps_accuracy_m',
       ...(logs || []).filter(r => r.worker).map(r => [
@@ -386,10 +386,10 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
     .order('site_id',         { ascending: true })
     .order('worker_id',       { ascending: true })
     .order('timestamp_server',{ ascending: true })
-    .limit(200000);
+    .limit(50000);
 
   if (logsErr) return res.status(500).json({ error: logsErr.message });
-  const limitReached = (logs || []).length === 200000;
+  const limitReached = (logs || []).length === 50000;
 
   // 3. Raggruppa per cantiere + worker + giorno
   const byKey = new Map();

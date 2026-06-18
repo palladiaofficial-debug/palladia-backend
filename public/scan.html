@@ -555,7 +555,7 @@
     const { status, body } = await apiFetch('GET', `/api/v1/scan/worksites/${WSITE_ID}`);
     if (status !== 200) {
       $('site-name').textContent    = 'Cantiere non trovato';
-      $('site-address').textContent = `Errore: ${body.error || status}`;
+      $('site-address').textContent = 'Impossibile caricare il cantiere. Controlla la connessione e riprova.';
       $('site-address').insertAdjacentHTML('afterend', '<button onclick="location.reload()" style="margin-top:16px;padding:14px 28px;font-size:16px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:10px;cursor:pointer;min-height:48px;">Riprova</button>');
       return false;
     }
@@ -645,9 +645,9 @@
       if (status === 422 && body.error === 'GPS_REQUIRED')          { toast('GPS obbligatorio — abilita la geolocalizzazione', 'warn'); return; }
       if (status === 422 && body.error === 'GPS_ACCURACY_TOO_LOW')  { toast(`Precisione GPS insufficiente (${body.accuracy_m}m) — spostati all'aperto`, 'warn'); return; }
 
-      toast(`Errore: ${body.error || status}`, 'error');
+      toast('Timbratura non riuscita — riprova tra qualche istante', 'error');
     } catch (e) {
-      toast('Errore di rete — verificare la connessione', 'error');
+      toast('Connessione assente — controlla internet e riprova', 'error');
     } finally {
       punchInProgress    = false;
       spinner.style.display = 'none';
@@ -855,9 +855,9 @@
       if (status === 400 && body.error === 'INVALID_FISCAL_CODE')       { showFieldError('Codice Fiscale non valido (16 caratteri alfanumerici)'); return; }
       if (status === 503) { showFieldError('Cantiere non configurato — contattare l\'amministratore'); return; }
 
-      showFieldError(`Errore: ${body.error || status}`);
+      showFieldError('Identificazione non riuscita — riprova o contatta l\'amministratore');
     } catch (e) {
-      showFieldError('Errore di rete — verificare la connessione');
+      showFieldError('Connessione assente — controlla internet e riprova');
     } finally {
       btn.disabled  = false;
       btn.innerHTML = 'Continua';

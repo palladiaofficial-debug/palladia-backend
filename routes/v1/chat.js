@@ -568,7 +568,7 @@ async function executeTool(toolName, toolInput, companyId) {
           .gte('timestamp_server', from)
           .lte('timestamp_server', to)
           .order('timestamp_server', { ascending: true })
-          .limit(2000);
+          .limit(500);
         if (toolInput.site_id) q = q.eq('site_id', toolInput.site_id);
 
         const { data: logs, error } = await q;
@@ -1436,7 +1436,7 @@ async function loadHistory(conversationId, limit = 20) {
     .select('role, content')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true })
-    .limit(limit);
+    .limit(Math.min(limit, 200));
   if (error || !data) return [];
   return data.map(m => ({ role: m.role, content: m.content }));
 }

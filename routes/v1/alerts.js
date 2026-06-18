@@ -96,7 +96,7 @@ async function findMissingExits(companyId, siteId, date) {
     .gte('timestamp_server', fromUtc.toISOString())
     .lte('timestamp_server', toUtc.toISOString())
     .order('timestamp_server', { ascending: true })
-    .limit(10000);
+    .limit(5000);
 
   if (siteId) query = query.eq('site_id', siteId);
 
