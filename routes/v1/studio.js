@@ -99,6 +99,44 @@ async function checkStudioAccess(studioId, companyId, requireOwnership = false) 
   return { ok: true, isOwner: !!data.owned_by_studio };
 }
 
+const ALERT_DEFAULTS = {
+  cert_expiry:   { warn: 60, critical: 30 },
+  health_expiry: { warn: 60, critical: 30 },
+  durc_expiry:   { warn: 90, critical: 30 },
+  dvr_age:       { warn: 365, critical: 365 },
+  riunione:      { warn: 365, critical: 365 },
+  safety_role:   { warn: 60, critical: 30 },
+};
+
+async function getAlertThresholds(studioId) {
+  const { data } = await supabase
+    .from('studio_alert_config')
+    .select('alert_type, warn_days, critical_days, enabled')
+    .eq('studio_id', studioId);
+  const cfg = {};
+  for (const [type, defaults] of Object.entries(ALERT_DEFAULTS)) {
+    const row = (data || []).find(r => r.alert_type === type);
+    cfg[type] = {
+      warn:     row?.warn_days     ?? defaults.warn,
+      critical: row?.critical_days ?? defaults.critical,
+      enabled:  row?.enabled       ?? true,
+    };
+  }
+  return cfg;
+}
+
+async function filterClientsByCollaborator(studioId, userId, studioRole, companyIds) {
+  if (studioRole === 'owner' || studioRole === 'admin') return companyIds;
+  const { data } = await supabase
+    .from('studio_user_clients')
+    .select('company_id')
+    .eq('studio_id', studioId)
+    .eq('user_id', userId);
+  if (!data?.length) return companyIds;
+  const assigned = new Set(data.map(r => r.company_id));
+  return companyIds.filter(id => assigned.has(id));
+}
+
 /**
  * Trova o crea un course_type per nome (case-insensitive match sul nome esatto,
  * poi fallback a INSERT ... ON CONFLICT DO NOTHING).
@@ -1517,11 +1555,13 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
     });
   }
 
-  const companyIds = clients.map(c => c.company_id);
-  const now        = new Date();
-  const in30       = new Date(now.getTime() + 30 * 86400_000);
-  const oneYearAgo = new Date(now.getTime() - 365 * 86400_000);
-  const todayStr   = now.toISOString().slice(0, 10);
+  const allCompanyIds = clients.map(c => c.company_id);
+  const companyIds    = await filterClientsByCollaborator(req.studioId, req.user.id, req.studioRole, allCompanyIds);
+  const thresholds    = await getAlertThresholds(req.studioId);
+  const now           = new Date();
+  const in30          = new Date(now.getTime() + (thresholds.cert_expiry.critical || 30) * 86400_000);
+  const oneYearAgo    = new Date(now.getTime() - (thresholds.dvr_age.warn || 365) * 86400_000);
+  const todayStr      = now.toISOString().slice(0, 10);
   const in30Str    = in30.toISOString().slice(0, 10);
 
   // Fetch parallelo di tutti i dati necessari (incluse le nuove dimensioni conformità)
@@ -1845,13 +1885,17 @@ router.get('/studio/scadenziario', verifyStudioJwt, async (req, res) => {
 
   if (!clients?.length) return res.json({ items: [], total_critical: 0 });
 
-  const companyIds  = clients.map(c => c.company_id);
-  const companyMap  = Object.fromEntries(clients.map(c => [c.company_id, c.companies?.name || '—']));
-  const now         = new Date();
-  const in90        = new Date(now.getTime() + 90 * 86_400_000);
-  const oneYearAgo  = new Date(now.getTime() - 365 * 86_400_000);
-  const todayStr    = now.toISOString().slice(0, 10);
-  const in90Str     = in90.toISOString().slice(0, 10);
+  const allCompanyIds = clients.map(c => c.company_id);
+  const companyIds    = await filterClientsByCollaborator(req.studioId, req.user.id, req.studioRole, allCompanyIds);
+  const companyMap    = Object.fromEntries(clients.map(c => [c.company_id, c.companies?.name || '—']));
+  const thresholds    = await getAlertThresholds(req.studioId);
+  const now           = new Date();
+  const maxWarn       = Math.max(...Object.values(thresholds).map(t => t.warn));
+  const horizonMs     = maxWarn * 86_400_000;
+  const inHorizon     = new Date(now.getTime() + horizonMs);
+  const oneYearAgo    = new Date(now.getTime() - (thresholds.dvr_age.warn || 365) * 86_400_000);
+  const todayStr      = now.toISOString().slice(0, 10);
+  const in90Str       = inHorizon.toISOString().slice(0, 10);
 
   const [
     { data: certs     },
@@ -2807,7 +2851,11 @@ router.get('/studio/scadenziario.ics', verifyStudioJwt, async (req, res) => {
     return res.send('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Palladia//Studio CDL//IT\r\nEND:VCALENDAR');
   }
 
-  const companyIds = clients.map(c => c.company_id);
+  // Filtra per collaboratore assegnato
+  const allIds = clients.map(c => c.company_id);
+  const filteredIds = await filterClientsByCollaborator(req.studioId, req.user.id, req.studioRole, allIds);
+
+  const companyIds = filteredIds;
   const companyMap = Object.fromEntries(clients.map(c => [c.company_id, c.companies?.name || '—']));
   const in90Str    = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
 
@@ -3001,12 +3049,17 @@ router.get('/studio/dashboard.csv', verifyStudioJwt, async (req, res) => {
 
   const companyIds = clients.map(c => c.company_id);
 
-  const [{ count: sitesCount }, { count: workersCount }] = await Promise.all([
-    supabase.from('sites').select('id', { count: 'exact', head: true })
+  const [{ data: sites }, { data: workers }] = await Promise.all([
+    supabase.from('sites').select('company_id')
       .in('company_id', companyIds).eq('status', 'attivo'),
-    supabase.from('workers').select('id', { count: 'exact', head: true })
+    supabase.from('workers').select('company_id')
       .in('company_id', companyIds).eq('is_active', true),
   ]);
+
+  const sitesPerCo   = {};
+  const workersPerCo = {};
+  for (const s of (sites || []))   sitesPerCo[s.company_id]   = (sitesPerCo[s.company_id]   || 0) + 1;
+  for (const w of (workers || [])) workersPerCo[w.company_id] = (workersPerCo[w.company_id] || 0) + 1;
 
   const header = 'Impresa,DURC Scadenza,Stato DURC,Cantieri,Lavoratori';
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -3019,7 +3072,7 @@ router.get('/studio/dashboard.csv', verifyStudioJwt, async (req, res) => {
       else if (exp < new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)) stato = 'In scadenza';
       else stato = 'Valido';
     }
-    return `"${(co?.name||'').replace(/"/g,'""')}","${exp || ''}","${stato}","",""`;
+    return `"${(co?.name||'').replace(/"/g,'""')}","${exp || ''}","${stato}","${sitesPerCo[c.company_id] || 0}","${workersPerCo[c.company_id] || 0}"`;
   });
 
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
