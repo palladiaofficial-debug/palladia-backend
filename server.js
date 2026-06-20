@@ -773,7 +773,7 @@ async function getNextRevision(siteId) {
   return (data && data.length > 0) ? data[0].revision + 1 : 1;
 }
 
-const { withAiLimit, withPdfLimit } = require('./lib/concurrencyLimit');
+const { withAiLimit, withPdfLimit, aiSemaphore } = require('./lib/concurrencyLimit');
 
 // --- Helper: call Anthropic streaming API, return reader ---
 async function callAnthropicStream(prompt) {
@@ -781,7 +781,7 @@ async function callAnthropicStream(prompt) {
     throw new Error('ANTHROPIC_API_KEY not configured on server');
   }
 
-  const response = await withAiLimit(() => fetch('https://api.anthropic.com/v1/messages', {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -794,7 +794,7 @@ async function callAnthropicStream(prompt) {
       stream: true,
       messages: [{ role: 'user', content: prompt }]
     })
-  }));
+  });
 
   if (!response.ok) {
     const errData = await response.json();
@@ -883,31 +883,33 @@ async function callAnthropicHaiku(prompt) {
     throw new Error('ANTHROPIC_API_KEY not configured on server');
   }
 
-  const response = await withAiLimit(() => fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 4000,
-      messages: [{ role: 'user', content: prompt }]
-    })
-  }));
+  return withAiLimit(async () => {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 4000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
 
-  if (!response.ok) {
-    const errData = await response.json();
-    console.error('Anthropic Haiku error:', JSON.stringify(errData));
-    const err = new Error('Anthropic API error');
-    err.status = 502;
-    err.details = errData;
-    throw err;
-  }
+    if (!response.ok) {
+      const errData = await response.json();
+      console.error('Anthropic Haiku error:', JSON.stringify(errData));
+      const err = new Error('Anthropic API error');
+      err.status = 502;
+      err.details = errData;
+      throw err;
+    }
 
-  const data = await response.json();
-  return data.content?.[0]?.text || '';
+    const data = await response.json();
+    return data.content?.[0]?.text || '';
+  });
 }
 
 // ==================== ROUTES ====================
@@ -940,8 +942,10 @@ app.post('/api/sites/:id/generate-pos', verifyJwtOnly, aiLimiter, async (req, re
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
 
-    const response = await callAnthropicStream(megaPrompt);
-    const fullText = await collectStreamText(response);
+    const fullText = await withAiLimit(async () => {
+      const response = await callAnthropicStream(megaPrompt);
+      return collectStreamText(response);
+    });
 
     // Save to Supabase
     const { data: saved, error: saveError } = await supabase
@@ -995,29 +999,34 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
     // Send revision info as first event
     res.write(`data: ${JSON.stringify({ type: 'meta', revision })}\n\n`);
 
-    const response = await callAnthropicStream(megaPrompt);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    await aiSemaphore.acquire();
     let fullText = '';
+    try {
+      const response = await callAnthropicStream(megaPrompt);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      for (const line of chunk.split('\n')) {
-        if (line.startsWith('data: ')) {
-          const jsonStr = line.slice(6);
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === 'content_block_delta' && event.delta?.text) {
-              const text = event.delta.text;
-              fullText += text;
-              res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
-            }
-          } catch (e) { /* skip non-JSON lines */ }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6);
+            if (jsonStr === '[DONE]') continue;
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.type === 'content_block_delta' && event.delta?.text) {
+                const text = event.delta.text;
+                fullText += text;
+                res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
+              }
+            } catch (e) { /* skip non-JSON lines */ }
+          }
         }
       }
+    } finally {
+      aiSemaphore.release();
     }
 
     // Save to Supabase
@@ -1079,29 +1088,34 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
 
     res.write(`data: ${JSON.stringify({ type: 'meta', revision })}\n\n`);
 
-    const response = await callAnthropicStream(megaPrompt);
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    await aiSemaphore.acquire();
     let fullText = '';
+    try {
+      const response = await callAnthropicStream(megaPrompt);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      const chunk = decoder.decode(value, { stream: true });
-      for (const line of chunk.split('\n')) {
-        if (line.startsWith('data: ')) {
-          const jsonStr = line.slice(6);
-          if (jsonStr === '[DONE]') continue;
-          try {
-            const event = JSON.parse(jsonStr);
-            if (event.type === 'content_block_delta' && event.delta?.text) {
-              const text = event.delta.text;
-              fullText += text;
-              res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
-            }
-          } catch (e) { /* skip non-JSON lines */ }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split('\n')) {
+          if (line.startsWith('data: ')) {
+            const jsonStr = line.slice(6);
+            if (jsonStr === '[DONE]') continue;
+            try {
+              const event = JSON.parse(jsonStr);
+              if (event.type === 'content_block_delta' && event.delta?.text) {
+                const text = event.delta.text;
+                fullText += text;
+                res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
+              }
+            } catch (e) { /* skip non-JSON lines */ }
+          }
         }
       }
+    } finally {
+      aiSemaphore.release();
     }
 
     // Save to Supabase (optional - only if siteId provided)

@@ -498,6 +498,18 @@ router.delete('/companies/:companyId', async (req, res) => {
 
   console.log(`[delete-company] inizio cancellazione transazionale company ${companyId} (owner: ${userId})`);
 
+  // Cleanup Storage best-effort (prima del delete DB — i path sono ancora nel DB)
+  const BUCKETS = ['documents', 'equipment-docs', 'worker-photos', 'company-docs'];
+  for (const bucket of BUCKETS) {
+    try {
+      const { data: files } = await supabase.storage.from(bucket).list(companyId, { limit: 1000 });
+      if (files?.length) {
+        const paths = files.map(f => `${companyId}/${f.name}`);
+        await supabase.storage.from(bucket).remove(paths);
+      }
+    } catch { /* best-effort — continua anche se il bucket non esiste */ }
+  }
+
   const { error } = await supabase.rpc('delete_company_cascade', { p_company_id: companyId });
 
   if (error) {
