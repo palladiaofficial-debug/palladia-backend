@@ -1,4 +1,5 @@
 'use strict';
+const { logStudioAction } = require('../../lib/studioAudit');
 /**
  * routes/v1/studio.js
  * Portale Studio CDL Partner — Consulenti del Lavoro che gestiscono N imprese clienti.
@@ -825,6 +826,7 @@ router.post('/studio/clients/create-direct', verifyStudioJwt, validate(createDir
     return res.status(500).json({ error: scErr.message });
   }
 
+  logStudioAction(req.studioId, req.user.id, 'client.create', { companyId: company.id, payload: { name: company.name } });
   res.status(201).json({ company, client });
 });
 
@@ -890,6 +892,7 @@ router.post('/studio/clients/:companyId/workers', verifyStudioJwt, validate(crea
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  logStudioAction(req.studioId, req.user.id, 'worker.create', { companyId, targetType: 'worker', targetId: data.id, payload: { full_name: data.full_name } });
   res.status(201).json({ worker: data });
 });
 
@@ -996,6 +999,7 @@ router.post('/studio/clients/:companyId/certificates', verifyStudioJwt, validate
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  logStudioAction(req.studioId, req.user.id, 'cert.create', { companyId, targetType: 'certificate', targetId: data.id });
   res.status(201).json({ certificate: data });
 });
 
@@ -1952,6 +1956,17 @@ router.get('/studio/scadenziario', verifyStudioJwt, async (req, res) => {
     return (a.expiry_date || '').localeCompare(b.expiry_date || '');
   });
 
+  // CSV export
+  if (req.query.format === 'csv') {
+    const header = 'Tipo,Impresa,Scadenza,Descrizione,Severità';
+    const rows = items.map(i =>
+      `"${i.type}","${(i.company_name||'').replace(/"/g,'""')}","${i.expiry_date || ''}","${(i.label||'').replace(/"/g,'""')}","${i.severity}"`
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="scadenziario_${todayStr}.csv"`);
+    return res.send('﻿' + [header, ...rows].join('\r\n'));
+  }
+
   res.json({ items, total_critical: items.filter(i => i.severity === 'critical').length });
 });
 
@@ -2603,6 +2618,7 @@ router.post('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res)
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
+  logStudioAction(req.studioId, req.user.id, 'durc.add', { companyId, targetType: 'durc', targetId: data.id });
   res.status(201).json(data);
 });
 
@@ -2665,6 +2681,350 @@ router.get('/studio/durc-overview', verifyStudioJwt, async (req, res) => {
   });
 
   res.json(rows);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: Alert configurabili
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const ALERT_TYPES = ['cert_expiry', 'health_expiry', 'durc_expiry', 'dvr_age', 'riunione', 'safety_role'];
+
+router.get('/studio/alert-config', verifyStudioJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('studio_alert_config')
+    .select('*')
+    .eq('studio_id', req.studioId)
+    .order('alert_type');
+  if (error) return res.status(500).json({ error: error.message });
+
+  const configMap = Object.fromEntries((data || []).map(c => [c.alert_type, c]));
+  const result = ALERT_TYPES.map(t => configMap[t] || {
+    alert_type: t, warn_days: 60, critical_days: 30, enabled: true,
+  });
+  res.json(result);
+});
+
+router.put('/studio/alert-config', verifyStudioJwt, async (req, res) => {
+  const configs = req.body;
+  if (!Array.isArray(configs)) return res.status(400).json({ error: 'Array di configurazioni richiesto' });
+
+  const rows = configs.filter(c => ALERT_TYPES.includes(c.alert_type)).map(c => ({
+    studio_id:     req.studioId,
+    alert_type:    c.alert_type,
+    warn_days:     Math.max(1, Number(c.warn_days) || 60),
+    critical_days: Math.max(1, Number(c.critical_days) || 30),
+    enabled:       c.enabled !== false,
+  }));
+
+  const { error } = await supabase
+    .from('studio_alert_config')
+    .upsert(rows, { onConflict: 'studio_id,alert_type' });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true, updated: rows.length });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: Audit log azioni studio
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/studio/audit-log', verifyStudioJwt, async (req, res) => {
+  const { company_id, action, limit: lim } = req.query;
+  let q = supabase
+    .from('studio_audit_log')
+    .select('*')
+    .eq('studio_id', req.studioId)
+    .order('created_at', { ascending: false })
+    .limit(Number(lim) || 200);
+
+  if (company_id) q = q.eq('company_id', company_id);
+  if (action)     q = q.eq('action', action);
+
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: Permessi collaboratori per cliente
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/studio/team/assignments', verifyStudioJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('studio_user_clients')
+    .select('id, user_id, company_id, assigned_at')
+    .eq('studio_id', req.studioId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/studio/team/assignments', verifyStudioJwt, async (req, res) => {
+  if (req.studioRole !== 'owner' && req.studioRole !== 'admin') {
+    return res.status(403).json({ error: 'Solo owner/admin possono assegnare collaboratori' });
+  }
+  const { user_id, company_id } = req.body;
+  if (!user_id || !company_id) return res.status(400).json({ error: 'user_id e company_id obbligatori' });
+
+  const { data: member } = await supabase
+    .from('studio_users').select('id').eq('studio_id', req.studioId).eq('user_id', user_id).maybeSingle();
+  if (!member) return res.status(400).json({ error: 'Utente non è membro dello studio' });
+
+  const { error } = await supabase
+    .from('studio_user_clients')
+    .insert({ studio_id: req.studioId, user_id, company_id });
+  if (error) {
+    if (error.code === '23505') return res.status(409).json({ error: 'Assegnazione già esistente' });
+    return res.status(500).json({ error: error.message });
+  }
+  res.status(201).json({ ok: true });
+});
+
+router.delete('/studio/team/assignments/:id', verifyStudioJwt, async (req, res) => {
+  if (req.studioRole !== 'owner' && req.studioRole !== 'admin') {
+    return res.status(403).json({ error: 'Solo owner/admin possono rimuovere assegnazioni' });
+  }
+  const { error } = await supabase
+    .from('studio_user_clients')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('studio_id', req.studioId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: Calendario ICS — feed scadenze
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/studio/scadenziario.ics', verifyStudioJwt, async (req, res) => {
+  const { data: clients } = await supabase
+    .from('studio_clients')
+    .select('company_id, companies(id, name)')
+    .eq('studio_id', req.studioId)
+    .eq('status', 'active');
+
+  if (!clients?.length) {
+    res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+    return res.send('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Palladia//Studio CDL//IT\r\nEND:VCALENDAR');
+  }
+
+  const companyIds = clients.map(c => c.company_id);
+  const companyMap = Object.fromEntries(clients.map(c => [c.company_id, c.companies?.name || '—']));
+  const in90Str    = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
+
+  const [{ data: certs }, { data: health }, { data: companies }] = await Promise.all([
+    supabase.from('worker_certificates')
+      .select('company_id, course_name, worker:workers(full_name), expiry_date')
+      .in('company_id', companyIds).lte('expiry_date', in90Str).is('deleted_at', null),
+    supabase.from('workers')
+      .select('company_id, full_name, health_fitness_expiry')
+      .in('company_id', companyIds).lte('health_fitness_expiry', in90Str).eq('is_active', true),
+    supabase.from('companies')
+      .select('id, durc_expiry_date')
+      .in('id', companyIds).lte('durc_expiry_date', in90Str),
+  ]);
+
+  const fmtDate = d => d.replace(/-/g, '');
+  const events = [];
+
+  for (const c of (certs || [])) {
+    if (!c.expiry_date) continue;
+    events.push({
+      uid:     `cert-${c.company_id}-${c.expiry_date}-${(c.worker?.full_name||'').slice(0,10)}`,
+      date:    fmtDate(c.expiry_date),
+      summary: `Scad. ${c.course_name} — ${c.worker?.full_name || ''}`,
+      desc:    `Impresa: ${companyMap[c.company_id]}`,
+    });
+  }
+  for (const w of (health || [])) {
+    if (!w.health_fitness_expiry) continue;
+    events.push({
+      uid:     `health-${w.company_id}-${w.health_fitness_expiry}-${(w.full_name||'').slice(0,10)}`,
+      date:    fmtDate(w.health_fitness_expiry),
+      summary: `Scad. idoneità — ${w.full_name}`,
+      desc:    `Impresa: ${companyMap[w.company_id]}`,
+    });
+  }
+  for (const co of (companies || [])) {
+    if (!co.durc_expiry_date) continue;
+    events.push({
+      uid:     `durc-${co.id}-${co.durc_expiry_date}`,
+      date:    fmtDate(co.durc_expiry_date),
+      summary: `Scad. DURC — ${companyMap[co.id]}`,
+      desc:    '',
+    });
+  }
+
+  const icsEvents = events.map(e => [
+    'BEGIN:VEVENT',
+    `UID:${e.uid}@palladia.app`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}/,'')}`,
+    `DTSTART;VALUE=DATE:${e.date}`,
+    `SUMMARY:${e.summary}`,
+    e.desc ? `DESCRIPTION:${e.desc}` : '',
+    'END:VEVENT',
+  ].filter(Boolean).join('\r\n')).join('\r\n');
+
+  const ics = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Palladia//Studio CDL//IT\r\nX-WR-CALNAME:Scadenze Palladia\r\n${icsEvents}\r\nEND:VCALENDAR`;
+
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="scadenze-palladia.ics"');
+  res.send(ics);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: Export ore/presenze per cedolini (payroll)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req, res) => {
+  const { companyId } = req.params;
+  const access = await checkStudioAccess(req.studioId, companyId);
+  if (!access.ok) return res.status(access.status).json({ error: access.error });
+
+  const { month } = req.query; // YYYY-MM
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ error: 'month obbligatorio (YYYY-MM)' });
+  }
+
+  const from = `${month}-01`;
+  const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const to = `${month}-${String(lastDay).padStart(2, '0')}`;
+
+  const { data: logs, error: logsErr } = await supabase
+    .from('presence_logs')
+    .select('worker_id, event_type, timestamp_server, site_id, workers(full_name, fiscal_code)')
+    .eq('company_id', companyId)
+    .gte('timestamp_server', `${from}T00:00:00+01:00`)
+    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
+    .order('worker_id').order('timestamp_server')
+    .limit(50000);
+
+  if (logsErr) return res.status(500).json({ error: logsErr.message });
+
+  // Raggruppa per worker → giorno, calcola ore da coppie ENTRY/EXIT
+  const byWorker = new Map();
+  for (const log of (logs || [])) {
+    if (!log.workers) continue;
+    if (!byWorker.has(log.worker_id)) {
+      byWorker.set(log.worker_id, {
+        full_name: log.workers.full_name,
+        fiscal_code: log.workers.fiscal_code,
+        days: new Map(),
+      });
+    }
+    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    const worker = byWorker.get(log.worker_id);
+    if (!worker.days.has(dateKey)) worker.days.set(dateKey, []);
+    worker.days.get(dateKey).push(log);
+  }
+
+  const results = [];
+  for (const [workerId, worker] of byWorker) {
+    let totalMinutes = 0;
+    let totalDays = 0;
+    const dayDetails = [];
+
+    for (const [dateKey, dayLogs] of worker.days) {
+      const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
+      const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+      let dayMinutes = 0;
+
+      for (let i = 0; i < entries.length; i++) {
+        const entry = entries[i];
+        const exit = exits.find(e => new Date(e.timestamp_server) > new Date(entry.timestamp_server));
+        if (exit) {
+          dayMinutes += (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000;
+        }
+      }
+
+      if (dayMinutes > 0) {
+        totalDays++;
+        totalMinutes += dayMinutes;
+        dayDetails.push({ date: dateKey, hours: Math.round(dayMinutes / 60 * 100) / 100 });
+      }
+    }
+
+    results.push({
+      worker_id:   workerId,
+      full_name:   worker.full_name,
+      fiscal_code: worker.fiscal_code,
+      total_hours: Math.round(totalMinutes / 60 * 100) / 100,
+      total_days:  totalDays,
+      days:        dayDetails,
+    });
+  }
+
+  results.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+
+  // CSV export
+  if (req.query.format === 'csv') {
+    const header = 'Cognome e Nome,Codice Fiscale,Ore Totali,Giorni Lavorati';
+    const rows = results.map(r =>
+      `"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${r.total_hours}","${r.total_days}"`
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ore_${month}_${companyId.slice(0,8)}.csv"`);
+    return res.send('﻿' + [header, ...rows].join('\r\n'));
+  }
+
+  // CSV dettagliato (giorno per giorno)
+  if (req.query.format === 'csv-detail') {
+    const header = 'Cognome e Nome,Codice Fiscale,Data,Ore';
+    const rows = [];
+    for (const r of results) {
+      for (const d of r.days) {
+        rows.push(`"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${d.date}","${d.hours}"`);
+      }
+    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="ore_dettaglio_${month}_${companyId.slice(0,8)}.csv"`);
+    return res.send('﻿' + [header, ...rows].join('\r\n'));
+  }
+
+  res.json({ month, company_id: companyId, workers: results, total_workers: results.length });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEATURE: Dashboard CSV export
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/studio/dashboard.csv', verifyStudioJwt, async (req, res) => {
+  const { data: clients } = await supabase
+    .from('studio_clients')
+    .select('company_id, companies(id, name, durc_expiry_date)')
+    .eq('studio_id', req.studioId)
+    .eq('status', 'active');
+
+  if (!clients?.length) {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    return res.send('﻿Nessun cliente attivo');
+  }
+
+  const companyIds = clients.map(c => c.company_id);
+
+  const [{ count: sitesCount }, { count: workersCount }] = await Promise.all([
+    supabase.from('sites').select('id', { count: 'exact', head: true })
+      .in('company_id', companyIds).eq('status', 'attivo'),
+    supabase.from('workers').select('id', { count: 'exact', head: true })
+      .in('company_id', companyIds).eq('is_active', true),
+  ]);
+
+  const header = 'Impresa,DURC Scadenza,Stato DURC,Cantieri,Lavoratori';
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const rows = clients.map(c => {
+    const co = c.companies;
+    const exp = co?.durc_expiry_date;
+    let stato = 'Mancante';
+    if (exp) {
+      if (exp < todayStr) stato = 'Scaduto';
+      else if (exp < new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10)) stato = 'In scadenza';
+      else stato = 'Valido';
+    }
+    return `"${(co?.name||'').replace(/"/g,'""')}","${exp || ''}","${stato}","",""`;
+  });
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="clienti_studio_${todayStr}.csv"`);
+  res.send('﻿' + [header, ...rows].join('\r\n'));
 });
 
 module.exports = router;
