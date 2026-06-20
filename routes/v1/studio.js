@@ -2587,16 +2587,11 @@ router.post('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res)
     return res.status(400).json({ error: 'expiry_date deve essere successivo a issue_date' });
   }
 
-  // Recupera studio_id
-  const { data: studio } = await supabase
-    .from('studio_partners').select('id').eq('user_id', req.studioId).maybeSingle();
-  if (!studio) return res.status(403).json({ error: 'STUDIO_NOT_FOUND' });
-
   const { data, error } = await supabase
     .from('durc_records')
     .insert({
       company_id:      companyId,
-      studio_id:       studio.id,
+      studio_id:       req.studioId,
       issue_date,
       expiry_date,
       protocol_number: protocol_number?.trim() || null,
@@ -2629,15 +2624,13 @@ router.delete('/studio/clients/:companyId/durc/:id', verifyStudioJwt, async (req
 
 // GET /api/v1/studio/durc-overview — tutti i clienti con stato DURC
 router.get('/studio/durc-overview', verifyStudioJwt, async (req, res) => {
-  const { data: studio } = await supabase
-    .from('studio_partners').select('id').eq('user_id', req.studioId).maybeSingle();
-  if (!studio) return res.status(403).json({ error: 'STUDIO_NOT_FOUND' });
+  const studioId = req.studioId;
+  if (!studioId) return res.status(403).json({ error: 'STUDIO_NOT_FOUND' });
 
-  // Prendo tutte le aziende collegate allo studio
   const { data: relations } = await supabase
-    .from('studio_client_relations')
+    .from('studio_clients')
     .select('company_id, companies(id, name, durc_expiry_date)')
-    .eq('studio_id', studio.id)
+    .eq('studio_id', studioId)
     .eq('status', 'active');
 
   const today  = new Date().toISOString().slice(0, 10);

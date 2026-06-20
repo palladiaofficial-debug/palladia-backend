@@ -571,6 +571,9 @@ app.get('/studio', (req, res) => {
 app.get('/studio/accetta/:token', (req, res) => {
   res.sendFile('studio.html', { root: __dirname + '/public' });
 });
+app.get('/studio/upload/:token', (req, res) => {
+  res.sendFile('studio.html', { root: __dirname + '/public' });
+});
 app.get('/coordinator', (req, res) => {
   res.sendFile('coordinator.html', { root: __dirname + '/public' });
 });
