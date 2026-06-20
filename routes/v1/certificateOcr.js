@@ -104,9 +104,9 @@ router.post('/workers/:workerId/certificates/upload', upload.single('file'), asy
     return res.status(500).json({ error: 'STORAGE_ERROR', detail: upErr.message });
   }
 
-  const { data: { publicUrl } } = supabase.storage.from('documents').getPublicUrl(path);
+  const { data: signed } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
 
-  res.json({ url: publicUrl, path, mime: req.file.mimetype, size: req.file.size });
+  res.json({ url: signed?.signedUrl || path, path, mime: req.file.mimetype, size: req.file.size });
 });
 
 // ── POST /api/v1/workers/:workerId/certificates/extract ───────────────────────

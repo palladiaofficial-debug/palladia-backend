@@ -252,7 +252,18 @@ router.get('/equipment/:id/documents', verifySupabaseJwt, async (req, res) => {
     .order('uploaded_at', { ascending: false });
 
   if (error) return res.status(500).json({ error: error.message });
-  res.json(data || []);
+
+  const docs = await Promise.all((data || []).map(async (doc) => {
+    if (!doc.file_url) return doc;
+    const path = doc.file_url.includes('/equipment-docs/')
+      ? doc.file_url.split('/equipment-docs/').pop()
+      : doc.file_url;
+    const { data: signed } = await supabase.storage
+      .from('equipment-docs').createSignedUrl(path, 3600);
+    return { ...doc, file_url: signed?.signedUrl || doc.file_url };
+  }));
+
+  res.json(docs);
 });
 
 // ── POST /api/v1/equipment/:id/documents ─────────────────────────────────────
@@ -288,9 +299,7 @@ router.post('/equipment/:id/documents', verifySupabaseJwt, upload.single('file')
     return res.status(500).json({ error: 'STORAGE_ERROR', detail: uploadErr.message });
   }
 
-  const { data: { publicUrl } } = supabase.storage
-    .from('equipment-docs')
-    .getPublicUrl(storagePath);
+  // Salva il path, non l'URL pubblico — signed URL generato al GET
 
   // OCR asincrono
   let aiExtracted = null;
@@ -321,7 +330,7 @@ Date in formato YYYY-MM-DD. null per campi non presenti.`;
       equipment_id: id,
       doc_type:     docType,
       file_name:    originalname,
-      file_url:     publicUrl,
+      file_url:     storagePath,
       file_size:    size,
       mime_type:    mimetype,
       ai_extracted: aiExtracted,
@@ -354,10 +363,10 @@ router.delete('/equipment/:id/documents/:docId', verifySupabaseJwt, async (req, 
 
   // Rimuovi da Storage (best-effort)
   if (doc.file_url) {
-    const urlParts = doc.file_url.split('/equipment-docs/');
-    if (urlParts[1]) {
-      await supabase.storage.from('equipment-docs').remove([urlParts[1]]);
-    }
+    const path = doc.file_url.includes('/equipment-docs/')
+      ? doc.file_url.split('/equipment-docs/').pop()
+      : doc.file_url;
+    await supabase.storage.from('equipment-docs').remove([path]).catch(() => {});
   }
 
   const { error } = await supabase

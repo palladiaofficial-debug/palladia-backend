@@ -9,15 +9,13 @@ const express    = require('express');
 const cors       = require('cors');
 const helmet     = require('helmet');
 const compression = require('compression');
-const { createClient } = require('@supabase/supabase-js');
 const { buildPosDocument } = require('./pos-template');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
 const { generateDvrHtml }  = require('./dvr-html-generator');
 const { generatePimusHtml } = require('./pimus-html-generator');
 const { rendererPool } = require('./pdf-renderer');
-const rateLimit = require('express-rate-limit');
-const { apiLimiter } = require('./middleware/rateLimit');
+const { apiLimiter, aiLimiter } = require('./middleware/rateLimit');
 const v1Router = require('./routes/v1');
 const { generateAndSave: generateSiteChecklist } = require('./routes/v1/siteChecklist');
 const { startMissingExitCron }      = require('./services/missingExitCron');
@@ -596,10 +594,7 @@ app.use(express.static(__dirname + '/public', {
   },
 }));
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_KEY
-);
+const supabase = require('./lib/supabase');
 
 // JWT-only auth: verifica il Bearer token senza richiedere X-Company-Id.
 // Usato per gli endpoint AI/PDF legacy che operano fuori dal contesto /api/v1.
@@ -658,7 +653,7 @@ async function checkPosOwnership(req, res, posId) {
 }
 
 // Rate limiter stretto per le chiamate AI (Anthropic è costoso)
-const aiLimiter = rateLimit({ windowMs: 60000, max: 10, message: { error: 'AI_RATE_LIMIT' } });
+// aiLimiter già importato sopra
 
 // Verifica che l'utente autenticato (verifyJwtOnly) abbia accesso a un siteId tramite company.
 // Richiede X-Company-Id header. Se siteId è fornito, verifica anche che il cantiere
@@ -778,13 +773,15 @@ async function getNextRevision(siteId) {
   return (data && data.length > 0) ? data[0].revision + 1 : 1;
 }
 
+const { withAiLimit, withPdfLimit } = require('./lib/concurrencyLimit');
+
 // --- Helper: call Anthropic streaming API, return reader ---
 async function callAnthropicStream(prompt) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY not configured on server');
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await withAiLimit(() => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -797,7 +794,7 @@ async function callAnthropicStream(prompt) {
       stream: true,
       messages: [{ role: 'user', content: prompt }]
     })
-  });
+  }));
 
   if (!response.ok) {
     const errData = await response.json();
@@ -886,7 +883,7 @@ async function callAnthropicHaiku(prompt) {
     throw new Error('ANTHROPIC_API_KEY not configured on server');
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
+  const response = await withAiLimit(() => fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -898,7 +895,7 @@ async function callAnthropicHaiku(prompt) {
       max_tokens: 4000,
       messages: [{ role: 'user', content: prompt }]
     })
-  });
+  }));
 
   if (!response.ok) {
     const errData = await response.json();
