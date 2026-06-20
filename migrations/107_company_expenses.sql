@@ -41,3 +41,25 @@ CREATE POLICY company_expenses_rw ON company_expenses FOR ALL
 
 -- Metodi di pagamento:
 -- contanti, assegno, bonifico, carta, pos, altro
+
+-- ── Spese ricorrenti ────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS company_recurring_expenses (
+  id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id      uuid        NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  amount          numeric(12,2) NOT NULL CHECK (amount > 0),
+  description     text        NOT NULL,
+  category        text        NOT NULL DEFAULT 'altro',
+  payment_method  text        NOT NULL DEFAULT 'bonifico',
+  paid_by         text,
+  supplier        text,
+  day_of_month    integer     NOT NULL DEFAULT 1 CHECK (day_of_month BETWEEN 1 AND 28),
+  is_active       boolean     NOT NULL DEFAULT true,
+  created_by      uuid,
+  created_at      timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX idx_recurring_company ON company_recurring_expenses(company_id) WHERE is_active = true;
+
+ALTER TABLE company_recurring_expenses ENABLE ROW LEVEL SECURITY;
+CREATE POLICY company_recurring_expenses_rw ON company_recurring_expenses FOR ALL
+  USING (is_company_member(company_id));

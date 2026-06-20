@@ -1,12 +1,21 @@
 'use strict';
-const router   = require('express').Router();
-const multer   = require('multer');
-const supabase = require('../../lib/supabase');
+const router    = require('express').Router();
+const multer    = require('multer');
+const Anthropic = require('@anthropic-ai/sdk');
+const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { validate }             = require('../../middleware/validate');
+const { aiLimiter }            = require('../../middleware/rateLimit');
+const { withAiLimit }          = require('../../lib/concurrencyLimit');
 const { createExpenseSchema, updateExpenseSchema, CATEGORIES, PAYMENT_METHODS } = require('../../lib/schemas/expenses');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+let _anthropic = null;
+function getClient() {
+  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _anthropic;
+}
 
 router.use(verifySupabaseJwt);
 
@@ -271,6 +280,190 @@ router.get('/expenses/suppliers', async (req, res) => {
 
   const unique = [...new Set((data || []).map(r => r.supplier).filter(Boolean))];
   res.json(unique);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// OCR RICEVUTA — scatta foto → AI estrae importo, data, fornitore, N. fattura
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/expenses/scan', aiLimiter, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+  const { buffer, mimetype } = req.file;
+  const SUPPORTED = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+  if (!SUPPORTED.includes(mimetype)) {
+    return res.status(400).json({ error: 'INVALID_FILE_TYPE', detail: 'Accettati: jpg, png, webp, pdf' });
+  }
+
+  try {
+    const base64 = buffer.toString('base64');
+    const mediaType = mimetype === 'application/pdf' ? 'application/pdf' : mimetype;
+    const sourceType = mimetype === 'application/pdf' ? 'document' : 'image';
+
+    const content = [
+      { type: sourceType, source: { type: 'base64', media_type: mediaType, data: base64 } },
+      { type: 'text', text: `Analizza questa ricevuta/scontrino/fattura ed estrai i dati. Restituisci SOLO JSON valido con questi campi:
+{"amount":null,"description":null,"supplier":null,"invoice_number":null,"expense_date":null,"category":null,"payment_method":null}
+
+Regole:
+- amount: numero decimale (es. 125.50), senza simbolo €
+- expense_date: formato YYYY-MM-DD
+- category: una tra [materiali, carburante, utenze, assicurazioni, tasse_contributi, stipendi, affitto, attrezzature, subappalto, consulenze, manutenzione, trasporti, cancelleria, vitto_alloggio, altro] — scegli la più appropriata
+- payment_method: una tra [contanti, assegno, bonifico, carta, pos, altro] — deduci dal documento se possibile, altrimenti null
+- description: breve descrizione della spesa (max 100 caratteri)
+- null per campi non presenti nel documento` },
+    ];
+
+    const msg = await withAiLimit(() =>
+      getClient().messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 500,
+        messages: [{ role: 'user', content }],
+      })
+    );
+
+    const text  = msg.content[0]?.text || '{}';
+    const match = text.match(/\{[\s\S]*\}/);
+    const extracted = match ? JSON.parse(match[0]) : {};
+
+    // Verifica duplicato
+    let duplicate = null;
+    if (extracted.amount && extracted.expense_date) {
+      const { data: dup } = await supabase
+        .from('company_expenses')
+        .select('id, description, supplier, expense_date, amount')
+        .eq('company_id', req.companyId)
+        .eq('amount', extracted.amount)
+        .eq('expense_date', extracted.expense_date)
+        .limit(1)
+        .maybeSingle();
+      if (dup) duplicate = dup;
+    }
+
+    res.json({ extracted, duplicate_warning: duplicate });
+  } catch (e) {
+    console.error('[expenses/scan] OCR error:', e.message);
+    res.status(500).json({ error: 'OCR_FAILED', detail: e.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SPESE RICORRENTI — imposta una volta, si ripete ogni mese
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/expenses/recurring', async (req, res) => {
+  const { data, error } = await supabase
+    .from('company_recurring_expenses')
+    .select('*')
+    .eq('company_id', req.companyId)
+    .eq('is_active', true)
+    .order('description');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/expenses/recurring', async (req, res) => {
+  const { amount, description, category, payment_method, paid_by, supplier, day_of_month } = req.body;
+  if (!amount || !description) return res.status(400).json({ error: 'amount e description obbligatori' });
+
+  const { data, error } = await supabase
+    .from('company_recurring_expenses')
+    .insert({
+      company_id:     req.companyId,
+      amount:         Number(amount),
+      description,
+      category:       category || 'altro',
+      payment_method: payment_method || 'bonifico',
+      paid_by:        paid_by || null,
+      supplier:       supplier || null,
+      day_of_month:   Math.min(28, Math.max(1, Number(day_of_month) || 1)),
+      created_by:     req.user?.id || null,
+    })
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.status(201).json(data);
+});
+
+router.delete('/expenses/recurring/:id', async (req, res) => {
+  const { error } = await supabase
+    .from('company_recurring_expenses')
+    .update({ is_active: false })
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+router.post('/expenses/recurring/generate', async (req, res) => {
+  const { month } = req.body; // YYYY-MM
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ error: 'month obbligatorio (YYYY-MM)' });
+  }
+
+  const { data: recurring } = await supabase
+    .from('company_recurring_expenses')
+    .select('*')
+    .eq('company_id', req.companyId)
+    .eq('is_active', true);
+
+  if (!recurring?.length) return res.json({ generated: 0 });
+
+  const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
+  const rows = recurring.map(r => ({
+    company_id:     req.companyId,
+    amount:         r.amount,
+    description:    r.description,
+    category:       r.category,
+    payment_method: r.payment_method,
+    paid_by:        r.paid_by,
+    supplier:       r.supplier,
+    expense_date:   `${month}-${String(Math.min(r.day_of_month, lastDay)).padStart(2, '0')}`,
+    is_deductible:  true,
+    notes:          `Generata da spesa ricorrente`,
+    created_by:     req.user?.id || null,
+  }));
+
+  // Evita duplicati: non generare se esiste già una spesa con stessa descrizione+mese
+  const toInsert = [];
+  for (const row of rows) {
+    const { data: existing } = await supabase
+      .from('company_expenses')
+      .select('id')
+      .eq('company_id', req.companyId)
+      .eq('description', row.description)
+      .eq('expense_date', row.expense_date)
+      .maybeSingle();
+    if (!existing) toInsert.push(row);
+  }
+
+  if (!toInsert.length) return res.json({ generated: 0, message: 'Spese ricorrenti già generate per questo mese' });
+
+  const { error } = await supabase.from('company_expenses').insert(toInsert);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ generated: toInsert.length });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DUPLICATE CHECK — verifica se una spesa simile esiste già
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/expenses/check-duplicate', async (req, res) => {
+  const { amount, expense_date, supplier } = req.body;
+  if (!amount || !expense_date) return res.json({ duplicate: null });
+
+  let q = supabase
+    .from('company_expenses')
+    .select('id, description, supplier, expense_date, amount')
+    .eq('company_id', req.companyId)
+    .eq('amount', amount)
+    .eq('expense_date', expense_date);
+
+  if (supplier) q = q.eq('supplier', supplier);
+
+  const { data } = await q.limit(1).maybeSingle();
+  res.json({ duplicate: data || null });
 });
 
 module.exports = router;
