@@ -547,7 +547,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
 
   const { data: session, error: sessErr } = await supabase
     .from('worker_device_sessions')
-    .select('id, worker_id, company_id, expires_at, revoked_at, worker:workers(full_name)')
+    .select('id, worker_id, company_id, expires_at, revoked_at, worker:workers(full_name, is_active)')
     .eq('token_hash', tokenHash)
     .maybeSingle();
 
@@ -555,6 +555,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   if (!session)                            return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
   if (session.revoked_at)                  return res.status(401).json({ error: 'SESSION_REVOKED' });
   if (new Date(session.expires_at) < now)  return res.status(401).json({ error: 'SESSION_EXPIRED' });
+  if (!session.worker?.is_active)          return res.status(403).json({ error: 'WORKER_DEACTIVATED' });
 
   const { data: site, error: siteErr } = await supabase
     .from('sites')

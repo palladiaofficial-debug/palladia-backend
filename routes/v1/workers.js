@@ -667,7 +667,7 @@ router.post('/workers/import', verifySupabaseJwt, async (req, res) => {
         ...(safety_training_expiry !== null && { safety_training_expiry }),
         ...(health_fitness_expiry  !== null && { health_fitness_expiry }),
       }).eq('id', existing.id);
-      if (updErr) { errors.push({ row: i + 2, error: updErr.message }); continue; }
+      if (updErr) { errors.push({ row: i + 1, error: updErr.message }); continue; }
       updated++;
     } else {
       // Crea
@@ -687,7 +687,7 @@ router.post('/workers/import', verifySupabaseJwt, async (req, res) => {
         ...(safety_training_expiry && { safety_training_expiry }),
         ...(health_fitness_expiry  && { health_fitness_expiry }),
       });
-      if (insErr) { errors.push({ row: i + 2, error: insErr.message }); continue; }
+      if (insErr) { errors.push({ row: i + 1, error: insErr.message }); continue; }
       created++;
     }
   }

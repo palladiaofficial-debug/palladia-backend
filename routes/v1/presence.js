@@ -66,8 +66,8 @@ router.get('/presence/notes', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .eq('target_id', siteId)
     .eq('action', 'worker.exit_note')
-    .gte('created_at', `${date}T00:00:00.000Z`)
-    .lte('created_at', `${date}T23:59:59.999Z`)
+    .gte('created_at', `${date}T00:00:00+01:00`)
+    .lte('created_at', `${date}T23:59:59.999+01:00`)
     .order('created_at', { ascending: true })
     .limit(500);
 

@@ -28,9 +28,10 @@ const { getForecast }   = require('./weatherService');
 /** Differenza in giorni interi tra oggi (Europe/Rome) e una data ISO */
 function daysUntil(isoDate) {
   if (!isoDate) return null;
-  const today = new Date(new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' }));
-  const exp   = new Date(isoDate);
-  return Math.round((exp - today) / 86_400_000);
+  const [y, m, d] = String(isoDate).split('T')[0].split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  return Math.ceil((target - now) / 86400000);
 }
 
 /** True se oggi è sabato o domenica (Europe/Rome) */

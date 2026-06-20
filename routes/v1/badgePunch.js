@@ -514,8 +514,8 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
 
   // Se il capocantiere non ha GPS, usa le coordinate del cantiere come proxy
   // (è fisicamente sul posto, distance_m = 0 per indicare "presunto sul sito")
-  const punchLat = validGps ? lat  : (site.latitude  ?? 0);
-  const punchLon = validGps ? lon  : (site.longitude ?? 0);
+  const punchLat = validGps ? lat  : (site.latitude  ?? null);
+  const punchLon = validGps ? lon  : (site.longitude ?? null);
 
   if (validGps && site.latitude != null && site.longitude != null) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));

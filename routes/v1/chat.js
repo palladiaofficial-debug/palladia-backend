@@ -958,13 +958,14 @@ async function executeTool(toolName, toolInput, companyId) {
         if (type === 'all' || type === 'mezzi') {
           const { data: equip } = await supabase
             .from('equipment')
-            .select('nome, tipo, targa, data_scadenza_assicurazione')
+            .select('type, model, plate_or_serial, insurance_expiry')
             .eq('company_id', companyId)
+            .eq('is_active', true)
             .limit(200);
           (equip || []).forEach(eq => {
-            if (!eq.data_scadenza_assicurazione) return;
-            const d = Math.ceil((new Date(eq.data_scadenza_assicurazione) - today4) / 86400000);
-            if (d <= horizon) deadlines.push({ tipo: 'Assicurazione mezzo', soggetto: eq.nome || eq.tipo, targa: eq.targa, scadenza: eq.data_scadenza_assicurazione, giorni_rimasti: d, urgenza: d < 0 ? 'SCADUTA' : d <= 30 ? 'CRITICA' : 'ATTENZIONE' });
+            if (!eq.insurance_expiry) return;
+            const d = Math.ceil((new Date(eq.insurance_expiry) - today4) / 86400000);
+            if (d <= horizon) deadlines.push({ tipo: 'Assicurazione mezzo', soggetto: eq.model || eq.type, targa: eq.plate_or_serial, scadenza: eq.insurance_expiry, giorni_rimasti: d, urgenza: d < 0 ? 'SCADUTA' : d <= 30 ? 'CRITICA' : 'ATTENZIONE' });
           });
         }
 

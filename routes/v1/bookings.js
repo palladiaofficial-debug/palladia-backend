@@ -63,7 +63,7 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
     .select(`
       id, start_date, available_spots, booked_spots, is_cancelled,
       marketplace_courses (
-        id, title, price_cents,
+        id, title, price_cents, consultant_id,
         training_providers ( id, name, commission_rate )
       )
     `)
@@ -84,6 +84,10 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
 
   const course = session.marketplace_courses;
   const provider = course.training_providers;
+
+  if (!isConsultantCourse && !provider) {
+    return res.status(400).json({ error: 'PROVIDER_NOT_FOUND', message: 'Corso senza provider associato' });
+  }
 
   // Verify all workers belong to company
   const { data: workers, error: wErr } = await supabase

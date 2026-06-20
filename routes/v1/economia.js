@@ -451,6 +451,11 @@ router.get('/sites/:siteId/economia/pnl', async (req, res) => {
 });
 
 // ── Shared PDF HTML builder ───────────────────────────────────────────────────
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function buildSalPdfHtml({ siteName, siteAddress, client, companyName, pnl, salNumber, dataEmissione }) {
   const { contratto, costo_mo, costi_diretti, margine, totale_costi } = pnl;
   const salPct   = contratto.sal_percentuale;
@@ -477,9 +482,9 @@ function buildSalPdfHtml({ siteName, siteAddress, client, companyName, pnl, salN
     let html = '';
     for (const [cat, items] of Object.entries(costiPerCat)) {
       const tot = items.reduce((s, i) => s + Number(i.importo), 0);
-      html += `<tr style="background:#f9fafb"><td colspan="3" style="padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151">${cat}</td><td style="padding:7px 16px;text-align:right;font-size:10px;font-weight:700;color:#374151">${fmtEur(tot)}</td></tr>`;
+      html += `<tr style="background:#f9fafb"><td colspan="3" style="padding:7px 16px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#374151">${esc(cat)}</td><td style="padding:7px 16px;text-align:right;font-size:10px;font-weight:700;color:#374151">${fmtEur(tot)}</td></tr>`;
       for (const c of items) {
-        html += `<tr><td style="padding:6px 16px 6px 28px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${c.descrizione}</td><td style="padding:6px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${c.fornitore || '—'}</td><td style="padding:6px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${c.data_documento ? new Date(c.data_documento+'T12:00:00').toLocaleDateString('it-IT') : '—'}</td><td style="padding:6px 16px;text-align:right;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${fmtEur(Number(c.importo))}</td></tr>`;
+        html += `<tr><td style="padding:6px 16px 6px 28px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${esc(c.descrizione)}</td><td style="padding:6px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${esc(c.fornitore) || '—'}</td><td style="padding:6px 8px;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${c.data_documento ? new Date(c.data_documento+'T12:00:00').toLocaleDateString('it-IT') : '—'}</td><td style="padding:6px 16px;text-align:right;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${fmtEur(Number(c.importo))}</td></tr>`;
       }
     }
     return html;
@@ -487,7 +492,7 @@ function buildSalPdfHtml({ siteName, siteAddress, client, companyName, pnl, salN
 
   function moRows() {
     if (!costo_mo.breakdown.length) return '<tr><td colspan="4" style="padding:12px 16px;color:#6b7280;font-style:italic;font-size:11px">Nessuna timbratura registrata</td></tr>';
-    return costo_mo.breakdown.map(w => `<tr><td style="padding:7px 16px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${w.full_name}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${fmtOre(w.ore_totali)}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${w.tariffa_oraria ? `€ ${w.tariffa_oraria.toFixed(2)}/h` : '<i>N/D</i>'}</td><td style="padding:7px 16px;text-align:right;font-size:11px;font-weight:600;color:#374151;border-bottom:1px solid #f3f4f6">${w.costo_totale > 0 ? fmtEur(w.costo_totale) : '<span style="color:#d97706">N/D</span>'}</td></tr>`).join('');
+    return costo_mo.breakdown.map(w => `<tr><td style="padding:7px 16px;font-size:11px;color:#374151;border-bottom:1px solid #f3f4f6">${esc(w.full_name)}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${fmtOre(w.ore_totali)}</td><td style="padding:7px 8px;text-align:right;font-size:11px;color:#6b7280;border-bottom:1px solid #f3f4f6">${w.tariffa_oraria ? `€ ${w.tariffa_oraria.toFixed(2)}/h` : '<i>N/D</i>'}</td><td style="padding:7px 16px;text-align:right;font-size:11px;font-weight:600;color:#374151;border-bottom:1px solid #f3f4f6">${w.costo_totale > 0 ? fmtEur(w.costo_totale) : '<span style="color:#d97706">N/D</span>'}</td></tr>`).join('');
   }
 
   const salLabel    = salNumber != null ? `SAL N. ${salNumber}` : 'SAL';
@@ -536,8 +541,8 @@ table{width:100%;border-collapse:collapse}
 
 <div class="header">
   <div class="header-left">
-    <h1>${companyName || 'Impresa'}</h1>
-    <p>Stato Avanzamento Lavori &mdash; ${siteName}</p>
+    <h1>${esc(companyName) || 'Impresa'}</h1>
+    <p>Stato Avanzamento Lavori &mdash; ${esc(siteName)}</p>
   </div>
   <div>
     <div class="badge">${salLabel}</div>
@@ -548,10 +553,10 @@ table{width:100%;border-collapse:collapse}
 <div class="section">
   <div class="section-title">Dati cantiere</div>
   <div class="info-grid">
-    <div class="info-item"><label>Cantiere</label><span>${siteName}</span></div>
-    <div class="info-item"><label>Committente</label><span>${client || '—'}</span></div>
-    <div class="info-item"><label>Indirizzo</label><span>${siteAddress || '—'}</span></div>
-    <div class="info-item"><label>Impresa esecutrice</label><span>${companyName || '—'}</span></div>
+    <div class="info-item"><label>Cantiere</label><span>${esc(siteName)}</span></div>
+    <div class="info-item"><label>Committente</label><span>${esc(client) || '—'}</span></div>
+    <div class="info-item"><label>Indirizzo</label><span>${esc(siteAddress) || '—'}</span></div>
+    <div class="info-item"><label>Impresa esecutrice</label><span>${esc(companyName) || '—'}</span></div>
   </div>
 </div>
 

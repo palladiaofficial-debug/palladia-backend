@@ -28,8 +28,8 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    .gte('timestamp_server', `${date}T00:00:00.000Z`)
-    .lte('timestamp_server', `${date}T23:59:59.999Z`)
+    .gte('timestamp_server', `${date}T00:00:00+01:00`)
+    .lte('timestamp_server', `${date}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(20000);
@@ -111,7 +111,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   }
 
   // Nessun limite di giorni: l'export annuale è il caso d'uso principale.
-  // Limit righe raw: 200k (sufficiente per ~500 lavoratori × 365 giorni × 1 coppia)
+  // Limit righe raw: 50k
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select(`
@@ -214,7 +214,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
 
   // Header con metadati se il limite è stato raggiunto
   if (limitReached) {
-    csvRows.unshift(`# ATTENZIONE: dati troncati a 200.000 righe raw — export parziale`);
+    csvRows.unshift(`# ATTENZIONE: dati troncati a 50.000 righe raw — export parziale`);
   }
 
   const filename = `presenze-range-${from}-${to}-${siteId}.csv`;
@@ -344,7 +344,7 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
         r.gps_accuracy_m ?? ''
       ].join(','))
     ];
-    if (limitReached) rows.unshift('# ATTENZIONE: dati troncati a 200.000 righe raw \u2014 export parziale');
+    if (limitReached) rows.unshift('# ATTENZIONE: dati troncati a 50.000 righe raw \u2014 export parziale');
 
     const filename = `presenze-${siteId}-${from}-${to}.csv`;
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -489,7 +489,7 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
   }
   csvRows.push(['', '', '"TOTALE"', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : ''].join(','));
 
-  if (limitReached) csvRows.unshift('# ATTENZIONE: dati troncati a 200.000 righe raw — export parziale');
+  if (limitReached) csvRows.unshift('# ATTENZIONE: dati troncati a 50.000 righe raw — export parziale');
 
   const filename = `presenze-referente-${referenteId || 'tutti'}-${from}-${to}.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');

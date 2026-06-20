@@ -211,7 +211,7 @@ async function sendRainNotification(siteId, companyId, chatId) {
     .from('telegram_users')
     .select('telegram_chat_id, user_id')
     .eq('company_id', companyId)
-    .neq('telegram_chat_id', chatId);
+    .neq('telegram_chat_id', String(chatId));
 
   if (!users?.length) {
     await logAction(chatId, companyId, siteId, 'rain_notify', { siteId }, 'skipped', 'nessun altro utente collegato');
@@ -346,7 +346,7 @@ async function sendHeatNotification(siteId, companyId, chatId) {
     .from('telegram_users')
     .select('telegram_chat_id, user_id')
     .eq('company_id', companyId)
-    .neq('telegram_chat_id', chatId);
+    .neq('telegram_chat_id', String(chatId));
 
   if (!users?.length) {
     await logAction(chatId, companyId, siteId, 'heat_notify', { siteId }, 'skipped', 'nessun altro utente');

@@ -11,7 +11,10 @@ const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
-  return Math.ceil((new Date(dateStr) - Date.now()) / 86400000);
+  const [y, m, d] = String(dateStr).split('T')[0].split('-').map(Number);
+  const target = new Date(y, m - 1, d);
+  const now = new Date(); now.setHours(0, 0, 0, 0);
+  return Math.ceil((target - now) / 86400000);
 }
 
 function today() { return new Date().toISOString().split('T')[0]; }

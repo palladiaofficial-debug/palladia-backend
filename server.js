@@ -258,7 +258,7 @@ app.post('/api/webhooks/stripe',
                   destination: profile.stripe_account_id,
                   description: `Palladia payout #${booking.id.slice(0, 8)}`,
                   metadata:    { booking_id: booking.id, consultant_id: booking.consultant_id },
-                });
+                }, { idempotencyKey: `transfer_${booking.id}` });
 
                 const commissionCents = (booking.total_price_cents || 0) - booking.consultant_payout_cents;
                 await supabaseW.from('consultant_payouts').insert({
@@ -304,11 +304,22 @@ app.post('/api/webhooks/stripe',
           .eq('stripe_subscription_id', sub.id)
           .maybeSingle();
         if (company) {
-          const statusMap = { active: 'active', past_due: 'past_due', canceled: 'canceled', unpaid: 'past_due' };
-          await supabaseW.from('companies').update({
-            subscription_status:             statusMap[sub.status] || sub.status,
+          const statusMap = { active: 'active', past_due: 'past_due', canceled: 'canceled', unpaid: 'past_due', trialing: 'trial', incomplete: 'past_due', incomplete_expired: 'canceled', paused: 'past_due' };
+          const updatePayload = {
+            subscription_status:             statusMap[sub.status] || 'active',
             subscription_current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
-          }).eq('id', company.id);
+          };
+          const newPriceId = sub.items?.data?.[0]?.price?.id;
+          if (newPriceId) {
+            const priceToplan = {
+              [process.env.STRIPE_PRICE_STARTER]: 'starter',
+              [process.env.STRIPE_PRICE_BASE]:    'starter',
+              [process.env.STRIPE_PRICE_GROW]:    'grow',
+              [process.env.STRIPE_PRICE_PRO]:     'pro',
+            };
+            if (priceToplan[newPriceId]) updatePayload.subscription_plan = priceToplan[newPriceId];
+          }
+          await supabaseW.from('companies').update(updatePayload).eq('id', company.id);
         }
       }
 
@@ -673,7 +684,7 @@ async function checkBillingActive(companyId, res) {
   const { data: company } = await supabase
     .from('companies').select('subscription_status, trial_ends_at')
     .eq('id', companyId).maybeSingle();
-  if (!company) return true; // DB error → non bloccare
+  if (!company) { res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' }); return false; }
   const now = Date.now();
   const trialExpired = company.subscription_status === 'trial' &&
     company.trial_ends_at && new Date(company.trial_ends_at).getTime() < now;

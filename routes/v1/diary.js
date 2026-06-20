@@ -66,8 +66,8 @@ router.get('/sites/:siteId/diary/prefill/:date', verifySupabaseJwt, async (req, 
       .select('worker_id, event_type, timestamp_server, workers(full_name)')
       .eq('site_id', siteId)
       .eq('company_id', req.companyId)
-      .gte('timestamp_server', `${date}T00:00:00`)
-      .lte('timestamp_server', `${date}T23:59:59`)
+      .gte('timestamp_server', `${date}T00:00:00+01:00`)
+      .lte('timestamp_server', `${date}T23:59:59+01:00`)
       .order('timestamp_server', { ascending: true }),
 
     supabase
@@ -324,6 +324,11 @@ async function getSiteOrFail(siteId, companyId, res) {
   return data;
 }
 
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
 function wmoLabel(code) {
   if (code === null || code === undefined) return '—';
   if (code === 0)   return 'Sereno';
@@ -358,11 +363,11 @@ function buildDiaryPdf(entry, site, companyName) {
   ].filter(Boolean).join(' · ') || '—';
 
   const workerRows = workers.map(w =>
-    `<tr><td>${w.name || '—'}</td><td class="r">${w.hours != null ? w.hours + ' h' : '—'}</td></tr>`
+    `<tr><td>${esc(w.name) || '—'}</td><td class="r">${w.hours != null ? w.hours + ' h' : '—'}</td></tr>`
   ).join('');
 
   const field = (label, val) => val
-    ? `<div class="f"><div class="fl">${label}</div><div class="fv">${val}</div></div>`
+    ? `<div class="f"><div class="fl">${label}</div><div class="fv">${esc(val)}</div></div>`
     : '';
 
   return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
@@ -394,13 +399,13 @@ tr:nth-child(even) td { background:#f9f9f9; }
 <div class="page">
   <div class="hdr">
     <div class="hl">
-      <div class="co">${companyName}</div>
-      <h1>Diario di Cantiere · ${site.name}</h1>
+      <div class="co">${esc(companyName)}</div>
+      <h1>Diario di Cantiere · ${esc(site.name)}</h1>
       <div class="dt">${fmtLong(entry.entry_date)}</div>
     </div>
     <div class="hr">
-      ${site.address ? `<div>${site.address}</div>` : ''}
-      ${site.client  ? `<div>Committente: <strong>${site.client}</strong></div>` : ''}
+      ${site.address ? `<div>${esc(site.address)}</div>` : ''}
+      ${site.client  ? `<div>Committente: <strong>${esc(site.client)}</strong></div>` : ''}
     </div>
   </div>
 
@@ -416,10 +421,10 @@ tr:nth-child(even) td { background:#f9f9f9; }
     <tbody>${workerRows}</tbody></table></div>` : ''}
 
   ${machinery.length ? `<div class="sec"><h2>Mezzi e attrezzature</h2>
-    <div class="f"><div class="fv">${machinery.map(m => m.name || m.id).join(' · ')}</div></div></div>` : ''}
+    <div class="f"><div class="fv">${machinery.map(m => esc(m.name || m.id)).join(' · ')}</div></div></div>` : ''}
 
   ${subs.length ? `<div class="sec"><h2>Subappaltatori</h2>
-    <div class="f"><div class="fv">${subs.map(s => s.name || s.id).join(' · ')}</div></div></div>` : ''}
+    <div class="f"><div class="fv">${subs.map(s => esc(s.name || s.id)).join(' · ')}</div></div></div>` : ''}
 
   <div class="sec"><h2>Attività e annotazioni</h2>
     ${field('Lavori eseguiti', entry.activities)}

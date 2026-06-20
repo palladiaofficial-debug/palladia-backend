@@ -377,7 +377,7 @@ function generatePresenceReportHtml(data) {
   if (rows.length === 0) {
     tableRowsHtml = `
       <tr>
-        <td colspan="10" style="text-align:center;color:#888888;padding:16pt 0;font-size:9pt;">
+        <td colspan="11" style="text-align:center;color:#888888;padding:16pt 0;font-size:9pt;">
           Nessuna presenza registrata nel periodo selezionato.
         </td>
       </tr>`;

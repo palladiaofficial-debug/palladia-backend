@@ -241,11 +241,16 @@ router.post('/onboard/:token', validate(onboardWorkerSchema), async (req, res) =
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 
-  // Incrementa uses_count
-  await supabase
-    .from('worker_invite_tokens')
-    .update({ uses_count: invite.uses_count + 1 })
-    .eq('id', invite.id);
+  // Incrementa uses_count atomicamente
+  await supabase.rpc('increment_invite_uses', { p_invite_id: invite.id })
+    .then(({ error }) => {
+      if (error) {
+        // Fallback non-atomico se la RPC non esiste ancora
+        return supabase.from('worker_invite_tokens')
+          .update({ uses_count: (invite.uses_count || 0) + 1 })
+          .eq('id', invite.id);
+      }
+    });
 
   res.status(201).json({ ok: true, message: 'Dati inviati. L\'amministratore li verificherà e ti aggiungerà al cantiere.' });
 });
