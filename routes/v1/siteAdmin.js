@@ -398,23 +398,20 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
   const effectivePlan = trialExpired ? 'trial' : company.subscription_plan;
   const siteLimit = getSiteLimit(effectivePlan);
 
-  if (siteLimit !== null) {
-    const { count, error: cntErr } = await supabase
-      .from('sites')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', req.companyId)
-      .in('status', BILLABLE_STATUSES);  // solo attivo + sospeso pesano sul limite
-
-    if (cntErr) return res.status(500).json({ error: 'DB_ERROR' });
-
-    if (count >= siteLimit) {
+  // Check atomico con advisory lock — previene bypass da richieste concorrenti
+  const { data: currentCount, error: limitErr } = await supabase.rpc('check_site_limit', {
+    p_company_id: req.companyId,
+    p_site_limit: siteLimit,
+  });
+  if (limitErr) {
+    if (limitErr.message?.includes('SITE_LIMIT_REACHED')) {
       return res.status(403).json({
         error:      'SITE_LIMIT_REACHED',
-        message:    `Il tuo piano (${effectivePlan}) consente massimo ${siteLimit} cantieri attivi. Archivia o ultime un cantiere, oppure aggiorna il piano.`,
+        message:    `Il tuo piano (${effectivePlan}) consente massimo ${siteLimit} cantieri attivi. Archivia un cantiere oppure aggiorna il piano.`,
         site_limit: siteLimit,
-        current:    count,
       });
     }
+    return res.status(500).json({ error: 'DB_ERROR' });
   }
 
   const siteStatus   = ALLOWED_STATUSES.includes(status) ? status : 'attivo';
@@ -513,21 +510,19 @@ router.post('/sites/:siteId/duplicate', verifySupabaseJwt, async (req, res) => {
   const effectivePlan = trialExpired ? 'trial' : company.subscription_plan;
   const siteLimit = getSiteLimit(effectivePlan);
 
-  if (siteLimit !== null) {
-    const { count, error: cntErr } = await supabase
-      .from('sites')
-      .select('id', { count: 'exact', head: true })
-      .eq('company_id', req.companyId)
-      .in('status', BILLABLE_STATUSES);
-    if (cntErr) return res.status(500).json({ error: 'DB_ERROR' });
-    if (count >= siteLimit) {
+  const { error: limitErr } = await supabase.rpc('check_site_limit', {
+    p_company_id: req.companyId,
+    p_site_limit: siteLimit,
+  });
+  if (limitErr) {
+    if (limitErr.message?.includes('SITE_LIMIT_REACHED')) {
       return res.status(403).json({
         error:      'SITE_LIMIT_REACHED',
         message:    `Il tuo piano consente massimo ${siteLimit} cantieri attivi.`,
         site_limit: siteLimit,
-        current:    count,
       });
     }
+    return res.status(500).json({ error: 'DB_ERROR' });
   }
 
   const newName = name?.trim() || `${orig.name} (copia)`;

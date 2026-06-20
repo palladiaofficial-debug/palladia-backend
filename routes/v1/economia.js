@@ -759,17 +759,12 @@ router.post('/sites/:siteId/economia/sal-history', validate(createSalHistorySche
   const site = await resolveSite(siteId, companyId);
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
-  // Determine next SAL number for this site
-  const { data: lastSal } = await supabase
-    .from('site_sal_history')
-    .select('sal_number')
-    .eq('site_id', siteId)
-    .eq('company_id', companyId)
-    .order('sal_number', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const salNumber = (lastSal?.sal_number ?? 0) + 1;
+  // Numero SAL atomico — advisory lock previene duplicati da richieste concorrenti
+  const { data: salNumber, error: salErr } = await supabase.rpc('next_sal_number', {
+    p_site_id:    siteId,
+    p_company_id: companyId,
+  });
+  if (salErr) return res.status(500).json({ error: 'DB_ERROR', detail: salErr.message });
 
   // Fetch P&L + site info in parallel
   const [{ data: siteData }, { data: company }, pnl] = await Promise.all([

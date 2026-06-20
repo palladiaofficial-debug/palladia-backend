@@ -73,13 +73,18 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
   if (sErr || !session) return res.status(404).json({ error: 'SESSION_NOT_FOUND' });
   if (session.is_cancelled)  return res.status(400).json({ error: 'SESSION_CANCELLED' });
 
-  const spotsLeft = session.available_spots - (session.booked_spots || 0);
-  if (spotsLeft < worker_ids.length) {
-    return res.status(400).json({ error: 'NOT_ENOUGH_SPOTS', spots_left: spotsLeft });
-  }
-
   if (new Date(session.start_date) < new Date()) {
     return res.status(400).json({ error: 'SESSION_EXPIRED' });
+  }
+
+  // Prenotazione atomica posti — previene overbooking da richieste concorrenti
+  const { error: bookErr } = await supabase.rpc('book_session_atomic', {
+    p_session_id:  session_id,
+    p_num_workers: worker_ids.length,
+  });
+  if (bookErr) {
+    const spotsLeft = session.available_spots - (session.booked_spots || 0);
+    return res.status(400).json({ error: 'NOT_ENOUGH_SPOTS', spots_left: spotsLeft });
   }
 
   const course = session.marketplace_courses;
