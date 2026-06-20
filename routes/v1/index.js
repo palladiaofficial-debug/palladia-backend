@@ -134,6 +134,9 @@ router.use('/', require('./siteExport'));
 // SAL — Stato Avanzamento Lavori: budget, costi, ricavi per cantiere
 router.use('/', require('./economia'));
 
+// Gestione Spese Aziendali: tracciamento uscite, ricevute, export commercialista
+router.use('/', require('./expenses'));
+
 // Computo Metrico: import PDF/Excel, parsing AI, SAL% per voce
 router.use('/', require('./computo'));
 

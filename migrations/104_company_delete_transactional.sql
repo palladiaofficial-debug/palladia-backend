@@ -38,6 +38,7 @@ BEGIN
   DELETE FROM equipment              WHERE company_id = p_company_id;
   DELETE FROM subcontractor_documents WHERE company_id = p_company_id;
   DELETE FROM subcontractors         WHERE company_id = p_company_id;
+  DELETE FROM company_expenses        WHERE company_id = p_company_id;
   DELETE FROM pos_documents          WHERE company_id = p_company_id;
   DELETE FROM dvr_documents          WHERE company_id = p_company_id;
   DELETE FROM pimus_documents        WHERE company_id = p_company_id;
