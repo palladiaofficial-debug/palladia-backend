@@ -49,28 +49,33 @@ router.get('/prezzario/regioni', verifySupabaseJwt, async (req, res) => {
 // Ricerca full-text nel prezzario regionale.
 // Query params: q (testo), regione (default: liguria), anno (default: ultimo disponibile),
 //               categoria, limit (default: 10, max: 50)
+// Cache anno per regione — evita query ripetuta ad ogni ricerca
+const _annoCache = {};
 router.get('/prezzario/search', verifySupabaseJwt, async (req, res) => {
   const q        = (req.query.q || '').trim();
   const regione  = (req.query.regione || 'liguria').toLowerCase();
   const categoria = req.query.categoria;
   const limit    = Math.min(parseInt(req.query.limit) || 10, 50);
 
-  // Determina anno: richiesto o l'ultimo disponibile per la regione
   let anno = req.query.anno ? parseInt(req.query.anno) : null;
   if (!anno) {
-    const { data: latest } = await supabase
-      .from('prezzario_voci')
-      .select('anno')
-      .eq('regione', regione)
-      .order('anno', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    anno = latest?.anno || null;
+    if (_annoCache[regione]) {
+      anno = _annoCache[regione];
+    } else {
+      const { data: latest } = await supabase
+        .from('prezzario_voci')
+        .select('anno')
+        .eq('regione', regione)
+        .order('anno', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      anno = latest?.anno || null;
+      if (anno) _annoCache[regione] = anno;
+    }
   }
 
   if (!anno) return res.json({ voci: [], total: 0, regione, anno: null });
 
-  // Ricerca: full-text se query presente, altrimenti per categoria
   let query = supabase
     .from('prezzario_voci')
     .select('id, codice, categoria, sottocategoria, descrizione, um, prezzo, costo_mat, costo_mdo, costo_noli, note')
@@ -79,7 +84,6 @@ router.get('/prezzario/search', verifySupabaseJwt, async (req, res) => {
     .limit(limit);
 
   if (q) {
-    // Usa full-text search con plainto_tsquery (gestisce automaticamente plurali italiani)
     query = query.textSearch('descrizione_tsv', q, {
       type: 'plain',
       config: 'italian',
@@ -87,7 +91,7 @@ router.get('/prezzario/search', verifySupabaseJwt, async (req, res) => {
   }
 
   if (categoria) {
-    query = query.ilike('categoria', `%${categoria}%`);
+    query = query.eq('categoria', categoria);
   }
 
   if (!q && !categoria) {
