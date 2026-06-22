@@ -557,7 +557,7 @@ async function executeTool(toolName, toolInput, companyId) {
       }
 
       case 'get_presence_history': {
-        const from = new Date(toolInput.from_date + 'T00:00:00+01:00').toISOString();
+        const from = new Date(toolInput.from_date + 'T00:00:00+02:00').toISOString();
         const to   = new Date(toolInput.to_date   + 'T23:59:59+01:00').toISOString();
 
         // Query senza join embedded

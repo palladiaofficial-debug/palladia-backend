@@ -2941,7 +2941,7 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
     .from('presence_logs')
     .select('worker_id, event_type, timestamp_server, site_id, workers(full_name, fiscal_code)')
     .eq('company_id', companyId)
-    .gte('timestamp_server', `${from}T00:00:00+01:00`)
+    .gte('timestamp_server', `${from}T00:00:00+02:00`)
     .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
     .order('worker_id').order('timestamp_server')
     .limit(50000);

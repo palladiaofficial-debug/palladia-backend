@@ -66,7 +66,7 @@ router.get('/presence/notes', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .eq('target_id', siteId)
     .eq('action', 'worker.exit_note')
-    .gte('created_at', `${date}T00:00:00+01:00`)
+    .gte('created_at', `${date}T00:00:00+02:00`)
     .lte('created_at', `${date}T23:59:59.999+01:00`)
     .order('created_at', { ascending: true })
     .limit(500);
@@ -83,8 +83,9 @@ router.get('/presence/notes', verifySupabaseJwt, async (req, res) => {
   })));
 });
 
-// GET /api/v1/presence/history?from=&to= — storico presenze azienda (tutti i cantieri)
+// GET /api/v1/presence/history?from=&to=&siteId=&workerId= — storico presenze azienda
 router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
+  const HISTORY_MAX = 10000;
   const toDate   = req.query.to   || new Date().toISOString().split('T')[0];
   const fromDate = req.query.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
@@ -92,21 +93,30 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
     return res.status(400).json({ error: 'from e to devono essere YYYY-MM-DD' });
   }
 
-  // 1. Carica i log di presenza (senza join embedded — più robusto)
-  const { data: logs, error: logsErr } = await supabase
+  let query = supabase
     .from('presence_logs')
     .select('id, event_type, timestamp_server, worker_id, site_id')
     .eq('company_id', req.companyId)
-    .gte('timestamp_server', `${fromDate}T00:00:00.000Z`)
-    .lte('timestamp_server', `${toDate}T23:59:59.999Z`)
+    .gte('timestamp_server', `${fromDate}T00:00:00+02:00`)
+    .lte('timestamp_server', `${toDate}T23:59:59.999+01:00`)
     .order('timestamp_server', { ascending: false })
-    .limit(2000);
+    .limit(HISTORY_MAX);
+
+  if (req.query.siteId)   query = query.eq('site_id', req.query.siteId);
+  if (req.query.workerId) query = query.eq('worker_id', req.query.workerId);
+
+  const { data: logs, error: logsErr } = await query;
 
   if (logsErr) {
     console.error('[presence/history] logs error:', logsErr.message);
     return res.status(500).json({ error: logsErr.message });
   }
   if (!logs || logs.length === 0) return res.json([]);
+
+  if (logs.length >= HISTORY_MAX) {
+    res.setHeader('X-Palladia-Truncated', 'true');
+    res.setHeader('X-Palladia-Limit', String(HISTORY_MAX));
+  }
 
   // 2. Recupera worker e site in parallelo (solo quelli effettivamente presenti nei log)
   const workerIds = [...new Set(logs.map(l => l.worker_id).filter(Boolean))];
@@ -125,7 +135,6 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
       .eq('company_id', req.companyId),
   ]);
 
-  // Mappa id → oggetto per lookup O(1)
   const workerMap = {};
   for (const w of workersRes.data || []) {
     workerMap[w.id] = {
@@ -138,7 +147,6 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
     siteMap[s.id] = { id: s.id, name: s.name || '—' };
   }
 
-  // 3. Arricchisci i log con i dati di worker e site
   const result = logs.map(l => ({
     id:               l.id,
     event_type:       l.event_type,

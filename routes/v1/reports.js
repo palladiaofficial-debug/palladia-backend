@@ -28,7 +28,7 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    .gte('timestamp_server', `${date}T00:00:00+01:00`)
+    .gte('timestamp_server', `${date}T00:00:00+02:00`)
     .lte('timestamp_server', `${date}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
