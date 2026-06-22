@@ -529,11 +529,11 @@
       const card     = document.createElement('div');
       card.className = 'worker-card';
 
-      const initials = w.full_name.split(' ')
+      const initials = (w.full_name || '?').split(' ')
         .map(p => p[0]).join('').slice(0, 2).toUpperCase();
       const roleLine = [w.role, w.employer_name].filter(Boolean).join(' · ');
 
-      const docsHtml = !w.documents.length
+      const docsHtml = !w.documents || !w.documents.length
         ? '<div class="doc-empty">Nessun documento caricato</div>'
         : w.documents.map(doc => {
             const label  = DOC_LABELS[doc.doc_type] || doc.name || doc.doc_type;
@@ -596,7 +596,10 @@
       .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  loadInfo();
+  loadInfo().catch(function (err) {
+    console.error('[asl] loadInfo() failed:', err);
+    showError('Errore imprevisto', 'Si è verificato un errore. Riprova tra qualche istante.');
+  });
   </script>
 </body>
 </html>

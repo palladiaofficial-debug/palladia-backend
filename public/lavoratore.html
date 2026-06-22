@@ -475,7 +475,10 @@
     if(typeof Notification!=='undefined'&&Notification.permission==='granted')doPushSub();
 
     /* BOOT */
-    (async()=>{_code=getCode();if(_code&&tryResume())enterApp();else await initAuth();})();
+    (async()=>{_code=getCode();if(_code&&tryResume())enterApp();else await initAuth();})().catch(function(e){
+      console.error('[lavoratore] boot failed:',e);
+      document.getElementById('auth-id').innerHTML='<div class="auth-load" style="color:var(--red);font-weight:700;font-size:16px">Errore di caricamento — ricarica la pagina</div>';
+    });
   </script>
 </body>
 </html>

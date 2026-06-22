@@ -728,7 +728,10 @@
       }
     }
 
-    main();
+    main().catch(function (err) {
+      console.error('[badge] main() failed:', err);
+      renderError('Errore imprevisto', 'Si è verificato un errore. Riprova tra qualche istante.');
+    });
   </script>
 </body>
 </html>

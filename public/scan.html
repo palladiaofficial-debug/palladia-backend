@@ -900,7 +900,13 @@
     if (sessionToken) { activateSession(workerName || 'Lavoratore'); }
     else if (!localStorage.getItem(LS_KEY_PRIVACY)) { showState('privacy'); }
     else              { showState('identify'); }
-  })();
+  })().catch(function (err) {
+    console.error('[scan] boot failed:', err);
+    document.getElementById('site-name').textContent = 'Errore di caricamento';
+    document.getElementById('site-address').textContent = 'Si è verificato un errore. Ricarica la pagina.';
+    document.getElementById('site-address').insertAdjacentHTML('afterend',
+      '<button onclick="location.reload()" style="margin-top:16px;padding:14px 28px;font-size:16px;font-weight:700;background:#2563eb;color:#fff;border:none;border-radius:10px;cursor:pointer;min-height:48px;">Ricarica</button>');
+  });
   </script>
 </body>
 </html>

@@ -1347,7 +1347,10 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 });
 
 // ─── Boot ────────────────────────────────────────────────────────────────────
-init();
+init().catch(function (err) {
+  console.error('[coordinator] init() failed:', err);
+  showError('Errore imprevisto', 'Si è verificato un errore. Ricarica la pagina.');
+});
 </script>
 </body>
 </html>

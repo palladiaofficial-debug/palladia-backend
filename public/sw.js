@@ -1,5 +1,5 @@
 'use strict';
-const CACHE_VERSION = 'palladia-app-v2';
+const CACHE_VERSION = 'palladia-app-v3';
 
 const PRECACHE_URLS = [
   '/',

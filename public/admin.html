@@ -1033,7 +1033,11 @@ document.addEventListener('DOMContentLoaded', () => {
   loginBtn.addEventListener('click', doLogin);
   passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
 
-  init();
+  init().catch(function (err) {
+    console.error('[admin] init() failed:', err);
+    document.getElementById('screen-loading').innerHTML =
+      '<div style="color:var(--red);font-size:14px">Errore di caricamento — ricarica la pagina</div>';
+  });
 });
 
 // ── Overview ─────────────────────────────────────────────────────

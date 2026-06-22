@@ -1702,7 +1702,10 @@ async function checkStudio(session) {
   }
 }
 
-init();
+init().catch(function (err) {
+  console.error('[studio] init() failed:', err);
+  showView('view-auth');
+});
 </script>
 </body>
 </html>
