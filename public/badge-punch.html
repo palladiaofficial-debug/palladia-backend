@@ -1011,7 +1011,7 @@
   // Push notifications — chiede il permesso dopo la prima timbratura riuscita
   function requestPushPermission() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    if (Notification.permission !== 'default') return;
+    if (typeof Notification === 'undefined' || Notification.permission !== 'default') return;
     Notification.requestPermission().then(function (perm) {
       if (perm === 'granted') subscribePush();
     });
@@ -1037,7 +1037,7 @@
     });
   }
 
-  if (Notification.permission === 'granted') subscribePush();
+  if (typeof Notification !== 'undefined' && Notification.permission === 'granted') subscribePush();
 
   // ── Guida salvataggio Home ────────────────────────────────────────────────────
   var _pwaPrompt = null; // beforeinstallprompt Android Chrome
@@ -1184,7 +1184,10 @@
     setTimeout(pwaGuideShow, 800);
   })();
 
-  main();
+  main().catch(function (err) {
+    console.error('[badge-punch] main() failed:', err);
+    renderError('SERVER_ERROR');
+  });
   </script>
 </body>
 </html>

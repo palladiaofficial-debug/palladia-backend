@@ -456,7 +456,7 @@
       navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(function(){});
     }
     function tryPush(){
-      if(!('PushManager' in window)||Notification.permission!=='default')return;
+      if(typeof Notification==='undefined'||!('PushManager' in window)||Notification.permission!=='default')return;
       Notification.requestPermission().then(function(p){if(p==='granted')doPushSub();});
     }
     function doPushSub(){
@@ -472,7 +472,7 @@
         }).catch(function(){});
       });
     }
-    if(Notification.permission==='granted')doPushSub();
+    if(typeof Notification!=='undefined'&&Notification.permission==='granted')doPushSub();
 
     /* BOOT */
     (async()=>{_code=getCode();if(_code&&tryResume())enterApp();else await initAuth();})();
