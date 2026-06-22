@@ -42,8 +42,8 @@ async function processPendingReminders() {
 }
 
 function startReminderCron() {
-  cron.schedule('* * * * *', processPendingReminders, { timezone: 'Europe/Rome' });
-  console.log('[reminderCron] avviato — ogni minuto');
+  cron.schedule('*/5 * * * *', processPendingReminders, { timezone: 'Europe/Rome' });
+  console.log('[reminderCron] avviato — ogni 5 minuti');
 }
 
 module.exports = { startReminderCron };

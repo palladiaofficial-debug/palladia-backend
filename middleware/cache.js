@@ -17,10 +17,10 @@
  */
 
 const store = new Map(); // key → { data, expiresAt }
+const MAX_ENTRIES = 2000;
 
 function cache(ttlSeconds = 30) {
   return (req, res, next) => {
-    // Cache solo GET autenticati
     if (req.method !== 'GET' || !req.companyId) return next();
 
     const key    = `${req.companyId}:${req.path}:${JSON.stringify(req.query)}`;
@@ -31,16 +31,18 @@ function cache(ttlSeconds = 30) {
       return res.json(cached.data);
     }
 
-    // Intercetta res.json per salvare la risposta in cache
     const _json = res.json.bind(res);
     res.json = function (data) {
       if (res.statusCode === 200) {
         store.set(key, { data, expiresAt: Date.now() + ttlSeconds * 1000 });
-        // Cleanup automatico delle entry scadute ogni 100 scritture
-        if (store.size % 100 === 0) {
+        if (store.size % 100 === 0 || store.size > MAX_ENTRIES) {
           const now = Date.now();
           for (const [k, v] of store) {
             if (v.expiresAt < now) store.delete(k);
+          }
+          if (store.size > MAX_ENTRIES) {
+            const keys = Array.from(store.keys());
+            for (let i = 0; i < keys.length - MAX_ENTRIES; i++) store.delete(keys[i]);
           }
         }
       }
