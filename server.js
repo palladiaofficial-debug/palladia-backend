@@ -487,12 +487,15 @@ app.get('/app', (req, res) => {
 // Serve i file in /public (scan.html, setup.html)
 // Le route SPA sono dichiarate PRIMA di express.static per sicurezza esplicita.
 app.get('/scan/:worksiteId', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('scan.html', { root: __dirname + '/public' });
 });
 app.get('/asl/:token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('asl.html', { root: __dirname + '/public' });
 });
 app.get('/admin', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('admin.html', { root: __dirname + '/public' });
 });
 app.get('/onboarding', (req, res) => {
@@ -502,9 +505,11 @@ app.get('/setup', (req, res) => {
   res.sendFile('setup.html', { root: __dirname + '/public' });
 });
 app.get('/badge/:code', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('badge.html', { root: __dirname + '/public' });
 });
 app.get('/lavoratore/:code', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('lavoratore.html', { root: __dirname + '/public' });
 });
 // ── PWA: icone generate in-memory con pngjs ──────────────────────────────────
@@ -563,6 +568,7 @@ app.get('/timbratura/:code/manifest.json', (req, res) => {
 
 // Timbratura via badge personale lavoratore (nuovo flusso primario)
 app.get('/timbratura/:code', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('badge-punch.html', { root: __dirname + '/public' });
 });
 app.get('/studio', (req, res) => {
