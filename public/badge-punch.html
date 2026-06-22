@@ -327,6 +327,73 @@
     }
     .fade-in { animation: fadeUp 0.3s ease-out both; }
 
+    /* ── Guida permessi GPS ── */
+    #gps-guide {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      z-index: 400;
+      padding: 0;
+    }
+    #gps-guide.hidden { display: none !important; }
+    .gps-sheet {
+      background: #ffffff;
+      border-radius: 24px 24px 0 0;
+      padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0));
+      width: 100%;
+      max-width: 520px;
+      max-height: 85dvh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      animation: slideUp .28s ease-out both;
+    }
+    .gps-guide-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: #fef2f2;
+      margin: 0 auto 18px;
+    }
+    .gps-guide-icon svg { width: 32px; height: 32px; color: #dc2626; }
+    .gps-guide-title {
+      font-size: 20px; font-weight: 800; color: #111827;
+      text-align: center; margin-bottom: 6px; line-height: 1.25;
+    }
+    .gps-guide-sub {
+      font-size: 14px; color: #6b7280; text-align: center;
+      margin-bottom: 24px; line-height: 1.5;
+    }
+    .gps-steps { display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px; }
+    .gps-step {
+      display: flex; align-items: flex-start; gap: 12px;
+    }
+    .gps-step-num {
+      width: 28px; height: 28px; background: var(--red);
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 800; color: #fff; flex-shrink: 0; margin-top: 1px;
+    }
+    .gps-step-text {
+      flex: 1; font-size: 15px; color: #374151; line-height: 1.5;
+    }
+    .gps-step-text strong { color: #111827; }
+    .gps-guide-note {
+      background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px;
+      padding: 12px 14px; font-size: 13px; color: #1e40af; line-height: 1.5;
+      margin-bottom: 20px; text-align: center;
+    }
+    .gps-btn-retry {
+      display: block; width: 100%; padding: 16px;
+      background: var(--red); color: #fff; border: none; border-radius: 14px;
+      font-family: inherit; font-size: 16px; font-weight: 800; cursor: pointer;
+      margin-bottom: 10px;
+    }
+    .gps-btn-retry:active { opacity: 0.85; transform: scale(0.98); }
+
     /* ── Guida salvataggio Home ── */
     #pwa-guide {
       position: fixed;
@@ -448,6 +515,21 @@
     <div class="brand">Palladia</div>
   </div>
 
+  <!-- Guida attivazione GPS — si apre quando il permesso è negato -->
+  <div id="gps-guide" class="hidden">
+    <div class="gps-sheet">
+      <div class="pwa-handle"></div>
+      <div class="gps-guide-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+      </div>
+      <div class="gps-guide-title">Attiva la posizione</div>
+      <div class="gps-guide-sub">Per timbrare la presenza serve il GPS attivo.<br>Segui questi passaggi:</div>
+      <div class="gps-steps" id="gps-steps"></div>
+      <div class="gps-guide-note" id="gps-guide-note"></div>
+      <button class="gps-btn-retry" onclick="location.reload()">Ho attivato — Riprova</button>
+    </div>
+  </div>
+
   <!-- Guida salvataggio Home — si apre automaticamente, contenuto generato da JS -->
   <div id="pwa-guide" class="hidden">
     <div class="pwa-sheet">
@@ -521,6 +603,55 @@
     return { status: r.status, body: json };
   }
 
+  // ── Guida permessi GPS ─────────────────────────────────────────────────────────
+  function showGpsPermissionGuide() {
+    var isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    var isSamsung = /samsungbrowser/i.test(navigator.userAgent);
+    var stepsEl = document.getElementById('gps-steps');
+    var noteEl  = document.getElementById('gps-guide-note');
+    if (!stepsEl) return;
+
+    var steps, note;
+    if (isIos) {
+      steps = [
+        { n: '1', text: 'Apri <strong>Impostazioni</strong> sul tuo dispositivo' },
+        { n: '2', text: 'Vai su <strong>Privacy e sicurezza</strong>' },
+        { n: '3', text: 'Tocca <strong>Servizi di localizzazione</strong> e assicurati che sia <strong>attivo</strong> (verde)' },
+        { n: '4', text: 'Scorri in basso, tocca <strong>Safari</strong> e seleziona <strong>Mentre usi l\'app</strong>' },
+      ];
+      note = 'Dopo aver attivato, torna su questa pagina e tocca <strong>Riprova</strong>. Safari ti chiederà di nuovo il permesso.';
+    } else if (isSamsung) {
+      steps = [
+        { n: '1', text: 'Tocca l\'icona <strong>☰</strong> in basso a destra nel browser' },
+        { n: '2', text: 'Tocca <strong>Impostazioni</strong> → <strong>Autorizzazioni siti</strong> → <strong>Posizione</strong>' },
+        { n: '3', text: 'Assicurati che la posizione sia <strong>attiva</strong>' },
+      ];
+      note = 'In alternativa: tocca il <strong>lucchetto</strong> nella barra degli indirizzi → <strong>Autorizzazioni</strong> → attiva <strong>Posizione</strong>.';
+    } else {
+      steps = [
+        { n: '1', text: 'Tocca il <strong>lucchetto</strong> (o l\'icona) nella barra degli indirizzi in alto' },
+        { n: '2', text: 'Tocca <strong>Autorizzazioni</strong> o <strong>Impostazioni sito</strong>' },
+        { n: '3', text: 'Imposta <strong>Posizione</strong> su <strong>Consenti</strong>' },
+      ];
+      note = 'Se non vedi l\'opzione, vai nelle <strong>Impostazioni del telefono</strong> → <strong>Posizione</strong> e assicurati che sia attiva.';
+    }
+
+    stepsEl.innerHTML = steps.map(function (s) {
+      return '<div class="gps-step">' +
+        '<div class="gps-step-num">' + s.n + '</div>' +
+        '<div class="gps-step-text">' + s.text + '</div>' +
+        '</div>';
+    }).join('');
+
+    if (noteEl) noteEl.innerHTML = note;
+
+    var guide = document.getElementById('gps-guide');
+    if (guide) {
+      guide.classList.remove('hidden');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
   // ── GPS ───────────────────────────────────────────────────────────────────────
   // Usa watchPosition (non getCurrentPosition) per ricevere letture continue.
   // Su iOS/Android la prima lettura è spesso da antenna cellulare (>500m).
@@ -532,6 +663,7 @@
       gpsStatus = 'error';
       gpsText   = 'GPS non disponibile su questo dispositivo';
       updateGpsRow();
+      showGpsPermissionGuide();
       return;
     }
 
@@ -564,11 +696,12 @@
       },
       err => {
         if (err.code === 1) {
-          // PERMISSION_DENIED — definitivo, smetti di provare
+          // PERMISSION_DENIED — definitivo, mostra guida passo-passo
           gpsStatus = 'error';
-          gpsText   = 'Posizione non disponibile. Attiva la geolocalizzazione nelle impostazioni.';
+          gpsText   = 'Permesso posizione negato — segui la guida qui sotto';
           gpsCoords = null;
           stopGps();
+          showGpsPermissionGuide();
         } else {
           // POSITION_UNAVAILABLE o TIMEOUT — temporaneo, continua a watchare
           if (!gpsCoords) {
