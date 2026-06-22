@@ -1041,18 +1041,112 @@
       renderError('SERVER_ERROR');
 
     } catch (e) {
-      renderError('NETWORK_ERROR');
+      // Offline: salva in coda locale per retry automatico
+      var punchPayload = {
+        site_id:        selectedSite.site_id,
+        latitude:       gpsCoords.latitude,
+        longitude:      gpsCoords.longitude,
+        gps_accuracy_m: gpsCoords.accuracy,
+      };
+      queueOfflinePunch(punchPayload, selectedSite.site_name);
+      renderOfflineSuccess(selectedSite.site_name);
+      return;
     } finally {
       punching = false;
-      // Ripristina icona se non siamo andati a successo/errore permanente
-      const ico2 = document.getElementById('btn-icon');
+      var ico2 = document.getElementById('btn-icon');
       if (ico2 && ico2.querySelector('.btn-spinner')) {
         ico2.textContent = selectedSite?.next_action === 'EXIT' ? '⏹' : '▶';
       }
-      // Ripristina label e stato bottone
       updatePunchButton();
     }
   }
+
+  // ── Offline Queue ──────────────────────────────────────────────────────────
+  var OFFLINE_KEY = 'palladia_offline_punches';
+
+  function getOfflineQueue() {
+    try { return JSON.parse(localStorage.getItem(OFFLINE_KEY) || '[]'); } catch { return []; }
+  }
+  function saveOfflineQueue(q) {
+    try { localStorage.setItem(OFFLINE_KEY, JSON.stringify(q)); } catch {}
+  }
+
+  function queueOfflinePunch(payload, siteName) {
+    var q = getOfflineQueue();
+    q.push({ payload: payload, siteName: siteName, savedAt: new Date().toISOString() });
+    saveOfflineQueue(q);
+  }
+
+  function renderOfflineSuccess(siteName) {
+    stopGps();
+    wrap.innerHTML =
+      '<div class="card fade-in" style="text-align:center;padding:32px 20px;">' +
+        '<span style="font-size:56px;display:block;margin-bottom:16px;">📡</span>' +
+        '<div style="font-size:22px;font-weight:800;color:#d97706;margin-bottom:6px;">Salvata offline</div>' +
+        '<div style="font-size:15px;color:#6b7280;margin-bottom:20px;line-height:1.5;">' +
+          esc(siteName) + '<br>La timbratura verrà inviata automaticamente<br>quando tornerà la connessione.' +
+        '</div>' +
+        '<div style="font-size:13px;color:#9ca3af;">Puoi chiudere questa pagina.</div>' +
+      '</div>';
+  }
+
+  var _syncing = false;
+  async function syncOfflineQueue() {
+    if (_syncing) return;
+    var q = getOfflineQueue();
+    if (!q.length) return;
+    _syncing = true;
+
+    var remaining = [];
+    for (var i = 0; i < q.length; i++) {
+      try {
+        var r = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/punch', q[i].payload);
+        if (r.status === 200) {
+          console.log('[offline-sync] punch inviato:', q[i].siteName);
+        } else if (r.status === 429) {
+          remaining.push(q[i]);
+        }
+        // 4xx diverso da 429: scarta (dati non validi, badge revocato, etc.)
+      } catch {
+        remaining.push(q[i]);
+        break; // ancora offline, riprova dopo
+      }
+    }
+
+    saveOfflineQueue(remaining);
+    _syncing = false;
+
+    if (remaining.length === 0 && q.length > 0) {
+      updateOfflineBadge();
+    }
+  }
+
+  function updateOfflineBadge() {
+    var badge = document.getElementById('offline-badge');
+    var q = getOfflineQueue();
+    if (q.length > 0) {
+      if (!badge) {
+        badge = document.createElement('div');
+        badge.id = 'offline-badge';
+        badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#d97706;color:#fff;text-align:center;font-size:13px;font-weight:700;padding:6px 12px;z-index:500;';
+        document.body.prepend(badge);
+      }
+      badge.textContent = q.length + ' timbratur' + (q.length > 1 ? 'e' : 'a') + ' in attesa di connessione…';
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
+  // Sync quando torna la rete
+  window.addEventListener('online', function () {
+    setTimeout(syncOfflineQueue, 1500);
+  });
+
+  // Sync al caricamento pagina
+  setTimeout(function () {
+    updateOfflineBadge();
+    if (navigator.onLine) syncOfflineQueue();
+  }, 2000);
 
   // ── Main ─────────────────────────────────────────────────────────────────────
   async function main() {

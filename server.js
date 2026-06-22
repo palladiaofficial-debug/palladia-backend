@@ -19,6 +19,7 @@ const { apiLimiter, aiLimiter } = require('./middleware/rateLimit');
 const v1Router = require('./routes/v1');
 const { generateAndSave: generateSiteChecklist } = require('./routes/v1/siteChecklist');
 const { startMissingExitCron }      = require('./services/missingExitCron');
+const { startMissingExitIntraDayCron } = require('./services/missingExitIntraDayCron');
 // dailySummaryCron rimosso — sostituito da push notification native
 const { startEveningSummaryCron }   = require('./services/eveningSummaryCron');
 const { startExpiryAlertCron }      = require('./services/expiryAlertCron');
@@ -2251,6 +2252,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Avvia cron — solo in produzione o se esplicitamente abilitato
   if (process.env.NODE_ENV !== 'test') {
     startMissingExitCron();
+    startMissingExitIntraDayCron();
     startEveningSummaryCron();
     startExpiryAlertCron();
     startDailyDocCheckCron();
