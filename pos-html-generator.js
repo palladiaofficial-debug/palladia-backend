@@ -12,7 +12,6 @@
  */
 
 const fs   = require('fs');
-const path = require('path');
 const { ZONE_ORDER } = require('./sign-selector');
 
 // ── ESCAPE / HELPERS ──────────────────────────────────────────────────────────
@@ -69,7 +68,7 @@ function formatDate(val) {
 // ── SIGN IMAGE LOADER (async) ─────────────────────────────────────────────────
 async function loadSignImage(imagePath) {
   try {
-    const data = fs.readFileSync(imagePath); // sync ok — called once at render time
+    const data = fs.readFileSync(imagePath); // eslint-disable-line security/detect-non-literal-fs-filename
     return `data:image/jpeg;base64,${data.toString('base64')}`;
   } catch {
     return null;
@@ -99,7 +98,7 @@ function parseTable(rows) {
     cells.forEach((cell, ci) => {
       const hdr = (headers[ci] || '').toLowerCase();
       const isLivello = /livello/i.test(hdr);
-      const isRiskNum = /^\s*r\s*[\(=]|^\s*r\s*$/i.test(hdr);
+      const isRiskNum = /^\s*r\s*[(=]|^\s*r\s*$/i.test(hdr);
       let content = boldify(cell);
       if (isLivello && cell) {
         const bc = riskBadgeClass(cell);
@@ -197,9 +196,6 @@ const CAT_META = {
 };
 function catColor(category) {
   return (CAT_META[category] || CAT_META['Generale']).color;
-}
-function catLabel(category) {
-  return (CAT_META[category] || CAT_META['Generale']).label;
 }
 function extractIso(norm) {
   const m = (norm || '').match(/ISO\s+7010\s+[A-Z]\d+/i);

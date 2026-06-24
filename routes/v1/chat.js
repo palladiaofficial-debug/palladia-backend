@@ -6,6 +6,7 @@ const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
+const { computeRiskScore, generateInspectionShield } = require('../../services/safetyCopilot');
 const { getCompanyBrain } = require('../../lib/companyBrain');
 const {
   chatMessageSchema,
@@ -445,11 +446,151 @@ const TOOLS = [
       },
       required: []
     }
+  },
+
+  // ── Tool 13-23: nuovi strumenti ──────────────────────────────────────────────
+
+  {
+    name: 'get_subcontractors',
+    description: 'Lista subappaltatori dell\'azienda o di un cantiere. Include stato DURC, assicurazione, SOA. Usa per: "subappaltatori", "DURC di X", "chi lavora in subappalto".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere per filtrare. Ometti per tutti.' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_equipment',
+    description: 'Lista mezzi e attrezzature. Include scadenze manutenzione/assicurazione. Usa per: "mezzi", "attrezzature", "gru", "escavatore", "revisione".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere per filtrare. Ometti per tutti.' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_expenses_summary',
+    description: 'Riepilogo spese aziendali con filtri. Usa per: "spese di questo mese", "quanto abbiamo speso", "spese per categoria", "ultima fattura".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere. Ometti per tutte le spese aziendali.' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' },
+        category: { type: 'string', description: 'Categoria: materiali, manodopera, noli, trasporti, altro' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_site_documents',
+    description: 'Documenti caricati per un cantiere e checklist di cosa manca. Usa per: "documenti di Via Roma", "manca qualcosa?", "abbiamo il PSC?", "stato documenti".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_diary_entries',
+    description: 'Diario di cantiere — registrazioni giornaliere (lavorazioni, meteo, note, presenti). Usa per: "diario di oggi", "cosa si è fatto ieri", "registrazioni della settimana".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD. Default: oggi.' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD. Default: from_date.' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_risk_score',
+    description: 'Punteggio di rischio Safety Copilot per un cantiere: compliance, presenze, meteo, scadenze, NC aperte, subappaltatori. Usa per: "rischio", "livello sicurezza", "come siamo messi con la sicurezza".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_inspection_shield',
+    description: 'Scudo ispezione ASL — dossier completo di tutto ciò che serve se arriva un\'ispezione. Usa per: "arriva l\'ASL", "ispezione", "siamo pronti per un controllo?", "dossier ispettivo".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_nonconformities',
+    description: 'Non conformità aperte per un cantiere o per tutta l\'azienda. Usa per: "problemi aperti", "non conformità", "NC", "segnalazioni del coordinatore".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere. Ometti per tutte.' },
+        status: { type: 'string', enum: ['open', 'closed', 'all'], description: 'Default: open' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_site_detail',
+    description: 'Dettaglio completo di un singolo cantiere: info, date, budget, stato, coordinate, lavoratori assegnati, documenti. Usa quando serve il quadro completo di UN cantiere.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'create_expense',
+    description: 'Registra una nuova spesa aziendale. Usa quando l\'utente dice "ho speso", "registra spesa", "fattura da X euro". IMPORTANTE: conferma sempre i dettagli con l\'utente prima di chiamare questo tool.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount: { type: 'number', description: 'Importo in euro' },
+        category: { type: 'string', enum: ['materiali', 'manodopera', 'noli', 'trasporti', 'sicurezza', 'altro'], description: 'Categoria spesa' },
+        description: { type: 'string', description: 'Descrizione della spesa' },
+        supplier: { type: 'string', description: 'Fornitore (opzionale)' },
+        site_id: { type: 'string', description: 'UUID cantiere (opzionale)' },
+        expense_date: { type: 'string', description: 'Data YYYY-MM-DD. Default: oggi.' },
+        payment_method: { type: 'string', enum: ['contanti', 'bonifico', 'carta', 'assegno'], description: 'Metodo pagamento. Default: bonifico.' }
+      },
+      required: ['amount', 'description']
+    }
+  },
+  {
+    name: 'create_site_note',
+    description: 'Crea una nota/promemoria per un cantiere. Usa quando l\'utente dice "ricordami", "annotami", "segna che", "nota per il cantiere". IMPORTANTE: conferma i dettagli prima.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        title: { type: 'string', description: 'Titolo breve della nota' },
+        body: { type: 'string', description: 'Testo completo della nota' },
+        category: { type: 'string', enum: ['generale', 'sicurezza', 'materiali', 'non_conformita', 'promemoria'], description: 'Default: generale' },
+        urgency: { type: 'string', enum: ['bassa', 'media', 'alta', 'critica'], description: 'Default: media' }
+      },
+      required: ['site_id', 'title']
+    }
   }
 ];
 
 // ── Tool execution ────────────────────────────────────────────────────────────
-async function executeTool(toolName, toolInput, companyId) {
+async function executeTool(toolName, toolInput, companyId, userId) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
   const fromUtc   = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
 
@@ -980,6 +1121,260 @@ async function executeTool(toolName, toolInput, companyId) {
         };
       }
 
+      // ── Nuovi tool (13-23) ──────────────────────────────────────────────────
+
+      case 'get_subcontractors': {
+        let subIds = null;
+        if (toolInput.site_id) {
+          const { data: assignments, error: aErr } = await supabase
+            .from('site_subcontractors')
+            .select('subcontractor_id')
+            .eq('site_id', toolInput.site_id);
+          if (aErr) return { error: aErr.message };
+          subIds = (assignments || []).map(a => a.subcontractor_id);
+          if (subIds.length === 0) return { subcontractors: [], total: 0 };
+        }
+
+        let q = supabase
+          .from('subcontractors')
+          .select('id, company_name, contact_person, contact_email, contact_phone, durc_expiry, insurance_expiry, soa_expiry, is_active')
+          .eq('company_id', companyId);
+        if (subIds) q = q.in('id', subIds);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+
+        const subs = (data || []).map(s => {
+          const semaphore = (expiry) => {
+            if (!expiry) return 'N/D';
+            const days = Math.ceil((new Date(expiry) - new Date(todayRome)) / 86400000);
+            if (days < 0) return 'SCADUTO';
+            if (days <= 30) return 'CRITICO';
+            return 'OK';
+          };
+          return {
+            ...s,
+            durc_stato: semaphore(s.durc_expiry),
+            assicurazione_stato: semaphore(s.insurance_expiry),
+            soa_stato: semaphore(s.soa_expiry),
+          };
+        });
+        return { subcontractors: subs, total: subs.length };
+      }
+
+      case 'get_equipment': {
+        let eqIds = null;
+        if (toolInput.site_id) {
+          const { data: assignments, error: aErr } = await supabase
+            .from('site_equipment')
+            .select('equipment_id')
+            .eq('site_id', toolInput.site_id);
+          if (aErr) return { error: aErr.message };
+          eqIds = (assignments || []).map(a => a.equipment_id);
+          if (eqIds.length === 0) return { equipment: [], total: 0 };
+        }
+
+        let q = supabase
+          .from('equipment')
+          .select('id, name, type, plate_or_serial, model, status, insurance_expiry, is_active')
+          .eq('company_id', companyId)
+          .eq('is_active', true);
+        if (eqIds) q = q.in('id', eqIds);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+
+        const items = (data || []).map(e => {
+          const daysToExpiry = e.insurance_expiry
+            ? Math.ceil((new Date(e.insurance_expiry) - new Date(todayRome)) / 86400000)
+            : null;
+          return { ...e, giorni_scadenza_assicurazione: daysToExpiry };
+        });
+        return { equipment: items, total: items.length };
+      }
+
+      case 'get_expenses_summary': {
+        let q = supabase
+          .from('company_expenses')
+          .select('id, amount, category, description, payment_method, paid_by, expense_date, supplier, site_id, is_deductible')
+          .eq('company_id', companyId)
+          .order('expense_date', { ascending: false });
+
+        if (toolInput.site_id)   q = q.eq('site_id', toolInput.site_id);
+        if (toolInput.from_date) q = q.gte('expense_date', toolInput.from_date);
+        if (toolInput.to_date)   q = q.lte('expense_date', toolInput.to_date);
+        if (toolInput.category)  q = q.eq('category', toolInput.category);
+
+        const { data, error } = await q.limit(500);
+        if (error) return { error: error.message };
+
+        const rows = data || [];
+        const byCategory = {};
+        let total = 0;
+        for (const r of rows) {
+          total += Number(r.amount) || 0;
+          const cat = r.category || 'altro';
+          if (!byCategory[cat]) byCategory[cat] = { totale: 0, conteggio: 0 };
+          byCategory[cat].totale += Number(r.amount) || 0;
+          byCategory[cat].conteggio++;
+        }
+        return {
+          totale_euro: Math.round(total * 100) / 100,
+          conteggio: rows.length,
+          per_categoria: byCategory,
+          ultime_10: rows.slice(0, 10),
+        };
+      }
+
+      case 'get_site_documents': {
+        const { data: docs, error: dErr } = await supabase
+          .from('site_documents')
+          .select('id, doc_type, original_name, created_at, file_size')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId);
+        if (dErr) return { error: dErr.message };
+
+        const { data: posData } = await supabase
+          .from('pos')
+          .select('id, created_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .limit(1);
+
+        const docTypes = (docs || []).map(d => d.doc_type);
+        if (posData && posData.length > 0) docTypes.push('pos');
+
+        const requiredTypes = ['pos', 'psc', 'notifica_asl', 'durc', 'dvr', 'assicurazione'];
+        const checklist = requiredTypes.map(t => ({
+          tipo: t,
+          presente: docTypes.includes(t),
+        }));
+
+        return {
+          documenti: docs || [],
+          pos_presente: posData && posData.length > 0,
+          checklist,
+          mancanti: checklist.filter(c => !c.presente).map(c => c.tipo),
+        };
+      }
+
+      case 'get_diary_entries': {
+        const fromDate = toolInput.from_date || todayRome;
+        const toDate   = toolInput.to_date || fromDate;
+
+        const { data, error } = await supabase
+          .from('site_diary')
+          .select('id, date, weather, temperature, wind, notes, work_done, workers_present, photos_count, created_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .gte('date', fromDate)
+          .lte('date', toDate)
+          .order('date', { ascending: false })
+          .limit(30);
+        if (error) return { error: error.message };
+        return { entries: data || [], total: (data || []).length, periodo: { da: fromDate, a: toDate } };
+      }
+
+      case 'get_risk_score': {
+        const result = await computeRiskScore(toolInput.site_id, companyId);
+        return result;
+      }
+
+      case 'get_inspection_shield': {
+        const result = await generateInspectionShield(toolInput.site_id, companyId);
+        return result;
+      }
+
+      case 'get_nonconformities': {
+        const statusFilter = toolInput.status || 'open';
+        let q = supabase
+          .from('site_notes')
+          .select('id, site_id, title, body, category, urgency, resolved_at, created_at')
+          .eq('company_id', companyId)
+          .eq('category', 'non_conformita')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (toolInput.site_id) q = q.eq('site_id', toolInput.site_id);
+        if (statusFilter === 'open')   q = q.is('resolved_at', null);
+        if (statusFilter === 'closed') q = q.not('resolved_at', 'is', null);
+
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+
+        // Arricchisci con nomi cantiere
+        const siteIds = [...new Set((data || []).map(d => d.site_id).filter(Boolean))];
+        let siteNames = {};
+        if (siteIds.length > 0) {
+          const { data: sites } = await supabase
+            .from('sites')
+            .select('id, name')
+            .in('id', siteIds);
+          siteNames = Object.fromEntries((sites || []).map(s => [s.id, s.name]));
+        }
+
+        const ncs = (data || []).map(nc => ({
+          ...nc,
+          cantiere: siteNames[nc.site_id] || nc.site_id,
+        }));
+        return { non_conformita: ncs, total: ncs.length, filtro: statusFilter };
+      }
+
+      case 'get_site_detail': {
+        const { data: site, error } = await supabase
+          .from('sites')
+          .select('id, name, status, address, budget_totale, sal_percentuale, latitude, longitude, start_date, end_date, created_at, description, committente, rup, direttore_lavori, csp, cse')
+          .eq('id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .single();
+        if (error) return { error: error.message };
+
+        const { count: workerCount } = await supabase
+          .from('worksite_workers')
+          .select('id', { count: 'exact', head: true })
+          .eq('site_id', toolInput.site_id)
+          .eq('status', 'active');
+
+        return { ...site, lavoratori_assegnati: workerCount || 0 };
+      }
+
+      case 'create_expense': {
+        const row = {
+          company_id:     companyId,
+          amount:         toolInput.amount,
+          category:       toolInput.category || 'altro',
+          description:    toolInput.description,
+          supplier:       toolInput.supplier || null,
+          site_id:        toolInput.site_id || null,
+          expense_date:   toolInput.expense_date || todayRome,
+          payment_method: toolInput.payment_method || 'bonifico',
+        };
+        const { data, error } = await supabase
+          .from('company_expenses')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, spesa_creata: data };
+      }
+
+      case 'create_site_note': {
+        const row = {
+          company_id: companyId,
+          site_id:    toolInput.site_id,
+          title:      toolInput.title,
+          body:       toolInput.body || null,
+          category:   toolInput.category || 'generale',
+          urgency:    toolInput.urgency || 'media',
+          user_id:    userId || null,
+        };
+        const { data, error } = await supabase
+          .from('site_notes')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, nota_creata: data };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -990,7 +1385,7 @@ async function executeTool(toolName, toolInput, companyId) {
 
 // ── Agentic loop con company_id (chat principale) ────────────────────────────
 // systemPrompt: system prompt arricchito con company brain (o SYSTEM_PROMPT base)
-async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT) {
+async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null) {
   let response = await client.messages.create({
     model,
     max_tokens: model === MODEL_SONNET ? 2048 : 1024,
@@ -1010,7 +1405,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
       toolBlocks.map(async (block) => ({
         type:        'tool_result',
         tool_use_id: block.id,
-        content:     JSON.stringify(await executeTool(block.name, block.input, companyId))
+        content:     JSON.stringify(await executeTool(block.name, block.input, companyId, userId))
       }))
     );
 
@@ -1532,7 +1927,7 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
       if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
     } catch { /* non critico — Ladia funziona anche senza brain */ }
 
-    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt);
+    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id);
 
     // Salva asincrono — non blocca la risposta
     saveMessages(convId, message.trim(), reply).catch(e =>
@@ -1752,7 +2147,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       // Esegui tool in parallelo
       const toolResults = await Promise.all(
         toolBlocks.map(async (block) => {
-          const result = await executeTool(block.name, block.input, req.companyId);
+          const result = await executeTool(block.name, block.input, req.companyId, req.user.id);
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
           }

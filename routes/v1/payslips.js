@@ -9,7 +9,6 @@
 // Endpoint pubblici RIMOSSI — ora in workerArea.js (autenticazione CF obbligatoria)
 // ──────────────────────────────────────────────────────────────────────────────
 
-const path   = require('path');
 const multer = require('multer');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
@@ -37,16 +36,11 @@ async function verifyWorker(workerId, companyId) {
   return !!data;
 }
 
-async function signedUrl(filePath, expiresIn = 3600) {
+async function _signedUrl(filePath, expiresIn = 3600) {
   if (!filePath) return null;
   const { data } = await supabase.storage.from(BUCKET).createSignedUrl(filePath, expiresIn);
   return data?.signedUrl ?? null;
 }
-
-const MONTH_NAMES = [
-  '', 'Gennaio', 'Febbraio', 'Marzo', 'Aprile', 'Maggio', 'Giugno',
-  'Luglio', 'Agosto', 'Settembre', 'Ottobre', 'Novembre', 'Dicembre',
-];
 
 // ── GET /api/v1/workers/:workerId/payslips ────────────────────────────────────
 router.get('/workers/:workerId/payslips', verifySupabaseJwt, async (req, res) => {

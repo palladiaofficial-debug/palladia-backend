@@ -118,14 +118,14 @@ function makePdfOpts(opts = {}) {
 // la safe area [top:22mm, bottom:277mm] — in pixel a 96dpi.
 async function _debugOverflow(page) {
   const hits = await page.evaluate(() => {
-    const doc  = document.querySelector('.doc');
-    const maxW = doc ? doc.clientWidth : document.documentElement.clientWidth;
+    const doc  = document.querySelector('.doc'); // eslint-disable-line no-undef
+    const maxW = doc ? doc.clientWidth : document.documentElement.clientWidth; // eslint-disable-line no-undef
     // Safe area verticale: 26mm top ≈ 98px, 24mm bottom → limit 297mm-24mm=273mm ≈ 1032px
     const SAFE_TOP = 98;
     const SAFE_BTM = 1032;
     const results  = {};
 
-    document.querySelectorAll('*').forEach(el => {
+    document.querySelectorAll('*').forEach(el => { // eslint-disable-line no-undef
       const r = el.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) return;
       const overflow_h = el.scrollWidth > maxW + 2;
@@ -189,9 +189,9 @@ async function renderHtmlToPdf(html, opts = {}) {
   try {
     await Promise.race([
       pdfSemaphore.acquire(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('PDF_QUEUE_TIMEOUT')), PDF_QUEUE_TIMEOUT_MS)
-      ),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('PDF_QUEUE_TIMEOUT')), PDF_QUEUE_TIMEOUT_MS);
+      }),
     ]);
     clearTimeout(timer);
   } catch (e) {
@@ -252,9 +252,9 @@ class PdfRendererPool {
     // Semaforo condiviso — anche le render via pool contano nel limite
     await Promise.race([
       pdfSemaphore.acquire(),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('PDF_QUEUE_TIMEOUT')), PDF_QUEUE_TIMEOUT_MS)
-      ),
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('PDF_QUEUE_TIMEOUT')), PDF_QUEUE_TIMEOUT_MS);
+      }),
     ]);
 
     const browser = await this._getBrowser();

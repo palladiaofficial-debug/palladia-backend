@@ -17,7 +17,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
-const { computeAllRiskScores, riskIcon } = require('./safetyCopilot');
+const { computeAllRiskScores } = require('./safetyCopilot');
 const { getCompanyTelegramUsers }        = require('./telegramNotifications');
 const { sendPushToCompany }              = require('./pushNotifications');
 

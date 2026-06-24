@@ -25,7 +25,7 @@ for (let i = 0; i < str.length; i++) {
 const filtered = results
   .filter(s => /[a-zA-Z\u00C0-\u00FF]{2,}/.test(s))
   .filter(s => s.length < 200)
-  .filter(s => !/^[0-9\s\.\-\+\/,;:]+$/.test(s));
+  .filter(s => !/^[0-9\s.\-+/,;:]+$/.test(s));
 
 console.log('Total text items:', filtered.length);
 console.log('\n=== CONTENT ===');

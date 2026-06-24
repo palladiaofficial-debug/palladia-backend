@@ -70,7 +70,7 @@ function parseTable(rows) {
     cells.forEach((cell, ci) => {
       const hdr = (headers[ci] || '').toLowerCase();
       const isLivello = /livello/i.test(hdr);
-      const isRiskNum = /^\s*r\s*[\(=]|^\s*r\s*$/i.test(hdr);
+      const isRiskNum = /^\s*r\s*[(=]|^\s*r\s*$/i.test(hdr);
       let content = boldify(cell);
       if (isLivello && cell) {
         const bc = riskBadgeClass(cell);

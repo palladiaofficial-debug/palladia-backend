@@ -137,7 +137,7 @@ async function computeRiskScore(siteId, companyId) {
 
 // ── Dimensione 1: Compliance documentale ────────────────────────────────────
 
-async function _checkCompliance(workerIds, companyId, todayObj) {
+async function _checkCompliance(workerIds, _companyId, _todayObj) {
   if (!workerIds.length) {
     return { severity: 0, detail: 'Nessun lavoratore assegnato', items: [] };
   }
@@ -381,7 +381,7 @@ async function _checkAttendance(siteId, companyId, today) {
   const dayStart = `${today}T00:00:00.000Z`;
   const dayEnd = `${today}T23:59:59.999Z`;
 
-  const { data: todayEntries, count: todayCount } = await supabase
+  const { data: todayEntries } = await supabase
     .from('presence_logs')
     .select('worker_id', { count: 'exact', head: false })
     .eq('site_id', siteId)
@@ -505,7 +505,7 @@ async function _checkNonConformities(siteId, companyId) {
 
 // ── Dimensione 6: Subappaltatori ────────────────────────────────────────────
 
-async function _checkSubcontractors(siteId, companyId, todayObj) {
+async function _checkSubcontractors(siteId, companyId, _todayObj) {
   const { data: subs } = await supabase.from('subcontractors')
     .select('id, company_name, durc_expiry, insurance_expiry, soa_expiry')
     .eq('site_id', siteId)
@@ -562,7 +562,6 @@ async function _checkSubcontractors(siteId, companyId, todayObj) {
  */
 async function generateInspectionShield(siteId, companyId) {
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-  const todayObj = new Date(today + 'T00:00:00.000Z');
 
   const [siteRes, assignRes] = await Promise.all([
     supabase.from('sites')

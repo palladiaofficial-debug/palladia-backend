@@ -3,7 +3,7 @@
 const PDFDocument = require('pdfkit');
 const path = require('path');
 
-const { ZONE_ORDER, Z_INGRESSO, Z_DPI, Z_LAVORO, Z_EMERGENZA, Z_ANTINC } = require('./sign-selector');
+const { ZONE_ORDER } = require('./sign-selector');
 
 const MARGIN = 50;
 const PAGE_WIDTH = 595.28; // A4
@@ -237,7 +237,7 @@ function drawTableRow(doc, cells, colWidths, rowY, rowH, isHeader, dataRowIdx, t
 
   let rColIdx = -1;
   if (tableType === 'risk') {
-    rColIdx = headerCells.findIndex(h => /r\s*[\(=]|^r$/i.test(h.trim()));
+    rColIdx = headerCells.findIndex(h => /r\s*[(=]|^r$/i.test(h.trim()));
   }
 
   let cellX = MARGIN;
@@ -251,7 +251,7 @@ function drawTableRow(doc, cells, colWidths, rowY, rowH, isHeader, dataRowIdx, t
       doc.text(cellText, cellX + padH, rowY + padV, { width: cw - padH * 2, align: 'left' });
     } else {
       const headerName  = (headerCells[ci] || '').toLowerCase().trim();
-      const isRiskValueCol   = /r\s*[\(=]|^r$/i.test(headerName);
+      const isRiskValueCol   = /r\s*[(=]|^r$/i.test(headerName);
       const isLivelloCol     = /livello/i.test(headerName);
       const isSegnaleticaFirst = ci === 0 && tableType === 'segnaletica';
 

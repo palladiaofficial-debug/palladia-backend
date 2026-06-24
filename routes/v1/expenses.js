@@ -149,7 +149,7 @@ router.delete('/expenses/:id', async (req, res) => {
 
 // ── GET /api/v1/expenses/summary — riepilogo per categoria/mese/pagatore ────
 router.get('/expenses/summary', async (req, res) => {
-  const { from, to, group_by } = req.query;
+  const { from, to } = req.query;
 
   let q = supabase
     .from('company_expenses')
@@ -250,7 +250,6 @@ router.get('/expenses/export', async (req, res) => {
     ].join(',');
   });
 
-  const todayStr = new Date().toISOString().slice(0, 10);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="spese_${from}_${to}.csv"`);
   res.send('﻿' + [header, ...rows].join('\r\n'));

@@ -500,6 +500,11 @@ app.get('/admin', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('admin.html', { root: __dirname + '/public' });
 });
+
+app.get('/ladia', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile('ladia.html', { root: __dirname + '/public' });
+});
 app.get('/onboarding', (req, res) => {
   res.sendFile('onboarding.html', { root: __dirname + '/public' });
 });
@@ -784,7 +789,7 @@ async function getNextRevision(siteId) {
   return (data && data.length > 0) ? data[0].revision + 1 : 1;
 }
 
-const { withAiLimit, withPdfLimit, aiSemaphore } = require('./lib/concurrencyLimit');
+const { withAiLimit, aiSemaphore } = require('./lib/concurrencyLimit');
 
 // --- Helper: call Anthropic streaming API, return reader ---
 async function callAnthropicStream(prompt) {

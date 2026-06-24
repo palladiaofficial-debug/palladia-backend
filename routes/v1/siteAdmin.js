@@ -399,7 +399,7 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
   const siteLimit = getSiteLimit(effectivePlan);
 
   // Check atomico con advisory lock — previene bypass da richieste concorrenti
-  const { data: currentCount, error: limitErr } = await supabase.rpc('check_site_limit', {
+  const { error: limitErr } = await supabase.rpc('check_site_limit', {
     p_company_id: req.companyId,
     p_site_limit: siteLimit,
   });
