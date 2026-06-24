@@ -1,6 +1,7 @@
 'use strict';
 const router    = require('express').Router();
 const Anthropic = require('@anthropic-ai/sdk');
+const crypto    = require('crypto');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
@@ -51,6 +52,20 @@ const SONNET_KEYWORDS = [
   'come si fa','cosa prevede','cosa dice','è obbligatorio','sono obbligato',
   'procedura','checklist','linee guida','best practice','consiglio','suggerisci',
   'spiega','spiegami','differenza','confronto','quando scade','frequenza',
+  // fasi e cronoprogramma
+  'fase','fasi','cronoprogramma',
+  // computo e capitolato
+  'computo','capitolato','metrico','voce','voci',
+  // diario
+  'diario','giornale',
+  // meteo e sospensioni
+  'sospensione','pioggia','meteo','tempo','neve','vento',
+  // coordinatore
+  'coordinatore','verbale',
+  // NC e ispezioni
+  'non conformità','nc','ispezione','asl',
+  // costi e documenti
+  'certificato','costi','fattura','fatture','ddt','acconto',
 ];
 
 function classifyQuery(message) {
@@ -203,7 +218,34 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - MAI usare frasi come "problema di connessione", "errore tecnico", "contatta l'amministratore", "vai nella sezione X".
 - MAI suggerire all'utente di cercare i dati altrove — tu SEI il sistema, sei la fonte.
 - Se un tool restituisce {error: "..."}: di semplicemente "Non riesco a recuperare questo dato al momento" e offri ciò che puoi.
-- Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."`;
+- Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOOL DISPONIBILI — PANORAMICA COMPLETA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
+PRESENZE E ORE: get_presence_today, get_presence_history, get_workers, get_worker_detail, get_worker_hours, get_worker_certificates
+SICUREZZA E COMPLIANCE: get_compliance_overview, get_upcoming_deadlines, get_risk_score, get_inspection_shield, get_nonconformities, get_coordinator_notes, get_coordinator_nonconformities
+FASI E AVANZAMENTO: get_site_phases, get_sal_history, get_computo_voci, get_capitolato_voci
+METEO E SOSPENSIONI: get_weather_log, get_suspension_days
+ECONOMIA E COSTI: get_site_costs, get_expenses_summary
+DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents
+DIARIO: get_diary_entries
+SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
+PREZZARIO: search_prezzario, get_company_prezzi
+
+AZIONI DI SCRITTURA (conferma SEMPRE prima):
+create_worker, update_worker_expiry, assign_worker_to_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AZIONI DI SCRITTURA — REGOLA FERREA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Prima di chiamare QUALSIASI tool di scrittura (create_*, update_*, assign_*):
+1. Riepiloga all'utente cosa stai per fare con i dati specifici.
+2. Chiedi conferma esplicita ("Procedo?").
+3. Solo dopo la conferma, chiama il tool.
+Non chiamare MAI un tool di scrittura senza conferma dell'utente.`;
 
 // ── System prompt per strutturazione report (export) ─────────────────────────
 const REPORT_SYSTEM_PROMPT = `Sei un formattatore di report aziendali professionali.
@@ -585,6 +627,311 @@ const TOOLS = [
         urgency: { type: 'string', enum: ['bassa', 'media', 'alta', 'critica'], description: 'Default: media' }
       },
       required: ['site_id', 'title']
+    }
+  },
+  // ── 13 READ tools ──────────────────────────────────────────────────────────
+  {
+    name: 'get_site_phases',
+    description: 'Fasi/lavorazioni di un cantiere: stato, percentuale avanzamento, date previste/reali, importo. Usa per: "fasi del cantiere", "cronoprogramma", "a che punto siamo con le lavorazioni".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_sal_history',
+    description: 'Storico SAL emessi per un cantiere: numero, percentuale, data, importo maturato, costi, margine. Usa per: "SAL emessi", "storico avanzamento", "ultimo SAL".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_weather_log',
+    description: 'Storico meteo registrato per un cantiere: pioggia, vento, temperature, superamento soglie. Usa per: "meteo della settimana", "quanta pioggia", "giorni di maltempo".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_suspension_days',
+    description: 'Giorni di sospensione cantiere (pioggia, vento, neve). Usa per: "giorni di sospensione", "quanti giorni persi per maltempo", "sospensioni".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_computo_voci',
+    description: 'Voci del computo metrico: codice, descrizione, quantita, prezzo unitario, importo, avanzamento SAL per voce. Usa per: "computo del cantiere", "voci di lavoro", "quanto costa la voce X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_site_costs',
+    description: 'Costi diretti sostenuti per un cantiere: fatture, DDT, acconti con fornitore, importo, data. Usa per: "costi del cantiere", "fatture ricevute", "quanto abbiamo speso di fatture".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_subcontractor_documents',
+    description: 'Documenti di un subappaltatore: DURC, polizza, SOA, visura con scadenze. Usa per: "documenti del subappaltatore", "DURC di Edilcoop", "cosa scade al sub".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subcontractor_id: { type: 'string', description: 'UUID subappaltatore (obbligatorio). Usa get_subcontractors per trovarlo.' }
+      },
+      required: ['subcontractor_id']
+    }
+  },
+  {
+    name: 'get_coordinator_notes',
+    description: 'Note del coordinatore sicurezza (CSE/CSP): osservazioni, richieste, approvazioni, avvertimenti. Usa per: "cosa ha scritto il coordinatore", "note del CSE", "comunicazioni sicurezza".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        unread_only: { type: 'boolean', description: 'true = solo non lette. Default: false.' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_coordinator_nonconformities',
+    description: 'Non conformita formali dal coordinatore: titolo, gravita, stato, scadenza. Usa per: "NC del coordinatore", "segnalazioni CSE", "non conformita formali".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        status: { type: 'string', enum: ['aperta', 'in_lavorazione', 'risolta', 'chiusa', 'all'], description: 'Default: aperta.' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'get_worker_certificates',
+    description: 'Attestati di formazione di un lavoratore o di tutti: tipo corso, data, scadenza, ente. Usa per: "attestati di Mario", "certificati in scadenza", "formazione del lavoratore".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore. Ometti per tutti i lavoratori.' },
+        worker_name: { type: 'string', description: 'Nome lavoratore (ricerca parziale).' },
+        expiring_within_days: { type: 'integer', description: 'Solo attestati che scadono entro N giorni.' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_worker_hours',
+    description: 'Ore lavorate da un lavoratore in un periodo: timbrature, ore per giorno, totale. Usa per: "ore di Mario", "quante ore ha fatto", "presenze dettagliate di un lavoratore".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio)' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD (obbligatorio)' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD (obbligatorio)' }
+      },
+      required: ['worker_id', 'from_date', 'to_date']
+    }
+  },
+  {
+    name: 'get_company_documents',
+    description: 'Documenti aziendali (DURC, visura, DVR, ISO, SOA, polizze). Usa per: "documenti aziendali", "abbiamo il DURC aziendale?", "libreria documenti".',
+    input_schema: {
+      type: 'object',
+      properties: {},
+      required: []
+    }
+  },
+  {
+    name: 'get_capitolato_voci',
+    description: 'Voci del capitolato speciale d\'appalto: codice, categoria, descrizione, quantita, prezzo, importo. Usa per: "capitolato del cantiere", "voci del capitolato", "cosa prevede il capitolato".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  // ── 10 WRITE tools ─────────────────────────────────────────────────────────
+  {
+    name: 'create_worker',
+    description: 'Crea un nuovo lavoratore nell\'organico. IMPORTANTE: conferma SEMPRE i dati prima. Usa per: "aggiungi lavoratore", "inserisci operaio", "nuovo dipendente".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        full_name: { type: 'string', description: 'Nome completo (obbligatorio)' },
+        fiscal_code: { type: 'string', description: 'Codice fiscale' },
+        role: { type: 'string', description: 'Ruolo es. operaio, carpentiere, muratore' },
+        qualification: { type: 'string', description: 'Qualifica es. operaio specializzato' },
+        employer_name: { type: 'string', description: 'Nome datore di lavoro/impresa' }
+      },
+      required: ['full_name']
+    }
+  },
+  {
+    name: 'update_worker_expiry',
+    description: 'Aggiorna scadenze formazione/idoneita medica di un lavoratore. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiorna scadenza di Mario", "rinnova idoneita".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore (se noto)' },
+        worker_name: { type: 'string', description: 'Nome lavoratore (cerca se UUID non noto)' },
+        safety_training_expiry: { type: 'string', description: 'Nuova scadenza formazione YYYY-MM-DD' },
+        health_fitness_expiry: { type: 'string', description: 'Nuova scadenza idoneita medica YYYY-MM-DD' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'assign_worker_to_site',
+    description: 'Assegna un lavoratore a un cantiere. IMPORTANTE: conferma SEMPRE prima. Usa per: "assegna Mario al cantiere X", "aggiungi operaio al cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['worker_id', 'site_id']
+    }
+  },
+  {
+    name: 'create_site',
+    description: 'Crea un nuovo cantiere. IMPORTANTE: conferma SEMPRE i dettagli prima. Usa per: "crea cantiere", "nuovo cantiere", "apri un cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Nome del cantiere (obbligatorio)' },
+        address: { type: 'string', description: 'Indirizzo' },
+        start_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
+        end_date: { type: 'string', description: 'Data fine prevista YYYY-MM-DD' },
+        budget_totale: { type: 'number', description: 'Budget totale in euro' }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'update_site',
+    description: 'Aggiorna dati di un cantiere: nome, indirizzo, stato, date, budget. IMPORTANTE: conferma SEMPRE prima. Usa per: "cambia indirizzo cantiere", "aggiorna budget", "chiudi cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        name: { type: 'string', description: 'Nuovo nome' },
+        address: { type: 'string', description: 'Nuovo indirizzo' },
+        status: { type: 'string', enum: ['attivo', 'sospeso', 'ultimato', 'chiuso'], description: 'Nuovo stato' },
+        start_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
+        end_date: { type: 'string', description: 'Data fine YYYY-MM-DD' },
+        budget_totale: { type: 'number', description: 'Nuovo budget' },
+        sal_percentuale: { type: 'number', description: 'Nuova SAL %' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'create_diary_entry',
+    description: 'Crea o aggiorna il diario di cantiere per una data. IMPORTANTE: conferma SEMPRE prima. Usa per: "scrivi nel diario", "registra attivita di oggi", "giornale cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        entry_date: { type: 'string', description: 'Data YYYY-MM-DD. Default: oggi.' },
+        activities: { type: 'string', description: 'Attivita svolte' },
+        notes: { type: 'string', description: 'Note aggiuntive' },
+        issues: { type: 'string', description: 'Problemi riscontrati' },
+        decisions: { type: 'string', description: 'Decisioni prese' },
+        materials: { type: 'string', description: 'Materiali utilizzati/consegnati' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'create_suspension_day',
+    description: 'Registra un giorno di sospensione lavori (maltempo). IMPORTANTE: conferma SEMPRE prima. Usa per: "segna sospensione per pioggia", "oggi non si lavora".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        day: { type: 'string', description: 'Data YYYY-MM-DD (obbligatorio)' },
+        reason: { type: 'string', enum: ['pioggia', 'vento', 'neve', 'altro'], description: 'Default: altro.' },
+        notes: { type: 'string', description: 'Note aggiuntive' }
+      },
+      required: ['site_id', 'day']
+    }
+  },
+  {
+    name: 'update_sal',
+    description: 'Aggiorna la percentuale SAL di un cantiere. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiorna SAL al 45%", "stato avanzamento lavori".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        sal_percentuale: { type: 'number', description: 'Nuova SAL % 0-100 (obbligatorio)' }
+      },
+      required: ['site_id', 'sal_percentuale']
+    }
+  },
+  {
+    name: 'create_phase',
+    description: 'Crea una nuova fase/lavorazione in un cantiere. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiungi fase", "nuova lavorazione", "crea fase Demolizioni".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        nome: { type: 'string', description: 'Nome della fase (obbligatorio)' },
+        data_inizio_prevista: { type: 'string', description: 'Data inizio prevista YYYY-MM-DD' },
+        data_fine_prevista: { type: 'string', description: 'Data fine prevista YYYY-MM-DD' },
+        note: { type: 'string', description: 'Note' }
+      },
+      required: ['site_id', 'nome']
+    }
+  },
+  {
+    name: 'update_phase',
+    description: 'Aggiorna stato/avanzamento di una fase. IMPORTANTE: conferma SEMPRE prima. Usa per: "la fase X e completata", "aggiorna avanzamento fase", "inizia la fase".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        phase_id: { type: 'string', description: 'UUID fase (se noto)' },
+        site_id: { type: 'string', description: 'UUID cantiere (per cercare per nome)' },
+        nome: { type: 'string', description: 'Nome fase (per cercare se phase_id non noto)' },
+        stato: { type: 'string', enum: ['non_iniziata', 'in_corso', 'completata', 'sospesa'], description: 'Nuovo stato' },
+        progresso_percentuale: { type: 'number', description: 'Percentuale 0-100' },
+        data_inizio_reale: { type: 'string', description: 'Data inizio reale YYYY-MM-DD' },
+        data_fine_reale: { type: 'string', description: 'Data fine reale YYYY-MM-DD' },
+        note: { type: 'string', description: 'Note' }
+      },
+      required: []
     }
   }
 ];
@@ -1261,13 +1608,13 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         const toDate   = toolInput.to_date || fromDate;
 
         const { data, error } = await supabase
-          .from('site_diary')
-          .select('id, date, weather, temperature, wind, notes, work_done, workers_present, photos_count, created_at')
+          .from('site_diary_entries')
+          .select('id, entry_date, weather_desc, temp_min, temp_max, precipitation_mm, activities, issues, decisions, notes, workers_snapshot, work_hours_total, created_at')
           .eq('site_id', toolInput.site_id)
           .eq('company_id', companyId)
-          .gte('date', fromDate)
-          .lte('date', toDate)
-          .order('date', { ascending: false })
+          .gte('entry_date', fromDate)
+          .lte('entry_date', toDate)
+          .order('entry_date', { ascending: false })
           .limit(30);
         if (error) return { error: error.message };
         return { entries: data || [], total: (data || []).length, periodo: { da: fromDate, a: toDate } };
@@ -1375,6 +1722,404 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         return { success: true, nota_creata: data };
       }
 
+      // ── 13 READ executors ────────────────────────────────────────────────────
+      case 'get_site_phases': {
+        const { data, error } = await supabase
+          .from('site_phases')
+          .select('id, nome, stato, progresso_percentuale, data_inizio_prevista, data_fine_prevista, data_inizio_reale, data_fine_reale, importo_contratto, importo_maturato, note, sort_order')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('sort_order');
+        if (error) return { error: error.message };
+        return { fasi: data || [], total: (data || []).length };
+      }
+
+      case 'get_sal_history': {
+        const { data, error } = await supabase
+          .from('site_sal_history')
+          .select('id, sal_number, sal_percentuale, data_emissione, totale_contratto, importo_maturato, costo_mo, costi_diretti, totale_costi, margine, margine_percentuale, note, pagato_il')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('sal_number', { ascending: false });
+        if (error) return { error: error.message };
+        return { sal_records: data || [], total: (data || []).length };
+      }
+
+      case 'get_weather_log': {
+        let q = supabase
+          .from('site_weather_logs')
+          .select('id, log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('log_date', { ascending: false })
+          .limit(30);
+        if (toolInput.from_date) q = q.gte('log_date', toolInput.from_date);
+        if (toolInput.to_date)   q = q.lte('log_date', toolInput.to_date);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        return { weather: data || [], total: (data || []).length };
+      }
+
+      case 'get_suspension_days': {
+        let q = supabase
+          .from('site_suspension_days')
+          .select('id, day, reason, notes, created_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('day', { ascending: false });
+        if (toolInput.from_date) q = q.gte('day', toolInput.from_date);
+        if (toolInput.to_date)   q = q.lte('day', toolInput.to_date);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        const byReason = {};
+        (data || []).forEach(d => { byReason[d.reason] = (byReason[d.reason] || 0) + 1; });
+        return { sospensioni: data || [], total: (data || []).length, per_motivo: byReason };
+      }
+
+      case 'get_computo_voci': {
+        const { data: computo } = await supabase
+          .from('site_computo')
+          .select('id, nome, fonte, totale_contratto, created_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!computo) return { error: 'Nessun computo metrico trovato per questo cantiere.' };
+        const { data: voci, error } = await supabase
+          .from('site_computo_voci')
+          .select('codice, descrizione, unita_misura, quantita, prezzo_unitario, importo, sal_percentuale, tipo, sort_order')
+          .eq('computo_id', computo.id)
+          .order('sort_order');
+        if (error) return { error: error.message };
+        return { nome: computo.nome, totale_contratto: computo.totale_contratto, voci: voci || [], n_voci: (voci || []).length };
+      }
+
+      case 'get_site_costs': {
+        let q = supabase
+          .from('site_costs')
+          .select('id, descrizione, fornitore, quantita, unita_misura, prezzo_unitario, importo, data_documento, tipo, numero_documento, note, pagato_il')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('data_documento', { ascending: false })
+          .limit(500);
+        if (toolInput.from_date) q = q.gte('data_documento', toolInput.from_date);
+        if (toolInput.to_date)   q = q.lte('data_documento', toolInput.to_date);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        const rows = data || [];
+        let total = 0;
+        const byTipo = {};
+        for (const r of rows) {
+          const amt = Number(r.importo) || 0;
+          total += amt;
+          const t = r.tipo || 'altro';
+          if (!byTipo[t]) byTipo[t] = { totale: 0, conteggio: 0 };
+          byTipo[t].totale += amt;
+          byTipo[t].conteggio++;
+        }
+        return { totale_euro: Math.round(total * 100) / 100, conteggio: rows.length, per_tipo: byTipo, costi: rows.slice(0, 20) };
+      }
+
+      case 'get_subcontractor_documents': {
+        const { data, error } = await supabase
+          .from('subcontractor_documents')
+          .select('id, name, category, valid_until, ai_summary, created_at')
+          .eq('subcontractor_id', toolInput.subcontractor_id)
+          .eq('company_id', companyId);
+        if (error) return { error: error.message };
+        const docs = (data || []).map(d => ({
+          ...d,
+          giorni_scadenza: d.valid_until ? Math.ceil((new Date(d.valid_until) - new Date(todayRome)) / 86400000) : null,
+          stato: !d.valid_until ? 'N/D' : Math.ceil((new Date(d.valid_until) - new Date(todayRome)) / 86400000) < 0 ? 'SCADUTO' : Math.ceil((new Date(d.valid_until) - new Date(todayRome)) / 86400000) <= 30 ? 'CRITICO' : 'OK',
+        }));
+        return { documenti: docs, total: docs.length };
+      }
+
+      case 'get_coordinator_notes': {
+        let q = supabase
+          .from('site_coordinator_notes')
+          .select('id, note_type, content, coordinator_name, is_read, created_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false })
+          .limit(50);
+        if (toolInput.unread_only) q = q.eq('is_read', false);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        const unreadCount = (data || []).filter(n => !n.is_read).length;
+        return { note: data || [], total: (data || []).length, non_lette: unreadCount };
+      }
+
+      case 'get_coordinator_nonconformities': {
+        const st = toolInput.status || 'aperta';
+        let q = supabase
+          .from('site_nonconformities')
+          .select('id, coordinator_name, title, description, category, severity, status, due_date, resolution_notes, created_at, resolved_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+        if (st !== 'all') q = q.eq('status', st);
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+        return { non_conformita: data || [], total: (data || []).length, filtro: st };
+      }
+
+      case 'get_worker_certificates': {
+        let workerIds = null;
+        if (toolInput.worker_id) {
+          workerIds = [toolInput.worker_id];
+        } else if (toolInput.worker_name) {
+          const { data: found } = await supabase.from('workers').select('id').eq('company_id', companyId).ilike('full_name', `%${toolInput.worker_name}%`).limit(5);
+          workerIds = (found || []).map(w => w.id);
+          if (workerIds.length === 0) return { error: `Nessun lavoratore trovato per "${toolInput.worker_name}"` };
+        }
+        let q = supabase
+          .from('worker_certificates')
+          .select('id, worker_id, issue_date, expiry_date, issuing_body, certificate_number, course_types(name, validity_years, mandatory_for_construction)')
+          .eq('company_id', companyId);
+        if (workerIds) q = q.in('worker_id', workerIds);
+        const { data, error } = await q.limit(200);
+        if (error) return { error: error.message };
+        const certs = (data || []).map(c => {
+          const days = c.expiry_date ? Math.ceil((new Date(c.expiry_date) - new Date(todayRome)) / 86400000) : null;
+          return { ...c, corso: c.course_types?.name || 'N/D', giorni_scadenza: days, stato: days === null ? 'N/D' : days < 0 ? 'SCADUTO' : days <= 30 ? 'CRITICO' : days <= 90 ? 'ATTENZIONE' : 'OK' };
+        });
+        let filtered = certs;
+        if (toolInput.expiring_within_days) {
+          filtered = certs.filter(c => c.giorni_scadenza !== null && c.giorni_scadenza <= toolInput.expiring_within_days);
+        }
+        // Enrich with worker names
+        const wIds = [...new Set(filtered.map(c => c.worker_id))];
+        let wNames = {};
+        if (wIds.length > 0) {
+          const { data: ws } = await supabase.from('workers').select('id, full_name').in('id', wIds);
+          (ws || []).forEach(w => { wNames[w.id] = w.full_name; });
+        }
+        filtered.forEach(c => { c.lavoratore = wNames[c.worker_id] || c.worker_id; });
+        return { attestati: filtered, total: filtered.length };
+      }
+
+      case 'get_worker_hours': {
+        if (!toolInput.worker_id || !toolInput.from_date || !toolInput.to_date) return { error: 'worker_id, from_date e to_date obbligatori' };
+        const from = new Date(toolInput.from_date + 'T00:00:00+02:00').toISOString();
+        const to   = new Date(toolInput.to_date   + 'T23:59:59+01:00').toISOString();
+        const { data: logs, error } = await supabase
+          .from('presence_logs')
+          .select('event_type, timestamp_server, site_id')
+          .eq('worker_id', toolInput.worker_id)
+          .eq('company_id', companyId)
+          .gte('timestamp_server', from)
+          .lte('timestamp_server', to)
+          .order('timestamp_server', { ascending: true })
+          .limit(1000);
+        if (error) return { error: error.message };
+        const byDate = {};
+        for (const log of (logs || [])) {
+          const d = new Date(log.timestamp_server).toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
+          if (!byDate[d]) byDate[d] = [];
+          byDate[d].push(log);
+        }
+        let totalHours = 0;
+        const daily = Object.entries(byDate).map(([date, dayLogs]) => {
+          const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
+          const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+          let hours = 0;
+          const pairs = Math.min(entries.length, exits.length);
+          for (let i = 0; i < pairs; i++) {
+            const diff = (new Date(exits[i].timestamp_server) - new Date(entries[i].timestamp_server)) / 3_600_000;
+            if (diff > 0) hours += diff;
+          }
+          hours = Math.round(hours * 10) / 10;
+          totalHours += hours;
+          return { date, ore: hours, timbrature: dayLogs.length };
+        });
+        const { data: worker } = await supabase.from('workers').select('full_name').eq('id', toolInput.worker_id).maybeSingle();
+        return { lavoratore: worker?.full_name || toolInput.worker_id, periodo: { da: toolInput.from_date, a: toolInput.to_date }, totale_ore: Math.round(totalHours * 10) / 10, giorni_lavorati: daily.filter(d => d.ore > 0).length, dettaglio: daily };
+      }
+
+      case 'get_company_documents': {
+        const { data, error } = await supabase
+          .from('company_documents')
+          .select('id, name, category, file_size, created_at')
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false });
+        if (error) return { error: error.message };
+        const byCategory = {};
+        (data || []).forEach(d => {
+          if (!byCategory[d.category]) byCategory[d.category] = [];
+          byCategory[d.category].push(d);
+        });
+        return { documenti: data || [], total: (data || []).length, per_categoria: byCategory };
+      }
+
+      case 'get_capitolato_voci': {
+        const { data, error } = await supabase
+          .from('capitolato_voci')
+          .select('id, codice, categoria, descrizione, unita_misura, quantita, prezzo_unitario, importo_contratto, sort_order')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .order('sort_order');
+        if (error) return { error: error.message };
+        const byCategoria = {};
+        let totale = 0;
+        (data || []).forEach(v => {
+          if (!byCategoria[v.categoria]) byCategoria[v.categoria] = [];
+          byCategoria[v.categoria].push(v);
+          totale += Number(v.importo_contratto) || 0;
+        });
+        return { voci: data || [], total: (data || []).length, totale_contratto: Math.round(totale * 100) / 100, per_categoria: Object.keys(byCategoria).map(k => ({ categoria: k, n_voci: byCategoria[k].length, importo: byCategoria[k].reduce((s, v) => s + (Number(v.importo_contratto) || 0), 0) })) };
+      }
+
+      // ── 10 WRITE executors ───────────────────────────────────────────────────
+      case 'create_worker': {
+        if (!toolInput.full_name) return { error: 'full_name obbligatorio' };
+        const badge_code = crypto.randomBytes(9).toString('hex').toUpperCase();
+        const row = {
+          company_id: companyId,
+          full_name: toolInput.full_name,
+          badge_code,
+          is_active: true,
+          fiscal_code: toolInput.fiscal_code || null,
+          role: toolInput.role || null,
+          qualification: toolInput.qualification || null,
+          employer_name: toolInput.employer_name || null,
+        };
+        const { data, error } = await supabase.from('workers').insert(row).select().single();
+        if (error) return { error: error.message };
+        return { success: true, lavoratore_creato: data };
+      }
+
+      case 'update_worker_expiry': {
+        let wId = toolInput.worker_id;
+        if (!wId && toolInput.worker_name) {
+          const { data: found } = await supabase.from('workers').select('id, full_name').eq('company_id', companyId).ilike('full_name', `%${toolInput.worker_name}%`).limit(1);
+          if (!found || found.length === 0) return { error: `Nessun lavoratore trovato per "${toolInput.worker_name}"` };
+          wId = found[0].id;
+        }
+        if (!wId) return { error: 'Specificare worker_id o worker_name' };
+        const patch = {};
+        if (toolInput.safety_training_expiry) patch.safety_training_expiry = toolInput.safety_training_expiry;
+        if (toolInput.health_fitness_expiry)  patch.health_fitness_expiry  = toolInput.health_fitness_expiry;
+        if (Object.keys(patch).length === 0) return { error: 'Nessuna scadenza da aggiornare specificata' };
+        const { data, error } = await supabase.from('workers').update(patch).eq('id', wId).eq('company_id', companyId).select('id, full_name, safety_training_expiry, health_fitness_expiry').single();
+        if (error) return { error: error.message };
+        return { success: true, lavoratore_aggiornato: data };
+      }
+
+      case 'assign_worker_to_site': {
+        const { data: existing } = await supabase.from('worksite_workers').select('id').eq('worker_id', toolInput.worker_id).eq('site_id', toolInput.site_id).eq('status', 'active').maybeSingle();
+        if (existing) return { success: true, message: 'Lavoratore gia assegnato a questo cantiere.' };
+        const { data, error } = await supabase.from('worksite_workers').insert({ company_id: companyId, site_id: toolInput.site_id, worker_id: toolInput.worker_id, status: 'active', start_date: todayRome }).select().single();
+        if (error) return { error: error.message };
+        return { success: true, assegnazione_creata: data };
+      }
+
+      case 'create_site': {
+        if (!toolInput.name) return { error: 'name obbligatorio' };
+        const row = {
+          company_id: companyId,
+          name: toolInput.name,
+          status: 'attivo',
+          address: toolInput.address || null,
+          start_date: toolInput.start_date || null,
+          end_date: toolInput.end_date || null,
+          budget_totale: toolInput.budget_totale || null,
+        };
+        const { data, error } = await supabase.from('sites').insert(row).select().single();
+        if (error) return { error: error.message };
+        return { success: true, cantiere_creato: data };
+      }
+
+      case 'update_site': {
+        if (!toolInput.site_id) return { error: 'site_id obbligatorio' };
+        const patch = {};
+        ['name', 'address', 'status', 'start_date', 'end_date', 'budget_totale', 'sal_percentuale'].forEach(k => {
+          if (toolInput[k] !== undefined && toolInput[k] !== null) patch[k] = toolInput[k];
+        });
+        if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
+        const { data, error } = await supabase.from('sites').update(patch).eq('id', toolInput.site_id).eq('company_id', companyId).select().single();
+        if (error) return { error: error.message };
+        return { success: true, cantiere_aggiornato: data };
+      }
+
+      case 'create_diary_entry': {
+        if (!toolInput.site_id) return { error: 'site_id obbligatorio' };
+        const row = {
+          company_id: companyId,
+          site_id: toolInput.site_id,
+          entry_date: toolInput.entry_date || todayRome,
+          created_by: userId || null,
+          updated_at: new Date().toISOString(),
+        };
+        if (toolInput.activities) row.activities = toolInput.activities;
+        if (toolInput.notes)      row.notes      = toolInput.notes;
+        if (toolInput.issues)     row.issues     = toolInput.issues;
+        if (toolInput.decisions)  row.decisions  = toolInput.decisions;
+        if (toolInput.materials)  row.materials  = toolInput.materials;
+        const { data, error } = await supabase.from('site_diary_entries').upsert(row, { onConflict: 'site_id,entry_date' }).select().single();
+        if (error) return { error: error.message };
+        return { success: true, diario_salvato: data };
+      }
+
+      case 'create_suspension_day': {
+        if (!toolInput.site_id || !toolInput.day) return { error: 'site_id e day obbligatori' };
+        const { data, error } = await supabase.from('site_suspension_days').upsert({
+          company_id: companyId,
+          site_id: toolInput.site_id,
+          day: toolInput.day,
+          reason: toolInput.reason || 'altro',
+          notes: toolInput.notes || null,
+          created_by: userId || null,
+        }, { onConflict: 'site_id,day' }).select().single();
+        if (error) return { error: error.message };
+        return { success: true, sospensione_registrata: data };
+      }
+
+      case 'update_sal': {
+        if (!toolInput.site_id) return { error: 'site_id obbligatorio' };
+        const pct = Number(toolInput.sal_percentuale);
+        if (isNaN(pct) || pct < 0 || pct > 100) return { error: 'sal_percentuale deve essere tra 0 e 100' };
+        const { data, error } = await supabase.from('sites').update({ sal_percentuale: pct }).eq('id', toolInput.site_id).eq('company_id', companyId).select('id, name, sal_percentuale').single();
+        if (error) return { error: error.message };
+        return { success: true, cantiere_aggiornato: data };
+      }
+
+      case 'create_phase': {
+        if (!toolInput.site_id || !toolInput.nome) return { error: 'site_id e nome obbligatori' };
+        const row = {
+          company_id: companyId,
+          site_id: toolInput.site_id,
+          nome: toolInput.nome,
+          stato: 'non_iniziata',
+          progresso_percentuale: 0,
+          data_inizio_prevista: toolInput.data_inizio_prevista || null,
+          data_fine_prevista: toolInput.data_fine_prevista || null,
+          note: toolInput.note || null,
+        };
+        const { data, error } = await supabase.from('site_phases').insert(row).select().single();
+        if (error) return { error: error.message };
+        return { success: true, fase_creata: data };
+      }
+
+      case 'update_phase': {
+        let phaseId = toolInput.phase_id;
+        if (!phaseId && toolInput.site_id && toolInput.nome) {
+          const { data: found } = await supabase.from('site_phases').select('id').eq('site_id', toolInput.site_id).eq('company_id', companyId).ilike('nome', `%${toolInput.nome}%`).limit(1);
+          if (!found || found.length === 0) return { error: `Nessuna fase trovata per "${toolInput.nome}"` };
+          phaseId = found[0].id;
+        }
+        if (!phaseId) return { error: 'Specificare phase_id oppure site_id + nome della fase' };
+        const patch = {};
+        ['stato', 'progresso_percentuale', 'data_inizio_reale', 'data_fine_reale', 'note'].forEach(k => {
+          if (toolInput[k] !== undefined && toolInput[k] !== null) patch[k] = toolInput[k];
+        });
+        if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
+        const { data, error } = await supabase.from('site_phases').update(patch).eq('id', phaseId).eq('company_id', companyId).select().single();
+        if (error) return { error: error.message };
+        return { success: true, fase_aggiornata: data };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -1388,7 +2133,7 @@ async function executeTool(toolName, toolInput, companyId, userId) {
 async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null) {
   let response = await client.messages.create({
     model,
-    max_tokens: model === MODEL_SONNET ? 2048 : 1024,
+    max_tokens: model === MODEL_SONNET ? 4096 : 1024,
     system:     systemPrompt,
     tools:      TOOLS,
     messages,
@@ -1397,7 +2142,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
   const extra = [];
   let iter = 0;
 
-  while (response.stop_reason === 'tool_use' && iter < 4) {
+  while (response.stop_reason === 'tool_use' && iter < 6) {
     iter++;
     const toolBlocks = response.content.filter(b => b.type === 'tool_use');
 
@@ -1416,7 +2161,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
 
     response = await client.messages.create({
       model,
-      max_tokens: model === MODEL_SONNET ? 2048 : 1024,
+      max_tokens: model === MODEL_SONNET ? 4096 : 1024,
       system:     systemPrompt,
       tools:      TOOLS,
       messages:   [...messages, ...extra],
@@ -1882,7 +2627,7 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
-  if (message.length > 1000) {
+  if (message.length > 4000) {
     return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
   }
 
@@ -2022,7 +2767,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
-  if (message.length > 1000) {
+  if (message.length > 4000) {
     return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
   }
 
@@ -2094,14 +2839,14 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
     const model  = classifyQuery(message);
 
     // Loop agentico con streaming — max 4 iterazioni
-    for (let iter = 0; iter < 4 && !aborted; iter++) {
+    for (let iter = 0; iter < 6 && !aborted; iter++) {
       const collectedContent = [];
       let stopReason = null;
 
       // Apre stream verso Anthropic
       const stream = client.messages.stream({
         model,
-        max_tokens: model === MODEL_SONNET ? 2048 : 1024,
+        max_tokens: model === MODEL_SONNET ? 4096 : 1024,
         system:     systemPrompt,
         tools:      TOOLS,
         messages,
