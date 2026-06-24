@@ -197,6 +197,9 @@ router.use('/', require('./consultantCourses'));
 router.use('/', require('./consultantBookings'));
 router.use('/', require('./consultantConnect'));
 
+// Safety Copilot — risk score predittivo + scudo ispezione
+router.use('/', require('./safetyCopilot'));
+
 // ── Error handler v1 ─────────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars
 router.use((err, req, res, next) => {
