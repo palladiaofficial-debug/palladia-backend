@@ -66,12 +66,20 @@ const SONNET_KEYWORDS = [
   'non conformità','nc','ispezione','asl',
   // costi e documenti
   'certificato','costi','fattura','fatture','ddt','acconto',
+  // cedolini e buste paga
+  'cedolino','cedolini','busta paga','buste paga',
+  // prenotazioni e logistica
+  'prenotazion','consegna','consegne','fornitura','forniture',
+  // mezzi e attrezzature
+  'escavatore','gru','autocarro','betoniera','mezzo','mezzi','attrezzatura','attrezzature',
 ];
 
 const WRITE_KEYWORDS = [
   'registra','crea','aggiungi','inserisci','assegna','aggiorna','modifica',
   'cambia','segna','scrivi','annota','apri un cantiere','nuovo cantiere',
   'nuova fase','chiudi','sospendi','nuovo lavoratore','nuova spesa',
+  'rimuovi','togli','disassegna','risolvi','nuovo sub','nuovo mezzo',
+  'fattura','ddt','acconto','sposta','nuovo subappaltatore','nuova attrezzatura',
 ];
 
 function classifyQuery(message) {
@@ -131,10 +139,18 @@ AMBITI DI COMPETENZA
    SAL, contabilità lavori, riserve — art. 120-121 D.Lgs. 36/2023
    Collaudi: tecnico-amministrativo, statico (D.P.R. 380/2001), funzionale
 
-④ ANALISI E GESTIONE
+④ ANALISI E GESTIONE OPERATIVA
    Analisi presenze, ore lavorate, produttività, assenteismo
    Statistiche cantiere, reportistica operativa
    Pianificazione squadre, scadenze documentali, checklist sicurezza
+   Previsioni meteo cantiere (3 giorni) con suggerimenti operativi
+   Gestione subappaltatori: DURC, SOA, assicurazioni, assegnazione cantieri
+   Gestione mezzi/attrezzature: inventario, assicurazioni, assegnazione cantieri
+   Non conformità: apertura, monitoraggio, risoluzione — ciclo completo
+   Quadro economico cantiere: costi, ricavi, voci economia, fatture, DDT
+   Cedolini/buste paga lavoratori — consultazione e storico
+   Prenotazioni e consegne programmate per cantiere
+   Diario di cantiere: lavorazioni, meteo, problemi, decisioni, materiali
 
 ⑤ PREZZIARI REGIONALI E ANALISI PREZZI — competenza esclusiva
    Hai accesso al Prezzario Regionale Liguria 2023 (e altre regioni disponibili).
@@ -228,22 +244,22 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 46 TOOL
+TOOL DISPONIBILI — 57 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
 PRESENZE E ORE: get_presence_today, get_presence_history, get_workers, get_worker_detail, get_worker_hours, get_worker_certificates
 SICUREZZA E COMPLIANCE: get_compliance_overview, get_upcoming_deadlines, get_risk_score, get_inspection_shield, get_nonconformities, get_coordinator_notes, get_coordinator_nonconformities
 FASI E AVANZAMENTO: get_site_phases, get_sal_history, get_computo_voci, get_capitolato_voci
-METEO E SOSPENSIONI: get_weather_log, get_suspension_days
-ECONOMIA E COSTI: get_site_costs, get_expenses_summary
+METEO E SOSPENSIONI: get_weather_forecast, get_weather_log, get_suspension_days
+ECONOMIA E COSTI: get_site_costs, get_expenses_summary, get_payslips
 DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents
-DIARIO: get_diary_entries
+DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
-create_worker, update_worker_expiry, assign_worker_to_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note
+create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRATEGIA MULTI-TOOL — RISPOSTE COMPLETE
@@ -270,6 +286,30 @@ Per domande ampie, chiama PIU' tool per dare risposte complete:
 
 "Diario della settimana":
 → get_diary_entries + get_weather_log + get_suspension_days (stesse date)
+
+"Che tempo fa domani?" / "Previsioni cantiere":
+→ get_weather_forecast (previsioni 3 giorni con temperature e precipitazioni)
+
+"Cedolini di Mario" / "Buste paga giugno":
+→ get_payslips (con worker_name o month)
+
+"Aggiungi costo al cantiere" / "Fattura da X":
+→ create_site_cost (costi diretti) OPPURE create_economia_voce (quadro economico)
+
+"Chiudi la NC" / "Non conformità risolta":
+→ resolve_nonconformity
+
+"Aggiungi il sub Edilcoop al cantiere":
+→ create_subcontractor (se non esiste) → assign_subcontractor_to_site
+
+"Sposta l'escavatore al cantiere Y":
+→ get_equipment (trova UUID) → assign_equipment_to_site
+
+"Rimuovi Mario dal cantiere":
+→ get_workers (trova UUID) → remove_worker_from_site
+
+"Panoramica completa cantiere X":
+→ get_site_detail + get_site_phases + get_economia + get_risk_score + get_weather_forecast + get_nonconformities + get_diary_entries
 
 NON fare una sola call quando servono più dati. Il tecnico vuole il quadro completo.
 
@@ -302,7 +342,22 @@ Dopo aver mostrato dati, suggerisci azioni quando pertinente:
 - Fase completata → "Segno la fase come completata?"
 - Nessun diario per oggi → "Vuoi registrare le attività di oggi?"
 - Risk score alto → "Vuoi vedere cosa migliorare?"
-Suggerisci con una frase breve, mai invadente. L'utente decide.`;
+- NC aperte da tempo → "Vuoi chiuderne qualcuna?"
+- Subappaltatore con DURC scaduto → "Il DURC di X è scaduto — va sospeso dal cantiere."
+- Mezzo con assicurazione scaduta → "L'assicurazione di X è scaduta — da non usare in cantiere."
+- Pioggia prevista domani → "Domani è prevista pioggia — vuoi registrare una sospensione?"
+- Costi in sforamento → "Budget consumato al X% con SAL al Y% — attenzione."
+- Lavoratore non assegnato → "Vuoi assegnarlo a un cantiere?"
+Suggerisci con una frase breve, mai invadente. L'utente decide.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILOSOFIA — LADIA È IL CENTRO OPERATIVO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Tu NON sei un semplice chatbot. Sei il punto di controllo unico per ogni cantiere.
+Il tecnico deve poter gestire TUTTO da qui: presenze, sicurezza, economia, meteo, documenti, subappaltatori, mezzi, NC, diario, cedolini, scadenze.
+Se l'utente ti chiede qualcosa, hai il tool per rispondere. Se manca un dato, dillo — non rimandare MAI a "un'altra sezione".
+Quando presenti lo stato di un cantiere, pensa come un direttore di cantiere: cosa mi serve sapere ORA per prendere decisioni?
+Priorità: sicurezza > scadenze > economia > operatività.`;
 
 // ── System prompt per strutturazione report (export) ─────────────────────────
 const REPORT_SYSTEM_PROMPT = `Sei un formattatore di report aziendali professionali.
@@ -989,6 +1044,159 @@ const TOOLS = [
         note: { type: 'string', description: 'Note' }
       },
       required: []
+    }
+  },
+
+  // ── Tool aggiuntivi — copertura completa cantiere ──────────────────────────
+  {
+    name: 'get_weather_forecast',
+    description: 'Previsioni meteo 3 giorni per un cantiere (temperature, precipitazioni, vento). Usa per: "che tempo fa domani", "previsioni meteo cantiere", "pioverà questa settimana".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio — serve per le coordinate GPS)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'create_economia_voce',
+    description: 'Registra una voce nel quadro economico del cantiere (costo o ricavo). IMPORTANTE: conferma SEMPRE prima. Usa per: "registra costo materiali", "aggiungi ricavo SAL", "inserisci fattura nel quadro economico".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        tipo: { type: 'string', enum: ['costo', 'ricavo'], description: 'Tipo voce (obbligatorio)' },
+        categoria: { type: 'string', description: 'Categoria es. materiali, manodopera, noli, sicurezza, subappalto, sal, acconto' },
+        voce: { type: 'string', description: 'Descrizione della voce (obbligatorio)' },
+        importo: { type: 'number', description: 'Importo in euro (obbligatorio)' },
+        data_competenza: { type: 'string', description: 'Data YYYY-MM-DD. Default: oggi.' }
+      },
+      required: ['site_id', 'tipo', 'voce', 'importo']
+    }
+  },
+  {
+    name: 'resolve_nonconformity',
+    description: 'Chiudi/risolvi una non conformità. Usa per: "chiudi la NC", "NC risolta", "segna come risolta".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        nc_id: { type: 'string', description: 'UUID della non conformità (obbligatorio). Usa get_nonconformities per trovarlo.' },
+        resolution_notes: { type: 'string', description: 'Note di risoluzione (opzionale)' }
+      },
+      required: ['nc_id']
+    }
+  },
+  {
+    name: 'create_site_cost',
+    description: 'Registra un costo diretto di cantiere (fattura, DDT, acconto). IMPORTANTE: conferma SEMPRE prima. Usa per: "registra fattura", "DDT da fornitore X", "costo cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        descrizione: { type: 'string', description: 'Descrizione del costo (obbligatorio)' },
+        importo: { type: 'number', description: 'Importo in euro (obbligatorio)' },
+        fornitore: { type: 'string', description: 'Nome fornitore' },
+        tipo: { type: 'string', enum: ['fattura', 'ddt', 'acconto', 'nota_credito', 'altro'], description: 'Tipo documento. Default: fattura.' },
+        numero_documento: { type: 'string', description: 'Numero fattura/DDT' },
+        data_documento: { type: 'string', description: 'Data documento YYYY-MM-DD. Default: oggi.' },
+        note: { type: 'string', description: 'Note aggiuntive' }
+      },
+      required: ['site_id', 'descrizione', 'importo']
+    }
+  },
+  {
+    name: 'remove_worker_from_site',
+    description: 'Rimuovi un lavoratore da un cantiere (disassegna). IMPORTANTE: conferma SEMPRE prima. Usa per: "rimuovi Mario dal cantiere", "togli lavoratore dal cantiere", "disassegna".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['worker_id', 'site_id']
+    }
+  },
+  {
+    name: 'create_subcontractor',
+    description: 'Aggiungi un nuovo subappaltatore. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiungi subappaltatore", "nuovo sub", "inserisci ditta in subappalto".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        company_name: { type: 'string', description: 'Ragione sociale (obbligatorio)' },
+        contact_person: { type: 'string', description: 'Referente' },
+        contact_email: { type: 'string', description: 'Email' },
+        contact_phone: { type: 'string', description: 'Telefono' },
+        durc_expiry: { type: 'string', description: 'Scadenza DURC YYYY-MM-DD' },
+        insurance_expiry: { type: 'string', description: 'Scadenza assicurazione YYYY-MM-DD' },
+        soa_expiry: { type: 'string', description: 'Scadenza SOA YYYY-MM-DD' }
+      },
+      required: ['company_name']
+    }
+  },
+  {
+    name: 'assign_subcontractor_to_site',
+    description: 'Assegna un subappaltatore a un cantiere. Usa per: "assegna Edilcoop al cantiere X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        subcontractor_id: { type: 'string', description: 'UUID subappaltatore (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['subcontractor_id', 'site_id']
+    }
+  },
+  {
+    name: 'create_equipment',
+    description: 'Aggiungi un mezzo/attrezzatura all\'inventario. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiungi escavatore", "nuovo mezzo", "inserisci gru".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Nome del mezzo (obbligatorio)' },
+        type: { type: 'string', description: 'Tipo es. escavatore, gru, autocarro, betoniera, ponteggio' },
+        model: { type: 'string', description: 'Modello' },
+        plate_or_serial: { type: 'string', description: 'Targa o numero di serie' },
+        insurance_expiry: { type: 'string', description: 'Scadenza assicurazione YYYY-MM-DD' }
+      },
+      required: ['name']
+    }
+  },
+  {
+    name: 'assign_equipment_to_site',
+    description: 'Assegna un mezzo a un cantiere. Usa per: "sposta l\'escavatore al cantiere X".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        equipment_id: { type: 'string', description: 'UUID mezzo (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['equipment_id', 'site_id']
+    }
+  },
+  {
+    name: 'get_payslips',
+    description: 'Cedolini/buste paga dei lavoratori. Usa per: "cedolini di Mario", "buste paga di giugno", "ultimo cedolino".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore. Ometti per tutti.' },
+        worker_name: { type: 'string', description: 'Nome lavoratore (ricerca parziale).' },
+        month: { type: 'string', description: 'Mese nel formato YYYY-MM. Ometti per gli ultimi.' }
+      },
+      required: []
+    }
+  },
+  {
+    name: 'get_site_bookings',
+    description: 'Prenotazioni/consegne programmate per un cantiere. Usa per: "consegne previste", "prenotazioni cantiere", "cosa arriva questa settimana".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD. Default: oggi.' },
+        to_date: { type: 'string', description: 'Data fine YYYY-MM-DD. Default: +7 giorni.' }
+      },
+      required: ['site_id']
     }
   }
 ];
@@ -2175,6 +2383,245 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         const { data, error } = await supabase.from('site_phases').update(patch).eq('id', phaseId).eq('company_id', companyId).select().single();
         if (error) return { error: error.message };
         return { success: true, fase_aggiornata: data };
+      }
+
+      // ── Nuovi tool executor — copertura completa cantiere ─────────────────────
+
+      case 'get_weather_forecast': {
+        const { data: site } = await supabase
+          .from('sites')
+          .select('name, latitude, longitude')
+          .eq('id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .maybeSingle();
+        if (!site) return { error: 'Cantiere non trovato.' };
+        if (!site.latitude || !site.longitude) return { error: `Il cantiere "${site.name}" non ha coordinate GPS configurate. Impostale dalla scheda cantiere per attivare le previsioni meteo.` };
+        try {
+          const { getForecast } = require('../../services/weatherService');
+          const forecast = await getForecast(site.latitude, site.longitude);
+          return { cantiere: site.name, previsioni: forecast };
+        } catch (e) {
+          return { error: 'Servizio meteo temporaneamente non disponibile: ' + e.message };
+        }
+      }
+
+      case 'create_economia_voce': {
+        const row = {
+          company_id: companyId,
+          site_id: toolInput.site_id,
+          tipo: toolInput.tipo,
+          categoria: toolInput.categoria || 'altro',
+          voce: toolInput.voce,
+          importo: toolInput.importo,
+          data_competenza: toolInput.data_competenza || todayRome,
+        };
+        const { data, error } = await supabase
+          .from('site_economia_voci')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, voce_creata: data };
+      }
+
+      case 'resolve_nonconformity': {
+        const { data: existing } = await supabase
+          .from('site_notes')
+          .select('id, resolved_at')
+          .eq('id', toolInput.nc_id)
+          .eq('company_id', companyId)
+          .eq('category', 'non_conformita')
+          .maybeSingle();
+        if (!existing) return { error: 'Non conformità non trovata.' };
+        if (existing.resolved_at) return { success: true, message: 'Questa NC era già stata risolta.' };
+        const patch = {
+          resolved_at: new Date().toISOString(),
+          resolved_by: userId || null,
+        };
+        if (toolInput.resolution_notes) patch.body = (existing.body ? existing.body + '\n\n' : '') + `[RISOLUZIONE] ${toolInput.resolution_notes}`;
+        const { data, error } = await supabase
+          .from('site_notes')
+          .update(patch)
+          .eq('id', toolInput.nc_id)
+          .eq('company_id', companyId)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, nc_risolta: data };
+      }
+
+      case 'create_site_cost': {
+        const row = {
+          company_id: companyId,
+          site_id: toolInput.site_id,
+          descrizione: toolInput.descrizione,
+          importo: toolInput.importo,
+          fornitore: toolInput.fornitore || null,
+          tipo: toolInput.tipo || 'fattura',
+          numero_documento: toolInput.numero_documento || null,
+          data_documento: toolInput.data_documento || todayRome,
+          note: toolInput.note || null,
+        };
+        const { data, error } = await supabase
+          .from('site_costs')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, costo_registrato: data };
+      }
+
+      case 'remove_worker_from_site': {
+        const { data, error } = await supabase
+          .from('worksite_workers')
+          .update({ status: 'inactive' })
+          .eq('worker_id', toolInput.worker_id)
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .eq('status', 'active')
+          .select()
+          .single();
+        if (error) return { error: error.message || 'Assegnazione non trovata.' };
+        return { success: true, message: 'Lavoratore rimosso dal cantiere.' };
+      }
+
+      case 'create_subcontractor': {
+        const row = {
+          company_id: companyId,
+          company_name: toolInput.company_name,
+          contact_person: toolInput.contact_person || null,
+          contact_email: toolInput.contact_email || null,
+          contact_phone: toolInput.contact_phone || null,
+          durc_expiry: toolInput.durc_expiry || null,
+          insurance_expiry: toolInput.insurance_expiry || null,
+          soa_expiry: toolInput.soa_expiry || null,
+          is_active: true,
+        };
+        const { data, error } = await supabase
+          .from('subcontractors')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, subappaltatore_creato: data };
+      }
+
+      case 'assign_subcontractor_to_site': {
+        const { data: existing } = await supabase
+          .from('site_subcontractors')
+          .select('id')
+          .eq('subcontractor_id', toolInput.subcontractor_id)
+          .eq('site_id', toolInput.site_id)
+          .maybeSingle();
+        if (existing) return { success: true, message: 'Subappaltatore già assegnato a questo cantiere.' };
+        const { data, error } = await supabase
+          .from('site_subcontractors')
+          .insert({
+            subcontractor_id: toolInput.subcontractor_id,
+            site_id: toolInput.site_id,
+            company_id: companyId,
+          })
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, assegnazione_creata: data };
+      }
+
+      case 'create_equipment': {
+        const row = {
+          company_id: companyId,
+          name: toolInput.name,
+          type: toolInput.type || null,
+          model: toolInput.model || null,
+          plate_or_serial: toolInput.plate_or_serial || null,
+          insurance_expiry: toolInput.insurance_expiry || null,
+          is_active: true,
+          status: 'disponibile',
+        };
+        const { data, error } = await supabase
+          .from('equipment')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, mezzo_creato: data };
+      }
+
+      case 'assign_equipment_to_site': {
+        const { data: existing } = await supabase
+          .from('site_equipment')
+          .select('id')
+          .eq('equipment_id', toolInput.equipment_id)
+          .eq('site_id', toolInput.site_id)
+          .maybeSingle();
+        if (existing) return { success: true, message: 'Mezzo già assegnato a questo cantiere.' };
+        const { data, error } = await supabase
+          .from('site_equipment')
+          .insert({
+            equipment_id: toolInput.equipment_id,
+            site_id: toolInput.site_id,
+            company_id: companyId,
+          })
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, assegnazione_creata: data };
+      }
+
+      case 'get_payslips': {
+        let workerIds = null;
+        if (toolInput.worker_id) {
+          workerIds = [toolInput.worker_id];
+        } else if (toolInput.worker_name) {
+          const { data: found } = await supabase
+            .from('workers')
+            .select('id')
+            .eq('company_id', companyId)
+            .ilike('full_name', `%${toolInput.worker_name}%`)
+            .limit(5);
+          workerIds = (found || []).map(w => w.id);
+          if (workerIds.length === 0) return { error: `Nessun lavoratore trovato per "${toolInput.worker_name}"` };
+        }
+
+        let q = supabase
+          .from('payslips')
+          .select('id, worker_id, month, original_name, file_size, created_at')
+          .eq('company_id', companyId)
+          .order('month', { ascending: false })
+          .limit(50);
+        if (workerIds) q = q.in('worker_id', workerIds);
+        if (toolInput.month) q = q.eq('month', toolInput.month);
+
+        const { data, error } = await q;
+        if (error) return { error: error.message };
+
+        const wIds = [...new Set((data || []).map(p => p.worker_id))];
+        let wNames = {};
+        if (wIds.length > 0) {
+          const { data: ws } = await supabase.from('workers').select('id, full_name').in('id', wIds);
+          (ws || []).forEach(w => { wNames[w.id] = w.full_name; });
+        }
+        const cedolini = (data || []).map(p => ({
+          ...p,
+          lavoratore: wNames[p.worker_id] || p.worker_id,
+        }));
+        return { cedolini, total: cedolini.length };
+      }
+
+      case 'get_site_bookings': {
+        const fromDate = toolInput.from_date || todayRome;
+        const toDate = toolInput.to_date || new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+
+        const { data, error } = await supabase
+          .from('site_bookings')
+          .select('id, title, booking_date, booking_time, category, supplier, notes, status, created_at')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .gte('booking_date', fromDate)
+          .lte('booking_date', toDate)
+          .order('booking_date', { ascending: true });
+        if (error) return { error: error.message };
+        return { prenotazioni: data || [], total: (data || []).length, periodo: { da: fromDate, a: toDate } };
       }
 
       default:
