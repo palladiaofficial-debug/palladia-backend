@@ -804,11 +804,14 @@ function showScreen(id) {
 async function init() {
   let cfg;
   try {
-    cfg = await fetch('/api/config').then(r => r.json());
-    if (!cfg.supabase_url || !cfg.supabase_anon_key) throw new Error();
-  } catch {
+    const r = await fetch('/api/config');
+    if (!r.ok) throw new Error('API /api/config ha risposto ' + r.status);
+    cfg = await r.json();
+    if (!cfg.supabase_url) throw new Error('SUPABASE_URL mancante nella config del server');
+    if (!cfg.supabase_anon_key) throw new Error('SUPABASE_ANON_KEY mancante nella config del server — aggiungila nelle variabili ambiente di Railway');
+  } catch (e) {
     document.getElementById('screen-loading').innerHTML =
-      '<div style="color:var(--red);font-size:14px">Errore di configurazione</div>';
+      '<div style="color:var(--red);font-size:14px;max-width:500px;text-align:center;line-height:1.6">' + e.message + '</div>';
     return;
   }
 
