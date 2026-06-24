@@ -4,11 +4,17 @@
  * Motore proattivo di Ladia — invia messaggi ai tecnici PRIMA che lo chiedano.
  *
  * Trigger implementati:
- *   1. rain_alert      — pioggia domani > RAIN_THRESHOLD% → alert meteo cantiere
- *   2. nc_stale        — NC critica/alta aperta da > 48h → reminder
- *   3. budget_alert    — budget consumato > 85% con SAL < 75% → alert sforamento
- *   4. inactivity      — nessuna nota né presenza da 3 giorni lavorativi → check-in
- *   5. doc_expiry      — documento lavoratore scade entro 7 giorni → urgency alert
+ *   1. rain_alert          — pioggia domani > RAIN_THRESHOLD% → alert meteo cantiere
+ *   2. nc_stale            — NC critica/alta aperta da > 48h → reminder
+ *   3. budget_alert        — budget consumato > 85% con SAL < 75% → alert sforamento
+ *   4. inactivity          — nessuna nota né presenza da 3 giorni lavorativi → check-in
+ *   5. doc_expiry          — documento lavoratore scade entro 7 giorni → urgency alert
+ *   6. heat_alert          — temperatura > 33°C → obbligo D.Lgs. 81
+ *   7. mid_morning         — zero presenze alle 10:00 → "cantiere fermo?"
+ *   8. nc_pattern          — 3+ NC aperte in 30gg → problema sistemico
+ *   9. compliance_risk     — compliance engine rileva 2+ problemi → alert ispezione
+ *  10. sub_expiry          — DURC/assicurazione subappaltatore scade entro 14gg
+ *  11. equip_insurance     — assicurazione mezzo scade entro 14gg
  *
  * Anti-spam: ogni trigger usa ladia_proactive_log per deduplicazione.
  * Un messaggio NON viene mai ripetuto entro la finestra di dedup.
@@ -544,6 +550,127 @@ async function checkRepeatedNcPattern(entry) {
   console.log(`[ladiaProactive] nc_pattern → chat ${chatId} — ${siteName} (${count} NC aperte)`);
 }
 
+// ── Trigger 10: DURC subappaltatore in scadenza ──────────────
+// Scadenze DURC entro 14gg → alert critico (senza DURC il sub non può lavorare)
+
+const SUB_DURC_EXPIRY_DAYS = 14;
+
+async function checkSubcontractorDurc(entry) {
+  const { chatId, companyId, siteId, siteName } = entry;
+
+  // Subappaltatori assegnati a questo cantiere
+  const { data: assignments } = await supabase
+    .from('site_subcontractors')
+    .select('subcontractor_id')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId);
+  if (!assignments?.length) return;
+
+  const subIds = assignments.map(a => a.subcontractor_id);
+  const today  = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today.getTime() + SUB_DURC_EXPIRY_DAYS * 86_400_000)
+    .toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+
+  const { data: subs } = await supabase
+    .from('subcontractors')
+    .select('id, company_name, durc_expiry, insurance_expiry')
+    .in('id', subIds)
+    .eq('is_active', true)
+    .or(`durc_expiry.lte.${cutoff},insurance_expiry.lte.${cutoff}`);
+  if (!subs?.length) return;
+
+  const dateKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const key = `sub_expiry_${siteId}_${dateKey}`;
+  if (await alreadySent(chatId, 'sub_expiry', key)) return;
+
+  const lines = [];
+  for (const s of subs) {
+    const durcDays = s.durc_expiry
+      ? Math.round((new Date(s.durc_expiry) - today) / 86_400_000) : null;
+    const insDays = s.insurance_expiry
+      ? Math.round((new Date(s.insurance_expiry) - today) / 86_400_000) : null;
+    if (durcDays !== null && durcDays <= SUB_DURC_EXPIRY_DAYS) {
+      const icon = durcDays <= 0 ? '🔴' : '🟠';
+      const label = durcDays <= 0 ? `SCADUTO ${Math.abs(durcDays)}gg fa` : `tra ${durcDays}gg`;
+      lines.push(`${icon} <b>${s.company_name}</b> — DURC ${label}`);
+    }
+    if (insDays !== null && insDays <= SUB_DURC_EXPIRY_DAYS) {
+      const icon = insDays <= 0 ? '🔴' : '🟠';
+      const label = insDays <= 0 ? `SCADUTA ${Math.abs(insDays)}gg fa` : `tra ${insDays}gg`;
+      lines.push(`${icon} <b>${s.company_name}</b> — Assicurazione ${label}`);
+    }
+  }
+  if (!lines.length) return;
+
+  const text =
+    `⚠️ <b>Ladia — Scadenze subappaltatori</b> — ${siteName}\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `Senza DURC valido il subappaltatore non può operare in cantiere (art. 90 D.Lgs. 81/2008).`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🤖 Gestisci con Ladia',  callbackData: `act:open_ladia:${siteId}` },
+    { text: '✅ Ho già gestito',       callbackData: `act:skip_sub:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'sub_expiry', key, companyId, siteId);
+  console.log(`[ladiaProactive] sub_expiry → chat ${chatId} — ${siteName} (${lines.length} scadenze)`);
+}
+
+// ── Trigger 11: Assicurazione mezzo in scadenza ──────────────
+
+const EQUIP_EXPIRY_DAYS = 14;
+
+async function checkEquipmentInsurance(entry) {
+  const { chatId, companyId, siteId, siteName } = entry;
+
+  // Mezzi assegnati a questo cantiere
+  const { data: assignments } = await supabase
+    .from('site_equipment')
+    .select('equipment_id')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId);
+  if (!assignments?.length) return;
+
+  const eqIds  = assignments.map(a => a.equipment_id);
+  const today  = new Date(); today.setHours(0, 0, 0, 0);
+  const cutoff = new Date(today.getTime() + EQUIP_EXPIRY_DAYS * 86_400_000)
+    .toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+
+  const { data: eqs } = await supabase
+    .from('equipment')
+    .select('id, name, type, plate_or_serial, insurance_expiry')
+    .in('id', eqIds)
+    .eq('is_active', true)
+    .lte('insurance_expiry', cutoff);
+  if (!eqs?.length) return;
+
+  const dateKey = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const key = `equip_ins_${siteId}_${dateKey}`;
+  if (await alreadySent(chatId, 'equip_insurance', key)) return;
+
+  const lines = eqs.map(eq => {
+    const days = Math.round((new Date(eq.insurance_expiry) - today) / 86_400_000);
+    const icon = days <= 0 ? '🔴' : '🟠';
+    const label = days <= 0 ? `SCADUTA ${Math.abs(days)}gg fa` : `tra ${days}gg`;
+    return `${icon} <b>${eq.name || eq.type}</b>${eq.plate_or_serial ? ` (${eq.plate_or_serial})` : ''} — ${label}`;
+  });
+
+  const text =
+    `🚧 <b>Ladia — Scadenze mezzi</b> — ${siteName}\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `Un mezzo con assicurazione scaduta non può operare in cantiere.`;
+
+  const keyboard = tg.buildInlineKeyboard([
+    { text: '🤖 Gestisci con Ladia',  callbackData: `act:open_ladia:${siteId}` },
+    { text: '✅ Ho già gestito',       callbackData: `act:skip_equip:${siteId}` },
+  ], 2);
+
+  await safeSend(chatId, text, { replyMarkup: keyboard });
+  await markSent(chatId, 'equip_insurance', key, companyId, siteId);
+  console.log(`[ladiaProactive] equip_insurance → chat ${chatId} — ${siteName} (${lines.length} scadenze)`);
+}
+
 // ── Fatigue protection ────────────────────────────────────────
 // Se l'utente è in 'balanced' e non interagisce da FATIGUE_DAYS giorni,
 // passa automaticamente a 'quiet' e manda un messaggio gentile.
@@ -661,6 +788,8 @@ async function runProactiveEngine() {
         checkMidMorningPresences(entry),
         checkRepeatedNcPattern(entry),
         checkComplianceRisk(entry),
+        checkSubcontractorDurc(entry),
+        checkEquipmentInsurance(entry),
       ]);
       processed++;
     } catch (err) {
