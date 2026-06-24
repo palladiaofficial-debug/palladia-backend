@@ -706,8 +706,15 @@ async function generateInspectionShield(siteId, companyId) {
   ).length;
   const presentCount = presentToday.size;
 
+  // Risk Score attuale
+  let riskScore = null;
+  try {
+    riskScore = await computeRiskScore(siteId, companyId);
+  } catch { /* non blocca lo scudo */ }
+
   return {
     generatedAt: new Date().toISOString(),
+    riskScore: riskScore ? { score: riskScore.score, level: riskScore.level, label: riskScore.label, icon: riskScore.icon, dimensions: riskScore.dimensions } : null,
     site: {
       id: siteId,
       name: site?.name,

@@ -24,11 +24,55 @@ const { sendPushToCompany }              = require('./pushNotifications');
 // ── Cache ultimo livello per cantiere (in-memory) ───────────────────────────
 // Usato per rilevare transizioni (es. giallo → rosso)
 const lastLevelCache = new Map(); // key: siteId → 'verde'|'giallo'|'rosso'
+let cacheSeeded = false;
+
+async function _seedCacheFromDb() {
+  if (cacheSeeded) return;
+  try {
+    const { data } = await supabase.from('site_risk_scores')
+      .select('site_id, level, computed_at')
+      .order('computed_at', { ascending: false })
+      .limit(500);
+    const seen = new Set();
+    for (const r of data || []) {
+      if (seen.has(r.site_id)) continue;
+      seen.add(r.site_id);
+      lastLevelCache.set(r.site_id, r.level);
+    }
+    cacheSeeded = true;
+    console.log(`[safetyCopilot] cache seedata con ${seen.size} cantieri dal DB`);
+  } catch (e) {
+    console.error('[safetyCopilot] errore seed cache:', e.message);
+  }
+}
+
+// ── Pulizia record vecchi (>90 giorni) ──────────────────────────────────────
+
+async function _cleanupOldScores() {
+  const cutoff = new Date(Date.now() - 90 * 86_400_000).toISOString();
+  const { error, count } = await supabase.from('site_risk_scores')
+    .delete({ count: 'exact' })
+    .lt('computed_at', cutoff);
+  if (error) console.error('[safetyCopilot] cleanup errore:', error.message);
+  else if (count > 0) console.log(`[safetyCopilot] cleanup: rimossi ${count} record >90gg`);
+}
+
+// ── Strip items dalle dimensions per il salvataggio DB ──────────────────────
+
+function _stripDimensionsForDb(dimensions) {
+  const stripped = {};
+  for (const [key, dim] of Object.entries(dimensions)) {
+    const { items, forecast, ...rest } = dim;
+    stripped[key] = rest;
+  }
+  return stripped;
+}
 
 // ── Job principale ──────────────────────────────────────────────────────────
 
 async function runSafetyCopilotCheck() {
   console.log('[safetyCopilot] avvio calcolo risk scores...');
+  await _seedCacheFromDb();
 
   const results = await computeAllRiskScores();
   if (!results.length) {
@@ -47,13 +91,13 @@ async function runSafetyCopilotCheck() {
   }
 
   for (const [companyId, siteResults] of byCompany) {
-    // Salva tutti gli score in DB
+    // Salva tutti gli score in DB (dimensions strippate per risparmiare spazio)
     const records = siteResults.map(r => ({
       site_id:    r.siteId,
       company_id: r.companyId,
       score:      r.score,
       level:      r.level,
-      dimensions: r.dimensions,
+      dimensions: _stripDimensionsForDb(r.dimensions),
       computed_at: r.computedAt,
     }));
 
@@ -92,15 +136,25 @@ async function runSafetyCopilotCheck() {
 
 async function runMorningBrief() {
   console.log('[safetyCopilot] morning brief...');
+  await _seedCacheFromDb();
 
   const results = await computeAllRiskScores();
   if (!results.length) return;
 
+  // Salva score in DB (così la dashboard è aggiornata dalle 06:30)
   const byCompany = new Map();
   for (const r of results) {
     if (!byCompany.has(r.companyId)) byCompany.set(r.companyId, []);
     byCompany.get(r.companyId).push(r);
     lastLevelCache.set(r.siteId, r.level);
+  }
+
+  for (const [, siteResults] of byCompany) {
+    const records = siteResults.map(r => ({
+      site_id: r.siteId, company_id: r.companyId, score: r.score,
+      level: r.level, dimensions: _stripDimensionsForDb(r.dimensions), computed_at: r.computedAt,
+    }));
+    await supabase.from('site_risk_scores').insert(records).catch(() => {});
   }
 
   const todayIt = new Date().toLocaleDateString('it-IT', {
@@ -345,7 +399,13 @@ function startSafetyCopilotCron() {
     catch (e) { console.error('[safetyCopilot] check errore:', e.message); }
   }, { timezone: 'Europe/Rome' });
 
-  console.log('[cron] safety-copilot attivo — morning brief 06:30 lun-ven, check orario 08-19 lun-sab');
+  // Cleanup record >90gg — ogni domenica alle 03:00
+  cron.schedule('0 3 * * 0', async () => {
+    try { await _cleanupOldScores(); }
+    catch (e) { console.error('[safetyCopilot] cleanup errore:', e.message); }
+  }, { timezone: 'Europe/Rome' });
+
+  console.log('[cron] safety-copilot attivo — morning brief 06:30 lun-ven, check orario 08-19 lun-sab, cleanup dom 03:00');
 }
 
 module.exports = {
