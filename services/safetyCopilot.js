@@ -31,9 +31,10 @@ const WEIGHTS = {
 };
 
 // ── Soglie ──────────────────────────────────────────────────────────────────
-const FATIGUE_HOURS_WARN     = 9;    // ore consecutive → warning
-const FATIGUE_HOURS_CRITICAL = 11;   // ore consecutive → critical
-const ATTENDANCE_DROP_PCT    = 30;   // calo presenze vs media → anomalia
+const FATIGUE_HOURS_WARN     = 10;   // ore consecutive → warning (9h è routine in edilizia)
+const FATIGUE_HOURS_CRITICAL = 12;   // ore consecutive → critical
+const ATTENDANCE_DROP_PCT    = 40;   // calo presenze vs media → anomalia (30% era troppo sensibile)
+const ATTENDANCE_MIN_HOUR    = 10;   // non valutare presenze prima delle 10:00 (arrivi scaglionati)
 
 // ── Livelli ─────────────────────────────────────────────────────────────────
 function riskLevel(score) {
@@ -370,6 +371,12 @@ async function _checkFatigue(siteId, companyId, today) {
 // ── Dimensione 4: Presenze anomale ──────────────────────────────────────────
 
 async function _checkAttendance(siteId, companyId, today) {
+  // Prima delle 10:00 Rome gli arrivi sono scaglionati — non ha senso confrontare
+  const romeHour = new Date().toLocaleString('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Europe/Rome' });
+  if (parseInt(romeHour) < ATTENDANCE_MIN_HOUR) {
+    return { severity: 0, detail: 'Arrivi in corso (prima delle 10)', todayPresent: 0, avgPresent: 0 };
+  }
+
   // Presenze di oggi
   const dayStart = `${today}T00:00:00.000Z`;
   const dayEnd = `${today}T23:59:59.999Z`;

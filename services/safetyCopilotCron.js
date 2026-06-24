@@ -26,6 +26,19 @@ const { sendPushToCompany }              = require('./pushNotifications');
 const lastLevelCache = new Map(); // key: siteId → 'verde'|'giallo'|'rosso'
 let cacheSeeded = false;
 
+// ── Cooldown alert: max 1 escalation alert per cantiere per giorno ──────────
+const alertSentToday = new Map(); // key: siteId → dateString 'YYYY-MM-DD'
+
+function _canSendAlert(siteId) {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  return alertSentToday.get(siteId) !== today;
+}
+
+function _markAlertSent(siteId) {
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  alertSentToday.set(siteId, today);
+}
+
 async function _seedCacheFromDb() {
   if (cacheSeeded) return;
   try {
@@ -119,11 +132,13 @@ async function runSafetyCopilotCheck() {
       const escalated = _isEscalation(prevLevel, r.level);
       const deescalated = _isDeescalation(prevLevel, r.level);
 
-      if (escalated) {
+      if (escalated && _canSendAlert(r.siteId)) {
         await _sendRiskAlert(companyId, r);
+        _markAlertSent(r.siteId);
         alertsSent++;
-      } else if (deescalated && r.level === 'verde') {
+      } else if (deescalated && r.level === 'verde' && _canSendAlert(r.siteId)) {
         await _sendRiskResolved(companyId, r);
+        _markAlertSent(r.siteId);
         alertsSent++;
       }
     }
@@ -172,24 +187,24 @@ async function runMorningBrief() {
 
       const redCount    = sorted.filter(s => s.level === 'rosso').length;
       const yellowCount = sorted.filter(s => s.level === 'giallo').length;
-      const greenCount  = sorted.filter(s => s.level === 'verde').length;
+
+      // Tutto verde → silenzio. Non disturbare se va tutto bene.
+      if (redCount === 0 && yellowCount === 0) continue;
 
       let msg = `🛡️ <b>Safety Copilot — ${dayLabel}</b>\n\n`;
 
       // Headline
       if (redCount > 0) {
         msg += `⚠️ <b>${redCount} cantier${redCount > 1 ? 'i' : 'e'} a rischio alto</b>\n\n`;
-      } else if (yellowCount > 0) {
-        msg += `🟡 <b>${yellowCount} cantier${yellowCount > 1 ? 'i richiedono' : 'e richiede'} attenzione</b>\n\n`;
       } else {
-        msg += `✅ <b>Tutti i cantieri sono in ordine</b>\n\n`;
+        msg += `🟡 <b>${yellowCount} cantier${yellowCount > 1 ? 'i richiedono' : 'e richiede'} attenzione</b>\n\n`;
       }
 
-      // Dettaglio per cantiere
-      for (const r of sorted) {
+      // Dettaglio solo per cantieri con problemi (non mostrare i verdi)
+      const withIssues = sorted.filter(s => s.level !== 'verde');
+      for (const r of withIssues) {
         msg += `${r.icon} <b>${_esc(r.siteName)}</b> — ${r.score}/100\n`;
 
-        // Mostra solo le dimensioni con problemi
         const problems = Object.entries(r.dimensions)
           .filter(([, dim]) => dim.severity > 20)
           .sort((a, b) => b[1].severity - a[1].severity);
@@ -241,10 +256,12 @@ async function runMorningBrief() {
 // ── Helper: costruisci brief per sottoinsieme di cantieri ───────────────────
 
 function _buildBriefForSites(sites, dayLabel) {
-  const sorted = [...sites].sort((a, b) => b.score - a.score);
+  const withIssues = [...sites].filter(s => s.level !== 'verde').sort((a, b) => b.score - a.score);
+  if (!withIssues.length) return null; // tutto verde → silenzio
+
   let msg = `🛡️ <b>Safety Copilot — ${dayLabel}</b>\n\n`;
 
-  for (const r of sorted) {
+  for (const r of withIssues) {
     msg += `${r.icon} <b>${_esc(r.siteName)}</b> — ${r.score}/100\n`;
     const problems = Object.entries(r.dimensions)
       .filter(([, dim]) => dim.severity > 20)
@@ -364,7 +381,7 @@ function _getSuggestion(dimKey, dim) {
   }
 }
 
-const FATIGUE_HOURS_CRITICAL = 11;
+const FATIGUE_HOURS_CRITICAL = 12;
 
 // ── Transizioni ─────────────────────────────────────────────────────────────
 
