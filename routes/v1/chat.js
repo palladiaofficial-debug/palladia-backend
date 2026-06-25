@@ -3713,16 +3713,18 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 // Query params: context_type? ('azienda'|'cantiere'), context_id? (site_id)
 // ─────────────────────────────────────────────────────────────────────────────
 router.get('/chat/conversations', verifySupabaseJwt, async (req, res) => {
-  const { context_type, context_id } = req.query;
+  const { context_type, context_id, include_team } = req.query;
+  const isManager = ['owner', 'admin'].includes(req.userRole);
+  const teamView  = include_team === 'true' && isManager;
 
   let q = supabase
     .from('chat_conversations')
-    .select('id, title, context_type, context_id, created_at, updated_at')
+    .select('id, title, context_type, context_id, user_id, created_at, updated_at')
     .eq('company_id', req.companyId)
-    .eq('user_id', req.user.id)
     .order('updated_at', { ascending: false })
-    .limit(100);
+    .limit(200);
 
+  if (!teamView) q = q.eq('user_id', req.user.id);
   if (context_type) q = q.eq('context_type', context_type);
   if (context_id)   q = q.eq('context_id', context_id);
 
