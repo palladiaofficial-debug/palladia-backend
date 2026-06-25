@@ -5,6 +5,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createInviteSchema } = require('../../lib/schemas/invites');
+const { sendInviteEmail } = require('../../services/email');
 
 const APP_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -86,12 +87,21 @@ router.post('/invites', verifySupabaseJwt, validate(createInviteSchema), async (
 
   const inviteUrl = `${APP_URL}/invito/${token}`;
 
+  // Recupera nome company per l'email
+  const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).single();
+  const companyName = company?.name || 'Palladia';
+  const inviterName = req.user.email || 'Il tuo team';
+
+  // Invia email (fire-and-forget: non blocca la risposta in caso di errore email)
+  sendInviteEmail({ to: invite.email, companyName, inviterName, role: invite.role, inviteUrl })
+    .catch(err => console.error('[invites] sendInviteEmail failed:', err.message));
+
   res.status(201).json({
     id:         invite.id,
     email:      invite.email,
     role:       invite.role,
     expires_at: invite.expires_at,
-    invite_url: inviteUrl, // utile per debug/copia-link
+    invite_url: inviteUrl,
   });
 });
 
