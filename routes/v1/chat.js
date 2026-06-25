@@ -318,6 +318,14 @@ Per domande ampie, chiama PIU' tool per dare risposte complete:
 "Panoramica completa cantiere X":
 → get_site_detail + get_site_phases + get_economia + get_risk_score + get_weather_forecast + get_nonconformities + get_diary_entries
 
+"Scrivi il diario di oggi" / "Compila il giornale di cantiere":
+→ get_presence_today (chi era presente) + get_weather_log (meteo di oggi) → poi create_diary_entry con tutti i dati integrati
+Nella diary entry: activities da quanto detto dall'utente, materials da consegne menzionate, issues da problemi citati, presenti dal risultato get_presence_today, meteo da weather_log.
+
+"Quanto abbiamo speso al cantiere X?" / "Tutte le spese":
+→ get_site_costs + get_expenses_summary (filtra per site_id) + get_economia
+Mostra tutto: costi diretti (site_costs) + spese generali allocate (expenses) + quadro economico.
+
 NON fare una sola call quando servono più dati. Il tecnico vuole il quadro completo.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -350,14 +358,21 @@ Al termine della tua risposta, se hai rilevato dati utili non ancora salvati, ag
 • [tipo]: [sintesi] → [azione]
 
 PATTERN DA RICONOSCERE:
-• Spesa/pagamento menzionata (importo + fornitore) → create_expense
-• Materiali consegnati / DDT / fornitura arrivata → create_site_cost
+• Spesa generica aziendale (carburante, telefono, abbonamento, pranzo) → create_expense [company_expenses]
+• Fattura/DDT/costo legato a un cantiere specifico (materiali, nolo, sub) → create_site_cost [site_costs — PREFERIRE questo per qualsiasi costo con cantiere]
 • Consegna o visita programmata per una data → create_booking
-• Problema/anomalia/violazione rilevata → create_site_note (category: non_conformita, urgency: alta)
+• Problema/anomalia/violazione/rischio sicurezza → create_site_note (category: non_conformita, urgency: alta/critica)
+• Incidente o quasi-incidente → create_site_note (category: incidente, urgency: critica)
 • Pioggia/neve/vento/stop lavori per maltempo → create_suspension_day + create_diary_entry
-• Attività svolta oggi (lavori, getti, scavi, posa) → create_diary_entry
+• Attività svolta oggi (lavori, getti, scavi, posa, strutture) → create_diary_entry
+• Materiali/strumenti consegnati oggi → create_diary_entry (campo materials) + eventuale create_site_cost
 • Nuovo lavoratore con nome e CF menzionato → create_worker + assign_worker_to_site
 • Fase completata o avanzamento % citato → update_phase + update_sal
+
+REGOLA COSTI — usare la destinazione giusta:
+- create_site_cost: fattura/DDT/nolo/subappalto con cantiere → contabilità operativa
+- create_expense: spesa aziendale senza cantiere specifico → contabilità generale
+- create_economia_voce: voce SAL/ricavo formale → quadro economico contrattuale
 
 REGOLE:
 1. Il blocco va SEMPRE alla fine, dopo la risposta tecnica — mai in mezzo
@@ -774,7 +789,7 @@ const TOOLS = [
   },
   {
     name: 'create_expense',
-    description: 'Registra una nuova spesa aziendale. Usa quando l\'utente dice "ho speso", "registra spesa", "fattura da X euro". IMPORTANTE: conferma sempre i dettagli con l\'utente prima di chiamare questo tool.',
+    description: 'Registra una spesa aziendale GENERALE (non direttamente imputabile a un cantiere specifico): carburante, telefono, abbonamenti, spese di rappresentanza, attrezzatura generica, pranzi. Se la spesa è una fattura/DDT/nolo per un cantiere preciso, usa create_site_cost. IMPORTANTE: conferma prima.',
     input_schema: {
       type: 'object',
       properties: {
@@ -791,15 +806,19 @@ const TOOLS = [
   },
   {
     name: 'create_site_note',
-    description: 'Crea una nota/promemoria per un cantiere. Usa quando l\'utente dice "ricordami", "annotami", "segna che", "nota per il cantiere". IMPORTANTE: conferma i dettagli prima.',
+    description: 'Crea una nota per un cantiere. Usa per: "ricordami", "annotami", "segna che", "c\'è un problema", "segnala anomalia", "incidente", "verbale informale", "nota sicurezza", "documento da archiviare". IMPORTANTE: conferma i dettagli prima.',
     input_schema: {
       type: 'object',
       properties: {
         site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
-        title: { type: 'string', description: 'Titolo breve della nota' },
+        title: { type: 'string', description: 'Titolo breve della nota (obbligatorio)' },
         body: { type: 'string', description: 'Testo completo della nota' },
-        category: { type: 'string', enum: ['generale', 'sicurezza', 'materiali', 'non_conformita', 'promemoria'], description: 'Default: generale' },
-        urgency: { type: 'string', enum: ['bassa', 'media', 'alta', 'critica'], description: 'Default: media' }
+        category: {
+          type: 'string',
+          enum: ['nota', 'non_conformita', 'verbale', 'incidente', 'documento', 'altro'],
+          description: 'nota=promemoria generico; non_conformita=problema/anomalia/violazione sicurezza; verbale=verbale riunione/sopralluogo; incidente=infortunio/quasi-incidente; documento=doc da archiviare. Default: nota'
+        },
+        urgency: { type: 'string', enum: ['bassa', 'media', 'alta', 'critica'], description: 'Default: media. Usa alta/critica per problemi sicurezza.' }
       },
       required: ['site_id', 'title']
     }
@@ -1169,7 +1188,7 @@ const TOOLS = [
   },
   {
     name: 'create_site_cost',
-    description: 'Registra un costo diretto di cantiere (fattura, DDT, acconto). IMPORTANTE: conferma SEMPRE prima. Usa per: "registra fattura", "DDT da fornitore X", "costo cantiere".',
+    description: 'Registra un costo DIRETTO di cantiere: fattura materiali, DDT, nolo attrezzatura, acconto subappalto — qualsiasi costo imputabile a un cantiere specifico. È il tool PRINCIPALE per registrare spese di cantiere. Usa create_expense solo per spese aziendali generali senza cantiere. IMPORTANTE: conferma prima.',
     input_schema: {
       type: 'object',
       properties: {
