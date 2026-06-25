@@ -244,7 +244,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 57 TOOL
+TOOL DISPONIBILI — 60 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -260,6 +260,9 @@ PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
 create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site
+
+ELABORAZIONE IMMAGINI (usa quando l'utente invia una foto):
+create_expense_from_image, create_ddt_from_image, archive_document_image
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRATEGIA MULTI-TOOL — RISPOSTE COMPLETE
@@ -357,7 +360,36 @@ Tu NON sei un semplice chatbot. Sei il punto di controllo unico per ogni cantier
 Il tecnico deve poter gestire TUTTO da qui: presenze, sicurezza, economia, meteo, documenti, subappaltatori, mezzi, NC, diario, cedolini, scadenze.
 Se l'utente ti chiede qualcosa, hai il tool per rispondere. Se manca un dato, dillo — non rimandare MAI a "un'altra sezione".
 Quando presenti lo stato di un cantiere, pensa come un direttore di cantiere: cosa mi serve sapere ORA per prendere decisioni?
-Priorità: sicurezza > scadenze > economia > operatività.`;
+Priorità: sicurezza > scadenze > economia > operatività.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ELABORAZIONE IMMAGINI E DOCUMENTI FOTOGRAFATI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Quando ricevi una o più immagini, analizzale IMMEDIATAMENTE e identifica il tipo:
+
+RICEVUTA / SCONTRINO / FATTURA:
+→ Estrai: fornitore, importo totale, data, numero documento, articoli/servizi
+→ Tool: create_expense_from_image
+→ Mostra dati estratti in tabella, chiedi conferma e cantiere di destinazione
+
+DDT — Documento di Trasporto:
+→ Estrai: mittente, numero DDT, data, descrizione merci, destinatario/cantiere
+→ Tool: create_ddt_from_image
+→ Associa al cantiere già noto nella conversazione, o chiedi
+
+VERBALE / ORDINE / LETTERA / CERTIFICATO / PLANIMETRIA / FOTO CANTIERE:
+→ Identifica tipo, data, parti, contenuto chiave
+→ Tool: archive_document_image
+→ Proponi categoria e cantiere, crea nota strutturata con tutto il contenuto
+
+REGOLE IMMAGINI:
+1. Analizza PRIMA, chiedi DOPO — non dire "non riesco a vedere" prima di guardare
+2. Estrai TUTTI i campi leggibili. Se un campo è illeggibile, scrivi "illeggibile"
+3. Prima di salvare mostra sempre il riepilogo strutturato e chiedi conferma
+4. Se l'utente dice "registra" o "sì" o "ok" dopo il riepilogo, salva direttamente
+5. Dopo la registrazione: "✓ [Tipo] da [fornitore] del [data] registrato in [cantiere]"
+6. Per le foto di cantiere: descrivi lo stato lavori, segnala problemi visibili, suggerisci azioni`;
+
 
 // ── System prompt per strutturazione report (export) ─────────────────────────
 const REPORT_SYSTEM_PROMPT = `Sei un formattatore di report aziendali professionali.
@@ -1198,7 +1230,61 @@ const TOOLS = [
       },
       required: ['site_id']
     }
-  }
+  },
+
+  // ── Image processing tools ────────────────────────────────────────────────
+  {
+    name: 'create_expense_from_image',
+    description: 'Registra spesa/ricevuta/fattura estratta da foto. Usa dopo aver analizzato un\'immagine di documento di pagamento.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:        { type: 'string',  description: 'UUID cantiere. Ometti per spesa aziendale generica.' },
+        amount:         { type: 'number',  description: 'Importo totale EUR' },
+        vendor:         { type: 'string',  description: 'Fornitore/venditore' },
+        expense_date:   { type: 'string',  description: 'Data documento YYYY-MM-DD' },
+        description:    { type: 'string',  description: 'Descrizione spesa' },
+        category:       { type: 'string',  enum: ['materiali', 'manodopera', 'noli', 'trasporti', 'sicurezza', 'altro'], description: 'Categoria' },
+        invoice_number: { type: 'string',  description: 'Numero fattura/ricevuta se presente' },
+        payment_method: { type: 'string',  enum: ['contanti', 'bonifico', 'carta', 'assegno', 'altro'], description: 'Metodo pagamento' },
+        image_note:     { type: 'string',  description: 'Nota sul documento analizzato' },
+      },
+      required: ['amount', 'description', 'category']
+    }
+  },
+  {
+    name: 'create_ddt_from_image',
+    description: 'Registra DDT (Documento di Trasporto / bolla di consegna) estratto da foto nel cantiere.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:     { type: 'string', description: 'UUID cantiere destinatario' },
+        vendor:      { type: 'string', description: 'Mittente/Fornitore' },
+        ddt_number:  { type: 'string', description: 'Numero DDT / bolla' },
+        ddt_date:    { type: 'string', description: 'Data DDT YYYY-MM-DD' },
+        description: { type: 'string', description: 'Descrizione merci trasportate' },
+        amount:      { type: 'number', description: 'Importo se indicato (0 se assente)' },
+        image_note:  { type: 'string', description: 'Note aggiuntive sul DDT' },
+      },
+      required: ['description']
+    }
+  },
+  {
+    name: 'archive_document_image',
+    description: 'Archivia come nota strutturata un documento fotografato: verbale, ordine, lettera, certificato, planimetria, foto cantiere.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:         { type: 'string', description: 'UUID cantiere associato' },
+        title:           { type: 'string', description: 'Titolo descrittivo del documento' },
+        doc_type:        { type: 'string', description: 'Tipo: verbale_cse | ordine | lettera | certificato | planimetria | contratto | foto_cantiere | altro' },
+        doc_date:        { type: 'string', description: 'Data documento YYYY-MM-DD' },
+        content_summary: { type: 'string', description: 'Riepilogo dettagliato del contenuto estratto dall\'immagine' },
+        urgency:         { type: 'string', enum: ['bassa', 'media', 'alta'], description: 'Urgenza' },
+      },
+      required: ['title', 'doc_type', 'content_summary']
+    }
+  },
 ];
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -2624,6 +2710,56 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         return { prenotazioni: data || [], total: (data || []).length, periodo: { da: fromDate, a: toDate } };
       }
 
+      // ── Image processing tools ──────────────────────────────────────────────
+
+      case 'create_expense_from_image': {
+        const row = {
+          company_id:     companyId,
+          amount:         toolInput.amount,
+          category:       toolInput.category || 'altro',
+          description:    toolInput.description + (toolInput.image_note ? ` [${toolInput.image_note}]` : ''),
+          supplier:       toolInput.vendor || null,
+          site_id:        toolInput.site_id || null,
+          expense_date:   toolInput.expense_date || todayRome,
+          payment_method: toolInput.payment_method || 'altro',
+        };
+        const { data, error } = await supabase.from('company_expenses').insert(row).select().single();
+        if (error) return { error: error.message };
+        return { success: true, spesa_creata: data, messaggio: `Spesa di €${toolInput.amount} da "${toolInput.vendor || 'fornitore'}" registrata correttamente.` };
+      }
+
+      case 'create_ddt_from_image': {
+        const row = {
+          company_id:       companyId,
+          site_id:          toolInput.site_id || null,
+          descrizione:      toolInput.description + (toolInput.image_note ? ` — ${toolInput.image_note}` : ''),
+          importo:          toolInput.amount || 0,
+          fornitore:        toolInput.vendor || null,
+          tipo:             'ddt',
+          numero_documento: toolInput.ddt_number || null,
+          data_documento:   toolInput.ddt_date || todayRome,
+          note:             toolInput.image_note || null,
+        };
+        const { data, error } = await supabase.from('site_costs').insert(row).select().single();
+        if (error) return { error: error.message };
+        return { success: true, ddt_registrato: data, messaggio: `DDT${toolInput.ddt_number ? ' n.' + toolInput.ddt_number : ''} da "${toolInput.vendor || 'mittente'}" registrato correttamente.` };
+      }
+
+      case 'archive_document_image': {
+        const row = {
+          company_id: companyId,
+          site_id:    toolInput.site_id || null,
+          title:      toolInput.title,
+          body:       `[${toolInput.doc_type?.toUpperCase() || 'DOCUMENTO'}] ${toolInput.content_summary}`,
+          category:   'documento',
+          urgency:    toolInput.urgency || 'media',
+          user_id:    userId || null,
+        };
+        const { data, error } = await supabase.from('site_notes').insert(row).select().single();
+        if (error) return { error: error.message };
+        return { success: true, documento_archiviato: data, messaggio: `Documento "${toolInput.title}" archiviato correttamente.` };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -3267,12 +3403,21 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, conversation_id, context_type = 'azienda', context_id, history = [] } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [] } = req.body;
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
   if (message.length > 4000) {
     return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
+  }
+  if (!Array.isArray(images) || images.length > 5) {
+    return res.status(400).json({ error: 'MAX_5_IMAGES' });
+  }
+  const VALID_IMG_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+  for (const img of images) {
+    if (!img?.data || typeof img.data !== 'string') return res.status(400).json({ error: 'INVALID_IMAGE_DATA' });
+    if (!VALID_IMG_TYPES.includes(img.media_type)) return res.status(400).json({ error: 'INVALID_IMAGE_TYPE' });
+    if (img.data.length > 7_000_000) return res.status(400).json({ error: 'IMAGE_TOO_LARGE' }); // ~5MB
   }
 
   // SSE headers — disabilita buffering Nginx/Railway
@@ -3325,7 +3470,17 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
   }
 
-  let messages = [...dbHistory, { role: 'user', content: message.trim() }];
+  const userText = message.trim();
+  const userContent = images.length > 0
+    ? [
+        ...images.map(img => ({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } })),
+        { type: 'text', text: userText },
+      ]
+    : userText;
+  const userMsgForDb = images.length > 0
+    ? `[${images.length} immagine${images.length > 1 ? 'i' : ''}] ${userText}`
+    : userText;
+  let messages = [...dbHistory, { role: 'user', content: userContent }];
   let fullAssistantReply = ''; // colleziona testo completo per salvarlo
 
   let aborted = false;
@@ -3340,7 +3495,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 
   try {
     const client = getClient();
-    const model  = classifyQuery(message);
+    const model  = images.length > 0 ? MODEL_SONNET : classifyQuery(message);
 
     // Loop agentico con streaming — max 4 iterazioni
     for (let iter = 0; iter < 6 && !aborted; iter++) {
@@ -3419,11 +3574,11 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       send({ type: 'done' });
       // Salva nel DB asincrono
       if (fullAssistantReply) {
-        saveMessages(convId, message.trim(), fullAssistantReply).catch(e =>
+        saveMessages(convId, userMsgForDb, fullAssistantReply).catch(e =>
           console.error('[chat/stream] saveMessages error:', e.message)
         );
         if (isNew) {
-          autoTitle(convId, message.trim(), getClient()).catch(() => {});
+          autoTitle(convId, userMsgForDb, getClient()).catch(() => {});
         }
       }
     }
