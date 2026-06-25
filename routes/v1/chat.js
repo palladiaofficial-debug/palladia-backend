@@ -3630,7 +3630,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
 
       // Itera eventi raw SSE
       for await (const event of stream) {
-        if (aborted) break;
+        if (aborted) { stream.abort(); break; }
 
         if (event.type === 'content_block_start') {
           collectedContent.push({ ...event.content_block, _inputRaw: '' });
@@ -3651,7 +3651,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
         }
       }
 
-      if (aborted) break;
+      if (aborted) { try { stream.abort(); } catch {} break; }
       if (stopReason !== 'tool_use') break; // risposta testo — fine loop
 
       // Parsa input JSON dei tool (arrivato come stringa parziale durante lo stream)
