@@ -3359,7 +3359,7 @@ async function autoTitle(conversationId, firstUserMessage, client) {
     const resp = await client.messages.create({
       model:      MODEL_HAIKU,
       max_tokens: 32,
-      system:     'Genera un titolo brevissimo (max 40 caratteri, italiano) per questa conversazione. Solo il titolo, zero spiegazioni.',
+      system:     'Genera un titolo brevissimo (max 5 parole, italiano). SOLO testo semplice, ZERO markdown, ZERO hashtag #, ZERO asterischi *, ZERO simboli. Esempio: "Presenze cantiere oggi"',
       messages:   [{ role: 'user', content: firstUserMessage.slice(0, 300) }],
     });
     const title = resp.content.find(b => b.type === 'text')?.text?.trim().slice(0, 60) || 'Chat';
