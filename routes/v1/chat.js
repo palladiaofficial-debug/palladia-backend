@@ -244,7 +244,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 60 TOOL
+TOOL DISPONIBILI — 61 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -259,10 +259,14 @@ SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
-create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site
+create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking
 
 ELABORAZIONE IMMAGINI (usa quando l'utente invia una foto):
 create_expense_from_image, create_ddt_from_image, archive_document_image
+
+NOTA — NON CONFORMITÀ DA IMPRESA:
+La tabella NC formale richiede il coordinatore. Per segnalare un problema da impresa usa:
+create_site_note con category='non_conformita', urgency='alta' o 'critica'
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRATEGIA MULTI-TOOL — RISPOSTE COMPLETE
@@ -337,7 +341,34 @@ Prima di chiamare QUALSIASI tool di scrittura (create_*, update_*, assign_*):
 ECCEZIONE: Se l'utente dice esplicitamente "registra", "segna", "fai" con tutti i dati già chiari e non ambigui, puoi procedere direttamente senza chiedere conferma.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SUGGERIMENTI PROATTIVI
+RICONOSCIMENTO IMPLICITO — ZERO PERDITA DI DATI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+In OGNI messaggio dell'utente, identifica dati registrabili anche se non richiesti esplicitamente.
+Al termine della tua risposta, se hai rilevato dati utili non ancora salvati, aggiungi:
+
+📋 **Rilevato — vuoi che registri?**
+• [tipo]: [sintesi] → [azione]
+
+PATTERN DA RICONOSCERE:
+• Spesa/pagamento menzionata (importo + fornitore) → create_expense
+• Materiali consegnati / DDT / fornitura arrivata → create_site_cost
+• Consegna o visita programmata per una data → create_booking
+• Problema/anomalia/violazione rilevata → create_site_note (category: non_conformita, urgency: alta)
+• Pioggia/neve/vento/stop lavori per maltempo → create_suspension_day + create_diary_entry
+• Attività svolta oggi (lavori, getti, scavi, posa) → create_diary_entry
+• Nuovo lavoratore con nome e CF menzionato → create_worker + assign_worker_to_site
+• Fase completata o avanzamento % citato → update_phase + update_sal
+
+REGOLE:
+1. Il blocco va SEMPRE alla fine, dopo la risposta tecnica — mai in mezzo
+2. Max 3 voci per blocco (priorizza: sicurezza > scadenze > economia)
+3. Se l'utente risponde "sì", "ok", "registra" → procedi direttamente senza ulteriore riepilogo
+4. Per N elementi dello stesso tipo (es. 3 lavoratori, 2 spese) → registrali tutti in sequenza
+5. Non proporre se i dati sono già stati registrati in questa conversazione
+6. Non proporre per dati già certi (es. l'utente ti ha appena chiesto solo un consiglio normativo)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SUGGERIMENTI PROATTIVI (dopo visualizzazione dati)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Dopo aver mostrato dati, suggerisci azioni quando pertinente:
 - Documenti scaduti → "Vuoi che aggiorni la scadenza?"
@@ -1017,6 +1048,23 @@ const TOOLS = [
         materials: { type: 'string', description: 'Materiali utilizzati/consegnati' }
       },
       required: ['site_id']
+    }
+  },
+  {
+    name: 'create_booking',
+    description: 'Registra una prenotazione/consegna/appuntamento per un cantiere. IMPORTANTE: conferma SEMPRE prima. Usa per: "domani arriva il calcestruzzo", "visita del collaudatore mercoledì", "consegna ferro lunedì mattina".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:      { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        title:        { type: 'string', description: 'Titolo/oggetto della prenotazione (obbligatorio). Es: "Consegna calcestruzzo", "Visita collaudo"' },
+        booking_date: { type: 'string', description: 'Data YYYY-MM-DD (obbligatorio)' },
+        booking_time: { type: 'string', description: 'Ora HH:MM (opzionale)' },
+        category:     { type: 'string', enum: ['consegna', 'visita', 'collaudo', 'sopralluogo', 'fornitura', 'altro'], description: 'Tipo appuntamento. Default: consegna.' },
+        supplier:     { type: 'string', description: 'Fornitore/ditta (opzionale)' },
+        notes:        { type: 'string', description: 'Note aggiuntive (opzionale)' }
+      },
+      required: ['site_id', 'title', 'booking_date']
     }
   },
   {
@@ -2411,6 +2459,23 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         const { data, error } = await supabase.from('site_diary_entries').upsert(row, { onConflict: 'site_id,entry_date' }).select().single();
         if (error) return { error: error.message };
         return { success: true, diario_salvato: data };
+      }
+
+      case 'create_booking': {
+        if (!toolInput.site_id || !toolInput.title || !toolInput.booking_date) return { error: 'site_id, title e booking_date obbligatori' };
+        const { data, error } = await supabase.from('site_bookings').insert({
+          company_id:   companyId,
+          site_id:      toolInput.site_id,
+          title:        toolInput.title,
+          booking_date: toolInput.booking_date,
+          booking_time: toolInput.booking_time || null,
+          category:     toolInput.category || 'consegna',
+          supplier:     toolInput.supplier || null,
+          notes:        toolInput.notes || null,
+          status:       'programmata',
+        }).select().single();
+        if (error) return { error: error.message };
+        return { success: true, prenotazione_salvata: data };
       }
 
       case 'create_suspension_day': {
