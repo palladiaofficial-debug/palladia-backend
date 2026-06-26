@@ -3757,7 +3757,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
           }
-          if (block.name === 'leggi_documento_pdf' && !result.errore) {
+          if (block.name === 'leggi_documento_pdf' && !result.errore && !result.error) {
             send({
               type:        'document_card',
               documento:   result.documento,

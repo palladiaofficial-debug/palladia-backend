@@ -116,8 +116,8 @@ async function processCompany(companyId, sites) {
       const forecast   = await getForecast(site.latitude, site.longitude);
       const candidates = detectAlerts(forecast, {
         heatC:         site.weather_heat_c ?? 35,
-        snowEnabled:   site.weather_snow   !== false,
-        thunderEnabled:site.weather_thunderstorm !== false,
+        snowEnabled:   true,
+        thunderEnabled:true,
       });
 
       const newAlerts = await filterNew(site.id, candidates);
@@ -149,7 +149,7 @@ async function runWeatherAlerts() {
 
   const { data: rows } = await supabase
     .from('sites')
-    .select('id, company_id, name, address, latitude, longitude, weather_heat_c, weather_snow, weather_thunderstorm')
+    .select('id, company_id, name, address, latitude, longitude, weather_heat_c')
     .in('status', ['attivo', 'sospeso'])
     .not('latitude', 'is', null)
     .not('longitude', 'is', null);
