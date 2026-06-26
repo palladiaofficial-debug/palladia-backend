@@ -74,35 +74,37 @@ async function markSent(siteId, companyId, alerts) {
     );
 }
 
-// ── Crea notifiche in-app ─────────────────────────────────────────────────────
+// ── Crea/aggiorna notifica in-app (una per cantiere, aggregata) ───────────────
 async function createNotifications(companyId, siteId, siteName, alerts) {
-  const SEVERITY = { heat: 'danger', snow: 'warning', thunderstorm: 'warning' };
+  if (!alerts.length) return;
 
-  for (const a of alerts) {
+  // severity: heat → critical, altrimenti warning (valori validi: info|warning|critical)
+  const severity = alerts.some(a => a.type === 'heat') ? 'critical' : 'warning';
+
+  const lines = alerts.map(a => {
     const dateIt = new Date(a.date + 'T00:00:00').toLocaleDateString('it-IT', {
-      weekday: 'long', day: 'numeric', month: 'long',
+      weekday: 'short', day: 'numeric', month: 'long',
     });
     const label = ALERT_LABELS[a.type] || a.type;
-    let title, body;
+    const temp  = a.type === 'heat' && a.tempMax != null ? ` (max ${a.tempMax}°C)` : '';
+    return `${dateIt}: ${label}${temp}`;
+  });
 
-    if (a.type === 'heat') {
-      title = `${label} — ${siteName}`;
-      body  = `${dateIt}: temperatura massima prevista ${a.tempMax}°C. Adotta misure di protezione per i lavoratori (D.Lgs. 81/2008 art. 63).`;
-    } else {
-      title = `${label} prevista — ${siteName}`;
-      body  = `${dateIt}: ${a.description}. Valuta la sospensione dei lavori e informa i lavoratori.`;
-    }
+  const uniqueTypes = [...new Set(alerts.map(a => a.type))];
+  const title = uniqueTypes.map(t => ALERT_LABELS[t] || t).join(' · ') + ` — ${siteName}`;
+  const body  = lines.join('\n') + '\nValuta misure di protezione o la sospensione dei lavori.';
 
-    await supabase.from('notifications').insert({
-      company_id:  companyId,
-      type:        'weather_alert',
-      severity:    SEVERITY[a.type] || 'warning',
-      title,
-      body,
-      entity_type: 'site',
-      entity_id:   siteId,
-    });
-  }
+  // UPSERT: una sola notifica per cantiere (unique su company_id, entity_type, entity_id, type)
+  await supabase.from('notifications').upsert({
+    company_id:  companyId,
+    type:        'weather_alert',
+    severity,
+    title,
+    body,
+    entity_type: 'site',
+    entity_id:   siteId,
+    updated_at:  new Date().toISOString(),
+  }, { onConflict: 'company_id,entity_type,entity_id,type' });
 }
 
 // ── Elabora una singola company ───────────────────────────────────────────────
