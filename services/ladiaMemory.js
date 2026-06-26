@@ -171,7 +171,8 @@ Regole:
       messages: [{ role: 'user', content: prompt }],
     });
 
-    const text = res.content[0]?.text?.trim();
+    const raw  = res.content[0]?.text?.trim() ?? '';
+    const text = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
     const json = JSON.parse(text);
     if (!json.aggiornamenti?.length) return;
 

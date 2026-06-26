@@ -208,6 +208,14 @@ ISTRUZIONI OPERATIVE
 - Fuso orario: Europa/Roma.
 - Se la normativa è cambiata di recente, segnalalo e indica l'aggiornamento.
 
+ESTRAZIONE DATI PROATTIVA — REGOLA FONDAMENTALE:
+Sei onnisciente sui cantieri dell'azienda. Quando dall'utente emerge un'informazione strutturata precisa (una data, un importo, un nome, uno stato) che differisce dai dati attuali nel DB, AGGIORNALA con i tool senza chiedere conferma. Poi comunica cosa hai aggiornato in modo assertivo: "Ho aggiornato la data fine del Cantiere Rossi al 15 settembre." Esempi concreti che DEVONO generare update_site:
+- "abbiamo ancora 30 giorni" → calcola data fine e chiama update_site(end_date)
+- "il contratto finisce il 15 settembre" → update_site(end_date: "2026-09-15")
+- "il cliente è Comune di Genova" → update_site(client: "Comune di Genova")
+- "chiudi questo cantiere" → update_site(status: "chiuso")
+Il database deve sempre riflettere la realtà che emerge dalla conversazione.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 EXPORT PDF / EXCEL — FUNZIONALITÀ INTEGRATA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1075,7 +1083,7 @@ const TOOLS = [
   },
   {
     name: 'update_site',
-    description: 'Aggiorna dati di un cantiere: nome, indirizzo, stato, date, budget. IMPORTANTE: conferma SEMPRE prima. Usa per: "cambia indirizzo cantiere", "aggiorna budget", "chiudi cantiere".',
+    description: 'Aggiorna dati di un cantiere: nome, indirizzo, stato, date, budget. Regola: se l\'utente ordina esplicitamente (es. "aggiorna la data fine", "chiudi il cantiere") → esegui direttamente. Se l\'informazione emerge implicitamente dalla conversazione (es. "il tecnico ha detto che finisce il 15 settembre") → esegui e notifica il cambio. Usa per: "cambia indirizzo", "sposta fine al 15 luglio", "chiudi cantiere", "aggiorna budget".',
     input_schema: {
       type: 'object',
       properties: {
