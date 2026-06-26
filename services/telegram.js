@@ -76,6 +76,17 @@ async function downloadFile(filePath) {
   return Buffer.from(arrayBuffer);
 }
 
+/**
+ * Invia una foto (URL pubblico o file_id Telegram).
+ * caption: testo opzionale sotto l'immagine (max 1024 char).
+ */
+async function sendPhoto(chatId, photo, { caption, parseMode = 'HTML', replyMarkup } = {}) {
+  const body = { chat_id: chatId, photo, parse_mode: parseMode };
+  if (caption)     body.caption = caption;
+  if (replyMarkup) body.reply_markup = replyMarkup;
+  return tgPost('sendPhoto', body);
+}
+
 // ── Keyboard helpers ─────────────────────────────────────────
 
 /**
@@ -195,6 +206,7 @@ async function editMessageReplyMarkup(chatId, messageId, replyMarkup = null) {
 
 module.exports = {
   sendMessage,
+  sendPhoto,
   editMessageText,
   editMessageReplyMarkup,
   answerCallbackQuery,

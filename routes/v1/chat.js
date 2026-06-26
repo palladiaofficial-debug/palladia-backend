@@ -253,13 +253,18 @@ SICUREZZA E COMPLIANCE: get_compliance_overview, get_upcoming_deadlines, get_ris
 FASI E AVANZAMENTO: get_site_phases, get_sal_history, get_computo_voci, get_capitolato_voci
 METEO E SOSPENSIONI: get_weather_forecast, get_weather_log, get_suspension_days
 ECONOMIA E COSTI: get_site_costs, get_expenses_summary, get_payslips
-DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents
+DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents, leggi_documento_pdf
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
 create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking
+
+LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
+leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
+Quando restituisce 'doc_url', includi sempre il link "[Apri documento →](url)" in fondo.
+Non parafrasare la citazione: riportala verbatim come estratta dal documento.
 
 ELABORAZIONE IMMAGINI (usa quando l'utente invia una foto):
 create_expense_from_image, create_ddt_from_image, archive_document_image
@@ -1384,6 +1389,45 @@ const TOOLS = [
       },
       required: ['title', 'doc_type', 'content_summary']
     }
+  },
+  {
+    name: 'leggi_documento_pdf',
+    description:
+      'Legge il contenuto di un documento PDF caricato su Palladia per rispondere a domande precise. ' +
+      'Usa questo tool quando l\'utente chiede "cosa dice il capitolato riguardo a X", ' +
+      '"qual è la scadenza del DURC", "che qualifiche ha il lavoratore Y", ' +
+      '"cosa prevede il POS per questa lavorazione", o qualsiasi domanda che richiede ' +
+      'consultare il contenuto di un documento specifico. ' +
+      'Copre tutti i PDF caricati: capitolati, POS, PSC, DURC, DVR, attestati, ' +
+      'assicurazioni, contratti, visure, certificati lavoratori.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        domanda: {
+          type: 'string',
+          description: 'La domanda precisa a cui rispondere leggendo il documento',
+        },
+        tipo_documento: {
+          type: 'string',
+          enum: ['capitolato', 'pos', 'psc', 'durc', 'dvr', 'assicurazione',
+                 'contratto', 'attestato', 'certificato', 'formazione', 'visura', 'qualsiasi'],
+          description: 'Tipo di documento. Usa "qualsiasi" se non specificato.',
+        },
+        nome_file: {
+          type: 'string',
+          description: 'Nome parziale del file (es. "via Riboli" o "contratto Mario"). Aiuta a identificare il documento.',
+        },
+        nome_lavoratore: {
+          type: 'string',
+          description: 'Nome del lavoratore (per attestati, certificati, idoneità medica).',
+        },
+        site_id: {
+          type: 'string',
+          description: 'UUID del cantiere (filtra i documenti di quel cantiere).',
+        },
+      },
+      required: ['domanda'],
+    },
   },
 ];
 
@@ -2877,6 +2921,47 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         return { success: true, documento_archiviato: data, messaggio: `Documento "${toolInput.title}" archiviato correttamente.` };
       }
 
+      case 'leggi_documento_pdf': {
+        const { searchAndReadDocument } = require('../../services/ladiaDocumentSearch');
+        const { renderAndUploadQuoteCard } = require('../../services/pdfQuoteRenderer');
+
+        const result = await searchAndReadDocument({
+          companyId,
+          siteId:         toolInput.site_id         || null,
+          domanda:        toolInput.domanda,
+          tipo:           toolInput.tipo_documento   || 'qualsiasi',
+          nomeFile:       toolInput.nome_file        || null,
+          nomeLavoratore: toolInput.nome_lavoratore  || null,
+        });
+
+        if (result.errore) return { errore: result.errore, suggerimento: 'Verifica che il documento sia stato caricato su Palladia nella sezione documenti del cantiere o dell\'azienda.' };
+
+        // Genera immagine card della citazione (non-blocking: non blocca la risposta se fallisce)
+        let previewUrl = null;
+        if (result.citazione) {
+          previewUrl = await renderAndUploadQuoteCard({
+            citazione: result.citazione,
+            nomeDoc:   result.nome_doc,
+            pagina:    result.pagina,
+          }).catch(err => {
+            console.warn('[leggi_documento_pdf] quote card render fallita:', err.message);
+            return null;
+          });
+        }
+
+        return {
+          documento:      result.nome_doc,
+          pagina:         result.pagina,
+          risposta:       result.risposta,
+          citazione:      result.citazione,
+          preview_url:    previewUrl,   // URL immagine anteprima (mostrare inline)
+          doc_url:        result.signed_url, // URL documento originale (bottone "Apri")
+          altri_documenti: result.altri_nomi?.length
+            ? `Altri ${result.n_trovati - 1} documenti trovati: ${result.altri_nomi.join(', ')}`
+            : null,
+        };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -3671,6 +3756,16 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
           const result = await executeTool(block.name, block.input, req.companyId, req.user.id);
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
+          }
+          if (block.name === 'leggi_documento_pdf' && !result.errore) {
+            send({
+              type:        'document_card',
+              documento:   result.documento,
+              pagina:      result.pagina,
+              citazione:   result.citazione,
+              preview_url: result.preview_url,
+              doc_url:     result.doc_url,
+            });
           }
           return {
             type:        'tool_result',
