@@ -24,6 +24,8 @@ const VALID_CATEGORIES = ['nota','foto','non_conformita','verbale','presenza','i
 const VALID_URGENCIES  = ['normale','alta','critica'];
 const MAX_MEDIA_SIZE   = 10 * 1024 * 1024; // 10 MB
 
+const { analyzeDiaryNote } = require('../../services/ladiaMemory');
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: MAX_MEDIA_SIZE },
@@ -130,6 +132,23 @@ router.post('/site-notes',
 
       const [result] = await attachSignedUrls([note]);
       res.status(201).json(result);
+
+      // Analisi asincrona: Ladia cerca aggiornamenti strutturati nella nota
+      if (note?.content && note.content.length >= 15) {
+        setImmediate(async () => {
+          try {
+            const { data: siteData } = await supabase
+              .from('sites')
+              .select('name, start_date, end_date, client')
+              .eq('id', site_id)
+              .eq('company_id', companyId)
+              .maybeSingle();
+            await analyzeDiaryNote(companyId, site_id, note.content, siteData);
+          } catch (e) {
+            console.error('[siteNotes/analyzeDiary]', e.message);
+          }
+        });
+      }
     } catch (err) {
       console.error('[site-notes POST]', err.message);
       res.status(500).json({ error: 'INTERNAL', detail: err.message });

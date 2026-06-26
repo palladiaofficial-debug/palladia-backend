@@ -9,6 +9,7 @@ const { validate } = require('../../middleware/validate');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
 const { computeRiskScore, generateInspectionShield } = require('../../services/safetyCopilot');
 const { getCompanyBrain } = require('../../lib/companyBrain');
+const { getMemory, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -2535,7 +2536,7 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
         const { data, error } = await supabase.from('sites').update(patch).eq('id', toolInput.site_id).eq('company_id', companyId).select().single();
         if (error) return { error: error.message };
-        return { success: true, cantiere_aggiornato: data };
+        return { success: true, site_id: data.id, site_name: data.name, campi: patch, cantiere_aggiornato: data };
       }
 
       case 'create_diary_entry': {
@@ -3688,11 +3689,15 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
-  // Company brain — fetch prima dello stream loop
+  // Company brain + memoria Ladia — fetch prima dello stream loop
   let systemPrompt = SYSTEM_PROMPT;
   try {
-    const brain = await getCompanyBrain(supabase, req.companyId);
-    if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
+    const [brain, memory] = await Promise.all([
+      getCompanyBrain(supabase, req.companyId).catch(() => null),
+      getMemory(req.companyId, { siteId: context_type === 'cantiere' ? context_id : null, userId: req.user.id }).catch(() => ''),
+    ]);
+    if (brain?.text)  systemPrompt = SYSTEM_PROMPT + brain.text;
+    if (memory)       systemPrompt += `\n\n${memory}`;
   } catch { /* non critico */ }
 
   try {
@@ -3767,6 +3772,14 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
               doc_url:     result.doc_url,
             });
           }
+          if (block.name === 'update_site' && result.success && result.site_id) {
+            send({
+              type:       'cantiere_aggiornato',
+              site_id:    result.site_id,
+              site_name:  result.site_name,
+              campi:      result.campi,
+            });
+          }
           return {
             type:        'tool_result',
             tool_use_id: block.id,
@@ -3792,6 +3805,14 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
         if (isNew) {
           autoTitle(convId, userMsgForDb, getClient()).catch(() => {});
         }
+        // Aggiorna memoria Ladia (asincrono, non bloccante, usa claude-haiku)
+        setImmediate(() => {
+          updateMemoryAfterConversation(
+            req.companyId,
+            { siteId: context_type === 'cantiere' ? context_id : null, userId: req.user.id },
+            messages
+          ).catch(e => console.error('[ladiaMemory]', e.message));
+        });
       }
     }
   } catch (err) {
