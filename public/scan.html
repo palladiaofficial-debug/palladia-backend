@@ -430,6 +430,7 @@
   let maxAccuracyM    = 80;
   let punchInProgress = false;
   let pendingPosAck   = null; // { pos_id, worker_name, session_token }
+  let lastEntryTs     = null; // timestamp ISO dell'ultimo ENTRY aperto (per mostrare "in cantiere da X")
 
   // Stato punch: 'loading' | 'entry' | 'exit' | 'done'
   // 'entry' = può timbrare entrata | 'exit' = deve timbrare uscita | 'done' = uscita già registrata
@@ -488,7 +489,24 @@
     if (punchState === 'exit') {
       btn.className  = 'btn btn-exit';
       label.textContent = 'Timbra uscita';
-      sub.textContent   = 'Entrata registrata';
+      if (lastEntryTs) {
+        const entryDate = new Date(lastEntryTs);
+        const now       = new Date();
+        const diffMs    = now - entryDate;
+        const diffH     = Math.floor(diffMs / 3_600_000);
+        const diffM     = Math.floor((diffMs % 3_600_000) / 60_000);
+        const dateStr   = entryDate.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', timeZone: 'Europe/Rome' });
+        const timeStr   = entryDate.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+        const elapsed   = diffH >= 24
+          ? `${Math.floor(diffH / 24)}g ${diffH % 24}h`
+          : diffH > 0 ? `${diffH}h ${diffM}m` : `${diffM}m`;
+        sub.textContent = `In cantiere da ${dateStr} ore ${timeStr} (${elapsed} fa)`;
+        if (diffH >= 12) sub.style.color = '#ef4444'; // rosso se oltre 12h
+        else sub.style.color = '';
+      } else {
+        sub.textContent  = 'Entrata registrata';
+        sub.style.color  = '';
+      }
       btn.disabled   = !gpsCoords || punchInProgress;
       return;
     }
@@ -575,17 +593,33 @@
         `/api/v1/scan/punch-status?worksite_id=${encodeURIComponent(WSITE_ID)}&session_token=${encodeURIComponent(sessionToken)}`
       );
       if (status === 200) {
-        // null or EXIT → can timbra entrata; ENTRY → must timbra uscita
         if (body.last_event_type === 'ENTRY') {
-          punchState = 'exit';
+          punchState  = 'exit';
+          lastEntryTs = body.last_timestamp || null;
         } else {
-          punchState = 'entry';
+          punchState  = 'entry';
+          lastEntryTs = null;
         }
+      } else if (status === 401 || status === 404) {
+        // Sessione scaduta o non trovata — utente deve re-identificarsi
+        punchState  = 'entry';
+        lastEntryTs = null;
       } else {
-        punchState = 'entry'; // fallback
+        // Errore server (5xx, 4xx inatteso) — NON assumere 'entry' silenziosamente
+        // Mostra un avviso e blocca il pulsante finché non si risolve
+        punchState = 'loading';
+        toast('Impossibile verificare lo stato — riprova o ricarica la pagina', 'warn');
+        return; // non chiamare renderPunchButton qui — il btn resta "Caricamento…"
       }
     } catch (e) {
-      punchState = 'entry'; // fallback on network error
+      // Errore di rete — mostra avviso ma sblocca dopo 3s per non bloccare per sempre
+      punchState = 'loading';
+      toast('Connessione assente — verifica internet e riprova', 'warn');
+      setTimeout(() => {
+        if (punchState === 'loading') { punchState = 'entry'; lastEntryTs = null; renderPunchButton(); }
+      }, 5000);
+      renderPunchButton();
+      return;
     }
     renderPunchButton();
   }

@@ -19,6 +19,7 @@ router.use('/', require('./workers'));
 router.use('/', require('./sessions'));
 router.use('/', require('./qr'));
 router.use('/', require('./presence'));
+router.use('/', require('./presenceCorrections'));
 router.use('/', require('./reports'));
 router.use('/', require('./alerts'));
 router.use('/', require('./asl'));
