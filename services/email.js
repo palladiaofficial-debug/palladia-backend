@@ -2150,6 +2150,7 @@ module.exports = {
   sendMagicLinkEmail,
   sendEmailChangeEmail,
   sendStudioDurcAlert,
+  sendWeatherExtremeAlert,
 };
 
 // ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────
@@ -2199,5 +2200,105 @@ async function sendStudioDurcAlert({ to, studioName, companies, dashboardUrl }) 
     to,
     subject: `DURC in scadenza — ${companies.length} client${companies.length === 1 ? 'e' : 'i'} da rinnovare`,
     html: layout('Alert DURC clienti', body),
+  });
+}
+
+// ─── Email: Avviso meteo estremo (ondata calore / neve / temporale) ────────────
+
+/**
+ * @param {{ companyId: string, alerts: Array<{siteName, date, type, tempMax, description}> }} opts
+ */
+async function sendWeatherExtremeAlert({ companyId, alerts }) {
+  const supabase = require('../lib/supabase');
+  const { filterUserIdsByChannel } = require('../lib/notificationPrefs');
+
+  const { data: adminUsers } = await supabase
+    .from('company_users')
+    .select('user_id')
+    .eq('company_id', companyId)
+    .in('role', ['owner', 'admin']);
+
+  if (!adminUsers?.length) return;
+
+  const enabledIds = await filterUserIdsByChannel(companyId, adminUsers.map(u => u.user_id), 'email');
+  if (!enabledIds.length) return;
+
+  const adminEmails = [];
+  for (const uid of enabledIds) {
+    try {
+      const { data: { user } } = await supabase.auth.admin.getUserById(uid);
+      if (user?.email) adminEmails.push(user.email);
+    } catch { /* ignora */ }
+  }
+  if (!adminEmails.length) return;
+
+  const LABELS = { heat: 'Ondata di calore', snow: 'Neve prevista', thunderstorm: 'Temporale' };
+  const ICONS  = { heat: '&#x1F321;', snow: '&#x2744;', thunderstorm: '&#x26C8;' };
+
+  // Raggruppa alert per cantiere
+  const bySite = new Map();
+  for (const a of alerts) {
+    if (!bySite.has(a.siteName)) bySite.set(a.siteName, []);
+    bySite.get(a.siteName).push(a);
+  }
+
+  let siteRows = '';
+  for (const [siteName, siteAlerts] of bySite) {
+    const tableRows = siteAlerts.map(a => {
+      const dateIt = new Date(a.date + 'T00:00:00').toLocaleDateString('it-IT', {
+        weekday: 'short', day: 'numeric', month: 'short',
+      });
+      const label  = LABELS[a.type]  || a.type;
+      const icon   = ICONS[a.type]   || '&#x26A0;';
+      const temp   = a.tempMax != null ? ` &mdash; max ${a.tempMax}&deg;C` : '';
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${icon} ${esc(label)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#6b7280;">${esc(dateIt)}${temp}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#6b7280;">${esc(a.description)}</td>
+      </tr>`;
+    }).join('');
+
+    siteRows += `
+      <p style="margin:20px 0 6px;font-size:13px;font-weight:700;color:#1a1a1a;">&#x1F4CD; ${esc(siteName)}</p>
+      <table width="100%" cellpadding="0" cellspacing="0"
+        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:4px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;">Evento</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;">Data</th>
+          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#9ca3af;text-transform:uppercase;letter-spacing:0.06em;">Condizione</th>
+        </tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>`;
+  }
+
+  const uniqueTypes  = [...new Set(alerts.map(a => a.type))];
+  const subjectTypes = uniqueTypes.map(t => LABELS[t] || t).join(' · ');
+  const nSites       = bySite.size;
+  const subject      = `Allerta meteo — ${subjectTypes} (${nSites} cantier${nSites === 1 ? 'e' : 'i'})`;
+
+  const bodyHtml = `
+    <p style="margin:0 0 4px;font-size:18px;font-weight:800;color:#1a1a1a;">Condizioni meteo critiche in arrivo</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+      Nei prossimi 3 giorni sono previste condizioni potenzialmente pericolose per i seguenti cantieri.
+      Valuta misure di protezione per i lavoratori e, se necessario, la sospensione delle attività.
+    </p>
+    ${siteRows}
+    ${btn('Vai ai cantieri &#x2192;', `${APP_URL}/`)}
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Previsioni fornite da Open-Meteo (aggiornate ogni mattina alle 07:00).
+      Per allerta ufficiale consulta il bollettino della Protezione Civile.<br/>
+      Le soglie di avviso sono configurabili nelle impostazioni di ogni cantiere.
+    </p>
+  `;
+
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  return getResend().emails.send({
+    from: FROM,
+    to:   adminEmails,
+    subject,
+    html: layout('Allerta meteo estremo', bodyHtml),
   });
 }
