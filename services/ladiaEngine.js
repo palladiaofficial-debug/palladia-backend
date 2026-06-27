@@ -69,7 +69,7 @@ function computeSiteInferences(site, phases, costs, ncCount) {
 
   // ── Blocchi ──
   if (ncCount > 0) {
-    inf.blockers.push(`${ncCount} NC aperta${ncCount > 1 ? 'e' : ''}`);
+    inf.blockers.push(`${ncCount} NC ${ncCount > 1 ? 'aperte' : 'aperta'}`);
   }
   if (inf.budget_consumed_pct > 90 && sal < 75) {
     inf.blockers.push('Budget quasi esaurito, SAL incompleto');
