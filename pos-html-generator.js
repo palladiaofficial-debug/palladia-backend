@@ -432,13 +432,14 @@ thead {
 .cover-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   max-width: 100%;
   padding: 12mm 10mm 10mm 12mm;
   display: flex;
   flex-direction: column;
   background: #FFFFFF;
 }
-.cover-top { flex: 1; }
+.cover-top { flex: 1; min-height: 0; }
 .cover-title {
   font-size: 22pt;
   font-weight: bold;
@@ -539,7 +540,7 @@ thead {
   text-transform: uppercase;
   letter-spacing: 1pt;
   padding: 8pt 11pt;
-  margin: 28pt 0 14pt 0;
+  margin: 16pt 0 14pt 0;
   break-after: avoid;
   page-break-after: avoid;
   break-before: avoid;

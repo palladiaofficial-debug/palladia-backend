@@ -159,8 +159,6 @@ function buildMansioneBlocks(aiContent) {
 // ── CSS ───────────────────────────────────────────────────────────────────────
 function buildCss() {
   return `
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-
 /* Regola fondamentale: @page margin DEVE corrispondere esattamente a Puppeteer margin */
 @page {
   size: A4;
@@ -174,11 +172,13 @@ function buildCss() {
   min-width: 0;
 }
 body {
-  font-family: 'Inter', Arial, Helvetica, sans-serif;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 10pt;
   color: #1E1E1E;
   line-height: 1.65;
   background: #FFFFFF;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
 }
 .doc {
   width: 100%;
@@ -255,13 +255,14 @@ thead { display: table-header-group; }
 .cover-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   max-width: 100%;
   padding: 12mm 10mm 10mm 12mm;
   display: flex;
   flex-direction: column;
   background: #FFFFFF;
 }
-.cover-top { flex: 1; }
+.cover-top { flex: 1; min-height: 0; }
 .cover-norm-badge {
   display: inline-block;
   background: #EBF3FB;
@@ -372,7 +373,7 @@ thead { display: table-header-group; }
   text-transform: uppercase;
   letter-spacing: 1pt;
   padding: 8pt 11pt;
-  margin: 28pt 0 14pt 0;
+  margin: 16pt 0 14pt 0;
   break-after: avoid;
   page-break-after: avoid;
 }
