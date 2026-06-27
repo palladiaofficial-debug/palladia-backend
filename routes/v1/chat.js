@@ -9,7 +9,7 @@ const { validate } = require('../../middleware/validate');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
 const { computeRiskScore, generateInspectionShield } = require('../../services/safetyCopilot');
 const { getCompanyBrain } = require('../../lib/companyBrain');
-const { getMemory, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
+const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -270,6 +270,8 @@ PREZZARIO: search_prezzario, get_company_prezzi
 AZIONI DI SCRITTURA:
 create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking
 
+OBIETTIVI E FOLLOW-UP: resolve_objective
+
 LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
 leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
 Quando restituisce 'doc_url', includi sempre il link "[Apri documento →](url)" in fondo.
@@ -445,6 +447,16 @@ EMOJI — USO RIGOROSO:
 - Vietate come decorazione strutturale all'inizio di sezioni (no 📊 davanti a ##, no 🔴 come bullet)
 - Consentite solo in celle di tabella per stati operativi: ✅ conforme, ❌ scaduto/bloccato, ⚠️ in scadenza
 - MAI emoji all'inizio di ## intestazioni
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SNAPSHOT CANTIERE E OBIETTIVI TRACCIATI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Quando il contesto include "━━━ SNAPSHOT CANTIERE ━━━", leggi il blocco e usalo come punto di partenza del tuo ragionamento — contiene il ritardo stimato, la salute del cantiere e i blocchi attivi calcolati automaticamente. Non rileggere i dati grezzi per le stesse conclusioni: fidati dello snapshot.
+
+Quando il contesto include "[Obiettivi tracciati]":
+- Se ci sono "OBIETTIVI NON VERIFICATI": nella prima risposta della sessione, chiedi brevemente se sono stati risolti. Solo una volta, non ripetere.
+- Se l'utente conferma che un obiettivo è risolto: chiama resolve_objective con la descrizione parziale.
+- Usa il follow-up in modo naturale, non meccanico — integra la domanda nel contesto della conversazione.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 FILOSOFIA — LADIA È IL CENTRO OPERATIVO
@@ -1436,6 +1448,20 @@ const TOOLS = [
         },
       },
       required: ['domanda'],
+    },
+  },
+  {
+    name: 'resolve_objective',
+    description: 'Segna un obiettivo tracciato come risolto. Usalo quando l\'utente conferma che un impegno è stato completato (es. "Bianchi è rientrato", "il getto è finito", "ho chiamato il committente"). Passa la descrizione parziale dell\'obiettivo.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description: 'Descrizione parziale dell\'obiettivo da segnare come risolto (es. "Bianchi" o "getto").',
+        },
+      },
+      required: ['description'],
     },
   },
 ];
@@ -2971,6 +2997,12 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         };
       }
 
+      case 'resolve_objective': {
+        const { description } = toolInput;
+        if (!description) return { error: 'description obbligatoria' };
+        return await resolveObjective(companyId, description);
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -3697,15 +3729,18 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
-  // Company brain + memoria Ladia — fetch prima dello stream loop
+  // Company brain + memoria Ladia + obiettivi aperti — fetch prima dello stream loop
+  const _siteIdForContext = context_type === 'cantiere' ? context_id : null;
   let systemPrompt = SYSTEM_PROMPT;
   try {
-    const [brain, memory] = await Promise.all([
+    const [brain, memory, objectives] = await Promise.all([
       getCompanyBrain(supabase, req.companyId).catch(() => null),
-      getMemory(req.companyId, { siteId: context_type === 'cantiere' ? context_id : null, userId: req.user.id }).catch(() => ''),
+      getMemory(req.companyId, { siteId: _siteIdForContext, userId: req.user.id }).catch(() => ''),
+      getOpenObjectives(req.companyId, _siteIdForContext).catch(() => ''),
     ]);
     if (brain?.text)  systemPrompt = SYSTEM_PROMPT + brain.text;
     if (memory)       systemPrompt += `\n\n${memory}`;
+    if (objectives)   systemPrompt += `\n\n${objectives}`;
   } catch { /* non critico */ }
 
   try {
