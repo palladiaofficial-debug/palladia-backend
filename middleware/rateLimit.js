@@ -74,11 +74,13 @@ const identifyLimiter = rateLimit({
 });
 
 // ── Rate limiter generico per tutte le route /api/v1/ ─────────────────────────
-// Key: company_id quando disponibile (dopo JWT), altrimenti IP
-// Questo previene che un singolo account spammi l'API anche con VPN/Tor
+// Key: company_id quando disponibile (dopo JWT), altrimenti IP.
+// NOTA: questo limiter gira prima di verifySupabaseJwt, quindi req.companyId
+// non è ancora impostato → usa sempre IP. Limite generoso per evitare falsi positivi
+// su pagine che fanno molte call in parallelo (dashboard, conversations, ecc.).
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 120,
+  max: 300,
   standardHeaders: true,
   legacyHeaders:   false,
   validate:        { keyGeneratorIpFallback: false },
@@ -113,10 +115,10 @@ const coordinatorLimiter = rateLimit({
 });
 
 // ── Rate limiter per POST /api/v1/chat — assistente IA ───────────────────────
-// Limite generoso ma protegge dai costi AI in caso di abuso
+// Limite per IP — protegge dai costi AI in caso di abuso
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 20,
+  max: 40,
   standardHeaders: true,
   legacyHeaders:   false,
   message: { error: 'CHAT_RATE_LIMIT' },

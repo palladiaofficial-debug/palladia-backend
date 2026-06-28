@@ -4,6 +4,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const crypto    = require('crypto');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
+const { chatLimiter }          = require('../../middleware/rateLimit');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
@@ -3692,7 +3693,7 @@ router.post('/chat/export', verifySupabaseJwt, validate(chatExportSchema), async
 // Events: {type:'init',conversation_id} | {type:'tool_start',names:[]} |
 //         {type:'text',delta:''} | {type:'done'} | {type:'error',message:''}
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
+router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
