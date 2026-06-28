@@ -1,6 +1,6 @@
 'use strict';
 const router = require('express').Router();
-const { apiLimiter, chatLimiter } = require('../../middleware/rateLimit');
+const { apiLimiter } = require('../../middleware/rateLimit');
 
 // Rate limit globale su tutto /api/v1/
 router.use(apiLimiter);
@@ -121,8 +121,7 @@ router.use('/', require('./coordinatorVerifications'));
 // Verbale di Sopralluogo PDF (token — no JWT)
 router.use('/', require('./verbale'));
 
-// Assistente IA Pal (JWT + rate limit dedicato anti-abuso costi AI)
-router.use('/chat', chatLimiter);
+// Assistente IA Pal (JWT — rate limit anti-abuso AI applicato solo su /chat/stream in chat.js)
 router.use('/', require('./chat'));
 
 // Telegram Bot: link account (JWT) + note cantiere
