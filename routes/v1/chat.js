@@ -3049,9 +3049,20 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         return await resolveObjective(companyId, description);
       }
 
-      case 'create_canvas':
-        // Canvas rendered client-side via SSE canvas_block event; nothing to persist
+      case 'create_canvas': {
+        const VALID_CANVAS_TYPES = ['gantt', 'bar_chart', 'line_chart', 'kpi_grid', 'table'];
+        if (!VALID_CANVAS_TYPES.includes(toolInput.canvas_type)) {
+          return { error: `canvas_type non valido: ${toolInput.canvas_type}` };
+        }
+        if (!toolInput.data || (typeof toolInput.data !== 'object')) {
+          return { error: 'data obbligatorio (array o oggetto)' };
+        }
+        if (!toolInput.title || typeof toolInput.title !== 'string') {
+          return { error: 'title obbligatorio' };
+        }
+        // Rendered client-side via SSE canvas_block event
         return { success: true, rendered: true };
+      }
 
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
@@ -3696,13 +3707,21 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context = null, recent_activity = null } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null } = req.body;
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
   if (message.length > 4000) {
     return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
   }
+  // Sanitize injected context strings: max length, no leading prompt-injection sequences
+  const sanitizeCtx = (s, max) => {
+    if (!s || typeof s !== 'string') return null;
+    const trimmed = s.slice(0, max).trim();
+    return trimmed || null;
+  };
+  const view_context    = sanitizeCtx(_vc, 400);
+  const recent_activity = sanitizeCtx(_ra, 2000);
   if (!Array.isArray(images) || images.length > 5) {
     return res.status(400).json({ error: 'MAX_5_IMAGES' });
   }
