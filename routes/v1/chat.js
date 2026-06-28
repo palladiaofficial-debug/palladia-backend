@@ -323,6 +323,46 @@ REGOLE ASSOLUTE — NESSUNA ECCEZIONE:
 5. Il JSON deve contenere dati reali recuperati dai tool — mai inventati
 6. Se i dati non sono disponibili (lista vuota, errore tool), scrivi solo testo
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AZIONI INTERATTIVE — <ladia-action> (OBBLIGATORIO)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+L'interfaccia renderizza i tag <ladia-action> come pulsanti cliccabili inline nel messaggio.
+Usali ogni volta che puoi proporre un'azione diretta nella piattaforma.
+
+FORMATO — tag self-closing:
+<ladia-action type="TIPO" label="ETICHETTA" ATTRIBUTI/>
+
+TIPI DISPONIBILI:
+
+navigate — naviga a una sezione
+  <ladia-action type="navigate" path="/cantieri/UUID" label="Apri cantiere"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=0" label="Presenze"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=1" label="Sicurezza"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=2" label="Lavoratori"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=3" label="Fasi"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=5" label="Economia"/>
+  <ladia-action type="navigate" path="/risorse" label="Vai a Risorse"/>
+  <ladia-action type="navigate" path="/dashboard" label="Dashboard"/>
+
+generate_doc — genera documento PDF direttamente dall'assistente
+  <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Genera POS"/>
+  <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist"/>
+  Usa solo se hai già l'UUID del cantiere — mai con UUID inventati.
+
+quick_ask — proponi domanda di approfondimento rapido
+  <ladia-action type="quick_ask" prompt="Mostra il risk score del Cantiere X" label="Risk score"/>
+  <ladia-action type="quick_ask" prompt="Aggiorna il SAL al 65%" label="Aggiorna SAL"/>
+  <ladia-action type="quick_ask" prompt="Chi è presente oggi?" label="Presenze oggi"/>
+
+REGOLE FERREE:
+1. Posiziona i tag SEMPRE alla fine della risposta, dopo testo e canvas.
+2. Max 4 action tag per risposta.
+3. Ogni risposta con dati concreti (cantieri, lavoratori, scadenze, economia) DEVE avere ≥1 tag.
+4. Per navigate: usa UUID reali recuperati dai tool — MAI inventati o placeholder.
+5. Per quick_ask: domande utili, specifiche, brevi — no generiche.
+6. label: concisa, max 25 caratteri, sempre in italiano.
+7. Quando citi un cantiere per nome e hai il suo UUID: aggiungi sempre navigate verso quel cantiere.
+
 LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
 leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
 Quando restituisce 'doc_url', includi sempre il link "[Apri documento →](url)" in fondo.
@@ -3698,7 +3738,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null, page_context: _pc = null } = req.body;
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
@@ -3713,6 +3753,15 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
   };
   const view_context    = sanitizeCtx(_vc, 400);
   const recent_activity = sanitizeCtx(_ra, 2000);
+  // page_context: struttura {route, entity, entityId, entityName}
+  let page_context = null;
+  let pageSiteId   = null;
+  try {
+    if (_pc && typeof _pc === 'object' && !Array.isArray(_pc)) {
+      page_context = _pc;
+      if (_pc.entity === 'site' && typeof _pc.entityId === 'string') pageSiteId = _pc.entityId;
+    }
+  } catch { /* non critico */ }
   if (!Array.isArray(images) || images.length > 5) {
     return res.status(400).json({ error: 'MAX_5_IMAGES' });
   }
@@ -3790,7 +3839,8 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
   req.on('close', () => { aborted = true; });
 
   // Company brain + deep site context + memoria Ladia + obiettivi aperti
-  const _siteIdForContext = context_type === 'cantiere' ? context_id : null;
+  // siteId per contesto: se context_type è 'cantiere' usa context_id, altrimenti usa pageSiteId (URL corrente)
+  const _siteIdForContext = context_type === 'cantiere' ? context_id : (pageSiteId || null);
   let systemPrompt = SYSTEM_PROMPT;
   try {
     const [brain, siteCtx, memory, objectives] = await Promise.all([
@@ -3805,6 +3855,13 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     if (siteCtx)        systemPrompt += `\n\n${siteCtx}`;          // snapshot profondo per-cantiere
     if (memory)         systemPrompt += `\n\n${memory}`;
     if (objectives)     systemPrompt += `\n\n${objectives}`;
+    if (page_context) {
+      const pcParts = [`[SCHERMATA ATTUALE: ${page_context.route || '?'}`];
+      if (page_context.entityName) pcParts.push(` — ${page_context.entityName}`);
+      if (page_context.tab)        pcParts.push(` (tab: ${page_context.tab})`);
+      pcParts.push(']');
+      systemPrompt += `\n\n${pcParts.join('')}`;
+    }
     if (view_context)   systemPrompt += `\n\n${view_context}`;      // schermata attuale (Point 1)
     if (recent_activity) systemPrompt += `\n\n${recent_activity}`;  // sessione utente (Point 3)
   } catch { /* non critico */ }
@@ -3929,6 +3986,118 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     if (!aborted) send({ type: 'error', message: 'Si è verificato un errore. Riprova.' });
   } finally {
     res.end();
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/chat/brief — intelligence proattiva giornaliera (no AI, puro DB)
+// Restituisce: scadenze critiche, anomalie budget, cantieri a rischio, KPI snapshot
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+  const now  = new Date();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const horizon14 = new Date(today); horizon14.setDate(today.getDate() + 14);
+  const horizon7  = new Date(today); horizon7.setDate(today.getDate() + 7);
+
+  try {
+    const [
+      workersRes,
+      sitesRes,
+      economiaRes,
+      subcontractorsRes,
+      ncRes,
+    ] = await Promise.all([
+      supabase.from('workers').select('id, full_name, role, safety_training_expiry, health_fitness_expiry').eq('company_id', companyId).eq('is_active', true).limit(500),
+      supabase.from('sites').select('id, name, status, budget_totale, sal_percentuale').eq('company_id', companyId).neq('status', 'chiuso'),
+      supabase.from('site_economy').select('site_id, tipo, importo').eq('company_id', companyId),
+      supabase.from('subcontractors').select('id, name, durc_expiry').eq('company_id', companyId).eq('is_active', true).limit(200),
+      supabase.from('site_notes').select('id, site_id, title, urgency, created_at').eq('company_id', companyId).is('resolved_at', null).eq('category', 'non_conformita').order('created_at', { ascending: false }).limit(50),
+    ]);
+
+    const alerts = [];
+
+    // ── Scadenze lavoratori (7 giorni) ────────────────────────────────────────
+    const workers = workersRes.data || [];
+    for (const w of workers) {
+      if (w.safety_training_expiry) {
+        const d = Math.ceil((new Date(w.safety_training_expiry) - today) / 86400000);
+        if (d <= 7)  alerts.push({ severity: d < 0 ? 'critical' : 'warning', category: 'scadenza', icon: 'certificate', title: `Formazione sicurezza — ${w.full_name}`, detail: d < 0 ? `Scaduta da ${Math.abs(d)} giorni` : `Scade tra ${d} giorn${d === 1 ? 'o' : 'i'}`, days: d });
+        else if (d <= 14) alerts.push({ severity: 'info', category: 'scadenza', icon: 'certificate', title: `Formazione sicurezza — ${w.full_name}`, detail: `Scade tra ${d} giorni`, days: d });
+      }
+      if (w.health_fitness_expiry) {
+        const d = Math.ceil((new Date(w.health_fitness_expiry) - today) / 86400000);
+        if (d <= 7)  alerts.push({ severity: d < 0 ? 'critical' : 'warning', category: 'scadenza', icon: 'medical', title: `Idoneità medica — ${w.full_name}`, detail: d < 0 ? `Scaduta da ${Math.abs(d)} giorni` : `Scade tra ${d} giorn${d === 1 ? 'o' : 'i'}`, days: d });
+        else if (d <= 14) alerts.push({ severity: 'info', category: 'scadenza', icon: 'medical', title: `Idoneità medica — ${w.full_name}`, detail: `Scade tra ${d} giorni`, days: d });
+      }
+    }
+
+    // ── Scadenze DURC subappaltatori ─────────────────────────────────────────
+    for (const s of (subcontractorsRes.data || [])) {
+      if (s.durc_expiry) {
+        const d = Math.ceil((new Date(s.durc_expiry) - today) / 86400000);
+        if (d <= 14) alerts.push({ severity: d < 0 ? 'critical' : d <= 7 ? 'warning' : 'info', category: 'scadenza', icon: 'company', title: `DURC — ${s.name}`, detail: d < 0 ? `Scaduto da ${Math.abs(d)} giorni` : `Scade tra ${d} giorni`, days: d });
+      }
+    }
+
+    // ── Anomalie budget (consumato > 85% con SAL < 70%) ──────────────────────
+    const sites = sitesRes.data || [];
+    const economia = economiaRes.data || [];
+    const costiPerSite = {};
+    for (const e of economia) {
+      if (e.tipo === 'costo') costiPerSite[e.site_id] = (costiPerSite[e.site_id] || 0) + Number(e.importo || 0);
+    }
+    for (const site of sites) {
+      if (!site.budget_totale || site.budget_totale <= 0) continue;
+      const speso = costiPerSite[site.id] || 0;
+      const budgetPct = Math.round((speso / site.budget_totale) * 100);
+      const sal = site.sal_percentuale || 0;
+      if (budgetPct >= 85 && sal < 70) {
+        alerts.push({ severity: 'critical', category: 'budget', icon: 'chart', title: `Budget critico — ${site.name}`, detail: `Speso ${budgetPct}% del budget, SAL al ${sal}%`, site_id: site.id, site_name: site.name });
+      } else if (budgetPct >= 70 && sal < 50) {
+        alerts.push({ severity: 'warning', category: 'budget', icon: 'chart', title: `Attenzione budget — ${site.name}`, detail: `Speso ${budgetPct}% del budget, SAL al ${sal}%`, site_id: site.id, site_name: site.name });
+      }
+    }
+
+    // ── NC critiche aperte da più di 7 giorni ────────────────────────────────
+    const ncs = ncRes.data || [];
+    const siteNameMap = Object.fromEntries(sites.map(s => [s.id, s.name]));
+    for (const nc of ncs) {
+      const age = Math.ceil((now - new Date(nc.created_at)) / 86400000);
+      if ((nc.urgency === 'critica' || nc.urgency === 'alta') && age >= 7) {
+        alerts.push({ severity: nc.urgency === 'critica' ? 'critical' : 'warning', category: 'nc', icon: 'alert', title: `NC aperta da ${age} giorni — ${siteNameMap[nc.site_id] || 'Cantiere'}`, detail: nc.title, site_id: nc.site_id, site_name: siteNameMap[nc.site_id] });
+      }
+    }
+
+    // ── KPI snapshot ─────────────────────────────────────────────────────────
+    const todayStr = today.toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
+    const { data: presenceToday } = await supabase.from('presence_logs').select('worker_id', { count: 'exact', head: false }).eq('company_id', companyId).eq('event_type', 'ENTRY').gte('timestamp_server', `${todayStr}T00:00:00`).lte('timestamp_server', `${todayStr}T23:59:59`);
+    const presentIds = new Set((presenceToday || []).map(p => p.worker_id));
+
+    const kpi = {
+      sites_active:  sites.length,
+      workers_total: workers.length,
+      present_today: presentIds.size,
+      open_nc:       ncs.length,
+    };
+
+    // Ordina: critical prima, poi warning, poi info; dentro ogni gruppo per days ASC
+    alerts.sort((a, b) => {
+      const sev = { critical: 0, warning: 1, info: 2 };
+      if (sev[a.severity] !== sev[b.severity]) return sev[a.severity] - sev[b.severity];
+      if (a.days != null && b.days != null) return a.days - b.days;
+      return 0;
+    });
+
+    res.json({
+      generated_at: new Date().toISOString(),
+      kpi,
+      alerts: alerts.slice(0, 12), // max 12 alert nel brief
+      sites_count: sites.length,
+    });
+  } catch (e) {
+    console.error('[brief]', e.message);
+    res.status(500).json({ error: 'BRIEF_ERROR' });
   }
 });
 
