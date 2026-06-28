@@ -56,6 +56,8 @@ const SONNET_KEYWORDS = [
   'spiega','spiegami','differenza','confronto','quando scade','frequenza',
   // fasi e cronoprogramma
   'fase','fasi','cronoprogramma',
+  // canvas — query che producono grafici/KPI (→ Sonnet per seguire istruzioni canvas)
+  'kpi','dashboard','andamento','grafico','grafici',
   // computo e capitolato
   'computo','capitolato','metrico','voce','voci',
   // diario
@@ -3065,7 +3067,7 @@ async function executeTool(toolName, toolInput, companyId, userId) {
 async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null) {
   let response = await client.messages.create({
     model,
-    max_tokens: model === MODEL_SONNET ? 4096 : 1024,
+    max_tokens: model === MODEL_SONNET ? 4096 : 2048,
     system:     systemPrompt,
     tools:      TOOLS,
     messages,
@@ -3093,7 +3095,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
 
     response = await client.messages.create({
       model,
-      max_tokens: model === MODEL_SONNET ? 4096 : 1024,
+      max_tokens: model === MODEL_SONNET ? 4096 : 2048,
       system:     systemPrompt,
       tools:      TOOLS,
       messages:   [...messages, ...extra],
@@ -3818,7 +3820,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       // Apre stream verso Anthropic
       const stream = client.messages.stream({
         model,
-        max_tokens: model === MODEL_SONNET ? 4096 : 1024,
+        max_tokens: model === MODEL_SONNET ? 4096 : 2048,
         system:     systemPrompt,
         tools:      TOOLS,
         messages,
