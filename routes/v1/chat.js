@@ -254,7 +254,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 62 TOOL
+TOOL DISPONIBILI — 61 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -274,39 +274,51 @@ create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_s
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CANVAS DINAMICO — REGOLA OBBLIGATORIA
+CANVAS — VISUALIZZAZIONI INTERATTIVE (OBBLIGATORIO)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Hai la capacità di generare visualizzazioni interattive inline nella chat.
-DEVI usare create_canvas ogni volta che la domanda riguarda uno di questi scenari:
+L'interfaccia rileva automaticamente i tag <ladia-canvas> nel tuo testo e li renderizza
+come componenti interattivi (Gantt, grafici, KPI, tabelle). Non devi chiamare nessun tool.
 
-GANTT (canvas_type: "gantt") — USA SEMPRE per:
-→ "fasi del cantiere", "timeline lavori", "quando finisce la fase X", "mostrami l'avanzamento"
-→ Dati richiesti: get_site_phases → mappa in [{nome, inizio, fine, progresso, stato}]
+FORMATO — scrivi esattamente così nel tuo testo:
 
-BAR CHART (canvas_type: "bar_chart") — USA SEMPRE per:
-→ "confronta i cantieri", "grafico costi", "quanto abbiamo speso", "ore per cantiere"
-→ Dati richiesti: get_economia / get_site_costs / get_kpi → mappa in [{label, value}]
+<ladia-canvas type="TIPO" title="TITOLO" subtitle="opzionale">
+JSON_DATI
+</ladia-canvas>
 
-LINE CHART (canvas_type: "line_chart") — USA SEMPRE per:
-→ "andamento nel tempo", "trend SAL", "presenze settimana per settimana"
-→ Dati richiesti: get_sal_history / get_presence_history → mappa in [{label, value}]
+TIPI E CASI D'USO OBBLIGATORI:
 
-KPI GRID (canvas_type: "kpi_grid") — USA SEMPRE per:
-→ "dashboard", "riepilogo azienda", "KPI", "come siamo messi in generale"
-→ Dati richiesti: get_kpi → mappa in [{label, value, unit, trend, delta}]
+gantt — per: fasi cantiere, timeline lavori, avanzamento, "quando finisce la fase X"
+  Recupera dati con get_site_phases, poi:
+  [{"nome":"Fondazioni","inizio":"2024-01-15","fine":"2024-03-01","progresso":100,"stato":"completata"},
+   {"nome":"Struttura","inizio":"2024-03-01","fine":"2024-07-15","progresso":60,"stato":"in_corso"}]
+  stato: completata | in_corso | sospesa | non_iniziata
 
-TABLE (canvas_type: "table") — USA SEMPRE per:
-→ "lista lavoratori", "tabella scadenze", "tutti i documenti", "elenco subappaltatori"
-→ Dati richiesti: get_workers / get_upcoming_deadlines → mappa in {headers:[...], rows:[[...]]}
+bar_chart — per: confronti tra cantieri, costi, ore, budget, valori per periodo
+  Recupera con get_economia / get_kpi / get_site_costs, poi:
+  [{"label":"Cantiere Rossi","value":45000},{"label":"Cantiere Bianchi","value":32000}]
 
-SEQUENZA OBBLIGATORIA:
-1. Chiama i tool dati (get_kpi, get_site_phases, get_economia, ecc.)
-2. Chiama create_canvas con i dati ottenuti (SEMPRE, se la categoria sopra corrisponde)
-3. Scrivi 1-3 righe di commento testuale DOPO il canvas
+line_chart — per: andamento SAL nel tempo, trend presenze, costi mensili
+  Recupera con get_sal_history / get_presence_history, poi:
+  [{"label":"Gen","value":12},{"label":"Feb","value":18},{"label":"Mar","value":22}]
 
-IMPORTANTE: NON scrivere mai markdown tables al posto di create_canvas.
-NON rispondere solo con testo quando un canvas sarebbe appropriato.
-Il canvas è la tua risposta visiva — usalo come prima cosa, poi commenta.
+kpi_grid — per: "come siamo messi", dashboard, riepilogo generale, KPI aziendali
+  Recupera con get_kpi, poi:
+  [{"label":"Cantieri attivi","value":"4","unit":"","trend":"up","delta":"+1"},
+   {"label":"Presenti oggi","value":"23","unit":"","trend":"flat"},
+   {"label":"Budget totale","value":"450000","unit":"€","trend":"down","delta":"-3%"}]
+  trend: up | down | flat
+
+table — per: liste lavoratori, scadenze, documenti, subappaltatori, qualsiasi elenco
+  Recupera con get_workers / get_upcoming_deadlines / get_subcontractors, poi:
+  {"headers":["Nome","Ruolo","Scadenza"],"rows":[["Mario Rossi","Muratore","2024-12-01"],["Luigi Bianchi","Elettricista","2025-03-15"]]}
+
+REGOLE ASSOLUTE — NESSUNA ECCEZIONE:
+1. MAI usare tabelle markdown (|col|col|) — usa SEMPRE <ladia-canvas type="table">
+2. Inserisci il canvas dove mostreresti naturalmente i dati, non alla fine
+3. Dopo il canvas scrivi 1-3 righe di analisi
+4. Puoi usare più canvas in una risposta (es: prima kpi_grid, poi gantt)
+5. Il JSON deve contenere dati reali recuperati dai tool — mai inventati
+6. Se i dati non sono disponibili (lista vuota, errore tool), scrivi solo testo
 
 LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
 leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
@@ -1501,40 +1513,6 @@ const TOOLS = [
     },
   },
 
-  // ── Canvas — visualizzazioni dinamiche inline ─────────────────────────────
-  {
-    name: 'create_canvas',
-    description: 'Crea una visualizzazione dinamica inline nella conversazione (Gantt, grafico, tabella, KPI). ' +
-      'Usa DOPO aver recuperato i dati con gli altri tool. ' +
-      'Quando usare: "mostrami la Gantt delle fasi", "grafico dei costi", "confronta i cantieri", "dashboard KPI", "tabella dei lavoratori". ' +
-      'NON usare per dati già presentati come testo — solo per dati che beneficiano di una visualizzazione visiva.',
-    input_schema: {
-      type: 'object',
-      properties: {
-        canvas_type: {
-          type: 'string',
-          enum: ['gantt', 'bar_chart', 'line_chart', 'kpi_grid', 'table'],
-          description: 'gantt=timeline fasi; bar_chart=confronto valori; line_chart=andamento nel tempo; kpi_grid=metriche chiave; table=dati tabulari',
-        },
-        title: { type: 'string', description: 'Titolo del canvas (es. "Fasi Cantiere Rossi", "KPI Azienda Giugno")' },
-        subtitle: { type: 'string', description: 'Sottotitolo opzionale (es. periodo, nota)' },
-        data: {
-          type: 'array',
-          description:
-            'Dati da visualizzare. ' +
-            'gantt: [{nome,inizio(YYYY-MM-DD),fine(YYYY-MM-DD),progresso(0-100),stato}] ' +
-            'bar_chart/line_chart: [{label,value(number)}] ' +
-            'kpi_grid: [{label,value(string),unit?,trend?(up|down|flat),delta?}] ' +
-            'table: {headers:[string],rows:[[cell,...],...]}',
-        },
-        config: {
-          type: 'object',
-          description: 'Configurazione aggiuntiva. Per chart: {unit: "€"|"%"|""}',
-        },
-      },
-      required: ['canvas_type', 'title', 'data'],
-    },
-  },
 ];
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -3074,21 +3052,6 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         return await resolveObjective(companyId, description);
       }
 
-      case 'create_canvas': {
-        const VALID_CANVAS_TYPES = ['gantt', 'bar_chart', 'line_chart', 'kpi_grid', 'table'];
-        if (!VALID_CANVAS_TYPES.includes(toolInput.canvas_type)) {
-          return { error: `canvas_type non valido: ${toolInput.canvas_type}` };
-        }
-        if (!toolInput.data || (typeof toolInput.data !== 'object')) {
-          return { error: 'data obbligatorio (array o oggetto)' };
-        }
-        if (!toolInput.title || typeof toolInput.title !== 'string') {
-          return { error: 'title obbligatorio' };
-        }
-        // Rendered client-side via SSE canvas_block event
-        return { success: true, rendered: true };
-      }
-
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -3921,16 +3884,6 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
               site_id:    result.site_id,
               site_name:  result.site_name,
               campi:      result.campi,
-            });
-          }
-          if (block.name === 'create_canvas' && result.success) {
-            send({
-              type:        'canvas_block',
-              canvas_type: block.input.canvas_type,
-              title:       block.input.title,
-              subtitle:    block.input.subtitle,
-              data:        block.input.data,
-              config:      block.input.config ?? {},
             });
           }
           return {
