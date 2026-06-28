@@ -10,6 +10,7 @@ const { complianceStatus, overallStatus } = require('../../lib/compliance');
 const { computeRiskScore, generateInspectionShield } = require('../../services/safetyCopilot');
 const { getCompanyBrain } = require('../../lib/companyBrain');
 const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
+const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -3729,16 +3730,20 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
-  // Company brain + memoria Ladia + obiettivi aperti — fetch prima dello stream loop
+  // Company brain + deep site context + memoria Ladia + obiettivi aperti
   const _siteIdForContext = context_type === 'cantiere' ? context_id : null;
   let systemPrompt = SYSTEM_PROMPT;
   try {
-    const [brain, memory, objectives] = await Promise.all([
+    const [brain, siteCtx, memory, objectives] = await Promise.all([
       getCompanyBrain(supabase, req.companyId).catch(() => null),
+      _siteIdForContext
+        ? buildEnrichedContext(req.companyId, _siteIdForContext).catch(() => null)
+        : Promise.resolve(null),
       getMemory(req.companyId, { siteId: _siteIdForContext, userId: req.user.id }).catch(() => ''),
       getOpenObjectives(req.companyId, _siteIdForContext).catch(() => ''),
     ]);
     if (brain?.text)  systemPrompt = SYSTEM_PROMPT + brain.text;
+    if (siteCtx)      systemPrompt += `\n\n${siteCtx}`;   // snapshot profondo per-cantiere
     if (memory)       systemPrompt += `\n\n${memory}`;
     if (objectives)   systemPrompt += `\n\n${objectives}`;
   } catch { /* non critico */ }
