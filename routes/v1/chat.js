@@ -344,24 +344,34 @@ navigate — naviga a una sezione
   <ladia-action type="navigate" path="/risorse" label="Vai a Risorse"/>
   <ladia-action type="navigate" path="/dashboard" label="Dashboard"/>
 
-generate_doc — genera documento PDF direttamente dall'assistente
-  <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Genera POS"/>
-  <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist"/>
+generate_doc — apri la pagina di generazione documento per questo cantiere
+  <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/>
+  <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist sicurezza"/>
   Usa solo se hai già l'UUID del cantiere — mai con UUID inventati.
 
-quick_ask — proponi domanda di approfondimento rapido
+quick_ask — proponi domanda di approfondimento rapido (stile chip suggerimento)
   <ladia-action type="quick_ask" prompt="Mostra il risk score del Cantiere X" label="Risk score"/>
-  <ladia-action type="quick_ask" prompt="Aggiorna il SAL al 65%" label="Aggiorna SAL"/>
   <ladia-action type="quick_ask" prompt="Chi è presente oggi?" label="Presenze oggi"/>
+
+confirm — bottone di conferma verde, per azioni di scrittura che aspettano un "sì"
+  USA confirm quando stai per chiedere "Confermo?" o "Vuoi che lo registri?" o "Procedo?"
+  Il bottone invia il messaggio di conferma al posto dell'utente — risparmia un round-trip.
+  <ladia-action type="confirm" prompt="Sì, aggiorna il SAL al 65%" label="✓ Aggiorna SAL"/>
+  <ladia-action type="confirm" prompt="Sì, segna la fase come completata" label="✓ Segna completata"/>
+  <ladia-action type="confirm" prompt="Sì, registra la sospensione per pioggia" label="✓ Registra sospensione"/>
+  <ladia-action type="confirm" prompt="Sì, crea il lavoratore" label="✓ Crea lavoratore"/>
+  Regola: ogni volta che mostri un riepilogo e chiedi conferma, aggiungi SEMPRE un confirm tag.
+  Non aggiungere altri tag insieme al confirm (al massimo 1 confirm + 1 quick_ask "Modifica" se vuoi).
 
 REGOLE FERREE:
 1. Posiziona i tag SEMPRE alla fine della risposta, dopo testo e canvas.
-2. Max 4 action tag per risposta.
+2. Max 4 action tag per risposta. Preferisci 2-3 precisi a 4 generici.
 3. Ogni risposta con dati concreti (cantieri, lavoratori, scadenze, economia) DEVE avere ≥1 tag.
 4. Per navigate: usa UUID reali recuperati dai tool — MAI inventati o placeholder.
-5. Per quick_ask: domande utili, specifiche, brevi — no generiche.
+5. Per quick_ask: domande utili, specifiche, pertinenti al contesto attuale.
 6. label: concisa, max 25 caratteri, sempre in italiano.
 7. Quando citi un cantiere per nome e hai il suo UUID: aggiungi sempre navigate verso quel cantiere.
+8. REGOLA CRITICA su confirm: quando mostri un riepilogo di dati da salvare e chiedi conferma, usa SEMPRE confirm — non solo testo. Il "Confermo?" testuale senza pulsante è vietato.
 
 LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
 leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
@@ -4010,7 +4020,7 @@ router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
     ] = await Promise.all([
       supabase.from('workers').select('id, full_name, role, safety_training_expiry, health_fitness_expiry').eq('company_id', companyId).eq('is_active', true).limit(500),
       supabase.from('sites').select('id, name, status, budget_totale, sal_percentuale').eq('company_id', companyId).neq('status', 'chiuso'),
-      supabase.from('site_economy').select('site_id, tipo, importo').eq('company_id', companyId),
+      supabase.from('site_economia_voci').select('site_id, tipo, importo').eq('company_id', companyId),
       supabase.from('subcontractors').select('id, name, durc_expiry').eq('company_id', companyId).eq('is_active', true).limit(200),
       supabase.from('site_notes').select('id, site_id, title, urgency, created_at').eq('company_id', companyId).is('resolved_at', null).eq('category', 'non_conformita').order('created_at', { ascending: false }).limit(50),
     ]);
