@@ -115,12 +115,19 @@ const coordinatorLimiter = rateLimit({
 });
 
 // ── Rate limiter per POST /api/v1/chat — assistente IA ───────────────────────
-// Limite per IP — protegge dai costi AI in caso di abuso
+// Limite per company_id (non per IP) — evita che una singola azienda
+// monopolizzi il budget Anthropic o faccia abuso tramite più utenti/IP.
 const chatLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 40,
+  max: 20,
   standardHeaders: true,
   legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    if (req.companyId) return `chat:company:${req.companyId}`;
+    const ip = req.ip || '';
+    return `chat:ip:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
+  },
   message: { error: 'CHAT_RATE_LIMIT' },
   ...makeStore(),
 });
