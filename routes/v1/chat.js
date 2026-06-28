@@ -254,7 +254,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 61 TOOL
+TOOL DISPONIBILI — 62 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -272,6 +272,16 @@ AZIONI DI SCRITTURA:
 create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
+
+CANVAS DINAMICO: create_canvas
+Usa per generare visualizzazioni inline nella chat. SEMPRE DOPO aver recuperato i dati.
+- gantt      → "mostrami la Gantt delle fasi", "timeline lavori", "quando finiscono le fasi"
+- bar_chart  → "grafico dei costi", "confronta i cantieri", "entrate per mese"
+- line_chart → "andamento SAL", "presenze nel tempo", "trend spese"
+- kpi_grid   → "dashboard", "KPI azienda", "riepilogo metriche"
+- table      → "tabella lavoratori", "lista scadenze", "confronto subappaltatori"
+QUANDO USARE: solo se la domanda beneficia chiaramente di un visual. Per dati già leggibili come testo → non usare.
+SEQUENZA CORRETTA: 1) chiama i tool dati (get_sites, get_site_phases, ecc.) → 2) chiama create_canvas con i dati ottenuti → 3) scrivi 1-2 righe di commento testuale.
 
 LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
 leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
@@ -1463,6 +1473,41 @@ const TOOLS = [
         },
       },
       required: ['description'],
+    },
+  },
+
+  // ── Canvas — visualizzazioni dinamiche inline ─────────────────────────────
+  {
+    name: 'create_canvas',
+    description: 'Crea una visualizzazione dinamica inline nella conversazione (Gantt, grafico, tabella, KPI). ' +
+      'Usa DOPO aver recuperato i dati con gli altri tool. ' +
+      'Quando usare: "mostrami la Gantt delle fasi", "grafico dei costi", "confronta i cantieri", "dashboard KPI", "tabella dei lavoratori". ' +
+      'NON usare per dati già presentati come testo — solo per dati che beneficiano di una visualizzazione visiva.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        canvas_type: {
+          type: 'string',
+          enum: ['gantt', 'bar_chart', 'line_chart', 'kpi_grid', 'table'],
+          description: 'gantt=timeline fasi; bar_chart=confronto valori; line_chart=andamento nel tempo; kpi_grid=metriche chiave; table=dati tabulari',
+        },
+        title: { type: 'string', description: 'Titolo del canvas (es. "Fasi Cantiere Rossi", "KPI Azienda Giugno")' },
+        subtitle: { type: 'string', description: 'Sottotitolo opzionale (es. periodo, nota)' },
+        data: {
+          type: 'array',
+          description:
+            'Dati da visualizzare. ' +
+            'gantt: [{nome,inizio(YYYY-MM-DD),fine(YYYY-MM-DD),progresso(0-100),stato}] ' +
+            'bar_chart/line_chart: [{label,value(number)}] ' +
+            'kpi_grid: [{label,value(string),unit?,trend?(up|down|flat),delta?}] ' +
+            'table: {headers:[string],rows:[[cell,...],...]}',
+        },
+        config: {
+          type: 'object',
+          description: 'Configurazione aggiuntiva. Per chart: {unit: "€"|"%"|""}',
+        },
+      },
+      required: ['canvas_type', 'title', 'data'],
     },
   },
 ];
@@ -3004,6 +3049,10 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         return await resolveObjective(companyId, description);
       }
 
+      case 'create_canvas':
+        // Canvas rendered client-side via SSE canvas_block event; nothing to persist
+        return { success: true, rendered: true };
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -3647,7 +3696,7 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [] } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context = null, recent_activity = null } = req.body;
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
@@ -3742,10 +3791,12 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
       getMemory(req.companyId, { siteId: _siteIdForContext, userId: req.user.id }).catch(() => ''),
       getOpenObjectives(req.companyId, _siteIdForContext).catch(() => ''),
     ]);
-    if (brain?.text)  systemPrompt = SYSTEM_PROMPT + brain.text;
-    if (siteCtx)      systemPrompt += `\n\n${siteCtx}`;   // snapshot profondo per-cantiere
-    if (memory)       systemPrompt += `\n\n${memory}`;
-    if (objectives)   systemPrompt += `\n\n${objectives}`;
+    if (brain?.text)    systemPrompt = SYSTEM_PROMPT + brain.text;
+    if (siteCtx)        systemPrompt += `\n\n${siteCtx}`;          // snapshot profondo per-cantiere
+    if (memory)         systemPrompt += `\n\n${memory}`;
+    if (objectives)     systemPrompt += `\n\n${objectives}`;
+    if (view_context)   systemPrompt += `\n\n${view_context}`;      // schermata attuale (Point 1)
+    if (recent_activity) systemPrompt += `\n\n${recent_activity}`;  // sessione utente (Point 3)
   } catch { /* non critico */ }
 
   try {
@@ -3826,6 +3877,16 @@ router.post('/chat/stream', verifySupabaseJwt, async (req, res) => {
               site_id:    result.site_id,
               site_name:  result.site_name,
               campi:      result.campi,
+            });
+          }
+          if (block.name === 'create_canvas' && result.success) {
+            send({
+              type:        'canvas_block',
+              canvas_type: block.input.canvas_type,
+              title:       block.input.title,
+              subtitle:    block.input.subtitle,
+              data:        block.input.data,
+              config:      block.input.config ?? {},
             });
           }
           return {
