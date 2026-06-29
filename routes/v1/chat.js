@@ -597,6 +597,19 @@ REGOLE IMMAGINI:
 6. Per le foto di cantiere: descrivi lo stato lavori, segnala problemi visibili, suggerisci azioni`;
 
 
+// ── System prompt aggiuntivo per modalità vocale ─────────────────────────────
+const VOICE_MODE_PROMPT = `
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+MODALITÀ VOCALE — PRIORITÀ ASSOLUTA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Messaggio arrivato da INPUT VOCALE (cantiere, mani occupate).
+REGOLE FERREE:
+• Esegui IMMEDIATAMENTE qualsiasi azione — ZERO conferme, ZERO "Confermo?", ZERO riepiloghi prima di eseguire
+• Risposta MAX 2 righe brevi: "✓ [azione eseguita] — [cantiere/dettaglio]" oppure risposta diretta
+• ZERO canvas (<ladia-canvas>), ZERO action tag (<ladia-action>)
+• Tono assertivo: "Ho registrato…" / "Ho aggiornato…" / "Ho creato…"
+• Per domande (non comandi): risposta diretta in max 2 righe, nessun elenco lungo`;
+
 // ── System prompt per strutturazione report (export) ─────────────────────────
 const REPORT_SYSTEM_PROMPT = `Sei un formattatore di report aziendali professionali.
 Ricevi una conversazione tra un utente e Pal (assistente IA per cantieri) e devi strutturarla in un report JSON.
@@ -3748,7 +3761,8 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null, page_context: _pc = null } = req.body;
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null, page_context: _pc = null, voice_mode: _vm = false } = req.body;
+  const voiceMode = Boolean(_vm);
   if (!message || typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
@@ -3874,6 +3888,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     }
     if (view_context)   systemPrompt += `\n\n${view_context}`;      // schermata attuale (Point 1)
     if (recent_activity) systemPrompt += `\n\n${recent_activity}`;  // sessione utente (Point 3)
+    if (voiceMode)      systemPrompt += VOICE_MODE_PROMPT;          // voice: esegui subito, risposta 2 righe
   } catch { /* non critico */ }
 
   try {
