@@ -3810,90 +3810,142 @@ async function executeTool(toolName, toolInput, companyId, userId) {
 
       case 'search_documents': {
         const { query, scope = 'all', site_id, worker_id, category } = toolInput;
-        const ilike = query ? `%${query}%` : '%';
+        const ilike   = query ? `%${query}%` : '%';
+        const ql      = (query || '').toLowerCase();
+        const oggi    = todayRome;
+        const presto  = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
         const results = [];
 
-        // 1. Documenti cantiere (site_documents)
-        if (scope === 'all' || scope === 'site') {
-          let q = supabase
-            .from('site_documents')
-            .select('id, name, category, file_size, mime_type, created_at, site_id, sites(name)')
-            .eq('company_id', companyId)
-            .ilike('name', ilike)
-            .order('created_at', { ascending: false })
-            .limit(30);
-          if (site_id) q = q.eq('site_id', site_id);
-          if (category) q = q.eq('category', category);
-          const { data } = await q;
-          (data || []).forEach(d => results.push({
-            fonte: 'cantiere',
-            id: d.id,
-            nome: d.name,
-            tipo: d.category,
-            cantiere: d.sites?.name || null,
-            data_caricamento: d.created_at?.slice(0, 10),
-            mime_type: d.mime_type,
-            download_endpoint: `/api/v1/documents/${d.id}/download`,
-          }));
-        }
+        // Pre-fetch site names per enrichment (evita join FK fragili)
+        const { data: sitesData } = await supabase
+          .from('sites').select('id, name').eq('company_id', companyId).limit(200);
+        const siteMap = Object.fromEntries((sitesData || []).map(s => [s.id, s.name]));
+        const allSiteIds = Object.keys(siteMap);
 
-        // 2. Documenti aziendali (company_documents)
-        if (scope === 'all' || scope === 'company') {
-          let q = supabase
-            .from('company_documents')
-            .select('id, name, category, file_size, mime_type, created_at, ai_expiry_date, ai_validity_ok')
-            .eq('company_id', companyId)
-            .ilike('name', ilike)
-            .order('created_at', { ascending: false })
-            .limit(30);
-          if (category) q = q.eq('category', category);
-          const { data } = await q;
-          (data || []).forEach(d => results.push({
-            fonte: 'azienda',
-            id: d.id,
-            nome: d.name,
-            tipo: d.category,
-            scadenza: d.ai_expiry_date || null,
-            valido: d.ai_validity_ok,
-            data_caricamento: d.created_at?.slice(0, 10),
-            mime_type: d.mime_type,
-            download_endpoint: `/api/v1/company-documents/${d.id}/download`,
-          }));
-        }
+        const inSites = site_id ? [site_id] : allSiteIds;
 
-        // 3. Documenti lavoratori (worker_documents)
-        if (scope === 'all' || scope === 'workers') {
-          let q = supabase
-            .from('worker_documents')
-            .select('id, name, doc_type, expiry_date, ai_expiry_date, ai_validity_ok, created_at, mime_type, worker_id, workers(full_name)')
-            .eq('company_id', companyId)
-            .ilike('name', ilike)
-            .order('expiry_date', { ascending: true, nullsFirst: false })
-            .limit(50);
-          if (worker_id) q = q.eq('worker_id', worker_id);
-          if (category)  q = q.eq('doc_type', category);
-          const { data } = await q;
-          (data || []).forEach(d => {
-            const scad = d.expiry_date || d.ai_expiry_date;
-            const oggi = todayRome;
-            const status = !scad ? 'nessuna_scadenza'
-              : scad < oggi ? 'scaduto'
-              : scad < new Date(Date.now() + 30*86400000).toISOString().slice(0,10) ? 'in_scadenza'
-              : 'valido';
-            results.push({
-              fonte: 'lavoratore',
-              id: d.id,
-              nome: d.name,
-              tipo: d.doc_type,
-              lavoratore: d.workers?.full_name || null,
-              scadenza: scad || null,
-              status,
+        await Promise.all([
+          // 1. Documenti cantiere (site_documents)
+          (scope === 'all' || scope === 'site') && (async () => {
+            let q = supabase
+              .from('site_documents')
+              .select('id, name, category, file_size, mime_type, created_at, site_id')
+              .eq('company_id', companyId)
+              .ilike('name', ilike)
+              .order('created_at', { ascending: false })
+              .limit(30);
+            if (site_id) q = q.eq('site_id', site_id);
+            if (category) q = q.eq('category', category);
+            const { data } = await q;
+            (data || []).forEach(d => results.push({
+              fonte: 'cantiere', id: d.id, nome: d.name, tipo: d.category,
+              cantiere: siteMap[d.site_id] || null,
               data_caricamento: d.created_at?.slice(0, 10),
               mime_type: d.mime_type,
-              download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+              download_endpoint: `/api/v1/documents/${d.id}/download`,
+            }));
+          })(),
+
+          // 2. POS generati da AI
+          (scope === 'all' || scope === 'site') && allSiteIds.length > 0 && (!category || category === 'pos') && (async () => {
+            const { data: posDocs } = await supabase
+              .from('pos_documents')
+              .select('id, site_id, revision, created_at')
+              .in('site_id', inSites)
+              .order('created_at', { ascending: false })
+              .limit(20);
+            (posDocs || []).forEach(d => {
+              const nome = `POS — Revisione ${d.revision}`;
+              if (ql && !nome.toLowerCase().includes(ql) && !ql.includes('pos')) return;
+              results.push({
+                fonte: 'cantiere', id: `pos_${d.id}`, nome, tipo: 'pos',
+                cantiere: siteMap[d.site_id] || null,
+                data_caricamento: d.created_at?.slice(0, 10),
+                mime_type: 'application/pdf',
+                pos_id: d.id,
+                download_endpoint: null,
+                nota: 'PDF Palladia — scaricabile dalla pagina cantiere',
+              });
             });
-          });
-        }
+          })(),
+
+          // 3. Documenti aziendali (company_documents)
+          (scope === 'all' || scope === 'company') && (async () => {
+            let q = supabase
+              .from('company_documents')
+              .select('id, name, category, file_size, mime_type, created_at, ai_expiry_date, ai_validity_ok')
+              .eq('company_id', companyId)
+              .ilike('name', ilike)
+              .order('created_at', { ascending: false })
+              .limit(30);
+            if (category) q = q.eq('category', category);
+            const { data } = await q;
+            (data || []).forEach(d => results.push({
+              fonte: 'azienda', id: d.id, nome: d.name, tipo: d.category,
+              scadenza: d.ai_expiry_date || null, valido: d.ai_validity_ok,
+              data_caricamento: d.created_at?.slice(0, 10),
+              mime_type: d.mime_type,
+              download_endpoint: `/api/v1/company-documents/${d.id}/download`,
+            }));
+          })(),
+
+          // 4. Documenti lavoratori (worker_documents)
+          (scope === 'all' || scope === 'workers') && (async () => {
+            let q = supabase
+              .from('worker_documents')
+              .select('id, name, doc_type, expiry_date, ai_expiry_date, created_at, mime_type, worker_id, workers(full_name)')
+              .eq('company_id', companyId)
+              .ilike('name', ilike)
+              .order('expiry_date', { ascending: true, nullsFirst: false })
+              .limit(50);
+            if (worker_id) q = q.eq('worker_id', worker_id);
+            if (category)  q = q.eq('doc_type', category);
+            const { data } = await q;
+            (data || []).forEach(d => {
+              const scad = d.expiry_date || d.ai_expiry_date;
+              const status = !scad ? 'nessuna_scadenza'
+                : scad < oggi ? 'scaduto' : scad < presto ? 'in_scadenza' : 'valido';
+              results.push({
+                fonte: 'lavoratore', id: d.id, nome: d.name, tipo: d.doc_type,
+                lavoratore: d.workers?.full_name || null, worker_id: d.worker_id,
+                scadenza: scad || null, status,
+                data_caricamento: d.created_at?.slice(0, 10),
+                mime_type: d.mime_type,
+                download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+              });
+            });
+          })(),
+
+          // 5. Attestati formazione (worker_certificates)
+          (scope === 'all' || scope === 'workers') && (!category || category === 'attestato_formazione') && (async () => {
+            let q = supabase
+              .from('worker_certificates')
+              .select('id, worker_id, expiry_date, issue_date, pdf_url, issuing_body, course_types(name), workers(full_name)')
+              .eq('company_id', companyId)
+              .order('expiry_date', { ascending: true, nullsFirst: false })
+              .limit(100);
+            if (worker_id) q = q.eq('worker_id', worker_id);
+            const { data, error } = await q;
+            if (error?.code === '42P01') return; // tabella non ancora migrata — skip silenziosamente
+            (data || []).forEach(d => {
+              const nome = d.course_types?.name || 'Attestato formazione';
+              if (ql && !nome.toLowerCase().includes(ql) && !(d.issuing_body || '').toLowerCase().includes(ql)) return;
+              const scad = d.expiry_date;
+              const status = !scad ? 'nessuna_scadenza'
+                : scad < oggi ? 'scaduto' : scad < presto ? 'in_scadenza' : 'valido';
+              results.push({
+                fonte: 'lavoratore', id: d.id, nome,
+                tipo: 'attestato_formazione',
+                lavoratore: d.workers?.full_name || null, worker_id: d.worker_id,
+                ente_emittente: d.issuing_body || null,
+                scadenza: scad || null, status,
+                data_emissione: d.issue_date || null,
+                mime_type: d.pdf_url ? 'application/pdf' : null,
+                download_endpoint: d.pdf_url || null,
+              });
+            });
+          })(),
+        ].filter(Boolean));
 
         if (results.length === 0) return { risultati: [], messaggio: 'Nessun documento trovato con questi criteri.' };
         return { risultati: results, totale: results.length };

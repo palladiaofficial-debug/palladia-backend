@@ -379,17 +379,17 @@ async function loadAll() {
 }
 
 async function loadDocs() {
+  if (_scope === 'expiring') {
+    await renderExpiring();
+    return;
+  }
+
   const content = document.getElementById('content');
   content.innerHTML = '<div class="skel-card skeleton"></div>'.repeat(5);
 
   let url = `/api/v1/documents/search?scope=${_scope}`;
   if (_query)    url += `&q=${encodeURIComponent(_query)}`;
   if (_category) url += `&category=${encodeURIComponent(_category)}`;
-
-  if (_scope === 'expiring') {
-    renderExpiring();
-    return;
-  }
 
   const data = await api('GET', url);
   _docs = data?.results || [];
@@ -585,8 +585,18 @@ function renderDocs() {
 }
 
 // ── Expiring view ─────────────────────────────────────────────────────────────
-function renderExpiring() {
+async function renderExpiring() {
   const content = document.getElementById('content');
+  content.innerHTML = '<div class="skel-card skeleton"></div>'.repeat(4);
+  // Fetch fresh ogni volta — nessuna race condition con loadAll()
+  const data = await api('GET', '/api/v1/documents/expiring?days=60');
+  if (data) {
+    _expiring = data;
+    const total = (data.scaduti?.length || 0) + (data.in_scadenza?.length || 0);
+    const badge = document.getElementById('sidebar-expiry-count');
+    if (total > 0) { badge.textContent = total; badge.style.display = ''; }
+    renderAlert();
+  }
   const scad    = _expiring.scaduti    || [];
   const inScad  = _expiring.in_scadenza || [];
 

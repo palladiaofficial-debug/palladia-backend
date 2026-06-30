@@ -27,15 +27,25 @@ router.get('/documents/search', async (req, res) => {
   const { q = '', scope = 'all', siteId, workerId, category } = req.query;
   const companyId = req.companyId;
   const ilike     = q ? `%${q}%` : '%';
+  const ql        = q.toLowerCase();
+  const ora       = today();
+  const presto    = futureDate(30);
   const results   = [];
 
   try {
+    // Pre-fetch site names (evita join FK fragili)
+    const { data: sitesData } = await supabase
+      .from('sites').select('id, name').eq('company_id', companyId).limit(200);
+    const siteMap    = Object.fromEntries((sitesData || []).map(s => [s.id, s.name]));
+    const allSiteIds = Object.keys(siteMap);
+    const inSites    = siteId ? [siteId] : allSiteIds;
+
     await Promise.all([
-      // Documenti cantiere
+      // 1. Documenti cantiere
       (scope === 'all' || scope === 'site') && (async () => {
         let query = supabase
           .from('site_documents')
-          .select('id, name, category, file_size, mime_type, created_at, site_id, sites(name)')
+          .select('id, name, category, file_size, mime_type, created_at, site_id')
           .eq('company_id', companyId)
           .ilike('name', ilike)
           .order('created_at', { ascending: false })
@@ -44,20 +54,47 @@ router.get('/documents/search', async (req, res) => {
         if (category) query = query.eq('category', category);
         const { data } = await query;
         (data || []).forEach(d => results.push({
-          fonte:              'cantiere',
-          id:                 d.id,
-          nome:               d.name,
-          tipo:               d.category,
-          cantiere:           d.sites?.name || null,
-          site_id:            d.site_id,
-          data_caricamento:   d.created_at?.slice(0, 10),
-          file_size:          d.file_size,
-          mime_type:          d.mime_type,
-          download_endpoint:  `/api/v1/documents/${d.id}/download`,
+          fonte:             'cantiere',
+          id:                d.id,
+          nome:              d.name,
+          tipo:              d.category,
+          cantiere:          siteMap[d.site_id] || null,
+          site_id:           d.site_id,
+          data_caricamento:  d.created_at?.slice(0, 10),
+          file_size:         d.file_size,
+          mime_type:         d.mime_type,
+          download_endpoint: `/api/v1/documents/${d.id}/download`,
         }));
       })(),
 
-      // Documenti aziendali
+      // 2. POS generati da AI
+      (scope === 'all' || scope === 'site') && allSiteIds.length > 0 && (!category || category === 'pos') && (async () => {
+        const { data: posDocs } = await supabase
+          .from('pos_documents')
+          .select('id, site_id, revision, created_at')
+          .in('site_id', inSites)
+          .order('created_at', { ascending: false })
+          .limit(30);
+        (posDocs || []).forEach(d => {
+          const nome = `POS — Revisione ${d.revision}`;
+          if (ql && !nome.toLowerCase().includes(ql) && !ql.includes('pos')) return;
+          results.push({
+            fonte:             'cantiere',
+            id:                `pos_${d.id}`,
+            nome,
+            tipo:              'pos',
+            cantiere:          siteMap[d.site_id] || null,
+            site_id:           d.site_id,
+            data_caricamento:  d.created_at?.slice(0, 10),
+            mime_type:         'application/pdf',
+            pos_id:            d.id,
+            download_endpoint: null,
+            nota:              'PDF Palladia — scaricabile dalla pagina cantiere',
+          });
+        });
+      })(),
+
+      // 3. Documenti aziendali
       (scope === 'all' || scope === 'company') && (async () => {
         let query = supabase
           .from('company_documents')
@@ -69,27 +106,25 @@ router.get('/documents/search', async (req, res) => {
         if (category) query = query.eq('category', category);
         const { data } = await query;
         (data || []).forEach(d => results.push({
-          fonte:              'azienda',
-          id:                 d.id,
-          nome:               d.name,
-          tipo:               d.category,
-          scadenza:           d.ai_expiry_date || null,
-          valido:             d.ai_validity_ok,
-          sommario_ai:        d.ai_summary || null,
-          data_caricamento:   d.created_at?.slice(0, 10),
-          file_size:          d.file_size,
-          mime_type:          d.mime_type,
-          download_endpoint:  `/api/v1/company-documents/${d.id}/download`,
+          fonte:             'azienda',
+          id:                d.id,
+          nome:              d.name,
+          tipo:              d.category,
+          scadenza:          d.ai_expiry_date || null,
+          valido:            d.ai_validity_ok,
+          sommario_ai:       d.ai_summary || null,
+          data_caricamento:  d.created_at?.slice(0, 10),
+          file_size:         d.file_size,
+          mime_type:         d.mime_type,
+          download_endpoint: `/api/v1/company-documents/${d.id}/download`,
         }));
       })(),
 
-      // Documenti lavoratori
+      // 4. Documenti lavoratori
       (scope === 'all' || scope === 'workers') && (async () => {
-        const ora = today();
-        const presto = futureDate(30);
         let query = supabase
           .from('worker_documents')
-          .select('id, name, doc_type, expiry_date, ai_expiry_date, ai_validity_ok, ai_summary, created_at, mime_type, worker_id, workers(full_name, is_active)')
+          .select('id, name, doc_type, expiry_date, ai_expiry_date, ai_validity_ok, ai_summary, created_at, mime_type, worker_id, workers(full_name)')
           .eq('company_id', companyId)
           .ilike('name', ilike)
           .order('expiry_date', { ascending: true, nullsFirst: false })
@@ -98,24 +133,57 @@ router.get('/documents/search', async (req, res) => {
         if (category) query = query.eq('doc_type', category);
         const { data } = await query;
         (data || []).forEach(d => {
-          const scad = d.expiry_date || d.ai_expiry_date;
+          const scad   = d.expiry_date || d.ai_expiry_date;
           const status = !scad ? 'nessuna_scadenza'
-            : scad < ora    ? 'scaduto'
-            : scad < presto ? 'in_scadenza'
-            : 'valido';
+            : scad < ora ? 'scaduto' : scad < presto ? 'in_scadenza' : 'valido';
           results.push({
-            fonte:              'lavoratore',
-            id:                 d.id,
-            nome:               d.name,
-            tipo:               d.doc_type,
-            lavoratore:         d.workers?.full_name || null,
-            worker_id:          d.worker_id,
-            scadenza:           scad || null,
-            status_scadenza:    status,
-            sommario_ai:        d.ai_summary || null,
-            data_caricamento:   d.created_at?.slice(0, 10),
-            mime_type:          d.mime_type,
-            download_endpoint:  `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+            fonte:             'lavoratore',
+            id:                d.id,
+            nome:              d.name,
+            tipo:              d.doc_type,
+            lavoratore:        d.workers?.full_name || null,
+            worker_id:         d.worker_id,
+            scadenza:          scad || null,
+            status_scadenza:   status,
+            sommario_ai:       d.ai_summary || null,
+            data_caricamento:  d.created_at?.slice(0, 10),
+            mime_type:         d.mime_type,
+            download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+          });
+        });
+      })(),
+
+      // 5. Attestati formazione (worker_certificates)
+      (scope === 'all' || scope === 'workers') && (!category || category === 'attestato_formazione') && (async () => {
+        let query = supabase
+          .from('worker_certificates')
+          .select('id, worker_id, expiry_date, issue_date, pdf_url, issuing_body, course_types(name), workers(full_name)')
+          .eq('company_id', companyId)
+          .order('expiry_date', { ascending: true, nullsFirst: false })
+          .limit(200);
+        if (workerId) query = query.eq('worker_id', workerId);
+        const { data, error } = await query;
+        if (error?.code === '42P01') return; // tabella non ancora migrata — skip
+        (data || []).forEach(d => {
+          const nome = d.course_types?.name || 'Attestato formazione';
+          if (ql && !nome.toLowerCase().includes(ql) && !(d.issuing_body || '').toLowerCase().includes(ql)) return;
+          const scad   = d.expiry_date;
+          const status = !scad ? 'nessuna_scadenza'
+            : scad < ora ? 'scaduto' : scad < presto ? 'in_scadenza' : 'valido';
+          results.push({
+            fonte:             'lavoratore',
+            id:                d.id,
+            nome,
+            tipo:              'attestato_formazione',
+            lavoratore:        d.workers?.full_name || null,
+            worker_id:         d.worker_id,
+            ente_emittente:    d.issuing_body || null,
+            scadenza:          scad || null,
+            status_scadenza:   status,
+            data_emissione:    d.issue_date || null,
+            mime_type:         d.pdf_url ? 'application/pdf' : null,
+            file_size:         null,
+            download_endpoint: d.pdf_url || null,
           });
         });
       })(),
