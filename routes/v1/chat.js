@@ -5003,6 +5003,13 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               campi:      result.campi,
             });
           }
+          if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
+            send({ type: 'doc_cards', docs: result.risultati.slice(0, 10) });
+          }
+          if (block.name === 'get_expiring_documents') {
+            const docs = [...(result.scaduti || []), ...(result.in_scadenza || [])];
+            if (docs.length > 0) send({ type: 'doc_cards', docs: docs.slice(0, 10) });
+          }
           return {
             type:        'tool_result',
             tool_use_id: block.id,

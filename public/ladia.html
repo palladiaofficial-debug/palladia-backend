@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="theme-color" content="#f5f3ee">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -49,7 +49,7 @@
     }
 
     /* ── Layout ─────────────────────────────────────────── */
-    .app { display: flex; height: 100vh; }
+    .app { display: flex; height: 100vh; height: 100dvh; }
 
     /* ── Sidebar ────────────────────────────────────────── */
     .sidebar {
@@ -593,7 +593,7 @@
     }
 
     /* ── Loading / Login screens ─────────────────────────── */
-    .screen { display: none; height: 100vh; }
+    .screen { display: none; height: 100vh; height: 100dvh; }
     .screen.active { display: flex; }
 
     #screen-loading {
@@ -697,6 +697,93 @@
     .nav-card:hover { background: rgba(0,0,0,0.08); }
     .nav-card svg { width: 14px; height: 14px; }
 
+    /* ── Document cards (risultati tool AI) ─────────────── */
+    .doc-cards-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .doc-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .doc-card:hover {
+      border-color: rgba(0,0,0,0.15);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .doc-card-top {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 20px;
+    }
+    .doc-src {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 2px 7px;
+      border-radius: 5px;
+      flex-shrink: 0;
+    }
+    .doc-src-cantiere   { background: var(--accent-soft); color: var(--text); }
+    .doc-src-azienda    { background: var(--amber-bg); color: var(--amber); }
+    .doc-src-lavoratore { background: var(--green-bg); color: var(--green); }
+    .doc-status {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 5px;
+      margin-left: auto;
+      flex-shrink: 0;
+    }
+    .doc-status-ok    { background: var(--green-bg); color: var(--green); }
+    .doc-status-warn  { background: var(--amber-bg); color: var(--amber); }
+    .doc-status-error { background: var(--red-bg); color: var(--red); }
+    .doc-card-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      line-height: 1.4;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .doc-card-meta {
+      font-size: 11px;
+      color: var(--muted);
+      line-height: 1.4;
+    }
+    .doc-card-action { margin-top: 2px; }
+    .doc-card-btn {
+      width: 100%;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      background: transparent;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      min-height: 34px;
+    }
+    .doc-card-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .doc-card-btn svg { width: 12px; height: 12px; flex-shrink: 0; }
+
     /* ── Mobile ─────────────────────────────────────────── */
     .overlay {
       display: none;
@@ -711,16 +798,38 @@
         position: fixed;
         left: 0; top: 0; bottom: 0;
         transform: translateX(-100%);
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
       }
       .sidebar.open { transform: translateX(0); }
       .overlay.open { display: block; }
       .btn-menu { display: flex; }
-      .topbar { padding: 12px 16px; }
+      .topbar {
+        padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+        min-height: 56px;
+      }
+      .topbar-title {
+        max-width: 140px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .chat-messages { padding: 16px; }
-      .input-area { padding: 12px 16px 16px; }
+      .input-area {
+        padding: 12px 16px max(20px, env(safe-area-inset-bottom));
+      }
+      .input-box textarea { font-size: 16px; } /* prevents iOS zoom on focus */
+      .btn-send { width: 44px; height: 44px; }  /* min 44px touch target */
       .welcome { padding: 60px 16px 20px; }
       .welcome h1 { font-size: 22px; }
+      .welcome p { font-size: 14px; }
+      .welcome-chips { max-width: 100%; }
+      .welcome-chip { min-height: 48px; font-size: 13px; }
       .msg-user .msg-bubble { max-width: 90%; }
+      .mode-toggle { gap: 1px; }
+      .mode-btn { padding: 6px 12px; font-size: 11px; }
+      .doc-cards-grid { grid-template-columns: 1fr; }
+      .chat-area { overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
     }
   </style>
 </head>
@@ -1184,6 +1293,7 @@ async function sendMessage(text) {
 
   let fullText = '';
   let navCards = [];
+  let pendingDocCards = [];
 
   try {
     const response = await fetch('/api/v1/chat/stream', {
@@ -1252,6 +1362,10 @@ async function sendMessage(text) {
           navCards.push({ path: event.path, label: event.label });
         }
 
+        if (event.type === 'doc_cards' && Array.isArray(event.docs)) {
+          pendingDocCards.push(...event.docs);
+        }
+
         if (event.type === 'error') {
           $content.innerHTML = `<p style="color:var(--red)">${escHtml(event.message)}</p>`;
         }
@@ -1261,6 +1375,18 @@ async function sendMessage(text) {
     // Remove tool indicators, render final text
     $content.querySelectorAll('.tool-indicator').forEach(el => el.remove());
     $content.innerHTML = renderMarkdown(fullText);
+
+    // Render document cards (da tool search_documents / get_expiring_documents)
+    if (pendingDocCards.length > 0) {
+      const seen = new Set();
+      const unique = pendingDocCards.filter(d => {
+        const k = String(d.id || d.nome);
+        if (seen.has(k)) return false;
+        seen.add(k);
+        return true;
+      });
+      $content.appendChild(renderDocCards(unique.slice(0, 10)));
+    }
 
     // Add navigation cards
     navCards.forEach(nav => {
@@ -1299,6 +1425,101 @@ async function sendMessage(text) {
   scrollToBottom();
 }
 
+// ── Document cards renderer ───────────────────────────────────────────────────
+function renderDocCards(docs) {
+  const grid = document.createElement('div');
+  grid.className = 'doc-cards-grid';
+
+  docs.forEach(doc => {
+    const card = document.createElement('div');
+    card.className = 'doc-card';
+
+    const isPOS = String(doc.id || '').startsWith('pos_');
+    const isDirectUrl = doc.download_endpoint && !doc.download_endpoint.startsWith('/api/');
+    const nome = doc.nome || doc.name || 'Documento';
+
+    const srcClass = doc.fonte === 'azienda' ? 'doc-src-azienda'
+      : doc.fonte === 'lavoratore' ? 'doc-src-lavoratore' : 'doc-src-cantiere';
+    const srcLabel = doc.fonte === 'azienda' ? 'Azienda'
+      : doc.fonte === 'lavoratore' ? 'Lavoratore' : 'Cantiere';
+
+    let statusHtml = '';
+    if (doc.status) {
+      const isErr  = ['scaduto', 'SCADUTO'].includes(doc.status);
+      const isWarn = doc.status === 'in_scadenza';
+      const cls = isErr ? 'doc-status-error' : isWarn ? 'doc-status-warn' : 'doc-status-ok';
+      const lbl = isErr ? 'Scaduto' : isWarn ? 'In scadenza' : 'Valido';
+      statusHtml = `<span class="doc-status ${cls}">${lbl}</span>`;
+    }
+
+    const metaParts = [];
+    if (doc.cantiere)   metaParts.push(escHtml(doc.cantiere));
+    if (doc.lavoratore) metaParts.push(escHtml(doc.lavoratore));
+    if (doc.scadenza) {
+      const d = new Date(doc.scadenza);
+      metaParts.push('Scade ' + d.toLocaleDateString('it-IT', { day: '2-digit', month: 'short', year: 'numeric' }));
+    }
+    if (typeof doc.giorni_mancanti === 'number') {
+      const g = doc.giorni_mancanti;
+      metaParts.push(g < 0 ? `${Math.abs(g)}gg fa` : `tra ${g}gg`);
+    }
+
+    const btnLabel = isPOS ? 'Vai al cantiere' : 'Scarica';
+    const dlIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+    const navIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+
+    card.innerHTML = `
+      <div class="doc-card-top">
+        <span class="doc-src ${srcClass}">${srcLabel}</span>
+        ${statusHtml}
+      </div>
+      <div class="doc-card-name">${escHtml(nome)}</div>
+      ${metaParts.length ? `<div class="doc-card-meta">${metaParts.join(' · ')}</div>` : ''}
+      <div class="doc-card-action">
+        <button class="doc-card-btn">${isPOS ? navIcon : dlIcon}${btnLabel}</button>
+      </div>`;
+
+    card.querySelector('.doc-card-btn').addEventListener('click', () =>
+      downloadDocCard({ endpoint: doc.download_endpoint, isDirectUrl, isPOS, nome })
+    );
+
+    grid.appendChild(card);
+  });
+  return grid;
+}
+
+async function downloadDocCard({ endpoint, isDirectUrl, isPOS, nome }) {
+  if (isPOS) {
+    alert('Il POS è scaricabile direttamente dalla pagina del cantiere nella sezione "Documenti".');
+    return;
+  }
+  if (!endpoint) {
+    alert('Download non disponibile per questo documento.');
+    return;
+  }
+  if (isDirectUrl) {
+    window.open(endpoint, '_blank');
+    return;
+  }
+  const token = await getJwt();
+  if (!token) return;
+  const headers = { 'Authorization': `Bearer ${token}` };
+  if (_companyId) headers['X-Company-Id'] = _companyId;
+  try {
+    const r = await fetch(endpoint, { headers });
+    if (!r.ok) { alert('Errore nel download del documento.'); return; }
+    const blob = await r.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    alert('Errore di rete durante il download.');
+  }
+}
+
 function formatToolName(name) {
   const map = {
     get_sites: 'Cercando cantieri',
@@ -1324,6 +1545,9 @@ function formatToolName(name) {
     get_site_detail: 'Caricando dettagli cantiere',
     create_expense: 'Registrando spesa',
     create_site_note: 'Creando nota',
+    search_documents: 'Cercando documenti',
+    get_expiring_documents: 'Controllando scadenze documenti',
+    get_site_document_summary: 'Analizzando documenti cantiere',
   };
   return map[name] || name;
 }
