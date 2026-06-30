@@ -97,6 +97,9 @@ router.use('/', require('./courseQuotes'));
 // Documenti aziendali: libreria centralizzata (JWT)
 router.use('/', require('./companyDocuments'));
 
+// Hub documenti unificato: search, expiring, site summary (JWT)
+router.use('/', require('./documentsHub'));
+
 // Notifiche in-app scadenze (JWT)
 router.use('/', require('./notifications'));
 

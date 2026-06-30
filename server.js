@@ -506,6 +506,10 @@ app.get('/ladia', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('ladia.html', { root: __dirname + '/public' });
 });
+app.get('/documenti', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile('documenti.html', { root: __dirname + '/public' });
+});
 app.get('/onboarding', (req, res) => {
   res.sendFile('onboarding.html', { root: __dirname + '/public' });
 });

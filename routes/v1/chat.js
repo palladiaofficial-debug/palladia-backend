@@ -257,7 +257,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 61 TOOL
+TOOL DISPONIBILI — 64 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -266,7 +266,7 @@ SICUREZZA E COMPLIANCE: get_compliance_overview, get_upcoming_deadlines, get_ris
 FASI E AVANZAMENTO: get_site_phases, get_sal_history, get_computo_voci, get_capitolato_voci
 METEO E SOSPENSIONI: get_weather_forecast, get_weather_log, get_suspension_days
 ECONOMIA E COSTI: get_site_costs, get_expenses_summary, get_payslips
-DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents, leggi_documento_pdf
+DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents, leggi_documento_pdf, search_documents, get_expiring_documents, get_site_document_summary
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
@@ -275,6 +275,11 @@ AZIONI DI SCRITTURA:
 create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
+
+DOCUMENT INTELLIGENCE — REGOLE:
+- search_documents: punto di accesso unico per trovare qualsiasi documento (cantiere/azienda/lavoratore). Usa SEMPRE questo prima di rispondere "non trovo il documento X".
+- get_expiring_documents: usa proattivamente quando l'utente chiede dello stato compliance, delle scadenze, o in contesti dove è rilevante segnalare problemi imminenti.
+- get_site_document_summary: usa quando l'utente chiede "cosa manca al cantiere X" o "stato documenti" — dà una panoramica completa inclusa compliance lavoratori.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CANVAS — VISUALIZZAZIONI INTERATTIVE (OBBLIGATORIO)
@@ -1755,6 +1760,56 @@ const TOOLS = [
         },
       },
       required: ['description'],
+    },
+  },
+
+  // ── Document intelligence tools ───────────────────────────────────────────
+  {
+    name: 'search_documents',
+    description:
+      'Cerca documenti in tutto il sistema Palladia: cantieri, azienda, lavoratori. ' +
+      'Usa per: "trova il DURC", "dove è il DVR del cantiere X", "documenti di Mario", ' +
+      '"cerca assicurazione", "tutti i POS". Restituisce lista unificata con fonte, tipo, scadenza e link.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query:     { type: 'string',  description: 'Parola chiave nel nome del documento (case-insensitive). Ometti per listare tutti.' },
+        scope:     { type: 'string',  enum: ['all', 'site', 'company', 'workers'], description: 'Dove cercare. Default: all.' },
+        site_id:   { type: 'string',  description: 'Limita ai documenti di un cantiere specifico.' },
+        worker_id: { type: 'string',  description: 'Limita ai documenti di un lavoratore specifico.' },
+        category:  { type: 'string',  description: 'Filtra per categoria/tipo es. dvr, durc, pos, idoneita_medica, formazione_sicurezza.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_expiring_documents',
+    description:
+      'Elenca documenti aziendali e personali dei lavoratori in scadenza o già scaduti. ' +
+      'Fondamentale per la compliance. Usa per: "cosa scade questo mese", "documenti scaduti", ' +
+      '"idoneità in scadenza", "verifica compliance documenti", "alert scadenze".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days:             { type: 'number',  description: 'Documenti che scadono entro N giorni da oggi. Default: 60.' },
+        include_expired:  { type: 'boolean', description: 'Includi anche i già scaduti. Default: true.' },
+        scope:            { type: 'string',  enum: ['all', 'company', 'workers'], description: 'Dove cercare. Default: all.' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'get_site_document_summary',
+    description:
+      'Panoramica completa documenti di un cantiere: cosa è caricato, cosa manca, ' +
+      'stato compliance lavoratori assegnati (idoneità, formazione), POS/DVR presenti. ' +
+      'Usa per: "stato documenti cantiere X", "cosa manca al cantiere", "compliance cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID del cantiere (obbligatorio). Usa get_sites per trovarlo.' },
+      },
+      required: ['site_id'],
     },
   },
 
@@ -3749,6 +3804,258 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           .single();
         if (error) return { error: error.message };
         return { success: true, cantiere: data };
+      }
+
+      // ── Document intelligence ─────────────────────────────────────────────────
+
+      case 'search_documents': {
+        const { query, scope = 'all', site_id, worker_id, category } = toolInput;
+        const ilike = query ? `%${query}%` : '%';
+        const results = [];
+
+        // 1. Documenti cantiere (site_documents)
+        if (scope === 'all' || scope === 'site') {
+          let q = supabase
+            .from('site_documents')
+            .select('id, name, category, file_size, mime_type, created_at, site_id, sites(name)')
+            .eq('company_id', companyId)
+            .ilike('name', ilike)
+            .order('created_at', { ascending: false })
+            .limit(30);
+          if (site_id) q = q.eq('site_id', site_id);
+          if (category) q = q.eq('category', category);
+          const { data } = await q;
+          (data || []).forEach(d => results.push({
+            fonte: 'cantiere',
+            id: d.id,
+            nome: d.name,
+            tipo: d.category,
+            cantiere: d.sites?.name || null,
+            data_caricamento: d.created_at?.slice(0, 10),
+            mime_type: d.mime_type,
+            download_endpoint: `/api/v1/documents/${d.id}/download`,
+          }));
+        }
+
+        // 2. Documenti aziendali (company_documents)
+        if (scope === 'all' || scope === 'company') {
+          let q = supabase
+            .from('company_documents')
+            .select('id, name, category, file_size, mime_type, created_at, ai_expiry_date, ai_validity_ok')
+            .eq('company_id', companyId)
+            .ilike('name', ilike)
+            .order('created_at', { ascending: false })
+            .limit(30);
+          if (category) q = q.eq('category', category);
+          const { data } = await q;
+          (data || []).forEach(d => results.push({
+            fonte: 'azienda',
+            id: d.id,
+            nome: d.name,
+            tipo: d.category,
+            scadenza: d.ai_expiry_date || null,
+            valido: d.ai_validity_ok,
+            data_caricamento: d.created_at?.slice(0, 10),
+            mime_type: d.mime_type,
+            download_endpoint: `/api/v1/company-documents/${d.id}/download`,
+          }));
+        }
+
+        // 3. Documenti lavoratori (worker_documents)
+        if (scope === 'all' || scope === 'workers') {
+          let q = supabase
+            .from('worker_documents')
+            .select('id, name, doc_type, expiry_date, ai_expiry_date, ai_validity_ok, created_at, mime_type, worker_id, workers(full_name)')
+            .eq('company_id', companyId)
+            .ilike('name', ilike)
+            .order('expiry_date', { ascending: true, nullsFirst: false })
+            .limit(50);
+          if (worker_id) q = q.eq('worker_id', worker_id);
+          if (category)  q = q.eq('doc_type', category);
+          const { data } = await q;
+          (data || []).forEach(d => {
+            const scad = d.expiry_date || d.ai_expiry_date;
+            const oggi = todayRome;
+            const status = !scad ? 'nessuna_scadenza'
+              : scad < oggi ? 'scaduto'
+              : scad < new Date(Date.now() + 30*86400000).toISOString().slice(0,10) ? 'in_scadenza'
+              : 'valido';
+            results.push({
+              fonte: 'lavoratore',
+              id: d.id,
+              nome: d.name,
+              tipo: d.doc_type,
+              lavoratore: d.workers?.full_name || null,
+              scadenza: scad || null,
+              status,
+              data_caricamento: d.created_at?.slice(0, 10),
+              mime_type: d.mime_type,
+              download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+            });
+          });
+        }
+
+        if (results.length === 0) return { risultati: [], messaggio: 'Nessun documento trovato con questi criteri.' };
+        return { risultati: results, totale: results.length };
+      }
+
+      case 'get_expiring_documents': {
+        const { days = 60, include_expired = true, scope = 'all' } = toolInput;
+        const oggi   = todayRome;
+        const limite = new Date(Date.now() + Number(days) * 86400000).toISOString().slice(0, 10);
+        const results = [];
+
+        // Documenti aziendali con scadenza AI
+        if (scope === 'all' || scope === 'company') {
+          const { data } = await supabase
+            .from('company_documents')
+            .select('id, name, category, ai_expiry_date, ai_validity_ok')
+            .eq('company_id', companyId)
+            .not('ai_expiry_date', 'is', null)
+            .lte('ai_expiry_date', limite)
+            .order('ai_expiry_date');
+          (data || []).forEach(d => {
+            if (!include_expired && d.ai_expiry_date < oggi) return;
+            results.push({
+              fonte: 'azienda',
+              id: d.id,
+              nome: d.name,
+              tipo: d.category,
+              scadenza: d.ai_expiry_date,
+              status: d.ai_expiry_date < oggi ? 'SCADUTO' : 'in_scadenza',
+              giorni_mancanti: Math.ceil((new Date(d.ai_expiry_date) - new Date(oggi)) / 86400000),
+              download_endpoint: `/api/v1/company-documents/${d.id}/download`,
+            });
+          });
+        }
+
+        // Documenti lavoratori con scadenza
+        if (scope === 'all' || scope === 'workers') {
+          const { data } = await supabase
+            .from('worker_documents')
+            .select('id, name, doc_type, expiry_date, ai_expiry_date, worker_id, workers(full_name)')
+            .eq('company_id', companyId)
+            .or(`expiry_date.lte.${limite},ai_expiry_date.lte.${limite}`)
+            .order('expiry_date', { ascending: true, nullsFirst: false });
+          (data || []).forEach(d => {
+            const scad = d.expiry_date || d.ai_expiry_date;
+            if (!scad) return;
+            if (!include_expired && scad < oggi) return;
+            const giorniMancanti = Math.ceil((new Date(scad) - new Date(oggi)) / 86400000);
+            results.push({
+              fonte: 'lavoratore',
+              id: d.id,
+              nome: d.name,
+              tipo: d.doc_type,
+              lavoratore: d.workers?.full_name || null,
+              scadenza: scad,
+              status: scad < oggi ? 'SCADUTO' : 'in_scadenza',
+              giorni_mancanti: giorniMancanti,
+              download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+            });
+          });
+        }
+
+        results.sort((a, b) => a.giorni_mancanti - b.giorni_mancanti);
+        const scaduti    = results.filter(r => r.status === 'SCADUTO');
+        const inScadenza = results.filter(r => r.status === 'in_scadenza');
+
+        if (results.length === 0) return {
+          messaggio: `Nessun documento scade nei prossimi ${days} giorni. Compliance OK.`,
+          scaduti: [], in_scadenza: [],
+        };
+        return {
+          riepilogo: `${scaduti.length} scaduti, ${inScadenza.length} in scadenza entro ${days} giorni`,
+          scaduti,
+          in_scadenza: inScadenza,
+          totale: results.length,
+        };
+      }
+
+      case 'get_site_document_summary': {
+        const { site_id } = toolInput;
+        if (!site_id) return { error: 'site_id obbligatorio' };
+
+        const { data: site } = await supabase
+          .from('sites').select('id, name').eq('id', site_id).eq('company_id', companyId).maybeSingle();
+        if (!site) return { error: 'Cantiere non trovato' };
+
+        const oggi = todayRome;
+
+        const [
+          { data: siteDocs },
+          { data: posDocs },
+          { data: siteWorkers },
+        ] = await Promise.all([
+          supabase.from('site_documents')
+            .select('id, name, category, created_at')
+            .eq('site_id', site_id).eq('company_id', companyId)
+            .order('created_at', { ascending: false }),
+          supabase.from('pos_documents')
+            .select('id, revision, created_at')
+            .eq('site_id', site_id)
+            .order('created_at', { ascending: false }).limit(5),
+          supabase.from('worksite_workers')
+            .select('worker_id, workers(id, full_name, health_fitness_expiry, safety_training_expiry)')
+            .eq('site_id', site_id).eq('company_id', companyId).eq('status', 'active'),
+        ]);
+
+        // Documenti cantiere per categoria
+        const docPerCategoria = {};
+        (siteDocs || []).forEach(d => {
+          if (!docPerCategoria[d.category]) docPerCategoria[d.category] = [];
+          docPerCategoria[d.category].push({ id: d.id, nome: d.name, data: d.created_at?.slice(0,10) });
+        });
+
+        // Compliance lavoratori
+        const lavoratoriOk    = [];
+        const lavoratoriAlert = [];
+        (siteWorkers || []).forEach(sw => {
+          const w = sw.workers;
+          if (!w) return;
+          const idScad  = w.health_fitness_expiry;
+          const forScad = w.safety_training_expiry;
+          const issues  = [];
+          if (!idScad)               issues.push('idoneità medica mancante');
+          else if (idScad < oggi)    issues.push(`idoneità SCADUTA (${idScad})`);
+          else if (idScad < new Date(Date.now()+30*86400000).toISOString().slice(0,10)) issues.push(`idoneità in scadenza (${idScad})`);
+          if (!forScad)              issues.push('formazione mancante');
+          else if (forScad < oggi)   issues.push(`formazione SCADUTA (${forScad})`);
+          else if (forScad < new Date(Date.now()+30*86400000).toISOString().slice(0,10)) issues.push(`formazione in scadenza (${forScad})`);
+
+          if (issues.length > 0)
+            lavoratoriAlert.push({ nome: w.full_name, problemi: issues });
+          else
+            lavoratoriOk.push(w.full_name);
+        });
+
+        // Checklist documenti tipici cantiere
+        const categoriePresenti = new Set(Object.keys(docPerCategoria));
+        const checklist = [
+          { tipo: 'pos',          label: 'POS',                  presente: posDocs && posDocs.length > 0 },
+          { tipo: 'dvr',          label: 'DVR',                  presente: categoriePresenti.has('dvr')  },
+          { tipo: 'psc',          label: 'PSC',                  presente: categoriePresenti.has('psc')  },
+          { tipo: 'notifica_asl', label: 'Notifica ASL',         presente: categoriePresenti.has('notifica_asl') },
+          { tipo: 'durc',         label: 'DURC',                 presente: categoriePresenti.has('durc') },
+          { tipo: 'assicurazione',label: 'Assicurazione',        presente: categoriePresenti.has('assicurazione') },
+        ];
+        const mancanti = checklist.filter(c => !c.presente).map(c => c.label);
+
+        return {
+          cantiere: site.name,
+          documenti_caricati: siteDocs?.length || 0,
+          pos_presenti: posDocs?.length || 0,
+          ultimi_pos: (posDocs || []).map(p => ({ id: p.id, revisione: p.revision, data: p.created_at?.slice(0,10) })),
+          documenti_per_categoria: docPerCategoria,
+          checklist_tipica: checklist,
+          documenti_mancanti: mancanti.length > 0 ? mancanti : null,
+          lavoratori_attivi: (siteWorkers || []).length,
+          lavoratori_compliance_ok: lavoratoriOk,
+          lavoratori_con_alert: lavoratoriAlert,
+          compliance_score: lavoratoriOk.length + lavoratoriAlert.length > 0
+            ? Math.round(lavoratoriOk.length / (lavoratoriOk.length + lavoratoriAlert.length) * 100)
+            : null,
+        };
       }
 
       default:
