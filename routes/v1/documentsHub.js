@@ -234,7 +234,7 @@ router.get('/documents/expiring', async (req, res) => {
         });
       })(),
 
-      // Documenti lavoratori
+      // Documenti lavoratori (worker_documents)
       (scope === 'all' || scope === 'workers') && (async () => {
         const { data } = await supabase
           .from('worker_documents')
@@ -248,16 +248,44 @@ router.get('/documents/expiring', async (req, res) => {
           if (!includeExpired && scad < ora) return;
           const giorni = Math.ceil((new Date(scad) - new Date(ora)) / 86400000);
           results.push({
-            fonte:              'lavoratore',
-            id:                 d.id,
-            nome:               d.name,
-            tipo:               d.doc_type,
-            lavoratore:         d.workers?.full_name || null,
-            worker_id:          d.worker_id,
-            scadenza:           scad,
-            status:             scad < ora ? 'scaduto' : 'in_scadenza',
-            giorni_mancanti:    giorni,
-            download_endpoint:  `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+            fonte:             'lavoratore',
+            id:                d.id,
+            nome:              d.name,
+            tipo:              d.doc_type,
+            lavoratore:        d.workers?.full_name || null,
+            worker_id:         d.worker_id,
+            scadenza:          scad,
+            status:            scad < ora ? 'scaduto' : 'in_scadenza',
+            giorni_mancanti:   giorni,
+            download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
+          });
+        });
+      })(),
+
+      // Attestati formazione (worker_certificates)
+      (scope === 'all' || scope === 'workers') && (async () => {
+        const { data, error } = await supabase
+          .from('worker_certificates')
+          .select('id, worker_id, expiry_date, pdf_url, course_types(name), workers(full_name)')
+          .eq('company_id', companyId)
+          .not('expiry_date', 'is', null)
+          .lte('expiry_date', limite)
+          .order('expiry_date', { ascending: true });
+        if (error?.code === '42P01') return; // tabella non ancora migrata
+        (data || []).forEach(d => {
+          if (!includeExpired && d.expiry_date < ora) return;
+          const giorni = Math.ceil((new Date(d.expiry_date) - new Date(ora)) / 86400000);
+          results.push({
+            fonte:             'lavoratore',
+            id:                d.id,
+            nome:              d.course_types?.name || 'Attestato formazione',
+            tipo:              'attestato_formazione',
+            lavoratore:        d.workers?.full_name || null,
+            worker_id:         d.worker_id,
+            scadenza:          d.expiry_date,
+            status:            d.expiry_date < ora ? 'scaduto' : 'in_scadenza',
+            giorni_mancanti:   giorni,
+            download_endpoint: d.pdf_url || null,
           });
         });
       })(),

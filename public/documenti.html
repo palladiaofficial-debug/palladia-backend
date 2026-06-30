@@ -546,8 +546,8 @@ function docCard(d) {
         </div>
       </div>
       <div class="doc-actions">
-        <button class="btn-download" onclick="downloadDoc('${d.id}','${d.fonte}','${d.worker_id || ''}',this)">
-          Scarica
+        <button class="btn-download" onclick="downloadDoc('${d.id}','${d.fonte}','${d.worker_id || ''}','${d.download_endpoint || ''}',this)">
+          ${d.id.startsWith('pos_') ? 'Info' : 'Scarica'}
         </button>
       </div>
     </div>`;
@@ -634,8 +634,8 @@ async function renderExpiring() {
           </div>
         </div>
         <div class="doc-actions">
-          <button class="btn-download" onclick="downloadDoc('${d.id}','${d.fonte}','${d.worker_id || ''}',this)">
-            Scarica
+          <button class="btn-download" onclick="downloadDoc('${d.id}','${d.fonte}','${d.worker_id || ''}','${d.download_endpoint || ''}',this)">
+            ${d.id.startsWith('pos_') ? 'Info' : 'Scarica'}
           </button>
         </div>
       </div>`;
@@ -654,12 +654,24 @@ async function renderExpiring() {
 }
 
 // ── Download ──────────────────────────────────────────────────────────────────
-async function downloadDoc(id, fonte, workerId, btn) {
+async function downloadDoc(id, fonte, workerId, directUrl, btn) {
+  // POS generati: non hanno endpoint API diretto — link alla pagina cantiere
+  if (id.startsWith('pos_')) {
+    alert('I POS generati da Palladia si scaricano dalla pagina del cantiere → sezione Documenti.');
+    return;
+  }
+  // Attestati formazione con PDF diretto
+  if (directUrl && directUrl !== 'null' && directUrl !== '') {
+    const a = document.createElement('a');
+    a.href = directUrl; a.target = '_blank'; a.rel = 'noopener';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    return;
+  }
   btn.disabled = true; btn.textContent = '...';
   let endpoint;
-  if (fonte === 'azienda')   endpoint = `/api/v1/company-documents/${id}/download`;
+  if (fonte === 'azienda')                     endpoint = `/api/v1/company-documents/${id}/download`;
   else if (fonte === 'lavoratore' && workerId) endpoint = `/api/v1/workers/${workerId}/documents/${id}/download`;
-  else endpoint = `/api/v1/documents/${id}/download`;
+  else                                          endpoint = `/api/v1/documents/${id}/download`;
 
   const data = await api('GET', endpoint);
   btn.disabled = false; btn.textContent = 'Scarica';

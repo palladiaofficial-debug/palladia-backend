@@ -3983,29 +3983,47 @@ async function executeTool(toolName, toolInput, companyId, userId) {
 
         // Documenti lavoratori con scadenza
         if (scope === 'all' || scope === 'workers') {
-          const { data } = await supabase
-            .from('worker_documents')
-            .select('id, name, doc_type, expiry_date, ai_expiry_date, worker_id, workers(full_name)')
-            .eq('company_id', companyId)
-            .or(`expiry_date.lte.${limite},ai_expiry_date.lte.${limite}`)
-            .order('expiry_date', { ascending: true, nullsFirst: false });
-          (data || []).forEach(d => {
+          const [wdRes, wcRes] = await Promise.all([
+            supabase.from('worker_documents')
+              .select('id, name, doc_type, expiry_date, ai_expiry_date, worker_id, workers(full_name)')
+              .eq('company_id', companyId)
+              .or(`expiry_date.lte.${limite},and(expiry_date.is.null,ai_expiry_date.lte.${limite})`)
+              .order('expiry_date', { ascending: true, nullsFirst: false }),
+            supabase.from('worker_certificates')
+              .select('id, worker_id, expiry_date, pdf_url, course_types(name), workers(full_name)')
+              .eq('company_id', companyId)
+              .not('expiry_date', 'is', null)
+              .lte('expiry_date', limite)
+              .order('expiry_date', { ascending: true }),
+          ]);
+
+          (wdRes.data || []).forEach(d => {
             const scad = d.expiry_date || d.ai_expiry_date;
             if (!scad) return;
             if (!include_expired && scad < oggi) return;
-            const giorniMancanti = Math.ceil((new Date(scad) - new Date(oggi)) / 86400000);
             results.push({
-              fonte: 'lavoratore',
-              id: d.id,
-              nome: d.name,
-              tipo: d.doc_type,
+              fonte: 'lavoratore', id: d.id, nome: d.name, tipo: d.doc_type,
               lavoratore: d.workers?.full_name || null,
-              scadenza: scad,
-              status: scad < oggi ? 'SCADUTO' : 'in_scadenza',
-              giorni_mancanti: giorniMancanti,
+              scadenza: scad, status: scad < oggi ? 'SCADUTO' : 'in_scadenza',
+              giorni_mancanti: Math.ceil((new Date(scad) - new Date(oggi)) / 86400000),
               download_endpoint: `/api/v1/workers/${d.worker_id}/documents/${d.id}/download`,
             });
           });
+
+          if (!wcRes.error || wcRes.error.code !== '42P01') {
+            (wcRes.data || []).forEach(d => {
+              if (!include_expired && d.expiry_date < oggi) return;
+              results.push({
+                fonte: 'lavoratore', id: d.id,
+                nome: d.course_types?.name || 'Attestato formazione',
+                tipo: 'attestato_formazione',
+                lavoratore: d.workers?.full_name || null,
+                scadenza: d.expiry_date, status: d.expiry_date < oggi ? 'SCADUTO' : 'in_scadenza',
+                giorni_mancanti: Math.ceil((new Date(d.expiry_date) - new Date(oggi)) / 86400000),
+                download_endpoint: d.pdf_url || null,
+              });
+            });
+          }
         }
 
         results.sort((a, b) => a.giorni_mancanti - b.giorni_mancanti);
@@ -4034,10 +4052,13 @@ async function executeTool(toolName, toolInput, companyId, userId) {
 
         const oggi = todayRome;
 
+        const presto30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
         const [
           { data: siteDocs },
           { data: posDocs },
           { data: siteWorkers },
+          wcRes,
         ] = await Promise.all([
           supabase.from('site_documents')
             .select('id, name, category, created_at')
@@ -4050,7 +4071,20 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           supabase.from('worksite_workers')
             .select('worker_id, workers(id, full_name, health_fitness_expiry, safety_training_expiry)')
             .eq('site_id', site_id).eq('company_id', companyId).eq('status', 'active'),
+          supabase.from('worker_certificates')
+            .select('worker_id, expiry_date, course_types(name)')
+            .eq('company_id', companyId)
+            .not('expiry_date', 'is', null),
         ]);
+
+        // Mappa attestati per worker_id (scadenze corsi specifici)
+        const certsByWorker = {};
+        if (!wcRes.error || wcRes.error.code !== '42P01') {
+          (wcRes.data || []).forEach(c => {
+            if (!certsByWorker[c.worker_id]) certsByWorker[c.worker_id] = [];
+            certsByWorker[c.worker_id].push({ nome: c.course_types?.name || 'Attestato', scadenza: c.expiry_date });
+          });
+        }
 
         // Documenti cantiere per categoria
         const docPerCategoria = {};
@@ -4059,7 +4093,7 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           docPerCategoria[d.category].push({ id: d.id, nome: d.name, data: d.created_at?.slice(0,10) });
         });
 
-        // Compliance lavoratori
+        // Compliance lavoratori (worker_documents + worker_certificates)
         const lavoratoriOk    = [];
         const lavoratoriAlert = [];
         (siteWorkers || []).forEach(sw => {
@@ -4068,12 +4102,18 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           const idScad  = w.health_fitness_expiry;
           const forScad = w.safety_training_expiry;
           const issues  = [];
-          if (!idScad)               issues.push('idoneità medica mancante');
-          else if (idScad < oggi)    issues.push(`idoneità SCADUTA (${idScad})`);
-          else if (idScad < new Date(Date.now()+30*86400000).toISOString().slice(0,10)) issues.push(`idoneità in scadenza (${idScad})`);
-          if (!forScad)              issues.push('formazione mancante');
-          else if (forScad < oggi)   issues.push(`formazione SCADUTA (${forScad})`);
-          else if (forScad < new Date(Date.now()+30*86400000).toISOString().slice(0,10)) issues.push(`formazione in scadenza (${forScad})`);
+          if (!idScad)                issues.push('idoneità medica mancante');
+          else if (idScad < oggi)     issues.push(`idoneità SCADUTA (${idScad})`);
+          else if (idScad < presto30) issues.push(`idoneità in scadenza (${idScad})`);
+          if (!forScad)               issues.push('formazione mancante');
+          else if (forScad < oggi)    issues.push(`formazione SCADUTA (${forScad})`);
+          else if (forScad < presto30)issues.push(`formazione in scadenza (${forScad})`);
+
+          // Attestati corsi specifici
+          (certsByWorker[w.id] || []).forEach(c => {
+            if (c.scadenza < oggi)     issues.push(`${c.nome} SCADUTO (${c.scadenza})`);
+            else if (c.scadenza < presto30) issues.push(`${c.nome} in scadenza (${c.scadenza})`);
+          });
 
           if (issues.length > 0)
             lavoratoriAlert.push({ nome: w.full_name, problemi: issues });
