@@ -272,7 +272,7 @@ SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
-create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking
+create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, emit_sal, mark_sal_pagato
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -485,11 +485,21 @@ PATTERN DA RICONOSCERE:
 • Materiali/strumenti consegnati oggi → create_diary_entry (campo materials) + eventuale create_site_cost
 • Nuovo lavoratore con nome e CF menzionato → create_worker + assign_worker_to_site
 • Fase completata o avanzamento % citato → update_phase + update_sal
+• Avanzamento di una VOCE specifica del computo (es. "fondazioni al 75%") → update_sal_voce (non update_sal)
+• Prezzo unitario di una voce cambiato (offerta, variante prezzi) → update_prezzo_voce
+• Voce economica da correggere/aggiornare → update_economia_voce
+• SAL da emettere formalmente → emit_sal (con conferma obbligatoria + get_economia prima)
+• SAL incassato dal committente → mark_sal_pagato
 
 REGOLA COSTI — usare la destinazione giusta:
 - create_site_cost: fattura/DDT/nolo/subappalto con cantiere → contabilità operativa
 - create_expense: spesa aziendale senza cantiere specifico → contabilità generale
 - create_economia_voce: voce SAL/ricavo formale → quadro economico contrattuale
+
+REGOLE SPECIALI — tool ad alto impatto:
+• emit_sal: SEMPRE chiama get_economia prima → mostra P&L con importo maturato, costi, margine → chiedi conferma → poi emit_sal. Mai senza conferma esplicita.
+• delete_economia_voce: SEMPRE mostra la voce (descrizione + importo) prima → chiedi conferma → poi delete. Mai in blocco proattivo.
+• update_sal_voce / update_prezzo_voce: chiama get_computo_voci prima per ottenere l'id → mostra "Sto aggiornando [descrizione voce] da X a Y" → poi esegui. Se l'utente specifica una voce per nome, trova la corrispondenza nell'elenco restituito da get_computo_voci (match parziale sulla descrizione).
 
 REGOLE:
 1. Il blocco va SEMPRE alla fine, dopo la risposta tecnica — mai in mezzo
@@ -1345,6 +1355,86 @@ const TOOLS = [
         data_competenza: { type: 'string', description: 'Data YYYY-MM-DD. Default: oggi.' }
       },
       required: ['site_id', 'tipo', 'voce', 'importo']
+    }
+  },
+  {
+    name: 'update_economia_voce',
+    description: 'Modifica una voce economica esistente (costo o ricavo). REGOLA: chiama SEMPRE get_economia prima per ottenere l\'id e mostrare i valori attuali. IMPORTANTE: conferma prima.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:         { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        voce_id:         { type: 'string', description: 'UUID voce (id da get_economia, obbligatorio)' },
+        voce:            { type: 'string', description: 'Nuova descrizione' },
+        importo:         { type: 'number', description: 'Nuovo importo (> 0)' },
+        categoria:       { type: 'string', description: 'Categoria es. materiali, manodopera, sal' },
+        data_competenza: { type: 'string', description: 'Data YYYY-MM-DD' },
+        note:            { type: 'string', description: 'Note' }
+      },
+      required: ['site_id', 'voce_id']
+    }
+  },
+  {
+    name: 'delete_economia_voce',
+    description: 'Elimina una voce economica. OPERAZIONE IRREVERSIBILE. REGOLA FERREA: mostra SEMPRE la voce (descrizione + importo) e chiedi conferma esplicita PRIMA di chiamare questo tool. Mai chiamarlo proattivamente.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        voce_id: { type: 'string', description: 'UUID voce da eliminare (id da get_economia, obbligatorio)' }
+      },
+      required: ['site_id', 'voce_id']
+    }
+  },
+  {
+    name: 'update_sal_voce',
+    description: 'Aggiorna il SAL% di una singola voce del computo metrico. REGOLA: chiama SEMPRE get_computo_voci prima per ottenere l\'id e il nome della voce. Poi mostra cosa stai aggiornando e chiedi conferma. Usa per: "fondazioni al 75%", "aggiorna SAL voce X", "avanzamento voce Y".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        voce_id:         { type: 'string', description: 'UUID voce computo (id da get_computo_voci, obbligatorio)' },
+        sal_percentuale: { type: 'number', description: 'Nuovo SAL%: 0-100 (obbligatorio)' },
+        sal_note:        { type: 'string', description: 'Note sull\'avanzamento (opzionale)' }
+      },
+      required: ['voce_id', 'sal_percentuale']
+    }
+  },
+  {
+    name: 'update_prezzo_voce',
+    description: 'Aggiorna prezzo unitario di una voce del computo. Il server ricalcola automaticamente l\'importo (quantità × nuovo prezzo). REGOLA: chiama get_computo_voci prima, mostra voce + nuovo importo calcolato, chiedi conferma. Usa per: "cambia prezzo fondazioni", "aggiorna €/m²".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        voce_id:         { type: 'string', description: 'UUID voce computo (id da get_computo_voci, obbligatorio)' },
+        prezzo_unitario: { type: 'number', description: 'Nuovo prezzo unitario >= 0 (obbligatorio)' },
+        unita_misura:    { type: 'string', description: 'Unità di misura es. m², ml, cad. Ometti se invariata.' }
+      },
+      required: ['voce_id', 'prezzo_unitario']
+    }
+  },
+  {
+    name: 'emit_sal',
+    description: 'Emette un SAL formale con snapshot P&L. OPERAZIONE DEFINITIVA con effetti contabili permanenti. REGOLA FERREA: 1) chiama get_economia per mostrare il P&L aggiornato, 2) presenta riepilogo SAL (numero progressivo, importo maturato, margine), 3) chiedi conferma ESPLICITA, 4) chiama SOLO dopo conferma. Non usare proattivamente.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        note:    { type: 'string', description: 'Note sul SAL (opzionale)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'mark_sal_pagato',
+    description: 'Segna un SAL come incassato o annulla l\'incasso. REGOLA: chiama get_sal_history per ottenere l\'id SAL e mostrare il SAL prima di aggiornarlo. Usa per: "SAL incassato", "il SAL 3 è stato pagato", "annulla incasso SAL".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:   { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        sal_id:    { type: 'string', description: 'UUID SAL (id da get_sal_history, obbligatorio)' },
+        pagato_il: { type: 'string', description: 'Data incasso YYYY-MM-DD, oppure null per annullare' }
+      },
+      required: ['site_id', 'sal_id']
     }
   },
   {
@@ -2433,7 +2523,7 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         if (!computo) return { error: 'Nessun computo metrico trovato per questo cantiere.' };
         const { data: voci, error } = await supabase
           .from('site_computo_voci')
-          .select('codice, descrizione, unita_misura, quantita, prezzo_unitario, importo, sal_percentuale, tipo, sort_order')
+          .select('id, codice, descrizione, unita_misura, quantita, prezzo_unitario, importo, sal_percentuale, tipo, sort_order')
           .eq('computo_id', computo.id)
           .order('sort_order');
         if (error) return { error: error.message };
@@ -3116,6 +3206,203 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         const { description } = toolInput;
         if (!description) return { error: 'description obbligatoria' };
         return await resolveObjective(companyId, description);
+      }
+
+      // ── Nuovi tool computo / economia / SAL ───────────────────────────────────
+
+      case 'update_sal_voce': {
+        const { voce_id, sal_percentuale, sal_note } = toolInput;
+        if (!voce_id) return { error: 'voce_id obbligatorio' };
+        const pct = Number(sal_percentuale);
+        if (isNaN(pct) || pct < 0 || pct > 100) return { error: 'sal_percentuale deve essere tra 0 e 100' };
+        const patch = { sal_percentuale: pct };
+        if (sal_note !== undefined && sal_note !== null) patch.sal_note = sal_note;
+        const { data, error } = await supabase
+          .from('site_computo_voci')
+          .update(patch)
+          .eq('id', voce_id)
+          .eq('company_id', companyId)
+          .select('id, descrizione, sal_percentuale, sal_note, importo')
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, voce_aggiornata: data };
+      }
+
+      case 'update_prezzo_voce': {
+        const { voce_id, prezzo_unitario, unita_misura } = toolInput;
+        if (!voce_id) return { error: 'voce_id obbligatorio' };
+        const prezzo = Number(prezzo_unitario);
+        if (isNaN(prezzo) || prezzo < 0) return { error: 'prezzo_unitario deve essere >= 0' };
+        const { data: voce, error: fetchErr } = await supabase
+          .from('site_computo_voci')
+          .select('quantita')
+          .eq('id', voce_id)
+          .eq('company_id', companyId)
+          .single();
+        if (fetchErr) return { error: 'Voce non trovata' };
+        const importo = voce.quantita != null ? Math.round(Number(voce.quantita) * prezzo * 100) / 100 : null;
+        const patch = { prezzo_unitario: prezzo };
+        if (importo != null) patch.importo = importo;
+        if (unita_misura) patch.unita_misura = unita_misura;
+        const { data, error } = await supabase
+          .from('site_computo_voci')
+          .update(patch)
+          .eq('id', voce_id)
+          .eq('company_id', companyId)
+          .select('id, descrizione, prezzo_unitario, quantita, unita_misura, importo')
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, voce_aggiornata: data };
+      }
+
+      case 'update_economia_voce': {
+        const { site_id, voce_id, ...rest } = toolInput;
+        if (!site_id || !voce_id) return { error: 'site_id e voce_id obbligatori' };
+        const patch = {};
+        ['voce', 'importo', 'categoria', 'data_competenza', 'note'].forEach(k => {
+          if (rest[k] !== undefined && rest[k] !== null) patch[k] = rest[k];
+        });
+        if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
+        const { data, error } = await supabase
+          .from('site_economia_voci')
+          .update(patch)
+          .eq('id', voce_id)
+          .eq('site_id', site_id)
+          .eq('company_id', companyId)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, voce_aggiornata: data };
+      }
+
+      case 'delete_economia_voce': {
+        const { site_id, voce_id } = toolInput;
+        if (!site_id || !voce_id) return { error: 'site_id e voce_id obbligatori' };
+        const { data: preview } = await supabase
+          .from('site_economia_voci')
+          .select('voce, importo, tipo')
+          .eq('id', voce_id)
+          .eq('site_id', site_id)
+          .eq('company_id', companyId)
+          .single();
+        if (!preview) return { error: 'Voce non trovata' };
+        const { error } = await supabase
+          .from('site_economia_voci')
+          .delete()
+          .eq('id', voce_id)
+          .eq('site_id', site_id)
+          .eq('company_id', companyId);
+        if (error) return { error: error.message };
+        return { success: true, voce_eliminata: preview };
+      }
+
+      case 'emit_sal': {
+        const siteId = toolInput.site_id;
+        if (!siteId) return { error: 'site_id obbligatorio' };
+
+        // Dati cantiere
+        const { data: site } = await supabase
+          .from('sites')
+          .select('name, budget_totale, sal_percentuale')
+          .eq('id', siteId).eq('company_id', companyId).single();
+        if (!site) return { error: 'Cantiere non trovato' };
+
+        // Totale contratto da computo (o budget_totale come fallback)
+        const { data: computo } = await supabase
+          .from('site_computo')
+          .select('totale_contratto')
+          .eq('site_id', siteId).eq('company_id', companyId)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle();
+        const totaleContratto = Number(computo?.totale_contratto || site.budget_totale || 0);
+        const salPct = Number(site.sal_percentuale || 0);
+        const importoMaturato = Math.round(totaleContratto * salPct / 100 * 100) / 100;
+
+        // Costo manodopera da timbrature × tariffa_oraria
+        const { data: logs } = await supabase
+          .from('presence_logs')
+          .select('worker_id, event_type, timestamp_server')
+          .eq('site_id', siteId).eq('company_id', companyId)
+          .order('worker_id').order('timestamp_server');
+        const { data: workers } = await supabase
+          .from('workers')
+          .select('id, tariffa_oraria').eq('company_id', companyId);
+        const tariffe = {};
+        (workers || []).forEach(w => { if (w.tariffa_oraria) tariffe[w.id] = Number(w.tariffa_oraria); });
+        const byWorker = {};
+        (logs || []).forEach(l => { (byWorker[l.worker_id] = byWorker[l.worker_id] || []).push(l); });
+        let costoMo = 0;
+        for (const [wId, wLogs] of Object.entries(byWorker)) {
+          const tariffa = tariffe[wId] || 0;
+          if (!tariffa) continue;
+          let lastEntry = null;
+          for (const log of wLogs) {
+            if (log.event_type === 'ENTRY') { lastEntry = new Date(log.timestamp_server); }
+            else if (log.event_type === 'EXIT' && lastEntry) {
+              costoMo += ((new Date(log.timestamp_server) - lastEntry) / 3600000) * tariffa;
+              lastEntry = null;
+            }
+          }
+        }
+        costoMo = Math.round(costoMo * 100) / 100;
+
+        // Costi diretti (fatture, DDT, acconti)
+        const { data: costiRows } = await supabase
+          .from('site_costs')
+          .select('importo').eq('site_id', siteId).eq('company_id', companyId);
+        const costiDiretti = Math.round((costiRows || []).reduce((s, r) => s + Number(r.importo || 0), 0) * 100) / 100;
+        const totaleCosti = Math.round((costoMo + costiDiretti) * 100) / 100;
+        const margine = Math.round((importoMaturato - totaleCosti) * 100) / 100;
+        const margPct = importoMaturato > 0 ? Math.round(margine / importoMaturato * 10000) / 100 : 0;
+
+        // Numero SAL progressivo atomico
+        const { data: nextNum, error: rpcErr } = await supabase.rpc('next_sal_number', { p_site_id: siteId });
+        if (rpcErr) return { error: 'Errore numerazione SAL: ' + rpcErr.message };
+
+        const snapshot = {
+          company_id: companyId, site_id: siteId,
+          sal_number: nextNum, sal_percentuale: salPct,
+          data_emissione: todayRome,
+          totale_contratto: totaleContratto,
+          importo_maturato: importoMaturato,
+          costo_mo: costoMo, costi_diretti: costiDiretti,
+          totale_costi: totaleCosti, margine, margine_percentuale: margPct,
+          note: toolInput.note || null,
+          created_by: userId || null,
+        };
+        const { data: sal, error: salErr } = await supabase
+          .from('site_sal_history').insert(snapshot).select().single();
+        if (salErr) return { error: salErr.message };
+        return {
+          success: true,
+          sal_emesso: {
+            numero: sal.sal_number, data: sal.data_emissione,
+            sal_percentuale: sal.sal_percentuale,
+            totale_contratto: sal.totale_contratto,
+            importo_maturato: sal.importo_maturato,
+            costo_mo: sal.costo_mo, costi_diretti: sal.costi_diretti,
+            margine: sal.margine, margine_percentuale: sal.margine_percentuale,
+          },
+          nota: 'SAL registrato con snapshot P&L completo. Scarica il PDF dalla sezione Economia → Storico SAL.',
+        };
+      }
+
+      case 'mark_sal_pagato': {
+        const { site_id, sal_id, pagato_il } = toolInput;
+        if (!site_id || !sal_id) return { error: 'site_id e sal_id obbligatori' };
+        const { data, error } = await supabase
+          .from('site_sal_history')
+          .update({ pagato_il: pagato_il || null })
+          .eq('id', sal_id)
+          .eq('site_id', site_id)
+          .eq('company_id', companyId)
+          .select('id, sal_number, sal_percentuale, importo_maturato, data_emissione, pagato_il')
+          .single();
+        if (error) return { error: error.message };
+        return {
+          success: true,
+          sal: data,
+          stato: data.pagato_il ? `SAL ${data.sal_number} segnato come incassato il ${data.pagato_il}` : `SAL ${data.sal_number} — incasso annullato`,
+        };
       }
 
       default:
