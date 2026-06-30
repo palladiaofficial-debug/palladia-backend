@@ -272,7 +272,7 @@ SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
-create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, emit_sal, mark_sal_pagato
+create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -487,9 +487,12 @@ PATTERN DA RICONOSCERE:
 • Fase completata o avanzamento % citato → update_phase + update_sal
 • Avanzamento di una VOCE specifica del computo (es. "fondazioni al 75%") → update_sal_voce (non update_sal)
 • Prezzo unitario di una voce cambiato (offerta, variante prezzi) → update_prezzo_voce
+• Nuova voce da aggiungere al computo → create_computo_voce
+• Voce del computo da rimuovere → delete_computo_voce (con conferma)
 • Voce economica da correggere/aggiornare → update_economia_voce
 • SAL da emettere formalmente → emit_sal (con conferma obbligatoria + get_economia prima)
 • SAL incassato dal committente → mark_sal_pagato
+• Budget contratto o SAL% globale da aggiornare → update_budget_cantiere
 
 REGOLA COSTI — usare la destinazione giusta:
 - create_site_cost: fattura/DDT/nolo/subappalto con cantiere → contabilità operativa
@@ -1435,6 +1438,49 @@ const TOOLS = [
         pagato_il: { type: 'string', description: 'Data incasso YYYY-MM-DD, oppure null per annullare' }
       },
       required: ['site_id', 'sal_id']
+    }
+  },
+  {
+    name: 'create_computo_voce',
+    description: 'Aggiunge una singola voce al computo metrico esistente. Ricalcola automaticamente il totale contratto. REGOLA: mostra la voce con importo calcolato e chiedi conferma prima. Usa per: "aggiungi voce al computo", "inserisci fondazioni nel computo", "nuova voce di lavoro". NOTA: serve un computo già presente nel cantiere.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:         { type: 'string',  description: 'UUID cantiere (obbligatorio)' },
+        descrizione:     { type: 'string',  description: 'Descrizione della voce (obbligatorio)' },
+        tipo:            { type: 'string',  enum: ['voce', 'categoria'], description: 'Tipo: voce (con importo) o categoria (titolo). Default: voce.' },
+        codice:          { type: 'string',  description: 'Codice voce es. A.1.3 (opzionale)' },
+        unita_misura:    { type: 'string',  description: 'UM es. m², ml, cad (opzionale)' },
+        quantita:        { type: 'number',  description: 'Quantità (opzionale)' },
+        prezzo_unitario: { type: 'number',  description: 'Prezzo unitario €/UM (opzionale)' },
+        importo:         { type: 'number',  description: 'Importo totale €. Se omesso viene calcolato da quantita × prezzo_unitario.' },
+        parent_id:       { type: 'string',  description: 'UUID categoria padre (opzionale, da get_computo_voci)' }
+      },
+      required: ['site_id', 'descrizione']
+    }
+  },
+  {
+    name: 'delete_computo_voce',
+    description: 'Elimina una singola voce dal computo metrico. Se è una categoria, elimina anche tutte le sue sotto-voci (CASCADE). Ricalcola il totale contratto. OPERAZIONE IRREVERSIBILE — mostra SEMPRE la voce (descrizione + importo) e chiedi conferma prima. Mai usare proattivamente.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        voce_id: { type: 'string', description: 'UUID voce da eliminare (id da get_computo_voci, obbligatorio)' }
+      },
+      required: ['voce_id']
+    }
+  },
+  {
+    name: 'update_budget_cantiere',
+    description: 'Aggiorna il budget totale contratto e/o il SAL% globale del cantiere. REGOLA: mostra i valori attuali (da get_economia o get_site_detail) e i nuovi valori, chiedi conferma. Usa per: "il contratto è di 850.000€", "aggiorna budget", "cambia importo lavori".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:         { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        budget_totale:   { type: 'number', description: 'Nuovo importo contratto in € (>= 0)' },
+        sal_percentuale: { type: 'number', description: 'Nuovo SAL% globale 0-100' }
+      },
+      required: ['site_id']
     }
   },
   {
@@ -3403,6 +3449,127 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           sal: data,
           stato: data.pagato_il ? `SAL ${data.sal_number} segnato come incassato il ${data.pagato_il}` : `SAL ${data.sal_number} — incasso annullato`,
         };
+      }
+
+      case 'create_computo_voce': {
+        const { site_id, descrizione, tipo = 'voce', codice, unita_misura, quantita, prezzo_unitario, importo, parent_id } = toolInput;
+        if (!site_id || !descrizione) return { error: 'site_id e descrizione obbligatori' };
+        if (!['voce', 'categoria'].includes(tipo)) return { error: 'tipo deve essere voce o categoria' };
+
+        const { data: computo } = await supabase
+          .from('site_computo')
+          .select('id')
+          .eq('site_id', site_id)
+          .eq('company_id', companyId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (!computo) return { error: 'Nessun computo trovato per questo cantiere. Carica prima un computo dalla sezione Computo Metrico.' };
+
+        const { data: last } = await supabase
+          .from('site_computo_voci')
+          .select('sort_order')
+          .eq('computo_id', computo.id)
+          .order('sort_order', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const sortOrder = last ? (last.sort_order + 10) : 0;
+
+        let importoCalc = importo != null ? Number(importo) : null;
+        if (importoCalc == null && quantita != null && prezzo_unitario != null) {
+          importoCalc = Math.round(Number(quantita) * Number(prezzo_unitario) * 100) / 100;
+        }
+
+        const row = {
+          computo_id:      computo.id,
+          company_id:      companyId,
+          site_id,
+          tipo,
+          codice:          codice || null,
+          descrizione:     String(descrizione).slice(0, 500),
+          unita_misura:    unita_misura || null,
+          quantita:        quantita        != null ? Number(quantita)         : null,
+          prezzo_unitario: prezzo_unitario != null ? Number(prezzo_unitario)  : null,
+          importo:         importoCalc,
+          sal_percentuale: 0,
+          parent_id:       parent_id || null,
+          sort_order:      sortOrder,
+        };
+
+        const { data: voce, error } = await supabase
+          .from('site_computo_voci')
+          .insert(row)
+          .select()
+          .single();
+        if (error) return { error: error.message };
+
+        // Ricalcola totale_contratto
+        const { data: allVoci } = await supabase
+          .from('site_computo_voci')
+          .select('importo, tipo')
+          .eq('computo_id', computo.id);
+        const newTotale = Math.round(
+          (allVoci || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
+        ) / 100;
+        await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', computo.id);
+
+        return { success: true, voce_creata: voce, nuovo_totale_contratto: newTotale };
+      }
+
+      case 'delete_computo_voce': {
+        const { voce_id } = toolInput;
+        if (!voce_id) return { error: 'voce_id obbligatorio' };
+
+        const { data: voce } = await supabase
+          .from('site_computo_voci')
+          .select('id, descrizione, importo, tipo, computo_id')
+          .eq('id', voce_id)
+          .eq('company_id', companyId)
+          .single();
+        if (!voce) return { error: 'Voce non trovata' };
+
+        const { error } = await supabase
+          .from('site_computo_voci')
+          .delete()
+          .eq('id', voce_id)
+          .eq('company_id', companyId);
+        if (error) return { error: error.message };
+
+        const { data: remaining } = await supabase
+          .from('site_computo_voci')
+          .select('importo, tipo')
+          .eq('computo_id', voce.computo_id);
+        const newTotale = Math.round(
+          (remaining || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
+        ) / 100;
+        await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', voce.computo_id);
+
+        return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale };
+      }
+
+      case 'update_budget_cantiere': {
+        const { site_id, budget_totale, sal_percentuale } = toolInput;
+        if (!site_id) return { error: 'site_id obbligatorio' };
+        if (budget_totale === undefined && sal_percentuale === undefined)
+          return { error: 'Specificare almeno budget_totale o sal_percentuale' };
+
+        const patch = {};
+        if (budget_totale   !== undefined) patch.budget_totale   = Number(budget_totale);
+        if (sal_percentuale !== undefined) {
+          const pct = Number(sal_percentuale);
+          if (isNaN(pct) || pct < 0 || pct > 100) return { error: 'sal_percentuale deve essere tra 0 e 100' };
+          patch.sal_percentuale = pct;
+        }
+
+        const { data, error } = await supabase
+          .from('sites')
+          .update(patch)
+          .eq('id', site_id)
+          .eq('company_id', companyId)
+          .select('id, name, budget_totale, sal_percentuale')
+          .single();
+        if (error) return { error: error.message };
+        return { success: true, cantiere: data };
       }
 
       default:

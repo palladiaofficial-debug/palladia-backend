@@ -522,4 +522,134 @@ router.delete('/sites/:siteId/computo/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST /api/v1/sites/:siteId/computo/voci ──────────────────
+// Aggiunge una singola voce al computo esistente.
+// Ricalcola totale_contratto sul computo dopo l'inserimento.
+
+router.post('/sites/:siteId/computo/voci', async (req, res) => {
+  const { companyId, user } = req;
+  const { siteId }          = req.params;
+  const {
+    descrizione, tipo = 'voce', codice,
+    unita_misura, quantita, prezzo_unitario, importo,
+    parent_id, sort_order,
+  } = req.body;
+
+  if (!descrizione) return res.status(400).json({ error: 'descrizione obbligatoria' });
+  if (!['voce', 'categoria'].includes(tipo)) return res.status(400).json({ error: 'tipo deve essere voce o categoria' });
+
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  // Computo attivo
+  const { data: computo } = await supabase
+    .from('site_computo')
+    .select('id')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!computo) return res.status(404).json({ error: 'COMPUTO_NOT_FOUND', message: 'Nessun computo presente per questo cantiere. Carica prima un computo.' });
+
+  // sort_order: in fondo se non specificato
+  let finalSortOrder = sort_order;
+  if (finalSortOrder == null) {
+    const { data: last } = await supabase
+      .from('site_computo_voci')
+      .select('sort_order')
+      .eq('computo_id', computo.id)
+      .order('sort_order', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    finalSortOrder = last ? (last.sort_order + 10) : 0;
+  }
+
+  // Calcola importo se non fornito
+  let importoCalc = importo != null ? Number(importo) : null;
+  if (importoCalc == null && quantita != null && prezzo_unitario != null) {
+    importoCalc = Math.round(Number(quantita) * Number(prezzo_unitario) * 100) / 100;
+  }
+
+  const row = {
+    computo_id:      computo.id,
+    company_id:      companyId,
+    site_id:         siteId,
+    tipo,
+    codice:          codice || null,
+    descrizione:     String(descrizione).slice(0, 500),
+    unita_misura:    unita_misura || null,
+    quantita:        quantita    != null ? Number(quantita)         : null,
+    prezzo_unitario: prezzo_unitario != null ? Number(prezzo_unitario) : null,
+    importo:         importoCalc,
+    sal_percentuale: 0,
+    parent_id:       parent_id || null,
+    sort_order:      finalSortOrder,
+  };
+
+  const { data: voce, error } = await supabase
+    .from('site_computo_voci')
+    .insert(row)
+    .select()
+    .single();
+  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+
+  // Ricalcola totale_contratto
+  const { data: allVoci } = await supabase
+    .from('site_computo_voci')
+    .select('importo, tipo')
+    .eq('computo_id', computo.id);
+  const newTotale = (allVoci || [])
+    .filter(v => v.tipo === 'voce')
+    .reduce((s, v) => s + (Number(v.importo) || 0), 0);
+  await supabase
+    .from('site_computo')
+    .update({ totale_contratto: Math.round(newTotale * 100) / 100 })
+    .eq('id', computo.id);
+
+  res.status(201).json({ ok: true, voce_creata: voce, totale_contratto: Math.round(newTotale * 100) / 100 });
+});
+
+// ── DELETE /api/v1/computo/voci/:voceId ──────────────────────
+// Elimina una singola voce (CASCADE: elimina le sotto-voci se è categoria).
+// Ricalcola totale_contratto sul computo.
+
+router.delete('/computo/voci/:voceId', async (req, res) => {
+  const { companyId } = req;
+  const { voceId }    = req.params;
+
+  if (!isUuid(voceId)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  // Leggi prima la voce per avere computo_id e info
+  const { data: voce } = await supabase
+    .from('site_computo_voci')
+    .select('id, descrizione, importo, tipo, computo_id')
+    .eq('id', voceId)
+    .eq('company_id', companyId)
+    .single();
+  if (!voce) return res.status(404).json({ error: 'VOCE_NOT_FOUND' });
+
+  const { error } = await supabase
+    .from('site_computo_voci')
+    .delete()
+    .eq('id', voceId)
+    .eq('company_id', companyId);
+  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+
+  // Ricalcola totale_contratto
+  const { data: remaining } = await supabase
+    .from('site_computo_voci')
+    .select('importo, tipo')
+    .eq('computo_id', voce.computo_id);
+  const newTotale = (remaining || [])
+    .filter(v => v.tipo === 'voce')
+    .reduce((s, v) => s + (Number(v.importo) || 0), 0);
+  await supabase
+    .from('site_computo')
+    .update({ totale_contratto: Math.round(newTotale * 100) / 100 })
+    .eq('id', voce.computo_id);
+
+  res.json({ ok: true, voce_eliminata: voce, totale_contratto: Math.round(newTotale * 100) / 100 });
+});
+
 module.exports = router;
