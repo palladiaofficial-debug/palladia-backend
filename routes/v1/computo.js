@@ -3,12 +3,17 @@
  * routes/v1/computo.js
  * Computo Metrico digitale con SAL per voce.
  *
- * POST   /api/v1/sites/:siteId/computo/parse     — AI parsing (no save, ritorna draft)
- * POST   /api/v1/sites/:siteId/computo           — salva computo (dopo revisione)
- * GET    /api/v1/sites/:siteId/computo           — recupera computo attivo con voci
- * GET    /api/v1/sites/:siteId/computo/export.pdf — esporta SAL in PDF stile Palladia
- * PATCH  /api/v1/computo/voci/:voceId/sal        — aggiorna SAL% voce singola
- * DELETE /api/v1/sites/:siteId/computo/:id       — elimina computo
+ * POST   /api/v1/sites/:siteId/computo/parse          — AI parsing (no save, ritorna draft)
+ * POST   /api/v1/sites/:siteId/computo               — salva computo base (dopo revisione)
+ * GET    /api/v1/sites/:siteId/computo               — recupera computo base con voci
+ * GET    /api/v1/sites/:siteId/computo/export.pdf    — esporta SAL in PDF stile Palladia
+ * PATCH  /api/v1/computo/voci/:voceId/sal            — aggiorna SAL% voce singola
+ * POST   /api/v1/sites/:siteId/computo/voci          — aggiunge singola voce
+ * DELETE /api/v1/computo/voci/:voceId                — elimina singola voce
+ * DELETE /api/v1/sites/:siteId/computo/:id           — elimina computo
+ * GET    /api/v1/sites/:siteId/computo/varianti      — lista varianti
+ * POST   /api/v1/sites/:siteId/computo/varianti      — crea variante
+ * PATCH  /api/v1/computo/:id/variante                — aggiorna stato/motivazione variante
  */
 
 const router    = require('express').Router();
@@ -259,6 +264,8 @@ router.post('/sites/:siteId/computo', validate(createComputoSchema), async (req,
       nome:             String(nome || 'Computo metrico').slice(0, 200),
       fonte:            fonte || 'manuale',
       totale_contratto: Math.round(totale * 100) / 100,
+      tipo:             'base',
+      stato:            'approvata',
       created_by:       user.id,
     })
     .select()
@@ -403,9 +410,10 @@ router.get('/sites/:siteId/computo', async (req, res) => {
 
   const { data: computo } = await supabase
     .from('site_computo')
-    .select('id, nome, fonte, totale_contratto, created_at')
+    .select('id, nome, fonte, totale_contratto, tipo, stato, created_at')
     .eq('site_id', siteId)
     .eq('company_id', companyId)
+    .eq('tipo', 'base')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -532,7 +540,7 @@ router.post('/sites/:siteId/computo/voci', async (req, res) => {
   const {
     descrizione, tipo = 'voce', codice,
     unita_misura, quantita, prezzo_unitario, importo,
-    parent_id, sort_order,
+    parent_id, sort_order, computo_id: explicitComputoId,
   } = req.body;
 
   if (!descrizione) return res.status(400).json({ error: 'descrizione obbligatoria' });
@@ -541,16 +549,33 @@ router.post('/sites/:siteId/computo/voci', async (req, res) => {
   const site = await resolveSite(siteId, companyId);
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
-  // Computo attivo
-  const { data: computo } = await supabase
-    .from('site_computo')
-    .select('id')
-    .eq('site_id', siteId)
-    .eq('company_id', companyId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!computo) return res.status(404).json({ error: 'COMPUTO_NOT_FOUND', message: 'Nessun computo presente per questo cantiere. Carica prima un computo.' });
+  // Se passato computo_id esplicito (per varianti), verificane ownership
+  let computo;
+  if (explicitComputoId) {
+    if (!isUuid(explicitComputoId)) return res.status(400).json({ error: 'INVALID_COMPUTO_ID' });
+    const { data } = await supabase
+      .from('site_computo')
+      .select('id')
+      .eq('id', explicitComputoId)
+      .eq('site_id', siteId)
+      .eq('company_id', companyId)
+      .single();
+    if (!data) return res.status(404).json({ error: 'COMPUTO_NOT_FOUND' });
+    computo = data;
+  } else {
+    // Default: computo base
+    const { data } = await supabase
+      .from('site_computo')
+      .select('id')
+      .eq('site_id', siteId)
+      .eq('company_id', companyId)
+      .eq('tipo', 'base')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data) return res.status(404).json({ error: 'COMPUTO_NOT_FOUND', message: 'Nessun computo presente per questo cantiere. Carica prima un computo.' });
+    computo = data;
+  }
 
   // sort_order: in fondo se non specificato
   let finalSortOrder = sort_order;
@@ -650,6 +675,153 @@ router.delete('/computo/voci/:voceId', async (req, res) => {
     .eq('id', voce.computo_id);
 
   res.json({ ok: true, voce_eliminata: voce, totale_contratto: Math.round(newTotale * 100) / 100 });
+});
+
+// ── GET /api/v1/sites/:siteId/computo/varianti ───────────────
+// Lista varianti con riepilogo voci e totale per variante.
+
+router.get('/sites/:siteId/computo/varianti', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+
+  if (!isUuid(siteId)) return res.status(400).json({ error: 'INVALID_SITE_ID' });
+
+  const { data: varianti, error } = await supabase
+    .from('site_computo')
+    .select('id, nome, numero_variante, motivazione, stato, data_approvazione, totale_contratto, created_at')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .eq('tipo', 'variante')
+    .order('numero_variante', { ascending: true });
+
+  if (error) return res.status(500).json({ error: 'INTERNAL' });
+
+  // Per ogni variante, ritorna n_voci e importo_maturato
+  const result = await Promise.all((varianti || []).map(async v => {
+    const { data: voci } = await supabase
+      .from('site_computo_voci')
+      .select('importo, sal_percentuale, tipo')
+      .eq('computo_id', v.id);
+    const vociLavoro = (voci || []).filter(x => x.tipo === 'voce');
+    const importoMaturato = vociLavoro.reduce(
+      (s, x) => s + (Number(x.importo) || 0) * (Number(x.sal_percentuale) || 0) / 100, 0
+    );
+    return { ...v, n_voci: vociLavoro.length, importo_maturato: Math.round(importoMaturato * 100) / 100 };
+  }));
+
+  res.json(result);
+});
+
+// ── POST /api/v1/sites/:siteId/computo/varianti ──────────────
+// Crea una nuova variante (opzionalmente con voci iniziali).
+
+router.post('/sites/:siteId/computo/varianti', async (req, res) => {
+  const { companyId, user } = req;
+  const { siteId }          = req.params;
+  const { motivazione, stato = 'bozza', data_approvazione, voci = [] } = req.body;
+
+  if (!isUuid(siteId)) return res.status(400).json({ error: 'INVALID_SITE_ID' });
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  // Verifica che esista un computo base
+  const { data: base } = await supabase
+    .from('site_computo')
+    .select('id')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .eq('tipo', 'base')
+    .maybeSingle();
+  if (!base) return res.status(400).json({ error: 'BASE_COMPUTO_REQUIRED', message: 'Crea prima un computo base per questo cantiere.' });
+
+  // Numero progressivo
+  const { data: lastVar } = await supabase
+    .from('site_computo')
+    .select('numero_variante')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .eq('tipo', 'variante')
+    .order('numero_variante', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const numeroVariante = (lastVar?.numero_variante || 0) + 1;
+
+  const totale = voci.filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0);
+
+  const { data: variante, error: varErr } = await supabase
+    .from('site_computo')
+    .insert({
+      company_id:        companyId,
+      site_id:           siteId,
+      nome:              `Variante n. ${numeroVariante}`,
+      fonte:             'manuale',
+      tipo:              'variante',
+      numero_variante:   numeroVariante,
+      motivazione:       motivazione || null,
+      stato,
+      data_approvazione: data_approvazione || null,
+      totale_contratto:  Math.round(totale * 100) / 100,
+      created_by:        user?.id || null,
+    })
+    .select()
+    .single();
+  if (varErr) return res.status(500).json({ error: 'INTERNAL', detail: varErr.message });
+
+  // Inserisci voci se fornite
+  if (voci.length > 0) {
+    const rows = voci.map((v, i) => ({
+      computo_id:      variante.id,
+      company_id:      companyId,
+      site_id:         siteId,
+      tipo:            v.tipo || 'voce',
+      codice:          v.codice || null,
+      descrizione:     String(v.descrizione || '').slice(0, 500),
+      unita_misura:    v.unita_misura || null,
+      quantita:        v.quantita        != null ? Number(v.quantita)         : null,
+      prezzo_unitario: v.prezzo_unitario != null ? Number(v.prezzo_unitario)  : null,
+      importo:         v.importo         != null ? Number(v.importo)          : null,
+      sal_percentuale: 0,
+      sort_order:      v.sort_order ?? (i * 10),
+    }));
+    await supabase.from('site_computo_voci').insert(rows);
+  }
+
+  res.status(201).json({ ok: true, variante });
+});
+
+// ── PATCH /api/v1/computo/:id/variante ───────────────────────
+// Aggiorna stato e/o motivazione di una variante.
+
+router.patch('/computo/:id/variante', async (req, res) => {
+  const { companyId }  = req;
+  const { id }         = req.params;
+  const { stato, motivazione, data_approvazione } = req.body;
+
+  if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  const allowed = ['bozza', 'in_attesa', 'approvata'];
+  if (stato && !allowed.includes(stato))
+    return res.status(400).json({ error: 'stato deve essere bozza, in_attesa o approvata' });
+
+  const patch = {};
+  if (stato             !== undefined) patch.stato             = stato;
+  if (motivazione       !== undefined) patch.motivazione       = motivazione;
+  if (data_approvazione !== undefined) patch.data_approvazione = data_approvazione || null;
+  if (Object.keys(patch).length === 0)
+    return res.status(400).json({ error: 'Nessun campo da aggiornare' });
+
+  const { data, error } = await supabase
+    .from('site_computo')
+    .update(patch)
+    .eq('id', id)
+    .eq('company_id', companyId)
+    .eq('tipo', 'variante')
+    .select()
+    .single();
+
+  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (!data)  return res.status(404).json({ error: 'VARIANTE_NOT_FOUND' });
+  res.json({ ok: true, variante: data });
 });
 
 module.exports = router;

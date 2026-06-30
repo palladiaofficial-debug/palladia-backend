@@ -272,7 +272,7 @@ SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
-create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato
+create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -487,8 +487,11 @@ PATTERN DA RICONOSCERE:
 • Fase completata o avanzamento % citato → update_phase + update_sal
 • Avanzamento di una VOCE specifica del computo (es. "fondazioni al 75%") → update_sal_voce (non update_sal)
 • Prezzo unitario di una voce cambiato (offerta, variante prezzi) → update_prezzo_voce
-• Nuova voce da aggiungere al computo → create_computo_voce
+• Nuova voce da aggiungere al computo base → create_computo_voce
+• Nuova voce da aggiungere a una variante → create_computo_voce con variante_id
 • Voce del computo da rimuovere → delete_computo_voce (con conferma)
+• Varianti/addendum: visualizza → get_varianti; crea → create_variante; approva/aggiorna → update_variante
+• Flusso variante: create_variante → ottieni id → create_computo_voce con variante_id per ogni voce
 • Voce economica da correggere/aggiornare → update_economia_voce
 • SAL da emettere formalmente → emit_sal (con conferma obbligatoria + get_economia prima)
 • SAL incassato dal committente → mark_sal_pagato
@@ -1454,7 +1457,8 @@ const TOOLS = [
         quantita:        { type: 'number',  description: 'Quantità (opzionale)' },
         prezzo_unitario: { type: 'number',  description: 'Prezzo unitario €/UM (opzionale)' },
         importo:         { type: 'number',  description: 'Importo totale €. Se omesso viene calcolato da quantita × prezzo_unitario.' },
-        parent_id:       { type: 'string',  description: 'UUID categoria padre (opzionale, da get_computo_voci)' }
+        parent_id:       { type: 'string',  description: 'UUID categoria padre (opzionale, da get_computo_voci)' },
+        variante_id:     { type: 'string',  description: 'UUID variante (id da get_varianti). Se omesso, aggiunge al computo base.' }
       },
       required: ['site_id', 'descrizione']
     }
@@ -1481,6 +1485,45 @@ const TOOLS = [
         sal_percentuale: { type: 'number', description: 'Nuovo SAL% globale 0-100' }
       },
       required: ['site_id']
+    }
+  },
+  {
+    name: 'get_varianti',
+    description: 'Lista varianti e addendum del computo metrico con stato approvazione, motivazione, totale e n. voci. Usa per: "mostrami le varianti", "quante varianti ci sono", "stato variante 2", "totale con varianti".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'create_variante',
+    description: 'Crea una nuova variante al computo. Richiede un computo base esistente. REGOLA: mostra il numero progressivo e la motivazione e chiedi conferma prima. Le voci si aggiungono dopo con create_computo_voce passando variante_id. Usa per: "crea variante", "aggiungi addendum", "nuova variante per extra lavori".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:           { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        motivazione:       { type: 'string', description: 'Motivazione variante es. "Extra fondazioni per terreno instabile" (obbligatorio)' },
+        stato:             { type: 'string', enum: ['bozza', 'in_attesa', 'approvata'], description: 'Stato approvazione. Default: bozza.' },
+        data_approvazione: { type: 'string', description: 'Data approvazione YYYY-MM-DD (opzionale)' }
+      },
+      required: ['site_id', 'motivazione']
+    }
+  },
+  {
+    name: 'update_variante',
+    description: 'Aggiorna stato approvazione e/o motivazione di una variante. REGOLA: chiama get_varianti prima per ottenere l\'id. Usa per: "approva variante 2", "metti variante in attesa", "variante approvata dal committente".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        variante_id:       { type: 'string', description: 'UUID variante (id da get_varianti, obbligatorio)' },
+        stato:             { type: 'string', enum: ['bozza', 'in_attesa', 'approvata'], description: 'Nuovo stato' },
+        motivazione:       { type: 'string', description: 'Nuova motivazione' },
+        data_approvazione: { type: 'string', description: 'Data approvazione YYYY-MM-DD' }
+      },
+      required: ['variante_id']
     }
   },
   {
@@ -2558,11 +2601,13 @@ async function executeTool(toolName, toolInput, companyId, userId) {
       }
 
       case 'get_computo_voci': {
+        // Computo base
         const { data: computo } = await supabase
           .from('site_computo')
           .select('id, nome, fonte, totale_contratto, created_at')
           .eq('site_id', toolInput.site_id)
           .eq('company_id', companyId)
+          .eq('tipo', 'base')
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -2573,7 +2618,34 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           .eq('computo_id', computo.id)
           .order('sort_order');
         if (error) return { error: error.message };
-        return { nome: computo.nome, totale_contratto: computo.totale_contratto, voci: voci || [], n_voci: (voci || []).length };
+
+        // Varianti — riepilogo
+        const { data: varianti } = await supabase
+          .from('site_computo')
+          .select('id, numero_variante, motivazione, stato, totale_contratto')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .eq('tipo', 'variante')
+          .order('numero_variante');
+        const totaleVarianti = (varianti || [])
+          .filter(v => v.stato === 'approvata')
+          .reduce((s, v) => s + Number(v.totale_contratto || 0), 0);
+
+        return {
+          nome: computo.nome,
+          totale_base: computo.totale_contratto,
+          totale_varianti_approvate: Math.round(totaleVarianti * 100) / 100,
+          totale_contratto_attivo: Math.round((Number(computo.totale_contratto) + totaleVarianti) * 100) / 100,
+          voci: voci || [],
+          n_voci: (voci || []).length,
+          varianti: (varianti || []).map(v => ({
+            id: v.id,
+            numero: v.numero_variante,
+            stato: v.stato,
+            motivazione: v.motivazione,
+            totale: v.totale_contratto,
+          })),
+        };
       }
 
       case 'get_site_costs': {
@@ -3452,19 +3524,34 @@ async function executeTool(toolName, toolInput, companyId, userId) {
       }
 
       case 'create_computo_voce': {
-        const { site_id, descrizione, tipo = 'voce', codice, unita_misura, quantita, prezzo_unitario, importo, parent_id } = toolInput;
+        const { site_id, descrizione, tipo = 'voce', codice, unita_misura, quantita, prezzo_unitario, importo, parent_id, variante_id } = toolInput;
         if (!site_id || !descrizione) return { error: 'site_id e descrizione obbligatori' };
         if (!['voce', 'categoria'].includes(tipo)) return { error: 'tipo deve essere voce o categoria' };
 
-        const { data: computo } = await supabase
-          .from('site_computo')
-          .select('id')
-          .eq('site_id', site_id)
-          .eq('company_id', companyId)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (!computo) return { error: 'Nessun computo trovato per questo cantiere. Carica prima un computo dalla sezione Computo Metrico.' };
+        let computo;
+        if (variante_id) {
+          const { data } = await supabase
+            .from('site_computo')
+            .select('id')
+            .eq('id', variante_id)
+            .eq('site_id', site_id)
+            .eq('company_id', companyId)
+            .single();
+          if (!data) return { error: 'Variante non trovata' };
+          computo = data;
+        } else {
+          const { data } = await supabase
+            .from('site_computo')
+            .select('id')
+            .eq('site_id', site_id)
+            .eq('company_id', companyId)
+            .eq('tipo', 'base')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (!data) return { error: 'Nessun computo trovato per questo cantiere. Carica prima un computo dalla sezione Computo Metrico.' };
+          computo = data;
+        }
 
         const { data: last } = await supabase
           .from('site_computo_voci')
@@ -3545,6 +3632,91 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', voce.computo_id);
 
         return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale };
+      }
+
+      case 'get_varianti': {
+        const { site_id } = toolInput;
+        if (!site_id) return { error: 'site_id obbligatorio' };
+        const { data: varianti, error } = await supabase
+          .from('site_computo')
+          .select('id, numero_variante, motivazione, stato, data_approvazione, totale_contratto, created_at')
+          .eq('site_id', site_id)
+          .eq('company_id', companyId)
+          .eq('tipo', 'variante')
+          .order('numero_variante');
+        if (error) return { error: error.message };
+        if (!varianti || varianti.length === 0) return { varianti: [], messaggio: 'Nessuna variante presente per questo cantiere.' };
+
+        const result = await Promise.all(varianti.map(async v => {
+          const { data: voci } = await supabase
+            .from('site_computo_voci')
+            .select('id, codice, descrizione, unita_misura, quantita, prezzo_unitario, importo, sal_percentuale, tipo')
+            .eq('computo_id', v.id)
+            .order('sort_order');
+          return { ...v, voci: voci || [], n_voci: (voci || []).filter(x => x.tipo === 'voce').length };
+        }));
+
+        const totaleApprovate = varianti
+          .filter(v => v.stato === 'approvata')
+          .reduce((s, v) => s + Number(v.totale_contratto || 0), 0);
+        return { varianti: result, totale_varianti_approvate: Math.round(totaleApprovate * 100) / 100 };
+      }
+
+      case 'create_variante': {
+        const { site_id, motivazione, stato = 'bozza', data_approvazione } = toolInput;
+        if (!site_id || !motivazione) return { error: 'site_id e motivazione obbligatori' };
+
+        const { data: base } = await supabase
+          .from('site_computo').select('id')
+          .eq('site_id', site_id).eq('company_id', companyId).eq('tipo', 'base').maybeSingle();
+        if (!base) return { error: 'Crea prima un computo base per questo cantiere.' };
+
+        const { data: lastVar } = await supabase
+          .from('site_computo')
+          .select('numero_variante')
+          .eq('site_id', site_id).eq('company_id', companyId).eq('tipo', 'variante')
+          .order('numero_variante', { ascending: false }).limit(1).maybeSingle();
+        const numero = (lastVar?.numero_variante || 0) + 1;
+
+        const { data: variante, error } = await supabase
+          .from('site_computo')
+          .insert({
+            company_id: companyId, site_id,
+            nome: `Variante n. ${numero}`,
+            fonte: 'manuale', tipo: 'variante',
+            numero_variante: numero,
+            motivazione,
+            stato,
+            data_approvazione: data_approvazione || null,
+            totale_contratto: 0,
+            created_by: userId || null,
+          })
+          .select().single();
+        if (error) return { error: error.message };
+        return {
+          success: true,
+          variante: { id: variante.id, numero: variante.numero_variante, stato: variante.stato, motivazione: variante.motivazione },
+          istruzione: `Variante ${numero} creata. Aggiungi voci con create_computo_voce passando variante_id: "${variante.id}"`,
+        };
+      }
+
+      case 'update_variante': {
+        const { variante_id, stato, motivazione, data_approvazione } = toolInput;
+        if (!variante_id) return { error: 'variante_id obbligatorio' };
+        const patch = {};
+        if (stato             !== undefined) patch.stato             = stato;
+        if (motivazione       !== undefined) patch.motivazione       = motivazione;
+        if (data_approvazione !== undefined) patch.data_approvazione = data_approvazione || null;
+        if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare' };
+        const { data, error } = await supabase
+          .from('site_computo')
+          .update(patch)
+          .eq('id', variante_id).eq('company_id', companyId).eq('tipo', 'variante')
+          .select('id, numero_variante, stato, motivazione, data_approvazione, totale_contratto')
+          .single();
+        if (error) return { error: error.message };
+        if (!data)  return { error: 'Variante non trovata' };
+        return { success: true, variante: data };
       }
 
       case 'update_budget_cantiere': {
