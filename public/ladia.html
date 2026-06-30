@@ -114,6 +114,76 @@
       padding: 12px 10px 6px;
     }
 
+    /* ── Sidebar project groups ─────────────────────────────────── */
+    .sidebar-sec-label {
+      font-size: 10px;
+      font-weight: 700;
+      color: rgba(255,255,255,0.25);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      padding: 14px 10px 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sidebar-sec-count {
+      background: rgba(255,255,255,0.08);
+      border-radius: 10px;
+      padding: 1px 6px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255,255,255,0.3);
+    }
+    .site-entry { margin-bottom: 1px; }
+    .site-entry-header {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      color: rgba(255,255,255,0.55);
+      font-size: 13px;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+      user-select: none;
+    }
+    .site-entry-header:hover { background: rgba(255,255,255,0.06); color: #ddd; }
+    .site-entry-header.in-context { color: #fff; background: rgba(255,255,255,0.07); }
+    .site-entry-chevron {
+      flex-shrink: 0;
+      color: rgba(255,255,255,0.25);
+      transition: transform 0.18s;
+    }
+    .site-entry.expanded .site-entry-chevron { transform: rotate(90deg); }
+    .site-entry-dot {
+      flex-shrink: 0;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+    }
+    .site-entry-dot.attivo   { background: #22c55e; }
+    .site-entry-dot.sospeso  { background: #f59e0b; }
+    .site-entry-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+    .site-new-btn {
+      flex-shrink: 0;
+      background: none; border: none;
+      color: rgba(255,255,255,0.3);
+      cursor: pointer; padding: 2px 4px;
+      border-radius: 4px; font-size: 15px;
+      line-height: 1; display: none;
+      font-family: inherit;
+    }
+    .site-entry-header:hover .site-new-btn { display: block; }
+    .site-new-btn:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.08); }
+    .site-entry-convs { display: none; padding-left: 12px; }
+    .site-entry.expanded .site-entry-convs { display: block; }
+    .site-no-convs {
+      font-size: 11.5px;
+      color: rgba(255,255,255,0.2);
+      padding: 4px 10px 6px;
+      font-style: italic;
+    }
+
     .conv-item {
       display: flex;
       align-items: center;
@@ -766,6 +836,9 @@ let _token = null;
 let _currentConvId = null;
 let _isStreaming = false;
 let _conversations = [];
+let _sites = [];
+let _currentContext = { type: 'azienda', siteId: null, siteName: null };
+let _expandedSites = new Set();
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const $chatArea     = document.getElementById('chat-area');
@@ -841,7 +914,7 @@ async function checkUser(session) {
     _companyId = me.company_id;
     document.getElementById('user-email').textContent = session.user?.email || '';
     showScreen('screen-app');
-    loadConversations();
+    loadSidebar();
   } catch {
     showScreen('screen-login');
   }
@@ -870,7 +943,17 @@ document.getElementById('btn-logout').addEventListener('click', () => {
   _currentConvId = null;
 });
 
-// ── Conversations ─────────────────────────────────────────────────────────────
+// ── Sidebar (conversations + sites) ──────────────────────────────────────────
+async function loadSidebar() {
+  const [convRes, sitesRes] = await Promise.all([
+    api('GET', '/api/v1/chat/conversations'),
+    api('GET', '/api/v1/sites'),
+  ]);
+  if (convRes.ok)  _conversations = convRes.body  || [];
+  if (sitesRes.ok) _sites         = sitesRes.body || [];
+  renderConversations();
+}
+
 async function loadConversations() {
   const { ok, body } = await api('GET', '/api/v1/chat/conversations');
   if (!ok) return;
@@ -879,32 +962,43 @@ async function loadConversations() {
 }
 
 function renderConversations() {
-  const now = new Date();
-  const todayStr = now.toISOString().slice(0, 10);
-  const yestDate = new Date(now); yestDate.setDate(yestDate.getDate() - 1);
-  const yestStr = yestDate.toISOString().slice(0, 10);
-
-  const groups = { today: [], yesterday: [], older: [] };
-  _conversations.forEach(c => {
-    const d = (c.updated_at || c.created_at || '').slice(0, 10);
-    if (d === todayStr) groups.today.push(c);
-    else if (d === yestStr) groups.yesterday.push(c);
-    else groups.older.push(c);
-  });
+  const azConvs   = _conversations.filter(c => !c.context_type || c.context_type === 'azienda');
+  const activeSites = _sites.filter(s => s.status !== 'chiuso');
 
   let html = '';
-  if (groups.today.length) {
-    html += '<div class="conv-group-label">Oggi</div>';
-    html += groups.today.map(c => convItemHtml(c)).join('');
+
+  // ── Sezione AZIENDA ───────────────────────────────────────────
+  html += `<div class="sidebar-sec-label">Azienda <span class="sidebar-sec-count">${azConvs.length || ''}</span></div>`;
+  if (azConvs.length) {
+    html += azConvs.map(c => convItemHtml(c)).join('');
   }
-  if (groups.yesterday.length) {
-    html += '<div class="conv-group-label">Ieri</div>';
-    html += groups.yesterday.map(c => convItemHtml(c)).join('');
+
+  // ── Sezione CANTIERI ──────────────────────────────────────────
+  if (activeSites.length) {
+    html += `<div class="sidebar-sec-label" style="margin-top:6px">Cantieri <span class="sidebar-sec-count">${activeSites.length}</span></div>`;
+    activeSites.forEach(site => {
+      const siteConvs  = _conversations.filter(c => c.context_type === 'cantiere' && c.context_id === site.id);
+      const isExpanded = _expandedSites.has(site.id);
+      const isCtx      = _currentContext.type === 'cantiere' && _currentContext.siteId === site.id;
+      const dotClass   = site.status === 'attivo' ? 'attivo' : (site.status === 'sospeso' ? 'sospeso' : '');
+
+      html += `
+<div class="site-entry${isExpanded ? ' expanded' : ''}" data-site="${site.id}">
+  <div class="site-entry-header${isCtx ? ' in-context' : ''}" onclick="toggleSite('${site.id}','${escHtml(site.name).replace(/'/g,"\\'")}')" >
+    <svg class="site-entry-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+    <span class="site-entry-dot ${dotClass}"></span>
+    <span class="site-entry-name">${escHtml(site.name)}</span>
+    <button class="site-new-btn" onclick="event.stopPropagation();startSiteChat('${site.id}','${escHtml(site.name).replace(/'/g,"\\'")}')" title="Nuova chat per questo cantiere">+</button>
+  </div>
+  <div class="site-entry-convs">
+    ${siteConvs.length
+      ? siteConvs.map(c => convItemHtml(c)).join('')
+      : '<div class="site-no-convs">Nessuna chat</div>'}
+  </div>
+</div>`;
+    });
   }
-  if (groups.older.length) {
-    html += '<div class="conv-group-label">Precedenti</div>';
-    html += groups.older.map(c => convItemHtml(c)).join('');
-  }
+
   $convList.innerHTML = html;
 }
 
@@ -919,6 +1013,18 @@ function convItemHtml(c) {
 
 async function openConversation(id) {
   _currentConvId = id;
+  const conv = _conversations.find(c => c.id === id);
+  if (conv) {
+    if (conv.context_type === 'cantiere' && conv.context_id) {
+      const site = _sites.find(s => s.id === conv.context_id);
+      _currentContext = { type: 'cantiere', siteId: conv.context_id, siteName: site?.name || '' };
+      _expandedSites.add(conv.context_id);
+      $topTitle.textContent = (site?.name ? site.name + ' — ' : '') + (conv.title || 'Ladia');
+    } else {
+      _currentContext = { type: 'azienda', siteId: null, siteName: null };
+      $topTitle.textContent = conv.title || 'Ladia';
+    }
+  }
   renderConversations();
   closeSidebar();
 
@@ -935,8 +1041,6 @@ async function openConversation(id) {
   });
 
   scrollToBottom();
-  const conv = _conversations.find(c => c.id === id);
-  if (conv) $topTitle.textContent = conv.title || 'Ladia';
 }
 
 async function deleteConversation(id) {
@@ -946,17 +1050,40 @@ async function deleteConversation(id) {
   renderConversations();
 }
 
-function newChat() {
+function newChat(keepContext = false) {
   _currentConvId = null;
+  if (!keepContext) {
+    _currentContext = { type: 'azienda', siteId: null, siteName: null };
+    $topTitle.textContent = 'Ladia';
+  }
   $welcome.style.display = '';
   $chatMessages.style.display = 'none';
   $chatMessages.innerHTML = '';
-  $topTitle.textContent = 'Ladia';
   renderConversations();
   $input.focus();
 }
 
-document.getElementById('btn-new-chat').addEventListener('click', newChat);
+function toggleSite(siteId, siteName) {
+  if (_expandedSites.has(siteId)) {
+    _expandedSites.delete(siteId);
+  } else {
+    _expandedSites.add(siteId);
+    // Entra anche in contesto cantiere per nuova chat
+    if (_currentContext.siteId !== siteId) {
+      _currentContext = { type: 'cantiere', siteId, siteName };
+    }
+  }
+  renderConversations();
+}
+
+function startSiteChat(siteId, siteName) {
+  _currentContext = { type: 'cantiere', siteId, siteName };
+  _expandedSites.add(siteId);
+  newChat(true);
+  $topTitle.textContent = siteName;
+}
+
+document.getElementById('btn-new-chat').addEventListener('click', () => newChat(false));
 
 // ── Message rendering ─────────────────────────────────────────────────────────
 function appendUserMsg(text) {
@@ -1069,6 +1196,8 @@ async function sendMessage(text) {
       body: JSON.stringify({
         message: text.trim(),
         conversation_id: _currentConvId,
+        context_type: _currentContext.type,
+        ..._currentContext.siteId ? { context_id: _currentContext.siteId } : {},
       }),
     });
 
