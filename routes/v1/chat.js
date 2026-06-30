@@ -257,7 +257,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 64 TOOL
+TOOL DISPONIBILI — 66 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -267,6 +267,7 @@ FASI E AVANZAMENTO: get_site_phases, get_sal_history, get_computo_voci, get_capi
 METEO E SOSPENSIONI: get_weather_forecast, get_weather_log, get_suspension_days
 ECONOMIA E COSTI: get_site_costs, get_expenses_summary, get_payslips
 DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents, leggi_documento_pdf, search_documents, get_expiring_documents, get_site_document_summary
+ARCHIVIO AI: read_uploaded_document, archive_document
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 PREZZARIO: search_prezzario, get_company_prezzi
@@ -280,6 +281,23 @@ DOCUMENT INTELLIGENCE — REGOLE:
 - search_documents: punto di accesso unico per trovare qualsiasi documento (cantiere/azienda/lavoratore). Usa SEMPRE questo prima di rispondere "non trovo il documento X".
 - get_expiring_documents: usa proattivamente quando l'utente chiede dello stato compliance, delle scadenze, o in contesti dove è rilevante segnalare problemi imminenti.
 - get_site_document_summary: usa quando l'utente chiede "cosa manca al cantiere X" o "stato documenti" — dà una panoramica completa inclusa compliance lavoratori.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ARCHIVIO DOCUMENTI AI — REGOLE CRITICHE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
+1. Chiama read_uploaded_document per OGNI upload_id elencato — uno alla volta o in parallelo
+2. Dal risultato, determina: tipo documento, destinazione, nome, scadenza, lavoratore/cantiere associato
+3. Se il lavoratore è identificato per nome/CF ma non hai il worker_id → usa get_workers per trovarlo
+4. Se il cantiere è identificato per nome ma non hai il site_id → usa get_sites per trovarlo
+5. Chiama archive_document con tutti i campi corretti
+6. Conferma all'utente: nome archiviato, destinazione, scadenza rilevata (se presente)
+7. Se mancano informazioni indispensabili (es: a quale cantiere appartiene?) → CHIEDI prima di archiviare
+8. Tono: diretto e assertivo — "Ho archiviato X come Y con scadenza Z" non "Ho cercato di archiviare"
+- Per worker_certificates: destination="worker_certificates", obbligatorio worker_id
+- Per idoneità mediche, patenti, formazione: destination="worker_documents" o "worker_certificates"
+- Per DURC, ISO, SOA, assicurazione, visura: destination="company_documents"
+- Per POS, PSC, DVR, documenti legati a un cantiere: destination="site_documents"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CANVAS — VISUALIZZAZIONI INTERATTIVE (OBBLIGATORIO)
@@ -1810,6 +1828,44 @@ const TOOLS = [
         site_id: { type: 'string', description: 'UUID del cantiere (obbligatorio). Usa get_sites per trovarlo.' },
       },
       required: ['site_id'],
+    },
+  },
+
+  // ── Archivio documenti AI ─────────────────────────────────────────────────
+  {
+    name: 'read_uploaded_document',
+    description:
+      'Legge e analizza un documento caricato dall\'utente nella chat (PDF o immagine). ' +
+      'Usa Claude Vision per estrarre: tipo documento, nome, data scadenza, lavoratore, cantiere, ente emittente. ' +
+      'Chiama questo tool per OGNI upload_id ricevuto nel contesto [FILE ALLEGATI].',
+    input_schema: {
+      type: 'object',
+      properties: {
+        upload_id: { type: 'string', description: 'UUID del file caricato (da [FILE ALLEGATI])' },
+      },
+      required: ['upload_id'],
+    },
+  },
+  {
+    name: 'archive_document',
+    description:
+      'Archivia definitivamente un documento caricato nella sezione corretta di Palladia. ' +
+      'Chiama DOPO read_uploaded_document quando hai tutti i dati necessari.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        upload_id:      { type: 'string', description: 'UUID del file da archiviare' },
+        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates'], description: 'Tabella di destinazione' },
+        name:           { type: 'string', description: 'Nome visualizzato del documento (max 80 car)' },
+        site_id:        { type: 'string', description: 'UUID cantiere (obbligatorio per site_documents)' },
+        worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents e worker_certificates)' },
+        category:       { type: 'string', description: 'Categoria specifica del documento' },
+        expiry_date:    { type: 'string', description: 'Data scadenza YYYY-MM-DD (se rilevata)' },
+        issue_date:     { type: 'string', description: 'Data emissione YYYY-MM-DD (per certificati)' },
+        issuing_body:   { type: 'string', description: 'Ente emittente (per attestati formazione)' },
+        course_type_id: { type: 'string', description: 'UUID tipo corso (per worker_certificates, se noto)' },
+      },
+      required: ['upload_id', 'destination', 'name'],
     },
   },
 
@@ -4150,6 +4206,185 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         };
       }
 
+      // ── Archivio documenti AI ─────────────────────────────────────────────────
+
+      case 'read_uploaded_document': {
+        const { upload_id } = toolInput;
+
+        const { data: upload } = await supabase
+          .from('chat_uploads')
+          .select('id, original_name, mime_type, storage_path, size_bytes')
+          .eq('id', upload_id)
+          .eq('company_id', companyId)
+          .maybeSingle();
+        if (!upload) return { error: 'File non trovato o accesso negato.' };
+
+        const { data: signed } = await supabase.storage
+          .from('site-documents').createSignedUrl(upload.storage_path, 90);
+        if (!signed?.signedUrl) return { error: 'Impossibile accedere al file.' };
+
+        const fileResp = await fetch(signed.signedUrl);
+        if (!fileResp.ok) return { error: 'Download file fallito.' };
+        const buf    = Buffer.from(await fileResp.arrayBuffer());
+        const b64    = buf.toString('base64');
+        const isImg  = upload.mime_type.startsWith('image/');
+        const isPdf  = upload.mime_type === 'application/pdf';
+
+        if (!isImg && !isPdf) {
+          return {
+            upload_id,
+            nome_file:  upload.original_name,
+            tipo_mime:  upload.mime_type,
+            nota: 'Documento Office ricevuto: non posso estrarne il testo. Chiedi all\'utente tipo e dettagli per l\'archiviazione.',
+          };
+        }
+
+        const contentBlock = isPdf
+          ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
+          : { type: 'image',    source: { type: 'base64', media_type: upload.mime_type,      data: b64 } };
+
+        const aiClient = getClient();
+        const createOpts = {
+          model:      'claude-haiku-4-5-20251001',
+          max_tokens: 1024,
+          system: `Analizza il documento allegato e rispondi SOLO con JSON valido (niente markdown):
+{
+  "doc_type": "idoneita_medica|attestato_formazione|durc|visura|assicurazione|dvr|pos|psc|capitolato|contratto|busta_paga|f24|iso|soa|permesso|patente|altro",
+  "destination": "site_documents|company_documents|worker_documents|worker_certificates",
+  "name": "nome breve descrittivo max 80 car",
+  "expiry_date": "YYYY-MM-DD oppure null",
+  "issue_date": "YYYY-MM-DD oppure null",
+  "worker_name": "nome cognome lavoratore oppure null",
+  "worker_cf": "codice fiscale maiuscolo oppure null",
+  "issuing_body": "ente emittente oppure null",
+  "cantiere_hint": "nome cantiere se menzionato oppure null",
+  "category": "categoria per la tabella oppure null",
+  "summary": "max 2 righe descrizione"
+}`,
+          messages: [{ role: 'user', content: [contentBlock, { type: 'text', text: 'Analizza.' }] }],
+        };
+        if (isPdf) createOpts.betas = ['pdfs-2024-09-25'];
+
+        const aiResp = await aiClient.messages.create(createOpts);
+        const raw    = aiResp.content.find(b => b.type === 'text')?.text || '{}';
+        let analysis = {};
+        try { const m = raw.match(/\{[\s\S]*\}/); if (m) analysis = JSON.parse(m[0]); } catch { /* parziale */ }
+
+        return { upload_id, nome_file: upload.original_name, size_bytes: upload.size_bytes, ...analysis };
+      }
+
+      case 'archive_document': {
+        const {
+          upload_id, destination, name,
+          site_id, worker_id,
+          category, expiry_date, issue_date, issuing_body, course_type_id,
+        } = toolInput;
+
+        const { data: upload } = await supabase
+          .from('chat_uploads')
+          .select('id, original_name, mime_type, storage_path, size_bytes, archived')
+          .eq('id', upload_id)
+          .eq('company_id', companyId)
+          .maybeSingle();
+        if (!upload)         return { error: 'File non trovato o accesso negato.' };
+        if (upload.archived) return { error: 'Questo file è già stato archiviato.' };
+
+        const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates'];
+        if (!validDests.includes(destination)) return { error: 'destination non valida: ' + destination };
+        if (destination === 'site_documents' && !site_id)
+          return { error: 'site_id obbligatorio per site_documents.' };
+        if ((destination === 'worker_documents' || destination === 'worker_certificates') && !worker_id)
+          return { error: 'worker_id obbligatorio per ' + destination + '.' };
+
+        const { randomUUID } = require('crypto');
+        const pathLib = require('path');
+        const ext     = pathLib.extname(upload.original_name) || '';
+        const safeFn  = name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) + ext;
+        const newId   = randomUUID();
+
+        const permanentPath =
+          destination === 'site_documents'        ? `${companyId}/${site_id}/${newId}-${safeFn}` :
+          destination === 'company_documents'      ? `${companyId}/company/${newId}-${safeFn}` :
+          destination === 'worker_documents'       ? `${companyId}/${worker_id}/${newId}-${safeFn}` :
+          /* worker_certificates */                  `${companyId}/${worker_id}/certs/${newId}-${safeFn}`;
+
+        // Scarica temp + ricarica nel path permanente
+        const { data: signedTmp } = await supabase.storage
+          .from('site-documents').createSignedUrl(upload.storage_path, 120);
+        if (!signedTmp?.signedUrl) return { error: 'Impossibile accedere al file temporaneo.' };
+
+        const dlResp = await fetch(signedTmp.signedUrl);
+        if (!dlResp.ok) return { error: 'Download file temporaneo fallito.' };
+        const fileBuf = Buffer.from(await dlResp.arrayBuffer());
+
+        const { error: storErr } = await supabase.storage
+          .from('site-documents')
+          .upload(permanentPath, fileBuf, { contentType: upload.mime_type, upsert: false });
+        if (storErr) return { error: 'Upload permanente fallito: ' + storErr.message };
+
+        // Inserisci record DB
+        let docId, insertErr;
+
+        if (destination === 'site_documents') {
+          const { data: d, error: e } = await supabase.from('site_documents').insert({
+            company_id: companyId, site_id, name,
+            category:  category || 'altro',
+            file_path: permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
+          }).select('id').single();
+          docId = d?.id; insertErr = e;
+
+        } else if (destination === 'company_documents') {
+          const { data: d, error: e } = await supabase.from('company_documents').insert({
+            company_id: companyId, name,
+            category:       category || 'altro',
+            file_path:      permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
+            ai_expiry_date: expiry_date || null,
+          }).select('id').single();
+          docId = d?.id; insertErr = e;
+
+        } else if (destination === 'worker_documents') {
+          const { data: d, error: e } = await supabase.from('worker_documents').insert({
+            company_id: companyId, worker_id, name,
+            doc_type:    category || 'altro',
+            file_path:   permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
+            expiry_date: expiry_date || null,
+          }).select('id').single();
+          docId = d?.id; insertErr = e;
+
+        } else if (destination === 'worker_certificates') {
+          // Genera signed URL lungo (1 anno) da salvare in pdf_url
+          const { data: longSgn } = await supabase.storage
+            .from('site-documents').createSignedUrl(permanentPath, 31536000);
+          const { data: d, error: e } = await supabase.from('worker_certificates').insert({
+            company_id:     companyId, worker_id,
+            pdf_url:        longSgn?.signedUrl || permanentPath,
+            expiry_date:    expiry_date  || null,
+            issue_date:     issue_date   || null,
+            issuing_body:   issuing_body || null,
+            course_type_id: course_type_id || null,
+          }).select('id').single();
+          docId = d?.id; insertErr = e;
+        }
+
+        if (insertErr) {
+          supabase.storage.from('site-documents').remove([permanentPath]).catch(() => {});
+          return { error: 'Errore DB: ' + insertErr.message };
+        }
+
+        // Segna archiviato + rimuovi temp
+        await supabase.from('chat_uploads').update({ archived: true }).eq('id', upload_id);
+        supabase.storage.from('site-documents').remove([upload.storage_path]).catch(() => {});
+
+        return {
+          success:     true,
+          doc_id:      docId,
+          destination,
+          name,
+          expiry_date: expiry_date || null,
+          messaggio:   `Documento "${name}" archiviato in ${destination}${expiry_date ? ` — scadenza ${expiry_date}` : ''}.`,
+        };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -4793,9 +5028,14 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
 
-  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null, page_context: _pc = null, voice_mode: _vm = false } = req.body;
-  const voiceMode = Boolean(_vm);
-  if (!message || typeof message !== 'string' || !message.trim()) {
+  const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null, page_context: _pc = null, voice_mode: _vm = false, upload_ids: _uids = [] } = req.body;
+  const voiceMode  = Boolean(_vm);
+  const uploadIds  = Array.isArray(_uids) ? _uids.filter(id => typeof id === 'string' && id.length > 0).slice(0, 10) : [];
+  if (!message || typeof message !== 'string') {
+    return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
+  }
+  // Messaggio può essere vuoto se ci sono file allegati
+  if (!message.trim() && uploadIds.length === 0) {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
   if (message.length > 4000) {
@@ -4878,7 +5118,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
   }
 
-  const userText = message.trim();
+  const userText = message.trim() || (uploadIds.length > 0 ? `Allego ${uploadIds.length} documento${uploadIds.length > 1 ? 'i' : ''}.` : '');
   const userContent = images.length > 0
     ? [
         ...images.map(img => ({ type: 'image', source: { type: 'base64', media_type: img.media_type, data: img.data } })),
@@ -4887,7 +5127,9 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     : userText;
   const userMsgForDb = images.length > 0
     ? `[${images.length} immagine${images.length > 1 ? 'i' : ''}] ${userText}`
-    : userText;
+    : uploadIds.length > 0 && !message.trim()
+      ? `[${uploadIds.length} file allegati]`
+      : userText;
   let messages = [...dbHistory, { role: 'user', content: userContent }];
   let fullAssistantReply = ''; // colleziona testo completo per salvarlo
 
@@ -4921,6 +5163,22 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     if (view_context)   systemPrompt += `\n\n${view_context}`;      // schermata attuale (Point 1)
     if (recent_activity) systemPrompt += `\n\n${recent_activity}`;  // sessione utente (Point 3)
     if (voiceMode)      systemPrompt += VOICE_MODE_PROMPT;          // voice: esegui subito, risposta 2 righe
+
+    // File allegati: inietta lista per i tool read_uploaded_document / archive_document
+    if (uploadIds.length > 0) {
+      const { data: uploads } = await supabase
+        .from('chat_uploads')
+        .select('id, original_name, mime_type, size_bytes')
+        .in('id', uploadIds)
+        .eq('company_id', req.companyId)
+        .catch(() => ({ data: null }));
+      if (uploads?.length > 0) {
+        const fileList = uploads.map(u =>
+          `• ${u.original_name} (${u.mime_type}, ${Math.round((u.size_bytes || 0) / 1024)}KB) — upload_id: ${u.id}`
+        ).join('\n');
+        systemPrompt += `\n\n[FILE ALLEGATI DALL'UTENTE]\nProcessa OGNI file con read_uploaded_document poi usa archive_document:\n${fileList}`;
+      }
+    }
   } catch { /* non critico */ }
 
   try {

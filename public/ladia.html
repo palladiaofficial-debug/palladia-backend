@@ -697,6 +697,159 @@
     .nav-card:hover { background: rgba(0,0,0,0.08); }
     .nav-card svg { width: 14px; height: 14px; }
 
+    /* ── File upload chips ───────────────────────────────── */
+    .file-chips-row {
+      max-width: 768px;
+      margin: 0 auto 0;
+      padding: 0 0 8px;
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .file-chips-row.visible { display: flex; }
+    .file-chip {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 8px 6px 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      max-width: 210px;
+      position: relative;
+      overflow: hidden;
+      transition: border-color 0.15s;
+    }
+    .file-chip.uploading { opacity: 0.65; }
+    .file-chip.error { border-color: var(--red); background: var(--red-bg); color: var(--red); }
+    .file-chip.ready  { border-color: var(--green); }
+    .file-chip-icon {
+      width: 22px; height: 22px;
+      background: var(--accent-soft);
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .file-chip.error .file-chip-icon { background: var(--red-bg); }
+    .file-chip-icon svg { width: 12px; height: 12px; }
+    .file-chip-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+    .file-chip-remove {
+      background: none; border: none;
+      cursor: pointer; color: var(--subtle);
+      padding: 0; display: flex; align-items: center;
+      flex-shrink: 0; transition: color 0.15s;
+      line-height: 1;
+    }
+    .file-chip-remove:hover { color: var(--red); }
+    .file-chip-remove svg { width: 13px; height: 13px; }
+    .file-chip-progress {
+      position: absolute;
+      bottom: 0; left: 0;
+      height: 2px;
+      background: var(--accent);
+      width: 0%;
+      animation: upload-progress 1.2s ease-in-out infinite;
+      border-radius: 0;
+    }
+    @keyframes upload-progress {
+      0%   { width: 20%; margin-left: 0; }
+      50%  { width: 60%; margin-left: 20%; }
+      100% { width: 20%; margin-left: 80%; }
+    }
+
+    /* Drag-drop overlay sul chat area */
+    .drag-overlay {
+      position: absolute;
+      inset: 8px;
+      background: rgba(255,255,255,0.9);
+      border: 2px dashed var(--accent);
+      border-radius: 12px;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      pointer-events: none;
+      backdrop-filter: blur(4px);
+    }
+    .drag-overlay.active { display: flex; }
+    .drag-overlay-inner {
+      display: flex; flex-direction: column;
+      align-items: center; gap: 12px;
+      color: var(--text);
+    }
+    .drag-overlay-inner svg { width: 36px; height: 36px; color: var(--accent); }
+    .drag-overlay-inner span { font-size: 15px; font-weight: 700; }
+    .drag-overlay-inner small { font-size: 12px; color: var(--muted); }
+
+    /* Paperclip button */
+    .btn-attach {
+      width: 34px; height: 34px;
+      background: none; border: none;
+      border-radius: 8px;
+      color: var(--subtle);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: color 0.15s, background 0.15s;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .btn-attach:hover { color: var(--text); background: var(--accent-soft); }
+    .btn-attach.has-files { color: var(--accent); }
+    .btn-attach svg { width: 17px; height: 17px; }
+    .btn-attach-badge {
+      position: absolute;
+      top: -3px; right: -3px;
+      width: 14px; height: 14px;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      font-size: 9px;
+      font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      line-height: 1;
+    }
+
+    /* Attach menu */
+    .attach-menu {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      padding: 4px;
+      display: none;
+      flex-direction: column;
+      gap: 0;
+      z-index: 50;
+      min-width: 160px;
+    }
+    .attach-menu.open { display: flex; }
+    .attach-menu-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      font-size: 13px; font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.12s;
+      border: none; background: none; font-family: inherit;
+      width: 100%;
+      text-align: left;
+    }
+    .attach-menu-item:hover { background: var(--accent-soft); }
+    .attach-menu-item svg { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; }
+
     /* ── Document cards (risultati tool AI) ─────────────── */
     .doc-cards-grid {
       display: grid;
@@ -900,7 +1053,15 @@
         </div>
       </div>
 
-      <div class="chat-area" id="chat-area">
+      <div class="chat-area" id="chat-area" style="position:relative">
+        <div class="drag-overlay" id="drag-overlay">
+          <div class="drag-overlay-inner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span>Rilascia i file qui</span>
+            <small>PDF, immagini, Word — max 25MB ciascuno</small>
+          </div>
+        </div>
+
         <div id="welcome" class="welcome">
           <div class="welcome-logo">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
@@ -919,15 +1080,35 @@
         <div class="chat-messages" id="chat-messages" style="display:none"></div>
       </div>
 
+      <!-- Hidden file inputs -->
+      <input type="file" id="file-input" multiple accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" style="display:none">
+      <input type="file" id="folder-input" webkitdirectory multiple style="display:none">
+
       <div class="input-area">
         <div class="input-container">
-          <div class="input-box">
-            <textarea id="chat-input" rows="1" placeholder="Scrivi qualcosa a Ladia..." autofocus></textarea>
+          <div class="file-chips-row" id="file-chips-row"></div>
+          <div class="input-box" style="padding-left:10px">
+            <div style="position:relative">
+              <button class="btn-attach" id="btn-attach" title="Allega file">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+              </button>
+              <div class="attach-menu" id="attach-menu">
+                <button class="attach-menu-item" id="attach-files">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Carica file
+                </button>
+                <button class="attach-menu-item" id="attach-folder">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/></svg>
+                  Carica cartella
+                </button>
+              </div>
+            </div>
+            <textarea id="chat-input" rows="1" placeholder="Scrivi o allega documenti a Ladia..."></textarea>
             <button class="btn-send" id="btn-send" disabled>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
             </button>
           </div>
-          <div class="input-hint">Ladia ha accesso ai dati reali dei tuoi cantieri</div>
+          <div class="input-hint">Ladia ha accesso ai dati reali dei tuoi cantieri · Allega documenti per archiviarli</div>
         </div>
       </div>
     </div>
@@ -948,6 +1129,7 @@ let _conversations = [];
 let _sites = [];
 let _currentContext = { type: 'azienda', siteId: null, siteName: null };
 let _expandedSites = new Set();
+let _uploads = []; // [{ local_id, upload_id, name, mime_type, status:'uploading'|'ready'|'error' }]
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const $chatArea     = document.getElementById('chat-area');
@@ -1195,11 +1377,23 @@ function startSiteChat(siteId, siteName) {
 document.getElementById('btn-new-chat').addEventListener('click', () => newChat(false));
 
 // ── Message rendering ─────────────────────────────────────────────────────────
-function appendUserMsg(text) {
+function appendUserMsg(text, uploads = []) {
   const div = document.createElement('div');
   div.className = 'msg msg-user';
-  div.innerHTML = `<div class="msg-bubble">${escHtml(text)}</div>`;
+  let fileHtml = '';
+  if (uploads.length > 0) {
+    fileHtml = '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">' +
+      uploads.map(u => `<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;background:rgba(255,255,255,0.2);border-radius:10px;padding:2px 8px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(getFileEmoji(u.mime_type || ''))} ${escHtml(u.name)}</span>`).join('')
+      + '</div>';
+  }
+  div.innerHTML = `<div class="msg-bubble">${escHtml(text)}${fileHtml}</div>`;
   $chatMessages.appendChild(div);
+}
+
+function getFileEmoji(mime) {
+  if (mime === 'application/pdf') return '📄';
+  if (mime.startsWith('image/')) return '🖼';
+  return '📎';
 }
 
 function appendAssistantMsg(text) {
@@ -1272,17 +1466,25 @@ function escHtml(s) {
 
 // ── Send message (SSE streaming) ──────────────────────────────────────────────
 async function sendMessage(text) {
-  if (!text.trim() || _isStreaming) return;
+  const readyUploads = _uploads.filter(u => u.status === 'ready');
+  if ((!text.trim() && readyUploads.length === 0) || _isStreaming) return;
   _isStreaming = true;
   $btnSend.disabled = true;
   $input.value = '';
   autoResize();
 
+  // Congela le uploads pronte e pulisci le chips
+  const frozenUploads = readyUploads.slice();
+  _uploads = _uploads.filter(u => u.status !== 'ready');
+  renderFileChips();
+
   // Hide welcome, show chat
   $welcome.style.display = 'none';
   $chatMessages.style.display = 'block';
 
-  appendUserMsg(text);
+  // Mostra messaggio utente con eventuale lista file allegati
+  const displayText = text.trim() || `Allego ${frozenUploads.length} documento${frozenUploads.length > 1 ? 'i' : ''}.`;
+  appendUserMsg(displayText, frozenUploads);
   scrollToBottom();
 
   const $content = createStreamingMsg();
@@ -1304,10 +1506,11 @@ async function sendMessage(text) {
         'X-Company-Id': _companyId,
       },
       body: JSON.stringify({
-        message: text.trim(),
+        message: text.trim() || displayText,
         conversation_id: _currentConvId,
         context_type: _currentContext.type,
         ..._currentContext.siteId ? { context_id: _currentContext.siteId } : {},
+        ...(frozenUploads.length > 0 ? { upload_ids: frozenUploads.map(u => u.upload_id) } : {}),
       }),
     });
 
@@ -1548,6 +1751,8 @@ function formatToolName(name) {
     search_documents: 'Cercando documenti',
     get_expiring_documents: 'Controllando scadenze documenti',
     get_site_document_summary: 'Analizzando documenti cantiere',
+    read_uploaded_document: 'Leggendo documento allegato',
+    archive_document: 'Archiviando documento',
   };
   return map[name] || name;
 }
@@ -1580,25 +1785,208 @@ async function exportChat(format) {
 }
 
 // ── Input handling ────────────────────────────────────────────────────────────
+function updateSendBtn() {
+  const hasContent = $input.value.trim() || _uploads.some(u => u.status === 'ready');
+  $btnSend.disabled = !hasContent || _isStreaming;
+}
+
 $input.addEventListener('input', () => {
-  $btnSend.disabled = !$input.value.trim() || _isStreaming;
+  updateSendBtn();
   autoResize();
 });
 
 $input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
-    if ($input.value.trim() && !_isStreaming) sendMessage($input.value);
+    const hasContent = $input.value.trim() || _uploads.some(u => u.status === 'ready');
+    if (hasContent && !_isStreaming) sendMessage($input.value);
   }
 });
 
 $btnSend.addEventListener('click', () => {
-  if ($input.value.trim() && !_isStreaming) sendMessage($input.value);
+  const hasContent = $input.value.trim() || _uploads.some(u => u.status === 'ready');
+  if (hasContent && !_isStreaming) sendMessage($input.value);
 });
 
 function autoResize() {
   $input.style.height = 'auto';
   $input.style.height = Math.min($input.scrollHeight, 160) + 'px';
+}
+
+// ── File upload system ────────────────────────────────────────────────────────
+const $fileInput    = document.getElementById('file-input');
+const $folderInput  = document.getElementById('folder-input');
+const $btnAttach    = document.getElementById('btn-attach');
+const $attachMenu   = document.getElementById('attach-menu');
+const $fileChipsRow = document.getElementById('file-chips-row');
+const $dragOverlay  = document.getElementById('drag-overlay');
+
+const ALLOWED_MIME = [
+  'application/pdf',
+  'image/jpeg', 'image/png', 'image/webp',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
+
+// Attach menu toggle
+$btnAttach.addEventListener('click', (e) => {
+  e.stopPropagation();
+  $attachMenu.classList.toggle('open');
+});
+document.addEventListener('click', () => $attachMenu.classList.remove('open'));
+
+document.getElementById('attach-files').addEventListener('click', () => {
+  $attachMenu.classList.remove('open');
+  $fileInput.click();
+});
+document.getElementById('attach-folder').addEventListener('click', () => {
+  $attachMenu.classList.remove('open');
+  $folderInput.click();
+});
+
+$fileInput.addEventListener('change',  e => { handleFileList([...(e.target.files || [])]); $fileInput.value = ''; });
+$folderInput.addEventListener('change', e => { handleFileList([...(e.target.files || [])]); $folderInput.value = ''; });
+
+async function handleFileList(files) {
+  const tooLarge = files.filter(f => f.size > 25 * 1024 * 1024);
+  if (tooLarge.length) alert(`${tooLarge.length} file ignorato${tooLarge.length > 1 ? '/i' : ''}: supera${tooLarge.length > 1 ? 'no' : ''} il limite di 25MB.`);
+
+  const valid = files.filter(f => ALLOWED_MIME.includes(f.type) && f.size <= 25 * 1024 * 1024);
+  if (!valid.length) return;
+
+  const space = 10 - _uploads.filter(u => u.status !== 'error').length;
+  if (space <= 0) { alert('Hai già 10 file allegati. Rimuovine qualcuno prima.'); return; }
+  const toUpload = valid.slice(0, space);
+
+  // Aggiungi chips in stato uploading
+  const localIds = toUpload.map(() => Math.random().toString(36).slice(2));
+  toUpload.forEach((f, i) => {
+    _uploads.push({ local_id: localIds[i], upload_id: null, name: f.name, mime_type: f.type, status: 'uploading' });
+  });
+  renderFileChips();
+
+  // Upload parallelo
+  await Promise.all(toUpload.map(async (file, i) => {
+    const lid = localIds[i];
+    try {
+      const token = await getJwt();
+      const form  = new FormData();
+      form.append('file', file);
+      const r = await fetch('/api/v1/chat/upload', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId },
+        body: form,
+      });
+      const idx = _uploads.findIndex(u => u.local_id === lid);
+      if (idx < 0) return;
+      if (r.ok) {
+        const data = await r.json();
+        _uploads[idx].upload_id = data.upload_id;
+        _uploads[idx].status    = 'ready';
+      } else {
+        _uploads[idx].status = 'error';
+      }
+    } catch {
+      const idx = _uploads.findIndex(u => u.local_id === lid);
+      if (idx >= 0) _uploads[idx].status = 'error';
+    }
+    renderFileChips();
+    updateSendBtn();
+  }));
+}
+
+function renderFileChips() {
+  if (_uploads.length === 0) {
+    $fileChipsRow.classList.remove('visible');
+    $btnAttach.classList.remove('has-files');
+    const badge = $btnAttach.querySelector('.btn-attach-badge');
+    if (badge) badge.remove();
+    return;
+  }
+
+  $fileChipsRow.classList.add('visible');
+  const readyCount = _uploads.filter(u => u.status === 'ready').length;
+  $btnAttach.classList.toggle('has-files', readyCount > 0);
+
+  // Badge count
+  let badge = $btnAttach.querySelector('.btn-attach-badge');
+  if (readyCount > 0) {
+    if (!badge) { badge = document.createElement('span'); badge.className = 'btn-attach-badge'; $btnAttach.appendChild(badge); }
+    badge.textContent = readyCount;
+  } else if (badge) badge.remove();
+
+  $fileChipsRow.innerHTML = _uploads.map((u, i) => {
+    const cls  = u.status === 'uploading' ? 'uploading' : u.status === 'error' ? 'error' : 'ready';
+    const icon = getMimeIconSvg(u.mime_type || '');
+    const lbl  = u.status === 'uploading' ? ' — caricamento...' : u.status === 'error' ? ' — errore' : '';
+    return `<div class="file-chip ${cls}">
+      <div class="file-chip-icon">${icon}</div>
+      <span class="file-chip-name" title="${escHtml(u.name)}">${escHtml(u.name)}${lbl}</span>
+      ${u.status !== 'uploading' ? `<button class="file-chip-remove" onclick="removeUpload(${i})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>` : ''}
+      ${u.status === 'uploading' ? '<div class="file-chip-progress"></div>' : ''}
+    </div>`;
+  }).join('');
+}
+
+function getMimeIconSvg(mime) {
+  if (mime === 'application/pdf')
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+  if (mime.startsWith('image/'))
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>';
+}
+
+async function removeUpload(idx) {
+  const u = _uploads[idx];
+  if (!u) return;
+  if (u.upload_id && u.status === 'ready') {
+    const token = await getJwt();
+    fetch(`/api/v1/chat/upload/${u.upload_id}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId },
+    }).catch(() => {});
+  }
+  _uploads.splice(idx, 1);
+  renderFileChips();
+  updateSendBtn();
+}
+
+// Drag & drop
+let _dragCount = 0;
+$chatArea.addEventListener('dragenter', e => {
+  e.preventDefault();
+  if (++_dragCount === 1) $dragOverlay.classList.add('active');
+});
+$chatArea.addEventListener('dragleave', () => {
+  if (--_dragCount <= 0) { _dragCount = 0; $dragOverlay.classList.remove('active'); }
+});
+$chatArea.addEventListener('dragover', e => e.preventDefault());
+$chatArea.addEventListener('drop', async e => {
+  e.preventDefault();
+  _dragCount = 0;
+  $dragOverlay.classList.remove('active');
+  const items = [...(e.dataTransfer?.items || [])];
+  const files = [];
+  await Promise.all(items.map(item => {
+    const entry = item.webkitGetAsEntry?.();
+    if (entry) return collectFromEntry(entry, files);
+    const f = item.getAsFile?.();
+    if (f) files.push(f);
+    return Promise.resolve();
+  }));
+  if (files.length) handleFileList(files);
+});
+
+async function collectFromEntry(entry, files) {
+  if (entry.isFile) {
+    await new Promise(res => entry.file(f => { files.push(f); res(); }));
+  } else if (entry.isDirectory) {
+    const reader = entry.createReader();
+    await new Promise(res => reader.readEntries(async entries => {
+      await Promise.all(entries.map(e2 => collectFromEntry(e2, files)));
+      res();
+    }));
+  }
 }
 
 // ── Welcome chips ─────────────────────────────────────────────────────────────

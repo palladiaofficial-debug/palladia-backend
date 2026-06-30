@@ -127,6 +127,9 @@ router.use('/', require('./verbale'));
 // Assistente IA Pal (JWT — rate limit anti-abuso AI applicato solo su /chat/stream in chat.js)
 router.use('/', require('./chat'));
 
+// Upload file per chat Ladia (JWT — file temporanei archiviati da Ladia via tool)
+router.use('/', require('./chatUpload'));
+
 // Telegram Bot: link account (JWT) + note cantiere
 router.use('/', require('./telegram'));
 router.use('/', require('./siteNotes'));
