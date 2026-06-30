@@ -247,10 +247,11 @@ router.delete('/sites/:siteId/economia/voci/:id', async (req, res) => {
 
 // ── Shared P&L calculation ────────────────────────────────────────────────────
 async function calcPnl(siteId, companyId, site) {
-  const [computoRes, logsRes, costsRes, workersRes] = await Promise.all([
+  const [computoRes, logsRes, costsRes, workersRes, variantiRes] = await Promise.all([
     supabase.from('site_computo')
       .select('id, totale_contratto')
       .eq('site_id', siteId).eq('company_id', companyId)
+      .eq('tipo', 'base')
       .order('created_at', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('presence_logs')
       .select('worker_id, event_type, timestamp_server')
@@ -263,7 +264,15 @@ async function calcPnl(siteId, companyId, site) {
     supabase.from('workers')
       .select('id, full_name, tariffa_oraria, qualification, role')
       .eq('company_id', companyId),
+    supabase.from('site_computo')
+      .select('totale_contratto')
+      .eq('site_id', siteId).eq('company_id', companyId)
+      .eq('tipo', 'variante').eq('stato', 'approvata'),
   ]);
+
+  // Somma varianti approvate al contratto base
+  const extraVarianti = (variantiRes.data || [])
+    .reduce((s, v) => s + Number(v.totale_contratto || 0), 0);
 
   // 1. Contratto
   let source = 'none', totale_contratto = null, importo_maturato = null, sal_percentuale = 0;
@@ -271,7 +280,7 @@ async function calcPnl(siteId, companyId, site) {
   if (computoRes.data?.id) {
     source = 'computo';
     totale_contratto = computoRes.data.totale_contratto
-      ? Number(computoRes.data.totale_contratto) : null;
+      ? Number(computoRes.data.totale_contratto) + extraVarianti : null;
     const { data: voci } = await supabase
       .from('site_computo_voci')
       .select('importo, sal_percentuale')
@@ -285,7 +294,7 @@ async function calcPnl(siteId, companyId, site) {
       ? Math.round((maturato / sumImporti) * 1000) / 10 : 0;
   } else if (site.budget_totale !== null) {
     source = 'manual';
-    totale_contratto = Number(site.budget_totale);
+    totale_contratto = Number(site.budget_totale) + extraVarianti;
     sal_percentuale  = Number(site.sal_percentuale) || 0;
     importo_maturato = Math.round(totale_contratto * sal_percentuale / 100 * 100) / 100;
   }

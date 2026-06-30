@@ -3425,13 +3425,20 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           .eq('id', siteId).eq('company_id', companyId).single();
         if (!site) return { error: 'Cantiere non trovato' };
 
-        // Totale contratto da computo (o budget_totale come fallback)
-        const { data: computo } = await supabase
-          .from('site_computo')
-          .select('totale_contratto')
-          .eq('site_id', siteId).eq('company_id', companyId)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle();
-        const totaleContratto = Number(computo?.totale_contratto || site.budget_totale || 0);
+        // Totale contratto da computo base + varianti approvate (o budget_totale come fallback)
+        const [{ data: computo }, { data: variantiApp }] = await Promise.all([
+          supabase.from('site_computo')
+            .select('totale_contratto')
+            .eq('site_id', siteId).eq('company_id', companyId)
+            .eq('tipo', 'base')
+            .order('created_at', { ascending: false }).limit(1).maybeSingle(),
+          supabase.from('site_computo')
+            .select('totale_contratto')
+            .eq('site_id', siteId).eq('company_id', companyId)
+            .eq('tipo', 'variante').eq('stato', 'approvata'),
+        ]);
+        const extraVarianti = (variantiApp || []).reduce((s, v) => s + Number(v.totale_contratto || 0), 0);
+        const totaleContratto = (Number(computo?.totale_contratto || site.budget_totale || 0)) + extraVarianti;
         const salPct = Number(site.sal_percentuale || 0);
         const importoMaturato = Math.round(totaleContratto * salPct / 100 * 100) / 100;
 

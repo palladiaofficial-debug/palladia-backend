@@ -346,12 +346,13 @@ router.get('/sites/:siteId/computo/export.pdf', async (req, res) => {
 
   if (!isUuid(siteId)) return res.status(400).json({ error: 'INVALID_SITE_ID' });
 
-  // Carica computo
+  // Carica computo base
   const { data: computo } = await supabase
     .from('site_computo')
     .select('id, nome, fonte, totale_contratto, created_at')
     .eq('site_id', siteId)
     .eq('company_id', companyId)
+    .eq('tipo', 'base')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
