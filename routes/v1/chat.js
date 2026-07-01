@@ -291,6 +291,7 @@ SICUREZZA E COMPLIANCE: get_compliance_overview, get_upcoming_deadlines, get_ris
 FASI E AVANZAMENTO: get_site_phases, get_sal_history, get_computo_voci, get_capitolato_voci
 METEO E SOSPENSIONI: get_weather_forecast, get_weather_log, get_suspension_days
 ECONOMIA E COSTI: get_site_costs, get_expenses_summary, get_payslips
+TREND E ANALYTICS: get_company_trends (presenze, crescita, utilizzo Ladia negli ultimi N giorni)
 DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents, leggi_documento_pdf, search_documents, get_expiring_documents, get_site_document_summary
 ARCHIVIO AI: read_uploaded_document, archive_document
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
@@ -1929,6 +1930,23 @@ const TOOLS = [
         site_id: { type: 'string', description: 'UUID del cantiere (obbligatorio). Usa get_sites per trovarlo.' },
       },
       required: ['site_id'],
+    },
+  },
+
+  // ── Analytics e trend ────────────────────────────────────────────────────
+  {
+    name: 'get_company_trends',
+    description:
+      'Trend storici dell\'azienda: presenze giornaliere, utilizzo cantieri, query Ladia negli ultimi giorni/settimane. ' +
+      'Usa per: "come siamo andati questa settimana", "trend presenze ultimo mese", "stiamo crescendo?", ' +
+      '"quante timbrature di media", "il cantiere X è più attivo rispetto al mese scorso".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days:    { type: 'number', description: 'Quanti giorni passati analizzare. Default: 30.' },
+        site_id: { type: 'string', description: 'UUID cantiere. Ometti per dati aziendali aggregati.' },
+      },
+      required: [],
     },
   },
 
@@ -4535,6 +4553,47 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         };
       }
 
+      case 'get_company_trends': {
+        const { days = 30, site_id } = toolInput;
+        const cap = Math.min(Math.max(1, days), 365);
+        const startDate = new Date();
+        startDate.setDate(startDate.getDate() - cap);
+        const startStr = startDate.toISOString().slice(0, 10);
+
+        const { data: rows, error: tErr } = await supabase
+          .from('company_daily_stats')
+          .select('date, badge_entries, badge_exits, active_sites, active_workers, ladia_queries')
+          .eq('company_id', companyId)
+          .gte('date', startStr)
+          .order('date', { ascending: true });
+
+        if (tErr || !rows?.length) {
+          return { message: 'Dati trend non ancora disponibili. Il sistema inizierà a raccoglierli dalla prossima notte.', days: cap };
+        }
+
+        const total_entries = rows.reduce((s, r) => s + (r.badge_entries || 0), 0);
+        const total_queries = rows.reduce((s, r) => s + (r.ladia_queries || 0), 0);
+        const avg_workers   = Math.round(rows.reduce((s, r) => s + (r.active_workers || 0), 0) / rows.length);
+        const peak_day      = rows.reduce((best, r) => (r.badge_entries > (best?.badge_entries || 0) ? r : best), null);
+        const active_days   = rows.filter(r => r.badge_entries > 0).length;
+
+        const trend_7  = rows.slice(-7);
+        const trend_prev7 = rows.slice(-14, -7);
+        const avg7_now  = trend_7.length ? Math.round(trend_7.reduce((s, r) => s + r.badge_entries, 0) / trend_7.length) : 0;
+        const avg7_prev = trend_prev7.length ? Math.round(trend_prev7.reduce((s, r) => s + r.badge_entries, 0) / trend_prev7.length) : null;
+
+        return {
+          period_days: cap,
+          days_with_data: rows.length,
+          active_days,
+          totals: { badge_entries: total_entries, ladia_queries: total_queries },
+          averages: { workers_per_day: avg_workers, entries_last_7d: avg7_now },
+          trend_vs_prev_week: avg7_prev !== null ? { now: avg7_now, prev: avg7_prev, delta_pct: avg7_prev > 0 ? Math.round((avg7_now - avg7_prev) / avg7_prev * 100) : null } : null,
+          peak_day: peak_day ? { date: peak_day.date, entries: peak_day.badge_entries, workers: peak_day.active_workers } : null,
+          daily: rows.map(r => ({ date: r.date, entries: r.badge_entries, workers: r.active_workers, ladia: r.ladia_queries })),
+        };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -5089,12 +5148,15 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
 
     const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id);
 
-    // Salva asincrono — non blocca la risposta
-    saveMessages(convId, message.trim(), reply).catch(e =>
-      console.error('[chat] saveMessages error:', e.message)
-    );
+    // Salva prima di rispondere — garantisce che il messaggio sia nel DB
+    // overhead ~20ms su una risposta già da 1-3s
+    try {
+      await saveMessages(convId, message.trim(), reply);
+    } catch (e) {
+      console.error('[chat] saveMessages error:', e.message);
+    }
 
-    // Titolo auto al 1° scambio (isNew o 1ª coppia)
+    // Titolo auto al 1° scambio (fire-and-forget — solo cosmesi)
     if (isNew) {
       autoTitle(convId, message.trim(), client).catch(() => {});
     }
@@ -5435,11 +5497,13 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
 
     if (!aborted) {
       send({ type: 'done' });
-      // Salva nel DB asincrono
+      // Salva nel DB — attendiamo prima di chiudere la connessione SSE
       if (fullAssistantReply) {
-        saveMessages(convId, userMsgForDb, fullAssistantReply).catch(e =>
-          console.error('[chat/stream] saveMessages error:', e.message)
-        );
+        try {
+          await saveMessages(convId, userMsgForDb, fullAssistantReply);
+        } catch (e) {
+          console.error('[chat/stream] saveMessages error:', e.message);
+        }
         if (isNew) {
           autoTitle(convId, userMsgForDb, getClient()).catch(() => {});
         }

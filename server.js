@@ -40,6 +40,7 @@ const { startWeatherAlertCron }     = require('./services/weatherAlertCron');
 const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCron');
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
 const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
+const { startDailyStatsCron }       = require('./services/dailyStatsCron');
 const { startSafetyCopilotCron }    = require('./services/safetyCopilotCron');
 const { PNG }                       = require('pngjs');
 
@@ -2283,6 +2284,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startCertificateExpiryCron();
     startStudioDurcAlertCron();
     startSafetyCopilotCron();
+    startDailyStatsCron();
 
     // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti
     runFormazioneMigration().catch(e => console.error('[migration] formazione:', e.message));
