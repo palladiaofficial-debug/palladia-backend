@@ -5752,8 +5752,23 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       }
     }
   } catch (err) {
-    console.error('[chat/stream] error:', err.message);
-    if (!aborted) send({ type: 'error', message: 'Si è verificato un errore. Riprova.' });
+    // Log completo: err.message da solo spesso nasconde la causa reale (es. errori
+    // Anthropic arrivano come APIError con status + body JSON in err.error/err.status)
+    console.error('[chat/stream] error:', {
+      message: err.message,
+      status:  err.status,
+      body:    err.error,
+      stack:   err.stack,
+    });
+    let userMessage = 'Si è verificato un errore. Riprova.';
+    if (err.status === 400 && images.length > 0) {
+      userMessage = 'Non riesco a elaborare questa immagine (troppo pesante o messaggio troppo lungo). Prova con una foto più leggera o meno testo.';
+    } else if (err.status === 429) {
+      userMessage = 'Troppe richieste in questo momento. Riprova tra qualche secondo.';
+    } else if (err.status === 529 || err.status === 503) {
+      userMessage = 'Il servizio AI è temporaneamente sovraccarico. Riprova tra poco.';
+    }
+    if (!aborted) send({ type: 'error', message: userMessage });
   } finally {
     res.end();
   }
