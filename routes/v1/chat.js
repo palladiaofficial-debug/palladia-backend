@@ -5067,11 +5067,36 @@ async function loadHistory(conversationId, limit = 20) {
   return data.map(m => ({ role: m.role, content: m.content }));
 }
 
-async function saveMessages(conversationId, userContent, assistantContent) {
+async function saveMessages(conversationId, userContent, assistantContent, userImages = []) {
   await supabase.from('chat_messages').insert([
-    { conversation_id: conversationId, role: 'user',      content: userContent },
+    { conversation_id: conversationId, role: 'user',      content: userContent, images: userImages.length ? userImages : null },
     { conversation_id: conversationId, role: 'assistant', content: assistantContent },
   ]);
+}
+
+// Carica le foto allegate su storage permanente (bucket privato, URL firmato 1 anno)
+// così sopravvivono al reload della conversazione invece di sparire con la sessione.
+async function uploadChatImages(images, companyId, conversationId) {
+  const urls = [];
+  for (let i = 0; i < images.length; i++) {
+    const img = images[i];
+    try {
+      const ext = (img.media_type.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+      const path = `${companyId}/chat-images/${conversationId}/${Date.now()}-${i}.${ext}`;
+      const buf = Buffer.from(img.data, 'base64');
+      const { error: upErr } = await supabase.storage
+        .from('site-documents')
+        .upload(path, buf, { contentType: img.media_type, upsert: true });
+      if (upErr) { console.error('[chat] uploadChatImages error:', upErr.message); continue; }
+      const { data: signed } = await supabase.storage
+        .from('site-documents')
+        .createSignedUrl(path, 31536000);
+      if (signed?.signedUrl) urls.push(signed.signedUrl);
+    } catch (e) {
+      console.error('[chat] uploadChatImages exception:', e.message);
+    }
+  }
+  return urls;
 }
 
 // Genera titolo automatico dal 1° messaggio (fire-and-forget)
@@ -5511,7 +5536,10 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       // Salva nel DB — attendiamo prima di chiudere la connessione SSE
       if (fullAssistantReply) {
         try {
-          await saveMessages(convId, userMsgForDb, fullAssistantReply);
+          const uploadedImageUrls = images.length > 0
+            ? await uploadChatImages(images, req.companyId, convId)
+            : [];
+          await saveMessages(convId, userMsgForDb, fullAssistantReply, uploadedImageUrls);
         } catch (e) {
           console.error('[chat/stream] saveMessages error:', e.message);
         }
@@ -5759,7 +5787,7 @@ router.get('/chat/conversations/:id', verifySupabaseJwt, async (req, res) => {
 
   const { data: msgs, error: msgsErr } = await supabase
     .from('chat_messages')
-    .select('id, role, content, created_at')
+    .select('id, role, content, images, created_at')
     .eq('conversation_id', conv.id)
     .order('created_at', { ascending: true })
     .limit(200);
