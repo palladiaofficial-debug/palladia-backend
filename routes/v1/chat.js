@@ -366,6 +366,11 @@ navigate — naviga a una sezione
   <ladia-action type="navigate" path="/cantieri/UUID?tab=5" label="Economia"/>
   <ladia-action type="navigate" path="/risorse" label="Vai a Risorse"/>
   <ladia-action type="navigate" path="/dashboard" label="Dashboard"/>
+  <ladia-action type="navigate" path="/documenti" label="Documenti azienda"/>
+  <ladia-action type="navigate" path="/scadenze" label="Scadenzario"/>
+  <ladia-action type="navigate" path="/formazione" label="Formazione"/>
+  <ladia-action type="navigate" path="/economia" label="Economia aziendale"/>
+  REGOLA: usa SOLO i path elencati sopra. MAI inventare path come /documenti-azienda o /company-documents — non esistono.
 
 generate_doc — apri la pagina di generazione documento per questo cantiere
   <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/>
