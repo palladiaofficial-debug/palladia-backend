@@ -403,9 +403,10 @@ TIPI DISPONIBILI:
 navigate — naviga a una sezione
   <ladia-action type="navigate" path="/cantieri/UUID" label="Apri cantiere"/>
   <ladia-action type="navigate" path="/cantieri/UUID?tab=0" label="Presenze"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=1" label="Sicurezza"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=1" label="Info cantiere"/>
   <ladia-action type="navigate" path="/cantieri/UUID?tab=2" label="Lavoratori"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=3" label="Fasi"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=3" label="Documenti"/>
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=4" label="Diario"/>
   <ladia-action type="navigate" path="/cantieri/UUID?tab=5" label="Economia"/>
   <ladia-action type="navigate" path="/risorse" label="Vai a Risorse"/>
   <ladia-action type="navigate" path="/dashboard" label="Dashboard"/>
