@@ -52,7 +52,7 @@
     }
 
     /* ── Layout ─────────────────────────────────────────── */
-    .app { display: flex; height: 100vh; height: 100dvh; }
+    .app { display: flex; height: 100vh; height: var(--app-h, 100dvh); }
 
     /* ── Sidebar ────────────────────────────────────────── */
     .sidebar {
@@ -2138,6 +2138,25 @@ function scrollToBottom() {
     $chatArea.scrollTop = $chatArea.scrollHeight;
   });
 }
+
+// ── Mobile keyboard — Visual Viewport API ─────────────────────────────────────
+(function () {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const update = () => {
+    document.documentElement.style.setProperty('--app-h', vv.height + 'px');
+  };
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll', update);
+  update();
+})();
+
+// Scroll al fondo quando si apre la tastiera su mobile
+$input.addEventListener('focus', () => {
+  if (window.innerWidth < 768) {
+    setTimeout(scrollToBottom, 350);
+  }
+});
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
