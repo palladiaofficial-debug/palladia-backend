@@ -299,8 +299,23 @@ SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 SCRITTURA DIRETTA: create_diary_note, create_site_note
 PREZZARIO: search_prezzario, get_company_prezzi
 
-AZIONI DI SCRITTURA:
-create_worker, update_worker_expiry, assign_worker_to_site, remove_worker_from_site, create_site, update_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_expense, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, create_booking, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
+AZIONI DI SCRITTURA (LAVORATORI):
+- create_worker: crea nuovo lavoratore (full_name obbligatorio, opzionale fiscal_code/qualification/employer_name/site_id per assegnazione immediata)
+- assign_worker_to_site: assegna lavoratore a cantiere — supporta worker_name/site_name come alternativa agli UUID
+- remove_worker_from_site: rimuove lavoratore da cantiere (worker_id + site_id obbligatori)
+- update_worker: aggiorna qualifica, employer_name, scadenze idoneità/formazione, stato attivo — solo i campi forniti
+
+AZIONI DI SCRITTURA (CANTIERI E COSTI):
+- update_site: cambia status (attivo/sospeso/chiuso), nome, indirizzo — site_id obbligatorio
+- create_expense: registra spesa manuale — amount + description obbligatori; opzionale vendor/category/site_id/expense_date/payment_method
+- create_booking: crea prenotazione/consegna — site_id + title + booking_date obbligatori
+
+REGOLE SCRITTURA:
+- Esegui SEMPRE direttamente senza chiedere conferma — comunica il risultato DOPO l'azione
+- Se hai solo un nome (lavoratore o cantiere) invece dell'UUID, usa get_workers/get_sites prima per risolvere l'ID
+- In caso di errore dal DB, mostralo all'utente in modo chiaro
+
+ALTRE AZIONI: create_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -1930,6 +1945,113 @@ const TOOLS = [
         site_id: { type: 'string', description: 'UUID del cantiere (obbligatorio). Usa get_sites per trovarlo.' },
       },
       required: ['site_id'],
+    },
+  },
+
+  // ── Azioni di modifica dati ──────────────────────────────────────────────
+  {
+    name: 'create_worker',
+    description: 'Crea un nuovo lavoratore nell\'azienda. Usa per: "aggiungi lavoratore", "nuovo operaio", "registra dipendente". Se non viene fornito il CF, chiedi prima di procedere.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        full_name:    { type: 'string',  description: 'Nome e cognome completo (obbligatorio)' },
+        fiscal_code:  { type: 'string',  description: 'Codice fiscale 16 caratteri (consigliato)' },
+        qualification:{ type: 'string',  description: 'Qualifica: operaio | capocantiere | gruista | saldatore | elettricista | idraulico | ponteggiatore | altro' },
+        employer_name:{ type: 'string',  description: 'Ragione sociale del datore di lavoro se diverso dall\'azienda' },
+        site_id:      { type: 'string',  description: 'UUID cantiere a cui assegnare subito (opzionale)' },
+      },
+      required: ['full_name'],
+    },
+  },
+  {
+    name: 'assign_worker_to_site',
+    description: 'Assegna un lavoratore a un cantiere. Usa per: "metti Mario al cantiere X", "assegna Rossi a Via Roma", "sposta il gruista al cantiere Nord". Se hai solo il nome usa get_workers/get_sites prima per l\'UUID.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id:   { type: 'string', description: 'UUID lavoratore (preferito)' },
+        worker_name: { type: 'string', description: 'Nome lavoratore — alternativa a worker_id, esegue ricerca fuzzy' },
+        site_id:     { type: 'string', description: 'UUID cantiere di destinazione (preferito)' },
+        site_name:   { type: 'string', description: 'Nome cantiere — alternativa a site_id' },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'remove_worker_from_site',
+    description: 'Rimuove un lavoratore da un cantiere (disattiva l\'assegnazione, non cancella il lavoratore). Usa per: "togli Mario dal cantiere X", "Rossi non lavora più su Via Roma", "rimuovi dal cantiere".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id: { type: 'string', description: 'UUID lavoratore' },
+        site_id:   { type: 'string', description: 'UUID cantiere' },
+      },
+      required: ['worker_id', 'site_id'],
+    },
+  },
+  {
+    name: 'update_worker',
+    description: 'Aggiorna i dati di un lavoratore esistente. Usa per: "cambia qualifica a Rossi", "aggiorna scadenza idoneità di Mario", "disattiva il lavoratore Bianchi", "modifica il datore di lavoro". Aggiorna SOLO i campi forniti.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        worker_id:              { type: 'string',  description: 'UUID lavoratore (obbligatorio). Usa get_workers per trovarlo.' },
+        qualification:          { type: 'string',  description: 'Nuova qualifica' },
+        employer_name:          { type: 'string',  description: 'Nuovo datore di lavoro' },
+        health_fitness_expiry:  { type: 'string',  description: 'Nuova scadenza idoneità medica YYYY-MM-DD' },
+        safety_training_expiry: { type: 'string',  description: 'Nuova scadenza formazione sicurezza YYYY-MM-DD' },
+        is_active:              { type: 'boolean', description: 'true = attivo, false = disattiva il lavoratore' },
+      },
+      required: ['worker_id'],
+    },
+  },
+  {
+    name: 'create_expense',
+    description: 'Registra una spesa manuale (senza foto). Usa per: "registra spesa di 500€", "aggiungi fattura da fornitore X", "ho pagato i noleggi", "spesa materiali oggi".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        amount:         { type: 'number', description: 'Importo EUR (es. 350.50)' },
+        description:    { type: 'string', description: 'Descrizione della spesa' },
+        vendor:         { type: 'string', description: 'Fornitore / chi ha emesso la fattura' },
+        category:       { type: 'string', enum: ['materiali', 'manodopera', 'noli', 'trasporti', 'sicurezza', 'altro'], description: 'Categoria. Default: altro.' },
+        site_id:        { type: 'string', description: 'UUID cantiere (ometti per spesa aziendale)' },
+        expense_date:   { type: 'string', description: 'Data YYYY-MM-DD. Default: oggi.' },
+        payment_method: { type: 'string', enum: ['contanti', 'bonifico', 'carta', 'assegno', 'altro'], description: 'Default: altro.' },
+      },
+      required: ['amount', 'description'],
+    },
+  },
+  {
+    name: 'update_site',
+    description: 'Aggiorna stato o dati di un cantiere. Usa per: "chiudi il cantiere X", "sospendi Via Roma", "riattiva il cantiere Nord", "cambia nome cantiere", "aggiorna indirizzo". UUID obbligatorio — usa get_sites prima se hai solo il nome.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        status:  { type: 'string', enum: ['attivo', 'sospeso', 'chiuso'], description: 'Nuovo stato' },
+        name:    { type: 'string', description: 'Nuovo nome cantiere' },
+        address: { type: 'string', description: 'Nuovo indirizzo' },
+      },
+      required: ['site_id'],
+    },
+  },
+  {
+    name: 'create_booking',
+    description: 'Crea una prenotazione o consegna programmata per un cantiere. Usa per: "prenota getto cls per giovedì", "aggiungi consegna materiali", "programma ispezione venerdì", "segna arrivo ponteggio".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:      { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        title:        { type: 'string', description: 'Titolo/oggetto (es. "Getto cls fondazioni")' },
+        booking_date: { type: 'string', description: 'Data YYYY-MM-DD (obbligatoria)' },
+        booking_time: { type: 'string', description: 'Ora HH:MM (opzionale)' },
+        category:     { type: 'string', description: 'consegna_materiali | getto_cls | ispezione | manutenzione | sopralluogo | altro' },
+        supplier:     { type: 'string', description: 'Fornitore o azienda che effettua il servizio' },
+        notes:        { type: 'string', description: 'Note aggiuntive' },
+      },
+      required: ['site_id', 'title', 'booking_date'],
     },
   },
 
@@ -4551,6 +4673,118 @@ async function executeTool(toolName, toolInput, companyId, userId) {
           expiry_date: expiry_date || null,
           messaggio:   `Documento "${name}" archiviato in ${destination}${expiry_date ? ` — scadenza ${expiry_date}` : ''}.`,
         };
+      }
+
+      // ── Azioni di modifica dati ──────────────────────────────────────────
+      case 'create_worker': {
+        const { full_name, fiscal_code, qualification, employer_name, site_id: wSiteId } = toolInput;
+        if (!full_name?.trim()) return { error: 'full_name obbligatorio' };
+        const badge_code = require('crypto').randomBytes(9).toString('hex').toUpperCase();
+        const insert = {
+          company_id: companyId,
+          full_name: full_name.trim(),
+          badge_code,
+          is_active: true,
+          ...(fiscal_code   ? { fiscal_code: fiscal_code.toUpperCase().trim() } : {}),
+          ...(qualification ? { qualification } : {}),
+          ...(employer_name ? { employer_name } : {}),
+        };
+        const { data: newWorker, error: we } = await supabase.from('workers').insert(insert).select('id, full_name, badge_code').single();
+        if (we) return { error: we.message };
+        if (wSiteId) {
+          await supabase.from('worksite_workers').upsert({ company_id: companyId, site_id: wSiteId, worker_id: newWorker.id, status: 'active' }, { onConflict: 'site_id,worker_id' });
+        }
+        return { ok: true, worker: newWorker, message: `Lavoratore "${newWorker.full_name}" creato con badge ${newWorker.badge_code}${wSiteId ? ' e assegnato al cantiere' : ''}` };
+      }
+
+      case 'assign_worker_to_site': {
+        let { worker_id, worker_name, site_id: asgSiteId, site_name } = toolInput;
+        if (!worker_id && worker_name) {
+          const { data: wRes } = await supabase.from('workers').select('id, full_name').eq('company_id', companyId).ilike('full_name', `%${worker_name}%`).limit(1);
+          if (!wRes?.length) return { error: `Lavoratore "${worker_name}" non trovato. Usa get_workers per vedere la lista.` };
+          worker_id = wRes[0].id;
+        }
+        if (!asgSiteId && site_name) {
+          const { data: sRes } = await supabase.from('sites').select('id, name').eq('company_id', companyId).ilike('name', `%${site_name}%`).limit(1);
+          if (!sRes?.length) return { error: `Cantiere "${site_name}" non trovato. Usa get_sites per vedere la lista.` };
+          asgSiteId = sRes[0].id;
+        }
+        if (!worker_id || !asgSiteId) return { error: 'Servono worker_id e site_id (o i nomi corrispondenti).' };
+        const { error: ae } = await supabase.from('worksite_workers').upsert({ company_id: companyId, site_id: asgSiteId, worker_id, status: 'active' }, { onConflict: 'site_id,worker_id' });
+        if (ae) return { error: ae.message };
+        return { ok: true, message: 'Lavoratore assegnato al cantiere con successo.' };
+      }
+
+      case 'remove_worker_from_site': {
+        const { worker_id: rwId, site_id: rwSiteId } = toolInput;
+        if (!rwId || !rwSiteId) return { error: 'worker_id e site_id obbligatori.' };
+        const { error: re } = await supabase.from('worksite_workers').update({ status: 'inactive' }).eq('company_id', companyId).eq('worker_id', rwId).eq('site_id', rwSiteId);
+        if (re) return { error: re.message };
+        return { ok: true, message: 'Lavoratore rimosso dal cantiere.' };
+      }
+
+      case 'update_worker': {
+        const { worker_id: uwId, qualification: uwQ, employer_name: uwE, health_fitness_expiry, safety_training_expiry, is_active: uwActive } = toolInput;
+        if (!uwId) return { error: 'worker_id obbligatorio.' };
+        const patch = {};
+        if (uwQ !== undefined)                   patch.qualification          = uwQ;
+        if (uwE !== undefined)                   patch.employer_name          = uwE;
+        if (health_fitness_expiry !== undefined)  patch.health_fitness_expiry  = health_fitness_expiry;
+        if (safety_training_expiry !== undefined) patch.safety_training_expiry = safety_training_expiry;
+        if (uwActive !== undefined)              patch.is_active              = uwActive;
+        if (!Object.keys(patch).length) return { error: 'Nessun campo da aggiornare fornito.' };
+        const { data: updated, error: uwe } = await supabase.from('workers').update(patch).eq('company_id', companyId).eq('id', uwId).select('id, full_name').single();
+        if (uwe) return { error: uwe.message };
+        return { ok: true, worker: updated, message: `Lavoratore "${updated.full_name}" aggiornato.` };
+      }
+
+      case 'create_expense': {
+        const { amount, description, vendor, category = 'altro', site_id: expSiteId, expense_date, payment_method = 'altro' } = toolInput;
+        if (!amount || !description) return { error: 'amount e description obbligatori.' };
+        const today = new Date().toISOString().slice(0, 10);
+        const { data: exp, error: ee } = await supabase.from('company_expenses').insert({
+          company_id: companyId,
+          amount: parseFloat(amount),
+          description,
+          supplier: vendor ?? null,
+          category,
+          site_id: expSiteId ?? null,
+          expense_date: expense_date ?? today,
+          payment_method,
+        }).select('id, amount, description').single();
+        if (ee) return { error: ee.message };
+        return { ok: true, expense: exp, message: `Spesa di €${exp.amount} registrata: "${exp.description}".` };
+      }
+
+      case 'update_site': {
+        const { site_id: usSiteId, status: usStatus, name: usName, address: usAddress } = toolInput;
+        if (!usSiteId) return { error: 'site_id obbligatorio.' };
+        const sitePatch = {};
+        if (usStatus  !== undefined) sitePatch.status  = usStatus;
+        if (usName    !== undefined) sitePatch.name    = usName;
+        if (usAddress !== undefined) sitePatch.address = usAddress;
+        if (!Object.keys(sitePatch).length) return { error: 'Nessun campo da aggiornare fornito.' };
+        const { data: updSite, error: use } = await supabase.from('sites').update(sitePatch).eq('company_id', companyId).eq('id', usSiteId).select('id, name, status').single();
+        if (use) return { error: use.message };
+        return { ok: true, site: updSite, message: `Cantiere "${updSite.name}" aggiornato — stato: ${updSite.status}.` };
+      }
+
+      case 'create_booking': {
+        const { site_id: bkSiteId, title, booking_date, booking_time, category: bkCat, supplier: bkSupplier, notes: bkNotes } = toolInput;
+        if (!bkSiteId || !title || !booking_date) return { error: 'site_id, title e booking_date obbligatori.' };
+        const { data: bk, error: be } = await supabase.from('site_bookings').insert({
+          company_id: companyId,
+          site_id: bkSiteId,
+          title,
+          booking_date,
+          booking_time: booking_time ?? null,
+          category: bkCat ?? 'altro',
+          supplier: bkSupplier ?? null,
+          notes: bkNotes ?? null,
+          status: 'confermato',
+        }).select('id, title, booking_date').single();
+        if (be) return { error: be.message };
+        return { ok: true, booking: bk, message: `Prenotazione "${bk.title}" creata per il ${bk.booking_date}.` };
       }
 
       case 'get_company_trends': {
