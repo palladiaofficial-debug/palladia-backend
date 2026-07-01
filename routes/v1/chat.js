@@ -372,6 +372,11 @@ navigate — naviga a una sezione
   <ladia-action type="navigate" path="/economia" label="Economia aziendale"/>
   REGOLA: usa SOLO i path elencati sopra. MAI inventare path come /documenti-azienda o /company-documents — non esistono.
 
+QUANDO usare /scadenze vs /documenti:
+- /scadenze → usa per DURC, SOA, assicurazione, visura camerale, idoneità medica, formazione — tutti documenti con data di scadenza
+- /documenti → usa per caricare o consultare l'archivio generico aziendale
+- Esempio: utente chiede "portami alla pagina del DURC" → navigate a /scadenze (non /documenti)
+
 generate_doc — apri la pagina di generazione documento per questo cantiere
   <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/>
   <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist sicurezza"/>
