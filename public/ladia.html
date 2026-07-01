@@ -482,6 +482,44 @@
     .msg-content h3 { font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); margin-bottom: 6px; }
     .msg-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
 
+    /* Link inline nel testo */
+    .msg-content .md-link {
+      color: var(--text);
+      text-decoration: underline;
+      text-underline-offset: 3px;
+      text-decoration-color: rgba(0,0,0,0.25);
+      font-weight: 500;
+      transition: text-decoration-color 0.15s;
+    }
+    .msg-content .md-link:hover { text-decoration-color: var(--text); }
+
+    /* Bottone documento (PDF/storage) */
+    .msg-content .md-doc-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 14px;
+      margin: 6px 0;
+      background: var(--bg-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text);
+      text-decoration: none;
+      transition: all 0.15s;
+    }
+    .msg-content .md-doc-link:hover {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .msg-content .md-doc-link svg {
+      width: 14px; height: 14px;
+      flex-shrink: 0;
+      stroke: currentColor;
+    }
+
     /* ── Tool indicator ─────────────────────────────────── */
     .tool-indicator {
       display: inline-flex;
@@ -1476,15 +1514,27 @@ function createStreamingMsg() {
 // ── Markdown renderer (lightweight) ───────────────────────────────────────────
 function renderMarkdown(text) {
   if (!text) return '';
+
+  // Estrai code blocks prima di escHtml per preservarli
+  const codeBlocks = [];
+  text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push(`<pre><code>${escHtml(code.trim())}</code></pre>`);
+    return `\x00CODE${idx}\x00`;
+  });
+
   let html = escHtml(text);
 
-  // Code blocks
-  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
+  // Ripristina code blocks
+  html = html.replace(/\x00CODE(\d+)\x00/g, (_, i) => codeBlocks[+i]);
+
+  // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
 
   // Bold / Italic
+  html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
   html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  html = html.replace(/\*([^*\n]+)\*/g, '<em>$1</em>');
 
   // Headers
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
@@ -1497,20 +1547,31 @@ function renderMarkdown(text) {
   // Tables
   html = html.replace(/^(\|.+\|)\n(\|[-| :]+\|)\n((?:\|.+\|\n?)*)/gm, (_, header, _sep, body) => {
     const ths = header.split('|').filter(c => c.trim()).map(c => `<th>${c.trim()}</th>`).join('');
-    const rows = body.trim().split('\n').map(row => {
+    const rows = body.trim().split('\n').filter(r => r.trim()).map(row => {
       const tds = row.split('|').filter(c => c.trim()).map(c => `<td>${c.trim()}</td>`).join('');
       return `<tr>${tds}</tr>`;
     }).join('');
     return `<table><thead><tr>${ths}</tr></thead><tbody>${rows}</tbody></table>`;
   });
 
+  // Links [testo](url) — solo http/https per sicurezza
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, (_, label, url) => {
+    const safeUrl = url.replace(/"/g, '%22');
+    const isDoc = /\.(pdf|doc|docx|xls|xlsx)(\?|$)/i.test(url) || url.includes('supabase') || url.includes('storage');
+    if (isDoc) {
+      return `<a href="${safeUrl}" target="_blank" rel="noopener" class="md-doc-link"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>${label}</a>`;
+    }
+    return `<a href="${safeUrl}" target="_blank" rel="noopener" class="md-link">${label}</a>`;
+  });
+
   // Lists
-  html = html.replace(/^[•\-] (.+)$/gm, '<li>$1</li>');
-  html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+  html = html.replace(/^[•\-\*] (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+  html = html.replace(/(<li>[\s\S]*?<\/li>)(\n(?!<li>)|$)/g, (m, items) => `<ul>${items}</ul>\n`);
 
   // Paragraphs
-  html = html.replace(/\n\n/g, '</p><p>');
-  html = html.replace(/\n/g, '<br>');
+  html = html.replace(/\n\n+/g, '</p><p>');
+  html = html.replace(/\n(?!<)/g, '<br>');
   if (!html.startsWith('<')) html = '<p>' + html + '</p>';
 
   return html;
