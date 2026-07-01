@@ -5750,6 +5750,12 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
             messages
           ).catch(e => console.error('[ladiaMemory]', e.message));
         });
+      } else if (isNew) {
+        // Nessun testo prodotto (es. loop di soli tool senza risposta finale) —
+        // stessa pulizia del ramo catch: niente conversazione fantasma in sidebar.
+        supabase.from('chat_conversations').delete().eq('id', convId)
+          .then(({ error: delErr }) => { if (delErr) console.error('[chat/stream] cleanup ghost conv failed:', delErr.message); })
+          .catch(() => {});
       }
     }
   } catch (err) {
@@ -5775,6 +5781,15 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       userMessage = 'Il servizio AI è temporaneamente sovraccarico. Riprova tra poco.';
     }
     if (!aborted) send({ type: 'error', message: userMessage });
+
+    // Se lo stream falliva PRIMA di salvare qualunque messaggio in una conversazione
+    // appena creata, restava un record "Nuova conversazione" fantasma — 0 messaggi,
+    // per sempre, visibile in sidebar e indistinguibile da un click che "non funziona".
+    if (isNew && convId && !fullAssistantReply) {
+      supabase.from('chat_conversations').delete().eq('id', convId)
+        .then(({ error: delErr }) => { if (delErr) console.error('[chat/stream] cleanup ghost conv failed:', delErr.message); })
+        .catch(() => {});
+    }
   } finally {
     res.end();
   }
