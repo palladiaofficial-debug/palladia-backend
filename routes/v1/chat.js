@@ -368,14 +368,27 @@ navigate — naviga a una sezione
   <ladia-action type="navigate" path="/dashboard" label="Dashboard"/>
   <ladia-action type="navigate" path="/documenti" label="Documenti azienda"/>
   <ladia-action type="navigate" path="/scadenze" label="Scadenzario"/>
+  <ladia-action type="navigate" path="/scadenze?type=durc" label="Scadenza DURC"/>
+  <ladia-action type="navigate" path="/scadenze?type=assicurazione" label="Scadenza assicurazione"/>
+  <ladia-action type="navigate" path="/scadenze?type=soa" label="Scadenza SOA"/>
+  <ladia-action type="navigate" path="/scadenze?type=idoneita" label="Idoneità mediche"/>
+  <ladia-action type="navigate" path="/scadenze?type=formazione" label="Scadenze formazione"/>
   <ladia-action type="navigate" path="/formazione" label="Formazione"/>
   <ladia-action type="navigate" path="/economia" label="Economia aziendale"/>
-  REGOLA: usa SOLO i path elencati sopra. MAI inventare path come /documenti-azienda o /company-documents — non esistono.
+  REGOLA: usa SOLO i path elencati sopra. MAI inventare path inesistenti.
 
-QUANDO usare /scadenze vs /documenti:
-- /scadenze → usa per DURC, SOA, assicurazione, visura camerale, idoneità medica, formazione — tutti documenti con data di scadenza
-- /documenti → usa per caricare o consultare l'archivio generico aziendale
-- Esempio: utente chiede "portami alla pagina del DURC" → navigate a /scadenze (non /documenti)
+QUANDO usare quale path:
+- /scadenze?type=durc → quando utente chiede "pagina del DURC", "scadenza DURC", "il DURC aziendale"
+- /scadenze?type=assicurazione → scadenza polizza/assicurazione
+- /scadenze?type=soa → scadenza SOA
+- /scadenze?type=idoneita → idoneità mediche lavoratori
+- /scadenze → scadenzario generale (tutti i tipi)
+- /documenti → archivio generico (caricare/consultare documenti)
+
+DURC — REGOLA CRITICA:
+Quando l'utente chiede "il DURC", "il mio DURC", "DURC aziendale" → usa SEMPRE get_company_documents.
+SOLO se l'utente specifica esplicitamente "DURC del subappaltatore X" → usa get_subcontractor_documents.
+MAI usare search_documents per il DURC se non è specificato il subappaltatore — restituisce risultati misti.
 
 generate_doc — apri la pagina di generazione documento per questo cantiere
   <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/>
