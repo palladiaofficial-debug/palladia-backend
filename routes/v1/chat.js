@@ -1,5 +1,6 @@
 'use strict';
 const router    = require('express').Router();
+const Sentry    = require('../../lib/sentry');
 const Anthropic = require('@anthropic-ai/sdk');
 const crypto    = require('crypto');
 const supabase  = require('../../lib/supabase');
@@ -5759,6 +5760,11 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       status:  err.status,
       body:    err.error,
       stack:   err.stack,
+    });
+    // Questo catch risponde via SSE (status 200 già inviato) e non rilancia mai
+    // l'errore: senza una capture esplicita, Sentry non lo vedrebbe mai.
+    Sentry.captureException(err, {
+      extra: { companyId: req.companyId, hasImages: images.length > 0, convId },
     });
     let userMessage = 'Si è verificato un errore. Riprova.';
     if (err.status === 400 && images.length > 0) {
