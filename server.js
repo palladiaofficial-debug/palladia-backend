@@ -1066,6 +1066,7 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
 
     if (saveError) {
       console.error('Failed to save POS:', saveError.message);
+      Sentry.captureException(new Error('Failed to save POS: ' + saveError.message));
     }
 
     // Send final event with save info
@@ -1074,6 +1075,7 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
     res.end();
 
   } catch (error) {
+    Sentry.captureException(error);
     // If headers already sent, send error as SSE event
     if (res.headersSent) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
@@ -1157,6 +1159,7 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
 
       if (saveError) {
         console.error('Failed to save POS:', saveError.message);
+        Sentry.captureException(new Error('Failed to save POS: ' + saveError.message));
       } else {
         posId = saved?.id || null;
       }
@@ -1167,6 +1170,7 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
     res.end();
 
   } catch (error) {
+    Sentry.captureException(error);
     if (res.headersSent) {
       res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
       res.end();
@@ -1439,6 +1443,7 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
 
       if (saveError) {
         console.error('[template-stream] Supabase save error:', saveError.message);
+        Sentry.captureException(new Error('[template-stream] Supabase save error: ' + saveError.message));
       } else {
         posId = saved?.id || null;
         console.log('[template-stream] saved posId:', posId, 'siteId:', siteId || 'none');
@@ -1453,6 +1458,7 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
       }
     } catch (dbErr) {
       console.error('[template-stream] Supabase exception:', dbErr.message);
+      Sentry.captureException(dbErr);
     }
 
     sseWrite(res, `data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template' })}\n\n`);
@@ -1463,6 +1469,7 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
   } catch (error) {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
     console.error('[template-stream] fatal error:', error.message);
+    Sentry.captureException(error);
     try {
       if (headersFlused) {
         sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
@@ -1629,10 +1636,13 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
         }])
         .select()
         .single();
-      if (saveError) console.error('[dvr-stream] DB save error:', saveError.message);
-      else dvrId = saved?.id || null;
+      if (saveError) {
+        console.error('[dvr-stream] DB save error:', saveError.message);
+        Sentry.captureException(new Error('[dvr-stream] DB save error: ' + saveError.message));
+      } else dvrId = saved?.id || null;
     } catch (dbErr) {
       console.error('[dvr-stream] DB exception:', dbErr.message);
+      Sentry.captureException(dbErr);
     }
 
     sseWrite(res, `data: ${JSON.stringify({ type: 'done', dvrId, revision, mode: 'dvr' })}\n\n`);
@@ -1642,6 +1652,7 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
   } catch (error) {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
     console.error('[dvr-stream] fatal error:', error.message);
+    Sentry.captureException(error);
     try {
       if (headersFlushed) {
         sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
@@ -1854,10 +1865,13 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
         }])
         .select()
         .single();
-      if (saveError) console.error('[pimus-stream] DB error:', saveError.message);
-      else pimusId = saved?.id || null;
+      if (saveError) {
+        console.error('[pimus-stream] DB error:', saveError.message);
+        Sentry.captureException(new Error('[pimus-stream] DB error: ' + saveError.message));
+      } else pimusId = saved?.id || null;
     } catch (dbErr) {
       console.error('[pimus-stream] DB exception:', dbErr.message);
+      Sentry.captureException(dbErr);
     }
 
     sseWrite(res, `data: ${JSON.stringify({ type: 'done', pimusId, revision, mode: 'pimus' })}\n\n`);
@@ -1867,6 +1881,7 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
   } catch (error) {
     if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
     console.error('[pimus-stream] fatal:', error.message);
+    Sentry.captureException(error);
     try {
       if (headersFlushed) {
         sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);

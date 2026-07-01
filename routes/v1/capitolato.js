@@ -1,6 +1,7 @@
 'use strict';
 const multer   = require('multer');
 const router   = require('express').Router();
+const Sentry   = require('../../lib/sentry');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { parseCapitolatoPDF } = require('../../services/capitolatoParser');
@@ -61,7 +62,10 @@ router.post('/sites/:siteId/capitolato',
         .from(BUCKET).upload(storagePath, req.file.buffer, {
           contentType: 'application/pdf', upsert: true,
         });
-      if (upErr) { send('error', { message: 'Errore caricamento file.' }); res.end(); return; }
+      if (upErr) {
+        Sentry.captureException(new Error('[capitolato] upload error: ' + upErr.message));
+        send('error', { message: 'Errore caricamento file.' }); res.end(); return;
+      }
 
       send('progress', { message: 'File salvato. Avvio lettura capitolato…', percent: 15 });
 
@@ -91,7 +95,10 @@ router.post('/sites/:siteId/capitolato',
           sort_order:        i,
         }));
         const { error: insErr } = await supabase.from('capitolato_voci').insert(rows);
-        if (insErr) { send('error', { message: 'Errore salvataggio voci.' }); res.end(); return; }
+        if (insErr) {
+          Sentry.captureException(new Error('[capitolato] insert error: ' + insErr.message));
+          send('error', { message: 'Errore salvataggio voci.' }); res.end(); return;
+        }
       }
 
       // 4. Aggiorna ladia_site_config con il summary
@@ -112,6 +119,7 @@ router.post('/sites/:siteId/capitolato',
 
     } catch (err) {
       console.error('[capitolato] parsing error:', err.message);
+      Sentry.captureException(err);
       send('error', { message: err.message || 'Errore durante il parsing del capitolato.' });
     }
 
