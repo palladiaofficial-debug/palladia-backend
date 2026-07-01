@@ -247,6 +247,31 @@ Usa navigate_to_page quando l'utente vuole accedere a una sezione specifica:
 - Dopo navigate_to_page, spiega brevemente cosa trova l'utente in quella sezione.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AZIONI DI SCRITTURA DIRETTA — create_diary_note, create_site_note
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Quando l'utente chiede di AGGIUNGERE, REGISTRARE, ANNOTARE qualcosa → usa i tool di scrittura IMMEDIATAMENTE senza chiedere conferma.
+Sono azioni a basso rischio e reversibili: l'utente si aspetta che vengano eseguite subito.
+
+create_diary_note — usa per:
+  "aggiungi una nota al diario di cantiere", "scrivi che oggi...", "annota che...",
+  "registra sul diario", "aggiungi al diario di Via Roma che..."
+  Esempio: utente dice "aggiungi nota al cantiere Via Roma: fondazioni completate al 80%"
+  → chiama create_diary_note(site_id=UUID_VIA_ROMA, notes="Fondazioni completate al 80%")
+  → rispondi: "✓ Nota aggiunta al diario di **Via Roma** per oggi." + navigate al diario
+
+create_site_note — usa per:
+  "crea una NC", "non conformità: ...", "promemoria urgente per...", "segnala che..."
+  category: nota | non_conformita | verbale | altro
+  urgency:  normale | urgente | critico
+  Esempio: "crea una NC urgente: il ponteggio di Via Roma non ha parapetti"
+  → create_site_note(site_id=UUID, content="Ponteggio senza parapetti — verificare e correggere", category="non_conformita", urgency="urgente")
+  → rispondi: "✓ Non conformità urgente registrata per **Via Roma**." + navigate alle note
+
+Dopo ogni scrittura:
+1. Conferma con "✓ [azione] completata per **[cantiere]**."
+2. Aggiungi navigate action verso la sezione dove l'utente può vedere il risultato.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GESTIONE RISULTATI DEI TOOL — CRITICO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 - Se present_count = 0 o lista vuota: di chiaramente "Nessun lavoratore presente" o "Nessuna timbratura oggi" — è un dato valido, non un errore.
@@ -257,7 +282,7 @@ GESTIONE RISULTATI DEI TOOL — CRITICO
 - Tono sempre assertivo: "Oggi non risulta nessuna presenza" non "Purtroppo non riesco a vedere..."
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TOOL DISPONIBILI — 66 TOOL
+TOOL DISPONIBILI — 68 TOOL
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 DATI GENERALI: get_sites, get_site_detail, get_kpi, get_economia, navigate_to_page
@@ -270,6 +295,7 @@ DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_document
 ARCHIVIO AI: read_uploaded_document, archive_document
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
+SCRITTURA DIRETTA: create_diary_note, create_site_note
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA:
@@ -395,6 +421,22 @@ generate_doc — apri la pagina di generazione documento per questo cantiere
   <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist sicurezza"/>
   Usa solo se hai già l'UUID del cantiere — mai con UUID inventati.
 
+open_modal — apre un form modale direttamente nell'interfaccia (senza navigazione)
+  USA quando l'utente vuole AGGIUNGERE qualcosa e sei già nella sezione giusta.
+  <ladia-action type="open_modal" modal="add_worker" siteId="UUID" label="Aggiungi lavoratore"/>
+  <ladia-action type="open_modal" modal="add_subcontractor" label="Aggiungi subappaltatore"/>
+  <ladia-action type="open_modal" modal="add_equipment" label="Aggiungi mezzo"/>
+  Valori validi per modal: add_worker | add_subcontractor | add_equipment
+  NOTA: se l'utente non è già sulla pagina giusta, usa navigate prima e poi open_modal nella risposta successiva.
+
+highlight — evidenzia un elemento specifico nella pagina corrente (animazione glow)
+  USA subito dopo aver mostrato dati di un lavoratore, documento o scadenza specifici.
+  <ladia-action type="highlight" focusId="ENTITY_UUID" label="Evidenzia nel registro"/>
+  Dove focusId è l'UUID dell'entità (worker_id, entity_id delle scadenze, etc.)
+  POTENTE combinazione: navigate + highlight → l'utente va alla pagina E il record si illumina.
+  Per navigate con highlight: aggiungi focusId al tag navigate:
+  <ladia-action type="navigate" path="/cantieri/UUID?tab=2" focusId="WORKER_UUID" label="Vai al lavoratore"/>
+
 quick_ask — proponi domanda di approfondimento rapido (stile chip suggerimento)
   <ladia-action type="quick_ask" prompt="Mostra il risk score del Cantiere X" label="Risk score"/>
   <ladia-action type="quick_ask" prompt="Chi è presente oggi?" label="Presenze oggi"/>
@@ -405,7 +447,6 @@ confirm — bottone di conferma verde, per azioni di scrittura che aspettano un 
   <ladia-action type="confirm" prompt="Sì, aggiorna il SAL al 65%" label="✓ Aggiorna SAL"/>
   <ladia-action type="confirm" prompt="Sì, segna la fase come completata" label="✓ Segna completata"/>
   <ladia-action type="confirm" prompt="Sì, registra la sospensione per pioggia" label="✓ Registra sospensione"/>
-  <ladia-action type="confirm" prompt="Sì, crea il lavoratore" label="✓ Crea lavoratore"/>
   Regola: ogni volta che mostri un riepilogo e chiedi conferma, aggiungi SEMPRE un confirm tag.
   Non aggiungere altri tag insieme al confirm (al massimo 1 confirm + 1 quick_ask "Modifica" se vuoi).
 
@@ -413,11 +454,13 @@ REGOLE FERREE:
 1. Posiziona i tag SEMPRE alla fine della risposta, dopo testo e canvas.
 2. Max 4 action tag per risposta. Preferisci 2-3 precisi a 4 generici.
 3. Ogni risposta con dati concreti (cantieri, lavoratori, scadenze, economia) DEVE avere ≥1 tag.
-4. Per navigate: usa UUID reali recuperati dai tool — MAI inventati o placeholder.
+4. Per navigate/highlight: usa UUID reali recuperati dai tool — MAI inventati o placeholder.
 5. Per quick_ask: domande utili, specifiche, pertinenti al contesto attuale.
 6. label: concisa, max 25 caratteri, sempre in italiano.
 7. Quando citi un cantiere per nome e hai il suo UUID: aggiungi sempre navigate verso quel cantiere.
 8. REGOLA CRITICA su confirm: quando mostri un riepilogo di dati da salvare e chiedi conferma, usa SEMPRE confirm — non solo testo. Il "Confermo?" testuale senza pulsante è vietato.
+9. Quando mostri dati di UN lavoratore specifico e hai il suo UUID: aggiungi highlight con il suo ID.
+10. Dopo create_diary_note o create_site_note riusciti: aggiungi navigate verso il diario/note del cantiere.
 
 LETTURA DOCUMENTI (usa quando l'utente chiede il contenuto di un documento):
 leggi_documento_pdf — Quando restituisce 'citazione', includila in blockquote (> testo).
@@ -804,6 +847,36 @@ const TOOLS = [
       },
       required: ['site_id']
     }
+  },
+  // ── Tool di scrittura ──────────────────────────────────────────────────────
+  {
+    name: 'create_diary_note',
+    description: 'Aggiunge una nota al diario di cantiere per la data odierna (o data specificata). Usa quando l\'utente dice "aggiungi una nota", "scrivi sul diario", "annota che...", "registra che...". Esegue immediatamente senza conferma. Dopo la scrittura rispondi con una conferma concisa.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:    { type: 'string',  description: 'UUID del cantiere' },
+        notes:      { type: 'string',  description: 'Testo della nota da aggiungere al campo note del diario' },
+        activities: { type: 'string',  description: 'Attività svolte in giornata (opzionale)' },
+        issues:     { type: 'string',  description: 'Problemi riscontrati (opzionale)' },
+        entry_date: { type: 'string',  description: 'Data in formato YYYY-MM-DD, default: oggi' },
+      },
+      required: ['site_id', 'notes'],
+    },
+  },
+  {
+    name: 'create_site_note',
+    description: 'Crea una nota operativa per un cantiere (non-conformità, promemoria, osservazione). Usa per "crea una NC", "aggiungi una non conformità", "nota di sicurezza", "promemoria urgente".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id:  { type: 'string', description: 'UUID del cantiere' },
+        content:  { type: 'string', description: 'Testo della nota' },
+        category: { type: 'string', enum: ['nota', 'non_conformita', 'verbale', 'altro'], description: 'Categoria. Default: nota' },
+        urgency:  { type: 'string', enum: ['normale', 'urgente', 'critico'],              description: 'Urgenza. Default: normale' },
+      },
+      required: ['site_id', 'content'],
+    },
   },
   {
     name: 'navigate_to_page',
@@ -2163,6 +2236,55 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         }
 
         return result;
+      }
+
+      case 'create_diary_note': {
+        const { site_id, notes, activities, issues, entry_date } = toolInput;
+        if (!site_id || !notes) return { error: 'site_id e notes obbligatori' };
+        const { data: site } = await supabase
+          .from('sites').select('id, name').eq('id', site_id).eq('company_id', companyId).maybeSingle();
+        if (!site) return { error: 'SITE_NOT_FOUND' };
+        const today = entry_date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+        const { data, error } = await supabase
+          .from('site_diary_entries')
+          .upsert({
+            company_id: companyId,
+            site_id,
+            entry_date: today,
+            notes,
+            activities: activities || null,
+            issues:     issues     || null,
+            updated_at: new Date().toISOString(),
+            workers_snapshot:        [],
+            machinery_snapshot:      [],
+            subcontractors_snapshot: [],
+          }, { onConflict: 'site_id,entry_date' })
+          .select('id').single();
+        if (error) return { error: 'DB_ERROR', detail: error.message };
+        return { success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes };
+      }
+
+      case 'create_site_note': {
+        const { site_id, content, category = 'nota', urgency = 'normale' } = toolInput;
+        if (!site_id || !content) return { error: 'site_id e content obbligatori' };
+        const { data: site } = await supabase
+          .from('sites').select('id, name').eq('id', site_id).eq('company_id', companyId).maybeSingle();
+        if (!site) return { error: 'SITE_NOT_FOUND' };
+        const { data, error } = await supabase
+          .from('site_notes')
+          .insert({
+            company_id:  companyId,
+            site_id,
+            author_id:   userId,
+            author_name: 'Ladia AI',
+            source:      'web',
+            content:     content.trim(),
+            category,
+            urgency,
+          })
+          .select('id').single();
+        if (error) return { error: 'DB_ERROR', detail: error.message };
+        return { success: true, cantiere: site.name, note_id: data.id, category, urgency };
       }
 
       case 'navigate_to_page': {
