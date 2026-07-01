@@ -2006,6 +2006,31 @@ const TOOLS = [
 
 ];
 
+// ── Prompt caching ────────────────────────────────────────────────────────────
+// TOOLS (~15k token) e SYSTEM_PROMPT base (~10k token) sono identici ad ogni
+// chiamata — senza cache_control venivano ripagati per intero ogni messaggio
+// (e ogni giro del loop agentico). cache_control sull'ultimo blocco marca il
+// punto fino a cui l'API può riusare il prefisso già processato (~90% risparmio
+// sui token cache-hit). Costruito una sola volta al boot: TOOLS non cambia mai
+// a runtime, quindi non c'è bisogno di ricrearlo per ogni richiesta.
+const TOOLS_CACHED = TOOLS.length > 0
+  ? [...TOOLS.slice(0, -1), { ...TOOLS[TOOLS.length - 1], cache_control: { type: 'ephemeral' } }]
+  : TOOLS;
+
+// systemPrompt è sempre SYSTEM_PROMPT + testo dinamico (company brain, memoria,
+// contesto cantiere) concatenato in coda — mai anteposto. Isoliamo la parte
+// statica in un blocco cacheable e lasciamo il resto (che cambia ogni richiesta)
+// fuori dal breakpoint, così non invalida mai la cache del prefisso stabile.
+function buildCachedSystem(fullPrompt) {
+  if (typeof fullPrompt !== 'string' || !fullPrompt.startsWith(SYSTEM_PROMPT)) {
+    return [{ type: 'text', text: fullPrompt }];
+  }
+  const dynamic = fullPrompt.slice(SYSTEM_PROMPT.length);
+  const blocks = [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }];
+  if (dynamic) blocks.push({ type: 'text', text: dynamic });
+  return blocks;
+}
+
 // ── Tool execution ────────────────────────────────────────────────────────────
 async function executeTool(toolName, toolInput, companyId, userId) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
@@ -4620,8 +4645,8 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
   let response = await client.messages.create({
     model,
     max_tokens: model === MODEL_SONNET ? 4096 : 2048,
-    system:     systemPrompt,
-    tools:      TOOLS,
+    system:     buildCachedSystem(systemPrompt),
+    tools:      TOOLS_CACHED,
     messages,
   });
 
@@ -4648,8 +4673,8 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
     response = await client.messages.create({
       model,
       max_tokens: model === MODEL_SONNET ? 4096 : 2048,
-      system:     systemPrompt,
-      tools:      TOOLS,
+      system:     buildCachedSystem(systemPrompt),
+      tools:      TOOLS_CACHED,
       messages:   [...messages, ...extra],
     });
   }
@@ -5443,8 +5468,8 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       const stream = client.messages.stream({
         model,
         max_tokens: model === MODEL_SONNET ? 4096 : 2048,
-        system:     systemPrompt,
-        tools:      TOOLS,
+        system:     buildCachedSystem(systemPrompt),
+        tools:      TOOLS_CACHED,
         messages,
       });
 
