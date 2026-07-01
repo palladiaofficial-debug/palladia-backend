@@ -5577,7 +5577,10 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       extra: { companyId: req.companyId, hasImages: images.length > 0, convId },
     });
     let userMessage = 'Si è verificato un errore. Riprova.';
-    if (err.status === 400 && images.length > 0) {
+    const anthropicMsg = err.error?.error?.message || '';
+    if (/credit balance is too low/i.test(anthropicMsg)) {
+      userMessage = 'Il credito dell\'account AI è esaurito. Contatta l\'amministratore per ricaricarlo su Anthropic — la chat resterà inattiva finché non viene fatto.';
+    } else if (err.status === 400 && images.length > 0) {
       userMessage = 'Non riesco a elaborare questa immagine (troppo pesante o messaggio troppo lungo). Prova con una foto più leggera o meno testo.';
     } else if (err.status === 429) {
       userMessage = 'Troppe richieste in questo momento. Riprova tra qualche secondo.';

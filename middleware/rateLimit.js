@@ -13,24 +13,24 @@
 const rateLimit = require('express-rate-limit');
 
 // ── Store Redis opzionale ─────────────────────────────────────────────────────
-let redisStore = null;
+// NOTA: express-rate-limit vieta di condividere una singola istanza di store tra
+// più limiter (ERR_ERL_STORE_REUSE) — ogni limiter ora ha il proprio RedisStore
+// con prefisso univoco, tutti sulla stessa connessione ioredis sottostante.
+let RedisStoreClass = null;
+let redisClient      = null;
 
 if (process.env.REDIS_URL) {
   try {
     const { RedisStore } = require('rate-limit-redis');
     const Redis          = require('ioredis');
-    const client = new Redis(process.env.REDIS_URL, {
+    RedisStoreClass = RedisStore;
+    redisClient = new Redis(process.env.REDIS_URL, {
       maxRetriesPerRequest: 3,
       enableReadyCheck:     false,
       lazyConnect:          true,
     });
-    client.on('connect',  () => console.log('[Redis] connesso — rate limit distribuito attivo'));
-    client.on('error',    (e) => console.warn('[Redis] errore connessione:', e.message));
-
-    // rate-limit-redis richiede un sendCommand helper
-    redisStore = new RedisStore({
-      sendCommand: (...args) => client.call(...args),
-    });
+    redisClient.on('connect', () => console.log('[Redis] connesso — rate limit distribuito attivo'));
+    redisClient.on('error',   (e) => console.warn('[Redis] errore connessione:', e.message));
     console.log('[rateLimit] store Redis configurato');
   } catch (e) {
     console.warn('[rateLimit] Redis non disponibile — fallback a memoria:', e.message);
@@ -39,8 +39,14 @@ if (process.env.REDIS_URL) {
   console.log('[rateLimit] store in-memory (configura REDIS_URL per store distribuito)');
 }
 
-function makeStore() {
-  return redisStore ? { store: redisStore } : {};
+function makeStore(prefix) {
+  if (!redisClient) return {};
+  return {
+    store: new RedisStoreClass({
+      prefix:      `rl:${prefix}:`,
+      sendCommand: (...args) => redisClient.call(...args),
+    }),
+  };
 }
 
 // ── Rate limiter per POST /api/v1/scan/punch ──────────────────────────────────
@@ -50,7 +56,7 @@ const scanLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message: { error: 'RATE_LIMIT_EXCEEDED' },
-  ...makeStore(),
+  ...makeStore('scan'),
 });
 
 // ── Rate limiter per POST /api/v1/scan/identify ───────────────────────────────
@@ -70,7 +76,7 @@ const identifyLimiter = rateLimit({
     return `identify:${ip}:${wid}`;
   },
   message: { error: 'RATE_LIMIT_EXCEEDED' },
-  ...makeStore(),
+  ...makeStore('identify'),
 });
 
 // ── Rate limiter generico per tutte le route /api/v1/ ─────────────────────────
@@ -91,7 +97,7 @@ const apiLimiter = rateLimit({
     return ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown';
   },
   message: { error: 'TOO_MANY_REQUESTS' },
-  ...makeStore(),
+  ...makeStore('api'),
 });
 
 // ── Rate limiter per GET /api/v1/asl/:token ───────────────────────────────────
@@ -101,7 +107,7 @@ const aslLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message: { error: 'RATE_LIMIT_EXCEEDED' },
-  ...makeStore(),
+  ...makeStore('asl'),
 });
 
 // ── Rate limiter per endpoint pubblici coordinatore CSE ───────────────────────
@@ -111,7 +117,7 @@ const coordinatorLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message: { error: 'RATE_LIMIT_EXCEEDED' },
-  ...makeStore(),
+  ...makeStore('coordinator'),
 });
 
 // ── Rate limiter per POST /api/v1/chat — assistente IA ───────────────────────
@@ -129,7 +135,7 @@ const chatLimiter = rateLimit({
     return `chat:ip:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
   },
   message: { error: 'CHAT_RATE_LIMIT' },
-  ...makeStore(),
+  ...makeStore('chat'),
 });
 
 // ── Rate limiter AI: 10 chiamate/minuto per company ──────────────────────────
@@ -146,7 +152,7 @@ const aiLimiter = rateLimit({
     return `ai:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
   },
   message: { error: 'AI_RATE_LIMIT' },
-  ...makeStore(),
+  ...makeStore('ai'),
 });
 
 // ── Rate limiter per scan/verify-qr e scan/worksites (endpoint pubblici) ─────
@@ -156,7 +162,7 @@ const publicScanLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders:   false,
   message: { error: 'RATE_LIMIT_EXCEEDED' },
-  ...makeStore(),
+  ...makeStore('publicScan'),
 });
 
 module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter };
