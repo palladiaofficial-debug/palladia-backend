@@ -2,7 +2,6 @@
 const router    = require('express').Router();
 const Sentry    = require('../../lib/sentry');
 const Anthropic = require('@anthropic-ai/sdk');
-const crypto    = require('crypto');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { chatLimiter }          = require('../../middleware/rateLimit');
@@ -14,6 +13,7 @@ const { getCompanyBrain } = require('../../lib/companyBrain');
 const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
 const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const { sendAiCreditExhaustedAlert } = require('../../services/email');
+const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -225,11 +225,10 @@ ISTRUZIONI OPERATIVE
 - Se la normativa è cambiata di recente, segnalalo e indica l'aggiornamento.
 
 ESTRAZIONE DATI PROATTIVA — REGOLA FONDAMENTALE:
-Sei onnisciente sui cantieri dell'azienda. Quando dall'utente emerge un'informazione strutturata precisa (una data, un importo, un nome, uno stato) che differisce dai dati attuali nel DB, AGGIORNALA con i tool senza chiedere conferma. Poi comunica cosa hai aggiornato in modo assertivo: "Ho aggiornato la data fine del Cantiere Rossi al 15 settembre." Esempi concreti che DEVONO generare update_site:
-- "abbiamo ancora 30 giorni" → calcola data fine e chiama update_site(end_date)
-- "il contratto finisce il 15 settembre" → update_site(end_date: "2026-09-15")
-- "il cliente è Comune di Genova" → update_site(client: "Comune di Genova")
-- "chiudi questo cantiere" → update_site(status: "chiuso")
+Sei onnisciente sui cantieri dell'azienda. Quando dall'utente emerge un'informazione strutturata precisa (una data, un importo, un nome, uno stato) che differisce dai dati attuali nel DB, AGGIORNALA con i tool senza chiedere conferma. Poi comunica cosa hai aggiornato in modo assertivo: "Ho aggiornato la data fine del Cantiere Rossi al 15 settembre." Esempi concreti che DEVONO generare update_record (table:'sites'):
+- "abbiamo ancora 30 giorni" → calcola data fine e chiama update_record(table:'sites', payload:{end_date})
+- "il contratto finisce il 15 settembre" → update_record(table:'sites', payload:{end_date:"2026-09-15"})
+- "chiudi questo cantiere" → update_record(table:'sites', payload:{status:"chiuso"})
 Il database deve sempre riflettere la realtà che emerge dalla conversazione.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -312,22 +311,22 @@ SCRITTURA DIRETTA: create_diary_note, create_site_note
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA (LAVORATORI):
-- create_worker: crea nuovo lavoratore (full_name obbligatorio, opzionale fiscal_code/qualification/employer_name/site_id per assegnazione immediata)
-- assign_worker_to_site: assegna lavoratore a cantiere — supporta worker_name/site_name come alternativa agli UUID
+- create_record (table:'workers'): crea nuovo lavoratore (full_name obbligatorio, opzionale fiscal_code/role/qualification/employer_name)
+- create_record (table:'worksite_workers'): assegna lavoratore a cantiere (worker_id + site_id obbligatori, idempotente)
 - remove_worker_from_site: rimuove lavoratore da cantiere (worker_id + site_id obbligatori)
 - update_worker: aggiorna qualifica, employer_name, scadenze idoneità/formazione, stato attivo — solo i campi forniti
 
 AZIONI DI SCRITTURA (CANTIERI E COSTI):
-- update_site: cambia status (attivo/sospeso/chiuso), nome, indirizzo — site_id obbligatorio
+- update_record (table:'sites'): cambia status (attivo/sospeso/chiuso), nome, indirizzo, date, budget, sal_percentuale — id obbligatorio
 - create_expense: registra spesa manuale — amount + description obbligatori; opzionale vendor/category/site_id/expense_date/payment_method
-- create_booking: crea prenotazione/consegna — site_id + title + booking_date obbligatori
+- create_record (table:'site_bookings'): crea prenotazione/consegna — site_id + title + booking_date obbligatori
 
 REGOLE SCRITTURA:
 - Esegui SEMPRE direttamente senza chiedere conferma — comunica il risultato DOPO l'azione
 - Se hai solo un nome (lavoratore o cantiere) invece dell'UUID, usa get_workers/get_sites prima per risolvere l'ID
 - In caso di errore dal DB, mostralo all'utente in modo chiaro
 
-ALTRE AZIONI: create_site, update_sal, update_budget_cantiere, create_diary_entry, create_suspension_day, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
+ALTRE AZIONI: create_record (table:'sites'|'site_diary_entries'|'site_suspension_days'), update_sal, update_budget_cantiere, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -554,7 +553,7 @@ Per domande ampie, chiama PIU' tool per dare risposte complete:
 → get_site_detail + get_site_phases + get_economia + get_risk_score + get_weather_forecast + get_nonconformities + get_diary_entries
 
 "Scrivi il diario di oggi" / "Compila il giornale di cantiere":
-→ get_presence_today (chi era presente) + get_weather_log (meteo di oggi) → poi create_diary_entry con tutti i dati integrati
+→ get_presence_today (chi era presente) + get_weather_log (meteo di oggi) → poi create_record (table:'site_diary_entries') con tutti i dati integrati
 Nella diary entry: activities da quanto detto dall'utente, materials da consegne menzionate, issues da problemi citati, presenti dal risultato get_presence_today, meteo da weather_log.
 
 "Quanto abbiamo speso al cantiere X?" / "Tutte le spese":
@@ -595,13 +594,13 @@ Al termine della tua risposta, se hai rilevato dati utili non ancora salvati, ag
 PATTERN DA RICONOSCERE:
 • Spesa generica aziendale (carburante, telefono, abbonamento, pranzo) → create_expense [company_expenses]
 • Fattura/DDT/costo legato a un cantiere specifico (materiali, nolo, sub) → create_site_cost [site_costs — PREFERIRE questo per qualsiasi costo con cantiere]
-• Consegna o visita programmata per una data → create_booking
+• Consegna o visita programmata per una data → create_record (table:'site_bookings')
 • Problema/anomalia/violazione/rischio sicurezza → create_site_note (category: non_conformita, urgency: alta/critica)
 • Incidente o quasi-incidente → create_site_note (category: incidente, urgency: critica)
-• Pioggia/neve/vento/stop lavori per maltempo → create_suspension_day + create_diary_entry
-• Attività svolta oggi (lavori, getti, scavi, posa, strutture) → create_diary_entry
-• Materiali/strumenti consegnati oggi → create_diary_entry (campo materials) + eventuale create_site_cost
-• Nuovo lavoratore con nome e CF menzionato → create_worker + assign_worker_to_site
+• Pioggia/neve/vento/stop lavori per maltempo → create_record (table:'site_suspension_days') + create_record (table:'site_diary_entries')
+• Attività svolta oggi (lavori, getti, scavi, posa, strutture) → create_record (table:'site_diary_entries')
+• Materiali/strumenti consegnati oggi → create_record (table:'site_diary_entries', campo materials) + eventuale create_site_cost
+• Nuovo lavoratore con nome e CF menzionato → create_record (table:'workers') + create_record (table:'worksite_workers')
 • Fase completata o avanzamento % citato → update_phase + update_sal
 • Avanzamento di una VOCE specifica del computo (es. "fondazioni al 75%") → update_sal_voce (non update_sal)
 • Prezzo unitario di una voce cambiato (offerta, variante prezzi) → update_prezzo_voce
@@ -1302,18 +1301,37 @@ const TOOLS = [
   },
   // ── 10 WRITE tools ─────────────────────────────────────────────────────────
   {
-    name: 'create_worker',
-    description: 'Crea un nuovo lavoratore nell\'organico. IMPORTANTE: conferma SEMPRE i dati prima. Usa per: "aggiungi lavoratore", "inserisci operaio", "nuovo dipendente".',
+    name: 'create_record',
+    description: `Crea un record su una risorsa generica del dominio cantiere. Usa questo invece di un tool dedicato per le risorse elencate sotto. Risorse disponibili e relativi campi payload:
+- table:'workers' — nuovo lavoratore. payload: {full_name (obbligatorio), fiscal_code, role, qualification, employer_name}. NON include scadenze formazione/idoneità — per quelle usa update_worker_expiry dopo la creazione.
+- table:'worksite_workers' — assegna un lavoratore già esistente a un cantiere. payload: {worker_id (obbligatorio), site_id (obbligatorio)}. Idempotente: se il lavoratore è già assegnato non duplica, ritorna already_exists.
+- table:'sites' — nuovo cantiere. payload: {name (obbligatorio), address, start_date, end_date, budget_totale}.
+- table:'site_diary_entries' — diario di cantiere per una data (crea o sovrascrive se la data esiste già). payload: {site_id (obbligatorio), entry_date (default oggi), activities, notes, issues, decisions, materials}.
+- table:'site_bookings' — prenotazione/consegna/appuntamento. payload: {site_id, title, booking_date (tutti obbligatori), booking_time, category (consegna|visita|collaudo|sopralluogo|fornitura|altro, default consegna), supplier, notes}.
+- table:'site_suspension_days' — giorno di sospensione lavori (crea o sovrascrive se la data esiste già). payload: {site_id, day (entrambi obbligatori), reason (pioggia|vento|neve|altro, default altro), notes}.
+IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente. Se la risorsa richiesta non è tra queste, il tool ritorna un errore con l'elenco dei tool bespoke da usare invece.`,
     input_schema: {
       type: 'object',
       properties: {
-        full_name: { type: 'string', description: 'Nome completo (obbligatorio)' },
-        fiscal_code: { type: 'string', description: 'Codice fiscale' },
-        role: { type: 'string', description: 'Ruolo es. operaio, carpentiere, muratore' },
-        qualification: { type: 'string', description: 'Qualifica es. operaio specializzato' },
-        employer_name: { type: 'string', description: 'Nome datore di lavoro/impresa' }
+        table: { type: 'string', enum: ['workers', 'worksite_workers', 'sites', 'site_diary_entries', 'site_bookings', 'site_suspension_days'], description: 'Risorsa su cui creare il record' },
+        payload: { type: 'object', description: 'Campi del record, secondo lo schema della risorsa scelta (vedi descrizione del tool)' }
       },
-      required: ['full_name']
+      required: ['table', 'payload']
+    }
+  },
+  {
+    name: 'update_record',
+    description: `Aggiorna un record esistente su una risorsa generica del dominio cantiere. Risorse disponibili:
+- table:'sites' — payload: {name, address, status (attivo|sospeso|ultimato|chiuso), start_date, end_date, budget_totale, sal_percentuale} — solo i campi da cambiare.
+IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente o dato che emerge chiaramente dalla conversazione (es. "il contratto finisce il 15 settembre").`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        table: { type: 'string', enum: ['sites'], description: 'Risorsa su cui aggiornare il record' },
+        id: { type: 'string', description: 'UUID del record da aggiornare (obbligatorio)' },
+        payload: { type: 'object', description: 'Solo i campi da cambiare' }
+      },
+      required: ['table', 'id', 'payload']
     }
   },
   {
@@ -1328,99 +1346,6 @@ const TOOLS = [
         health_fitness_expiry: { type: 'string', description: 'Nuova scadenza idoneita medica YYYY-MM-DD' }
       },
       required: []
-    }
-  },
-  {
-    name: 'assign_worker_to_site',
-    description: 'Assegna un lavoratore a un cantiere. IMPORTANTE: conferma SEMPRE prima. Usa per: "assegna Mario al cantiere X", "aggiungi operaio al cantiere".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio)' },
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
-      },
-      required: ['worker_id', 'site_id']
-    }
-  },
-  {
-    name: 'create_site',
-    description: 'Crea un nuovo cantiere. IMPORTANTE: conferma SEMPRE i dettagli prima. Usa per: "crea cantiere", "nuovo cantiere", "apri un cantiere".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        name: { type: 'string', description: 'Nome del cantiere (obbligatorio)' },
-        address: { type: 'string', description: 'Indirizzo' },
-        start_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
-        end_date: { type: 'string', description: 'Data fine prevista YYYY-MM-DD' },
-        budget_totale: { type: 'number', description: 'Budget totale in euro' }
-      },
-      required: ['name']
-    }
-  },
-  {
-    name: 'update_site',
-    description: 'Aggiorna dati di un cantiere: nome, indirizzo, stato, date, budget. Regola: se l\'utente ordina esplicitamente (es. "aggiorna la data fine", "chiudi il cantiere") → esegui direttamente. Se l\'informazione emerge implicitamente dalla conversazione (es. "il tecnico ha detto che finisce il 15 settembre") → esegui e notifica il cambio. Usa per: "cambia indirizzo", "sposta fine al 15 luglio", "chiudi cantiere", "aggiorna budget".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
-        name: { type: 'string', description: 'Nuovo nome' },
-        address: { type: 'string', description: 'Nuovo indirizzo' },
-        status: { type: 'string', enum: ['attivo', 'sospeso', 'ultimato', 'chiuso'], description: 'Nuovo stato' },
-        start_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
-        end_date: { type: 'string', description: 'Data fine YYYY-MM-DD' },
-        budget_totale: { type: 'number', description: 'Nuovo budget' },
-        sal_percentuale: { type: 'number', description: 'Nuova SAL %' }
-      },
-      required: ['site_id']
-    }
-  },
-  {
-    name: 'create_diary_entry',
-    description: 'Crea o aggiorna il diario di cantiere per una data. IMPORTANTE: conferma SEMPRE prima. Usa per: "scrivi nel diario", "registra attivita di oggi", "giornale cantiere".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
-        entry_date: { type: 'string', description: 'Data YYYY-MM-DD. Default: oggi.' },
-        activities: { type: 'string', description: 'Attivita svolte' },
-        notes: { type: 'string', description: 'Note aggiuntive' },
-        issues: { type: 'string', description: 'Problemi riscontrati' },
-        decisions: { type: 'string', description: 'Decisioni prese' },
-        materials: { type: 'string', description: 'Materiali utilizzati/consegnati' }
-      },
-      required: ['site_id']
-    }
-  },
-  {
-    name: 'create_booking',
-    description: 'Registra una prenotazione/consegna/appuntamento per un cantiere. IMPORTANTE: conferma SEMPRE prima. Usa per: "domani arriva il calcestruzzo", "visita del collaudatore mercoledì", "consegna ferro lunedì mattina".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        site_id:      { type: 'string', description: 'UUID cantiere (obbligatorio)' },
-        title:        { type: 'string', description: 'Titolo/oggetto della prenotazione (obbligatorio). Es: "Consegna calcestruzzo", "Visita collaudo"' },
-        booking_date: { type: 'string', description: 'Data YYYY-MM-DD (obbligatorio)' },
-        booking_time: { type: 'string', description: 'Ora HH:MM (opzionale)' },
-        category:     { type: 'string', enum: ['consegna', 'visita', 'collaudo', 'sopralluogo', 'fornitura', 'altro'], description: 'Tipo appuntamento. Default: consegna.' },
-        supplier:     { type: 'string', description: 'Fornitore/ditta (opzionale)' },
-        notes:        { type: 'string', description: 'Note aggiuntive (opzionale)' }
-      },
-      required: ['site_id', 'title', 'booking_date']
-    }
-  },
-  {
-    name: 'create_suspension_day',
-    description: 'Registra un giorno di sospensione lavori (maltempo). IMPORTANTE: conferma SEMPRE prima. Usa per: "segna sospensione per pioggia", "oggi non si lavora".',
-    input_schema: {
-      type: 'object',
-      properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
-        day: { type: 'string', description: 'Data YYYY-MM-DD (obbligatorio)' },
-        reason: { type: 'string', enum: ['pioggia', 'vento', 'neve', 'altro'], description: 'Default: altro.' },
-        notes: { type: 'string', description: 'Note aggiuntive' }
-      },
-      required: ['site_id', 'day']
     }
   },
   {
@@ -2043,7 +1968,7 @@ function buildCachedSystem(fullPrompt) {
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
-async function executeTool(toolName, toolInput, companyId, userId) {
+async function executeTool(toolName, toolInput, companyId, userId, req = null) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
   const fromUtc   = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
 
@@ -3137,22 +3062,12 @@ async function executeTool(toolName, toolInput, companyId, userId) {
       }
 
       // ── 10 WRITE executors ───────────────────────────────────────────────────
-      case 'create_worker': {
-        if (!toolInput.full_name) return { error: 'full_name obbligatorio' };
-        const badge_code = crypto.randomBytes(9).toString('hex').toUpperCase();
-        const row = {
-          company_id: companyId,
-          full_name: toolInput.full_name,
-          badge_code,
-          is_active: true,
-          fiscal_code: toolInput.fiscal_code || null,
-          role: toolInput.role || null,
-          qualification: toolInput.qualification || null,
-          employer_name: toolInput.employer_name || null,
-        };
-        const { data, error } = await supabase.from('workers').insert(row).select().single();
-        if (error) return { error: error.message };
-        return { success: true, lavoratore_creato: data };
+      case 'create_record': {
+        return await ladiaGenericTools.createRecord(toolInput.table, toolInput.payload, companyId, userId, req);
+      }
+
+      case 'update_record': {
+        return await ladiaGenericTools.updateRecord(toolInput.table, toolInput.id, toolInput.payload, companyId, userId, req);
       }
 
       case 'update_worker_expiry': {
@@ -3170,92 +3085,6 @@ async function executeTool(toolName, toolInput, companyId, userId) {
         const { data, error } = await supabase.from('workers').update(patch).eq('id', wId).eq('company_id', companyId).select('id, full_name, safety_training_expiry, health_fitness_expiry').single();
         if (error) return { error: error.message };
         return { success: true, lavoratore_aggiornato: data };
-      }
-
-      case 'assign_worker_to_site': {
-        const { data: existing } = await supabase.from('worksite_workers').select('id').eq('worker_id', toolInput.worker_id).eq('site_id', toolInput.site_id).eq('status', 'active').maybeSingle();
-        if (existing) return { success: true, message: 'Lavoratore gia assegnato a questo cantiere.' };
-        const { data, error } = await supabase.from('worksite_workers').insert({ company_id: companyId, site_id: toolInput.site_id, worker_id: toolInput.worker_id, status: 'active', start_date: todayRome }).select().single();
-        if (error) return { error: error.message };
-        return { success: true, assegnazione_creata: data };
-      }
-
-      case 'create_site': {
-        if (!toolInput.name) return { error: 'name obbligatorio' };
-        const row = {
-          company_id: companyId,
-          name: toolInput.name,
-          status: 'attivo',
-          address: toolInput.address || null,
-          start_date: toolInput.start_date || null,
-          end_date: toolInput.end_date || null,
-          budget_totale: toolInput.budget_totale || null,
-        };
-        const { data, error } = await supabase.from('sites').insert(row).select().single();
-        if (error) return { error: error.message };
-        return { success: true, cantiere_creato: data };
-      }
-
-      case 'update_site': {
-        if (!toolInput.site_id) return { error: 'site_id obbligatorio' };
-        const patch = {};
-        ['name', 'address', 'status', 'start_date', 'end_date', 'budget_totale', 'sal_percentuale'].forEach(k => {
-          if (toolInput[k] !== undefined && toolInput[k] !== null) patch[k] = toolInput[k];
-        });
-        if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
-        const { data, error } = await supabase.from('sites').update(patch).eq('id', toolInput.site_id).eq('company_id', companyId).select().single();
-        if (error) return { error: error.message };
-        return { success: true, site_id: data.id, site_name: data.name, campi: patch, cantiere_aggiornato: data };
-      }
-
-      case 'create_diary_entry': {
-        if (!toolInput.site_id) return { error: 'site_id obbligatorio' };
-        const row = {
-          company_id: companyId,
-          site_id: toolInput.site_id,
-          entry_date: toolInput.entry_date || todayRome,
-          created_by: userId || null,
-          updated_at: new Date().toISOString(),
-        };
-        if (toolInput.activities) row.activities = toolInput.activities;
-        if (toolInput.notes)      row.notes      = toolInput.notes;
-        if (toolInput.issues)     row.issues     = toolInput.issues;
-        if (toolInput.decisions)  row.decisions  = toolInput.decisions;
-        if (toolInput.materials)  row.materials  = toolInput.materials;
-        const { data, error } = await supabase.from('site_diary_entries').upsert(row, { onConflict: 'site_id,entry_date' }).select().single();
-        if (error) return { error: error.message };
-        return { success: true, diario_salvato: data };
-      }
-
-      case 'create_booking': {
-        if (!toolInput.site_id || !toolInput.title || !toolInput.booking_date) return { error: 'site_id, title e booking_date obbligatori' };
-        const { data, error } = await supabase.from('site_bookings').insert({
-          company_id:   companyId,
-          site_id:      toolInput.site_id,
-          title:        toolInput.title,
-          booking_date: toolInput.booking_date,
-          booking_time: toolInput.booking_time || null,
-          category:     toolInput.category || 'consegna',
-          supplier:     toolInput.supplier || null,
-          notes:        toolInput.notes || null,
-          status:       'programmata',
-        }).select().single();
-        if (error) return { error: error.message };
-        return { success: true, prenotazione_salvata: data };
-      }
-
-      case 'create_suspension_day': {
-        if (!toolInput.site_id || !toolInput.day) return { error: 'site_id e day obbligatori' };
-        const { data, error } = await supabase.from('site_suspension_days').upsert({
-          company_id: companyId,
-          site_id: toolInput.site_id,
-          day: toolInput.day,
-          reason: toolInput.reason || 'altro',
-          notes: toolInput.notes || null,
-          created_by: userId || null,
-        }, { onConflict: 'site_id,day' }).select().single();
-        if (error) return { error: error.message };
-        return { success: true, sospensione_registrata: data };
       }
 
       case 'update_sal': {
@@ -5524,7 +5353,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       // Esegui tool in parallelo
       const toolResults = await Promise.all(
         toolBlocks.map(async (block) => {
-          const result = await executeTool(block.name, block.input, req.companyId, req.user.id);
+          const result = await executeTool(block.name, block.input, req.companyId, req.user.id, req);
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
           }
@@ -5538,12 +5367,16 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               doc_url:     result.doc_url,
             });
           }
-          if (block.name === 'update_site' && result.success && result.site_id) {
+          if (block.name === 'update_record' && block.input?.table === 'sites' && result.success && result.record) {
+            const campi = {};
+            for (const key of Object.keys(block.input.payload || {})) {
+              if (key in result.record) campi[key] = result.record[key];
+            }
             send({
               type:       'cantiere_aggiornato',
-              site_id:    result.site_id,
-              site_name:  result.site_name,
-              campi:      result.campi,
+              site_id:    result.record.id,
+              site_name:  result.record.name,
+              campi,
             });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
