@@ -17,7 +17,7 @@ require('dotenv').config();
 
 const supabase = require('../lib/supabase');
 const { RESOURCES, sanitizePayload, computeSensitivity } = require('../lib/ladiaSchemaRegistry');
-const { createRecord, updateRecord, deleteRecord } = require('../lib/ladiaGenericTools');
+const { createRecord, updateRecord, deleteRecord, proposeAction } = require('../lib/ladiaGenericTools');
 
 const COMPANY_ID = process.env.TEST_COMPANY_ID || 'd5dd4e79-635b-4ceb-ae74-9548a1dcfee1';
 const OTHER_COMPANY_ID = '00000000-0000-0000-0000-000000000000'; // finto, usato solo per il test di injection
@@ -83,6 +83,43 @@ async function main() {
   console.log('\n=== 7. deleteRecord su risorsa senza allow.delete è bloccato ===\n');
   const del = await deleteRecord('sites', SITE_ID, COMPANY_ID, null, null);
   check('delete su sites (allow.delete=false) è rifiutato', del.error === 'RISORSA_NON_GESTIBILE_GENERICAMENTE', del);
+
+  console.log('\n=== 8. updateRecord rifiuta strutturalmente un campo medium (Fase 2) ===\n');
+  const { data: expiryWorker } = await supabase.from('workers').select('id, safety_training_expiry').eq('company_id', COMPANY_ID).limit(1).maybeSingle();
+  if (expiryWorker) {
+    const blocked = await updateRecord('workers', expiryWorker.id, { safety_training_expiry: '2027-01-01' }, COMPANY_ID, null, null);
+    check('update campo medium SENZA opts.confirmed → RICHIEDE_CONFERMA, nessuna scrittura', blocked.error === 'RICHIEDE_CONFERMA' && blocked.requires_confirmation === true, blocked);
+
+    console.log('\n=== 9. updateRecord con opts.confirmed=true bypassa il gate (solo dopo conferma umana reale) ===\n');
+    const originalExpiry = expiryWorker.safety_training_expiry;
+    const approved = await updateRecord('workers', expiryWorker.id, { safety_training_expiry: '2027-01-01' }, COMPANY_ID, null, null, { confirmed: true });
+    check('update con confirmed:true riesce', approved.success === true && approved.record?.safety_training_expiry === '2027-01-01', approved);
+    // Cleanup — ripristina il valore originale, non lasciare dati di test in un campo legal-sensitive
+    await supabase.from('workers').update({ safety_training_expiry: originalExpiry }).eq('id', expiryWorker.id);
+  } else {
+    console.log('  – skip (nessun worker di test trovato)');
+  }
+
+  console.log('\n=== 10. proposeAction salva una proposta pending, non scrive nulla ===\n');
+  const proposal = await proposeAction({
+    resource: 'workers', action: 'update', recordId: expiryWorker?.id || 'x',
+    payload: { safety_training_expiry: '2027-06-01' },
+    summary: 'Selftest — aggiorna scadenza formazione',
+    companyId: COMPANY_ID, userId: null, conversationId: null,
+  });
+  if (proposal.error && /relation .* does not exist|could not find the table/i.test(proposal.error)) {
+    console.log('  – skip (migrations/120_ladia_pending_actions.sql non ancora applicata su Supabase)');
+  } else {
+    check('propose_action su campo medium crea una pending action', proposal.proposed === true && !!proposal.pending_action_id, proposal);
+    const lowProposal = await proposeAction({
+      resource: 'sites', action: 'update', recordId: SITE_ID,
+      payload: { name: 'x' }, summary: 'test', companyId: COMPANY_ID, userId: null, conversationId: null,
+    });
+    check('propose_action su campo low viene rifiutato (usare create_record/update_record)', lowProposal.error === 'AZIONE_A_BASSO_RISCHIO', lowProposal);
+    if (proposal.pending_action_id) {
+      await supabase.from('ladia_pending_actions').delete().eq('id', proposal.pending_action_id); // cleanup
+    }
+  }
 
   console.log(`\n${passed} passati, ${failed} falliti\n`);
   process.exit(failed > 0 ? 1 : 0);

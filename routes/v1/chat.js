@@ -4,7 +4,7 @@ const Sentry    = require('../../lib/sentry');
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
-const { chatLimiter }          = require('../../middleware/rateLimit');
+const { chatLimiter, confirmActionLimiter } = require('../../middleware/rateLimit');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
@@ -19,6 +19,7 @@ const {
   chatExportSchema,
   createConversationSchema,
   patchConversationTitleSchema,
+  confirmPendingActionSchema,
 } = require('../../lib/schemas/chat');
 
 // Lazy init — evita crash al boot se ANTHROPIC_API_KEY non è configurata
@@ -314,7 +315,8 @@ AZIONI DI SCRITTURA (LAVORATORI):
 - create_record (table:'workers'): crea nuovo lavoratore (full_name obbligatorio, opzionale fiscal_code/role/qualification/employer_name)
 - create_record (table:'worksite_workers'): assegna lavoratore a cantiere (worker_id + site_id obbligatori, idempotente)
 - remove_worker_from_site: rimuove lavoratore da cantiere (worker_id + site_id obbligatori)
-- update_worker: aggiorna qualifica, employer_name, scadenze idoneità/formazione, stato attivo — solo i campi forniti
+- update_worker: aggiorna qualifica, employer_name, stato attivo — solo i campi forniti
+- propose_action (table:'workers'): scadenze formazione/idoneità — dato sensibile, richiede conferma vincolante dell'utente su una card, non eseguire mai direttamente
 
 AZIONI DI SCRITTURA (CANTIERI E COSTI):
 - update_record (table:'sites'): cambia status (attivo/sospeso/chiuso), nome, indirizzo, date, budget, sal_percentuale — id obbligatorio
@@ -742,7 +744,8 @@ MODALITÀ VOCALE — PRIORITÀ ASSOLUTA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Messaggio arrivato da INPUT VOCALE (cantiere, mani occupate).
 REGOLE FERREE:
-• Esegui IMMEDIATAMENTE qualsiasi azione — ZERO conferme, ZERO "Confermo?", ZERO riepiloghi prima di eseguire
+• Esegui IMMEDIATAMENTE qualsiasi azione a basso rischio (create_record/update_record) — ZERO conferme, ZERO "Confermo?", ZERO riepiloghi prima di eseguire
+• ECCEZIONE — dati sensibili (scadenze formazione/idoneità e altri dati che richiedono propose_action): la conferma qui NON si può saltare, è bloccata lato server. Chiama comunque propose_action e rispondi in 1 riga tipo "Fatto, conferma dall'app quando puoi" — non provare a forzare l'esecuzione diretta, riceveresti solo un errore.
 • Risposta MAX 2 righe brevi: "✓ [azione eseguita] — [cantiere/dettaglio]" oppure risposta diretta
 • ZERO canvas (<ladia-canvas>), ZERO action tag (<ladia-action>)
 • Tono assertivo: "Ho registrato…" / "Ho aggiornato…" / "Ho creato…"
@@ -1303,7 +1306,7 @@ const TOOLS = [
   {
     name: 'create_record',
     description: `Crea un record su una risorsa generica del dominio cantiere. Usa questo invece di un tool dedicato per le risorse elencate sotto. Risorse disponibili e relativi campi payload:
-- table:'workers' — nuovo lavoratore. payload: {full_name (obbligatorio), fiscal_code, role, qualification, employer_name}. NON include scadenze formazione/idoneità — per quelle usa update_worker_expiry dopo la creazione.
+- table:'workers' — nuovo lavoratore. payload: {full_name (obbligatorio), fiscal_code, role, qualification, employer_name}. NON include scadenze formazione/idoneità — per quelle usa propose_action dopo la creazione (sono dati sensibili, richiedono conferma vincolante).
 - table:'worksite_workers' — assegna un lavoratore già esistente a un cantiere. payload: {worker_id (obbligatorio), site_id (obbligatorio)}. Idempotente: se il lavoratore è già assegnato non duplica, ritorna already_exists.
 - table:'sites' — nuovo cantiere. payload: {name (obbligatorio), address, start_date, end_date, budget_totale}.
 - table:'site_diary_entries' — diario di cantiere per una data (crea o sovrascrive se la data esiste già). payload: {site_id (obbligatorio), entry_date (default oggi), activities, notes, issues, decisions, materials}.
@@ -1335,17 +1338,22 @@ IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione espl
     }
   },
   {
-    name: 'update_worker_expiry',
-    description: 'Aggiorna scadenze formazione/idoneita medica di un lavoratore. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiorna scadenza di Mario", "rinnova idoneita".',
+    name: 'propose_action',
+    description: `Prepara (senza eseguire) una scrittura su un dato SENSIBILE — legale o di sicurezza sul lavoro. NON scrive nulla: crea una card di conferma nell'app che l'utente deve approvare esplicitamente con un click prima che la scrittura avvenga davvero (diverso dal "Confermo?" testuale — qui l'esecuzione è bloccata lato server finché l'utente non conferma sulla card).
+Risorse gestite:
+- table:'workers', action:'update' — SOLO per safety_training_expiry/health_fitness_expiry (scadenze formazione/idoneità, D.Lgs 81/2008). payload: {safety_training_expiry?, health_fitness_expiry?}. Se non conosci l'id del lavoratore, usa prima get_workers per risolverlo dal nome.
+Se provi a scrivere questi campi con update_record riceverai un rifiuto RICHIEDE_CONFERMA — è normale, usa propose_action invece.
+Il campo summary deve essere lo stesso riepilogo che hai già mostrato in chat (mostralo comunque prima di chiamare il tool, come per le altre scritture).`,
     input_schema: {
       type: 'object',
       properties: {
-        worker_id: { type: 'string', description: 'UUID lavoratore (se noto)' },
-        worker_name: { type: 'string', description: 'Nome lavoratore (cerca se UUID non noto)' },
-        safety_training_expiry: { type: 'string', description: 'Nuova scadenza formazione YYYY-MM-DD' },
-        health_fitness_expiry: { type: 'string', description: 'Nuova scadenza idoneita medica YYYY-MM-DD' }
+        table:   { type: 'string', enum: ['workers'], description: 'Risorsa su cui proporre la scrittura' },
+        action:  { type: 'string', enum: ['update'], description: 'Tipo di operazione' },
+        id:      { type: 'string', description: 'UUID del record da aggiornare (obbligatorio)' },
+        payload: { type: 'object', description: 'Campi da scrivere' },
+        summary: { type: 'string', description: 'Riepilogo leggibile già mostrato all\'utente in chat' }
       },
-      required: []
+      required: ['table', 'action', 'id', 'payload', 'summary']
     }
   },
   {
@@ -1870,15 +1878,13 @@ IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione espl
   // ── Azioni di modifica dati ──────────────────────────────────────────────
   {
     name: 'update_worker',
-    description: 'Aggiorna i dati di un lavoratore esistente. Usa per: "cambia qualifica a Rossi", "aggiorna scadenza idoneità di Mario", "disattiva il lavoratore Bianchi", "modifica il datore di lavoro". Aggiorna SOLO i campi forniti.',
+    description: 'Aggiorna i dati anagrafici di un lavoratore esistente. Usa per: "cambia qualifica a Rossi", "disattiva il lavoratore Bianchi", "modifica il datore di lavoro". Aggiorna SOLO i campi forniti. NON gestisce le scadenze formazione/idoneità — sono dati sensibili (D.Lgs 81/2008), usa propose_action.',
     input_schema: {
       type: 'object',
       properties: {
         worker_id:              { type: 'string',  description: 'UUID lavoratore (obbligatorio). Usa get_workers per trovarlo.' },
         qualification:          { type: 'string',  description: 'Nuova qualifica' },
         employer_name:          { type: 'string',  description: 'Nuovo datore di lavoro' },
-        health_fitness_expiry:  { type: 'string',  description: 'Nuova scadenza idoneità medica YYYY-MM-DD' },
-        safety_training_expiry: { type: 'string',  description: 'Nuova scadenza formazione sicurezza YYYY-MM-DD' },
         is_active:              { type: 'boolean', description: 'true = attivo, false = disattiva il lavoratore' },
       },
       required: ['worker_id'],
@@ -1968,7 +1974,7 @@ function buildCachedSystem(fullPrompt) {
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
-async function executeTool(toolName, toolInput, companyId, userId, req = null) {
+async function executeTool(toolName, toolInput, companyId, userId, req = null, convId = null) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
   const fromUtc   = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
 
@@ -3070,21 +3076,16 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null) {
         return await ladiaGenericTools.updateRecord(toolInput.table, toolInput.id, toolInput.payload, companyId, userId, req);
       }
 
-      case 'update_worker_expiry': {
-        let wId = toolInput.worker_id;
-        if (!wId && toolInput.worker_name) {
-          const { data: found } = await supabase.from('workers').select('id, full_name').eq('company_id', companyId).ilike('full_name', `%${toolInput.worker_name}%`).limit(1);
-          if (!found || found.length === 0) return { error: `Nessun lavoratore trovato per "${toolInput.worker_name}"` };
-          wId = found[0].id;
-        }
-        if (!wId) return { error: 'Specificare worker_id o worker_name' };
-        const patch = {};
-        if (toolInput.safety_training_expiry) patch.safety_training_expiry = toolInput.safety_training_expiry;
-        if (toolInput.health_fitness_expiry)  patch.health_fitness_expiry  = toolInput.health_fitness_expiry;
-        if (Object.keys(patch).length === 0) return { error: 'Nessuna scadenza da aggiornare specificata' };
-        const { data, error } = await supabase.from('workers').update(patch).eq('id', wId).eq('company_id', companyId).select('id, full_name, safety_training_expiry, health_fitness_expiry').single();
-        if (error) return { error: error.message };
-        return { success: true, lavoratore_aggiornato: data };
+      case 'propose_action': {
+        return await ladiaGenericTools.proposeAction({
+          resource: toolInput.table,
+          action: toolInput.action,
+          recordId: toolInput.id,
+          payload: toolInput.payload,
+          summary: toolInput.summary,
+          companyId, userId,
+          conversationId: convId,
+        });
       }
 
       case 'update_sal': {
@@ -4416,13 +4417,11 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null) {
       }
 
       case 'update_worker': {
-        const { worker_id: uwId, qualification: uwQ, employer_name: uwE, health_fitness_expiry, safety_training_expiry, is_active: uwActive } = toolInput;
+        const { worker_id: uwId, qualification: uwQ, employer_name: uwE, is_active: uwActive } = toolInput;
         if (!uwId) return { error: 'worker_id obbligatorio.' };
         const patch = {};
         if (uwQ !== undefined)                   patch.qualification          = uwQ;
         if (uwE !== undefined)                   patch.employer_name          = uwE;
-        if (health_fitness_expiry !== undefined)  patch.health_fitness_expiry  = health_fitness_expiry;
-        if (safety_training_expiry !== undefined) patch.safety_training_expiry = safety_training_expiry;
         if (uwActive !== undefined)              patch.is_active              = uwActive;
         if (!Object.keys(patch).length) return { error: 'Nessun campo da aggiornare fornito.' };
         const { data: updated, error: uwe } = await supabase.from('workers').update(patch).eq('company_id', companyId).eq('id', uwId).select('id, full_name').single();
@@ -5353,9 +5352,16 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       // Esegui tool in parallelo
       const toolResults = await Promise.all(
         toolBlocks.map(async (block) => {
-          const result = await executeTool(block.name, block.input, req.companyId, req.user.id, req);
+          const result = await executeTool(block.name, block.input, req.companyId, req.user.id, req, convId);
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
+          }
+          if (block.name === 'propose_action' && result.proposed) {
+            send({
+              type:              'pending_action',
+              pending_action_id: result.pending_action_id,
+              summary:           result.summary,
+            });
           }
           if (block.name === 'leggi_documento_pdf' && !result.errore && !result.error) {
             send({
@@ -5711,6 +5717,64 @@ router.delete('/chat/conversations/:id', verifySupabaseJwt, async (req, res) => 
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /chat/confirm-action/:id — approva/rifiuta una proposta di Ladia
+// (propose_action). Claim atomico contro doppio click/doppia tab: solo la
+// prima richiesta che trova status='pending' vince, le altre ricevono 409.
+// Ri-valida ogni operazione al momento dell'esecuzione, non si fida dello
+// snapshot salvato al momento della proposta.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/chat/confirm-action/:id', verifySupabaseJwt, confirmActionLimiter, validate(confirmPendingActionSchema), async (req, res) => {
+  const { data: claimed, error: claimErr } = await supabase
+    .from('ladia_pending_actions')
+    .update({ status: 'executing', decided_at: new Date().toISOString(), decided_by: req.user.id })
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('status', 'pending')
+    .select()
+    .maybeSingle();
+
+  if (claimErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!claimed) return res.status(409).json({ error: 'ALREADY_HANDLED_OR_NOT_FOUND' });
+
+  if (new Date(claimed.expires_at) < new Date()) {
+    await supabase.from('ladia_pending_actions').update({ status: 'expired' }).eq('id', claimed.id);
+    return res.status(410).json({ error: 'EXPIRED' });
+  }
+
+  if (req.body.decision === 'reject') {
+    await supabase.from('ladia_pending_actions').update({ status: 'rejected' }).eq('id', claimed.id);
+    return res.json({ status: 'rejected' });
+  }
+
+  // decision === 'approve'
+  const op = (claimed.operations || [])[0];
+  if (!op) {
+    await supabase.from('ladia_pending_actions').update({ status: 'error', error_msg: 'Nessuna operazione salvata' }).eq('id', claimed.id);
+    return res.status(500).json({ error: 'NO_OPERATION' });
+  }
+
+  const opts = { confirmed: true };
+  let result;
+  if (op.action === 'create') {
+    result = await ladiaGenericTools.createRecord(op.resource, op.payload, req.companyId, req.user.id, req, opts);
+  } else if (op.action === 'update') {
+    result = await ladiaGenericTools.updateRecord(op.resource, op.record_id, op.payload, req.companyId, req.user.id, req, opts);
+  } else if (op.action === 'delete') {
+    result = await ladiaGenericTools.deleteRecord(op.resource, op.record_id, req.companyId, req.user.id, req, opts);
+  } else {
+    result = { error: `Azione non riconosciuta: ${op.action}` };
+  }
+
+  if (result.error) {
+    await supabase.from('ladia_pending_actions').update({ status: 'error', error_msg: result.error }).eq('id', claimed.id);
+    return res.status(422).json({ status: 'error', error: result.error });
+  }
+
+  await supabase.from('ladia_pending_actions').update({ status: 'executed', result }).eq('id', claimed.id);
+  return res.json({ status: 'executed', result });
 });
 
 module.exports = router;

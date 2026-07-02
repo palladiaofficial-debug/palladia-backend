@@ -155,6 +155,23 @@ const aiLimiter = rateLimit({
   ...makeStore('ai'),
 });
 
+// ── Rate limiter per POST /chat/confirm-action/:id — separato da chatLimiter,
+// non consuma il budget della chat perché è un endpoint REST a parte.
+const confirmActionLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    if (req.companyId) return `confirmAction:company:${req.companyId}`;
+    const ip = req.ip || '';
+    return `confirmAction:ip:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
+  },
+  message: { error: 'CONFIRM_ACTION_RATE_LIMIT' },
+  ...makeStore('confirmAction'),
+});
+
 // ── Rate limiter per scan/verify-qr e scan/worksites (endpoint pubblici) ─────
 const publicScanLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -165,4 +182,4 @@ const publicScanLimiter = rateLimit({
   ...makeStore('publicScan'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter };
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter, confirmActionLimiter };
