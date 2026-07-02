@@ -2151,6 +2151,7 @@ module.exports = {
   sendEmailChangeEmail,
   sendStudioDurcAlert,
   sendWeatherExtremeAlert,
+  sendAiCreditExhaustedAlert,
 };
 
 // ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────
@@ -2300,5 +2301,28 @@ async function sendWeatherExtremeAlert({ companyId, alerts }) {
     to:   adminEmails,
     subject,
     html: layout('Allerta meteo estremo', bodyHtml),
+  });
+}
+
+// ─── Email: Credito Anthropic esaurito (interno — a chi gestisce la piattaforma) ──
+
+/**
+ * @param {{ detail?: string }} opts
+ */
+async function sendAiCreditExhaustedAlert({ detail } = {}) {
+  const to = process.env.ADMIN_EMAIL || 'palladiaofficial@gmail.com';
+  const bodyHtml = `
+    <p style="margin:0 0 4px;font-size:18px;font-weight:800;color:#1a1a1a;">Il credito Anthropic è esaurito</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+      Ladia (l'assistente AI) ha smesso di rispondere a tutti i clienti perché l'account Anthropic
+      non ha più credito disponibile. Ricarica il saldo su console.anthropic.com per ripristinare il servizio.
+    </p>
+    ${detail ? `<p style="margin:0 0 24px;font-size:12px;color:#9ca3af;font-family:monospace;">${detail}</p>` : ''}
+  `;
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: 'Palladia — Credito Anthropic esaurito, Ladia è offline',
+    html: layout('Credito AI esaurito', bodyHtml),
   });
 }

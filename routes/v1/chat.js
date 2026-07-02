@@ -13,6 +13,7 @@ const { computeRiskScore, generateInspectionShield } = require('../../services/s
 const { getCompanyBrain } = require('../../lib/companyBrain');
 const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
 const { buildEnrichedContext } = require('../../services/ladiaEngine');
+const { sendAiCreditExhaustedAlert } = require('../../services/email');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -30,6 +31,16 @@ function getClient() {
 // ── Modelli ───────────────────────────────────────────────────────────────────
 const MODEL_HAIKU  = 'claude-haiku-4-5-20251001';   // query dati, KPI, presenze
 const MODEL_SONNET = 'claude-sonnet-4-6';            // normativa, sicurezza, analisi tecnica
+
+// Evita di spammare l'admin: un solo alert email ogni ora per credito Anthropic esaurito,
+// altrimenti ogni messaggio chat fallito durante l'outage genererebbe una nuova email.
+let _lastCreditAlertAt = 0;
+function notifyAdminCreditExhausted(detail) {
+  const now = Date.now();
+  if (now - _lastCreditAlertAt < 60 * 60 * 1000) return;
+  _lastCreditAlertAt = now;
+  sendAiCreditExhaustedAlert({ detail }).catch(e => console.error('[chat] sendAiCreditExhaustedAlert failed:', e.message));
+}
 
 // ── Classificatore query (zero costo API — keyword matching) ─────────────────
 // Restituisce 'sonnet' se la query richiede ragionamento tecnico/normativo,
@@ -5605,7 +5616,8 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     let userMessage = 'Si è verificato un errore. Riprova.';
     const anthropicMsg = err.error?.error?.message || '';
     if (/credit balance is too low/i.test(anthropicMsg)) {
-      userMessage = 'Il credito dell\'account AI è esaurito. Contatta l\'amministratore per ricaricarlo su Anthropic — la chat resterà inattiva finché non viene fatto.';
+      userMessage = 'Ladia non è al momento disponibile. Il team è già stato avvisato e sta risolvendo — riprova tra poco.';
+      notifyAdminCreditExhausted(anthropicMsg);
     } else if (err.status === 400 && images.length > 0) {
       userMessage = 'Non riesco a elaborare questa immagine (troppo pesante o messaggio troppo lungo). Prova con una foto più leggera o meno testo.';
     } else if (err.status === 429) {
