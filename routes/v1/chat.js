@@ -5432,14 +5432,19 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
           }
           if (block.name === 'update_record' && block.input?.table === 'sites' && result.success && result.record) {
             const campi = {};
+            const campiPrecedenti = {};
             for (const key of Object.keys(block.input.payload || {})) {
-              if (key in result.record) campi[key] = result.record[key];
+              if (key in result.record) {
+                campi[key] = result.record[key];
+                if (result.previous && key in result.previous) campiPrecedenti[key] = result.previous[key];
+              }
             }
             send({
-              type:       'cantiere_aggiornato',
-              site_id:    result.record.id,
-              site_name:  result.record.name,
+              type:            'cantiere_aggiornato',
+              site_id:         result.record.id,
+              site_name:       result.record.name,
               campi,
+              campi_precedenti: campiPrecedenti,
             });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
