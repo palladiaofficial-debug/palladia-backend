@@ -1433,6 +1433,7 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
       const { data: saved, error: saveError } = await supabase
         .from('pos_documents')
         .insert([{
+          company_id: companyId,
           site_id: siteId || null,
           revision,
           content: aiRisks,
@@ -1450,11 +1451,8 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
         console.log('[template-stream] saved posId:', posId, 'siteId:', siteId || 'none');
         // Genera checklist preparazione cantiere in background (non-blocking)
         if (siteId) {
-          const companyId = req.headers['x-company-id'];
-          if (companyId) {
-            generateSiteChecklist(siteId, companyId, posId, posData)
-              .catch(e => console.error('[checklist] auto-gen failed:', e.message));
-          }
+          generateSiteChecklist(siteId, companyId, posId, posData)
+            .catch(e => console.error('[checklist] auto-gen failed:', e.message));
         }
       }
     } catch (dbErr) {
