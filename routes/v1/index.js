@@ -91,6 +91,26 @@ router.use('/', require('./studioFiles'));
 // Consulente RSPP: profilo (middleware per-route, safe per tutti gli utenti)
 router.use('/', require('./consultantProfile'));
 
+// Consulente RSPP: corsi, prenotazioni, Stripe Connect — guard scoped a /consultant
+// (router.use('/consultant', verifyConsultantJwt) dentro ciascun file). Montati qui,
+// PRIMA di qualsiasi router con router.use(verifySupabaseJwt) globale non scoped
+// (companyDocuments, notifications, push, telegram, ecc. più sotto), altrimenti
+// quei middleware intercettano /consultant/* per primi e rispondono 400
+// MISSING_X-COMPANY-ID prima ancora di raggiungere questi router — esattamente
+// lo stesso problema che verifyStudioJwt/studio.js risolve con questo stesso
+// posizionamento (vedi nota sopra).
+router.use('/', require('./consultantCourses'));
+router.use('/', require('./consultantBookings'));
+router.use('/', require('./consultantConnect'));
+
+// Admin Formazione (super_admin only) — guard scoped a /admin, stesso motivo di sopra.
+router.use('/', require('./formazioneAdmin'));
+
+// Safety Copilot — risk score predittivo + scudo ispezione. Middleware per-route
+// (verifySupabaseJwt), ma montato qui per essere raggiunto prima che qualunque
+// router con guard non scoped possa intercettarlo per errore.
+router.use('/', require('./safetyCopilot'));
+
 // Preventivi corsi in cantiere (impresa + consulente, middleware per-route)
 router.use('/', require('./courseQuotes'));
 
@@ -191,20 +211,6 @@ router.use('/', require('./marketplace'));
 
 // Prenotazioni corsi + Stripe Checkout
 router.use('/', require('./bookings'));
-
-// Admin Formazione (super_admin only)
-router.use('/', require('./formazioneAdmin'));
-
-// Consulente RSPP: corsi, prenotazioni, Stripe Connect
-// NOTA: questi router usano router.use(verifyConsultantJwt) globale — devono stare
-//       in FONDO all'index, altrimenti il loro middleware intercetta e blocca con 403
-//       tutte le richieste di utenti non-consulente che non hanno ancora trovato risposta.
-router.use('/', require('./consultantCourses'));
-router.use('/', require('./consultantBookings'));
-router.use('/', require('./consultantConnect'));
-
-// Safety Copilot — risk score predittivo + scudo ispezione
-router.use('/', require('./safetyCopilot'));
 
 // ── Error handler v1 ─────────────────────────────────────────────────────────
 // eslint-disable-next-line no-unused-vars

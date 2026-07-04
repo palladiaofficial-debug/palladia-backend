@@ -27,7 +27,11 @@ const {
 
 const COMMISSION_RATE = 15; // % trattenuta da Palladia
 
-router.use(verifyConsultantJwt);
+// Scoped a /consultant — senza il prefisso, questo middleware intercetta (bloccando
+// con 403 CONSULTANT_PROFILE_NOT_FOUND) qualsiasi richiesta successiva nello stack di
+// index.js che non abbia ancora trovato una route, comprese /safety/* montate dopo
+// questo router.
+router.use('/consultant', verifyConsultantJwt);
 
 // ── GET /api/v1/consultant/courses ────────────────────────────────────────────
 

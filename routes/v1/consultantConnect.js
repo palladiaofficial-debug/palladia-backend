@@ -20,7 +20,8 @@ function getStripe() {
   return require('stripe')(key);
 }
 
-router.use(verifyConsultantJwt);
+// Scoped a /consultant — vedi commento in consultantCourses.js.
+router.use('/consultant', verifyConsultantJwt);
 
 // ── POST /api/v1/consultant/connect/onboard ───────────────────────────────────
 

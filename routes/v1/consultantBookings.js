@@ -20,7 +20,8 @@ const { sendCertificatesUploaded } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { uploadCertificatesSchema } = require('../../lib/schemas/consultantBookings');
 
-router.use(verifyConsultantJwt);
+// Scoped a /consultant — vedi commento in consultantCourses.js.
+router.use('/consultant', verifyConsultantJwt);
 
 // ── GET /api/v1/consultant/dashboard ──────────────────────────────────────────
 

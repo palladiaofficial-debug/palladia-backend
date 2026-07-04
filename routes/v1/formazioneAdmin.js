@@ -39,9 +39,14 @@ function isSuperAdmin(req) {
   return SUPER_ADMIN_EMAILS.includes(req.user?.email?.toLowerCase());
 }
 
-router.use(verifySupabaseJwt);
+// Scoped a /admin — senza il prefisso, questo middleware intercettava (e bloccava
+// con 403/400) qualsiasi richiesta successiva nello stack di index.js che non avesse
+// ancora trovato una route corrispondente, compresi /consultant/* e /safety/* montati
+// dopo questo router: l'intero portale Consulente e la Safety Copilot API erano di
+// fatto irraggiungibili per qualunque utente non super-admin.
+router.use('/admin', verifySupabaseJwt);
 
-router.use((req, res, next) => {
+router.use('/admin', (req, res, next) => {
   if (!isSuperAdmin(req)) return res.status(403).json({ error: 'FORBIDDEN', message: 'Accesso riservato al team Palladia' });
   next();
 });
