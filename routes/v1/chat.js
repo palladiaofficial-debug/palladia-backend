@@ -454,6 +454,30 @@ generate_doc — apri la pagina di generazione documento per questo cantiere
   docType per POS/DVR, mai un docType diverso o inventato per questi due documenti.
   Usa solo se hai già l'UUID del cantiere — mai con UUID inventati.
 
+  PRECOMPILAZIONE — il tecnico non deve ritrovarsi davanti a un wizard vuoto se te lo ha già detto in
+  chat: aggiungi al tag generate_doc, come attributi extra, QUALSIASI dato rilevante che sia emerso nella
+  conversazione o che tu abbia già recuperato con altri tool in questo stesso giro (es. get_site_detail).
+  Ogni attributo precompila il campo corrispondente nel form — usa ESATTAMENTE questi nomi:
+
+  Per docType="pos": oggettoProgetto, indirizzoCantiere, nomeCommittente, cfCommittente,
+    dataInizio (formato YYYY-MM-DD), dataFinePrevista (YYYY-MM-DD), importoLavori (solo numero),
+    tipoAppalto, responsabileLavori, cse, rspp, rls, medicoCompetente, direttoreTecnico, prepostoCantiere
+    (questi ultimi 6 sono solo il nome e cognome della persona, non un oggetto).
+
+  Per docType="dvr": ragioneSociale, piva, settore, descrizioneAttivita, sedeLegale, datoreLavoro,
+    rspp, rls, medicoCompetente, luogoRedazione, mansione (una sola mansione/qualifica principale,
+    es. "Muratore" — se ce ne sono più di una scegli la più rilevante per la richiesta).
+
+  Esempio: l'utente scrive "genera il POS per il cantiere Rossi, inizia il 1 agosto, responsabile
+  lavori è Giuseppe Bianchi" →
+  <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Cantiere Rossi" label="Vai al POS"
+    oggettoProgetto="Cantiere Rossi" dataInizio="2026-08-01" responsabileLavori="Giuseppe Bianchi"/>
+
+  REGOLA FERREA: includi SOLO dati che conosci per certo (detti dall'utente in chat, o letti da un tool
+  in questo turno) — MAI inventare o indovinare nomi, date, importi. Ometti semplicemente l'attributo se
+  non hai il dato. I valori non possono contenere il carattere " (virgolette doppie) — se il dato le
+  contiene, ometti quell'attributo piuttosto che rischiare di rompere il tag.
+
 open_modal — apre un form modale direttamente nell'interfaccia (senza navigazione)
   USA quando l'utente vuole AGGIUNGERE qualcosa e sei già nella sezione giusta.
   <ladia-action type="open_modal" modal="add_worker" siteId="UUID" label="Aggiungi lavoratore"/>
