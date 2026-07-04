@@ -135,6 +135,7 @@ const ALLOWED_ORIGINS = [
   // Sviluppo locale
   'http://localhost:5173',
   'http://localhost:3000',
+  'http://localhost:8080',
 ].filter(Boolean);
 
 app.use(cors({

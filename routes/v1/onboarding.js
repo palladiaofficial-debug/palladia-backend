@@ -93,13 +93,15 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
 
   const cleanName = company_name.trim();
 
-  // Controlla che l'utente non abbia già una company come owner
+  // Controlla che l'utente non abbia già una company (come owner o come membro invitato).
+  // Il check era limitato a role='owner': un membro invitato finito qui per errore
+  // (es. redirect sbagliato su un hiccup di rete) si sarebbe visto creare una company
+  // duplicata invece di essere ricollegato a quella esistente.
   // Usa .limit(1) invece di .maybeSingle() per evitare errore PGRST116 su utenti con più membership
   const { data: existingRows, error: existErr } = await supabase
     .from('company_users')
-    .select('company_id, companies(name)')
+    .select('company_id, role, companies(name, account_type)')
     .eq('user_id', req.user.id)
-    .eq('role', 'owner')
     .limit(1);
 
   if (existErr) {
@@ -107,10 +109,10 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
     return res.status(500).json({ error: 'DB_ERROR' });
   }
 
-  // Idempotente: se ha già una company come owner, restituisce quella esistente (non errore)
+  // Idempotente: se ha già una company (owner o membro), restituisce quella esistente (non errore)
   if (existingRows && existingRows.length > 0) {
     const existing = existingRows[0];
-    console.log(`[onboarding] utente ${req.user.id} ha già company owner ${existing.company_id} — restituita`);
+    console.log(`[onboarding] utente ${req.user.id} ha già company (ruolo ${existing.role}) ${existing.company_id} — restituita`);
     return res.status(200).json({
       ok:              true,
       company_id:      existing.company_id,

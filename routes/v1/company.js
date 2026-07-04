@@ -45,10 +45,17 @@ router.get('/my-company', async (req, res) => {
   // Ordine: abbonamento attivo > trial valido > trial scaduto/canceled, poi per ruolo.
   // Questo evita che un utente membro di un team Pro (come tech) venga mandato
   // sulla propria company con trial scaduto dopo un login da nuovo dispositivo.
-  const { data: memberships } = await supabase
+  const { data: memberships, error: membershipsErr } = await supabase
     .from('company_users')
     .select('company_id, role, companies(subscription_status, trial_ends_at, account_type)')
     .eq('user_id', userId);
+
+  // Un errore di query (timeout, hiccup di rete) NON significa "utente senza company" —
+  // confondere i due casi manda un utente con company reale su /onboarding-company.
+  if (membershipsErr) {
+    console.error('[my-company] query fallita:', membershipsErr.message);
+    return res.status(503).json({ error: 'DB_ERROR' });
+  }
 
   if (!memberships || memberships.length === 0) {
     return res.status(404).json({ error: 'NO_COMPANY' });

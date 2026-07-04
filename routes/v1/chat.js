@@ -689,6 +689,10 @@ EMOJI — USO RIGOROSO:
 - Consentite solo in celle di tabella per stati operativi: ✅ conforme, ❌ scaduto/bloccato, ⚠️ in scadenza
 - MAI emoji all'inizio di ## intestazioni
 
+NOMI TECNICI — MAI ESPORLI:
+- Non scrivere mai nomi di colonna/campo del database (es. "safety_training_expiry", "site_id", "company_id") nel testo rivolto all'utente
+- Traduci sempre in etichetta leggibile italiana (es. "Scadenza formazione sicurezza", non "safety_training_expiry")
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SNAPSHOT CANTIERE E OBIETTIVI TRACCIATI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1343,7 +1347,8 @@ IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione espl
 Risorse gestite:
 - table:'workers', action:'update' — SOLO per safety_training_expiry/health_fitness_expiry (scadenze formazione/idoneità, D.Lgs 81/2008). payload: {safety_training_expiry?, health_fitness_expiry?}. Se non conosci l'id del lavoratore, usa prima get_workers per risolverlo dal nome.
 Se provi a scrivere questi campi con update_record riceverai un rifiuto RICHIEDE_CONFERMA — è normale, usa propose_action invece.
-Il campo summary deve essere lo stesso riepilogo che hai già mostrato in chat (mostralo comunque prima di chiamare il tool, come per le altre scritture).`,
+Il campo summary deve essere lo stesso riepilogo che hai già mostrato in chat (mostralo comunque prima di chiamare il tool, come per le altre scritture).
+IMPORTANTE — mai esporre nomi tecnici di colonna del database all'utente (es. "safety_training_expiry", "health_fitness_expiry"): usa sempre l'etichetta leggibile ("Scadenza formazione sicurezza", "Scadenza idoneità medica") sia nel riepilogo in chat che nel campo summary.`,
     input_schema: {
       type: 'object',
       properties: {
