@@ -449,9 +449,10 @@ MAI usare search_documents per il DURC se non è specificato il subappaltatore �
 generate_doc — apri la pagina di generazione documento per questo cantiere
   <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/>
   <ladia-action type="generate_doc" docType="dvr" siteId="UUID" siteName="Nome cantiere" label="Vai al DVR"/>
+  <ladia-action type="generate_doc" docType="pimus" siteId="UUID" siteName="Nome cantiere" label="Vai al PIMUS"/>
   <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist sicurezza"/>
-  pos e dvr aprono il generatore dedicato con il cantiere già preselezionato — usa SEMPRE uno di questi due
-  docType per POS/DVR, mai un docType diverso o inventato per questi due documenti.
+  pos, dvr e pimus aprono il generatore dedicato con il cantiere già preselezionato — usa SEMPRE uno di questi
+  tre docType per questi documenti, mai un docType diverso o inventato.
   Usa solo se hai già l'UUID del cantiere — mai con UUID inventati.
 
   PRECOMPILAZIONE — il tecnico non deve ritrovarsi davanti a un wizard vuoto se te lo ha già detto in
@@ -467,6 +468,11 @@ generate_doc — apri la pagina di generazione documento per questo cantiere
   Per docType="dvr": ragioneSociale, piva, settore, descrizioneAttivita, sedeLegale, datoreLavoro,
     rspp, rls, medicoCompetente, luogoRedazione, mansione (una sola mansione/qualifica principale,
     es. "Muratore" — se ce ne sono più di una scegli la più rilevante per la richiesta).
+
+  Per docType="pimus": ragioneSociale, datoreLavoro, preposto, nomeCantiere, indirizzoCantiere,
+    dataInizioMontaggio (YYYY-MM-DD), tipoPonteggio (è un menu a scelta fissa — usa ESATTAMENTE uno di
+    questi valori, altrimenti il campo resta vuoto: "PRP — Prefabbricato a Telaio", "Multidirezionale",
+    "Tubolare", "Facciata", "Trabattello (mobile)"), altezzaMax (solo numero, metri).
 
   Esempio: l'utente scrive "genera il POS per il cantiere Rossi, inizia il 1 agosto, responsabile
   lavori è Giuseppe Bianchi" →
@@ -485,6 +491,21 @@ open_modal — apre un form modale direttamente nell'interfaccia (senza navigazi
   <ladia-action type="open_modal" modal="add_equipment" label="Aggiungi mezzo"/>
   Valori validi per modal: add_worker | add_subcontractor | add_equipment
   NOTA: se l'utente non è già sulla pagina giusta, usa navigate prima e poi open_modal nella risposta successiva.
+
+  PRECOMPILAZIONE — stessa logica di generate_doc: se l'utente ha già detto in chat i dati del
+  lavoratore/subappaltatore/mezzo che sta per aggiungere, includili come attributi extra sul tag invece
+  di fargli riaprire un form vuoto e ridigitare tutto.
+
+  Per modal="add_worker": name, cf (codice fiscale), birthDate (YYYY-MM-DD), birthPlace.
+  Per modal="add_subcontractor": company_name, piva, legal_address, contact_person, phone, email.
+  Per modal="add_equipment": type (uno tra i tipi noti: Autovettura, Furgone, Motociclo/Scooter,
+    Autocarro, Escavatore, Gru, Ponteggio, Betoniera, Trattore, Sollevatore, Altro), model, plateOrSerial.
+
+  Esempio: l'utente scrive "aggiungi il lavoratore Mario Rossi, codice fiscale RSSMRA80A01D969Z" mentre
+  è già sulla pagina Risorse →
+  <ladia-action type="open_modal" modal="add_worker" label="Aggiungi lavoratore" name="Mario Rossi" cf="RSSMRA80A01D969Z"/>
+
+  Stessa REGOLA FERREA di generate_doc: solo dati certi, mai inventati, mai virgolette doppie nei valori.
 
 highlight — evidenzia un elemento specifico nella pagina corrente (animazione glow)
   USA subito dopo aver mostrato dati di un lavoratore, documento o scadenza specifici.
@@ -5451,12 +5472,29 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
             // Scrittura su una risorsa diversa da "sites" (che ha già la sua card
             // dedicata sopra) — card generica "Annulla" per qualsiasi altra
             // create_record/update_record/delete_record eseguita a basso rischio.
+            // Stesso trattamento diff prima→dopo di cantiere_aggiornato: updateRecord
+            // già cattura "previous" per QUALSIASI risorsa (Fase 3), qui lo esponiamo.
+            const campi = {};
+            const campiPrecedenti = {};
+            if (result.record) {
+              const keys = block.name === 'create_record'
+                ? Object.keys(block.input?.payload || {})
+                : Object.keys(block.input?.payload || {});
+              for (const key of keys) {
+                if (key in result.record) {
+                  campi[key] = result.record[key];
+                  if (result.previous && key in result.previous) campiPrecedenti[key] = result.previous[key];
+                }
+              }
+            }
             send({
               type:               'record_action',
               resource:           block.input?.table || null,
               action:             result.record ? (block.name === 'create_record' ? 'create' : 'update') : 'delete',
               summary:            result.undoSummary || null,
               action_history_id:  result.actionHistoryId,
+              campi:              Object.keys(campi).length > 0 ? campi : null,
+              campi_precedenti:   Object.keys(campiPrecedenti).length > 0 ? campiPrecedenti : null,
             });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
