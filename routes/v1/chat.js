@@ -3102,11 +3102,11 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
 
       // ── 10 WRITE executors ───────────────────────────────────────────────────
       case 'create_record': {
-        return await ladiaGenericTools.createRecord(toolInput.table, toolInput.payload, companyId, userId, req);
+        return await ladiaGenericTools.createRecord(toolInput.table, toolInput.payload, companyId, userId, req, { conversationId: convId });
       }
 
       case 'update_record': {
-        return await ladiaGenericTools.updateRecord(toolInput.table, toolInput.id, toolInput.payload, companyId, userId, req);
+        return await ladiaGenericTools.updateRecord(toolInput.table, toolInput.id, toolInput.payload, companyId, userId, req, { conversationId: convId });
       }
 
       case 'propose_action': {
@@ -5440,11 +5440,23 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               }
             }
             send({
-              type:            'cantiere_aggiornato',
-              site_id:         result.record.id,
-              site_name:       result.record.name,
+              type:             'cantiere_aggiornato',
+              site_id:          result.record.id,
+              site_name:        result.record.name,
               campi,
               campi_precedenti: campiPrecedenti,
+              action_history_id: result.actionHistoryId || null,
+            });
+          } else if ((block.name === 'create_record' || block.name === 'update_record' || block.name === 'delete_record') && result.success && result.actionHistoryId) {
+            // Scrittura su una risorsa diversa da "sites" (che ha già la sua card
+            // dedicata sopra) — card generica "Annulla" per qualsiasi altra
+            // create_record/update_record/delete_record eseguita a basso rischio.
+            send({
+              type:               'record_action',
+              resource:           block.input?.table || null,
+              action:             result.record ? (block.name === 'create_record' ? 'create' : 'update') : 'delete',
+              summary:            result.undoSummary || null,
+              action_history_id:  result.actionHistoryId,
             });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
@@ -5818,7 +5830,7 @@ router.post('/chat/confirm-action/:id', verifySupabaseJwt, confirmActionLimiter,
     return res.status(500).json({ error: 'NO_OPERATION' });
   }
 
-  const opts = { confirmed: true };
+  const opts = { confirmed: true, conversationId: claimed.conversation_id };
   let result;
   if (op.action === 'create') {
     result = await ladiaGenericTools.createRecord(op.resource, op.payload, req.companyId, req.user.id, req, opts);
@@ -5837,6 +5849,21 @@ router.post('/chat/confirm-action/:id', verifySupabaseJwt, confirmActionLimiter,
 
   await supabase.from('ladia_pending_actions').update({ status: 'executed', result }).eq('id', claimed.id);
   return res.json({ status: 'executed', result });
+});
+
+// POST /chat/undo/:historyId — annulla una scrittura di Ladia (create_record/
+// update_record/delete_record, sia immediata che confermata) registrata in
+// ladia_action_history. Vedi ladiaGenericTools.undoAction per la finestra
+// temporale e il controllo conflitti.
+router.post('/chat/undo/:historyId', verifySupabaseJwt, confirmActionLimiter, async (req, res) => {
+  const result = await ladiaGenericTools.undoAction(req.params.historyId, req.companyId, req.user.id);
+  if (result.error) {
+    const status = result.error === 'NOT_FOUND' ? 404
+      : result.error === 'GIA_ANNULLATA' || result.error === 'CONFLITTO' || result.error === 'FINESTRA_SCADUTA' ? 409
+      : 500;
+    return res.status(status).json(result);
+  }
+  return res.json(result);
 });
 
 module.exports = router;
