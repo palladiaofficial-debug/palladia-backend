@@ -1345,20 +1345,21 @@ IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione espl
     name: 'propose_action',
     description: `Prepara (senza eseguire) una scrittura su un dato SENSIBILE — legale o di sicurezza sul lavoro. NON scrive nulla: crea una card di conferma nell'app che l'utente deve approvare esplicitamente con un click prima che la scrittura avvenga davvero (diverso dal "Confermo?" testuale — qui l'esecuzione è bloccata lato server finché l'utente non conferma sulla card).
 Risorse gestite:
-- table:'workers', action:'update' — SOLO per safety_training_expiry/health_fitness_expiry (scadenze formazione/idoneità, D.Lgs 81/2008). payload: {safety_training_expiry?, health_fitness_expiry?}. Se non conosci l'id del lavoratore, usa prima get_workers per risolverlo dal nome.
+- table:'workers', action:'update' — SOLO per safety_training_expiry/health_fitness_expiry (scadenze formazione/idoneità, D.Lgs 81/2008). payload: {safety_training_expiry?, health_fitness_expiry?}. Se conosci già l'id del lavoratore passalo in id; ALTRIMENTI passa worker_name (nome/cognome, anche parziale) e viene risolto qui — non serve chiamare get_workers prima, risparmia un giro di tool call. Se il nome è ambiguo (più lavoratori corrispondenti) o non trovato, il tool te lo segnala e potrai chiedere chiarimento o usare get_workers.
 Se provi a scrivere questi campi con update_record riceverai un rifiuto RICHIEDE_CONFERMA — è normale, usa propose_action invece.
 Il campo summary deve essere lo stesso riepilogo che hai già mostrato in chat (mostralo comunque prima di chiamare il tool, come per le altre scritture).
 IMPORTANTE — mai esporre nomi tecnici di colonna del database all'utente (es. "safety_training_expiry", "health_fitness_expiry"): usa sempre l'etichetta leggibile ("Scadenza formazione sicurezza", "Scadenza idoneità medica") sia nel riepilogo in chat che nel campo summary.`,
     input_schema: {
       type: 'object',
       properties: {
-        table:   { type: 'string', enum: ['workers'], description: 'Risorsa su cui proporre la scrittura' },
-        action:  { type: 'string', enum: ['update'], description: 'Tipo di operazione' },
-        id:      { type: 'string', description: 'UUID del record da aggiornare (obbligatorio)' },
+        table:       { type: 'string', enum: ['workers'], description: 'Risorsa su cui proporre la scrittura' },
+        action:      { type: 'string', enum: ['update'], description: 'Tipo di operazione' },
+        id:          { type: 'string', description: 'UUID del record da aggiornare — se non lo conosci, usa worker_name invece' },
+        worker_name: { type: 'string', description: 'Nome (anche parziale) del lavoratore — alternativa a id, risolto lato server. Evita una chiamata get_workers separata.' },
         payload: { type: 'object', description: 'Campi da scrivere' },
         summary: { type: 'string', description: 'Riepilogo leggibile già mostrato all\'utente in chat' }
       },
-      required: ['table', 'action', 'id', 'payload', 'summary']
+      required: ['table', 'action', 'payload', 'summary']
     }
   },
   {
@@ -3082,10 +3083,34 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       }
 
       case 'propose_action': {
+        let recordId = toolInput.id;
+        // Risoluzione nome→id lato server: evita un giro get_workers separato
+        // quando il modello ha già il nome (caso comune: "la formazione di
+        // Mario scade il...") — risparmia un round-trip completo verso Claude.
+        if (!recordId && toolInput.table === 'workers' && toolInput.worker_name) {
+          const { data: found, error: findErr } = await supabase
+            .from('workers')
+            .select('id, full_name')
+            .eq('company_id', companyId)
+            .ilike('full_name', `%${toolInput.worker_name}%`)
+            .limit(5);
+          if (findErr) return { error: findErr.message };
+          if (!found || found.length === 0) {
+            return { error: `Nessun lavoratore trovato per "${toolInput.worker_name}"` };
+          }
+          if (found.length > 1) {
+            return {
+              error: 'NOME_AMBIGUO',
+              message: `Più lavoratori corrispondono a "${toolInput.worker_name}": ${found.map(w => w.full_name).join(', ')}. Chiedi all'utente quale intende, oppure usa get_workers per l'id esatto.`,
+            };
+          }
+          recordId = found[0].id;
+        }
+        if (!recordId) return { error: `${toolInput.table === 'workers' ? 'id o worker_name' : 'id'} obbligatorio` };
         return await ladiaGenericTools.proposeAction({
           resource: toolInput.table,
           action: toolInput.action,
-          recordId: toolInput.id,
+          recordId,
           payload: toolInput.payload,
           summary: toolInput.summary,
           companyId, userId,
