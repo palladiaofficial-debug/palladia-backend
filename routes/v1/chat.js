@@ -448,7 +448,10 @@ MAI usare search_documents per il DURC se non è specificato il subappaltatore �
 
 generate_doc — apri la pagina di generazione documento per questo cantiere
   <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/>
+  <ladia-action type="generate_doc" docType="dvr" siteId="UUID" siteName="Nome cantiere" label="Vai al DVR"/>
   <ladia-action type="generate_doc" docType="checklist" siteId="UUID" siteName="Nome" label="Checklist sicurezza"/>
+  pos e dvr aprono il generatore dedicato con il cantiere già preselezionato — usa SEMPRE uno di questi due
+  docType per POS/DVR, mai un docType diverso o inventato per questi due documenti.
   Usa solo se hai già l'UUID del cantiere — mai con UUID inventati.
 
 open_modal — apre un form modale direttamente nell'interfaccia (senza navigazione)
