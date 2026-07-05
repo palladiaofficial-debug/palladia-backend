@@ -32,6 +32,7 @@ const { generateBudgetProposal } = require('./ladiaSmartProposal');
 const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 const { runComplianceChecks }    = require('./complianceEngine');
 const { sendPushToCompany }      = require('./pushNotifications');
+const { upsertNotification }     = require('./expiryHelper');
 
 // ── Costanti ──────────────────────────────────────────────────
 const RAIN_THRESHOLD    = 50;  // % probabilità pioggia per triggare alert
@@ -151,32 +152,49 @@ async function safeSend(chatId, text, opts = {}) {
   }
 }
 
-// ── Ponte verso il canale Web Push (Fase "Ladia proattiva ovunque") ──────────
-// I trigger sotto parlavano SOLO con Telegram: la logica (le 11 regole) e il
-// canale push (VAPID + service worker) esistevano entrambi già, ma non erano
-// mai stati collegati — chi usa solo la web-app/PWA non riceveva nulla.
+// ── Ponte verso Web Push + badge in-app (Fase "Ladia proattiva ovunque") ─────
+// I trigger sotto parlavano SOLO con Telegram: la logica (le 11 regole), il
+// canale push (VAPID + service worker) e la tabella `notifications` (già
+// popolata da altri moduli — meteo, scadenze — e già mostrata come badge in
+// Navbar) esistevano tutti e tre già, ma non erano mai stati collegati — chi
+// usa solo la web-app/PWA non vedeva nulla, né come notifica push né come
+// pallino sulla campanella.
 //
 // Il dedup esistente (alreadySent/markSent) è per chat_id Telegram: se più
 // utenti Telegram della stessa azienda condividono lo stesso active_site_id,
 // lo stesso evento passa il check una volta per ciascuno (corretto per
-// Telegram, un messaggio a testa). Per il push, che è un BROADCAST a tutta
-// l'azienda (sendPushToCompany), questo andrebbe rimandato una volta per ogni
-// utente Telegram sullo stesso sito — riusiamo lo stesso meccanismo di dedup
-// con una chiave sintetica 'push:<companyId>' al posto del chat_id, così la
-// company riceve un solo push per evento indipendentemente da quanti utenti
-// Telegram lo attraversano nello stesso giro del cron.
+// Telegram, un messaggio a testa). Push e notifica in-app sono invece un
+// BROADCAST a tutta l'azienda — riusiamo lo stesso meccanismo di dedup con
+// una chiave sintetica 'push:<companyId>' al posto del chat_id, così la
+// company riceve un solo push/notifica per evento indipendentemente da
+// quanti utenti Telegram lo attraversano nello stesso giro del cron.
+// upsertNotification() è comunque già di per sé sicura da richiamare più
+// volte con lo stesso contenuto (upsert su company_id+entity_type+entity_id+
+// type, stesso pattern già usato da weatherAlertCron/siteWeather.js) — il
+// wrapper unico esiste soprattutto per il dedup del push.
 function stripHtml(s) {
   return String(s || '').replace(/<[^>]+>/g, '');
 }
 
-async function notifyPush(entry, triggerType, triggerKey, payload) {
+async function notifyCompany(entry, triggerType, triggerKey, { severity, title, body, tag, url, requireInteraction }) {
   const pushChatId = `push:${entry.companyId}`;
   if (await alreadySent(pushChatId, triggerType, triggerKey)) return;
+
   try {
-    await sendPushToCompany(entry.companyId, payload);
+    await sendPushToCompany(entry.companyId, { title, body, tag, url, requireInteraction });
   } catch (err) {
     console.error(`[ladiaProactive] push ${triggerType} company=${entry.companyId} failed:`, err.message);
   }
+
+  try {
+    await upsertNotification({
+      companyId: entry.companyId, type: triggerType, severity, title, body,
+      entityType: 'site', entityId: entry.siteId,
+    });
+  } catch (err) {
+    console.error(`[ladiaProactive] notifica in-app ${triggerType} company=${entry.companyId} failed:`, err.message);
+  }
+
   await markSent(pushChatId, triggerType, triggerKey, entry.companyId, entry.siteId);
 }
 
@@ -216,7 +234,8 @@ async function checkRainAlert(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'rain_alert', key, companyId, siteId);
-  await notifyPush(entry, 'rain_alert', key, {
+  await notifyCompany(entry, 'rain_alert', key, {
+    severity: tomorrow.precipProb >= 70 ? 'warning' : 'info',
     title: `${icon} Pioggia domani — ${siteName}`,
     body:  `Probabilità ${tomorrow.precipProb}%${tomorrow.description ? ' — ' + tomorrow.description : ''}. Valuta uno spostamento per gettate/opere esterne.`,
     tag:   `rain-${siteId}`,
@@ -274,7 +293,8 @@ async function checkNcStale(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'nc_stale_batch', key, companyId, siteId);
-  await notifyPush(entry, 'nc_stale_batch', key, {
+  await notifyCompany(entry, 'nc_stale_batch', key, {
+    severity: hasCritica ? 'critical' : 'warning',
     title: `${icon} ${staleNcs.length} NC non risolte — ${siteName}`,
     body:  staleNcs.map(nc => stripHtml(nc.ai_summary || nc.content || '')).slice(0, 2).join(' · ').slice(0, 120),
     tag:   `nc-stale-${siteId}`,
@@ -339,7 +359,8 @@ async function checkBudgetAlert(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'budget_alert', key, companyId, siteId);
-  await notifyPush(entry, 'budget_alert', key, {
+  await notifyCompany(entry, 'budget_alert', key, {
+    severity: spendPct >= 95 ? 'critical' : 'warning',
     title: `📊 Budget ${spendPct}% — ${siteName}`,
     body:  `${costiStr} su ${budgetStr}, SAL ${salPct}%. Rischio sforamento.`,
     tag:   `budget-${siteId}`,
@@ -390,7 +411,8 @@ async function checkInactivity(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'inactivity', key, companyId, siteId);
-  await notifyPush(entry, 'inactivity', key, {
+  await notifyCompany(entry, 'inactivity', key, {
+    severity: 'info',
     title: `👋 Cantiere fermo — ${siteName}`,
     body:  `Nessun aggiornamento da ${INACTIVITY_DAYS} giorni.`,
     tag:   `inactive-${siteId}`,
@@ -470,7 +492,8 @@ async function checkDocExpiry(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'doc_expiry_batch', batchKey, companyId, siteId);
-  await notifyPush(entry, 'doc_expiry_batch', batchKey, {
+  await notifyCompany(entry, 'doc_expiry_batch', batchKey, {
+    severity: hasCritica ? 'critical' : 'warning',
     title: `${icon} Scadenze documenti — ${siteName}`,
     body:  lines.map(stripHtml).join(' · ').slice(0, 120),
     tag:   `doc-expiry-${siteId}`,
@@ -520,7 +543,8 @@ async function checkHeatWarning(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'heat_alert', key, companyId, siteId);
-  await notifyPush(entry, 'heat_alert', key, {
+  await notifyCompany(entry, 'heat_alert', key, {
+    severity: 'warning',
     title: `🌡️ Caldo estremo — ${siteName}`,
     body:  `Massima prevista ${today.tempMax}°C. Misure obbligatorie D.Lgs. 81/2008 art. 28.`,
     tag:   `heat-${siteId}`,
@@ -570,7 +594,8 @@ async function checkMidMorningPresences(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'mid_morning', key, companyId, siteId);
-  await notifyPush(entry, 'mid_morning', key, {
+  await notifyCompany(entry, 'mid_morning', key, {
+    severity: 'info',
     title: `👀 Nessuna timbratura — ${siteName}`,
     body:  `Ore ${MID_MORNING_HOUR}:00, zero presenze registrate oggi.`,
     tag:   `midmorning-${siteId}`,
@@ -622,7 +647,8 @@ async function checkRepeatedNcPattern(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'nc_pattern', key, companyId, siteId);
-  await notifyPush(entry, 'nc_pattern', key, {
+  await notifyCompany(entry, 'nc_pattern', key, {
+    severity: count >= 5 ? 'critical' : 'warning',
     title: `📈 Anomalia NC — ${siteName}`,
     body:  `${count} non conformità aperte negli ultimi ${NC_PATTERN_DAYS} giorni — possibile problema sistemico.`,
     tag:   `nc-pattern-${siteId}`,
@@ -695,7 +721,8 @@ async function checkSubcontractorDurc(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'sub_expiry', key, companyId, siteId);
-  await notifyPush(entry, 'sub_expiry', key, {
+  await notifyCompany(entry, 'sub_expiry', key, {
+    severity: lines.some(l => l.startsWith('🔴')) ? 'critical' : 'warning',
     title: `⚠️ Scadenze subappaltatori — ${siteName}`,
     body:  lines.map(stripHtml).join(' · ').slice(0, 120),
     tag:   `sub-expiry-${siteId}`,
@@ -755,7 +782,8 @@ async function checkEquipmentInsurance(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'equip_insurance', key, companyId, siteId);
-  await notifyPush(entry, 'equip_insurance', key, {
+  await notifyCompany(entry, 'equip_insurance', key, {
+    severity: lines.some(l => l.startsWith('🔴')) ? 'critical' : 'warning',
     title: `🚧 Scadenze mezzi — ${siteName}`,
     body:  lines.map(stripHtml).join(' · ').slice(0, 120),
     tag:   `equip-ins-${siteId}`,
@@ -843,7 +871,8 @@ async function checkComplianceRisk(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'compliance_risk', key, companyId, siteId);
-  await notifyPush(entry, 'compliance_risk', key, {
+  await notifyCompany(entry, 'compliance_risk', key, {
+    severity: criticalCount > 0 ? 'critical' : 'warning',
     title: `${scoreIcon} Rischio conformità — ${siteName}`,
     body:  stripHtml(riskItems.replace(/\n/g, ' · ')).slice(0, 120),
     tag:   `compliance-${siteId}`,
