@@ -14,6 +14,8 @@ const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConvers
 const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const { sendAiCreditExhaustedAlert } = require('../../services/email');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
+const { auditLog } = require('../../lib/audit');
+const { logAction } = require('../../lib/ladiaActionLog');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -2300,23 +2302,29 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .from('sites').select('id, name').eq('id', site_id).eq('company_id', companyId).maybeSingle();
         if (!site) return { error: 'SITE_NOT_FOUND' };
         const today = entry_date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+        const diaryRow = {
+          company_id: companyId,
+          site_id,
+          entry_date: today,
+          notes,
+          activities: activities || null,
+          issues:     issues     || null,
+          updated_at: new Date().toISOString(),
+          workers_snapshot:        [],
+          machinery_snapshot:      [],
+          subcontractors_snapshot: [],
+        };
         const { data, error } = await supabase
           .from('site_diary_entries')
-          .upsert({
-            company_id: companyId,
-            site_id,
-            entry_date: today,
-            notes,
-            activities: activities || null,
-            issues:     issues     || null,
-            updated_at: new Date().toISOString(),
-            workers_snapshot:        [],
-            machinery_snapshot:      [],
-            subcontractors_snapshot: [],
-          }, { onConflict: 'site_id,entry_date' })
+          .upsert(diaryRow, { onConflict: 'site_id,entry_date' })
           .select('id').single();
         if (error) return { error: 'DB_ERROR', detail: error.message };
-        return { success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_diary_entries', action: 'create', recordId: data.id,
+          record: data, changedFields: diaryRow,
+        });
+        return { success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes, ...logged };
       }
 
       case 'create_site_note': {
@@ -2325,21 +2333,27 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const { data: site } = await supabase
           .from('sites').select('id, name').eq('id', site_id).eq('company_id', companyId).maybeSingle();
         if (!site) return { error: 'SITE_NOT_FOUND' };
+        const noteRow = {
+          company_id:  companyId,
+          site_id,
+          author_id:   userId,
+          author_name: 'Ladia AI',
+          source:      'web',
+          content:     content.trim(),
+          category,
+          urgency,
+        };
         const { data, error } = await supabase
           .from('site_notes')
-          .insert({
-            company_id:  companyId,
-            site_id,
-            author_id:   userId,
-            author_name: 'Ladia AI',
-            source:      'web',
-            content:     content.trim(),
-            category,
-            urgency,
-          })
+          .insert(noteRow)
           .select('id').single();
         if (error) return { error: 'DB_ERROR', detail: error.message };
-        return { success: true, cantiere: site.name, note_id: data.id, category, urgency };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_notes', action: 'create', recordId: data.id,
+          record: data, changedFields: noteRow,
+        });
+        return { success: true, cantiere: site.name, note_id: data.id, category, urgency, ...logged };
       }
 
       case 'navigate_to_page': {
@@ -2840,7 +2854,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, spesa_creata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'company_expenses', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, spesa_creata: data, ...logged };
       }
 
       // ── 13 READ executors ────────────────────────────────────────────────────
@@ -3170,9 +3189,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (!toolInput.site_id) return { error: 'site_id obbligatorio' };
         const pct = Number(toolInput.sal_percentuale);
         if (isNaN(pct) || pct < 0 || pct > 100) return { error: 'sal_percentuale deve essere tra 0 e 100' };
-        const { data, error } = await supabase.from('sites').update({ sal_percentuale: pct }).eq('id', toolInput.site_id).eq('company_id', companyId).select('id, name, sal_percentuale').single();
-        if (error) return { error: error.message };
-        return { success: true, cantiere_aggiornato: data };
+        // Delega a updateRecord generico: 'sites' ha già 'sal_percentuale' come
+        // campo valido — così questa scrittura eredita gratis audit+undo+card
+        // (Fase "Cursor per Palladia", invece di duplicare la scrittura a mano).
+        const result = await ladiaGenericTools.updateRecord('sites', toolInput.site_id, { sal_percentuale: pct }, companyId, userId, req, { conversationId: convId });
+        if (result.error) return result;
+        return { ...result, changedFields: { sal_percentuale: pct }, cantiere_aggiornato: result.record };
       }
 
       case 'create_phase': {
@@ -3189,10 +3211,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         };
         const { data, error } = await supabase.from('site_phases').insert(row).select().single();
         if (error) return { error: error.message };
-        return { success: true, fase_creata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_phases', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, fase_creata: data, ...logged };
       }
 
       case 'update_phase': {
+        // Risoluzione nome→id: resta un pre-step bespoke (non delegabile a un
+        // update_record generico, che richiede già l'id) prima della scrittura
+        // vera e propria, loggata sotto via logAction().
         let phaseId = toolInput.phase_id;
         if (!phaseId && toolInput.site_id && toolInput.nome) {
           const { data: found } = await supabase.from('site_phases').select('id').eq('site_id', toolInput.site_id).eq('company_id', companyId).ilike('nome', `%${toolInput.nome}%`).limit(1);
@@ -3205,9 +3235,16 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           if (toolInput[k] !== undefined && toolInput[k] !== null) patch[k] = toolInput[k];
         });
         if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
+        const { data: phaseBefore } = await supabase
+          .from('site_phases').select(Object.keys(patch).join(',')).eq('id', phaseId).eq('company_id', companyId).single();
         const { data, error } = await supabase.from('site_phases').update(patch).eq('id', phaseId).eq('company_id', companyId).select().single();
         if (error) return { error: error.message };
-        return { success: true, fase_aggiornata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_phases', action: 'update', recordId: phaseId,
+          record: data, previousValues: phaseBefore || {}, changedFields: patch,
+        });
+        return { success: true, fase_aggiornata: data, ...logged };
       }
 
       // ── Nuovi tool executor — copertura completa cantiere ─────────────────────
@@ -3246,13 +3283,21 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, voce_creata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_economia_voci', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, voce_creata: data, ...logged };
       }
 
       case 'resolve_nonconformity': {
+        // La select includeva solo id/resolved_at: existing.body era sempre
+        // undefined e ogni risoluzione con note SOVRASCRIVEVA il corpo della NC
+        // invece di accodare — bug preesistente, corretto qui includendo 'body'.
         const { data: existing } = await supabase
           .from('site_notes')
-          .select('id, resolved_at')
+          .select('id, body, resolved_at')
           .eq('id', toolInput.nc_id)
           .eq('company_id', companyId)
           .eq('category', 'non_conformita')
@@ -3272,7 +3317,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, nc_risolta: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_notes', action: 'update', recordId: toolInput.nc_id,
+          record: data, previousValues: { resolved_at: null, resolved_by: null, body: existing.body }, changedFields: patch,
+        });
+        return { success: true, nc_risolta: data, ...logged };
       }
 
       case 'create_site_cost': {
@@ -3293,7 +3343,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, costo_registrato: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_costs', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, costo_registrato: data, ...logged };
       }
 
       case 'remove_worker_from_site': {
@@ -3307,7 +3362,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message || 'Assegnazione non trovata.' };
-        return { success: true, message: 'Lavoratore rimosso dal cantiere.' };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'worksite_workers', action: 'update', recordId: data.id,
+          record: data, previousValues: { status: 'active' }, changedFields: { status: 'inactive' },
+        });
+        return { success: true, message: 'Lavoratore rimosso dal cantiere.', ...logged };
       }
 
       case 'create_subcontractor': {
@@ -3328,7 +3388,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, subappaltatore_creato: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'subcontractors', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, subappaltatore_creato: data, ...logged };
       }
 
       case 'assign_subcontractor_to_site': {
@@ -3339,17 +3404,23 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .eq('site_id', toolInput.site_id)
           .maybeSingle();
         if (existing) return { success: true, message: 'Subappaltatore già assegnato a questo cantiere.' };
+        const assignRow = {
+          subcontractor_id: toolInput.subcontractor_id,
+          site_id: toolInput.site_id,
+          company_id: companyId,
+        };
         const { data, error } = await supabase
           .from('site_subcontractors')
-          .insert({
-            subcontractor_id: toolInput.subcontractor_id,
-            site_id: toolInput.site_id,
-            company_id: companyId,
-          })
+          .insert(assignRow)
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, assegnazione_creata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_subcontractors', action: 'create', recordId: data.id,
+          record: data, changedFields: assignRow,
+        });
+        return { success: true, assegnazione_creata: data, ...logged };
       }
 
       case 'create_equipment': {
@@ -3369,7 +3440,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, mezzo_creato: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'equipment', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, mezzo_creato: data, ...logged };
       }
 
       case 'assign_equipment_to_site': {
@@ -3380,17 +3456,23 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .eq('site_id', toolInput.site_id)
           .maybeSingle();
         if (existing) return { success: true, message: 'Mezzo già assegnato a questo cantiere.' };
+        const equipAssignRow = {
+          equipment_id: toolInput.equipment_id,
+          site_id: toolInput.site_id,
+          company_id: companyId,
+        };
         const { data, error } = await supabase
           .from('site_equipment')
-          .insert({
-            equipment_id: toolInput.equipment_id,
-            site_id: toolInput.site_id,
-            company_id: companyId,
-          })
+          .insert(equipAssignRow)
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, assegnazione_creata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_equipment', action: 'create', recordId: data.id,
+          record: data, changedFields: equipAssignRow,
+        });
+        return { success: true, assegnazione_creata: data, ...logged };
       }
 
       case 'get_payslips': {
@@ -3464,7 +3546,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         };
         const { data, error } = await supabase.from('company_expenses').insert(row).select().single();
         if (error) return { error: error.message };
-        return { success: true, spesa_creata: data, messaggio: `Spesa di €${toolInput.amount} da "${toolInput.vendor || 'fornitore'}" registrata correttamente.` };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'company_expenses', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, spesa_creata: data, messaggio: `Spesa di €${toolInput.amount} da "${toolInput.vendor || 'fornitore'}" registrata correttamente.`, ...logged };
       }
 
       case 'create_ddt_from_image': {
@@ -3481,7 +3568,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         };
         const { data, error } = await supabase.from('site_costs').insert(row).select().single();
         if (error) return { error: error.message };
-        return { success: true, ddt_registrato: data, messaggio: `DDT${toolInput.ddt_number ? ' n.' + toolInput.ddt_number : ''} da "${toolInput.vendor || 'mittente'}" registrato correttamente.` };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_costs', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, ddt_registrato: data, messaggio: `DDT${toolInput.ddt_number ? ' n.' + toolInput.ddt_number : ''} da "${toolInput.vendor || 'mittente'}" registrato correttamente.`, ...logged };
       }
 
       case 'archive_document_image': {
@@ -3496,7 +3588,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         };
         const { data, error } = await supabase.from('site_notes').insert(row).select().single();
         if (error) return { error: error.message };
-        return { success: true, documento_archiviato: data, messaggio: `Documento "${toolInput.title}" archiviato correttamente.` };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_notes', action: 'create', recordId: data.id,
+          record: data, changedFields: row,
+        });
+        return { success: true, documento_archiviato: data, messaggio: `Documento "${toolInput.title}" archiviato correttamente.`, ...logged };
       }
 
       case 'leggi_documento_pdf': {
@@ -3555,6 +3652,8 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (isNaN(pct) || pct < 0 || pct > 100) return { error: 'sal_percentuale deve essere tra 0 e 100' };
         const patch = { sal_percentuale: pct };
         if (sal_note !== undefined && sal_note !== null) patch.sal_note = sal_note;
+        const { data: salVoceBefore } = await supabase
+          .from('site_computo_voci').select(Object.keys(patch).join(',')).eq('id', voce_id).eq('company_id', companyId).single();
         const { data, error } = await supabase
           .from('site_computo_voci')
           .update(patch)
@@ -3563,7 +3662,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select('id, descrizione, sal_percentuale, sal_note, importo')
           .single();
         if (error) return { error: error.message };
-        return { success: true, voce_aggiornata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_computo_voci', action: 'update', recordId: voce_id,
+          record: data, previousValues: salVoceBefore || {}, changedFields: patch,
+        });
+        return { success: true, voce_aggiornata: data, ...logged };
       }
 
       case 'update_prezzo_voce': {
@@ -3582,6 +3686,8 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const patch = { prezzo_unitario: prezzo };
         if (importo != null) patch.importo = importo;
         if (unita_misura) patch.unita_misura = unita_misura;
+        const { data: prezzoBefore } = await supabase
+          .from('site_computo_voci').select(Object.keys(patch).join(',')).eq('id', voce_id).eq('company_id', companyId).single();
         const { data, error } = await supabase
           .from('site_computo_voci')
           .update(patch)
@@ -3590,7 +3696,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select('id, descrizione, prezzo_unitario, quantita, unita_misura, importo')
           .single();
         if (error) return { error: error.message };
-        return { success: true, voce_aggiornata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_computo_voci', action: 'update', recordId: voce_id,
+          record: data, previousValues: prezzoBefore || {}, changedFields: patch,
+        });
+        return { success: true, voce_aggiornata: data, ...logged };
       }
 
       case 'update_economia_voce': {
@@ -3601,6 +3712,10 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           if (rest[k] !== undefined && rest[k] !== null) patch[k] = rest[k];
         });
         if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
+        const { data: economiaBefore } = await supabase
+          .from('site_economia_voci')
+          .select(Object.keys(patch).join(','))
+          .eq('id', voce_id).eq('site_id', site_id).eq('company_id', companyId).single();
         const { data, error } = await supabase
           .from('site_economia_voci')
           .update(patch)
@@ -3610,7 +3725,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
-        return { success: true, voce_aggiornata: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_economia_voci', action: 'update', recordId: voce_id,
+          record: data, previousValues: economiaBefore || {}, changedFields: patch,
+        });
+        return { success: true, voce_aggiornata: data, ...logged };
       }
 
       case 'delete_economia_voce': {
@@ -3618,7 +3738,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (!site_id || !voce_id) return { error: 'site_id e voce_id obbligatori' };
         const { data: preview } = await supabase
           .from('site_economia_voci')
-          .select('voce, importo, tipo')
+          .select('*')
           .eq('id', voce_id)
           .eq('site_id', site_id)
           .eq('company_id', companyId)
@@ -3631,7 +3751,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .eq('site_id', site_id)
           .eq('company_id', companyId);
         if (error) return { error: error.message };
-        return { success: true, voce_eliminata: preview };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_economia_voci', action: 'delete', recordId: voce_id,
+          fullRowSnapshot: preview,
+        });
+        return { success: true, voce_eliminata: preview, ...logged };
       }
 
       case 'emit_sal': {
@@ -3717,6 +3842,11 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const { data: sal, error: salErr } = await supabase
           .from('site_sal_history').insert(snapshot).select().single();
         if (salErr) return { error: salErr.message };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_sal_history', action: 'create', recordId: sal.id,
+          record: sal, changedFields: snapshot,
+        });
         return {
           success: true,
           sal_emesso: {
@@ -3728,25 +3858,35 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
             margine: sal.margine, margine_percentuale: sal.margine_percentuale,
           },
           nota: 'SAL registrato con snapshot P&L completo. Scarica il PDF dalla sezione Economia → Storico SAL.',
+          ...logged,
         };
       }
 
       case 'mark_sal_pagato': {
         const { site_id, sal_id, pagato_il } = toolInput;
         if (!site_id || !sal_id) return { error: 'site_id e sal_id obbligatori' };
+        const { data: salBefore } = await supabase
+          .from('site_sal_history').select('pagato_il').eq('id', sal_id).eq('site_id', site_id).eq('company_id', companyId).single();
+        const patch = { pagato_il: pagato_il || null };
         const { data, error } = await supabase
           .from('site_sal_history')
-          .update({ pagato_il: pagato_il || null })
+          .update(patch)
           .eq('id', sal_id)
           .eq('site_id', site_id)
           .eq('company_id', companyId)
           .select('id, sal_number, sal_percentuale, importo_maturato, data_emissione, pagato_il')
           .single();
         if (error) return { error: error.message };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_sal_history', action: 'update', recordId: sal_id,
+          record: data, previousValues: salBefore || {}, changedFields: patch,
+        });
         return {
           success: true,
           sal: data,
           stato: data.pagato_il ? `SAL ${data.sal_number} segnato come incassato il ${data.pagato_il}` : `SAL ${data.sal_number} — incasso annullato`,
+          ...logged,
         };
       }
 
@@ -3827,6 +3967,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         ) / 100;
         await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', computo.id);
 
+        await auditLog({ companyId, userId, action: 'record.create:site_computo_voci', targetType: 'site_computo_voci', targetId: voce.id, payload: row, req });
         return { success: true, voce_creata: voce, nuovo_totale_contratto: newTotale };
       }
 
@@ -3858,6 +3999,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         ) / 100;
         await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', voce.computo_id);
 
+        await auditLog({ companyId, userId, action: 'record.delete:site_computo_voci', targetType: 'site_computo_voci', targetId: voce_id, payload: voce, req });
         return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale };
       }
 
@@ -3905,25 +4047,32 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .order('numero_variante', { ascending: false }).limit(1).maybeSingle();
         const numero = (lastVar?.numero_variante || 0) + 1;
 
+        const varianteRow = {
+          company_id: companyId, site_id,
+          nome: `Variante n. ${numero}`,
+          fonte: 'manuale', tipo: 'variante',
+          numero_variante: numero,
+          motivazione,
+          stato,
+          data_approvazione: data_approvazione || null,
+          totale_contratto: 0,
+          created_by: userId || null,
+        };
         const { data: variante, error } = await supabase
           .from('site_computo')
-          .insert({
-            company_id: companyId, site_id,
-            nome: `Variante n. ${numero}`,
-            fonte: 'manuale', tipo: 'variante',
-            numero_variante: numero,
-            motivazione,
-            stato,
-            data_approvazione: data_approvazione || null,
-            totale_contratto: 0,
-            created_by: userId || null,
-          })
+          .insert(varianteRow)
           .select().single();
         if (error) return { error: error.message };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_computo', action: 'create', recordId: variante.id,
+          record: variante, changedFields: varianteRow,
+        });
         return {
           success: true,
           variante: { id: variante.id, numero: variante.numero_variante, stato: variante.stato, motivazione: variante.motivazione },
           istruzione: `Variante ${numero} creata. Aggiungi voci con create_computo_voce passando variante_id: "${variante.id}"`,
+          ...logged,
         };
       }
 
@@ -3935,6 +4084,8 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (motivazione       !== undefined) patch.motivazione       = motivazione;
         if (data_approvazione !== undefined) patch.data_approvazione = data_approvazione || null;
         if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare' };
+        const { data: varianteBefore } = await supabase
+          .from('site_computo').select(Object.keys(patch).join(',')).eq('id', variante_id).eq('company_id', companyId).eq('tipo', 'variante').single();
         const { data, error } = await supabase
           .from('site_computo')
           .update(patch)
@@ -3943,7 +4094,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .single();
         if (error) return { error: error.message };
         if (!data)  return { error: 'Variante non trovata' };
-        return { success: true, variante: data };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_computo', action: 'update', recordId: variante_id,
+          record: data, previousValues: varianteBefore || {}, changedFields: patch,
+        });
+        return { success: true, variante: data, ...logged };
       }
 
       case 'update_budget_cantiere': {
@@ -3960,15 +4116,9 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           patch.sal_percentuale = pct;
         }
 
-        const { data, error } = await supabase
-          .from('sites')
-          .update(patch)
-          .eq('id', site_id)
-          .eq('company_id', companyId)
-          .select('id, name, budget_totale, sal_percentuale')
-          .single();
-        if (error) return { error: error.message };
-        return { success: true, cantiere: data };
+        const result = await ladiaGenericTools.updateRecord('sites', site_id, patch, companyId, userId, req, { conversationId: convId });
+        if (result.error) return result;
+        return { ...result, changedFields: patch, cantiere: result.record };
       }
 
       // ── Document intelligence ─────────────────────────────────────────────────
@@ -4484,6 +4634,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         await supabase.from('chat_uploads').update({ archived: true }).eq('id', upload_id);
         supabase.storage.from('site-documents').remove([upload.storage_path]).catch(() => {});
 
+        await auditLog({ companyId, userId, action: `record.create:${destination}`, targetType: destination, targetId: docId, payload: { name, category, site_id, worker_id, expiry_date }, req });
         return {
           success:     true,
           doc_id:      docId,
@@ -4502,9 +4653,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (uwE !== undefined)                   patch.employer_name          = uwE;
         if (uwActive !== undefined)              patch.is_active              = uwActive;
         if (!Object.keys(patch).length) return { error: 'Nessun campo da aggiornare fornito.' };
-        const { data: updated, error: uwe } = await supabase.from('workers').update(patch).eq('company_id', companyId).eq('id', uwId).select('id, full_name').single();
+        const { data: uwBefore } = await supabase.from('workers').select(Object.keys(patch).join(',')).eq('company_id', companyId).eq('id', uwId).single();
+        const { data: updated, error: uwe } = await supabase.from('workers').update(patch).eq('company_id', companyId).eq('id', uwId).select('id, full_name, ' + Object.keys(patch).join(',')).single();
         if (uwe) return { error: uwe.message };
-        return { ok: true, worker: updated, message: `Lavoratore "${updated.full_name}" aggiornato.` };
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'workers', action: 'update', recordId: uwId,
+          record: updated, previousValues: uwBefore || {}, changedFields: patch,
+        });
+        return { ok: true, success: true, worker: updated, message: `Lavoratore "${updated.full_name}" aggiornato.`, ...logged };
       }
 
       case 'get_company_trends': {
@@ -5468,33 +5625,42 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               campi_precedenti: campiPrecedenti,
               action_history_id: result.actionHistoryId || null,
             });
-          } else if ((block.name === 'create_record' || block.name === 'update_record' || block.name === 'delete_record') && result.success && result.actionHistoryId) {
-            // Scrittura su una risorsa diversa da "sites" (che ha già la sua card
-            // dedicata sopra) — card generica "Annulla" per qualsiasi altra
-            // create_record/update_record/delete_record eseguita a basso rischio.
-            // Stesso trattamento diff prima→dopo di cantiere_aggiornato: updateRecord
-            // già cattura "previous" per QUALSIASI risorsa (Fase 3), qui lo esponiamo.
-            const campi = {};
-            const campiPrecedenti = {};
-            if (result.record) {
-              const keys = block.name === 'create_record'
-                ? Object.keys(block.input?.payload || {})
-                : Object.keys(block.input?.payload || {});
+          } else if (result.success && result.actionHistoryId) {
+            // Card generica "Annulla" per QUALUNQUE tool di scrittura (generico
+            // create_record/update_record/delete_record O bespoke via logAction())
+            // che abbia registrato l'azione in ladia_action_history — non più
+            // condizionata al nome del tool, altrimenti ogni nuovo tool bespoke
+            // resterebbe invisibile finché qualcuno non cabla un caso apposta qui.
+            let campi = null;
+            let campiPrecedenti = null;
+            if (result.changedFields) {
+              // Tool bespoke via logAction(): i campi scritti sono già espliciti.
+              campi = result.changedFields;
+              campiPrecedenti = result.previous || null;
+            } else if (result.record) {
+              // create_record/update_record generici: deriva i campi toccati da
+              // block.input.payload (updateRecord/createRecord non li ritornano
+              // esplicitamente, solo il record intero + "previous").
+              const keys = Object.keys(block.input?.payload || {});
+              const c = {};
+              const cp = {};
               for (const key of keys) {
                 if (key in result.record) {
-                  campi[key] = result.record[key];
-                  if (result.previous && key in result.previous) campiPrecedenti[key] = result.previous[key];
+                  c[key] = result.record[key];
+                  if (result.previous && key in result.previous) cp[key] = result.previous[key];
                 }
               }
+              campi = Object.keys(c).length > 0 ? c : null;
+              campiPrecedenti = Object.keys(cp).length > 0 ? cp : null;
             }
             send({
               type:               'record_action',
-              resource:           block.input?.table || null,
-              action:             result.record ? (block.name === 'create_record' ? 'create' : 'update') : 'delete',
-              summary:            result.undoSummary || null,
+              resource:           result.resource || block.input?.table || null,
+              action:             result.action || (result.record ? 'update' : 'delete'),
+              summary:            result.undoSummary || result.summary || null,
               action_history_id:  result.actionHistoryId,
-              campi:              Object.keys(campi).length > 0 ? campi : null,
-              campi_precedenti:   Object.keys(campiPrecedenti).length > 0 ? campiPrecedenti : null,
+              campi,
+              campi_precedenti:   campiPrecedenti,
             });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
