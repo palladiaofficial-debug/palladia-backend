@@ -31,6 +31,7 @@ const { getForecast }            = require('./weatherService');
 const { generateBudgetProposal } = require('./ladiaSmartProposal');
 const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 const { runComplianceChecks }    = require('./complianceEngine');
+const { sendPushToCompany }      = require('./pushNotifications');
 
 // ── Costanti ──────────────────────────────────────────────────
 const RAIN_THRESHOLD    = 50;  // % probabilità pioggia per triggare alert
@@ -150,6 +151,35 @@ async function safeSend(chatId, text, opts = {}) {
   }
 }
 
+// ── Ponte verso il canale Web Push (Fase "Ladia proattiva ovunque") ──────────
+// I trigger sotto parlavano SOLO con Telegram: la logica (le 11 regole) e il
+// canale push (VAPID + service worker) esistevano entrambi già, ma non erano
+// mai stati collegati — chi usa solo la web-app/PWA non riceveva nulla.
+//
+// Il dedup esistente (alreadySent/markSent) è per chat_id Telegram: se più
+// utenti Telegram della stessa azienda condividono lo stesso active_site_id,
+// lo stesso evento passa il check una volta per ciascuno (corretto per
+// Telegram, un messaggio a testa). Per il push, che è un BROADCAST a tutta
+// l'azienda (sendPushToCompany), questo andrebbe rimandato una volta per ogni
+// utente Telegram sullo stesso sito — riusiamo lo stesso meccanismo di dedup
+// con una chiave sintetica 'push:<companyId>' al posto del chat_id, così la
+// company riceve un solo push per evento indipendentemente da quanti utenti
+// Telegram lo attraversano nello stesso giro del cron.
+function stripHtml(s) {
+  return String(s || '').replace(/<[^>]+>/g, '');
+}
+
+async function notifyPush(entry, triggerType, triggerKey, payload) {
+  const pushChatId = `push:${entry.companyId}`;
+  if (await alreadySent(pushChatId, triggerType, triggerKey)) return;
+  try {
+    await sendPushToCompany(entry.companyId, payload);
+  } catch (err) {
+    console.error(`[ladiaProactive] push ${triggerType} company=${entry.companyId} failed:`, err.message);
+  }
+  await markSent(pushChatId, triggerType, triggerKey, entry.companyId, entry.siteId);
+}
+
 // ── Trigger 1: Pioggia domani ─────────────────────────────────
 
 async function checkRainAlert(entry) {
@@ -186,6 +216,12 @@ async function checkRainAlert(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'rain_alert', key, companyId, siteId);
+  await notifyPush(entry, 'rain_alert', key, {
+    title: `${icon} Pioggia domani — ${siteName}`,
+    body:  `Probabilità ${tomorrow.precipProb}%${tomorrow.description ? ' — ' + tomorrow.description : ''}. Valuta uno spostamento per gettate/opere esterne.`,
+    tag:   `rain-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] rain_alert → chat ${chatId} — ${siteName} (${tomorrow.precipProb}%)`);
 }
 
@@ -238,6 +274,13 @@ async function checkNcStale(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'nc_stale_batch', key, companyId, siteId);
+  await notifyPush(entry, 'nc_stale_batch', key, {
+    title: `${icon} ${staleNcs.length} NC non risolte — ${siteName}`,
+    body:  staleNcs.map(nc => stripHtml(nc.ai_summary || nc.content || '')).slice(0, 2).join(' · ').slice(0, 120),
+    tag:   `nc-stale-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+    requireInteraction: hasCritica,
+  });
   console.log(`[ladiaProactive] nc_stale_batch → chat ${chatId} — ${siteName} (${staleNcs.length} NC)`);
 }
 
@@ -296,6 +339,13 @@ async function checkBudgetAlert(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'budget_alert', key, companyId, siteId);
+  await notifyPush(entry, 'budget_alert', key, {
+    title: `📊 Budget ${spendPct}% — ${siteName}`,
+    body:  `${costiStr} su ${budgetStr}, SAL ${salPct}%. Rischio sforamento.`,
+    tag:   `budget-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+    requireInteraction: spendPct >= 95,
+  });
   console.log(`[ladiaProactive] budget_alert → chat ${chatId} — ${siteName} (${spendPct}%)`);
 }
 
@@ -340,6 +390,12 @@ async function checkInactivity(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'inactivity', key, companyId, siteId);
+  await notifyPush(entry, 'inactivity', key, {
+    title: `👋 Cantiere fermo — ${siteName}`,
+    body:  `Nessun aggiornamento da ${INACTIVITY_DAYS} giorni.`,
+    tag:   `inactive-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] inactivity → chat ${chatId} — ${siteName}`);
 }
 
@@ -414,6 +470,13 @@ async function checkDocExpiry(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'doc_expiry_batch', batchKey, companyId, siteId);
+  await notifyPush(entry, 'doc_expiry_batch', batchKey, {
+    title: `${icon} Scadenze documenti — ${siteName}`,
+    body:  lines.map(stripHtml).join(' · ').slice(0, 120),
+    tag:   `doc-expiry-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+    requireInteraction: hasCritica,
+  });
   console.log(`[ladiaProactive] doc_expiry_batch → chat ${chatId} — ${siteName} (${lines.length} scadenze)`);
 }
 
@@ -457,6 +520,12 @@ async function checkHeatWarning(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'heat_alert', key, companyId, siteId);
+  await notifyPush(entry, 'heat_alert', key, {
+    title: `🌡️ Caldo estremo — ${siteName}`,
+    body:  `Massima prevista ${today.tempMax}°C. Misure obbligatorie D.Lgs. 81/2008 art. 28.`,
+    tag:   `heat-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] heat_alert → chat ${chatId} — ${siteName} (${today.tempMax}°C)`);
 }
 
@@ -501,6 +570,12 @@ async function checkMidMorningPresences(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'mid_morning', key, companyId, siteId);
+  await notifyPush(entry, 'mid_morning', key, {
+    title: `👀 Nessuna timbratura — ${siteName}`,
+    body:  `Ore ${MID_MORNING_HOUR}:00, zero presenze registrate oggi.`,
+    tag:   `midmorning-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] mid_morning_presences → chat ${chatId} — ${siteName} (0 presenze)`);
 }
 
@@ -547,6 +622,12 @@ async function checkRepeatedNcPattern(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'nc_pattern', key, companyId, siteId);
+  await notifyPush(entry, 'nc_pattern', key, {
+    title: `📈 Anomalia NC — ${siteName}`,
+    body:  `${count} non conformità aperte negli ultimi ${NC_PATTERN_DAYS} giorni — possibile problema sistemico.`,
+    tag:   `nc-pattern-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] nc_pattern → chat ${chatId} — ${siteName} (${count} NC aperte)`);
 }
 
@@ -614,6 +695,12 @@ async function checkSubcontractorDurc(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'sub_expiry', key, companyId, siteId);
+  await notifyPush(entry, 'sub_expiry', key, {
+    title: `⚠️ Scadenze subappaltatori — ${siteName}`,
+    body:  lines.map(stripHtml).join(' · ').slice(0, 120),
+    tag:   `sub-expiry-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] sub_expiry → chat ${chatId} — ${siteName} (${lines.length} scadenze)`);
 }
 
@@ -668,6 +755,12 @@ async function checkEquipmentInsurance(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'equip_insurance', key, companyId, siteId);
+  await notifyPush(entry, 'equip_insurance', key, {
+    title: `🚧 Scadenze mezzi — ${siteName}`,
+    body:  lines.map(stripHtml).join(' · ').slice(0, 120),
+    tag:   `equip-ins-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+  });
   console.log(`[ladiaProactive] equip_insurance → chat ${chatId} — ${siteName} (${lines.length} scadenze)`);
 }
 
@@ -750,6 +843,13 @@ async function checkComplianceRisk(entry) {
 
   await safeSend(chatId, text, { replyMarkup: keyboard });
   await markSent(chatId, 'compliance_risk', key, companyId, siteId);
+  await notifyPush(entry, 'compliance_risk', key, {
+    title: `${scoreIcon} Rischio conformità — ${siteName}`,
+    body:  stripHtml(riskItems.replace(/\n/g, ' · ')).slice(0, 120),
+    tag:   `compliance-${siteId}`,
+    url:   `/cantieri/${siteId}`,
+    requireInteraction: criticalCount > 0,
+  });
   console.log(`[ladiaProactive] compliance_risk → chat ${chatId} — ${siteName} (crit=${criticalCount}, warn=${warnCount})`);
 }
 
