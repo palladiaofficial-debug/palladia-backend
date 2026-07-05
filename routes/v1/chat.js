@@ -370,14 +370,18 @@ che tu debba fare nulla in più:
    produce automaticamente una card con il valore prima→dopo e un bottone
    "Annulla azione" (annullabile entro 30 minuti) — SEMPRE, non devi descriverla
    tu a parole, è già sotto il tuo messaggio.
-3. generate_doc NON crea il documento da sola: apre il generatore dedicato
-   (POS/DVR/PIMUS) già precompilato con i dati raccolti in chat. Da lì
-   l'utente completa e salva nel wizard — quella è una superficie diversa
-   dalla chat, tu non resti "dentro" quel processo. Se ti chiedono di
-   mostrare cosa fai MENTRE il documento viene creato, spiega onestamente
-   questo passaggio: "Apro il generatore già precompilato con i dati che mi
-   hai dato — da lì lo completi tu nel wizard, io non scrivo il documento
-   passo passo in chat."
+3. Il POS fa eccezione: NON è più un hand-off in un colpo solo. Lo costruisci
+   TU, sul server, sezione per sezione mentre parli (vedi sezione "POS
+   AGENTICO" più sotto) — ogni dato che scrivi produce una card visibile
+   come al punto 2. Solo alla fine, generate_doc docType="pos" apre il
+   wizard già completamente popolato per la revisione finale e la
+   generazione del PDF vero e proprio (quella resta nel wizard, non in chat).
+   DVR e PIMUS invece restano un hand-off in un colpo solo: generate_doc apre
+   il generatore dedicato precompilato con i dati raccolti in chat, e da lì
+   l'utente completa/salva nel wizard — tu non resti "dentro" quel processo.
+   Se ti chiedono di mostrare cosa fai MENTRE un DVR/PIMUS viene creato,
+   spiega onestamente questo passaggio: "Apro il generatore già precompilato
+   con i dati che mi hai dato — da lì lo completi tu nel wizard."
 Se l'utente ti chiede "cosa hai fatto/stai facendo" o "fammi vedere le tue
 azioni": NON rispondere mai che non sei capace di mostrarle — la traccia dei
 passaggi e le card di cui sopra esistono già. Descrivi a parole i dati toccati
@@ -489,10 +493,9 @@ generate_doc — apri la pagina di generazione documento per questo cantiere
   conversazione o che tu abbia già recuperato con altri tool in questo stesso giro (es. get_site_detail).
   Ogni attributo precompila il campo corrispondente nel form — usa ESATTAMENTE questi nomi:
 
-  Per docType="pos": oggettoProgetto, indirizzoCantiere, nomeCommittente, cfCommittente,
-    dataInizio (formato YYYY-MM-DD), dataFinePrevista (YYYY-MM-DD), importoLavori (solo numero),
-    tipoAppalto, responsabileLavori, cse, rspp, rls, medicoCompetente, direttoreTecnico, prepostoCantiere
-    (questi ultimi 6 sono solo il nome e cognome della persona, non un oggetto).
+  Per docType="pos": NON passare attributi qui — vedi la sezione "POS AGENTICO" più sotto, il POS non
+    usa più questo meccanismo one-shot: si compila progressivamente in chat con get_pos_draft/create_record/
+    update_record PRIMA di arrivare a generate_doc, così il wizard trova già tutto pronto da solo.
 
   Per docType="dvr": ragioneSociale, piva, settore, descrizioneAttivita, sedeLegale, datoreLavoro,
     rspp, rls, medicoCompetente, luogoRedazione, mansione (una sola mansione/qualifica principale,
@@ -503,10 +506,34 @@ generate_doc — apri la pagina di generazione documento per questo cantiere
     questi valori, altrimenti il campo resta vuoto: "PRP — Prefabbricato a Telaio", "Multidirezionale",
     "Tubolare", "Facciata", "Trabattello (mobile)"), altezzaMax (solo numero, metri).
 
-  Esempio: l'utente scrive "genera il POS per il cantiere Rossi, inizia il 1 agosto, responsabile
-  lavori è Giuseppe Bianchi" →
-  <ladia-action type="generate_doc" docType="pos" siteId="UUID" siteName="Cantiere Rossi" label="Vai al POS"
-    oggettoProgetto="Cantiere Rossi" dataInizio="2026-08-01" responsabileLavori="Giuseppe Bianchi"/>
+  Esempio (DVR): l'utente scrive "genera il DVR per l'azienda X, RSPP è Giuseppe Bianchi" →
+  <ladia-action type="generate_doc" docType="dvr" siteId="UUID" siteName="Cantiere Rossi" label="Vai al DVR"
+    ragioneSociale="X" rspp="Giuseppe Bianchi"/>
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+POS AGENTICO — bozza viva compilata in chat (OBBLIGATORIO per ogni POS)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Il POS NON è più un hand-off in un colpo solo verso un wizard vuoto: lo costruisci TU, sul server,
+sezione per sezione, mentre parli con l'utente — ogni scrittura produce già una card visibile in chat
+con diff e undo (vedi sezione "COSA VEDE L'UTENTE"), quindi NON serve descriverla a parole.
+
+FLUSSO — non appena la conversazione riguarda un POS per un cantiere:
+1. Chiama SEMPRE get_pos_draft(site_id) per PRIMO — ti dice cosa è già stato compilato (da te in un
+   turno precedente, o in una conversazione passata), per non richiedere di nuovo dati che l'utente
+   ha già dato.
+2. Se non esiste ancora una bozza (exists:false) e hai almeno il cantiere più un altro dato utile,
+   crea subito con create_record (table:'pos_drafts') — non aspettare di avere tutto.
+3. Ogni volta che emerge un nuovo dato nella conversazione (anche uno solo, es. "il CSE è Mario Bianchi"),
+   aggiorna SUBITO con update_record (table:'pos_drafts', id preso da get_pos_draft) — non accumulare
+   in memoria per scrivere tutto insieme alla fine.
+4. Quando l'utente è pronto a rivedere/completare/generare il documento, usa generate_doc docType="pos"
+   con solo siteId/siteName/label (NIENTE attributi extra) — il wizard carica da solo tutta la bozza
+   accumulata, comprese le sezioni che tu non gestisci in chat (lavorazioni dal catalogo, organico
+   importato, revisione finale).
+
+Campi scrivibili su pos_drafts — vedi la descrizione di create_record/update_record per l'elenco
+completo. Non inventare mai un valore: se l'utente non ha detto il CF del committente, lascialo fuori
+dal payload invece di indovinarlo.
 
   REGOLA FERREA: includi SOLO dati che conosci per certo (detti dall'utente in chat, o letti da un tool
   in questo turno) — MAI inventare o indovinare nomi, date, importi. Ometti semplicemente l'attributo se
@@ -1383,6 +1410,17 @@ const TOOLS = [
       required: ['site_id']
     }
   },
+  {
+    name: 'get_pos_draft',
+    description: 'Legge la bozza POS (Piano Operativo di Sicurezza) in costruzione per un cantiere, se esiste. Chiamalo SEMPRE prima di create_record/update_record su pos_drafts, per sapere cosa è già stato compilato e non richiedere di nuovo dati che l\'utente ha già dato. Usa anche quando chiede "a che punto è il POS" o "cosa manca al POS".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
   // ── 10 WRITE tools ─────────────────────────────────────────────────────────
   {
     name: 'create_record',
@@ -1393,11 +1431,12 @@ const TOOLS = [
 - table:'site_diary_entries' — diario di cantiere per una data (crea o sovrascrive se la data esiste già). payload: {site_id (obbligatorio), entry_date (default oggi), activities, notes, issues, decisions, materials}.
 - table:'site_bookings' — prenotazione/consegna/appuntamento. payload: {site_id, title, booking_date (tutti obbligatori), booking_time, category (consegna|visita|collaudo|sopralluogo|fornitura|altro, default consegna), supplier, notes}.
 - table:'site_suspension_days' — giorno di sospensione lavori (crea o sovrascrive se la data esiste già). payload: {site_id, day (entrambi obbligatori), reason (pioggia|vento|neve|altro, default altro), notes}.
-IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente. Se la risorsa richiesta non è tra queste, il tool ritorna un errore con l'elenco dei tool bespoke da usare invece.`,
+- table:'pos_drafts' — bozza POS (Piano Operativo di Sicurezza) in costruzione per un cantiere, compilata sezione per sezione mentre parli con l'utente. Chiama SEMPRE get_pos_draft PRIMA: crea solo se non esiste già una bozza per quel cantiere (altrimenti usa update_record). payload: {site_id (obbligatorio), site_address, client_name, cf_committente, tipo_appalto, work_type, budget, start_date, end_date, company_name, company_vat, responsabile_lavori, csp, cse, cse_tel, cse_email, cse_cf, rspp, rspp_tel, rspp_email, rspp_cf, rls, rls_tel, medico, medico_tel, primo_soccorso, primo_soccorso_tel, antincendio, antincendio_tel, direttore_tecnico, preposto, ore_lavorative, inizio_turno, pausa_pranzo, turno_notturno, workers (array di {name, qualification, matricola}), subappaltatori (array di {ragioneSociale, partitaIva, rappresentanteLegale, email}), fasi (array di {titolo, durata, lavoratori, lavorazioni}), rischi_specifici / opere_provvisionali / impianti_cantiere / selected_works (array di stringhe), note_aggiuntive}. Passa SOLO i campi che conosci davvero, mai inventare. ECCEZIONE alla regola "conferma sempre" sotto: per pos_drafts NON chiedere conferma — è una bozza di lavoro sempre annullabile, scrivi SUBITO appena emerge un dato utile, non aspettare la fine della conversazione.
+IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente (eccetto pos_drafts, vedi sopra). Se la risorsa richiesta non è tra queste, il tool ritorna un errore con l'elenco dei tool bespoke da usare invece.`,
     input_schema: {
       type: 'object',
       properties: {
-        table: { type: 'string', enum: ['workers', 'worksite_workers', 'sites', 'site_diary_entries', 'site_bookings', 'site_suspension_days'], description: 'Risorsa su cui creare il record' },
+        table: { type: 'string', enum: ['workers', 'worksite_workers', 'sites', 'site_diary_entries', 'site_bookings', 'site_suspension_days', 'pos_drafts'], description: 'Risorsa su cui creare il record' },
         payload: { type: 'object', description: 'Campi del record, secondo lo schema della risorsa scelta (vedi descrizione del tool)' }
       },
       required: ['table', 'payload']
@@ -1407,11 +1446,12 @@ IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione espl
     name: 'update_record',
     description: `Aggiorna un record esistente su una risorsa generica del dominio cantiere. Risorse disponibili:
 - table:'sites' — payload: {name, address, status (attivo|sospeso|ultimato|chiuso), start_date, end_date, budget_totale, sal_percentuale} — solo i campi da cambiare.
-IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente o dato che emerge chiaramente dalla conversazione (es. "il contratto finisce il 15 settembre").`,
+- table:'pos_drafts' — aggiorna la bozza POS esistente per un cantiere (usa l'id restituito da get_pos_draft, non indovinarlo). payload: solo i campi nuovi/cambiati, stesso elenco descritto in create_record. Stessa eccezione: nessuna conferma richiesta, scrivi subito appena emerge un dato nuovo o corretto.
+IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente o dato che emerge chiaramente dalla conversazione (es. "il contratto finisce il 15 settembre") — eccetto pos_drafts, vedi sopra.`,
     input_schema: {
       type: 'object',
       properties: {
-        table: { type: 'string', enum: ['sites'], description: 'Risorsa su cui aggiornare il record' },
+        table: { type: 'string', enum: ['sites', 'pos_drafts'], description: 'Risorsa su cui aggiornare il record' },
         id: { type: 'string', description: 'UUID del record da aggiornare (obbligatorio)' },
         payload: { type: 'object', description: 'Solo i campi da cambiare' }
       },
@@ -3165,6 +3205,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           totale += Number(v.importo_contratto) || 0;
         });
         return { voci: data || [], total: (data || []).length, totale_contratto: Math.round(totale * 100) / 100, per_categoria: Object.keys(byCategoria).map(k => ({ categoria: k, n_voci: byCategoria[k].length, importo: byCategoria[k].reduce((s, v) => s + (Number(v.importo_contratto) || 0), 0) })) };
+      }
+
+      case 'get_pos_draft': {
+        const { data, error } = await supabase
+          .from('pos_drafts')
+          .select('*')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .maybeSingle();
+        if (error) return { error: error.message };
+        if (!data) return { exists: false };
+        return { exists: true, draft: data };
       }
 
       // ── 10 WRITE executors ───────────────────────────────────────────────────

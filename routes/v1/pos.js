@@ -47,6 +47,29 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
 });
 
 /**
+ * GET /api/v1/pos/draft?siteId=X
+ * Bozza POS in costruzione per un cantiere, compilata da Ladia in chat
+ * (Fase "POS agentico") — il wizard la usa per precompilarsi al mount invece
+ * del vecchio prefill one-shot via sessionStorage.
+ * DEVE stare prima di GET /pos/:id altrimenti Express cattura "draft" come :id.
+ */
+router.get('/pos/draft', verifySupabaseJwt, async (req, res) => {
+  const companyId = req.companyId;
+  const siteId    = req.query.siteId;
+  if (!siteId) return res.status(400).json({ error: 'siteId obbligatorio' });
+
+  const { data, error } = await supabase
+    .from('pos_drafts')
+    .select('*')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ draft: data || null });
+});
+
+/**
  * GET /api/v1/pos/defaults
  * Figure di sicurezza dall'ultimo POS — per pre-popolare un nuovo form.
  * DEVE stare prima di GET /pos/:id altrimenti Express cattura "defaults" come :id.
