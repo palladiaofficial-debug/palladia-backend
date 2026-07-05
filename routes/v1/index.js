@@ -114,6 +114,21 @@ router.use('/', require('./safetyCopilot'));
 // Preventivi corsi in cantiere (impresa + consulente, middleware per-route)
 router.use('/', require('./courseQuotes'));
 
+// Router pubblici token-based (nessun router.use(verifySupabaseJwt) globale):
+// DEVONO stare PRIMA di companyDocuments/documentsHub/notifications/economia/ecc.
+// più sotto, che montano router.use(verifySupabaseJwt) SENZA scoping di path —
+// quel middleware intercetta e blocca (401) qualunque richiesta priva di header
+// Authorization che attraversi il router, indipendentemente dal path richiesto.
+// Stesso identico problema/soluzione già documentato sopra per studio/consultant/
+// admin/safetyCopilot (vedi commit 81d14eb).
+router.use('/', require('./coordinatorPortal'));       // Portale coordinatore unificato (Pro + CSE) — DEVE stare PRIMA di coordinator
+router.use('/', require('./coordinator'));              // Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
+router.use('/', require('./nonconformities'));          // Non Conformità: aperte da coordinatori, gestite dall'impresa (JWT + token)
+router.use('/', require('./coordinatorVerifications')); // Verifiche coordinatore: registro immutabile + timeline (JWT + token)
+router.use('/', require('./verbale'));                  // Verbale di Sopralluogo PDF (token — no JWT)
+router.use('/', require('./formazioneProvider'));       // Portale Enti Formazione: auto-registrazione, magic link, corsi/sessioni/prenotazioni
+router.use('/', require('./workerInvite'));             // Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
+
 // Documenti aziendali: libreria centralizzata (JWT)
 router.use('/', require('./companyDocuments'));
 
@@ -128,21 +143,6 @@ router.use('/', require('./notificationPrefs'));
 
 // Web Push: subscribe/unsubscribe/vapid-public-key
 router.use('/', require('./push'));
-
-// Portale coordinatore unificato (Pro + CSE) — DEVE stare PRIMA di coordinator
-router.use('/', require('./coordinatorPortal'));
-
-// Coordinatore della Sicurezza CSE: inviti (JWT) + accesso pubblico (token)
-router.use('/', require('./coordinator'));
-
-// Non Conformità: aperte da coordinatori, gestite dall'impresa (JWT + token)
-router.use('/', require('./nonconformities'));
-
-// Verifiche coordinatore: registro immutabile + timeline (JWT + token)
-router.use('/', require('./coordinatorVerifications'));
-
-// Verbale di Sopralluogo PDF (token — no JWT)
-router.use('/', require('./verbale'));
 
 // Assistente IA Pal (JWT — rate limit anti-abuso AI applicato solo su /chat/stream in chat.js)
 router.use('/', require('./chat'));
@@ -184,9 +184,6 @@ router.use('/', require('./certificates'));
 // Formazione: raccomandazioni corsi intelligenti (scadenze → corsi disponibili)
 router.use('/', require('./formazioneRecommend'));
 
-// Portale Enti Formazione: auto-registrazione, magic link, gestione corsi/sessioni/prenotazioni
-router.use('/', require('./formazioneProvider'));
-
 // Formazione: OCR upload attestati (richiede multer — DEVE stare prima di altri middleware body)
 router.use('/', require('./certificateOcr'));
 
@@ -201,10 +198,6 @@ router.use('/', require('./diary'));
 
 // Buste paga: upload CDL/datore → revisione → condivisione → firma lavoratore
 router.use('/', require('./payslips'));
-
-// Onboarding self-service lavoratore: link invito → compilazione dati → approvazione admin
-router.use('/', require('./workerInvite'));
-
 
 // Marketplace corsi di formazione (provider + consulenti)
 router.use('/', require('./marketplace'));

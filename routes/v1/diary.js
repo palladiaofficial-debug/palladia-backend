@@ -286,6 +286,7 @@ router.delete('/sites/:siteId/diary/:date', verifySupabaseJwt, async (req, res) 
 // ── GET /api/v1/sites/:siteId/diary/:date/pdf ─────────────────────────────────
 router.get('/sites/:siteId/diary/:date/pdf', verifySupabaseJwt, async (req, res) => {
   const { siteId, date } = req.params;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'INVALID_DATE' });
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 

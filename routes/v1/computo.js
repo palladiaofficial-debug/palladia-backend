@@ -293,8 +293,12 @@ router.post('/sites/:siteId/computo', validate(createComputoSchema), async (req,
       descrizione:  String(v.descrizione).slice(0, 500),
       sal_percentuale: 0,
     };
-    const { data: saved } = await supabase.from('site_computo_voci').insert(row).select('id, codice').single();
-    if (saved && v.codice) codiceToId[v.codice] = saved.id;
+    const { data: saved, error: catErr } = await supabase.from('site_computo_voci').insert(row).select('id, codice').single();
+    if (catErr) {
+      console.error('[computo/save] categoria insert failed', catErr.message);
+      return res.status(500).json({ error: 'INTERNAL' });
+    }
+    if (v.codice) codiceToId[v.codice] = saved.id;
     toInsert.push(saved);
   }
 

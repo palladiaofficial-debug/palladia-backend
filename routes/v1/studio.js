@@ -1528,6 +1528,10 @@ router.get('/studio/clients/:companyId/lettera-scadenze.pdf', verifyStudioJwt, a
 router.delete('/studio/clients/:companyId', verifyStudioJwt, async (req, res) => {
   const { companyId } = req.params;
 
+  if (!['owner', 'admin'].includes(req.studioRole)) {
+    return res.status(403).json({ error: 'Solo owner/admin dello studio possono rimuovere un cliente' });
+  }
+
   const { error } = await supabase
     .from('studio_clients')
     .delete()
@@ -2113,7 +2117,7 @@ router.get('/studio/clients/:companyId/report-conformita.pdf', verifyStudioJwt, 
 <div class="lh">
   <div>
     <div class="sn">${esc(studio?.studio_name||'Studio CDL')}</div>
-    <div class="ss">Studio di Consulenza del Lavoro${studio?.registration_number?' · Albo n. '+studio.registration_number:''}</div>
+    <div class="ss">Studio di Consulenza del Lavoro${studio?.registration_number?' · Albo n. '+esc(studio.registration_number):''}</div>
   </div>
   <div class="sm">${studio?.vat_number?`P.IVA ${esc(studio.vat_number)}<br>`:''}Generato ${fmtDate(now.toISOString())} via Palladia</div>
 </div>
@@ -2693,11 +2697,16 @@ router.get('/studio/durc-overview', verifyStudioJwt, async (req, res) => {
     .eq('studio_id', studioId)
     .eq('status', 'active');
 
+  const allowedIds = new Set(await filterClientsByCollaborator(
+    studioId, req.user.id, req.studioRole, (relations || []).map(r => r.company_id)
+  ));
+  const visibleRelations = (relations || []).filter(r => allowedIds.has(r.company_id));
+
   const today  = new Date().toISOString().slice(0, 10);
   const in30   = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
   const in90   = new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10);
 
-  const rows = (relations || []).map(r => {
+  const rows = visibleRelations.map(r => {
     const co  = r.companies;
     const exp = co?.durc_expiry_date || null;
     let status = 'missing';
@@ -3047,7 +3056,9 @@ router.get('/studio/dashboard.csv', verifyStudioJwt, async (req, res) => {
     return res.send('﻿Nessun cliente attivo');
   }
 
-  const companyIds = clients.map(c => c.company_id);
+  const allCompanyIds = clients.map(c => c.company_id);
+  const companyIds    = await filterClientsByCollaborator(req.studioId, req.user.id, req.studioRole, allCompanyIds);
+  const visibleClients = clients.filter(c => companyIds.includes(c.company_id));
 
   const [{ data: sites }, { data: workers }] = await Promise.all([
     supabase.from('sites').select('company_id')
@@ -3063,7 +3074,7 @@ router.get('/studio/dashboard.csv', verifyStudioJwt, async (req, res) => {
 
   const header = 'Impresa,DURC Scadenza,Stato DURC,Cantieri,Lavoratori';
   const todayStr = new Date().toISOString().slice(0, 10);
-  const rows = clients.map(c => {
+  const rows = visibleClients.map(c => {
     const co = c.companies;
     const exp = co?.durc_expiry_date;
     let stato = 'Mancante';

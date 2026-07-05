@@ -5894,10 +5894,10 @@ router.post('/chat/confirm-action/:id', verifySupabaseJwt, confirmActionLimiter,
 // ladia_action_history. Vedi ladiaGenericTools.undoAction per la finestra
 // temporale e il controllo conflitti.
 router.post('/chat/undo/:historyId', verifySupabaseJwt, confirmActionLimiter, async (req, res) => {
-  const result = await ladiaGenericTools.undoAction(req.params.historyId, req.companyId, req.user.id);
+  const result = await ladiaGenericTools.undoAction(req.params.historyId, req.companyId, req.user.id, req);
   if (result.error) {
     const status = result.error === 'NOT_FOUND' ? 404
-      : result.error === 'GIA_ANNULLATA' || result.error === 'CONFLITTO' || result.error === 'FINESTRA_SCADUTA' ? 409
+      : ['GIA_ANNULLATA', 'CONFLITTO', 'FINESTRA_SCADUTA', 'SNAPSHOT_MANCANTE', 'UNDO_NON_DISPONIBILE'].includes(result.error) ? 409
       : 500;
     return res.status(status).json(result);
   }

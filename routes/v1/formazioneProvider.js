@@ -527,12 +527,24 @@ router.patch('/formazione/provider/:token/bookings/:bookingId/confirm', async (r
 
   const { data: booking } = await supabase
     .from('course_bookings')
-    .select('id, status, session_id')
+    .select(`
+      id, status, session_id,
+      course_sessions(
+        id,
+        marketplace_courses(training_providers(id))
+      )
+    `)
     .eq('id', req.params.bookingId)
     .maybeSingle();
 
   if (!booking || booking.status !== 'pending') {
     return res.status(404).json({ error: 'BOOKING_NOT_FOUND_OR_NOT_PENDING' });
+  }
+
+  // Verifica che la prenotazione appartenga a questo provider
+  const providerId = booking.course_sessions?.marketplace_courses?.training_providers?.id;
+  if (providerId !== session.provider_id) {
+    return res.status(403).json({ error: 'ACCESS_DENIED' });
   }
 
   const { data, error } = await supabase

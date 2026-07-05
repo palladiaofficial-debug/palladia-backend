@@ -572,8 +572,10 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
     </tr>`;
   }).join('');
 
-  const period = (from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi');
+  const period = esc((from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi'));
   const nowStr = new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
+
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
   const html = `<!DOCTYPE html>
 <html lang="it"><head><meta charset="UTF-8">
@@ -607,8 +609,8 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
     <div class="header-left">
       <div class="badge badge-palladia">PALLADIA</div>
       <h1>Registro Meteo Cantiere</h1>
-      <p>${site.name || ''} · ${site.address || ''}</p>
-      <p>Committente: <strong>${site.client || '—'}</strong> · Periodo: <strong>${period}</strong></p>
+      <p>${esc(site.name)} · ${esc(site.address)}</p>
+      <p>Committente: <strong>${esc(site.client) || '—'}</strong> · Periodo: <strong>${period}</strong></p>
     </div>
     <div class="header-right">
       <p>Generato il</p>
@@ -632,7 +634,7 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
     ${site.contract_days ? `
     <div class="meta-box">
       <div class="label">Giorni contratto</div>
-      <div class="val">${site.contract_days} (${site.days_type || 'solari'})</div>
+      <div class="val">${site.contract_days} (${esc(site.days_type) || 'solari'})</div>
     </div>
     <div class="meta-box">
       <div class="label">Inizio lavori</div>
@@ -672,8 +674,9 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
   try {
     const { renderHtmlToPdf } = require('../../pdf-renderer');
     const pdfBuf = await renderHtmlToPdf(html, {
-      format: 'A4', landscape: true,
-      margin: { top: '12mm', bottom: '12mm', left: '0', right: '0' },
+      noHeaderFooter: true,
+      landscape: true,
+      margin: { top: '12mm', bottom: '12mm', left: '0mm', right: '0mm' },
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="meteo_${siteId}_${Date.now()}.pdf"`);

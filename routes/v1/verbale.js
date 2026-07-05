@@ -16,8 +16,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { coordinatorLimiter } = require('../../middleware/rateLimit');
 
-let puppeteer;
-try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
+const { rendererPool } = require('../../pdf-renderer');
 const { complianceStatus } = require('../../lib/compliance');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -535,39 +534,16 @@ function buildVerbaleHtml(invite, data) {
  * Genera il PDF con Puppeteer e lo invia come risposta.
  */
 async function renderVerbalePdf(res, invite, data) {
-  if (!puppeteer) {
-    return res.status(503).json({ error: 'PDF_NOT_AVAILABLE', message: 'Puppeteer non disponibile.' });
-  }
-
   const html = buildVerbaleHtml(invite, data);
-  let browser;
+
+  const siteName  = (data.site?.name || data.site?.address || 'cantiere').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+  const dateStr   = new Date().toISOString().split('T')[0];
+  const filename  = `verbale-sopralluogo-${siteName}-${dateStr}.pdf`;
+  const coordName = invite.coordinator_name;
+
   try {
-    browser = await puppeteer.launch({
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-    });
-    const page = await browser.newPage();
-    await page.setContent(html, { waitUntil: 'networkidle0' });
-
-    const siteName    = (data.site?.name || data.site?.address || 'cantiere').replace(/[^a-z0-9]/gi, '-').toLowerCase();
-    const dateStr     = new Date().toISOString().split('T')[0];
-    const filename    = `verbale-sopralluogo-${siteName}-${dateStr}.pdf`;
-    const coordName   = invite.coordinator_name;
-
-    const pdf = await page.pdf({
-      format:  'A4',
-      printBackground: true,
-      displayHeaderFooter: true,
-      margin: { top: '26mm', bottom: '24mm', left: '0mm', right: '0mm' },
-      headerTemplate: `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #ddd;font-family:Arial,sans-serif;font-size:0;">
-        <span style="font-size:9px;font-weight:800;color:#2c2c2c;letter-spacing:0.5pt;">PALLADIA</span>
-        <span style="font-size:9px;color:#aaa;">Verbale di Sopralluogo — ${coordName.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</span>
-      </div>`,
-      footerTemplate: `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #ddd;font-family:Arial,sans-serif;font-size:0;">
-        <span style="font-size:8.5px;color:#bbb;">D.Lgs 81/2008</span>
-        <span style="font-size:8.5px;color:#444;font-weight:700;">Pagina <span class="pageNumber" style="font-size:8.5px;"></span> / <span class="totalPages" style="font-size:8.5px;"></span></span>
-        <span style="font-size:8.5px;color:#bbb;">palladia.net</span>
-      </div>`,
+    const pdf = await rendererPool.render(html, {
+      docTitle: `Verbale di Sopralluogo — ${coordName}`,
     });
 
     res.set({
@@ -579,8 +555,6 @@ async function renderVerbalePdf(res, invite, data) {
   } catch (err) {
     console.error('[verbale] PDF render error:', err.message);
     res.status(500).json({ error: 'PDF_ERROR', message: err.message });
-  } finally {
-    if (browser) browser.close().catch(() => {});
   }
 }
 

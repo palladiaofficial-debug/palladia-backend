@@ -69,7 +69,7 @@ router.get('/sites/:siteId/qr-pdf', verifySupabaseJwt, async (req, res) => {
   <meta charset="UTF-8">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    @page { size: A4 portrait; margin: 22mm 20mm 20mm 20mm; }
+    @page { size: A4 portrait; margin: 26mm 0 24mm 0; }
     html, body {
       width: 210mm;
       font-family: Arial, Helvetica, sans-serif;
@@ -80,12 +80,12 @@ router.get('/sites/:siteId/qr-pdf', verifySupabaseJwt, async (req, res) => {
     }
     .page {
       width: 100%;
-      min-height: 255mm;
+      min-height: 247mm;
       display: flex;
       flex-direction: column;
       align-items: center;
       text-align: center;
-      padding: 0;
+      padding: 0 16mm;
     }
 
     /* ── Top bar ── */

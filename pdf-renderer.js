@@ -89,17 +89,20 @@ const LAUNCH_ARGS = [
 // tra header/footer e contenuto (dark-bg blocks non sembrano sovrapposti).
 // Corrisponde a @page { margin: 26mm 0 24mm 0 } nel CSS.
 function makePdfOpts(opts = {}) {
+  const landscape = !!opts.landscape;
   // Documenti standalone (SAL, report semplici) che gestiscono H/F via CSS
   if (opts.noHeaderFooter) {
     return {
       format:              'A4',
+      landscape,
       printBackground:     true,
       displayHeaderFooter: false,
-      margin: { top: '0mm', bottom: '0mm', left: '0mm', right: '0mm' },
+      margin: opts.margin || { top: '0mm', bottom: '0mm', left: '0mm', right: '0mm' },
     };
   }
   return {
     format:              'A4',
+    landscape,
     printBackground:     true,
     displayHeaderFooter: true,
     headerTemplate:      buildHeaderTemplate(opts.docTitle || ''),

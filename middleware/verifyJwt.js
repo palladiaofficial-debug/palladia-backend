@@ -74,13 +74,36 @@ async function verifySupabaseJwt(req, res, next) {
     if (studioUser) {
       const { data: studioRelation } = await supabase
         .from('studio_clients')
-        .select('id')
+        .select('id, owned_by_studio')
         .eq('studio_id', studioUser.studio_id)
         .eq('company_id', companyId)
         .eq('status', 'active')
         .maybeSingle();
 
       if (studioRelation) {
+        // Collaboratori: se lo studio ha assegnazioni esplicite per-cliente,
+        // un collaborator vede solo le aziende a lui assegnate (stessa regola
+        // di filterClientsByCollaborator in routes/v1/studio.js).
+        if (studioUser.role === 'collaborator') {
+          const { data: assigned } = await supabase
+            .from('studio_user_clients')
+            .select('company_id')
+            .eq('studio_id', studioUser.studio_id)
+            .eq('user_id', user.id);
+          if (assigned?.length && !assigned.some(r => r.company_id === companyId)) {
+            return res.status(403).json({ error: 'Not a member of this company' });
+          }
+        }
+
+        // Scritture dirette solo se l'azienda è gestita dallo studio: stessa
+        // regola di checkStudioAccess(requireOwnership=true) in studio.js,
+        // applicata qui perché questo fallback dà accesso a TUTTE le route
+        // generiche /api/v1/*, non solo a /api/v1/studio/*.
+        const isWrite = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+        if (isWrite && !studioRelation.owned_by_studio) {
+          return res.status(403).json({ error: 'Azienda gestita autonomamente: il CDL non può modificare i dati direttamente' });
+        }
+
         req.user      = { id: user.id, email: user.email };
         req.jwt       = jwt;
         req.companyId = companyId;

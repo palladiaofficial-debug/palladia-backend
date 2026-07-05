@@ -167,6 +167,8 @@ router.get('/sites/:siteId/baracca/pdf', verifySupabaseJwt, async (req, res) => 
   const { site, workers, siteChecklist } = data;
   const printDate = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
 
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
   const statusLabel = { compliant: 'Conforme', expiring: 'In scadenza', non_compliant: 'Non conforme', incomplete: 'Dati incompleti' };
   const statusColor = { compliant: '#16a34a', expiring: '#d97706', non_compliant: '#dc2626', incomplete: '#6b7280' };
   const docStatus = { ok: '✓', expiring: '⚠', expired: '✗', not_set: '—' };
@@ -174,7 +176,7 @@ router.get('/sites/:siteId/baracca/pdf', verifySupabaseJwt, async (req, res) => 
 
   const workersRows = workers.map(w => `
     <tr>
-      <td>${w.full_name}</td>
+      <td>${esc(w.full_name)}</td>
       <td style="color:${docColor[w.safety_training_status]}">${docStatus[w.safety_training_status]} ${w.safety_training_expiry ? fmtDate(w.safety_training_expiry) : '—'}</td>
       <td style="color:${docColor[w.health_fitness_status]}">${docStatus[w.health_fitness_status]} ${w.health_fitness_expiry ? fmtDate(w.health_fitness_expiry) : '—'}</td>
       <td style="color:${statusColor[w.overall_status] || '#6b7280'};font-weight:600">${statusLabel[w.overall_status] || w.overall_status}</td>
@@ -183,7 +185,7 @@ router.get('/sites/:siteId/baracca/pdf', verifySupabaseJwt, async (req, res) => 
   const checklistRows = siteChecklist.map(item => `
     <tr>
       <td><span style="display:inline-block;width:16px;height:16px;border:2px solid ${item.checked ? '#16a34a' : '#d1d5db'};border-radius:3px;background:${item.checked ? '#16a34a' : 'white'};color:white;text-align:center;line-height:14px;font-size:11px">${item.checked ? '✓' : ''}</span></td>
-      <td>${item.label}</td>
+      <td>${esc(item.label)}</td>
       <td style="color:#6b7280;font-size:11px">${item.checked && item.checked_at ? fmtDate(item.checked_at) : '—'}</td>
     </tr>`).join('');
 
@@ -213,9 +215,9 @@ router.get('/sites/:siteId/baracca/pdf', verifySupabaseJwt, async (req, res) => 
 <body>
   <h1>Kit Baracca di Cantiere</h1>
   <div class="meta">
-    <span><strong>${site.name}</strong></span>
-    <span>${site.address}</span>
-    ${site.client ? `<span>Committente: ${site.client}</span>` : ''}
+    <span><strong>${esc(site.name)}</strong></span>
+    <span>${esc(site.address)}</span>
+    ${site.client ? `<span>Committente: ${esc(site.client)}</span>` : ''}
     <span>Stampato il ${printDate}</span>
   </div>
 
@@ -264,7 +266,7 @@ router.get('/sites/:siteId/baracca/pdf', verifySupabaseJwt, async (req, res) => 
   </table>
 
   <div class="footer">
-    <span>Generato da Palladia · ${site.name}</span>
+    <span>Generato da Palladia · ${esc(site.name)}</span>
     <span>${printDate}</span>
   </div>
 </body>
