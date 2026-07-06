@@ -16,6 +16,8 @@ const { sendAiCreditExhaustedAlert } = require('../../services/email');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
+const { buildRisksPrompt } = require('../../services/posRisksGenerator');
+const { isBillingActive } = require('../../lib/billing');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -43,6 +45,27 @@ function notifyAdminCreditExhausted(detail) {
   if (now - _lastCreditAlertAt < 60 * 60 * 1000) return;
   _lastCreditAlertAt = now;
   sendAiCreditExhaustedAlert({ detail }).catch(e => console.error('[chat] sendAiCreditExhaustedAlert failed:', e.message));
+}
+
+// Rate limit ad-hoc per generate_pos_risks — chiama l'AI (costo reale) e la
+// rigenerazione ripetuta è incoraggiata dal flusso stesso, ma il tool gira
+// dentro executeTool (nessun req/res su cui agganciare express-rate-limit
+// come aiLimiter negli endpoint Express). In-memory come il resto del rate
+// limiting di default in questo repo (Redis solo se REDIS_URL è configurata,
+// vedi middleware/rateLimit.js) — stesso ordine di grandezza di aiLimiter
+// (10/min/company) ma con budget proprio, leggermente più stretto.
+const _posRisksCalls = new Map(); // companyId -> { count, windowStart }
+const POS_RISKS_LIMIT = 8;
+const POS_RISKS_WINDOW_MS = 60 * 1000;
+function posRisksRateLimited(companyId) {
+  const now = Date.now();
+  const entry = _posRisksCalls.get(companyId);
+  if (!entry || now - entry.windowStart > POS_RISKS_WINDOW_MS) {
+    _posRisksCalls.set(companyId, { count: 1, windowStart: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > POS_RISKS_LIMIT;
 }
 
 // ── Classificatore query (zero costo API — keyword matching) ─────────────────
@@ -526,10 +549,22 @@ FLUSSO — non appena la conversazione riguarda un POS per un cantiere:
 3. Ogni volta che emerge un nuovo dato nella conversazione (anche uno solo, es. "il CSE è Mario Bianchi"),
    aggiorna SUBITO con update_record (table:'pos_drafts', id preso da get_pos_draft) — non accumulare
    in memoria per scrivere tutto insieme alla fine.
-4. Quando l'utente è pronto a rivedere/completare/generare il documento, usa generate_doc docType="pos"
+4. SEZIONE RISCHI (l'UNICA sezione del POS scritta davvero dall'AI, le altre 13 sono template statici
+   dai dati raccolti): appena l'utente ha indicato le lavorazioni previste (selected_works in pos_drafts
+   non vuoto), usa generate_pos_risks(site_id) per generarla — NON aspettare la fine della conversazione,
+   e NON descriverla a parole prima di averla generata. Quando il tool ritorna il testo:
+     - riportalo in chat ESATTAMENTE come ricevuto (risks_content), senza parafrasare, riassumere o
+       "sistemare" nulla — l'utente deve poter leggere e giudicare il testo esatto che finirà nel
+       documento, non una tua rielaborazione;
+     - se il tool segnala needs_review:true (lavorazioni mancanti nel testo, o testo troppo corto),
+       avvisa l'utente prima di procedere, non ignorarlo;
+     - se l'utente non è soddisfatto o cambia le lavorazioni, richiama di nuovo generate_pos_risks —
+       ogni rigenerazione produce una nuova card annullabile, la versione precedente resta annullabile
+       separatamente.
+5. Quando l'utente è pronto a rivedere/completare/generare il documento, usa generate_doc docType="pos"
    con solo siteId/siteName/label (NIENTE attributi extra) — il wizard carica da solo tutta la bozza
    accumulata, comprese le sezioni che tu non gestisci in chat (lavorazioni dal catalogo, organico
-   importato, revisione finale).
+   importato, revisione finale) e la sezione rischi già generata/confermata al passo 4.
 
 Campi scrivibili su pos_drafts — vedi la descrizione di create_record/update_record per l'elenco
 completo. Non inventare mai un valore: se l'utente non ha detto il CF del committente, lascialo fuori
@@ -1413,6 +1448,17 @@ const TOOLS = [
   {
     name: 'get_pos_draft',
     description: 'Legge la bozza POS (Piano Operativo di Sicurezza) in costruzione per un cantiere, se esiste. Chiamalo SEMPRE prima di create_record/update_record su pos_drafts, per sapere cosa è già stato compilato e non richiedere di nuovo dati che l\'utente ha già dato. Usa anche quando chiede "a che punto è il POS" o "cosa manca al POS".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'generate_pos_risks',
+    description: 'Genera (o rigenera) la Sezione 5 del POS — "Lavorazioni, Rischi e Misure di Prevenzione" — l\'UNICA sezione del documento scritta realmente dall\'AI (le altre 13 sono template statici dai dati raccolti). Richiede che la bozza abbia già delle lavorazioni selezionate (selected_works in pos_drafts, via get_pos_draft) — se mancano, chiedi prima all\'utente quali lavorazioni prevede il cantiere. Puoi richiamarlo più volte per rigenerare: ogni chiamata produce una nuova versione annullabile (card con "Annulla azione" sulla precedente).',
     input_schema: {
       type: 'object',
       properties: {
@@ -3217,6 +3263,77 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (error) return { error: error.message };
         if (!data) return { exists: false };
         return { exists: true, draft: data };
+      }
+
+      case 'generate_pos_risks': {
+        const { data: draft, error: draftErr } = await supabase
+          .from('pos_drafts')
+          .select('id, site_address, work_type, selected_works, risks_content')
+          .eq('site_id', toolInput.site_id)
+          .eq('company_id', companyId)
+          .maybeSingle();
+        if (draftErr) return { error: draftErr.message };
+        if (!draft) return { error: 'Nessuna bozza POS trovata per questo cantiere — crea prima la bozza con i dati di base.' };
+        if (!Array.isArray(draft.selected_works) || draft.selected_works.length === 0) {
+          return { error: 'LAVORAZIONI_MANCANTI', message: 'Nessuna lavorazione selezionata — chiedi all\'utente quali lavorazioni prevede il cantiere prima di generare la sezione rischi.' };
+        }
+        if (!await isBillingActive(companyId)) {
+          return { error: 'SUBSCRIPTION_REQUIRED', message: 'Abbonamento scaduto — impossibile generare contenuto con l\'AI.' };
+        }
+        if (posRisksRateLimited(companyId)) {
+          return { error: 'RATE_LIMIT', message: 'Troppe generazioni ravvicinate — riprova tra un minuto.' };
+        }
+
+        const prompt = buildRisksPrompt({
+          selectedWorks: draft.selected_works,
+          siteAddress:   draft.site_address,
+          workType:      draft.work_type,
+        });
+
+        let risksText;
+        try {
+          const aiResp = await getClient().messages.create({
+            model: MODEL_HAIKU,
+            max_tokens: 4000,
+            messages: [{ role: 'user', content: prompt }],
+          });
+          risksText = aiResp.content.find(b => b.type === 'text')?.text || '';
+        } catch (err) {
+          return { error: 'Errore nella generazione AI: ' + err.message };
+        }
+        if (!risksText.trim()) return { error: 'Generazione fallita — risposta vuota.' };
+
+        // Controllo di completezza non bloccante: ogni lavorazione selezionata
+        // dovrebbe comparire nel testo generato — se manca qualcosa o il testo
+        // è troppo corto, segnala needs_review invece di bloccare (l'utente/
+        // Ladia decide se rigenerare).
+        const textLower = risksText.toLowerCase();
+        const missingWorks = draft.selected_works.filter(w => !textLower.includes(String(w).toLowerCase()));
+        const needsReview = missingWorks.length > 0 || risksText.trim().length < 200;
+
+        const { data: updated, error: updateErr } = await supabase
+          .from('pos_drafts')
+          .update({ risks_content: risksText, risks_generated_at: new Date().toISOString() })
+          .eq('id', draft.id)
+          .eq('company_id', companyId)
+          .select('id, risks_content')
+          .single();
+        if (updateErr) return { error: updateErr.message };
+
+        const logged = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'pos_drafts', action: 'update', recordId: draft.id,
+          record: updated, previousValues: { risks_content: draft.risks_content || null },
+          changedFields: { risks_content: risksText },
+        });
+
+        return {
+          success: true,
+          risks_content: risksText,
+          needs_review: needsReview,
+          missing_works: needsReview && missingWorks.length > 0 ? missingWorks : undefined,
+          ...logged,
+        };
       }
 
       // ── 10 WRITE executors ───────────────────────────────────────────────────

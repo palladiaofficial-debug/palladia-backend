@@ -10,6 +10,8 @@ const cors       = require('cors');
 const helmet     = require('helmet');
 const compression = require('compression');
 const { buildPosDocument } = require('./pos-template');
+const { buildRisksPrompt } = require('./services/posRisksGenerator');
+const { isBillingActive } = require('./lib/billing');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
 const { generateDvrHtml }  = require('./dvr-html-generator');
@@ -697,17 +699,11 @@ async function verifySiteAccess(req, res, siteId) {
 }
 
 // Verifica che la company abbia un abbonamento attivo (trial non scaduto o pagato).
-// Ritorna true se OK, false e invia 402 se scaduto/cancellato.
+// Ritorna true se OK, false e invia 402 se scaduto/cancellato. Wrapper Express
+// sottile su isBillingActive (lib/billing.js) — logica pura estratta da qui
+// così è richiamabile anche da routes/v1/chat.js senza un `res` su cui scrivere.
 async function checkBillingActive(companyId, res) {
-  const { data: company } = await supabase
-    .from('companies').select('subscription_status, trial_ends_at')
-    .eq('id', companyId).maybeSingle();
-  if (!company) { res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' }); return false; }
-  const now = Date.now();
-  const trialExpired = company.subscription_status === 'trial' &&
-    company.trial_ends_at && new Date(company.trial_ends_at).getTime() < now;
-  if (company.subscription_status === 'active' ||
-      (company.subscription_status === 'trial' && !trialExpired)) return true;
+  if (await isBillingActive(companyId)) return true;
   res.status(402).json({ error: 'SUBSCRIPTION_REQUIRED' });
   return false;
 }
@@ -796,6 +792,36 @@ async function getNextRevision(siteId) {
   return (data && data.length > 0) ? data[0].revision + 1 : 1;
 }
 
+// Riusa la sezione rischi già generata/rivista in chat con Ladia
+// (generate_pos_risks, routes/v1/chat.js) invece di richiamare l'AI da capo
+// alla generazione finale — MA solo se le lavorazioni non sono cambiate nel
+// frattempo (l'utente può averle modificate nel wizard dopo la generazione
+// in chat, o il draft locale in localStorage può aver preso precedenza sul
+// draft server): un mismatch userebbe rischi calcolati su lavorazioni
+// diverse da quelle davvero selezionate — errore di sostanza in un
+// documento di sicurezza, non un dettaglio cosmetico. In caso di dubbio,
+// fallback silenzioso al comportamento attuale (richiama Haiku).
+async function getReusablePosRisks(companyId, siteId, incomingSelectedWorks) {
+  if (!siteId) return null;
+  const { data: draft } = await supabase
+    .from('pos_drafts')
+    .select('risks_content, selected_works')
+    .eq('site_id', siteId)
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (!draft?.risks_content) return null;
+
+  const norm = (arr) => (Array.isArray(arr) ? arr : [])
+    .map(w => String(w).trim().toLowerCase()).sort();
+  const savedWorks    = norm(draft.selected_works);
+  const incomingWorks = norm(incomingSelectedWorks);
+  const sameWorks = savedWorks.length > 0 &&
+    savedWorks.length === incomingWorks.length &&
+    savedWorks.every((w, i) => w === incomingWorks[i]);
+
+  return sameWorks ? draft.risks_content : null;
+}
+
 const { withAiLimit, aiSemaphore } = require('./lib/concurrencyLimit');
 
 // --- Helper: call Anthropic streaming API, return reader ---
@@ -855,49 +881,6 @@ async function collectStreamText(response) {
   }
 
   return fullText;
-}
-
-// --- Helper: build prompt for AI risks only (Haiku) ---
-function buildRisksPrompt(posData) {
-  const works = posData.selectedWorks?.join('\n- ') || 'Da definire';
-  return `Sei un Coordinatore per la Sicurezza esperto. Genera SOLO la sezione "Lavorazioni e Rischi" di un POS per le seguenti lavorazioni di cantiere.
-
-CANTIERE: ${posData.siteAddress || 'N/A'}
-NATURA LAVORI: ${posData.workType || 'N/A'}
-
-LAVORAZIONI PREVISTE:
-- ${works}
-
-Per OGNI lavorazione genera:
-
-### [Nome Lavorazione]
-
-**Descrizione tecnica:** descrizione dettagliata della lavorazione e delle fasi operative.
-
-**Rischi identificati e valutazione (matrice P x D):**
-
-| Rischio | P (1-4) | D (1-4) | R (PxD) | Livello |
-|---------|---------|---------|---------|---------|
-(elenca tutti i rischi con probabilita', danno, indice di rischio e livello: Basso/Medio/Alto/Molto Alto)
-
-Legenda: P=Probabilita' (1=Improbabile, 2=Poco probabile, 3=Probabile, 4=Molto probabile), D=Danno (1=Lieve, 2=Medio, 3=Grave, 4=Molto grave), R=PxD
-
-**Misure di prevenzione e protezione:**
-- (elenco dettagliato misure specifiche)
-
-**DPI obbligatori:**
-| DPI | Norma UNI EN | Note |
-|-----|-------------|------|
-(tabella DPI specifici con norme di riferimento)
-
-**Attrezzature e verifiche:**
-| Attrezzatura | Verifica richiesta | Frequenza |
-|-------------|-------------------|-----------|
-(tabella attrezzature con verifiche)
-
----
-
-Rispondi SOLO con il contenuto delle lavorazioni, senza intestazioni di sezione o preamboli. Sii tecnico, preciso e conforme al D.lgs 81/2008.`;
 }
 
 // --- Helper: call Anthropic Haiku (non-streaming, for template mode) ---
@@ -1292,9 +1275,13 @@ app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res
       revision = await getNextRevision(siteId);
     }
 
-    // Step 1: Generate only the risks section with Haiku
-    const risksPrompt = buildRisksPrompt(posData);
-    const aiRisks = await callAnthropicHaiku(risksPrompt);
+    // Step 1: riusa la sezione rischi già generata/rivista in chat con Ladia
+    // se le lavorazioni non sono cambiate, altrimenti genera da capo con Haiku.
+    let aiRisks = await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
+    if (!aiRisks) {
+      const risksPrompt = buildRisksPrompt(posData);
+      aiRisks = await callAnthropicHaiku(risksPrompt);
+    }
 
     // Step 2: Build document (usato solo per validazione — il salvataggio usa aiRisks)
     const signs = selectSigns(posData);
@@ -1393,16 +1380,20 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
     // Heartbeat every 10s to keep Railway proxy alive
     heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
 
-    console.log('[template-stream] calling Haiku...');
-    let aiRisks = '';
-    try {
-      const risksPrompt = buildRisksPrompt(posData);
-      aiRisks = await callAnthropicHaiku(risksPrompt);
-      console.log('[template-stream] Haiku done, length:', aiRisks.length);
-    } catch (aiErr) {
-      console.error('[template-stream] Haiku error:', aiErr.message);
-      // Continue with empty risks rather than aborting the stream
-      aiRisks = '[Sezione rischi non disponibile — errore AI]';
+    let aiRisks = await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
+    if (aiRisks) {
+      console.log('[template-stream] rischi riusati da pos_drafts (generati in chat con Ladia), length:', aiRisks.length);
+    } else {
+      console.log('[template-stream] calling Haiku...');
+      try {
+        const risksPrompt = buildRisksPrompt(posData);
+        aiRisks = await callAnthropicHaiku(risksPrompt);
+        console.log('[template-stream] Haiku done, length:', aiRisks.length);
+      } catch (aiErr) {
+        console.error('[template-stream] Haiku error:', aiErr.message);
+        // Continue with empty risks rather than aborting the stream
+        aiRisks = '[Sezione rischi non disponibile — errore AI]';
+      }
     }
 
     clearInterval(heartbeatTimer);
