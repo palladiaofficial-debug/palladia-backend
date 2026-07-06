@@ -12,6 +12,7 @@ const compression = require('compression');
 const { buildPosDocument } = require('./pos-template');
 const { buildRisksPrompt } = require('./services/posRisksGenerator');
 const { isBillingActive } = require('./lib/billing');
+const { isFeatureEnabled } = require('./lib/featureFlags');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
 const { generateDvrHtml }  = require('./dvr-html-generator');
@@ -1585,6 +1586,9 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
     }
     if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
     if (!await checkBillingActive(companyId, res)) return;
+    if (!await isFeatureEnabled(companyId, 'dvr')) {
+      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione DVR non disponibile al momento.' });
+    }
 
     const revision = await getNextDvrRevision(siteId, companyId);
 
@@ -1817,6 +1821,9 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
     }
     if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
     if (!await checkBillingActive(companyId, res)) return;
+    if (!await isFeatureEnabled(companyId, 'pimus')) {
+      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione PIMUS non disponibile al momento.' });
+    }
 
     const revision = await getNextPimusRevision(siteId, companyId);
 

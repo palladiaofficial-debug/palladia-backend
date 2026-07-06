@@ -3,15 +3,16 @@
  * Feature Flags — GET /api/v1/feature-flags
  *
  * Restituisce quali moduli sono abilitati per la company autenticata.
- * Logica a tre livelli (priorità decrescente):
+ * Logica a tre livelli — vedi lib/featureFlags.js per i dettagli:
  *   1. MASTER_COMPANY_IDS env (comma-separated) → tutti i flag ON
  *   2. company_feature_flags table (override per-company dal DB)
  *   3. Variabili d'ambiente globali FEATURE_<NAME>_DEFAULT (true/false)
  *
  * Default env vars per moduli "congelati":
- *   FEATURE_COMPUTO_DEFAULT=false   → computo nascosto ai clienti
+ *   FEATURE_COMPUTO_DEFAULT=false    → computo nascosto ai clienti
  *   FEATURE_CAPITOLATO_DEFAULT=false → capitolato nascosto ai clienti
- *   FEATURE_DVR_DEFAULT=true
+ *   FEATURE_DVR_DEFAULT=true         → riattiva la generazione DVR (default: off)
+ *   FEATURE_PIMUS_DEFAULT=true       → riattiva la generazione PIMUS (default: off)
  *   FEATURE_SUBCONTRACTORS_ENTERPRISE_DEFAULT=true
  */
 
@@ -20,19 +21,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { patchFeatureFlagSchema } = require('../../lib/schemas/featureFlags');
-
-// Features supportate e i loro default da env
-const FEATURES = {
-  computo:                   process.env.FEATURE_COMPUTO_DEFAULT                    !== 'false',
-  capitolato:                process.env.FEATURE_CAPITOLATO_DEFAULT                 !== 'false',
-  dvr:                       process.env.FEATURE_DVR_DEFAULT                        !== 'false',
-  subcontractors_enterprise: process.env.FEATURE_SUBCONTRACTORS_ENTERPRISE_DEFAULT  !== 'false',
-};
-
-// MASTER_COMPANY_IDS: company IDs che ottengono sempre tutti i flag ON
-const MASTER_IDS = new Set(
-  (process.env.MASTER_COMPANY_IDS || '').split(',').map(s => s.trim()).filter(Boolean)
-);
+const { FEATURES, MASTER_IDS } = require('../../lib/featureFlags');
 
 // ── GET /api/v1/feature-flags ─────────────────────────────────────────────────
 router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
