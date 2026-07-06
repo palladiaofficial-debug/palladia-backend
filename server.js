@@ -360,6 +360,10 @@ app.post('/api/webhooks/stripe',
       }
     } catch (e) {
       console.error('[stripe-webhook] errore gestione evento:', e.message);
+      // 500, non 200: Stripe ritenta automaticamente la consegna finché non
+      // riceve un 2xx — confermare comunque 200 qui lascerebbe lo stato di
+      // abbonamento silenziosamente disallineato senza alcun retry.
+      return res.status(500).json({ error: 'webhook processing failed' });
     }
 
     res.sendStatus(200);
@@ -1173,6 +1177,10 @@ app.post('/api/generate-pdf', verifyJwtOnly, apiLimiter, async (req, res) => {
       return res.status(400).json({ error: 'posData is required' });
     }
 
+    const companyId = await verifySiteAccess(req, res);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
+
     const rev      = revision || 1;
     const name     = siteName || posData.siteAddress || 'Cantiere';
     const fileName = `POS-Rev${rev}-${name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
@@ -1911,6 +1919,10 @@ app.post('/api/generate-pdf-html', verifyJwtOnly, apiLimiter, async (req, res) =
   try {
     const { content, siteName, revision, posData } = req.body;
     if (!posData) return res.status(400).json({ error: 'posData is required' });
+
+    const companyId = await verifySiteAccess(req, res);
+    if (!companyId) return;
+    if (!await checkBillingActive(companyId, res)) return;
 
     const signs    = selectSigns(posData);
     const html     = await generatePosHtml(posData, revision || 1, content || '', signs);

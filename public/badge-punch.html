@@ -598,9 +598,22 @@
   async function apiFetch(method, path, body) {
     const opts = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
-    const r = await fetch(API + path, opts);
-    const json = await r.json().catch(() => ({}));
-    return { status: r.status, body: json };
+    // Timeout esplicito: senza, un backend lento (non un vero errore di rete,
+    // che invece rifiuta subito) lascia lo spinner di timbratura girare
+    // all'infinito. Lasciamo che l'abort si propaghi come eccezione — i
+    // chiamanti (vedi handlePunch) già trattano qualunque eccezione come
+    // "offline": mettono la timbratura in coda locale e la ritentano da soli,
+    // che è esattamente il comportamento giusto anche per un server lento.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    opts.signal = controller.signal;
+    try {
+      const r = await fetch(API + path, opts);
+      const json = await r.json().catch(() => ({}));
+      return { status: r.status, body: json };
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   // ── Guida permessi GPS ─────────────────────────────────────────────────────────

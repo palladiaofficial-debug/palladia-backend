@@ -139,19 +139,10 @@ router.get('/pos/:id', verifySupabaseJwt, async (req, res) => {
     .from('pos_documents')
     .select('id, site_id, revision, created_at, pos_data, content')
     .eq('id', id)
+    .eq('company_id', companyId)
     .single();
 
   if (error || !doc) return res.status(404).json({ error: 'POS non trovato' });
-
-  if (doc.site_id) {
-    const { data: site } = await supabase
-      .from('sites')
-      .select('id')
-      .eq('id', doc.site_id)
-      .eq('company_id', companyId)
-      .single();
-    if (!site) return res.status(403).json({ error: 'Accesso negato' });
-  }
 
   res.json({
     id:         doc.id,
