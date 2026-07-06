@@ -122,8 +122,7 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [ ] 🔴 Upload documento: file salvato, visibile subito, scaricabile dopo
 - [ ] 🔴 Generazione POS: **testare l'intero flusso SSE fino al PDF finale**, verificare che l'header/footer del PDF non si sovrappongano al contenuto (bug storico)
-- [ ] 🔴 Generazione DVR: stesso test end-to-end
-- [ ] 🔴 Generazione PIMUS: stesso test end-to-end
+- [ ] 🔴 **DVR/PIMUS disattivati (2026-07-06, decisione esplicita)**: nessun bottone "Genera DVR"/"Genera PIMUS" visibile in Navbar/Altro/POSList; navigando direttamente a `/dvr/nuovo` e `/pimus/nuovo` compare il messaggio "non disponibile", non il form
 - [ ] 🟡 Documenti in scadenza evidenziati correttamente
 
 ## 3e. Cantiere → tab "Diario" ⚠️ area con bug corretti oggi — testare con attenzione
