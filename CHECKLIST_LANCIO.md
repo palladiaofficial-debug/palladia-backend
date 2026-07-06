@@ -36,9 +36,9 @@ un fix puntuale):
   dell'ambiente Railway reale — errore di metodo, non un problema vero. Non ripetere quello
   sbaglio: per verificare env di produzione usare sempre `railway variables`/`vercel env ls`,
   mai il file `.env` locale.)
-- [ ] 🟡 `VITE_SENTRY_DSN` (frontend/Vercel) — **non verificabile da questo ambiente** (repo
-  frontend non collegato al progetto Vercel, `vercel link` richiesto). Da controllare
-  manualmente su vercel.com → Settings → Environment Variables, o ricollegare l'ambiente.
+- [x] 🔴 `VITE_SENTRY_DSN` (frontend/Vercel) — **verificato 2026-07-06 con `vercel link` +
+  `vercel env ls production`: È impostata in produzione da 32 giorni.** Anche qui il dubbio
+  iniziale era infondato — Sentry risultava già configurato correttamente su entrambi i lati.
 - 🟡 Nessun timeout applicativo sul client Supabase stesso (`lib/supabase.js`) — il fix di
   sopra copre solo il fetch pubblico della timbratura, non un problema strutturale più ampio
   se Supabase rallenta su altri endpoint autenticati.
