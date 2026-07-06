@@ -4,7 +4,9 @@
  *
  * Restituisce quali moduli sono abilitati per la company autenticata.
  * Logica a tre livelli — vedi lib/featureFlags.js per i dettagli:
- *   1. MASTER_COMPANY_IDS env (comma-separated) → tutti i flag ON
+ *   1. MASTER_COMPANY_IDS env (comma-separated) → tutti i flag ON, TRANNE le
+ *      feature in FROZEN_FEATURES (dvr/pimus) — quelle passano comunque dal
+ *      punto 2/3, nessuna eccezione automatica nemmeno per i test interni.
  *   2. company_feature_flags table (override per-company dal DB)
  *   3. Variabili d'ambiente globali FEATURE_<NAME>_DEFAULT (true/false)
  *
@@ -21,17 +23,12 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { patchFeatureFlagSchema } = require('../../lib/schemas/featureFlags');
-const { FEATURES, MASTER_IDS } = require('../../lib/featureFlags');
+const { FEATURES, FROZEN_FEATURES, MASTER_IDS } = require('../../lib/featureFlags');
 
 // ── GET /api/v1/feature-flags ─────────────────────────────────────────────────
 router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
   const companyId = req.companyId;
-
-  // Se la company è nella lista master → tutti i flag ON
-  if (MASTER_IDS.has(companyId)) {
-    const allOn = Object.fromEntries(Object.keys(FEATURES).map(k => [k, true]));
-    return res.json(allOn);
-  }
+  const isMaster  = MASTER_IDS.has(companyId);
 
   // Leggi override specifici dal DB
   const { data: rows } = await supabase
@@ -44,10 +41,16 @@ router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
     dbOverrides[row.feature] = row.enabled;
   }
 
-  // Componi risposta: DB override > env default
+  // Componi risposta: master company → ON per tutto TRANNE le feature "frozen"
+  // (vedi lib/featureFlags.js — dvr/pimus restano disattivate anche per i test
+  // interni); per tutti gli altri, DB override > default env.
   const flags = {};
   for (const [feature, envDefault] of Object.entries(FEATURES)) {
-    flags[feature] = feature in dbOverrides ? dbOverrides[feature] : envDefault;
+    if (isMaster && !FROZEN_FEATURES.has(feature)) {
+      flags[feature] = true;
+    } else {
+      flags[feature] = feature in dbOverrides ? dbOverrides[feature] : envDefault;
+    }
   }
 
   res.json(flags);
