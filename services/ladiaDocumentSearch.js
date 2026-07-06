@@ -42,18 +42,15 @@ async function searchLadiaTemplates(companyId, nomeFile, tipo) {
     .select('id, document_type, original_filename, summary, key_sections, extracted_text, storage_path, created_at')
     .eq('company_id', companyId)
     .order('created_at', { ascending: false })
-    .limit(8);
-
-  if (tipo && tipo !== 'qualsiasi') {
-    const typeMap = {
-      capitolato: 'capitolato', contratto: 'contratto', pos: 'POS', psc: 'PSC',
-      durc: 'altro', dvr: 'altro', assicurazione: 'altro', attestato: 'altro', certificato: 'altro',
-    };
-    const mapped = typeMap[tipo.toLowerCase()];
-    if (mapped) q = q.eq('document_type', mapped);
-  }
+    .limit(15);
 
   if (nomeFile) q = q.ilike('original_filename', `%${nomeFile}%`);
+
+  const typeMap = {
+    capitolato: 'capitolato', contratto: 'contratto', pos: 'POS', psc: 'PSC',
+    durc: 'altro', dvr: 'altro', assicurazione: 'altro', attestato: 'altro', certificato: 'altro',
+  };
+  const mapped = tipo && tipo !== 'qualsiasi' ? typeMap[tipo.toLowerCase()] : null;
 
   const { data } = await q;
   return (data || []).map(d => ({
@@ -64,7 +61,7 @@ async function searchLadiaTemplates(companyId, nomeFile, tipo) {
     extracted_text: d.extracted_text,
     summary:        d.summary,
     key_sections:   d.key_sections,
-    score:          3, // priorità alta — già analizzati
+    score:          3 + (mapped && d.document_type === mapped ? 2 : 0), // priorità alta — già analizzati
   }));
 }
 
@@ -80,18 +77,22 @@ async function searchSiteDocuments(companyId, siteId, nomeFile, tipo) {
     .eq('company_id', companyId)
     .not('file_path', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(20);
 
   if (siteId)  q = q.eq('site_id', siteId);
-
-  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
-  if (cats) q = q.in('category', cats);
   if (nomeFile) q = q.ilike('name', `%${nomeFile}%`);
 
   const { data } = await q;
+  // La categoria è solo un BOOST del punteggio, non un filtro escludente: un
+  // documento archiviato con la categoria "sbagliata" dall'utente deve restare
+  // trovabile (altrimenti il tool risponde "non trovato" su un doc che esiste).
+  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
   return (data || [])
     .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
-    .map(d => ({ source: 'site_document', id: d.id, nome: d.name, storage_path: d.file_path, score: 2 }));
+    .map(d => ({
+      source: 'site_document', id: d.id, nome: d.name, storage_path: d.file_path,
+      score: 2 + (cats?.includes(d.category) ? 2 : 0),
+    }));
 }
 
 async function searchCompanyDocuments(companyId, nomeFile, tipo) {
@@ -107,16 +108,18 @@ async function searchCompanyDocuments(companyId, nomeFile, tipo) {
     .eq('company_id', companyId)
     .not('file_path', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(10);
+    .limit(20);
 
-  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
-  if (cats) q = q.in('category', cats);
   if (nomeFile) q = q.ilike('name', `%${nomeFile}%`);
 
   const { data } = await q;
+  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
   return (data || [])
     .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
-    .map(d => ({ source: 'company_document', id: d.id, nome: d.name, storage_path: d.file_path, score: 2 }));
+    .map(d => ({
+      source: 'company_document', id: d.id, nome: d.name, storage_path: d.file_path,
+      score: 2 + (cats?.includes(d.category) ? 2 : 0),
+    }));
 }
 
 async function searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore) {
@@ -145,16 +148,15 @@ async function searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore) 
     .eq('company_id', companyId)
     .not('file_path', 'is', null)
     .order('created_at', { ascending: false })
-    .limit(15);
+    .limit(25);
 
   if (workerIds) q = q.in('worker_id', workerIds);
-
-  const docTypes = tipo && TIPO_DOC_TYPES[tipo.toLowerCase()];
-  if (docTypes) q = q.in('doc_type', docTypes);
   if (nomeFile) q = q.ilike('name', `%${nomeFile}%`);
 
   const { data } = await q;
   if (!data?.length) return [];
+
+  const docTypes = tipo && TIPO_DOC_TYPES[tipo.toLowerCase()];
 
   // Arricchisci con il nome del lavoratore
   const wIds = [...new Set(data.map(d => d.worker_id).filter(Boolean))];
@@ -172,7 +174,7 @@ async function searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore) 
       id:           d.id,
       nome:         `${workerNames[d.worker_id] || 'Lavoratore'} — ${d.name || d.doc_type}`,
       storage_path: d.file_path,
-      score:        1,
+      score:        1 + (docTypes?.includes(d.doc_type) ? 1 : 0),
     }));
 }
 
