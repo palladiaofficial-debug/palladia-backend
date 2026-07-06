@@ -2,6 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { getCompanyPosDefaults } = require('../../lib/posDefaults');
 
 /**
  * GET /api/v1/pos
@@ -75,47 +76,8 @@ router.get('/pos/draft', verifySupabaseJwt, async (req, res) => {
  * DEVE stare prima di GET /pos/:id altrimenti Express cattura "defaults" come :id.
  */
 router.get('/pos/defaults', verifySupabaseJwt, async (req, res) => {
-  const companyId = req.companyId;
-
-  const { data: sites, error: sitesErr } = await supabase
-    .from('sites')
-    .select('id')
-    .eq('company_id', companyId);
-
-  if (sitesErr || !sites?.length) return res.json({ defaults: null });
-
-  const siteIds = sites.map(s => s.id);
-
-  const { data: doc } = await supabase
-    .from('pos_documents')
-    .select('pos_data')
-    .in('site_id', siteIds)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (!doc?.pos_data) return res.json({ defaults: null });
-
-  const d = doc.pos_data;
-  const persona = (nome = '', tel = '', email = '', cf = '') =>
-    ({ nome, telefono: tel, email, codiceFiscale: cf });
-
-  res.json({
-    defaults: {
-      ragioneSocialeImpresa:  d.companyName || '',
-      partitaIvaImpresa:      d.companyVat  || '',
-      responsabileLavori:     persona(d.responsabileLavori),
-      csp:                    persona(d.csp),
-      cse:                    persona(d.cse, d.cseTel, d.cseEmail, d.cseCf),
-      rspp:                   persona(d.rspp, d.rsppTel, d.rsppEmail, d.rsppCf),
-      rls:                    persona(d.rls, d.rlsTel),
-      medicoCompetente:       { ...persona(d.medico, d.medicoTel), firma: '' },
-      addettoPrimoSoccorso:   persona(d.primoSoccorso, d.primoSoccorsoTel),
-      addettoAntincendio:     persona(d.antincendio, d.antincendioTel),
-      direttoreTecnico:       persona(d.direttoreTecnico),
-      prepostoCantiere:       persona(d.preposto),
-    },
-  });
+  const defaults = await getCompanyPosDefaults(req.companyId);
+  res.json({ defaults });
 });
 
 /**

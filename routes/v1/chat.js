@@ -17,6 +17,9 @@ const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
 const { buildRisksPrompt } = require('../../services/posRisksGenerator');
+const { getMissingFields } = require('../../lib/posDraftCompleteness');
+const { getCompanyPosDefaults } = require('../../lib/posDefaults');
+const { searchLavorazioni } = require('../../lib/lavorazioniCatalog');
 const { isBillingActive } = require('../../lib/billing');
 const {
   chatMessageSchema,
@@ -546,16 +549,33 @@ con diff e undo (vedi sezione "COSA VEDE L'UTENTE"), quindi NON serve descriverl
 FLUSSO — non appena la conversazione riguarda un POS per un cantiere:
 1. Chiama SEMPRE get_pos_draft(site_id) per PRIMO — ti dice cosa è già stato compilato (da te in un
    turno precedente, o in una conversazione passata), per non richiedere di nuovo dati che l'utente
-   ha già dato.
+   ha già dato. Il tool ritorna anche 'missing' (campi ancora vuoti, raggruppati per sezione): se non è
+   vuoto, segnala SUBITO all'utente al massimo 1-2 gruppi (i più bloccanti, es. dati_generali e
+   figure_sicurezza) e chiedi quello — MAI l'elenco intero come un muro di richieste. Se l'utente sta
+   già dettando dati per conto suo, non interromperlo con questo checkpoint: aspetta una pausa naturale.
 2. Se non esiste ancora una bozza (exists:false) e hai almeno il cantiere più un altro dato utile,
    crea subito con create_record (table:'pos_drafts') — non aspettare di avere tutto.
 3. Ogni volta che emerge un nuovo dato nella conversazione (anche uno solo, es. "il CSE è Mario Bianchi"),
    aggiorna SUBITO con update_record (table:'pos_drafts', id preso da get_pos_draft) — non accumulare
    in memoria per scrivere tutto insieme alla fine.
-4. SEZIONE RISCHI (l'UNICA sezione del POS scritta davvero dall'AI, le altre 13 sono template statici
+4. FIGURE DI SICUREZZA — PRIMA di chiedere a freddo chi sono RSPP/RLS/CSE/medico competente/preposto,
+   chiama get_pos_defaults(site_id): legge le figure usate nell'ultimo POS emesso in azienda. Se torna
+   un valore utile, PROPONILO esplicitamente come domanda (es. "Uso lo stesso RSPP dell'ultimo POS,
+   Mario Bianchi?", volendo con un tag quick_ask) — NON scriverlo mai su pos_drafts senza una conferma
+   esplicita dell'utente: è un'inferenza da un cantiere/documento diverso, non un dato dettato in questa
+   conversazione (a differenza della REGOLA FERREA generale del POS, che vale solo per dati che l'utente
+   ha già detto qui). Se l'utente conferma, scrivi subito con update_record; se rifiuta o non c'è alcun
+   default (defaults:null), chiedi normalmente.
+5. LAVORAZIONI — PRIMA di proporre o scrivere selected_works, chiama SEMPRE search_lavorazioni con
+   parole chiave dal work_type/descrizione del cantiere (es. "ristrutturazione", "cappotto", "impianti")
+   e proponi/scrivi SOLO le stringhe ESATTE restituite dal tool — mai testo libero inventato: il wizard
+   fa un match esatto stringa-per-stringa, una voce anche leggermente diversa non risulterebbe spuntata.
+6. SEZIONE RISCHI (l'UNICA sezione del POS scritta davvero dall'AI, le altre 13 sono template statici
    dai dati raccolti): appena l'utente ha indicato le lavorazioni previste (selected_works in pos_drafts
    non vuoto), usa generate_pos_risks(site_id) per generarla — NON aspettare la fine della conversazione,
-   e NON descriverla a parole prima di averla generata. Quando il tool ritorna il testo:
+   e NON descriverla a parole prima di averla generata. Se 'missing' (dal passo 1) segnalava ancora
+   dati_generali o figure_sicurezza mancanti, avvisane brevemente l'utente prima di procedere (non
+   bloccante — la sezione rischi non dipende da quei dati). Quando il tool ritorna il testo:
      - riportalo in chat ESATTAMENTE come ricevuto (risks_content), senza parafrasare, riassumere o
        "sistemare" nulla — l'utente deve poter leggere e giudicare il testo esatto che finirà nel
        documento, non una tua rielaborazione;
@@ -564,11 +584,13 @@ FLUSSO — non appena la conversazione riguarda un POS per un cantiere:
      - se l'utente non è soddisfatto o cambia le lavorazioni, richiama di nuovo generate_pos_risks —
        ogni rigenerazione produce una nuova card annullabile, la versione precedente resta annullabile
        separatamente.
-5. Quando l'utente è pronto a rivedere/completare/generare il documento, NON chiamare nessun tool — scrivi
-   direttamente nella risposta il tag <ladia-action type="generate_doc" docType="pos" siteId="UUID"
-   siteName="Nome cantiere" label="Vai al POS"/> (NIENTE attributi extra oltre questi) — il wizard carica
-   da solo tutta la bozza accumulata, comprese le sezioni che tu non gestisci in chat (lavorazioni dal
-   catalogo, organico importato, revisione finale) e la sezione rischi già generata/confermata al passo 4.
+7. Quando l'utente è pronto a rivedere/completare/generare il documento: richiama get_pos_draft un'ultima
+   volta — se 'missing' non è vuoto, chiedi esplicitamente ("prima di aprire il wizard ti manca ancora
+   X — vuoi completarlo ora o preferisci farlo direttamente lì?") e attendi la risposta. Solo dopo, NON
+   chiamare nessun tool — scrivi direttamente nella risposta il tag <ladia-action type="generate_doc"
+   docType="pos" siteId="UUID" siteName="Nome cantiere" label="Vai al POS"/> (NIENTE attributi extra
+   oltre questi) — il wizard carica da solo tutta la bozza accumulata, comprese le sezioni che tu non
+   gestisci in chat (organico importato, revisione finale) e la sezione rischi già generata al passo 6.
 
 Campi scrivibili su pos_drafts — vedi la descrizione di create_record/update_record per l'elenco
 completo. Non inventare mai un valore: se l'utente non ha detto il CF del committente, lascialo fuori
@@ -1469,6 +1491,29 @@ const TOOLS = [
         site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
       },
       required: ['site_id']
+    }
+  },
+  {
+    name: 'get_pos_defaults',
+    description: 'Legge le figure di sicurezza (RSPP, RLS, CSE, medico competente, ecc.) usate nell\'ultimo POS emesso in azienda — per PROPORRE all\'utente il riuso invece di chiedere ogni dato a freddo. Chiamalo quando inizi a compilare le figure di sicurezza di un nuovo POS, PRIMA di chiedere chi sono. Se torna un valore utile, proponilo esplicitamente come domanda (mai scriverlo su pos_drafts senza conferma esplicita — è un\'inferenza da un altro cantiere/documento, non un dato dettato in questa conversazione). Se non c\'è alcun POS precedente, torna defaults:null — in quel caso chiedi normalmente.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio, solo per contesto/log)' }
+      },
+      required: ['site_id']
+    }
+  },
+  {
+    name: 'search_lavorazioni',
+    description: 'Cerca nel catalogo ufficiale di ~200 lavorazioni edili (stesso catalogo del wizard POS) per categoria o parola chiave. USA SEMPRE questo tool prima di proporre lavorazioni all\'utente o di scrivere selected_works su pos_drafts — scrivi SOLO le stringhe esatte restituite da questo tool, mai testo libero inventato: il wizard fa un match esatto stringa-per-stringa, un testo anche leggermente diverso non risulterà spuntato.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query:    { type: 'string', description: 'Parola chiave (es. "cappotto", "demolizione", o vuoto per elencare tutto)' },
+        category: { type: 'string', description: 'Nome o id categoria per restringere la ricerca (opzionale, es. "Impianti Elettrici")' }
+      },
+      required: []
     }
   },
   // ── 10 WRITE tools ─────────────────────────────────────────────────────────
@@ -3266,7 +3311,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .maybeSingle();
         if (error) return { error: error.message };
         if (!data) return { exists: false };
-        return { exists: true, draft: data };
+        return { exists: true, draft: data, missing: getMissingFields(data) };
       }
 
       case 'generate_pos_risks': {
@@ -3338,6 +3383,16 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           missing_works: needsReview && missingWorks.length > 0 ? missingWorks : undefined,
           ...logged,
         };
+      }
+
+      case 'get_pos_defaults': {
+        const defaults = await getCompanyPosDefaults(companyId);
+        return { defaults };
+      }
+
+      case 'search_lavorazioni': {
+        const results = searchLavorazioni(toolInput.query, toolInput.category);
+        return { categorie: results };
       }
 
       // ── 10 WRITE executors ───────────────────────────────────────────────────
