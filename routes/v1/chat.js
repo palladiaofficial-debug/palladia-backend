@@ -462,6 +462,9 @@ AZIONI INTERATTIVE — <ladia-action> (OBBLIGATORIO)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 L'interfaccia renderizza i tag <ladia-action> come pulsanti cliccabili inline nel messaggio.
 Usali ogni volta che puoi proporre un'azione diretta nella piattaforma.
+IMPORTANTE: questi NON sono tool da chiamare (non esistono come function tool, una tool_use con uno di
+questi nomi fallisce con "Tool non riconosciuto") — sono testo letterale da scrivere DIRETTAMENTE nella
+tua risposta, esattamente come scriveresti una parola qualunque.
 
 FORMATO — tag self-closing:
 <ladia-action type="TIPO" label="ETICHETTA" ATTRIBUTI/>
@@ -561,10 +564,11 @@ FLUSSO — non appena la conversazione riguarda un POS per un cantiere:
      - se l'utente non è soddisfatto o cambia le lavorazioni, richiama di nuovo generate_pos_risks —
        ogni rigenerazione produce una nuova card annullabile, la versione precedente resta annullabile
        separatamente.
-5. Quando l'utente è pronto a rivedere/completare/generare il documento, usa generate_doc docType="pos"
-   con solo siteId/siteName/label (NIENTE attributi extra) — il wizard carica da solo tutta la bozza
-   accumulata, comprese le sezioni che tu non gestisci in chat (lavorazioni dal catalogo, organico
-   importato, revisione finale) e la sezione rischi già generata/confermata al passo 4.
+5. Quando l'utente è pronto a rivedere/completare/generare il documento, NON chiamare nessun tool — scrivi
+   direttamente nella risposta il tag <ladia-action type="generate_doc" docType="pos" siteId="UUID"
+   siteName="Nome cantiere" label="Vai al POS"/> (NIENTE attributi extra oltre questi) — il wizard carica
+   da solo tutta la bozza accumulata, comprese le sezioni che tu non gestisci in chat (lavorazioni dal
+   catalogo, organico importato, revisione finale) e la sezione rischi già generata/confermata al passo 4.
 
 Campi scrivibili su pos_drafts — vedi la descrizione di create_record/update_record per l'elenco
 completo. Non inventare mai un valore: se l'utente non ha detto il CF del committente, lascialo fuori
@@ -5676,6 +5680,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       : userText;
   let messages = [...dbHistory, { role: 'user', content: userContent }];
   let fullAssistantReply = ''; // colleziona testo completo per salvarlo
+  let pendingSeparator = false; // separa il testo tra iterazioni diverse del loop agentico (dopo un giro di tool)
 
   let aborted = false;
   req.on('close', () => { aborted = true; });
@@ -5754,9 +5759,11 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
           const block = collectedContent[event.index];
           if (!block) continue;
           if (event.delta.type === 'text_delta') {
-            block.text = (block.text || '') + event.delta.text;
-            fullAssistantReply += event.delta.text;
-            send({ type: 'text', delta: event.delta.text });
+            let delta = event.delta.text;
+            if (pendingSeparator) { delta = '\n\n' + delta; pendingSeparator = false; }
+            block.text = (block.text || '') + delta;
+            fullAssistantReply += delta;
+            send({ type: 'text', delta });
           } else if (event.delta.type === 'input_json_delta') {
             block._inputRaw += event.delta.partial_json;
           }
@@ -5879,6 +5886,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
         { role: 'assistant', content: collectedContent.map(b => { const c = { ...b }; delete c._inputRaw; return c; }) },
         { role: 'user',      content: toolResults }
       ];
+      if (fullAssistantReply) pendingSeparator = true;
     }
 
     if (!aborted) {
