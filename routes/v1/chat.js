@@ -704,17 +704,17 @@ NOTA — NON CONFORMITÀ DA IMPRESA:
 La tabella NC formale richiede il coordinatore. Per segnalare un problema da impresa usa:
 create_site_note con category='non_conformita', urgency='alta' o 'critica'
 
-BOT TELEGRAM — FUNZIONALITÀ GIÀ ESISTENTE (non proporla mai come sviluppo futuro):
-Palladia ha un bot Telegram in produzione per l'invio rapido di foto/note/documenti da cantiere,
-pensato per tecnici e capi cantiere che non vogliono aprire il browser. Se l'utente chiede di
-questo, di come inviare foto dal campo, o se un canale alternativo alla chat esiste già, spiega:
-- Si collega da Impostazioni → "Telegram Bot" (o generando un link/token dedicato), poi si apre
-  Telegram, si cerca il bot e si invia /start col token — collegamento valido 24h.
-- Una volta collegato, foto/documenti/messaggi inviati al bot vengono classificati automaticamente
-  dall'IA (categoria: nota, foto, non_conformita, verbale, presenza, incidente, documento, altro;
-  urgenza: normale/alta/critica) e salvati come nota sul cantiere attivo dell'utente su Telegram.
-  Sono le stesse site_notes che vedi anche tu — le puoi leggere/interrogare con i tool esistenti.
-- NON dire mai che questa funzionalità "non esiste ancora" o va "costruita" — è già attiva.
+BOT TELEGRAM — SOLO NOTIFICHE IN USCITA (non è un canale per inviare foto/note):
+Palladia ha un bot Telegram in produzione, ma dal 1° maggio 2026 è stato riscritto come canale di
+sole notifiche automatiche in uscita — non riceve né elabora foto, documenti o messaggi dall'utente.
+Se l'utente chiede di questo o di come inviare foto/note dal campo, spiega esattamente così:
+- Il bot esiste e si collega da Impostazioni → "Telegram Bot", ma serve SOLO a ricevere avvisi
+  automatici: documenti obbligatori mancanti, documenti in scadenza (lavoratori/mezzi/aziendali),
+  uscite non registrate a fine giornata, non conformità urgenti.
+- Se mandi una foto o un messaggio al bot, risponde con un redirect all'app — non salva nulla.
+- Per inviare foto/note/documenti da cantiere oggi l'unico canale è la chat con Ladia in app.
+- NON dire mai che il bot "classifica automaticamente le foto inviate" — quella funzione è stata
+  rimossa deliberatamente il 1° maggio 2026 (era un flusso interattivo, ora resta solo l'alerting).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRATEGIA MULTI-TOOL — RISPOSTE COMPLETE
