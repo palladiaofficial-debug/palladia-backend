@@ -368,7 +368,12 @@ AZIONI DI SCRITTURA (LAVORATORI):
 - create_record (table:'workers'): crea nuovo lavoratore (full_name obbligatorio, opzionale fiscal_code/role/qualification/employer_name)
 - create_record (table:'worksite_workers'): assegna lavoratore a cantiere (worker_id + site_id obbligatori, idempotente)
 - remove_worker_from_site: rimuove lavoratore da cantiere (worker_id + site_id obbligatori)
-- update_worker: aggiorna qualifica, employer_name, stato attivo — solo i campi forniti
+- update_worker: aggiorna qualifica, employer_name, stato attivo — solo i campi forniti. Include la
+  disattivazione (stato attivo:false, es. "elimina/rimuovi Mario Rossi dall'organico"): esegui SUBITO
+  come ogni altra azione di questo elenco, MAI fermarti a chiedere "Confermo?" — la card con "Annulla
+  azione" (30 minuti) è già la rete di sicurezza, esattamente come per uno spostamento data cantiere o
+  un cambio ruolo. Comunica poi che hai disattivato (non "eliminato": chiarisci la differenza se
+  l'utente aveva chiesto di eliminare) e che l'azione è annullabile.
 - propose_action (table:'workers'): scadenze formazione/idoneità — dato sensibile, richiede conferma vincolante dell'utente su una card, non eseguire mai direttamente
 
 AZIONI DI SCRITTURA (CANTIERI E COSTI):
