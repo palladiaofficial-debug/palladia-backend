@@ -26,6 +26,9 @@ const {
   chatExportSchema,
   createConversationSchema,
   patchConversationTitleSchema,
+  patchConversationFolderSchema,
+  createFolderSchema,
+  patchFolderSchema,
   confirmPendingActionSchema,
 } = require('../../lib/schemas/chat');
 
@@ -6172,7 +6175,7 @@ router.get('/chat/conversations', verifySupabaseJwt, async (req, res) => {
 
   let q = supabase
     .from('chat_conversations')
-    .select('id, title, context_type, context_id, user_id, created_at, updated_at')
+    .select('id, title, context_type, context_id, user_id, folder_id, created_at, updated_at')
     .eq('company_id', req.companyId)
     .order('updated_at', { ascending: false })
     .limit(200);
@@ -6279,6 +6282,111 @@ router.patch('/chat/conversations/:id/title', verifySupabaseJwt, validate(patchC
 router.delete('/chat/conversations/:id', verifySupabaseJwt, async (req, res) => {
   const { error } = await supabase
     .from('chat_conversations')
+    .delete()
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json({ ok: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/v1/chat/conversations/:id/folder
+// Assegna/rimuove la conversazione da una cartella.
+// Body: { folder_id: uuid | null }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/chat/conversations/:id/folder', verifySupabaseJwt, validate(patchConversationFolderSchema), async (req, res) => {
+  const { folder_id } = req.body;
+
+  if (folder_id) {
+    const { data: folder, error: folderErr } = await supabase
+      .from('ladia_folders')
+      .select('id')
+      .eq('id', folder_id)
+      .eq('company_id', req.companyId)
+      .eq('user_id', req.user.id)
+      .maybeSingle();
+    if (folderErr) return res.status(500).json({ error: 'DB_ERROR' });
+    if (!folder)   return res.status(404).json({ error: 'FOLDER_NOT_FOUND' });
+  }
+
+  const { data, error } = await supabase
+    .from('chat_conversations')
+    .update({ folder_id })
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id)
+    .select('id, folder_id')
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data)  return res.status(404).json({ error: 'CONVERSATION_NOT_FOUND' });
+
+  res.json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/v1/chat/folders
+// Lista cartelle dell'utente per la company.
+// ─────────────────────────────────────────────────────────────────────────────
+router.get('/chat/folders', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('ladia_folders')
+    .select('id, name, created_at')
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id)
+    .order('created_at', { ascending: true });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json(data || []);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/chat/folders
+// Crea una nuova cartella.
+// Body: { name: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/chat/folders', verifySupabaseJwt, validate(createFolderSchema), async (req, res) => {
+  const { data, error } = await supabase
+    .from('ladia_folders')
+    .insert({ company_id: req.companyId, user_id: req.user.id, name: req.body.name })
+    .select('id, name, created_at')
+    .single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.status(201).json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PATCH /api/v1/chat/folders/:id
+// Rinomina una cartella.
+// Body: { name: string }
+// ─────────────────────────────────────────────────────────────────────────────
+router.patch('/chat/folders/:id', verifySupabaseJwt, validate(patchFolderSchema), async (req, res) => {
+  const { data, error } = await supabase
+    .from('ladia_folders')
+    .update({ name: req.body.name })
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .eq('user_id', req.user.id)
+    .select('id, name')
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data)  return res.status(404).json({ error: 'FOLDER_NOT_FOUND' });
+
+  res.json(data);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE /api/v1/chat/folders/:id
+// Elimina una cartella. Le conversazioni al suo interno restano, solo
+// scollegate (folder_id -> null, via ON DELETE SET NULL nel DB).
+// ─────────────────────────────────────────────────────────────────────────────
+router.delete('/chat/folders/:id', verifySupabaseJwt, async (req, res) => {
+  const { error } = await supabase
+    .from('ladia_folders')
     .delete()
     .eq('id', req.params.id)
     .eq('company_id', req.companyId)
