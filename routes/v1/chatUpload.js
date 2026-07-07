@@ -14,6 +14,8 @@ const ALLOWED_TYPES = [
   'image/jpeg', 'image/png', 'image/webp',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
 
 const upload = multer({
@@ -21,7 +23,7 @@ const upload = multer({
   limits:  { fileSize: MAX_SIZE },
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_TYPES.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Tipo file non supportato. Usa PDF, immagini o Word.'));
+    else cb(new Error('Tipo file non supportato. Usa PDF, immagini, Word o Excel.'));
   },
 });
 

@@ -399,13 +399,21 @@ DOCUMENT INTELLIGENCE — REGOLE:
 ARCHIVIO DOCUMENTI AI — REGOLE CRITICHE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
-1. Chiama read_uploaded_document per OGNI upload_id elencato — uno alla volta o in parallelo
-2. Dal risultato, determina: tipo documento, destinazione, nome, scadenza, lavoratore/cantiere associato
+1. Chiama read_uploaded_document per OGNI upload_id elencato, TUTTI IN PARALLELO nella stessa risposta
+   (più tool_use nello stesso turno) — mai un file alla volta in giri separati, anche con 10+ file.
+2. Da ogni risultato, determina: tipo documento, destinazione, nome, scadenza, lavoratore/cantiere associato
 3. Se il lavoratore è identificato per nome/CF ma non hai il worker_id → usa get_workers per trovarlo
-4. Se il cantiere è identificato per nome ma non hai il site_id → usa get_sites per trovarlo
-5. Chiama archive_document con tutti i campi corretti
-6. Conferma all'utente: nome archiviato, destinazione, scadenza rilevata (se presente)
-7. Se mancano informazioni indispensabili (es: a quale cantiere appartiene?) → CHIEDI prima di archiviare
+   (una volta sola, riusa il risultato per tutti i file di quel lavoratore)
+4. Se il cantiere è identificato per nome ma non hai il site_id → usa get_sites per trovarlo (stesso discorso)
+5. Chiama archive_document per OGNI file pronto, di nuovo TUTTI IN PARALLELO nella stessa risposta — non
+   intervallare "archivio uno, poi ti aggiorno, poi archivio il prossimo".
+6. CARICAMENTO MULTIPLO (2+ file): niente conferma per singolo file mentre lavori. Alla fine, UN SOLO
+   messaggio riepilogativo: elenco puntato di cosa hai archiviato e dove, poi — se presenti — i file che
+   NON hai potuto archiviare con il motivo esatto (dato mancante, tipo non leggibile). Il singolo file
+   isolato resta invece un messaggio diretto e breve come oggi.
+7. Se per un file specifico manca un'informazione indispensabile (es: a quale cantiere appartiene) e non
+   sei riuscito a dedurla da nome file/contenuto/contesto conversazione → non bloccarti su quello: archivia
+   gli altri, poi chiedi quel dato specifico nel riepilogo finale invece di fermare l'intero batch.
 8. Tono: diretto e assertivo — "Ho archiviato X come Y con scadenza Z" non "Ho cercato di archiviare"
 - Per worker_certificates: destination="worker_certificates", obbligatorio worker_id
 - Per idoneità mediche, patenti, formazione: destination="worker_documents" o "worker_certificates"
@@ -5657,7 +5665,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
 
   const { message, conversation_id, context_type = 'azienda', context_id, history = [], images = [], view_context: _vc = null, recent_activity: _ra = null, page_context: _pc = null, voice_mode: _vm = false, upload_ids: _uids = [] } = req.body;
   const voiceMode  = Boolean(_vm);
-  const uploadIds  = Array.isArray(_uids) ? _uids.filter(id => typeof id === 'string' && id.length > 0).slice(0, 10) : [];
+  const uploadIds  = Array.isArray(_uids) ? _uids.filter(id => typeof id === 'string' && id.length > 0).slice(0, 20) : [];
   if (!message || typeof message !== 'string') {
     return res.status(400).json({ error: 'MESSAGE_REQUIRED' });
   }
