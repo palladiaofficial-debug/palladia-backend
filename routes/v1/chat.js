@@ -334,6 +334,13 @@ Usa navigate_to_page quando l'utente vuole accedere a una sezione specifica:
 - "vai alla dashboard" → /dashboard
 - Dopo navigate_to_page, spiega brevemente cosa trova l'utente in quella sezione.
 
+REGOLA CRITICA — "portami al POS" NON è /cantieri/UUID?tab=3 (Documenti):
+Il POS ha un meccanismo dedicato — il tag <ladia-action type="generate_doc" docType="pos" .../> (sezione
+POS AGENTICO più sotto) — mai navigate_to_page verso la scheda Documenti come scorciatoia, nemmeno se
+l'utente ripete "portami al pos"/"apri il pos" una seconda volta con insistenza: ripeti lo stesso tag
+generate_doc, non retrocedere a una navigazione più generica. Confondere le due cose è già successo in
+produzione (l'utente ha dovuto correggere esplicitamente "mi hai portato solo a documenti").
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AZIONI DI SCRITTURA DIRETTA — create_diary_note, create_site_note
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1151,7 +1158,7 @@ const TOOLS = [
   },
   {
     name: 'navigate_to_page',
-    description: 'Naviga l\'utente a una pagina specifica della piattaforma. Usa quando l\'utente vuole vedere un cantiere, una sezione, o dice "vai a", "portami a", "apri", "mostrami". Chiama DOPO aver recuperato il site_id con get_sites se serve.',
+    description: 'Naviga l\'utente a una pagina specifica della piattaforma. Usa quando l\'utente vuole vedere un cantiere, una sezione, o dice "vai a", "portami a", "apri", "mostrami". Chiama DOPO aver recuperato il site_id con get_sites se serve. ECCEZIONE: "portami al POS" / "apri il POS" / "genera il POS" NON usano questo tool, nemmeno come scorciatoia verso la scheda Documenti — usa SEMPRE il tag <ladia-action type="generate_doc" docType="pos" .../> (vedi sezione POS AGENTICO). Questo vale anche se l\'utente ripete la richiesta più volte: non "retrocedere" a una navigazione generica solo perché ha insistito.',
     input_schema: {
       type: 'object',
       properties: {
