@@ -5008,7 +5008,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       }
 
       case 'get_company_trends': {
-        const { days = 30, site_id } = toolInput;
+        const { days = 30 } = toolInput;
         const cap = Math.min(Math.max(1, days), 365);
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - cap);
@@ -5920,7 +5920,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
         }
       }
 
-      if (aborted) { try { stream.abort(); } catch {} break; }
+      if (aborted) { try { stream.abort(); } catch { /* stream già chiuso */ } break; }
 
       try {
         const finalMsg = await stream.finalMessage();

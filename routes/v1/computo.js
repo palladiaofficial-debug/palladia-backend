@@ -540,8 +540,8 @@ router.delete('/sites/:siteId/computo/:id', async (req, res) => {
 // Ricalcola totale_contratto sul computo dopo l'inserimento.
 
 router.post('/sites/:siteId/computo/voci', async (req, res) => {
-  const { companyId, user } = req;
-  const { siteId }          = req.params;
+  const { companyId } = req;
+  const { siteId }    = req.params;
   const {
     descrizione, tipo = 'voce', codice,
     unita_misura, quantita, prezzo_unitario, importo,
