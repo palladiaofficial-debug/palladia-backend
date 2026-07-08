@@ -3062,7 +3062,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'get_site_detail': {
         const { data: site, error } = await supabase
           .from('sites')
-          .select('id, name, status, address, budget_totale, sal_percentuale, latitude, longitude, start_date, end_date, created_at, description, committente, rup, direttore_lavori, csp, cse')
+          .select('id, name, status, address, budget_totale, sal_percentuale, latitude, longitude, start_date, end_date, created_at, client, client_name, referente_tecnico_name')
           .eq('id', toolInput.site_id)
           .eq('company_id', companyId)
           .single();
