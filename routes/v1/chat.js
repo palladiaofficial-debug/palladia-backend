@@ -13,6 +13,7 @@ const { getCompanyBrain } = require('../../lib/companyBrain');
 const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
 const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const { sendAiCreditExhaustedAlert } = require('../../services/email');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
@@ -75,8 +76,15 @@ function posRisksRateLimited(companyId) {
 }
 
 // ── Classificatore query (zero costo API — keyword matching) ─────────────────
-// Restituisce 'sonnet' se la query richiede ragionamento tecnico/normativo,
-// altrimenti 'haiku' per query dati operative.
+// Restituisce 'sonnet' se la query richiede ragionamento normativo/tecnico
+// genuinamente complesso, altrimenti 'haiku' — che gestisce benissimo query
+// dati, KPI/dashboard, elenchi e domande semplici (costa ~12x meno di Sonnet).
+// Ristretta il 2026-07-08: la lista precedente includeva categorie che sono
+// semplici letture di dati (KPI/dashboard/grafici, fasi/cronoprogramma, diario,
+// meteo, NC, costi/fatture, cedolini, prenotazioni, mezzi) e parole troppo
+// generiche (consiglio/suggerisci/spiega/differenza/confronto/quando scade) —
+// finivano su Sonnet anche conversazioni banali, esaurendo il credito Anthropic
+// senza un motivo reale legato alla complessità della domanda.
 const SONNET_KEYWORDS = [
   // normativa
   'd.lgs','dlgs','decreto','normativ','legge','articolo','comma','allegato',
@@ -89,38 +97,18 @@ const SONNET_KEYWORDS = [
   'rspp','rls','cse','csp','preposto','datore','medico competen','sorveglianza sanitaria',
   'formazione','corso','attestato','abilitazione','patente a punti',
   'primo soccorso','evacuazione','antincendio',
-  // appalti / contratti
+  // appalti / contratti (normativa/legale, non semplice lettura dati)
   'soa','qualificazion','categoria og','categoria os','ati','rti','subappalto',
   'durc','antimafia','white list','cam costruzioni',
   'ccnl','contratto collettivo','inquadramento','mansione','retribuzion','tfr',
-  'sal','stato avanzamento','contabilità lavori','collaudo',
-  'codice dei contratti','d.lgs 36','appalto pubblico',
-  // analisi / consiglio
+  'collaudo','codice dei contratti','d.lgs 36','appalto pubblico',
+  // domande normative esplicite
   'come si fa','cosa prevede','cosa dice','è obbligatorio','sono obbligato',
-  'procedura','checklist','linee guida','best practice','consiglio','suggerisci',
-  'spiega','spiegami','differenza','confronto','quando scade','frequenza',
-  // fasi e cronoprogramma
-  'fase','fasi','cronoprogramma',
-  // canvas — query che producono grafici/KPI (→ Sonnet per seguire istruzioni canvas)
-  'kpi','dashboard','andamento','grafico','grafici',
-  // computo e capitolato
-  'computo','capitolato','metrico','voce','voci',
-  // diario
-  'diario','giornale',
-  // meteo e sospensioni
-  'sospensione','pioggia','meteo','tempo','neve','vento',
-  // coordinatore
-  'coordinatore','verbale',
-  // NC e ispezioni
-  'non conformità','nc','ispezione','asl',
-  // costi e documenti
-  'certificato','costi','fattura','fatture','ddt','acconto',
-  // cedolini e buste paga
-  'cedolino','cedolini','busta paga','buste paga',
-  // prenotazioni e logistica
-  'prenotazion','consegna','consegne','fornitura','forniture',
-  // mezzi e attrezzature
-  'escavatore','gru','autocarro','betoniera','mezzo','mezzi','attrezzatura','attrezzature',
+  'procedura','checklist','linee guida','best practice',
+  // ispezioni (normativa/preparazione, non solo lettura elenco NC)
+  'ispezione','asl',
+  // computo prezzi (analisi tecnica con formule, non solo lettura voci)
+  'computo','capitolato','metrico',
 ];
 
 const WRITE_KEYWORDS = [
@@ -3444,6 +3432,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
             max_tokens: 4000,
             messages: [{ role: 'user', content: prompt }],
           });
+          logUsage({ companyId, userId, conversationId: convId, model: MODEL_HAIKU, callSite: 'generate_pos_risks', usage: aiResp.usage });
           risksText = aiResp.content.find(b => b.type === 'text')?.text || '';
         } catch (err) {
           return { error: 'Errore nella generazione AI: ' + err.message };
@@ -4878,6 +4867,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (isPdf) createOpts.betas = ['pdfs-2024-09-25'];
 
         const aiResp = await aiClient.messages.create(createOpts);
+        logUsage({ companyId, userId, conversationId: convId, model: createOpts.model, callSite: 'read_uploaded_document', usage: aiResp.usage });
         const raw    = aiResp.content.find(b => b.type === 'text')?.text || '{}';
         let analysis = {};
         try { const m = raw.match(/\{[\s\S]*\}/); if (m) analysis = JSON.parse(m[0]); } catch { /* parziale */ }
@@ -5068,7 +5058,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
 
 // ── Agentic loop con company_id (chat principale) ────────────────────────────
 // systemPrompt: system prompt arricchito con company brain (o SYSTEM_PROMPT base)
-async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null) {
+async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null, convId = null) {
   let response = await client.messages.create({
     model,
     max_tokens: model === MODEL_SONNET ? 4096 : 2048,
@@ -5076,6 +5066,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
     tools:      TOOLS_CACHED,
     messages,
   });
+  logUsage({ companyId, userId, conversationId: convId, model, callSite: 'chat_legacy', usage: response.usage });
 
   const extra = [];
   let iter = 0;
@@ -5104,13 +5095,14 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
       tools:      TOOLS_CACHED,
       messages:   [...messages, ...extra],
     });
+    logUsage({ companyId, userId, conversationId: convId, model, callSite: 'chat_legacy', usage: response.usage });
   }
 
   return response.content.find(b => b.type === 'text')?.text ?? 'Non sono riuscito a elaborare la risposta.';
 }
 
 // ── Struttura JSON per report (export) ───────────────────────────────────────
-async function buildReportJson(messages, client) {
+async function buildReportJson(messages, client, companyId = null, userId = null) {
   const response = await client.messages.create({
     model:      'claude-haiku-4-5-20251001',
     max_tokens: 2048,
@@ -5120,6 +5112,7 @@ async function buildReportJson(messages, client) {
       { role: 'user', content: 'Struttura questa conversazione come report JSON professionale.' }
     ],
   });
+  logUsage({ companyId, userId, model: 'claude-haiku-4-5-20251001', callSite: 'report_json', usage: response.usage });
 
   const raw = response.content.find(b => b.type === 'text')?.text ?? '{}';
   // Estrai il primo blocco JSON valido anche se Claude aggiunge testo fuori
@@ -5553,7 +5546,7 @@ async function uploadChatImages(images, companyId, conversationId) {
 }
 
 // Genera titolo automatico dal 1° messaggio (fire-and-forget)
-async function autoTitle(conversationId, firstUserMessage, client) {
+async function autoTitle(conversationId, firstUserMessage, client, companyId = null, userId = null) {
   try {
     const { data: conv } = await supabase
       .from('chat_conversations')
@@ -5568,6 +5561,7 @@ async function autoTitle(conversationId, firstUserMessage, client) {
       system:     'Genera un titolo brevissimo (max 5 parole, italiano). SOLO testo semplice, ZERO markdown, ZERO hashtag #, ZERO asterischi *, ZERO simboli. Esempio: "Presenze cantiere oggi"',
       messages:   [{ role: 'user', content: firstUserMessage.slice(0, 300) }],
     });
+    logUsage({ companyId, userId, conversationId, model: MODEL_HAIKU, callSite: 'auto_title', usage: resp.usage });
     const title = resp.content.find(b => b.type === 'text')?.text?.trim().slice(0, 60) || 'Chat';
     await supabase.from('chat_conversations').update({ title }).eq('id', conversationId);
   } catch { /* non critico */ }
@@ -5635,7 +5629,7 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
       if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
     } catch { /* non critico — Ladia funziona anche senza brain */ }
 
-    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id);
+    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id, convId);
 
     // Salva prima di rispondere — garantisce che il messaggio sia nel DB
     // overhead ~20ms su una risposta già da 1-3s
@@ -5647,7 +5641,7 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
 
     // Titolo auto al 1° scambio (fire-and-forget — solo cosmesi)
     if (isNew) {
-      autoTitle(convId, message.trim(), client).catch(() => {});
+      autoTitle(convId, message.trim(), client, req.companyId, req.user.id).catch(() => {});
     }
 
     res.json({ reply, conversation_id: convId });
@@ -5689,7 +5683,7 @@ router.post('/chat/export', verifySupabaseJwt, validate(chatExportSchema), async
 
   try {
     const client = getClient();
-    const report = await buildReportJson(safeMessages, client);
+    const report = await buildReportJson(safeMessages, client, req.companyId, req.user.id);
     const ts     = Date.now();
 
     if (format === 'pdf') {
@@ -5927,6 +5921,12 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       }
 
       if (aborted) { try { stream.abort(); } catch {} break; }
+
+      try {
+        const finalMsg = await stream.finalMessage();
+        logUsage({ companyId: req.companyId, userId: req.user.id, conversationId: convId, model, callSite: 'chat_stream', usage: finalMsg.usage });
+      } catch { /* non critico — non deve mai bloccare la risposta a Ladia */ }
+
       if (stopReason !== 'tool_use') break; // risposta testo — fine loop
 
       // Parsa input JSON dei tool (arrivato come stringa parziale durante lo stream)
@@ -6066,7 +6066,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
           console.error('[chat/stream] saveMessages error:', e.message);
         }
         if (isNew) {
-          autoTitle(convId, userMsgForDb, getClient()).catch(() => {});
+          autoTitle(convId, userMsgForDb, getClient(), req.companyId, req.user.id).catch(() => {});
         }
         // Aggiorna memoria Ladia (asincrono, non bloccante, usa claude-haiku)
         setImmediate(() => {
