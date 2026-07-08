@@ -5918,7 +5918,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       }
 
       const toolBlocks = collectedContent.filter(b => b.type === 'tool_use');
-      send({ type: 'tool_start', names: toolBlocks.map(b => b.name) });
+      send({ type: 'tool_start', names: toolBlocks.map(b => b.name), ids: toolBlocks.map(b => b.id) });
 
       // Esegui tool in parallelo
       const toolResults = await Promise.all(
@@ -6006,6 +6006,17 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
             const docs = [...(result.scaduti || []), ...(result.in_scadenza || [])];
             if (docs.length > 0) send({ type: 'doc_cards', docs: docs.slice(0, 10) });
           }
+          // Evento dedicato allo stato di esecuzione del singolo tool (per la
+          // timeline lato frontend) — ortogonale alle card narrative sopra, che
+          // portano i dati da mostrare; questo porta solo successo/errore.
+          const failed = !!(result && (result.error || result.errore || result.success === false));
+          send({
+            type:    'tool_step',
+            id:      block.id,
+            name:    block.name,
+            status:  failed ? 'error' : 'done',
+            message: failed ? (result.error || result.errore || result.message || null) : undefined,
+          });
           return {
             type:        'tool_result',
             tool_use_id: block.id,
