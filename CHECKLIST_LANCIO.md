@@ -111,12 +111,13 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 1. Autenticazione e onboarding
 
-- [ ] 🔴 Registrazione nuovo utente con email reale → arriva email di conferma
-- [ ] 🔴 Login con credenziali corrette
-- [ ] 🔴 Login con password sbagliata → messaggio di errore chiaro, non generico
-- [ ] 🔴 Onboarding azienda: creazione company al primo accesso, nome salvato correttamente
-- [ ] 🟡 Reset password: richiesta, email ricevuta, nuovo accesso funziona
-- [ ] 🟡 Logout → sessione effettivamente terminata (provare a tornare indietro col browser)
+- [ ] 🟢 (nota minore, non bloccante) Pagina login su Microsoft Edge: contenuto visivamente shiftato a sinistra invece che centrato — non riprodotto/diagnosticato (zoom 100%, nessuna sidebar Edge visibile, DevTools non ha dato il tempo di leggere `window.innerWidth`). Edge non è tra i browser usati per test (Chrome) o campo (Firefox) — da rivedere con calma, non urgente
+- [x] 🔴 Registrazione nuovo utente con email reale → arriva email di conferma — verificato dal vivo 2026-07-09 (account test "Nova CS Servizi")
+- [x] 🔴 Login con credenziali corrette — verificato dal vivo 2026-07-09
+- [x] 🔴 Login con password sbagliata → messaggio di errore chiaro, non generico — verificato dal vivo 2026-07-09, messaggio chiaro
+- [x] 🔴 Onboarding azienda: creazione company al primo accesso, nome salvato correttamente — verificato dal vivo 2026-07-09
+- [x] 🔴🔴 **CRITICO trovato e corretto 2026-07-09**: Reset password — il link email autenticava l'utente completamente (accesso a dashboard/cantieri/tutto) **senza mai fargli impostare una nuova password**. La sessione di recovery di Supabase veniva trattata come un login normale. Chiunque avesse aperto quel link (email condivisa, link intercettato) entrava nell'account senza sapere alcuna password, e la vecchia password restava valida. Corretto: `AuthContext` ora distingue l'evento `PASSWORD_RECOVERY`, `ProtectedRoute` blocca ogni pagina finché la password non viene davvero cambiata, `/password-reset` mostra il form corretto in quel caso. Commit `dcaab5c` (repo frontend), pushato. **Riverificato dal vivo 2026-07-09** in incognito con un link di recovery reale: ora appare correttamente il form "Imposta una nuova password" invece di dare accesso diretto
+- [x] 🟡 Logout → sessione effettivamente terminata (provare a tornare indietro col browser) — verificato dal vivo 2026-07-09, dopo logout il tasto indietro non fa rientrare
 - [ ] 🟢 Redirect corretto dopo login (torna dove stava andando, non sempre alla dashboard)
 
 ---
@@ -282,7 +283,7 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [x] 🔴 Con due account di due company diverse, verificare che **nessun dato** (cantieri, lavoratori, documenti, conversazioni Ladia) sia visibile all'altra company — trovato rotto 2026-07-09 (RLS disabilitato su 24 tabelle), **corretto** con migrazione 129, riverificato dopo il fix con sessione reale
 - [x] 🔴 Provare a modificare l'URL con l'ID di una risorsa di un'altra company (es. `/cantieri/<uuid-altra-company>`) → deve dare errore, non mostrare i dati — questo test ha trovato il bug sopra; ora dà correttamente "non trovato" invece dei dati reali
-- [ ] 🟡 Token scan/QR di un cantiere non funziona su un cantiere diverso
+- [x] 🟡 Token scan/QR di un cantiere non funziona su un cantiere diverso — verificato 2026-07-09 dal vivo contro produzione: token generato per un sito, riusato dichiarando un sito di un'altra company → `INVALID_SIGNATURE` (HMAC lega il token al site_id)
 
 ---
 
