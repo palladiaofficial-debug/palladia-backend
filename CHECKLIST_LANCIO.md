@@ -164,8 +164,8 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [x] 🔴 Upload documento: file salvato, visibile subito, scaricabile dopo — verificato dal vivo 2026-07-09
 - [x] ✨ **Nuovo 2026-07-09**: i documenti caricati qui ora vengono analizzati automaticamente in background (Haiku, stesso meccanismo già esistente per company/worker_documents dalla migrazione 050) — scadenza, tipo, ente emittente, problemi rilevati pronti per Ladia senza dover rileggere il PDF ogni volta. Testato end-to-end con un PDF reale, analisi corretta. Commit `5fcfda4`. Bonus: corretto per strada `get_site_documents` (tool Ladia), che falliva sempre per colonne/tabella inesistenti (bug pre-esistente, mai notato)
-- [ ] 🔴 Generazione POS: **testare l'intero flusso SSE fino al PDF finale**, verificare che l'header/footer del PDF non si sovrappongano al contenuto (bug storico)
-- [ ] 🔴 **DVR/PIMUS disattivati (2026-07-06, decisione esplicita)**: nessun bottone "Genera DVR"/"Genera PIMUS" visibile in Navbar/Altro/POSList; navigando direttamente a `/dvr/nuovo` e `/pimus/nuovo` compare il messaggio "non disponibile", non il form
+- [x] 🔴 Generazione POS: **testare l'intero flusso SSE fino al PDF finale**, verificare che l'header/footer del PDF non si sovrappongano al contenuto (bug storico) — verificato dal vivo 2026-07-09, flusso completo funzionante
+- [x] 🔴 **DVR/PIMUS disattivati (2026-07-06, decisione esplicita)**: nessun bottone "Genera DVR"/"Genera PIMUS" visibile in Navbar/Altro/POSList; navigando direttamente a `/dvr/nuovo` e `/pimus/nuovo` compare il messaggio "non disponibile", non il form — verificato dal vivo 2026-07-09 su `/dvr/nuovo`
 - [ ] 🟡 Documenti in scadenza evidenziati correttamente
 
 ## 3e. Cantiere → tab "Diario" ⚠️ area con bug corretti oggi — testare con attenzione
@@ -186,7 +186,7 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 4. Ladia AI — desktop (`/pal`) ⚠️ area con più bug corretti oggi
 
-- [ ] 🔴 Messaggio di solo testo → risposta coerente, nessun errore
+- [x] 🔴🔴 **CRITICO trovato e corretto 2026-07-09**: l'invio di QUALUNQUE messaggio a Ladia dal drawer era completamente rotto — `ReferenceError: setNavChip is not defined` bloccava `send()` sulla primissima riga, prima ancora di mandare il messaggio. Introdotto dal refactor del 2026-07-08 (`1f8abae`), passato inosservato nonostante fosse segnato "verificato con Playwright". Corretto (repo frontend, commit `46d5c98`) sostituendo con `clearNavChip()`, la funzione realmente esposta dal context. **Da riverificare dal vivo dopo il deploy**: apri il drawer Ladia, scrivi e invia un messaggio qualsiasi
 - [ ] 🔴 Messaggio con foto allegata → **elaborata correttamente, nessun "immagine troppo pesante"** (verificare con foto reale da fotocamera, non ridimensionata a mano)
 - [ ] 🔴 Dopo l'invio con foto, **ricaricare la pagina**: la foto deve restare visibile nella cronologia
 - [ ] 🔴 Azioni di scrittura (nota diario, nuovo lavoratore, aggiorna cantiere, ecc.) → verificare che il dato sia **davvero** salvato nel posto giusto, non solo confermato a parole
