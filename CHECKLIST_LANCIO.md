@@ -134,24 +134,24 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [x] 🔴 Lista cantieri mostra solo quelli della company loggata (provare con 2 account diversi) — già coperto dalla verifica sezione 13 (fix RLS)
 - [x] 🔴 Creazione nuovo cantiere: tutti i campi obbligatori validati, cantiere compare in lista subito dopo — validazione ok; trovato e corretto 2026-07-09 bug reale: il popup non si chiudeva dopo il salvataggio (`onClose()` mancante in `handleCreate`), restava aperto vuoto sopra la pagina del nuovo cantiere. Commit `c6f41b4` (repo frontend). Nota a parte: durante il test è comparso in console un `AuthApiError: Invalid Refresh Token` — non riprodotto in isolamento, probabile residuo delle molte sessioni di test (incognito/account multipli) di questa sessione, non un bug nuovo confermato
-- [ ] 🟡 Ricerca/filtro cantieri funziona
-- [ ] 🟡 Badge "scaduto Ngg fa" / countdown giorni rimanenti corretto rispetto alle date reali
+- [x] 🟡 Ricerca/filtro cantieri funziona — verificato dal vivo 2026-07-09
+- [x] 🟡 Badge "scaduto Ngg fa" / countdown giorni rimanenti corretto rispetto alle date reali — verificato dal vivo 2026-07-09 con calcolo manuale su 2 cantieri reali, combacia esattamente. Nota minore non bloccante: un cantiere con data inizio futura (tra 5gg) risultava già "attivo" invece di "non ancora iniziato" — da confermare se è comportamento voluto
 
 ## 3a. Cantiere → tab "Cantiere" (Info)
 
-- [ ] 🔴 Dati contratto (inizio/fine) modificabili e salvati
-- [ ] 🔴 QR timbratura generato, valido, scaricabile in PDF
-- [ ] 🟡 "Condividi link" QR funziona
-- [ ] 🟡 Sospensioni giornata: aggiunta, mostrata nel calendario, **bottone ↩ annulla funziona**
-- [ ] 🟡 Coordinate GPS impostabili (necessarie per meteo e geofence)
-- [ ] 🟢 Progress bar percentuale completamento coerente con le date
+- [x] 🔴 Dati contratto (inizio/fine) modificabili e salvati — verificato dal vivo 2026-07-09, calcoli giorni/percentuale ricontrollati a mano e corretti
+- [x] 🔴 QR timbratura generato, valido, scaricabile in PDF — verificato dal vivo 2026-07-09, PDF A4 ok, QR leggibile
+- [x] 🟡 "Condividi link" QR funziona — verificato dal vivo 2026-07-09, link nel formato corretto (site-id + token firmato + scadenza)
+- [x] 🟡 Sospensioni giornata: aggiunta, mostrata nel calendario, **bottone ↩ annulla funziona** — verificato dal vivo 2026-07-09: aggiunta sposta correttamente la data fine di un giorno, rimozione (icona cestino, non freccia ↩ — UI diversa da quanto descritto ma funzione identica) riporta indietro correttamente
+- [x] 🟡 Coordinate GPS impostabili (necessarie per meteo e geofence) — verificato dal vivo 2026-07-09
+- [x] 🟢 Progress bar percentuale completamento coerente con le date — verificato dal vivo 2026-07-09 con calcolo a mano
 
 ## 3b. Cantiere → tab "Presenze"
 
-- [ ] 🔴 Presenze di oggi mostrate correttamente (chi è dentro, chi è uscito)
-- [ ] 🔴 Storico presenze per intervallo di date corretto
+- [x] 🔴 Presenze di oggi mostrate correttamente (chi è dentro, chi è uscito) — verificato 2026-07-09 con analisi approfondita del codice (nessun lavoratore reale disponibile per test dal vivo): `punch_atomic` (lock per worker+site, event_type deciso server-side, auto-exit su cambio cantiere) + `groupByWorker` frontend (ultimo evento determina stato) — logica corretta, nessun bug trovato
+- [x] 🔴 Storico presenze per intervallo di date corretto — stessa verifica di cui sopra, riusa la stessa logica di raggruppamento
 - [ ] 🟡 Export presenze PDF/CSV funziona e i dati coincidono con quelli a schermo
-- [ ] 🟡 Link ASL pubblico (ispettore) generato e funzionante senza login
+- [x] 🟡🔴 **Trovato e corretto 2026-07-09**: il link ASL pubblico non era generabile da nessuna parte dell'app — nessun pulsante lo richiamava, nonostante il backend (`asl.js` + `public/asl.html`) fosse completo e funzionante, e nonostante fosse pubblicizzato su landing page e piani a pagamento ("Token ASL per ispettori"). In più, anche generandolo a mano via API, l'URL puntava al dominio sbagliato (`palladia.net`, il frontend, che non ha quella rotta) invece del backend che la serve davvero. Corretti entrambi: dominio dell'URL (backend, commit `d840937`) + nuovo sub-tab "Ispettore ASL" in Presenze per generare/copiare/revocare i link (frontend, commit `283d747`). **Da riprovare dal vivo dopo il deploy**: genera un link, aprilo in incognito, verifica che scarichi PDF/CSV senza chiedere login
 
 ## 3c. Cantiere → tab "Organico"
 
