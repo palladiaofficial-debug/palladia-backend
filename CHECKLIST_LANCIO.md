@@ -1,5 +1,46 @@
 # Checklist pre-lancio Palladia — test manuale, un flusso alla volta
 
+## 🔴🔴 CRITICO — 2026-07-09: RLS disabilitato su 24 tabelle, dati cross-tenant esposti
+
+Scoperto testando manualmente la voce di sezione 13 ("provare a modificare l'URL con
+l'ID di una risorsa di un'altra company"): navigando su `/cantieri/<uuid altra company>`
+da loggati, l'app mostrava i dati reali del cantiere sbagliato (nome, date, avanzamento).
+
+Causa: `sites` in produzione aveva `relrowsecurity=false` nonostante la migrazione 002
+l'avesse abilitato — disattivato a mano da SQL Editor in qualche momento imprecisato e
+mai più riattivato (nessuna migrazione tracciava il rollback). Audit sistematico di
+`pg_class`/`pg_policies` su tutte le 112 tabelle: **24 tabelle** con RLS disabilitato,
+incluse `workers`, `presence_logs`, `worksite_workers`, `worker_device_sessions`,
+`chat_conversations`, `chat_messages`, `site_documents`, `subcontractors`,
+`site_nonconformities`, `user_site_assignments`, `ladia_folders` — più la policy
+`companies_select` alterata a `USING (true)` (chiunque autenticato leggeva tutte le
+company). `SUPABASE_URL`/`ANON_KEY` sono pubblici (`GET /api/config` — stesso schema
+già visto nella migrazione 123), quindi **qualunque utente con un account Palladia
+poteva leggere — e in molti casi scrivere/cancellare — i dati di tutte le altre
+company** via REST API diretta a Supabase, bypassando completamente il backend.
+
+**Verificato dal vivo** (non solo a codice): riprodotta la query esatta del frontend
+con una sessione reale (`carpiooricardo@gmail.com`, company MSCedilizia) — prima del
+fix vedeva tutti i 17 cantieri e 29 lavoratori del DB, di 3 company diverse, inclusa
+la company reale di campo (MSCedilizia S.r.l., account `carpio@mscedilizia.it`).
+
+**Corretto**: migrazione `129_fix_rls_gaps.sql`, applicata in produzione — RLS
+riabilitato + policy `is_company_member(company_id)` su tutte le tabelle interessate
+(`chat_conversations`/`ladia_folders` con vincolo aggiuntivo `user_id = auth.uid()`,
+essendo dati per-utente; `prezzario_voci` reso sola-lettura pubblica perché è listino
+condiviso non per-tenant by design; tabelle coordinatori esterni — keyed per email, non
+company — bloccate del tutto lato client, restano accessibili solo dal backend con
+service-role). Riverificato dopo il fix con la stessa sessione reale: zero accesso
+cross-company su sites/workers/companies/chat_conversations, accesso alla propria
+company intatto su tutte le 15 tabelle controllate.
+
+**Ancora da fare**: retest visivo in browser delle pagine che usano le tabelle appena
+ristrette (Documenti, Subappalti, Non conformità, Ladia/cartelle) per confermare che
+nessuna schermata si sia rotta — il controllo automatico conferma che le query non
+danno errore, ma non sostituisce un click reale.
+
+---
+
 ## Audit automatico 2026-07-06 — bug trovati e corretti
 
 Verifica di sicurezza/resilienza/migrazioni fatta leggendo il codice reale (non un audit
@@ -58,12 +99,12 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 0. Pre-requisiti ambiente (una tantum, prima di iniziare)
 
-- [ ] 🔴 `SENTRY_DSN` impostata su Railway (backend) — verificare in `railway variables`
-- [ ] 🔴 `VITE_SENTRY_DSN` impostata su Vercel (frontend) — verificare in `vercel env ls production`
-- [ ] 🔴 Credito Anthropic sufficiente su console.anthropic.com (Plans & Billing)
+- [x] 🔴 `SENTRY_DSN` impostata su Railway (backend) — riverificato 2026-07-09 con `railway variables`, presente
+- [x] 🔴 `VITE_SENTRY_DSN` impostata su Vercel (frontend) — riverificato 2026-07-09 con `vercel env ls production`, presente (35gg)
+- [ ] 🔴 Credito Anthropic sufficiente su console.anthropic.com (Plans & Billing) — da controllare manualmente, non verificabile da CLI/API
 - [x] 🔴 Migrazione `118_site_bookings.sql` applicata su Supabase — verificato 2026-07-06 con controllo sistematico di tutte le 131 migrazioni contro il DB reale
 - [x] 🔴 Migrazione `119_chat_message_images.sql` applicata su Supabase — verificato 2026-07-06, vedi sopra
-- [ ] 🟡 Nessuna conversazione fantasma in `chat_conversations` (0 messaggi) — query di verifica rapida
+- [x] 🟡 Nessuna conversazione fantasma in `chat_conversations` (0 messaggi) — verificato 2026-07-09: 101 conversazioni totali, 0 senza messaggi
 - [ ] 🟢 Hard refresh su tutti i dispositivi di test prima di iniziare (elimina bundle JS vecchio in cache)
 
 ---
@@ -239,8 +280,8 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 13. Sicurezza multi-tenant (fondamentale, non saltare)
 
-- [ ] 🔴 Con due account di due company diverse, verificare che **nessun dato** (cantieri, lavoratori, documenti, conversazioni Ladia) sia visibile all'altra company
-- [ ] 🔴 Provare a modificare l'URL con l'ID di una risorsa di un'altra company (es. `/cantieri/<uuid-altra-company>`) → deve dare errore, non mostrare i dati
+- [x] 🔴 Con due account di due company diverse, verificare che **nessun dato** (cantieri, lavoratori, documenti, conversazioni Ladia) sia visibile all'altra company — trovato rotto 2026-07-09 (RLS disabilitato su 24 tabelle), **corretto** con migrazione 129, riverificato dopo il fix con sessione reale
+- [x] 🔴 Provare a modificare l'URL con l'ID di una risorsa di un'altra company (es. `/cantieri/<uuid-altra-company>`) → deve dare errore, non mostrare i dati — questo test ha trovato il bug sopra; ora dà correttamente "non trovato" invece dei dati reali
 - [ ] 🟡 Token scan/QR di un cantiere non funziona su un cantiere diverso
 
 ---
