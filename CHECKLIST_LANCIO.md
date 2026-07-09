@@ -172,7 +172,7 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [ ] 🔴 Sub-tab **Diario di Cantiere**: nota del giorno visibile, editabile, salvata
 - [ ] 🔴 Sub-tab **Note & Foto**: creazione nota manuale con foto allegata — **la foto resta visibile dopo un reload della pagina**
-- [ ] 🔴 Da Ladia: "aggiungi una nota al diario con questa foto" → la nota compare **davvero** in questo tab (non solo nel messaggio di conferma di Ladia)
+- [x] 🔴🔴 **CRITICO trovato e corretto 2026-07-09**: Da Ladia: "aggiungi una nota al diario con questa foto" → la nota compariva nel diario (`site_diary_entries`, verificato) ma **la foto non veniva mai salvata** — Ladia la analizzava e scriveva una descrizione a parole, ma il file non risultava agganciato ("Foto: –" nella UI, che invece era già pronta a mostrarle). Causa: le foto venivano caricate su storage solo a fine turno, dopo che i tool avevano già girato — l'URL non esisteva ancora quando `create_diary_note` veniva eseguito. Corretto spostando l'upload prima del loop di tool (repo backend, commit `8186d39`), testato end-to-end direttamente sul DB. **Stesso gap identificato ma non ancora corretto su "Note & Foto"** (`create_site_note`/`site_notes`, convenzione di storage diversa) — da fare se serve. **Da riverificare dal vivo dopo il deploy**: chiedi di nuovo a Ladia di aggiungere una nota al diario con una foto
 - [ ] 🔴 Bottone "Vai al diario" generato da Ladia → atterra sul tab Diario, non su Cantiere
 
 ## 3f. Cantiere → tab "Economia"
