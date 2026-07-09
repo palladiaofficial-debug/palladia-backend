@@ -34,9 +34,24 @@ const {
 } = require('../../lib/schemas/chat');
 
 // Lazy init — evita crash al boot se ANTHROPIC_API_KEY non è configurata
+//
+// anthropic-beta extended-cache-ttl: il cache_control su system prompt/tools
+// (vedi buildCachedSystem/TOOLS_CACHED più sotto) di default dura solo 5 minuti.
+// Con un solo utente che testa (o traffico basso in generale), qualunque pausa
+// tra due messaggi più lunga di 5 minuti fa ripagare da zero l'intero prefisso
+// statico (~40k token, il costo dominante di ogni conversazione — osservato
+// $0.16 per "riscaldamento" contro $0.03 per un turno in cache-hit). La cache
+// da 1 ora costa il doppio a scrittura (2x invece di 1.25x il prezzo base) ma,
+// con gap realistici tra i messaggi di un operaio/PM che consulta Ladia in
+// cantiere, converte molti riscaldamenti costosi in uno solo — risparmio netto
+// significativo, non solo durante i test ma a qualunque livello di traffico
+// più sporadico di uno ogni 5 minuti.
 let _anthropic = null;
 function getClient() {
-  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  if (!_anthropic) _anthropic = new Anthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    defaultHeaders: { 'anthropic-beta': 'extended-cache-ttl-2025-04-11' },
+  });
   return _anthropic;
 }
 
@@ -2260,7 +2275,7 @@ IMPORTANTE — mai esporre nomi tecnici di colonna del database all'utente (es. 
 // sui token cache-hit). Costruito una sola volta al boot: TOOLS non cambia mai
 // a runtime, quindi non c'è bisogno di ricrearlo per ogni richiesta.
 const TOOLS_CACHED = TOOLS.length > 0
-  ? [...TOOLS.slice(0, -1), { ...TOOLS[TOOLS.length - 1], cache_control: { type: 'ephemeral' } }]
+  ? [...TOOLS.slice(0, -1), { ...TOOLS[TOOLS.length - 1], cache_control: { type: 'ephemeral', ttl: '1h' } }]
   : TOOLS;
 
 // systemPrompt è sempre SYSTEM_PROMPT + testo dinamico (company brain, memoria,
@@ -2272,7 +2287,7 @@ function buildCachedSystem(fullPrompt) {
     return [{ type: 'text', text: fullPrompt }];
   }
   const dynamic = fullPrompt.slice(SYSTEM_PROMPT.length);
-  const blocks = [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }];
+  const blocks = [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral', ttl: '1h' } }];
   if (dynamic) blocks.push({ type: 'text', text: dynamic });
   return blocks;
 }
