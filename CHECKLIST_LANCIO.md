@@ -170,12 +170,14 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 3e. Cantiere → tab "Diario" ⚠️ area con bug corretti oggi — testare con attenzione
 
-- [ ] 🔴 Sub-tab **Diario di Cantiere**: nota del giorno visibile, editabile, salvata
-- [ ] 🔴 Sub-tab **Note & Foto**: creazione nota manuale con foto allegata — **la foto resta visibile dopo un reload della pagina**
+- [x] 🔴 Sub-tab **Diario di Cantiere**: nota del giorno visibile, editabile, salvata — verificato dal vivo 2026-07-09
+- [x] 🔴 Sub-tab **Note & Foto**: creazione nota manuale con foto allegata — **la foto resta visibile dopo un reload della pagina** — verificato dal vivo 2026-07-09
 - [x] 🔴🔴 **CRITICO trovato e corretto 2026-07-09**: Da Ladia: "aggiungi una nota al diario con questa foto" → la nota compariva nel diario (`site_diary_entries`, verificato) ma **la foto non veniva mai salvata** — Ladia la analizzava e scriveva una descrizione a parole, ma il file non risultava agganciato ("Foto: –" nella UI, che invece era già pronta a mostrarle). Causa: le foto venivano caricate su storage solo a fine turno, dopo che i tool avevano già girato — l'URL non esisteva ancora quando `create_diary_note` veniva eseguito. Corretto spostando l'upload prima del loop di tool (repo backend, commit `8186d39`), testato end-to-end direttamente sul DB. **Stesso gap identificato ma non ancora corretto su "Note & Foto"** (`create_site_note`/`site_notes`, convenzione di storage diversa) — da fare se serve. **Da riverificare dal vivo dopo il deploy**: chiedi di nuovo a Ladia di aggiungere una nota al diario con una foto
 
-**Osservato ma non confermato 2026-07-09**: dopo la risposta di Ladia (nota+foto), il pannello Ladia si è resettato da solo alla schermata di benvenuto (conversazione e "Attività" azzerate), senza che l'utente cliccasse nulla — utente rimasto loggato, stessa pagina. Codice controllato: nessuna causa certa trovata (i punti che azzerano `messages`/`activityLog` sono legati a `SIGNED_OUT` o cancellazione conversazione, nessuno dei due sembra combaciare). Non riprodotto in isolamento — da tenere d'occhio se si ripresenta
-- [ ] 🔴 Bottone "Vai al diario" generato da Ladia → atterra sul tab Diario, non su Cantiere
+**Chiarito 2026-07-09** (non è un bug): il reset del pannello Ladia succedeva dopo un **ricaricamento completo della pagina** — comportamento voluto, la conversazione attiva non viene mai ripristinata dopo un hard reload (solo se il pannello è aperto/chiuso viene ricordato). La cronologia resta comunque salvata ed è raggiungibile dalla sidebar delle conversazioni.
+
+**Bonus trovato durante questo test, corretto 2026-07-09**: la lista "Diario di Cantiere" non si aggiornava da sola dopo che Ladia scriveva una nota — serviva un reload manuale per vederla. Causa più ampia: **nessuna pagina della piattaforma** aveva un modo di sapere quando Ladia scriveva qualcosa. Costruito un meccanismo generico (evento `record_action` SSE esteso con `site_id` + nuovo bus `ladiaEvents.dataChanged`) e collegato a Diario, Economia (costi/SAL), Organico/Mezzi/Subappalti/Presenze/Sospensioni/POS/Documenti/Note (dentro un cantiere), Risorse (lavoratori) e Dashboard (KPI) — copertura non esaustiva su tutta l'app ma sulle sezioni con cui Ladia interagisce di più. Backend commit `c800357`, frontend commit `6b69d5c`. **Da riverificare dal vivo**: fai scrivere a Ladia qualcosa su un cantiere aperto (es. una nota diario) senza ricaricare — la pagina deve aggiornarsi da sola
+- [x] 🔴 Bottone "Vai al diario" generato da Ladia → atterra sul tab Diario, non su Cantiere — verificato dal vivo 2026-07-09
 
 ## 3f. Cantiere → tab "Economia"
 
