@@ -124,7 +124,7 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 2. Dashboard
 
-- [ ] 🔴 KPI mostrati (cantieri attivi, lavoratori, presenze oggi) corrispondono ai dati reali
+- [x] 🔴 KPI mostrati (cantieri attivi, lavoratori, presenze oggi) corrispondono ai dati reali — verificato dal vivo 2026-07-09
 - [ ] 🟡 Nessun errore in console browser al caricamento
 - [ ] 🟢 Tempo di caricamento accettabile (< 3s su connessione normale)
 
@@ -132,8 +132,8 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 3. Cantieri — lista
 
-- [ ] 🔴 Lista cantieri mostra solo quelli della company loggata (provare con 2 account diversi)
-- [ ] 🔴 Creazione nuovo cantiere: tutti i campi obbligatori validati, cantiere compare in lista subito dopo
+- [x] 🔴 Lista cantieri mostra solo quelli della company loggata (provare con 2 account diversi) — già coperto dalla verifica sezione 13 (fix RLS)
+- [x] 🔴 Creazione nuovo cantiere: tutti i campi obbligatori validati, cantiere compare in lista subito dopo — validazione ok; trovato e corretto 2026-07-09 bug reale: il popup non si chiudeva dopo il salvataggio (`onClose()` mancante in `handleCreate`), restava aperto vuoto sopra la pagina del nuovo cantiere. Commit `c6f41b4` (repo frontend). Nota a parte: durante il test è comparso in console un `AuthApiError: Invalid Refresh Token` — non riprodotto in isolamento, probabile residuo delle molte sessioni di test (incognito/account multipli) di questa sessione, non un bug nuovo confermato
 - [ ] 🟡 Ricerca/filtro cantieri funziona
 - [ ] 🟡 Badge "scaduto Ngg fa" / countdown giorni rimanenti corretto rispetto alle date reali
 
