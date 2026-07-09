@@ -2550,6 +2550,24 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .from('sites').select('id, name').eq('id', site_id).eq('company_id', companyId).maybeSingle();
         if (!site) return { error: 'SITE_NOT_FOUND' };
         const today = entry_date || new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+
+        // Foto allegate al messaggio in questo turno (già caricate su storage
+        // permanente prima del loop di tool — vedi req._uploadedImageUrls in
+        // chat/stream). Se ce ne sono, uniscile a quelle già presenti sull'entry
+        // di oggi (se esiste) invece di sovrascriverle — omesso interamente dal
+        // payload se non ce ne sono, così l'upsert non tocca foto già salvate.
+        const newPhotoUrls = Array.isArray(req?._uploadedImageUrls) ? req._uploadedImageUrls : [];
+        let photosPatch = {};
+        if (newPhotoUrls.length > 0) {
+          const { data: existingEntry } = await supabase
+            .from('site_diary_entries')
+            .select('photos')
+            .eq('site_id', site_id).eq('company_id', companyId).eq('entry_date', today)
+            .maybeSingle();
+          const existingPhotos = Array.isArray(existingEntry?.photos) ? existingEntry.photos : [];
+          photosPatch = { photos: [...existingPhotos, ...newPhotoUrls.map(url => ({ url }))] };
+        }
+
         const diaryRow = {
           company_id: companyId,
           site_id,
@@ -2561,6 +2579,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           workers_snapshot:        [],
           machinery_snapshot:      [],
           subcontractors_snapshot: [],
+          ...photosPatch,
         };
         const { data, error } = await supabase
           .from('site_diary_entries')
@@ -2572,7 +2591,10 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           resourceName: 'site_diary_entries', action: 'create', recordId: data.id,
           record: data, changedFields: diaryRow,
         });
-        return { success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes, ...logged };
+        return {
+          success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes,
+          foto_allegate: newPhotoUrls.length, ...logged,
+        };
       }
 
       case 'create_site_note': {
@@ -5832,6 +5854,14 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
   let aborted = false;
   req.on('close', () => { aborted = true; });
 
+  // Carica le foto SUBITO (non a fine turno come prima) — così sono già disponibili
+  // come URL firmati quando create_diary_note/create_site_note vengono chiamati
+  // durante il loop di tool qui sotto, non solo per il salvataggio dei messaggi.
+  const uploadedImageUrls = images.length > 0
+    ? await uploadChatImages(images, req.companyId, convId).catch(() => [])
+    : [];
+  req._uploadedImageUrls = uploadedImageUrls;
+
   // Company brain + deep site context + memoria Ladia + obiettivi aperti
   // siteId per contesto: se context_type è 'cantiere' usa context_id, altrimenti usa pageSiteId (URL corrente)
   const _siteIdForContext = context_type === 'cantiere' ? context_id : (pageSiteId || null);
@@ -6058,9 +6088,6 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       // Salva nel DB — attendiamo prima di chiudere la connessione SSE
       if (fullAssistantReply) {
         try {
-          const uploadedImageUrls = images.length > 0
-            ? await uploadChatImages(images, req.companyId, convId)
-            : [];
           await saveMessages(convId, userMsgForDb, fullAssistantReply, uploadedImageUrls);
         } catch (e) {
           console.error('[chat/stream] saveMessages error:', e.message);
