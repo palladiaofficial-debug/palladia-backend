@@ -104,8 +104,10 @@ const SONNET_KEYWORDS = [
   // normativa
   'd.lgs','dlgs','decreto','normativ','legge','articolo','comma','allegato',
   'sanzione','multa','violazione','reato','penale','responsabilit',
-  // sicurezza tecnica
-  'dpi','dvr','psc','pos','piano','rischio','valutazione','misur',
+  // sicurezza tecnica ('pos' escluso qui apposta: come substring matcherebbe
+  // "posa", "posare", "posizione" — parole comunissime in cantiere che non
+  // c'entrano nulla col documento POS. Controllato a parte con confine di parola.)
+  'dpi','dvr','psc','piano','rischio','valutazione','misur',
   'ponteggio','trabattello','scala','lavori in quota','caduta','scavo','sbancamento',
   'demolizion','esplosiv','fuoco','incendio','atex','spazio confinato',
   'rumore','vibrazion','chimico','biologico','cancerogen','amianto',
@@ -134,10 +136,31 @@ const WRITE_KEYWORDS = [
   'fattura','ddt','acconto','sposta','nuovo subappaltatore','nuova attrezzatura',
 ];
 
+// Scritture semplici (nota diario, promemoria) verificate empiricamente affidabili
+// anche su Haiku — scripts/eval-model-routing.js, 2026-07-09: stesso tool-calling
+// corretto di Sonnet su casi reali (create_diary_note/create_site_note con i
+// campi giusti), a un costo per turno 5-6 volte più basso. Pattern di FRASE
+// precisi (non singole parole) apposta per non intercettare scritture più
+// delicate — nello stesso test, "registra una spesa" ha fatto INVENTARE a Haiku
+// uno strumento inesistente (create_expense), e "incidente"/Ronconformità hanno
+// beneficiato del ragionamento più approfondito di Sonnet sulle verifiche di
+// sicurezza da fare. Il controllo SONNET_KEYWORDS resta comunque prioritario:
+// una nota-diario che nomina DPI/rischio/normativa resta su Sonnet.
+const HAIKU_SAFE_WRITE_PATTERNS = [
+  /aggiungi\s+(una\s+)?nota\s+(al|nel)\s+diario/,
+  /annota\s+(che|nel\s+diario|sul\s+diario)/,
+  /scrivi\s+(che|sul\s+diario|nel\s+diario)/,
+  /(aggiungi|crea)\s+(un\s+)?promemoria/,
+];
+
+const POS_WORD_RE = /\bpos\b/; // "POS" (Piano Operativo di Sicurezza) come parola isolata
+
 function classifyQuery(message) {
   const lower = message.toLowerCase();
+  const isSonnetTopic = SONNET_KEYWORDS.some(kw => lower.includes(kw)) || POS_WORD_RE.test(lower);
+  if (!isSonnetTopic && HAIKU_SAFE_WRITE_PATTERNS.some(re => re.test(lower))) return MODEL_HAIKU;
   if (WRITE_KEYWORDS.some(kw => lower.includes(kw))) return MODEL_SONNET;
-  return SONNET_KEYWORDS.some(kw => lower.includes(kw)) ? MODEL_SONNET : MODEL_HAIKU;
+  return isSonnetTopic ? MODEL_SONNET : MODEL_HAIKU;
 }
 
 // ── HTML escape (per template PDF) ───────────────────────────────────────────
@@ -6590,3 +6613,12 @@ router.post('/chat/undo/:historyId', verifySupabaseJwt, confirmActionLimiter, as
 });
 
 module.exports = router;
+// Esposti per script di valutazione offline (es. scripts/eval-model-routing.js)
+// — confrontare Haiku vs Sonnet sulle stesse condizioni reali (prompt/tool)
+// senza duplicarli in un file separato che andrebbe disallineato nel tempo.
+module.exports.SYSTEM_PROMPT  = SYSTEM_PROMPT;
+module.exports.TOOLS_CACHED   = TOOLS_CACHED;
+module.exports.classifyQuery  = classifyQuery;
+module.exports.MODEL_HAIKU    = MODEL_HAIKU;
+module.exports.MODEL_SONNET   = MODEL_SONNET;
+module.exports.buildCachedSystem = buildCachedSystem;
