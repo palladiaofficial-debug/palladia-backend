@@ -6047,6 +6047,10 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               action_history_id:  result.actionHistoryId,
               campi,
               campi_precedenti:   campiPrecedenti,
+              // site_id: permette al frontend di sapere quale cantiere è stato
+              // toccato e aggiornare da sola la pagina aperta, se coincide —
+              // vedi ladiaEvents.dataChanged() lato client.
+              site_id:            result.record?.site_id || block.input?.site_id || null,
             });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
