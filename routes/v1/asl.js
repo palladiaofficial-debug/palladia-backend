@@ -83,8 +83,13 @@ router.post('/sites/:siteId/asl-token', verifySupabaseJwt, async (req, res) => {
 
   if (insertErr) return res.status(500).json({ error: 'TOKEN_CREATE_ERROR' });
 
-  const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
-  const url = `${appBase}/asl/${rawToken}`;
+  // NOTA: /asl/:token è servito da QUESTO backend (app.get('/asl/:token', ...)
+  // in server.js → public/asl.html, che fa fetch relativi a /api/v1/asl/...).
+  // APP_BASE_URL punta al frontend (palladia.net), dove quella rotta non esiste
+  // (la SPA la risolverebbe con la sua pagina 404) — va costruito sul dominio
+  // di QUESTO server, non su APP_BASE_URL.
+  const selfBase = `${req.protocol}://${req.get('host')}`;
+  const url = `${selfBase}/asl/${rawToken}`;
 
   auditLog({
     companyId:  req.companyId,
