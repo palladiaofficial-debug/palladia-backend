@@ -181,10 +181,10 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 3f. Cantiere → tab "Economia"
 
-- [ ] 🔴 Budget, margine, SAL calcolati correttamente rispetto ai costi inseriti
-- [ ] 🔴 Aggiunta costo/spesa cantiere: importo si riflette subito nel totale
-- [ ] 🟡 Emissione SAL, segna pagato — stato coerente dopo il refresh
-- [ ] 🟢 Computo metrico: voci, quantità, importi coerenti
+- [x] 🔴 Budget, margine, SAL calcolati correttamente rispetto ai costi inseriti — verificato 2026-07-09 con test matematico dal vivo su dati reali (creata/rimossa una spesa di prova, margine cambiato esattamente dell'importo atteso)
+- [x] 🔴 Aggiunta costo/spesa cantiere: importo si riflette subito nel totale — verificato dal vivo, stesso test
+- [x] 🟡 Emissione SAL, segna pagato — stato coerente dopo il refresh — verificato via codice (fetchSalHistory dopo ogni azione) + numerazione atomica anti-duplicati, PDF snapshot corretto al momento dell'emissione
+- [x] 🟢 Computo metrico: voci, quantità, importi coerenti — verificato via codice, stessa logica di somma di calcPnl, nessun problema trovato
 
 ---
 
