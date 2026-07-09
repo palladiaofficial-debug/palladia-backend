@@ -203,6 +203,32 @@ async function analyzeCompanyDoc(docId, filePath, mimeType) {
   }
 }
 
+// ── Analisi documento di cantiere ──────────────────────────────────────────────
+// Stessa logica di analyzeCompanyDoc — site_documents usa le stesse categorie
+// (pos, psc, notifica_asl, durc, dvr, assicurazione, altro), stesso prompt.
+
+async function analyzeSiteDoc(docId, filePath, mimeType) {
+  try {
+    const buffer = await downloadFileBuffer(filePath);
+    const raw    = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
+    if (!raw) return; // formato non analizzabile
+
+    const patch = {
+      ai_summary:        (raw.summary       || '').slice(0, 2000) || null,
+      ai_expiry_date:    normalizeDate(raw.expiry_date),
+      ai_renewal_years:  Number.isInteger(raw.renewal_years) ? raw.renewal_years : null,
+      ai_issued_by:      (raw.issued_by     || '').slice(0, 500)  || null,
+      ai_issues:         Array.isArray(raw.issues) ? raw.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
+      ai_validity_ok:    typeof raw.validity_ok === 'boolean' ? raw.validity_ok : null,
+      ai_analyzed_at:    new Date().toISOString(),
+    };
+
+    await supabase.from('site_documents').update(patch).eq('id', docId);
+  } catch (err) {
+    console.error('[documentAI] site doc analysis failed:', docId, err.message);
+  }
+}
+
 // ── Analisi documento lavoratore ───────────────────────────────────────────────
 
 async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) {
@@ -385,4 +411,4 @@ async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType) {
   };
 }
 
-module.exports = { analyzeCompanyDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione };
+module.exports = { analyzeCompanyDoc, analyzeSiteDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione };

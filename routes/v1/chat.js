@@ -2976,19 +2976,19 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'get_site_documents': {
         const { data: docs, error: dErr } = await supabase
           .from('site_documents')
-          .select('id, doc_type, original_name, created_at, file_size')
+          .select('id, name, category, created_at, file_size, ai_summary, ai_expiry_date, ai_issues, ai_validity_ok')
           .eq('site_id', toolInput.site_id)
           .eq('company_id', companyId);
         if (dErr) return { error: dErr.message };
 
         const { data: posData } = await supabase
-          .from('pos')
+          .from('pos_documents')
           .select('id, created_at')
           .eq('site_id', toolInput.site_id)
           .eq('company_id', companyId)
           .limit(1);
 
-        const docTypes = (docs || []).map(d => d.doc_type);
+        const docTypes = (docs || []).map(d => d.category);
         if (posData && posData.length > 0) docTypes.push('pos');
 
         const requiredTypes = ['pos', 'psc', 'notifica_asl', 'durc', 'dvr', 'assicurazione'];

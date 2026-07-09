@@ -6,6 +6,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
 const { coordinatorLimiter } = require('../../middleware/rateLimit');
+const { analyzeSiteDoc }     = require('../../services/documentAI');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -97,6 +98,9 @@ router.post('/sites/:siteId/documents', verifySupabaseJwt,
       await supabase.storage.from(BUCKET).remove([filePath]).catch(() => {});
       return res.status(500).json({ error: 'DB_ERROR' });
     }
+
+    // Analisi AI in background (non blocca la risposta) — vedi services/documentAI.js
+    analyzeSiteDoc(doc.id, filePath, req.file.mimetype).catch(() => {});
 
     res.status(201).json({ ok: true, document: doc });
   }
