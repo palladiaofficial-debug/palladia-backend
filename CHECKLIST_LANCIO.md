@@ -155,14 +155,15 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 3c. Cantiere → tab "Organico"
 
-- [ ] 🔴 Sub-tab **Organico**: lista lavoratori assegnati corretta, aggiunta/rimozione funziona
-- [ ] 🔴 Sub-tab **Mezzi**: aggiunta/modifica mezzo, assegnazione a cantiere
-- [ ] 🔴 Sub-tab **Subappalti**: aggiunta subappaltatore, documenti associati
+- [x] 🔴 Sub-tab **Organico**: lista lavoratori assegnati corretta, aggiunta/rimozione funziona — verificato dal vivo 2026-07-09
+- [x] 🔴 Sub-tab **Mezzi**: aggiunta/modifica mezzo, assegnazione a cantiere — verificato dal vivo 2026-07-09
+- [x] 🔴 Sub-tab **Subappalti**: aggiunta subappaltatore, documenti associati — verificato dal vivo 2026-07-09
 - [ ] 🟡 Compliance banner (idoneità/formazione lavoratori) coerente con le scadenze reali
 
 ## 3d. Cantiere → tab "Documenti"
 
-- [ ] 🔴 Upload documento: file salvato, visibile subito, scaricabile dopo
+- [x] 🔴 Upload documento: file salvato, visibile subito, scaricabile dopo — verificato dal vivo 2026-07-09
+- [x] ✨ **Nuovo 2026-07-09**: i documenti caricati qui ora vengono analizzati automaticamente in background (Haiku, stesso meccanismo già esistente per company/worker_documents dalla migrazione 050) — scadenza, tipo, ente emittente, problemi rilevati pronti per Ladia senza dover rileggere il PDF ogni volta. Testato end-to-end con un PDF reale, analisi corretta. Commit `5fcfda4`. Bonus: corretto per strada `get_site_documents` (tool Ladia), che falliva sempre per colonne/tabella inesistenti (bug pre-esistente, mai notato)
 - [ ] 🔴 Generazione POS: **testare l'intero flusso SSE fino al PDF finale**, verificare che l'header/footer del PDF non si sovrappongano al contenuto (bug storico)
 - [ ] 🔴 **DVR/PIMUS disattivati (2026-07-06, decisione esplicita)**: nessun bottone "Genera DVR"/"Genera PIMUS" visibile in Navbar/Altro/POSList; navigando direttamente a `/dvr/nuovo` e `/pimus/nuovo` compare il messaggio "non disponibile", non il form
 - [ ] 🟡 Documenti in scadenza evidenziati correttamente
