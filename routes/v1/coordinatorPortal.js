@@ -288,7 +288,7 @@ router.get('/coordinator/portal/:token', coordinatorLimiter, async (req, res) =>
     supabase.from('coordinator_visits').insert({
       invite_id: invite.id, company_id: invite.company_id, site_id: invite.site_id,
       coordinator_name: invite.coordinator_name, coordinator_email: invite.coordinator_email || null,
-      accessed_via: 'portal_cse',
+      accessed_via: 'cse',
     }).then(null, () => {});
     supabase.rpc('increment_coord_access', { p_invite_id: invite.id }).then(null, () => {});
 
@@ -325,7 +325,7 @@ router.get('/coordinator/portal/:token', coordinatorLimiter, async (req, res) =>
     supabase.from('coordinator_visits').insert({
       invite_id: invite.id, company_id: invite.company_id, site_id: invite.site_id,
       coordinator_name: invite.coordinator_name, coordinator_email: session.email,
-      accessed_via: 'portal_pro',
+      accessed_via: 'pro',
     }).then(null, () => {});
 
     const data = await getFullSiteData(invite);
@@ -415,7 +415,7 @@ router.get('/coordinator/portal/:token/site/:siteId', coordinatorLimiter, async 
     invite_id: result.invite.id, company_id: result.invite.company_id,
     site_id: req.params.siteId, coordinator_name: result.invite.coordinator_name,
     coordinator_email: result.invite.coordinator_email || null,
-    accessed_via: `portal_${result.auth_type}`,
+    accessed_via: result.auth_type,
   }).then(null, () => {});
 
   const data = await getFullSiteData(result.invite);
@@ -583,7 +583,7 @@ router.post('/coordinator/portal/:token/site/:siteId/verifications', coordinator
       site_id:                invite.site_id,
       coordinator_name:       invite.coordinator_name,
       coordinator_email:      invite.coordinator_email || null,
-      accessed_via:           `portal_${result.auth_type}`,
+      accessed_via:           result.auth_type,
       safety_status:          safetyStatus.level,
       open_nc_count:          safetyStatus.open_nc_count,
       critical_nc_count:      safetyStatus.critical_nc_count,
