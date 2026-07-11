@@ -11,6 +11,7 @@
 
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../lib/supabase');
+const { logUsage } = require('../lib/ladiaUsageLog');
 
 const BUCKET             = 'site-documents';
 const SIGNED_URL_SECONDS = 24 * 60 * 60; // 24 ore
@@ -195,7 +196,7 @@ async function readDocumentWithClaude(doc, domanda) {
         content: `DOCUMENTO: ${doc.nome}\nCONTENUTO:\n${doc.extracted_text.slice(0, 12000)}\n\nDOMANDA: ${domanda}`,
       }],
     });
-    return parseClaudeJson(res.content?.[0]?.text);
+    return { ...parseClaudeJson(res.content?.[0]?.text), usage: res.usage };
   }
 
   // PDF nativo
@@ -213,7 +214,7 @@ async function readDocumentWithClaude(doc, domanda) {
       ],
     }],
   });
-  return parseClaudeJson(res.content?.[0]?.text);
+  return { ...parseClaudeJson(res.content?.[0]?.text), usage: res.usage };
 }
 
 function parseClaudeJson(raw = '') {
@@ -271,6 +272,7 @@ async function searchAndReadDocument({ companyId, siteId, domanda, tipo, nomeFil
     }
     if (!analysis) throw new Error(`Impossibile leggere il documento: ${err.message}`);
   }
+  logUsage({ companyId, model: MODEL, callSite: 'ladia_document_search_read', usage: analysis.usage });
 
   // Genera URL firmato per il documento originale
   let signedUrl = null;

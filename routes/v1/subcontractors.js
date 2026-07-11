@@ -33,14 +33,14 @@ const upload = multer({
   },
 });
 
-async function analyzeSubDoc(docId, filePath, mimeType) {
+async function analyzeSubDoc(docId, filePath, mimeType, companyId = null) {
   try {
     const { analyzeSubcontractorDocBuffer } = require('../../services/documentAI');
     const { data: signed } = await supabase.storage.from(BUCKET).createSignedUrl(filePath, 300);
     if (!signed?.signedUrl) return;
     const resp   = await fetch(signed.signedUrl);
     const buf    = Buffer.from(await resp.arrayBuffer());
-    const result = await analyzeSubcontractorDocBuffer(buf, mimeType);
+    const result = await analyzeSubcontractorDocBuffer(buf, mimeType, companyId);
     if (!result) return;
     await supabase.from('subcontractor_documents').update({
       ai_summary:     result.summary     || null,
@@ -333,7 +333,7 @@ router.post('/subcontractors/:id/documents',
     }
 
     // AI analisi in background
-    analyzeSubDoc(doc.id, filePath, req.file.mimetype).catch(() => {});
+    analyzeSubDoc(doc.id, filePath, req.file.mimetype, req.companyId).catch(() => {});
 
     res.status(201).json({ ok: true, document: doc });
   }
@@ -370,7 +370,7 @@ router.post('/subcontractors/:id/documents/:docId/analyze', verifySupabaseJwt, a
   await supabase.from('subcontractor_documents')
     .update({ ai_analyzed_at: null }).eq('id', doc.id);
 
-  analyzeSubDoc(doc.id, doc.file_path, doc.mime_type).catch(() => {});
+  analyzeSubDoc(doc.id, doc.file_path, doc.mime_type, req.companyId).catch(() => {});
   res.json({ ok: true, message: 'Analisi avviata' });
 });
 

@@ -15,6 +15,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { extractCertificateSchema } = require('../../lib/schemas/certificateOcr');
 const { aiLimiter } = require('../../middleware/rateLimit');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -167,6 +168,7 @@ router.post('/workers/:workerId/certificates/extract', aiLimiter, validate(extra
         ],
       }],
     });
+    logUsage({ companyId: req.companyId, userId: req.user.id, model: 'claude-sonnet-4-6', callSite: 'certificate_ocr', usage: msg.usage });
 
     const raw = msg.content[0]?.text?.trim() || '';
     // Estrae il JSON dalla risposta (Claude a volte aggiunge ```json```)

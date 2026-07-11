@@ -7,6 +7,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createCompanyPrezzoSchema, patchCompanyPrezzoSchema } = require('../../lib/schemas/prezzario');
 const { aiLimiter } = require('../../middleware/rateLimit');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 let _ai = null;
 function getAI() {
@@ -330,6 +331,7 @@ Includi solo righe con prezzo unitario numerico leggibile. Max 300 voci.`;
         max_tokens: 8192,
         messages:   [{ role: 'user', content: [fileBlock, { type: 'text', text: prompt }] }],
       });
+      logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'prezzario_parse_offerta', usage: msg.usage });
 
       const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
       const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim() : raw;

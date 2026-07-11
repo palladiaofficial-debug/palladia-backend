@@ -11,6 +11,7 @@
 
 const Anthropic          = require('@anthropic-ai/sdk');
 const { extractPdfText } = require('../lib/pdfExtract');
+const { logUsage }       = require('../lib/ladiaUsageLog');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -68,6 +69,7 @@ async function extractVociFromText(text, onProgress) {
 
   const allVoci = [];
   let finalSummary = '';
+  const usageTotal = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
 
   for (let ci = 0; ci < chunks.length; ci++) {
     const pct = 20 + Math.floor((ci / chunks.length) * 55);
@@ -84,6 +86,13 @@ async function extractVociFromText(text, onProgress) {
       system:     PARSE_SYSTEM,
       messages:   [{ role: 'user', content: `TESTO CAPITOLATO (parte ${ci + 1}/${chunks.length}):\n\n${chunks[ci]}` }],
     });
+
+    if (msg.usage) {
+      usageTotal.input_tokens                += msg.usage.input_tokens || 0;
+      usageTotal.output_tokens               += msg.usage.output_tokens || 0;
+      usageTotal.cache_creation_input_tokens += msg.usage.cache_creation_input_tokens || 0;
+      usageTotal.cache_read_input_tokens     += msg.usage.cache_read_input_tokens || 0;
+    }
 
     const raw = msg.content[0]?.text?.trim() || '{}';
 
@@ -105,7 +114,7 @@ async function extractVociFromText(text, onProgress) {
     }
   }
 
-  return { voci: allVoci, summary: finalSummary };
+  return { voci: allVoci, summary: finalSummary, usage: usageTotal };
 }
 
 /**
@@ -125,7 +134,8 @@ async function parseCapitolatoPDF(buffer, siteId, companyId, onProgress) {
 
   if (onProgress) onProgress(`${numPages} pagine lette. Avvio analisi AI…`, 18);
 
-  const { voci, summary } = await extractVociFromText(text, onProgress);
+  const { voci, summary, usage } = await extractVociFromText(text, onProgress);
+  logUsage({ companyId, model: 'claude-sonnet-4-6', callSite: 'capitolato_parse', usage });
 
   // Normalizzazione
   const safeFloat = (raw) => {

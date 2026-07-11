@@ -8,6 +8,7 @@ const { validate }             = require('../../middleware/validate');
 const { aiLimiter }            = require('../../middleware/rateLimit');
 const { withAiLimit }          = require('../../lib/concurrencyLimit');
 const { createExpenseSchema, updateExpenseSchema, CATEGORIES, PAYMENT_METHODS } = require('../../lib/schemas/expenses');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -320,6 +321,7 @@ Regole:
         messages: [{ role: 'user', content }],
       })
     );
+    logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'expense_scan', usage: msg.usage });
 
     const text  = msg.content[0]?.text || '{}';
     const match = text.match(/\{[\s\S]*\}/);

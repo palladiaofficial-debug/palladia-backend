@@ -25,6 +25,7 @@ const { parsePdf, parseExcel } = require('../../services/computoParser');
 const { generateComputoPdf } = require('../../services/computoPdfGenerator');
 const { validate } = require('../../middleware/validate');
 const { createComputoSchema, patchVoceSalSchema } = require('../../lib/schemas/computo');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 let _ai = null;
 function getAI() {
@@ -84,8 +85,8 @@ router.post('/sites/:siteId/computo/parse',
 
     try {
       let parsed;
-      if (isPdf)        parsed = await parsePdf(buffer);
-      else if (isExcel) parsed = await parseExcel(buffer);
+      if (isPdf)        parsed = await parsePdf(buffer, companyId, req.user?.id);
+      else if (isExcel) parsed = await parseExcel(buffer, companyId, req.user?.id);
       else return res.status(400).json({ error: 'FORMAT_UNSUPPORTED' });
 
       res.json({
@@ -174,6 +175,7 @@ Rispondi SOLO con un oggetto JSON in questo formato (nessun testo fuori dal JSON
           ],
         }],
       });
+      logUsage({ companyId, userId: req.user.id, model: 'claude-sonnet-4-6', callSite: 'computo_parse_generic', usage: msg.usage });
 
       const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
       const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim() : raw;

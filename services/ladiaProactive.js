@@ -335,7 +335,7 @@ async function checkBudgetAlert(entry) {
   const budgetStr = fmtEur(budgetTotale);
 
   // LIVELLO 2 — Smart proposal: Claude Haiku genera diagnosi + raccomandazione specifica
-  const smartProposal = await generateBudgetProposal(siteName, spendPct, salPct, costiStr, budgetStr);
+  const smartProposal = await generateBudgetProposal(siteName, spendPct, salPct, costiStr, budgetStr, companyId);
 
   let text;
   if (smartProposal) {

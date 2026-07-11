@@ -12,6 +12,7 @@
 const Anthropic          = require('@anthropic-ai/sdk');
 const supabase           = require('../lib/supabase');
 const { extractPdfText } = require('../lib/pdfExtract');
+const { logUsage }       = require('../lib/ladiaUsageLog');
 
 const MODEL_TEXT   = 'claude-haiku-4-5-20251001'; // PDF con testo OCR — veloce, economico
 const MODEL_VISION = 'claude-sonnet-4-6';          // PDF scansionati e immagini — visione accurata
@@ -155,7 +156,7 @@ async function analyzeDocument(fileBuffer, mimeType, systemPrompt) {
   const raw = response.content?.[0]?.text || '';
   const jsonStr = extractFirstJson(raw);
   if (!jsonStr) throw new Error('Claude non ha restituito un JSON valido');
-  return JSON.parse(jsonStr);
+  return { data: JSON.parse(jsonStr), usage: response.usage, model };
 }
 
 // ── Normalizza data ────────────────────────────────────────────────────────────
@@ -183,9 +184,10 @@ function normalizeDate(val) {
 
 async function analyzeCompanyDoc(docId, filePath, mimeType) {
   try {
-    const buffer = await downloadFileBuffer(filePath);
-    const raw    = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
-    if (!raw) return; // formato non analizzabile
+    const buffer  = await downloadFileBuffer(filePath);
+    const result  = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
+    if (!result) return; // formato non analizzabile
+    const { data: raw, usage, model } = result;
 
     const patch = {
       ai_summary:        (raw.summary       || '').slice(0, 2000) || null,
@@ -197,7 +199,8 @@ async function analyzeCompanyDoc(docId, filePath, mimeType) {
       ai_analyzed_at:    new Date().toISOString(),
     };
 
-    await supabase.from('company_documents').update(patch).eq('id', docId);
+    const { data: updated } = await supabase.from('company_documents').update(patch).eq('id', docId).select('company_id').maybeSingle();
+    if (updated?.company_id) logUsage({ companyId: updated.company_id, model, callSite: 'company_doc_analysis', usage });
   } catch (err) {
     console.error('[documentAI] company doc analysis failed:', docId, err.message);
   }
@@ -209,9 +212,10 @@ async function analyzeCompanyDoc(docId, filePath, mimeType) {
 
 async function analyzeSiteDoc(docId, filePath, mimeType) {
   try {
-    const buffer = await downloadFileBuffer(filePath);
-    const raw    = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
-    if (!raw) return; // formato non analizzabile
+    const buffer  = await downloadFileBuffer(filePath);
+    const result  = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
+    if (!result) return; // formato non analizzabile
+    const { data: raw, usage, model } = result;
 
     const patch = {
       ai_summary:        (raw.summary       || '').slice(0, 2000) || null,
@@ -223,7 +227,8 @@ async function analyzeSiteDoc(docId, filePath, mimeType) {
       ai_analyzed_at:    new Date().toISOString(),
     };
 
-    await supabase.from('site_documents').update(patch).eq('id', docId);
+    const { data: updated } = await supabase.from('site_documents').update(patch).eq('id', docId).select('company_id').maybeSingle();
+    if (updated?.company_id) logUsage({ companyId: updated.company_id, model, callSite: 'site_doc_analysis', usage });
   } catch (err) {
     console.error('[documentAI] site doc analysis failed:', docId, err.message);
   }
@@ -233,9 +238,11 @@ async function analyzeSiteDoc(docId, filePath, mimeType) {
 
 async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) {
   try {
-    const buffer = await downloadFileBuffer(filePath);
-    const raw    = await analyzeDocument(buffer, mimeType, WORKER_DOC_PROMPT);
-    if (!raw) return;
+    const buffer  = await downloadFileBuffer(filePath);
+    const result  = await analyzeDocument(buffer, mimeType, WORKER_DOC_PROMPT);
+    if (!result) return;
+    const { data: raw, usage, model } = result;
+    logUsage({ companyId, model, callSite: 'worker_doc_analysis', usage });
 
     const patch = {
       ai_summary:        (raw.summary    || '').slice(0, 2000) || null,
@@ -294,9 +301,11 @@ async function analyzeWorkerDoc(docId, workerId, companyId, filePath, mimeType) 
 
 // ── Analisi su buffer diretto (smart import — senza salvare prima) ─────────────
 // Restituisce i dati estratti da Claude in forma normalizzata, senza toccare il DB.
-async function analyzeDocumentBuffer(fileBuffer, mimeType) {
-  const raw = await analyzeDocument(fileBuffer, mimeType, WORKER_DOC_PROMPT);
-  if (!raw) return null;
+async function analyzeDocumentBuffer(fileBuffer, mimeType, companyId = null, userId = null) {
+  const result = await analyzeDocument(fileBuffer, mimeType, WORKER_DOC_PROMPT);
+  if (!result) return null;
+  const { data: raw, usage, model } = result;
+  if (companyId) logUsage({ companyId, userId, model, callSite: 'document_buffer_analysis', usage });
   const rawCf = String(raw.fiscal_code || '').toUpperCase().replace(/\s/g, '');
   return {
     doc_type:      raw.doc_type_detected || 'altro',
@@ -400,9 +409,11 @@ async function syncToFormazione(docId, workerId, companyId, docType, docName, is
 
 // ── Analisi generica per documenti subappaltatori ─────────────────────────────
 // Usa COMPANY_DOC_PROMPT (DURC, polizza, SOA, visura, ecc.) e restituisce patch pronta.
-async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType) {
-  const raw = await analyzeDocument(fileBuffer, mimeType, COMPANY_DOC_PROMPT);
-  if (!raw) return null;
+async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType, companyId = null, userId = null) {
+  const result = await analyzeDocument(fileBuffer, mimeType, COMPANY_DOC_PROMPT);
+  if (!result) return null;
+  const { data: raw, usage, model } = result;
+  if (companyId) logUsage({ companyId, userId, model, callSite: 'subcontractor_doc_analysis', usage });
   return {
     summary:     (raw.summary    || '').slice(0, 2000) || null,
     expiry_date: normalizeDate(raw.expiry_date),

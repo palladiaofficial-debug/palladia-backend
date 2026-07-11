@@ -12,6 +12,7 @@ const compression = require('compression');
 const { buildPosDocument } = require('./pos-template');
 const { buildRisksPrompt } = require('./services/posRisksGenerator');
 const { isBillingActive } = require('./lib/billing');
+const { logUsage } = require('./lib/ladiaUsageLog');
 const { isFeatureEnabled } = require('./lib/featureFlags');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
@@ -861,9 +862,20 @@ async function callAnthropicStream(prompt) {
   return response;
 }
 
+// --- Helper: accumula usage token da eventi SSE Anthropic (message_start ha
+// input/cache tokens, message_delta ha l'output_tokens cumulativo finale) ---
+function accumulateStreamUsage(event, usageAcc) {
+  if (event.type === 'message_start' && event.message?.usage) {
+    Object.assign(usageAcc, event.message.usage);
+  } else if (event.type === 'message_delta' && event.usage) {
+    Object.assign(usageAcc, event.usage);
+  }
+}
+
 // --- Helper: collect full text from Anthropic stream ---
 async function collectStreamText(response) {
   let fullText = '';
+  const usage = {};
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
 
@@ -880,16 +892,17 @@ async function collectStreamText(response) {
           if (event.type === 'content_block_delta' && event.delta?.text) {
             fullText += event.delta.text;
           }
+          accumulateStreamUsage(event, usage);
         } catch (e) { /* skip non-JSON lines */ }
       }
     }
   }
 
-  return fullText;
+  return { text: fullText, usage };
 }
 
 // --- Helper: call Anthropic Haiku (non-streaming, for template mode) ---
-async function callAnthropicHaiku(prompt) {
+async function callAnthropicHaiku(prompt, logCtx = null) {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY not configured on server');
   }
@@ -919,6 +932,9 @@ async function callAnthropicHaiku(prompt) {
     }
 
     const data = await response.json();
+    if (logCtx?.companyId) {
+      logUsage({ companyId: logCtx.companyId, userId: logCtx.userId, model: 'claude-haiku-4-5-20251001', callSite: logCtx.callSite || 'haiku_generic', usage: data.usage });
+    }
     return data.content?.[0]?.text || '';
   });
 }
@@ -953,10 +969,11 @@ app.post('/api/sites/:id/generate-pos', verifyJwtOnly, aiLimiter, async (req, re
     const revision = await getNextRevision(siteId);
     const megaPrompt = buildPosPrompt(posData, revision);
 
-    const fullText = await withAiLimit(async () => {
+    const { text: fullText, usage } = await withAiLimit(async () => {
       const response = await callAnthropicStream(megaPrompt);
       return collectStreamText(response);
     });
+    logUsage({ companyId, userId: req.user.id, model: 'claude-sonnet-4-6', callSite: 'generate_pos', usage });
 
     // Save to Supabase
     const { data: saved, error: saveError } = await supabase
@@ -1012,6 +1029,7 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
 
     await aiSemaphore.acquire();
     let fullText = '';
+    const streamUsage = {};
     try {
       const response = await callAnthropicStream(megaPrompt);
       const reader = response.body.getReader();
@@ -1032,6 +1050,7 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
                 fullText += text;
                 res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
               }
+              accumulateStreamUsage(event, streamUsage);
             } catch (e) { /* skip non-JSON lines */ }
           }
         }
@@ -1039,6 +1058,7 @@ app.post('/api/sites/:id/generate-pos-stream', verifyJwtOnly, aiLimiter, async (
     } finally {
       aiSemaphore.release();
     }
+    logUsage({ companyId, userId: req.user.id, model: 'claude-sonnet-4-6', callSite: 'generate_pos_stream', usage: streamUsage });
 
     // Save to Supabase
     const { data: saved, error: saveError } = await supabase
@@ -1103,6 +1123,7 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
 
     await aiSemaphore.acquire();
     let fullText = '';
+    const streamUsage = {};
     try {
       const response = await callAnthropicStream(megaPrompt);
       const reader = response.body.getReader();
@@ -1123,6 +1144,7 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
                 fullText += text;
                 res.write(`data: ${JSON.stringify({ type: 'text', text })}\n\n`);
               }
+              accumulateStreamUsage(event, streamUsage);
             } catch (e) { /* skip non-JSON lines */ }
           }
         }
@@ -1130,6 +1152,7 @@ app.post('/api/generate-pos-stream', verifyJwtOnly, aiLimiter, async (req, res) 
     } finally {
       aiSemaphore.release();
     }
+    logUsage({ companyId, userId: req.user.id, model: 'claude-sonnet-4-6', callSite: 'generate_pos_stream_standalone', usage: streamUsage });
 
     // Save to Supabase (optional - only if siteId provided)
     let posId = null;
@@ -1289,7 +1312,7 @@ app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res
     let aiRisks = await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
     if (!aiRisks) {
       const risksPrompt = buildRisksPrompt(posData);
-      aiRisks = await callAnthropicHaiku(risksPrompt);
+      aiRisks = await callAnthropicHaiku(risksPrompt, { companyId, userId: req.user.id, callSite: 'generate_pos_template_risks' });
     }
 
     // Step 2: Build document (usato solo per validazione — il salvataggio usa aiRisks)
@@ -1396,7 +1419,7 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
       console.log('[template-stream] calling Haiku...');
       try {
         const risksPrompt = buildRisksPrompt(posData);
-        aiRisks = await callAnthropicHaiku(risksPrompt);
+        aiRisks = await callAnthropicHaiku(risksPrompt, { companyId, userId: req.user.id, callSite: 'generate_pos_template_stream_risks' });
         console.log('[template-stream] Haiku done, length:', aiRisks.length);
       } catch (aiErr) {
         console.error('[template-stream] Haiku error:', aiErr.message);
@@ -1606,7 +1629,7 @@ app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) 
     let aiRisks = '';
     try {
       const risksPrompt = buildDvrRisksPrompt(dvrData);
-      aiRisks = await callAnthropicHaiku(risksPrompt);
+      aiRisks = await callAnthropicHaiku(risksPrompt, { companyId, userId: req.user.id, callSite: 'generate_dvr_risks' });
     } catch (aiErr) {
       console.error('[dvr-stream] Haiku error:', aiErr.message);
       aiRisks = '[Valutazione rischi non disponibile — errore AI]';
@@ -1840,7 +1863,7 @@ app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res
 
     let aiContent = '';
     try {
-      aiContent = await callAnthropicHaiku(buildPimusPrompt(pimusData));
+      aiContent = await callAnthropicHaiku(buildPimusPrompt(pimusData), { companyId, userId: req.user.id, callSite: 'generate_pimus' });
     } catch (aiErr) {
       console.error('[pimus-stream] AI error:', aiErr.message);
       aiContent = '[Procedure non disponibili — errore AI]';

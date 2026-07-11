@@ -11,6 +11,7 @@
 
 const supabase  = require('../lib/supabase');
 const Anthropic = require('@anthropic-ai/sdk');
+const { logUsage } = require('../lib/ladiaUsageLog');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL     = 'claude-haiku-4-5-20251001';
@@ -156,6 +157,7 @@ Aggiorna la memoria del cantiere estraendo SOLO fatti concreti e verificati emer
     model: MODEL, max_tokens: 500,
     messages: [{ role: 'user', content: prompt }],
   });
+  logUsage({ companyId, model: MODEL, callSite: 'ladia_memory_site_update', usage: res.usage });
 
   const content = res.content[0]?.text?.trim();
   if (!content) return;
@@ -189,6 +191,7 @@ Aggiorna il profilo dell'utente con preferenze, stile comunicativo, competenze t
     model: MODEL, max_tokens: 250,
     messages: [{ role: 'user', content: prompt }],
   });
+  logUsage({ companyId, userId, model: MODEL, callSite: 'ladia_memory_user_update', usage: res.usage });
 
   const content = res.content[0]?.text?.trim();
   if (!content) return;
@@ -228,6 +231,7 @@ Regole:
       model: MODEL, max_tokens: 200,
       messages: [{ role: 'user', content: prompt }],
     });
+    logUsage({ companyId, userId, model: MODEL, callSite: 'ladia_memory_extract_objectives', usage: res.usage });
 
     const raw  = res.content[0]?.text?.trim() ?? '';
     const text = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
@@ -310,6 +314,7 @@ Regole:
       model: MODEL, max_tokens: 250,
       messages: [{ role: 'user', content: prompt }],
     });
+    logUsage({ companyId, model: MODEL, callSite: 'ladia_memory_diary_note_analysis', usage: res.usage });
 
     const raw  = res.content[0]?.text?.trim() ?? '';
     const text = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();

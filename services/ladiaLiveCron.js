@@ -16,6 +16,7 @@ const tg       = require('./telegram');
 const { buildEnrichedContext }  = require('./ladiaEngine');
 const { getLinkedChatIdsForSite } = require('./telegramNotifications');
 const Anthropic = require('@anthropic-ai/sdk');
+const { logUsage } = require('../lib/ladiaUsageLog');
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -77,6 +78,7 @@ async function sendBriefingForSite(cfg) {
       system:     BRIEFING_SYSTEM,
       messages:   [{ role: 'user', content: `Genera il briefing mattutino per questo cantiere:\n\n${context}` }],
     });
+    logUsage({ companyId: company_id, model: 'claude-sonnet-4-6', callSite: 'ladia_morning_briefing', usage: msg.usage });
     const briefingText = msg.content[0]?.text?.trim();
     if (!briefingText) return;
 

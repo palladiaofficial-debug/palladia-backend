@@ -22,13 +22,14 @@
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const HAIKU_MODEL   = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS    = 120; // 80 parole ca. — breve e denso
+const { logUsage }  = require('../lib/ladiaUsageLog');
 
 /**
  * Chiama Claude Haiku con un prompt focalizzato.
  * Ritorna il testo generato oppure null in caso di errore.
  * Non lancia mai eccezioni verso il chiamante.
  */
-async function callHaiku(prompt) {
+async function callHaiku(prompt, companyId = null) {
   if (!ANTHROPIC_KEY) return null;
 
   try {
@@ -53,6 +54,7 @@ async function callHaiku(prompt) {
 
     if (!res.ok) return null;
     const json = await res.json();
+    if (companyId) logUsage({ companyId, model: HAIKU_MODEL, callSite: 'ladia_smart_proposal', usage: json.usage });
     const text = json?.content?.[0]?.text?.trim();
     return text || null;
 
@@ -74,7 +76,7 @@ async function callHaiku(prompt) {
  * @param {string} ageLabel  es. "2 giorni", "5 giorni"
  * @returns {Promise<string|null>}
  */
-async function generateNcProposal(nc, siteName, ageLabel) {
+async function generateNcProposal(nc, siteName, ageLabel, companyId = null) {
   const ncText = (nc.ai_summary || nc.content || '').slice(0, 180);
   const urgLabel = nc.urgency === 'critica' ? 'CRITICA' : 'ALTA';
 
@@ -85,7 +87,7 @@ async function generateNcProposal(nc, siteName, ageLabel) {
     `(chiudere, scalare, diffida, sopralluogo, ecc.). ` +
     `Sii specifico, non generico. Termina con la proposta.`;
 
-  return callHaiku(prompt);
+  return callHaiku(prompt, companyId);
 }
 
 // ── Budget alert: proposta contestualizzata ───────────────────
@@ -103,7 +105,7 @@ async function generateNcProposal(nc, siteName, ageLabel) {
  * @param {string} budgetStr   es. "€ 200.000"
  * @returns {Promise<string|null>}
  */
-async function generateBudgetProposal(siteName, spendPct, salPct, costiStr, budgetStr) {
+async function generateBudgetProposal(siteName, spendPct, salPct, costiStr, budgetStr, companyId = null) {
   const gap = spendPct - salPct; // quanto i costi superano l'avanzamento lavori
 
   const prompt =
@@ -112,7 +114,7 @@ async function generateBudgetProposal(siteName, spendPct, salPct, costiStr, budg
     `In 2 frasi: identifica il rischio principale (es. margine a rischio, eccesso manodopera, ecc.) ` +
     `e proponi UN'azione concreta e realistica. Usa i numeri reali.`;
 
-  return callHaiku(prompt);
+  return callHaiku(prompt, companyId);
 }
 
 module.exports = { generateNcProposal, generateBudgetProposal };

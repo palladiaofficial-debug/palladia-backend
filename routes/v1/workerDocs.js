@@ -404,7 +404,7 @@ router.post('/worker-docs/ai-import',
 
     let analysis;
     try {
-      analysis = await analyzeDocumentBuffer(req.file.buffer, req.file.mimetype);
+      analysis = await analyzeDocumentBuffer(req.file.buffer, req.file.mimetype, req.companyId, req.user?.id);
     } catch (err) {
       console.error('[ai-import] analysis failed:', err.message);
       return res.status(500).json({ error: 'AI_ERROR', detail: err.message });

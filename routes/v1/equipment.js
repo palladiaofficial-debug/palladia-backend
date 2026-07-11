@@ -6,6 +6,7 @@ const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createEquipmentSchema, patchEquipmentSchema, assignEquipmentSchema } = require('../../lib/schemas/equipment');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 let _anthropic = null;
 function getClient() {
@@ -129,6 +130,7 @@ IMPORTANTE:
     };
 
     const msg  = await getClient().messages.create(msgOpts);
+    logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'equipment_ocr', usage: msg.usage });
     const text = msg.content[0]?.text || '{}';
     const match = text.match(/\{[\s\S]*\}/);
     const extracted = match ? JSON.parse(match[0]) : {};
@@ -316,6 +318,7 @@ Date in formato YYYY-MM-DD. null per campi non presenti.`;
     const msgOpts = { model: 'claude-haiku-4-5-20251001', max_tokens: 500, messages: [{ role: 'user', content }] };
 
     const msg  = await getClient().messages.create(msgOpts);
+    logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'equipment_doc_ocr', usage: msg.usage });
     const text = msg.content[0]?.text || '{}';
     const match = text.match(/\{[\s\S]*\}/);
     aiExtracted = match ? JSON.parse(match[0]) : null;

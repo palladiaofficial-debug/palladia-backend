@@ -15,6 +15,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const multer    = require('multer');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { aiLimiter } = require('../../middleware/rateLimit');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -91,6 +92,7 @@ router.post('/ocr/expiry', verifySupabaseJwt, aiLimiter, upload.single('file'), 
         ],
       }],
     });
+    logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'ocr_expiry', usage: msg.usage });
 
     const raw = msg.content[0]?.text?.trim() || '';
     const match = raw.match(/\{[\s\S]*\}/);

@@ -7,6 +7,7 @@ const { renderHtmlToPdf }   = require('../../pdf-renderer');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
 const { validate } = require('../../middleware/validate');
 const { patchChecklistSchema } = require('../../lib/schemas/baracca');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 let _anthropic = null;
 function getClient() {
@@ -149,6 +150,7 @@ Considera: tipo di lavori, presenza di subappaltatori, lavori in quota, scavi, e
       max_tokens: 400,
       messages: [{ role: 'user', content: prompt }],
     });
+    logUsage({ companyId: req.companyId, userId: req.user.id, model: 'claude-haiku-4-5-20251001', callSite: 'baracca_ai_suggestions', usage: msg.usage });
 
     const text = msg.content[0]?.text || '[]';
     const match = text.match(/\[[\s\S]*\]/);

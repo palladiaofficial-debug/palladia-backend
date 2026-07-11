@@ -7,6 +7,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const Anthropic = require('@anthropic-ai/sdk');
 const { validate } = require('../../middleware/validate');
 const { patchCostSchema } = require('../../lib/schemas/siteCosts');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 let _ai = null;
 function getAI() {
@@ -248,6 +249,7 @@ Rispondi SOLO con JSON valido, nessun testo aggiuntivo.`;
         max_tokens: 512,
         messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
       });
+      logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'site_costs_ocr', usage: msg.usage });
 
       const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
       const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim() : raw;

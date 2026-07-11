@@ -3,12 +3,13 @@ const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const Anthropic = require('@anthropic-ai/sdk');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { logUsage } = require('../../lib/ladiaUsageLog');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 // ── AI generation ─────────────────────────────────────────────────────────────
 
-async function callAiChecklist(posData) {
+async function callAiChecklist(posData, companyId, userId = null) {
   const works  = (posData.selectedWorks || []).slice(0, 8).join(', ') || 'Lavorazioni edili generali';
   const numW   = posData.numWorkers || '?';
   const period = posData.startDate && posData.endDate
@@ -50,6 +51,7 @@ Rispondi SOLO con il JSON array valido, nessun testo aggiuntivo. Max 15 voci tot
     max_tokens: 1500,
     messages:   [{ role: 'user', content: prompt }],
   });
+  if (companyId) logUsage({ companyId, userId, model: 'claude-haiku-4-5-20251001', callSite: 'site_setup_checklist', usage: resp.usage });
 
   const text  = resp.content[0]?.text || '[]';
   const match = text.match(/\[[\s\S]*\]/);
@@ -68,7 +70,7 @@ async function generateAndSave(siteId, companyId, posId, posData) {
 
   if (count > 0) return; // già presente — rispetta il lavoro dell'utente
 
-  const items = await callAiChecklist(posData);
+  const items = await callAiChecklist(posData, companyId);
   if (!items.length) return;
 
   const rows = items.map((item, i) => ({
@@ -124,7 +126,7 @@ router.post('/sites/:siteId/setup-checklist/generate', verifySupabaseJwt, async 
   }
 
   try {
-    const items = await callAiChecklist(posData || {});
+    const items = await callAiChecklist(posData || {}, req.companyId, req.user?.id);
     if (!items.length) return res.status(500).json({ error: 'Nessun elemento generato' });
 
     const insertTs = new Date().toISOString();

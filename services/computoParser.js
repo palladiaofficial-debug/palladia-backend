@@ -19,6 +19,19 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const xlsx      = require('xlsx');
 const { extractPdfText } = require('../lib/pdfExtract');
+const { logUsage }       = require('../lib/ladiaUsageLog');
+
+function sumUsage(usageAcc) {
+  const total = { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 };
+  for (const u of usageAcc || []) {
+    if (!u) continue;
+    total.input_tokens                += u.input_tokens || 0;
+    total.output_tokens               += u.output_tokens || 0;
+    total.cache_creation_input_tokens += u.cache_creation_input_tokens || 0;
+    total.cache_read_input_tokens     += u.cache_read_input_tokens || 0;
+  }
+  return total;
+}
 
 const MODEL      = 'claude-sonnet-4-6';
 const MAX_TOKENS = 8192;
@@ -329,7 +342,7 @@ Per ognuna restituisci un oggetto JSON con: codice, prezzo_unitario (numero o nu
 Usa SOLO i dati presenti nel testo — non inventare prezzi. Numeri italiani: 1.500,00 → 1500.00.
 Risposta: array JSON grezzo, nessun markdown.`;
 
-async function aiResolve(vociDaRisolvere) {
+async function aiResolve(vociDaRisolvere, usageAcc) {
   if (vociDaRisolvere.length === 0) return new Map();
   const client = new Anthropic();
   const payload = vociDaRisolvere.map(v =>
@@ -343,6 +356,7 @@ async function aiResolve(vociDaRisolvere) {
     system: AI_SYSTEM,
     messages: [{ role: 'user', content: `Voci da analizzare:\n${payload}` }],
   });
+  if (usageAcc) usageAcc.push(resp.usage);
   const raw   = resp.content[0]?.text?.trim() || '[]';
   const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '');
   let parsed; try { parsed = JSON.parse(clean); } catch { parsed = []; }
@@ -393,7 +407,7 @@ function parseJsonSafe(raw) {
   try { return JSON.parse(clean); } catch { return []; }
 }
 
-async function aiParseChunk(text, client, chunkIdx, total) {
+async function aiParseChunk(text, client, chunkIdx, total, usageAcc) {
   console.log(`[computoParser/AI-full] chunk ${chunkIdx}/${total} (${text.length} char)`);
   const resp = await client.messages.create({
     model: MODEL,
@@ -401,6 +415,7 @@ async function aiParseChunk(text, client, chunkIdx, total) {
     system: AI_FULL_SYSTEM,
     messages: [{ role: 'user', content: `Testo capitolato:\n${text}` }],
   });
+  if (usageAcc) usageAcc.push(resp.usage);
   return parseJsonSafe(resp.content[0]?.text?.trim() || '[]');
 }
 
@@ -499,7 +514,7 @@ function mergeAiItems(rawItems) {
   return merged;
 }
 
-async function aiParseFull(lines) {
+async function aiParseFull(lines, usageAcc) {
   const client = new Anthropic();
 
   // Percorso veloce: trova solo la sezione computo (evita 15+ chiamate su PDF lunghi)
@@ -507,7 +522,7 @@ async function aiParseFull(lines) {
   if (section) {
     console.log(`[computoParser/AI-full] sezione computo: ${section.length} righe → 1 chiamata`);
     try {
-      const items = await aiParseChunk(section.join('\n'), client, 1, 1);
+      const items = await aiParseChunk(section.join('\n'), client, 1, 1, usageAcc);
       const merged = mergeAiItems(items);
       if (merged.filter(v => v.tipo === 'voce').length > 0) return merged;
       console.log('[computoParser/AI-full] chiamata singola = 0 voci, fallback chunked');
@@ -529,7 +544,7 @@ async function aiParseFull(lines) {
   const allItems = [];
   for (let ci = 0; ci < chunks.length; ci++) {
     try {
-      const items = await aiParseChunk(chunks[ci], client, ci + 1, chunks.length);
+      const items = await aiParseChunk(chunks[ci], client, ci + 1, chunks.length, usageAcc);
       allItems.push(...items);
     } catch (e) {
       console.error(`[computoParser/AI-full] chunk ${ci+1} errore:`, e.message);
@@ -539,7 +554,7 @@ async function aiParseFull(lines) {
 }
 
 // ─── Entry point ─────────────────────────────────────────────────────────────
-async function runParse(rawLines, ctx) {
+async function runParse(rawLines, ctx, usageAcc) {
   const lines = preFilter(rawLines);
   console.log(`[computoParser/${ctx}] ${rawLines.length} righe raw → ${lines.length} dopo preFilter`);
 
@@ -550,7 +565,7 @@ async function runParse(rawLines, ctx) {
   // Se regex non riconosce il formato, usa il parser AI completo
   if (nVoci < 3) {
     console.log(`[computoParser/${ctx}] formato non standard → AI full parse`);
-    voci  = await aiParseFull(lines);
+    voci  = await aiParseFull(lines, usageAcc);
     nVoci = voci.filter(v => v.tipo === 'voce').length;
     console.log(`[computoParser/${ctx}] AI full → ${voci.length} elementi (${nVoci} voci)`);
     if (nVoci === 0)
@@ -566,7 +581,7 @@ async function runParse(rawLines, ctx) {
     v.tipo === 'voce' && v.prezzo_unitario == null && v.unita_misura != null
   );
   if (irrisolte.length > 0) {
-    const aiMap = await aiResolve(irrisolte);
+    const aiMap = await aiResolve(irrisolte, usageAcc);
     for (const v of irrisolte) {
       const ai = aiMap.get(v.codice);
       if (!ai) continue;
@@ -584,14 +599,16 @@ async function runParse(rawLines, ctx) {
 }
 
 // ─── PDF ──────────────────────────────────────────────────────────────────────
-async function parsePdf(buffer) {
+async function parsePdf(buffer, companyId = null, userId = null) {
   const { text: raw, numPages } = await extractPdfText(buffer, { maxPages: 80 });
   if (!raw.trim()) throw new Error('Il PDF non contiene testo estraibile (documento scansionato?).');
   const lines = preFilter(raw.split('\n'));
   console.log(`[computoParser/parsePdf] ${numPages} pagine → ${lines.length} righe dopo preFilter`);
 
   // PDF: sempre AI full parse — il formato è troppo variabile per regex
-  const voci = await aiParseFull(lines);
+  const usageAcc = [];
+  const voci = await aiParseFull(lines, usageAcc);
+  if (companyId) logUsage({ companyId, userId, model: 'claude-sonnet-4-6', callSite: 'computo_parse_pdf', usage: sumUsage(usageAcc) });
   const nVoci = voci.filter(v => v.tipo === 'voce').length;
   console.log(`[computoParser/parsePdf] AI full → ${voci.length} elementi (${nVoci} voci)`);
   if (nVoci === 0)
@@ -688,7 +705,7 @@ function excelColumnParse(rows, headerRow, colMap) {
 }
 
 // ─── Excel ────────────────────────────────────────────────────────────────────
-async function parseExcel(buffer) {
+async function parseExcel(buffer, companyId = null, userId = null) {
   const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true });
   let bestSheet = workbook.SheetNames[0], maxCells = 0;
   for (const name of workbook.SheetNames) {
@@ -724,7 +741,10 @@ async function parseExcel(buffer) {
   // Fallback: CSV → AI full parse
   const csv   = xlsx.utils.sheet_to_csv(workbook.Sheets[bestSheet], { blankrows: false });
   const lines = csv.split('\n').filter(l => l.replace(/,+/g, '').trim().length > 2);
-  return runParse(lines, 'parseExcel');
+  const usageAcc = [];
+  const result = await runParse(lines, 'parseExcel', usageAcc);
+  if (companyId) logUsage({ companyId, userId, model: 'claude-sonnet-4-6', callSite: 'computo_parse_excel', usage: sumUsage(usageAcc) });
+  return result;
 }
 
 module.exports = { parsePdf, parseExcel };
