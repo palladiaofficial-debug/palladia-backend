@@ -492,7 +492,6 @@ router.post('/coordinator/portal/:token/site/:siteId/nonconformities', coordinat
       site_id:          invite.site_id,
       invite_id:        invite.id,
       coordinator_name: invite.coordinator_name,
-      coordinator_email: invite.coordinator_email || null,
       title:            String(title).trim().slice(0, 300),
       description:      String(description).trim().slice(0, 3000),
       category:         safeCategory,
