@@ -282,9 +282,9 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 9. Notifiche
 
-- [ ] 🟡 Push notification ricevuta su mobile (se abilitate) per eventi chiave (scadenza, promemoria)
-- [ ] 🟡 Email inviate correttamente (welcome, alert uscite mancanti, scadenze) — controllare cartella spam
-- [ ] 🟢 Centro notifiche in-app: contatore corretto, segna come letto funziona
+- [ ] 🟡 Push notification ricevuta su mobile (se abilitate) per eventi chiave (scadenza, promemoria) — non testabile da qui, serve un dispositivo reale con permesso push concesso (sottoscrizione VAPID browser-specifica)
+- [x] 🟡 Email inviate correttamente (welcome, alert uscite mancanti, scadenze) — **verificato dal vivo 2026-07-11**, non solo "nessun errore lanciato": interrogata direttamente l'API di Resend (provider reale) per la cronologia invii degli ultimi giorni. Stato **"delivered" confermato** su indirizzi reali per: conferma account, email di benvenuto, reset password (tutte a `novacsservizi@gmail.com`, account di test creato il 9/7), digest giornaliero alert conformità e documenti mancanti (a `chiantia@mscedilizia.it`, account reale di campo). Le uniche email "bounced" erano tutte dirette a indirizzi fittizi `@palladia.internal` usati per account CI/QA — atteso, non un bug
+- [x] 🟢 Centro notifiche in-app: contatore corretto, segna come letto funziona — **verificato dal vivo 2026-07-11**: creata una notifica di test reale, contatore corretto (3→2 dopo lettura singola→0 dopo "segna tutte"), eliminazione confermata (204). Nessun bug trovato
 
 ---
 
