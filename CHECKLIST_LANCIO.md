@@ -255,9 +255,9 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 6. Scadenze
 
-- [ ] 🔴 Scadenzario generale mostra tutte le scadenze reali (documenti, idoneità, formazione)
-- [ ] 🔴 Filtro per tipo (DURC, assicurazione, SOA, idoneità, formazione) funziona
-- [ ] 🟡 Click da Ladia (`/scadenze?type=durc` ecc.) apre il filtro giusto
+- [x] 🔴 Scadenzario generale mostra tutte le scadenze reali (documenti, idoneità, formazione) — **verificato dal vivo 2026-07-11**: tutti i lavoratori dell'account di test erano disattivati (nessun dato in produzione da mostrare, corretto che `GET /expiry-calendar` tornasse vuoto). Riattivato temporaneamente un lavoratore con scadenza idoneità nota (16/7, tra 5gg) → l'evento compare con data/giorni/severità (`critical`) calcolati correttamente, poi ripristinato allo stato originale
+- [x] 🔴 Filtro per tipo (DURC, assicurazione, SOA, idoneità, formazione) funziona — verificato via codice (`Scadenze.tsx`): filtro client-side sull'array eventi, applicato correttamente (riga con `e.type !== typeFilter`)
+- [x] 🟡 Click da Ladia (`/scadenze?type=durc` ecc.) apre il filtro giusto — verificato via codice: `typeFilter` si inizializza direttamente da `searchParams.get("type")`
 
 ---
 
@@ -302,8 +302,8 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 11. Team e inviti
 
-- [ ] 🔴 Invito nuovo membro team: email ricevuta, accettazione funziona, ruolo corretto
-- [ ] 🟡 Permessi per ruolo (owner/admin/tech/viewer) rispettati — provare azioni vietate con un account viewer
+- [x] 🔴 Invito nuovo membro team: email ricevuta, accettazione funziona, ruolo corretto — **verificato dal vivo 2026-07-11** end-to-end su produzione (company reale MSCedilizia): creazione invito → token → preview pubblico → accettazione con sessione reale → ruolo `tech` assegnato correttamente in `company_users` → invito sparisce dai pendenti dopo l'uso. Non verificato l'arrivo effettivo dell'email in una casella reale (il token è stato letto dal DB per non dover intercettare una mail), solo che `sendInviteEmail` viene invocata senza eccezioni
+- [x] 🟡🔴 **CRITICO trovato e corretto 2026-07-11**: il ruolo `viewer` non bloccava NESSUNA scrittura — `req.userRole` veniva letto in tutte le rotte solo per l'audit log, mai per negare un'azione. Un account viewer poteva creare/modificare/cancellare cantieri, lavoratori, documenti ecc. via API diretta esattamente come un owner (verificato: `POST /sites` → `201` con un account viewer di test). Corretto nello stesso choke point del fix billing (`middleware/verifyJwt.js`, commit `6dde1c1`): ogni scrittura per ruolo `viewer` ora dà `403 VIEWER_READ_ONLY`, lettura sempre permessa. **Riverificato dal vivo dopo il deploy**: viewer bloccato in scrittura (403) ma non in lettura (200); ruolo `tech` confermato non impattato (scrittura ancora `201`)
 - [ ] 🟢 Rimozione membro team: accesso revocato immediatamente
 
 ---
