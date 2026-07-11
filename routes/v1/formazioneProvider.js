@@ -302,7 +302,7 @@ router.get('/formazione/provider/:token/courses', async (req, res) => {
       max_participants, includes_exam, certificate_issued_days, is_active, is_draft, is_featured,
       created_at,
       course_types(id, name, validity_years),
-      course_sessions(id, start_date, end_date, available_spots, booked_spots, notes, override_location)
+      course_sessions(id, start_date, end_date, available_spots, booked_spots, notes, location_override)
     `)
     .eq('provider_id', session.provider_id)
     .order('created_at', { ascending: false });
@@ -404,7 +404,7 @@ router.post('/formazione/provider/:token/courses/:courseId/sessions', validate(c
 
   if (!course) return res.status(403).json({ error: 'COURSE_NOT_FOUND' });
 
-  const { start_date, end_date, available_spots, notes, override_location } = req.body || {};
+  const { start_date, end_date, available_spots, notes, location_override } = req.body || {};
 
   if (!start_date || !/^\d{4}-\d{2}-\d{2}/.test(start_date)) {
     return res.status(400).json({ error: 'START_DATE_REQUIRED' });
@@ -419,7 +419,7 @@ router.post('/formazione/provider/:token/courses/:courseId/sessions', validate(c
       available_spots:   available_spots ? Math.max(1, parseInt(available_spots)) : (course.max_participants || 20),
       booked_spots:      0,
       notes:             notes ? String(notes).trim().slice(0, 500) : null,
-      override_location: override_location ? String(override_location).trim().slice(0, 200) : null,
+      location_override: location_override ? String(location_override).trim().slice(0, 200) : null,
     })
     .select('id, start_date, end_date, available_spots, booked_spots')
     .single();
@@ -439,7 +439,7 @@ router.patch('/formazione/provider/:token/courses/:courseId/sessions/:sessionId'
     .eq('id', req.params.courseId).eq('provider_id', pSession.provider_id).maybeSingle();
   if (!course) return res.status(403).json({ error: 'COURSE_NOT_FOUND' });
 
-  const ALLOWED = ['start_date', 'end_date', 'available_spots', 'notes', 'override_location'];
+  const ALLOWED = ['start_date', 'end_date', 'available_spots', 'notes', 'location_override'];
   const updates = {};
   for (const k of ALLOWED) { if (req.body[k] !== undefined) updates[k] = req.body[k]; }
   if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'NO_FIELDS' });
