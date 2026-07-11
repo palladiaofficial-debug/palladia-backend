@@ -89,8 +89,17 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
 
   const course = session.marketplace_courses;
   const provider = course.training_providers;
+  const isConsultantCourse = !!course.consultant_id;
+
+  // Rilascia i posti riservati da book_session_atomic se un controllo successivo
+  // fallisce — altrimenti la capacità del corso resta persa per sempre senza
+  // nessuna prenotazione a spiegarlo (bug reale trovato 2026-07-11, vedi migrazione 131).
+  const releaseSpots = () => supabase.rpc('release_session_spots', {
+    p_session_id: session_id, p_num_workers: worker_ids.length,
+  }).then(() => {}, () => {});
 
   if (!isConsultantCourse && !provider) {
+    await releaseSpots();
     return res.status(400).json({ error: 'PROVIDER_NOT_FOUND', message: 'Corso senza provider associato' });
   }
 
@@ -102,11 +111,11 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
     .eq('company_id', req.companyId);
 
   if (wErr || !workers || workers.length !== worker_ids.length) {
+    await releaseSpots();
     return res.status(400).json({ error: 'INVALID_WORKERS' });
   }
 
   // Compute pricing
-  const isConsultantCourse = !!course.consultant_id;
   const unitPrice          = course.price_cents;
   const totalPrice         = unitPrice * worker_ids.length;
   const commissionRate     = isConsultantCourse ? 15 : (provider?.commission_rate || 15);
@@ -170,7 +179,10 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
     bErr     = bE;
   }
 
-  if (bErr) return res.status(500).json({ error: 'DB_ERROR', detail: bErr.message });
+  if (bErr) {
+    await releaseSpots();
+    return res.status(500).json({ error: 'DB_ERROR', detail: bErr.message });
+  }
 
   const bookingIds = bookings.map(b => b.id).join(',');
 
@@ -212,8 +224,9 @@ router.post('/bookings/checkout', validate(checkoutBookingSchema), async (req, r
     checkoutUrl = stripeSession.url;
   } catch (e) {
     console.error('[bookings] Stripe error:', e.message);
-    // Rollback bookings
+    // Rollback bookings + posti riservati
     await supabase.from('course_bookings').delete().in('id', bookings.map(b => b.id));
+    await releaseSpots();
     return res.status(503).json({ error: 'STRIPE_ERROR', message: e.message });
   }
 
@@ -447,7 +460,7 @@ router.post('/bookings/:id/cancel', async (req, res) => {
 
   const { data: booking } = await supabase
     .from('course_bookings')
-    .select('id, status, payment_status, stripe_checkout_id')
+    .select('id, status, payment_status, stripe_checkout_id, session_id, participants_count')
     .eq('id', id)
     .eq('company_id', req.companyId)
     .maybeSingle();
@@ -463,6 +476,14 @@ router.post('/bookings/:id/cancel', async (req, res) => {
     .eq('id', id);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  // Rilascia il posto occupato — mai fatto prima (bug reale trovato 2026-07-11,
+  // vedi migrazione 131): senza questo una prenotazione cancellata restava
+  // "occupata" per sempre, bloccando un posto che nessuno usava più.
+  await supabase.rpc('release_session_spots', {
+    p_session_id: booking.session_id, p_num_workers: booking.participants_count || 1,
+  }).then(() => {}, () => {});
+
   res.json({ ok: true });
 });
 
