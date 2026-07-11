@@ -26,6 +26,22 @@ async function enforceBillingForWrites(req, res, companyId) {
 }
 
 /**
+ * Il ruolo 'viewer' è pensato per sola lettura, ma prima di questo fix nessuna
+ * rotta lo verificava davvero — un viewer poteva scrivere ovunque via API diretta
+ * esattamente come un admin. Blocca ogni scrittura (tutti i metodi tranne
+ * GET/HEAD/OPTIONS) per questo ruolo. Ritorna true se la richiesta può proseguire.
+ */
+function enforceViewerReadOnly(req, res, role) {
+  if (role !== 'viewer') return true;
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+  res.status(403).json({
+    error:   'VIEWER_READ_ONLY',
+    message: 'Il tuo ruolo (viewer) ha accesso in sola lettura.',
+  });
+  return false;
+}
+
+/**
  * verifySupabaseJwt — middleware per endpoint privati /api/v1/...
  *
  * Richiede:
@@ -148,6 +164,7 @@ async function verifySupabaseJwt(req, res, next) {
   req.companyId = companyId;   // verificato, sicuro da usare in .eq('company_id', req.companyId)
   req.userRole  = membership.role;
 
+  if (!enforceViewerReadOnly(req, res, membership.role)) return;
   if (!await enforceBillingForWrites(req, res, companyId)) return;
 
   next();
