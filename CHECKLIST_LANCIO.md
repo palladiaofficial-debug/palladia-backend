@@ -41,6 +41,36 @@ danno errore, ma non sostituisce un click reale.
 
 ---
 
+## Regressione automatica 2026-07-11 — `scripts/fulltest_platform.js` contro produzione
+
+Rilanciata la suite di smoke test esistente (94/99, non usata da un po') con una sessione
+reale generata per `carpiooricardo@gmail.com` (company MSCedilizia) — stesso principio delle
+verifiche precedenti: chiamate dirette contro il backend di produzione, non contro codice letto.
+Copre in un colpo solo gran parte delle sezioni 5, 8, 10 (solo stato), 11 (solo lettura), 13
+(riconferma) e la sicurezza multi-tenant/append-only.
+
+I 5 test falliti sono **tutti problemi dello script, non della piattaforma** (verificato leggendo
+il codice reale dietro ognuno): `/api/pdf-smoke` richiede JWT e lo script lo chiamava senza; l'endpoint
+`GET /sites/:id/workers` non è mai esistito (il frontend usa `/workers?siteId=`, testato a parte e ok);
+`sites/overview` restituisce un array diretto, non `{sites:[...]}`, aspettativa del test obsoleta; il
+`SITE_ID` hardcoded nello script punta a un cantiere reale ora con `status='eliminato'`, per cui
+`weather-log` lo rifiuta correttamente (comportamento voluto, non un bug). Trovato anche: la company di
+test contiene dati fittizi residui di sessioni manuali precedenti (cantiere "yhui"/"jioo") — rumore,
+non un problema, da ripulire quando capita.
+
+Il lavoratore di test creato dallo script non è cancellabile via API (nessun `DELETE /workers/:id`
+esiste, e la sua riga in `presence_logs` — creata dallo stesso test di timbratura — è bloccata
+dal trigger append-only, per design). Corretto disattivandolo (`is_active=false`) invece di
+cancellarlo: **conferma indiretta e utile** che disattivare un lavoratore blocca subito la
+timbratura (`403 BADGE_REVOKED`), verificato per caso durante il cleanup.
+
+Esteso il test oltre lo script esistente per chiudere due voci ancora ambigue in sezione 5:
+geofence e alternanza ENTRY/EXIT non erano mai state isolate dal rate limit (60s) nello script
+originale. Rifatto con attese di 65s tra le chiamate: geofence dà `403 OUTSIDE_GEOFENCE` con
+distanza esplicita (non confuso col rate limit), alternanza ENTRY→EXIT→ENTRY corretta.
+
+---
+
 ## Audit automatico 2026-07-06 — bug trovati e corretti
 
 Verifica di sicurezza/resilienza/migrazioni fatta leggendo il codice reale (non un audit
@@ -212,12 +242,14 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 5. Badge digitale / Timbratura
 
-- [ ] 🔴 Scan QR cantiere da telefono lavoratore → identificazione via CF funziona
-- [ ] 🔴 Timbratura ENTRY → EXIT → ENTRY alternata correttamente, mai due ENTRY di fila
-- [ ] 🔴 Geofence: timbratura rifiutata se fuori raggio (con cantiere che ha coordinate impostate)
-- [ ] 🟡 Rate limit "troppo presto" (60s tra timbrature) mostra messaggio chiaro
+- [ ] 🔴 Scan QR cantiere da telefono lavoratore → identificazione via CF funziona — non ancora testato (serve telefono reale o flusso completo scan→identify, non solo punch diretto via badge_code)
+- [x] 🔴 Timbratura ENTRY → EXIT → ENTRY alternata correttamente, mai due ENTRY di fila — **verificato dal vivo 2026-07-11** contro produzione con un lavoratore di test reale (`badge/:code/punch`, coordinate esatte del cantiere): sequenza ENTRY→EXIT→ENTRY corretta, mai due eventi uguali di fila
+- [x] 🔴 Geofence: timbratura rifiutata se fuori raggio (con cantiere che ha coordinate impostate) — **verificato dal vivo 2026-07-11**: punch a +5° di latitudine (555km) → `403 OUTSIDE_GEOFENCE` con `distance_m`/`max_allowed_m` espliciti, non confuso con il rate limit
+- [x] 🟡 Rate limit "troppo presto" (60s tra timbrature) mostra messaggio chiaro — **verificato dal vivo 2026-07-11**: doppia timbratura immediata → `429 PUNCH_TOO_SOON` con `retry_after_secs`
 - [ ] 🟡 Badge PDF lavoratore: dati corretti, foto se presente, QR di verifica funzionante
 - [ ] 🟢 Pagina pubblica verifica badge (`/badge/:code`) mostra dati corretti senza login
+
+**Bonus confermato durante il test**: disattivare un lavoratore (`is_active=false`) blocca subito la timbratura (`403 BADGE_REVOKED`) — comportamento di sicurezza corretto, scoperto per caso quando il worker di test disattivato in cleanup ha bloccato il round successivo del test.
 
 ---
 
@@ -240,8 +272,8 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 8. Risorse (lavoratori, subappaltatori, mezzi)
 
-- [ ] 🔴 Creazione lavoratore: tutti i campi salvati, badge_code generato univoco
-- [ ] 🔴 Assegnazione lavoratore a cantiere e rimozione — stato coerente in entrambe le liste
+- [x] 🔴 Creazione lavoratore: tutti i campi salvati, badge_code generato univoco — **verificato dal vivo 2026-07-11** via API reale su produzione, `POST /workers` → 201, `badge_code` generato e univoco per ogni lavoratore creato
+- [x] 🔴 Assegnazione lavoratore a cantiere e rimozione — stato coerente in entrambe le liste — **verificato dal vivo 2026-07-11**: assegnazione (`POST /sites/:id/workers` → 200/201) e rimozione (`DELETE /sites/:id/workers/:workerId`) confermate, nessuna riga orfana rimasta in `worksite_workers`
 - [ ] 🟡 Documenti lavoratore (certificati, idoneità): upload e scadenza tracciata
 - [ ] 🟡 Subappaltatori: creazione, documenti, assegnazione cantiere
 - [ ] 🟢 Mezzi: creazione, manutenzioni, assegnazione
