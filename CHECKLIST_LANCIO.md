@@ -290,10 +290,11 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 10. Billing / Abbonamento
 
-- [ ] 🔴 Trial: countdown giorni rimanenti corretto, banner mostrato negli ultimi 7gg
-- [ ] 🔴 Checkout Stripe: pagamento test completato, piano attivato subito dopo
-- [ ] 🔴 Limite cantieri per piano rispettato (es. Starter blocca al 3° cantiere attivo)
-- [ ] 🔴 Paywall: accesso bloccato correttamente a trial scaduto, sbloccato dopo pagamento
+- [ ] 🟡 Trial: countdown giorni rimanenti corretto, banner mostrato negli ultimi 7gg — `days_left` calcolato correttamente lato API (verificato indirettamente), manca solo la verifica visiva del banner
+- [ ] 🔴 Checkout Stripe: pagamento test completato, piano attivato subito dopo — **non testabile da qui** (nessun browser disponibile in questo ambiente per completare un checkout Stripe reale con carta). `POST /billing/checkout` genera correttamente un URL Stripe valido (verificato 2026-07-11), ma serve un click reale con carta di test per chiudere questa voce
+- [x] 🔴 Limite cantieri per piano rispettato (es. Starter blocca al 3° cantiere attivo) — **verificato dal vivo 2026-07-11** con una company isolata usa-e-getta (piano trial, limite 3): i primi 3 cantieri passano, il 4° dà `403 SITE_LIMIT_REACHED`
+- [x] 🔴🔴 **CRITICO trovato e corretto 2026-07-11**: `checkBillingActive` era collegato solo alla generazione PDF e a Ladia (fix del 2026-07-06), non alle rotte CRUD normali. Un abbonamento con trial scaduto poteva continuare a creare/modificare cantieri, lavoratori, documenti ecc. chiamando l'API direttamente, bypassando completamente il paywall lato frontend — stesso pattern del bug PDF già corretto, mai esteso al resto della piattaforma. Corretto estendendo il controllo al choke point comune `verifySupabaseJwt` (`middleware/verifyJwt.js`): blocca ogni scrittura (tutti i metodi tranne GET/HEAD/OPTIONS) se l'abbonamento non è attivo, con eccezione esplicita per `/billing/checkout` e `/billing/portal` (altrimenti un account bloccato non potrebbe più riattivarsi da solo). Commit `fdb6e02`. **Riverificato dal vivo dopo il deploy** con 3 scenari su produzione: (1) company con trial scaduto → scrittura bloccata `402 SUBSCRIPTION_REQUIRED`, lettura resta libera, checkout resta permesso e genera URL Stripe valido; (2) company con trial attivo → scrittura normale `201`; (3) account reale MSCedilizia (piano pro, attivo) → lettura e scrittura invariate, nessuna regressione
+- [ ] 🔴 Paywall: accesso bloccato correttamente a trial scaduto, sbloccato dopo pagamento — lato backend ora chiuso (vedi sopra), **manca ancora la verifica visiva lato frontend** (il paywall React mostra la schermata giusta? e si sblocca subito dopo un pagamento reale?)
 - [ ] 🟡 Portale gestione abbonamento (cambio piano, cancellazione) funziona
 - [ ] 🟡 Webhook Stripe: verificare nei log che gli eventi arrivino e vengano processati
 
