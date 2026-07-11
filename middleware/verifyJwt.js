@@ -1,5 +1,29 @@
 'use strict';
 const supabase = require('../lib/supabase');
+const { isBillingActive } = require('../lib/billing');
+
+// Endpoint che devono restare scrivibili anche ad abbonamento scaduto — altrimenti
+// una company bloccata non potrebbe più riattivarsi da sola (paradosso del lucchetto).
+const BILLING_EXEMPT_WRITE_PATHS = new Set([
+  '/billing/checkout',
+  '/billing/portal',
+]);
+
+/**
+ * Blocca le scritture (tutti i metodi tranne GET/HEAD/OPTIONS) quando l'abbonamento
+ * della company non è attivo (trial scaduto o subscription_status non 'active'/'trial').
+ * La lettura resta sempre permessa. Ritorna true se la richiesta può proseguire.
+ */
+async function enforceBillingForWrites(req, res, companyId) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return true;
+  if (BILLING_EXEMPT_WRITE_PATHS.has(req.path)) return true;
+  if (await isBillingActive(companyId)) return true;
+  res.status(402).json({
+    error:   'SUBSCRIPTION_REQUIRED',
+    message: 'Abbonamento scaduto: rinnova per continuare a modificare i dati.',
+  });
+  return false;
+}
 
 /**
  * verifySupabaseJwt — middleware per endpoint privati /api/v1/...
@@ -110,6 +134,7 @@ async function verifySupabaseJwt(req, res, next) {
         req.userRole  = 'cdl';
         req.isCdl     = true;
         req.studioId  = studioUser.studio_id;
+        if (!await enforceBillingForWrites(req, res, companyId)) return;
         return next();
       }
     }
@@ -122,6 +147,8 @@ async function verifySupabaseJwt(req, res, next) {
   req.jwt       = jwt;
   req.companyId = companyId;   // verificato, sicuro da usare in .eq('company_id', req.companyId)
   req.userRole  = membership.role;
+
+  if (!await enforceBillingForWrites(req, res, companyId)) return;
 
   next();
 }
