@@ -274,9 +274,9 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [x] 🔴 Creazione lavoratore: tutti i campi salvati, badge_code generato univoco — **verificato dal vivo 2026-07-11** via API reale su produzione, `POST /workers` → 201, `badge_code` generato e univoco per ogni lavoratore creato
 - [x] 🔴 Assegnazione lavoratore a cantiere e rimozione — stato coerente in entrambe le liste — **verificato dal vivo 2026-07-11**: assegnazione (`POST /sites/:id/workers` → 200/201) e rimozione (`DELETE /sites/:id/workers/:workerId`) confermate, nessuna riga orfana rimasta in `worksite_workers`
-- [ ] 🟡 Documenti lavoratore (certificati, idoneità): upload e scadenza tracciata
-- [ ] 🟡 Subappaltatori: creazione, documenti, assegnazione cantiere
-- [ ] 🟢 Mezzi: creazione, manutenzioni, assegnazione
+- [x] 🟡 Documenti lavoratore (certificati, idoneità): upload e scadenza tracciata — **verificato dal vivo 2026-07-11** su produzione: upload reale (PDF) con `expiry_date` manuale → risposta `201`, `workers.health_fitness_expiry` sincronizzato automaticamente al valore corretto, documento presente in lista
+- [x] 🟡 Subappaltatori: creazione, documenti, assegnazione cantiere — **verificato dal vivo 2026-07-11**: creazione `201`, upload documento reale `201`, assegnazione a cantiere `201` e presente nella lista del cantiere. Cleanup completo (disassegnato, archiviato)
+- [x] 🟢 Mezzi: creazione, manutenzioni, assegnazione — **verificato dal vivo 2026-07-11**: creazione `201`, aggiornamento data manutenzione via PATCH `200`, assegnazione a cantiere `201` e presente nella lista. Cleanup completo (disassegnato, eliminato)
 
 ---
 
