@@ -502,7 +502,10 @@ router.post('/coordinator/portal/:token/site/:siteId/nonconformities', coordinat
     })
     .select('id, title, description, category, severity, status, due_date, created_at').single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (error) {
+    console.error('[coordinatorPortal] nonconformity insert error:', error.message, error.code, error.details);
+    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  }
 
   try {
     const { data: site } = await supabase.from('sites').select('name').eq('id', invite.site_id).maybeSingle();
