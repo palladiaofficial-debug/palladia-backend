@@ -415,7 +415,10 @@ router.post('/formazione/provider/:token/courses/:courseId/sessions', validate(c
     .insert({
       course_id:         req.params.courseId,
       start_date,
-      end_date:          end_date || null,
+      // end_date è NOT NULL a DB — un corso in un solo giorno (caso comune,
+      // il campo nel form provider non è obbligatorio) altrimenti falliva
+      // sempre con un errore di constraint. Default: stesso giorno di inizio.
+      end_date:          end_date || start_date,
       available_spots:   available_spots ? Math.max(1, parseInt(available_spots)) : (course.max_participants || 20),
       booked_spots:      0,
       notes:             notes ? String(notes).trim().slice(0, 500) : null,
