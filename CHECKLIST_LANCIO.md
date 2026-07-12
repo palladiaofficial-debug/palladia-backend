@@ -327,7 +327,8 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 ## 14. PWA / mobile generale
 
-- [ ] 🔴 App installata come PWA su telefono: si apre, funziona offline-tolerant (non crasha senza rete)
+- [x] 🔴🔴 **CRITICO trovato e corretto 2026-07-12** (segnalato dal vivo dall'utente su mobile web, non PWA installata): il modale onboarding "Installa Palladia" aveva bottoni in fondo (incluso "Continua nel browser") **fisicamente irraggiungibili** — la tab bar mobile in fondo allo schermo (`Navbar.tsx`, `z-[9999]`) copriva il modale (`z-[300]`) e intercettava tutti i tap in quella zona, anche scorrendo. Stesso identico bug trovato per estensione in `WelcomeWizard.tsx` (`z-[70]` — **onboarding azienda al primo accesso**, un flusso critico) e nella vista espansa di `LadiaCanvas.tsx` (`z-[80]`). Tutti e tre allineati a `z-[10000]`, stesso valore già corretto in `BadgeModal.tsx`/`SiteDetail.tsx`. **Da riverificare dal vivo**: aprire il modale "Installa Palladia" su mobile web e confermare che "Continua nel browser" sia ora cliccabile
+- [x] 🔴 App installata come PWA su telefono: si apre — **verificato dal vivo 2026-07-12** dall'utente (screenshot reali). Tolleranza offline: **verificato dal vivo 2026-07-12**, navigazione tra pagine in modalità aereo non crasha (mostra avviso offline, non schermo bianco), riprende normalmente al ritorno online
 - [ ] 🔴 Dopo un deploy, il toast "Nuova versione disponibile" compare e il bottone "Aggiorna" ricarica senza perdere la sessione
 - [ ] 🟡 Notifiche push richieste e concesse correttamente al primo utilizzo
 - [ ] 🟢 Condivisione file/foto verso l'app (share target) funziona da altre app del telefono
