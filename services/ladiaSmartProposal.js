@@ -117,4 +117,63 @@ async function generateBudgetProposal(siteName, spendPct, salPct, costiStr, budg
   return callHaiku(prompt, companyId);
 }
 
-module.exports = { generateNcProposal, generateBudgetProposal };
+// ── Assegnazione cantiere per fatture SdI ambigue ──────────────
+//
+// Quando una company ha 2+ cantieri attivi, l'euristica deterministica in
+// services/sdiInvoices.js non può assegnare la spesa con certezza — invece di
+// lasciarla silenziosamente "generale", Ladia prova a suggerire il cantiere
+// più probabile dal contenuto della fattura (fornitore, righe, indirizzo),
+// con una motivazione breve che l'utente vede prima di confermare o correggere.
+// Risposta strutturata (JSON), non testo libero: serve un site_id programmabile.
+//
+// @param {object} invoice — InvoiceResponse (vedi services/sdiInvoices.js)
+// @param {{id, name, address}[]} activeSites
+// @param {string} companyId
+// @returns {Promise<{site_id: string, reason: string}|null>}
+async function generateSiteAssignmentProposal(invoice, activeSites, companyId = null) {
+  if (!ANTHROPIC_KEY || !activeSites?.length) return null;
+
+  const sitesList = activeSites.map(s => `- id:${s.id} — "${s.name}"${s.address ? ` (${s.address})` : ''}`).join('\n');
+  const lines = (invoice.invoice_lines || []).slice(0, 5).map(l => l.description).filter(Boolean).join('; ');
+
+  const prompt =
+    `Fattura ricevuta dal fornitore "${invoice.sender?.name || 'sconosciuto'}"` +
+    (lines ? ` — voci: ${lines}` : '') +
+    `.\n\nCantieri attivi dell'impresa:\n${sitesList}\n\n` +
+    `Se il contenuto della fattura suggerisce chiaramente uno di questi cantieri ` +
+    `(indirizzo che coincide, materiale tipico di una fase specifica, ecc.), rispondi ` +
+    `SOLO con questo JSON: {"site_id":"<id>","reason":"<motivo in una frase breve>"}. ` +
+    `Se non c'è un indizio sufficiente per essere ragionevolmente sicuro, rispondi ` +
+    `{"site_id":null,"reason":null} — è sempre meglio non indovinare che sbagliare cantiere.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type':     'application/json',
+        'x-api-key':         ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model:      HAIKU_MODEL,
+        max_tokens: 150,
+        system:     'Rispondi ESCLUSIVAMENTE con JSON grezzo valido, nessun testo fuori dal JSON, nessun markdown.',
+        messages:   [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (companyId) logUsage({ companyId, model: HAIKU_MODEL, callSite: 'sdi_site_assignment_proposal', usage: json.usage });
+
+    const raw = json?.content?.[0]?.text?.trim() || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    if (!parsed.site_id || !activeSites.some(s => s.id === parsed.site_id)) return null;
+    return { site_id: parsed.site_id, reason: parsed.reason || null };
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { generateNcProposal, generateBudgetProposal, generateSiteAssignmentProposal };

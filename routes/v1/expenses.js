@@ -26,7 +26,7 @@ router.get('/expenses', async (req, res) => {
 
   let q = supabase
     .from('company_expenses')
-    .select('*, sites(name)', { count: 'exact' })
+    .select('*, sites!site_id(name), suggested_site:sites!suggested_site_id(name)', { count: 'exact' })
     .eq('company_id', req.companyId)
     .order('expense_date', { ascending: false })
     .order('created_at', { ascending: false });

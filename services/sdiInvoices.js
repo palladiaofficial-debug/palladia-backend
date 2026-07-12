@@ -34,6 +34,7 @@
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
 const { auditLog } = require('../lib/audit');
+const { generateSiteAssignmentProposal } = require('./ladiaSmartProposal');
 
 const SDI_BASE_URL = {
   sandbox:    'https://test.sdi.openapi.it',
@@ -264,16 +265,44 @@ function mapPaymentMethod(paymentMeans) {
 // resta "generale" (site_id null) per revisione manuale invece di sbagliare.
 const ACTIVE_SITE_STATUSES = ['attivo', 'sospeso'];
 
+// Ritorna { siteId, activeSites }: siteId valorizzato solo se c'è un solo
+// cantiere attivo; activeSites (fino a 10) serve a Ladia per la proposta
+// quando siteId è null e ce n'è più di uno.
 async function resolveSiteAssignment(companyId) {
   const { data: sites } = await supabase
     .from('sites')
-    .select('id')
+    .select('id, name, address')
     .eq('company_id', companyId)
     .in('status', ACTIVE_SITE_STATUSES)
-    .limit(2);
+    .limit(10);
 
-  if (sites && sites.length === 1) return sites[0].id;
-  return null;
+  if (sites && sites.length === 1) return { siteId: sites[0].id, activeSites: sites };
+  return { siteId: null, activeSites: sites || [] };
+}
+
+// ── Notifica in-app ────────────────────────────────────────────────────────────
+// Stessa tabella già in uso per scadenze/alert — compare nel centro notifiche
+// indipendentemente dal fatto che qualcuno abbia la pagina Spese aperta o meno
+// (l'auto-refresh via Realtime copre solo chi ce l'ha già aperta in quel momento).
+async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion }) {
+  const title = ambiguous
+    ? 'Fattura fornitore da assegnare a un cantiere'
+    : 'Nuova fattura fornitore importata';
+  const body = ambiguous
+    ? (suggestion
+        ? `${expense.supplier} · ${expense.amount}€ — Ladia pensa sia per un cantiere specifico, conferma o correggi.`
+        : `${expense.supplier} · ${expense.amount}€ — non sono riuscito a capire per quale cantiere, assegnala tu.`)
+    : `${expense.supplier} · ${expense.amount}€ — assegnata automaticamente, nessuna azione richiesta.`;
+
+  await supabase.from('notifications').insert({
+    company_id:  companyId,
+    type:        'sdi_invoice_received',
+    severity:    ambiguous ? 'warning' : 'info',
+    title,
+    body,
+    entity_type: 'company_expense',
+    entity_id:   expense.id,
+  }).then(null, (e) => console.error('[sdi] notification insert error:', e.message));
 }
 
 // ── Ingest: dedup + salvataggio spesa ─────────────────────────────────────────
@@ -283,7 +312,20 @@ async function ingestSupplierInvoice(companyId, invoice) {
   const expenseRow = mapInvoiceResponseToExpense(companyId, invoice);
   if (!expenseRow) return { ok: true, skipped: true, reason: 'not_incoming' };
 
-  expenseRow.site_id = await resolveSiteAssignment(companyId);
+  const { siteId, activeSites } = await resolveSiteAssignment(companyId);
+  expenseRow.site_id = siteId;
+
+  const ambiguous = !siteId && activeSites.length >= 2;
+  let suggestion = null;
+  if (ambiguous) {
+    // Ladia prova a indovinare dal contenuto della fattura — se non è
+    // ragionevolmente sicura, resta null e la spesa parte comunque "generale".
+    suggestion = await generateSiteAssignmentProposal(invoice, activeSites, companyId).catch(() => null);
+    if (suggestion) {
+      expenseRow.suggested_site_id = suggestion.site_id;
+      expenseRow.suggested_site_reason = suggestion.reason;
+    }
+  }
 
   const { data: existing } = await supabase
     .from('company_expenses')
@@ -315,6 +357,8 @@ async function ingestSupplierInvoice(companyId, invoice) {
     targetId:   data.id,
     payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
   });
+
+  await notifyExpenseImported(companyId, data, { ambiguous, suggestion });
 
   return { ok: true, skipped: false, expense: data };
 }
