@@ -5618,11 +5618,22 @@ async function autoTitle(conversationId, firstUserMessage, client, companyId = n
     const resp = await client.messages.create({
       model:      MODEL_HAIKU,
       max_tokens: 32,
-      system:     'Genera un titolo brevissimo (max 5 parole, italiano). SOLO testo semplice, ZERO markdown, ZERO hashtag #, ZERO asterischi *, ZERO simboli. Esempio: "Presenze cantiere oggi"',
-      messages:   [{ role: 'user', content: firstUserMessage.slice(0, 300) }],
+      system:     'Il testo utente è il PRIMO MESSAGGIO di una conversazione (può contenere placeholder tipo "[1 immagine]" per una foto allegata altrove, non visibile qui). ' +
+                  'Il tuo unico compito è generare un titolo brevissimo (max 5 parole, italiano) che riassuma l\'argomento. ' +
+                  'NON rispondere al messaggio, NON commentare cosa manca o cosa non vedi, NON scrivere frasi in prima persona. ' +
+                  'SOLO testo semplice, ZERO markdown, ZERO hashtag #, ZERO asterischi *, ZERO simboli. Esempio: "Presenze cantiere oggi"',
+      messages:   [{ role: 'user', content: `Primo messaggio: "${firstUserMessage.slice(0, 300)}"` }],
     });
     logUsage({ companyId, userId, conversationId, model: MODEL_HAIKU, callSite: 'auto_title', usage: resp.usage });
-    const title = resp.content.find(b => b.type === 'text')?.text?.trim().slice(0, 60) || 'Chat';
+    let title = resp.content.find(b => b.type === 'text')?.text?.trim().slice(0, 60) || 'Chat';
+    // Guardia: se Haiku ha ignorato l'istruzione e ha risposto come se dovesse
+    // soddisfare la richiesta invece di titolarla (es. "Non riesco a vedere
+    // l'immagine..."), scarta e usa un fallback innocuo invece di salvare un
+    // titolo che sembra una risposta di Ladia.
+    const looksLikeAReply = title.length > 45 || /^(non riesco|non posso|non vedo|mi dispiace|purtroppo)/i.test(title);
+    if (looksLikeAReply) {
+      title = firstUserMessage.replace(/^\[\d+\s+immagin[ei]\]\s*/i, '').trim().slice(0, 40) || 'Foto allegata';
+    }
     await supabase.from('chat_conversations').update({ title }).eq('id', conversationId);
   } catch { /* non critico */ }
 }
