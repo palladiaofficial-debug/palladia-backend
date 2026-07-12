@@ -3,29 +3,41 @@
 /**
  * services/sdiInvoices.js
  * Ricezione automatica fatture fornitore via SdI (Sistema di Interscambio),
- * tramite il provider accreditato Openapi (https://openapi.com).
+ * tramite il provider accreditato Openapi (https://openapi.com), prodotto "SDI".
  *
  * ENV richieste:
- *   OPENAPI_API_KEY      — Bearer token (sandbox o produzione)
- *   OPENAPI_ENV           — 'sandbox' | 'production' (default 'sandbox')
- *   OPENAPI_WEBHOOK_URL   — URL pubblico del nostro webhook (es. https://.../api/v1/expenses/sdi/webhook)
+ *   OPENAPI_API_KEY            — Bearer token (sandbox o produzione)
+ *   OPENAPI_ENV                 — 'sandbox' | 'production' (default 'sandbox')
+ *   OPENAPI_WEBHOOK_URL         — URL pubblico per l'evento supplier-invoice
+ *   OPENAPI_LEGAL_STORAGE_WEBHOOK_URL — URL pubblico per la conferma di conservazione
  *
  * Flusso:
  *   1. L'impresa registra il proprio Codice Destinatario sul sito dell'Agenzia
  *      Entrate puntando al codice del provider (PIC7CPS per Openapi) — azione
- *      manuale, fuori da questa integrazione.
- *   2. connectCompany() registra l'azienda su Openapi (IT-configurations) e
- *      configura il webhook per l'evento fattura passiva.
+ *      manuale, fuori da questa integrazione, spetta al titolare dell'impresa.
+ *   2. connectCompany() registra l'azienda su Openapi con apply_legal_storage:true
+ *      (conservazione sostitutiva a norma inclusa, non solo salvataggio del JSON)
+ *      e configura i webhook per fattura passiva + conferma di conservazione.
  *   3. Ogni fattura fornitore in arrivo genera una chiamata al nostro webhook,
  *      già come oggetto JSON strutturato (non XML) — vedi mapInvoiceResponseToExpense.
+ *   4. Quando il documento risulta effettivamente conservato, un secondo webhook
+ *      conferma lo stato — vedi confirmLegalStorage.
+ *
+ * NOTA: il campo `auth_header` dell'API Openapi (usato per autenticare le
+ * chiamate in ingresso al nostro webhook) è documentato in modo ambiguo nella
+ * loro specifica pubblica ("nome dell'header" ma l'esempio mostra un valore
+ * tipo "Bearer xxx"). Verifichiamo entrambe le interpretazioni lato nostro
+ * (vedi resolveCompanyFromRequest) finché non c'è un account reale con cui
+ * confermare il comportamento esatto.
  */
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
+const { auditLog } = require('../lib/audit');
 
-const BASE_URL = {
-  sandbox:    'https://test.invoice.openapi.com',
-  production: 'https://invoice.openapi.com',
+const SDI_BASE_URL = {
+  sandbox:    'https://test.sdi.openapi.it',
+  production: 'https://sdi.openapi.it',
 };
 
 function getEnvironment() {
@@ -44,8 +56,19 @@ function getWebhookUrl() {
   return url;
 }
 
-async function openapiRequest(path, options = {}) {
-  const base = BASE_URL[getEnvironment()];
+function getLegalStorageWebhookUrl() {
+  const url = process.env.OPENAPI_LEGAL_STORAGE_WEBHOOK_URL;
+  if (!url) throw new Error('OPENAPI_LEGAL_STORAGE_WEBHOOK_URL non configurata');
+  return url;
+}
+
+// Openapi vuole il fiscal_id SENZA il prefisso paese (es. "12345678901", non "IT12345678901")
+function normalizeFiscalId(fiscalId) {
+  return String(fiscalId || '').trim().toUpperCase().replace(/^IT/, '');
+}
+
+async function sdiRequest(path, options = {}) {
+  const base = SDI_BASE_URL[getEnvironment()];
   const res = await fetch(`${base}${path}`, {
     ...options,
     headers: {
@@ -56,7 +79,7 @@ async function openapiRequest(path, options = {}) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(body?.message || `Openapi error ${res.status}`);
+    const err = new Error(body?.message || body?.['hydra:description'] || `Openapi error ${res.status}`);
     err.status = res.status;
     err.body   = body;
     throw err;
@@ -65,10 +88,13 @@ async function openapiRequest(path, options = {}) {
 }
 
 // ── Collega una company al provider SdI ──────────────────────────────────────
-// Registra la configurazione IT su Openapi con il webhook per fatture passive,
-// e salva lo stato del collegamento in sdi_configurations.
-async function connectCompany({ companyId, userId, fiscalId }) {
+// Due chiamate: registra l'anagrafica con conservazione a norma attiva, poi
+// configura i webhook per fattura passiva e conferma di conservazione.
+async function connectCompany({ companyId, userId, userEmail, fiscalId }) {
   const webhookSecret = crypto.randomBytes(24).toString('hex');
+  const normalizedFiscalId = normalizeFiscalId(fiscalId);
+
+  const { data: company } = await supabase.from('companies').select('name').eq('id', companyId).maybeSingle();
 
   const { data: existing } = await supabase
     .from('sdi_configurations')
@@ -83,6 +109,7 @@ async function connectCompany({ companyId, userId, fiscalId }) {
     environment: getEnvironment(),
     status:     'pending',
     webhook_secret: webhookSecret,
+    legal_storage_enabled: true,
     created_by: userId || null,
     error_message: null,
   };
@@ -102,28 +129,38 @@ async function connectCompany({ companyId, userId, fiscalId }) {
   }
 
   try {
-    const providerConfig = await openapiRequest('/IT-configurations', {
+    // 1. Anagrafica + conservazione a norma attiva (apply_legal_storage:true —
+    //    non solo salvare il JSON, conservazione sostitutiva reale lato provider)
+    await sdiRequest('/business_registry_configurations', {
       method: 'POST',
       body: JSON.stringify({
-        fiscal_id: fiscalId,
-        api_configurations: [{
-          event: 'supplier-invoice',
-          callback: {
-            method:  'JSON',
-            url:     getWebhookUrl(),
-            headers: { 'x-sdi-webhook-secret': webhookSecret },
-          },
-        }],
+        fiscal_id: normalizedFiscalId,
+        name:      company?.name || 'Azienda',
+        email:     userEmail || 'noreply@palladia.net',
+        apply_signature:     false, // riceviamo soltanto, non firmiamo/inviamo fatture per conto del cliente
+        apply_legal_storage: true,
+      }),
+    });
+
+    // 2. Webhook: fattura passiva ricevuta + conferma di conservazione
+    await sdiRequest('/api_configurations', {
+      method: 'POST',
+      body: JSON.stringify({
+        fiscal_id: normalizedFiscalId,
+        callbacks: [
+          { event: 'supplier-invoice',    url: getWebhookUrl(),              auth_header: `Bearer ${webhookSecret}` },
+          { event: 'legal-storage-receipt', url: getLegalStorageWebhookUrl(), auth_header: `Bearer ${webhookSecret}` },
+        ],
       }),
     });
 
     await supabase.from('sdi_configurations').update({
       status: 'active',
-      provider_configuration_id: providerConfig?.data?.fiscal_id || fiscalId,
+      provider_configuration_id: normalizedFiscalId,
       updated_at: new Date().toISOString(),
     }).eq('id', configRow.id);
 
-    return { ok: true, status: 'active' };
+    return { ok: true, status: 'active', legal_storage_enabled: true };
   } catch (err) {
     await supabase.from('sdi_configurations').update({
       status: 'error',
@@ -137,7 +174,7 @@ async function connectCompany({ companyId, userId, fiscalId }) {
 async function getConnectionStatus(companyId) {
   const { data, error } = await supabase
     .from('sdi_configurations')
-    .select('fiscal_id, provider, environment, status, last_invoice_received_at, error_message, created_at')
+    .select('fiscal_id, provider, environment, status, legal_storage_enabled, last_invoice_received_at, error_message, created_at')
     .eq('company_id', companyId)
     .maybeSingle();
   if (error) throw error;
@@ -152,9 +189,16 @@ async function disconnectCompany(companyId) {
   if (error) throw error;
 }
 
-// ── Trova la company dal webhook_secret ricevuto ─────────────────────────────
-async function resolveCompanyByWebhookSecret(secret) {
+// ── Trova la company dal secret ricevuto sul webhook ──────────────────────────
+// Openapi documenta auth_header in modo ambiguo — verifica sia "Authorization:
+// Bearer <secret>" (interpretazione più probabile, coerente col loro esempio)
+// sia l'header custom "x-sdi-webhook-secret" per compatibilità.
+async function resolveCompanyFromHeaders(headers) {
+  const authHeader = headers['authorization'] || '';
+  const bearerSecret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  const secret = bearerSecret || headers['x-sdi-webhook-secret'] || null;
   if (!secret) return null;
+
   const { data } = await supabase
     .from('sdi_configurations')
     .select('company_id, status')
@@ -201,6 +245,7 @@ function mapInvoiceResponseToExpense(companyId, invoice) {
     source:              'sdi_auto',
     sdi_invoice_id:       invoice.id,
     sdi_raw_invoice:      invoice,
+    sdi_legal_storage_status: 'to_be_stored',
   };
 }
 
@@ -263,14 +308,50 @@ async function ingestSupplierInvoice(companyId, invoice) {
     .update({ last_invoice_received_at: new Date().toISOString() })
     .eq('company_id', companyId);
 
+  auditLog({
+    companyId,
+    action:     'expense.sdi_auto_import',
+    targetType: 'company_expense',
+    targetId:   data.id,
+    payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
+  });
+
   return { ok: true, skipped: false, expense: data };
+}
+
+// ── Conferma di conservazione a norma ─────────────────────────────────────────
+// Callback separata dal provider quando il documento risulta effettivamente
+// archiviato (o fallito) presso il servizio di conservazione sostitutiva.
+async function confirmLegalStorage(companyId, payload) {
+  const objectId = payload?.object_id || payload?.data?.object_id;
+  const status   = payload?.status    || payload?.data?.status;
+  if (!objectId) return { ok: true, skipped: true, reason: 'missing_object_id' };
+
+  const patch = {
+    sdi_legal_storage_status: status || 'stored',
+    sdi_legal_storage_object_id: payload?.preserved_object_id || payload?.data?.preserved_object_id || null,
+  };
+  if (status === 'stored') patch.sdi_legal_storage_confirmed_at = new Date().toISOString();
+
+  const { data, error } = await supabase
+    .from('company_expenses')
+    .update(patch)
+    .eq('company_id', companyId)
+    .eq('sdi_invoice_id', objectId)
+    .select('id')
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return { ok: true, skipped: true, reason: 'expense_not_found' };
+  return { ok: true, expense_id: data.id };
 }
 
 module.exports = {
   connectCompany,
   getConnectionStatus,
   disconnectCompany,
-  resolveCompanyByWebhookSecret,
+  resolveCompanyFromHeaders,
   mapInvoiceResponseToExpense,
   ingestSupplierInvoice,
+  confirmLegalStorage,
 };

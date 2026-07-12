@@ -182,4 +182,16 @@ const publicScanLimiter = rateLimit({
   ...makeStore('publicScan'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter, confirmActionLimiter };
+// Webhook fatture SdI: chiamato dal provider (Openapi), non da un browser —
+// limite generoso per non perdere fatture reali in un giorno di picco, ma
+// comunque presente per non lasciare la rotta senza nessun freno.
+const sdiWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'RATE_LIMIT_EXCEEDED' },
+  ...makeStore('sdiWebhook'),
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter, confirmActionLimiter, sdiWebhookLimiter };

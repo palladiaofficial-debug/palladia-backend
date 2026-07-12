@@ -3,26 +3,29 @@
  * routes/v1/sdiInvoices.js
  * Ricezione automatica fatture fornitore via SdI (vedi services/sdiInvoices.js).
  *
- * POST   /api/v1/expenses/sdi/connect    — collega la company al provider (JWT, owner/admin)
- * GET    /api/v1/expenses/sdi/status     — stato del collegamento (JWT)
- * POST   /api/v1/expenses/sdi/disconnect — disattiva (JWT, owner/admin)
- * POST   /api/v1/expenses/sdi/webhook    — riceve le fatture dal provider (PUBBLICO,
- *                                          autenticato via header segreto per-company,
- *                                          non JWT — DEVE stare prima di router con
- *                                          verifySupabaseJwt globale, stesso motivo
- *                                          documentato in index.js per scan/badgePunch/ecc.)
+ * POST   /api/v1/expenses/sdi/connect                — collega la company (JWT, owner/admin)
+ * GET    /api/v1/expenses/sdi/status                  — stato del collegamento (JWT)
+ * POST   /api/v1/expenses/sdi/disconnect              — disattiva (JWT, owner/admin)
+ * POST   /api/v1/expenses/sdi/webhook                 — fattura passiva ricevuta (PUBBLICO)
+ * POST   /api/v1/expenses/sdi/webhook/legal-storage   — conferma conservazione a norma (PUBBLICO)
+ *
+ * Entrambi i webhook sono autenticati via secret per-company (non JWT — DEVE
+ * stare prima di router con verifySupabaseJwt globale, stesso motivo
+ * documentato in index.js per scan/badgePunch/workerArea).
  */
 
 const router   = require('express').Router();
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
+const { sdiWebhookLimiter } = require('../../middleware/rateLimit');
 const { connectSdiSchema } = require('../../lib/schemas/sdiInvoices');
 const {
   connectCompany,
   getConnectionStatus,
   disconnectCompany,
-  resolveCompanyByWebhookSecret,
+  resolveCompanyFromHeaders,
   ingestSupplierInvoice,
+  confirmLegalStorage,
 } = require('../../services/sdiInvoices');
 
 function isAdminOrOwner(role) {
@@ -30,9 +33,8 @@ function isAdminOrOwner(role) {
 }
 
 // ── POST /api/v1/expenses/sdi/webhook — PUBBLICO ──────────────────────────────
-router.post('/expenses/sdi/webhook', async (req, res) => {
-  const secret = req.headers['x-sdi-webhook-secret'];
-  const companyId = await resolveCompanyByWebhookSecret(secret).catch(() => null);
+router.post('/expenses/sdi/webhook', sdiWebhookLimiter, async (req, res) => {
+  const companyId = await resolveCompanyFromHeaders(req.headers).catch(() => null);
   if (!companyId) return res.status(401).json({ error: 'INVALID_WEBHOOK_SECRET' });
 
   const invoice = req.body?.data || req.body;
@@ -48,6 +50,20 @@ router.post('/expenses/sdi/webhook', async (req, res) => {
   }
 });
 
+// ── POST /api/v1/expenses/sdi/webhook/legal-storage — PUBBLICO ───────────────
+router.post('/expenses/sdi/webhook/legal-storage', sdiWebhookLimiter, async (req, res) => {
+  const companyId = await resolveCompanyFromHeaders(req.headers).catch(() => null);
+  if (!companyId) return res.status(401).json({ error: 'INVALID_WEBHOOK_SECRET' });
+
+  try {
+    const result = await confirmLegalStorage(companyId, req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    console.error('[sdi-webhook/legal-storage] error:', err.message);
+    res.status(200).json({ ok: false, error: err.message });
+  }
+});
+
 // ── Rotte azienda (JWT) ────────────────────────────────────────────────────────
 
 router.post('/expenses/sdi/connect', verifySupabaseJwt, validate(connectSdiSchema), async (req, res) => {
@@ -58,6 +74,7 @@ router.post('/expenses/sdi/connect', verifySupabaseJwt, validate(connectSdiSchem
     const result = await connectCompany({
       companyId: req.companyId,
       userId:    req.user.id,
+      userEmail: req.user.email,
       fiscalId:  req.body.fiscal_id,
     });
     res.status(201).json(result);
