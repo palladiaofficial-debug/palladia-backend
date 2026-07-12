@@ -34,7 +34,7 @@
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
 const { auditLog } = require('../lib/audit');
-const { generateSiteAssignmentProposal } = require('./ladiaSmartProposal');
+const { generateSiteAssignmentProposal, categorizeInvoice } = require('./ladiaSmartProposal');
 
 const SDI_BASE_URL = {
   sandbox:    'https://test.sdi.openapi.it',
@@ -235,7 +235,7 @@ function mapInvoiceResponseToExpense(companyId, invoice) {
     company_id:        companyId,
     amount:             Math.round(amount * 100) / 100,
     description:        docNumber ? `Fattura ${docNumber} — ${supplierName}` : `Fattura — ${supplierName}`,
-    category:           'altro', // categorizzazione automatica: possibile evoluzione futura, non in questa prima versione
+    category:           categorizeByKeywords(supplierName, invoice.invoice_lines) || 'altro',
     payment_method:      paymentMethod,
     supplier:            supplierName,
     supplier_vat:         invoice.sender?.vat_id || invoice.sender?.tax_code || null,
@@ -256,6 +256,37 @@ function mapPaymentMethod(paymentMeans) {
   if (code.includes('ASSEG')) return 'assegno';
   if (code.includes('CARTA')) return 'carta';
   return 'bonifico'; // default ragionevole per fatture B2B — la maggior parte è bonifico/RIBA
+}
+
+// ── Categorizzazione automatica (euristica a costo zero) ──────────────────────
+// Copre i casi comuni di un'impresa edile guardando fornitore + righe fattura,
+// prima di ricorrere a Ladia (AI, a pagamento) come fallback in ingestSupplierInvoice.
+// Ordine intenzionale: categorie con termini specifici prima, 'materiali' per ultima
+// perché i suoi termini sono i più generici e più a rischio di falsi positivi.
+const CATEGORY_KEYWORDS = {
+  carburante:     ['carburante', 'gasolio', 'diesel', 'benzina', 'gpl', 'stazione di servizio', 'rifornimento carburante'],
+  assicurazioni:  ['assicurazione', 'polizza', 'rc auto', 'premio assicurativo'],
+  affitto:        ['canone di locazione', 'locazione immobile', 'affitto locali', 'affitto capannone'],
+  subappalto:     ['subappalto', 'subappaltatore', 'lavori in subappalto'],
+  consulenze:     ['consulenza', 'onorario', 'parcella', 'prestazione professionale', 'studio tecnico', 'commercialista'],
+  attrezzature:   ['noleggio', 'nolo a caldo', 'nolo a freddo', 'noleggio attrezzatura', 'escavatore', 'gru', 'ponteggio', 'betoniera', 'piattaforma aerea'],
+  manutenzione:   ['manutenzione', 'riparazione', 'tagliando', 'assistenza tecnica'],
+  trasporti:      ['trasporto merci', 'spedizione', 'corriere', 'autotrasporto', 'nolo trasporto'],
+  utenze:         ['energia elettrica', 'elettricità', 'gas naturale', 'metano', 'fornitura acqua', 'telefonia', 'canone internet', 'fibra ottica'],
+  cancelleria:    ['cancelleria', 'materiale ufficio', 'toner', 'carta a4'],
+  vitto_alloggio: ['ristorante', 'hotel', 'albergo', 'vitto', 'pernottamento', 'buoni pasto'],
+  materiali:      ['cemento', 'calcestruzzo', 'sabbia', 'ghiaia', 'mattoni', 'laterizi', 'tondino', 'malta', 'intonaco', 'piastrelle', 'materiale edile', 'ferramenta', 'isolante', 'guaina', 'pittura edile'],
+};
+
+function categorizeByKeywords(supplierName, invoiceLines) {
+  const text = [supplierName, ...(invoiceLines || []).map((l) => l.description)]
+    .filter(Boolean).join(' ').toLowerCase();
+  if (!text.trim()) return null;
+
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some((kw) => text.includes(kw))) return category;
+  }
+  return null;
 }
 
 // ── Assegnazione automatica al cantiere ───────────────────────────────────────
@@ -280,11 +311,39 @@ async function resolveSiteAssignment(companyId) {
   return { siteId: null, activeSites: sites || [] };
 }
 
+// ── Assegnazione da storico fornitore (più affidabile di un'ipotesi testuale) ─
+// Se le fatture precedenti dello stesso fornitore (per partita IVA) sono SEMPRE
+// state assegnate allo stesso cantiere, è un pattern reale confermato da un
+// umano — non un'ipotesi — quindi si può assegnare in automatico senza chiedere
+// conferma. Richiede almeno 2 precedenti concordi, altrimenti non rischia.
+async function resolveSiteFromSupplierHistory(companyId, supplierVat, activeSiteIds) {
+  if (!supplierVat || !activeSiteIds?.length) return null;
+
+  const { data: past } = await supabase
+    .from('company_expenses')
+    .select('site_id')
+    .eq('company_id', companyId)
+    .eq('supplier_vat', supplierVat)
+    .not('site_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  if (!past || past.length < 2) return null;
+
+  const distinctSites = [...new Set(past.map((p) => p.site_id))];
+  if (distinctSites.length !== 1) return null; // pattern non consistente, meglio non indovinare
+
+  const siteId = distinctSites[0];
+  if (!activeSiteIds.includes(siteId)) return null; // il cantiere di sempre non è più attivo
+
+  return { siteId, occurrences: past.length };
+}
+
 // ── Notifica in-app ────────────────────────────────────────────────────────────
 // Stessa tabella già in uso per scadenze/alert — compare nel centro notifiche
 // indipendentemente dal fatto che qualcuno abbia la pagina Spese aperta o meno
 // (l'auto-refresh via Realtime copre solo chi ce l'ha già aperta in quel momento).
-async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion }) {
+async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion, viaHistory }) {
   const title = ambiguous
     ? 'Fattura fornitore da assegnare a un cantiere'
     : 'Nuova fattura fornitore importata';
@@ -292,7 +351,9 @@ async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion
     ? (suggestion
         ? `${expense.supplier} · ${expense.amount}€ — Ladia pensa sia per un cantiere specifico, conferma o correggi.`
         : `${expense.supplier} · ${expense.amount}€ — non sono riuscito a capire per quale cantiere, assegnala tu.`)
-    : `${expense.supplier} · ${expense.amount}€ — assegnata automaticamente, nessuna azione richiesta.`;
+    : (viaHistory
+        ? `${expense.supplier} · ${expense.amount}€ — assegnata come sempre allo stesso cantiere di questo fornitore, nessuna azione richiesta.`
+        : `${expense.supplier} · ${expense.amount}€ — assegnata automaticamente, nessuna azione richiesta.`);
 
   await supabase.from('notifications').insert({
     company_id:  companyId,
@@ -315,15 +376,39 @@ async function ingestSupplierInvoice(companyId, invoice) {
   const { siteId, activeSites } = await resolveSiteAssignment(companyId);
   expenseRow.site_id = siteId;
 
-  const ambiguous = !siteId && activeSites.length >= 2;
+  let viaHistory = false;
+  if (!expenseRow.site_id && activeSites.length >= 2) {
+    // Prima lo storico: se questo fornitore è sempre andato sullo stesso
+    // cantiere, è un pattern reale confermato da un umano — più affidabile
+    // di un'ipotesi letta dal testo della fattura, e non richiede conferma.
+    const historical = await resolveSiteFromSupplierHistory(
+      companyId, expenseRow.supplier_vat, activeSites.map((s) => s.id),
+    ).catch(() => null);
+    if (historical) {
+      expenseRow.site_id = historical.siteId;
+      expenseRow.notes += ' — cantiere assegnato in automatico: le fatture precedenti di questo fornitore erano sempre per questo cantiere.';
+      viaHistory = true;
+    }
+  }
+
+  const ambiguous = !expenseRow.site_id && activeSites.length >= 2;
+  const needsCategoryGuess = expenseRow.category === 'altro';
   let suggestion = null;
-  if (ambiguous) {
-    // Ladia prova a indovinare dal contenuto della fattura — se non è
-    // ragionevolmente sicura, resta null e la spesa parte comunque "generale".
-    suggestion = await generateSiteAssignmentProposal(invoice, activeSites, companyId).catch(() => null);
-    if (suggestion) {
-      expenseRow.suggested_site_id = suggestion.site_id;
-      expenseRow.suggested_site_reason = suggestion.reason;
+
+  if (ambiguous || needsCategoryGuess) {
+    // Se non è bastata l'euristica, un'ultima chiamata Ladia copre insieme
+    // cantiere (solo se ancora ambiguo) e categoria (solo se ancora 'altro') —
+    // una sola chiamata invece di due quando servono entrambe.
+    if (ambiguous) {
+      suggestion = await generateSiteAssignmentProposal(invoice, activeSites, companyId).catch(() => null);
+      if (suggestion) {
+        expenseRow.suggested_site_id = suggestion.site_id;
+        expenseRow.suggested_site_reason = suggestion.reason;
+      }
+    }
+    if (needsCategoryGuess) {
+      const aiCategory = await categorizeInvoice(invoice, companyId).catch(() => null);
+      if (aiCategory) expenseRow.category = aiCategory;
     }
   }
 
@@ -358,7 +443,7 @@ async function ingestSupplierInvoice(companyId, invoice) {
     payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
   });
 
-  await notifyExpenseImported(companyId, data, { ambiguous, suggestion });
+  await notifyExpenseImported(companyId, data, { ambiguous, suggestion, viaHistory });
 
   return { ok: true, skipped: false, expense: data };
 }

@@ -23,6 +23,7 @@ const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const HAIKU_MODEL   = 'claude-haiku-4-5-20251001';
 const MAX_TOKENS    = 120; // 80 parole ca. — breve e denso
 const { logUsage }  = require('../lib/ladiaUsageLog');
+const { CATEGORIES } = require('../lib/schemas/expenses');
 
 /**
  * Chiama Claude Haiku con un prompt focalizzato.
@@ -176,4 +177,56 @@ async function generateSiteAssignmentProposal(invoice, activeSites, companyId = 
   }
 }
 
-module.exports = { generateNcProposal, generateBudgetProposal, generateSiteAssignmentProposal };
+// ── Categorizzazione fattura SdI (fallback AI) ─────────────────────────────
+//
+// L'euristica per parole chiave in services/sdiInvoices.js (costo zero) copre
+// i casi comuni; quando non trova nulla, questa è l'ultima spiaggia prima di
+// lasciare la spesa su "altro" — una sola chiamata Haiku, non un giro completo
+// di agente, per restare economica anche su grandi volumi di fatture.
+//
+// @param {object} invoice — InvoiceResponse (vedi services/sdiInvoices.js)
+// @param {string} companyId
+// @returns {Promise<string|null>} una delle CATEGORIES, o null se non determinabile
+async function categorizeInvoice(invoice, companyId = null) {
+  if (!ANTHROPIC_KEY) return null;
+
+  const lines = (invoice.invoice_lines || []).slice(0, 8).map(l => l.description).filter(Boolean).join('; ');
+  const prompt =
+    `Fattura del fornitore "${invoice.sender?.name || 'sconosciuto'}"` +
+    (lines ? ` — voci: ${lines}` : ' — nessun dettaglio riga disponibile') +
+    `.\n\nClassificala in UNA di queste categorie di spesa per un'impresa edile: ` +
+    `${CATEGORIES.join(', ')}.\n\n` +
+    `Rispondi SOLO con questo JSON: {"category":"<una delle categorie sopra>"}. ` +
+    `Se non è chiaro, rispondi {"category":"altro"} — meglio "altro" che una categoria sbagliata.`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type':     'application/json',
+        'x-api-key':         ANTHROPIC_KEY,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model:      HAIKU_MODEL,
+        max_tokens: 60,
+        system:     'Rispondi ESCLUSIVAMENTE con JSON grezzo valido, nessun testo fuori dal JSON, nessun markdown.',
+        messages:   [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (companyId) logUsage({ companyId, model: HAIKU_MODEL, callSite: 'sdi_invoice_categorization', usage: json.usage });
+
+    const raw = json?.content?.[0]?.text?.trim() || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const parsed = JSON.parse(match[0]);
+    if (!CATEGORIES.includes(parsed.category)) return null;
+    return parsed.category;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { generateNcProposal, generateBudgetProposal, generateSiteAssignmentProposal, categorizeInvoice };
