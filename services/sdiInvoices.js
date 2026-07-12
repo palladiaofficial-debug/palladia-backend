@@ -212,12 +212,33 @@ function mapPaymentMethod(paymentMeans) {
   return 'bonifico'; // default ragionevole per fatture B2B — la maggior parte è bonifico/RIBA
 }
 
+// ── Assegnazione automatica al cantiere ───────────────────────────────────────
+// Euristica deterministica, zero costo AI: se la company ha UN SOLO cantiere
+// attivo, la spesa è quasi certamente sua — assegnala. Con più cantieri attivi
+// contemporaneamente non si può indovinare con certezza da una sola fattura,
+// resta "generale" (site_id null) per revisione manuale invece di sbagliare.
+const ACTIVE_SITE_STATUSES = ['attivo', 'sospeso'];
+
+async function resolveSiteAssignment(companyId) {
+  const { data: sites } = await supabase
+    .from('sites')
+    .select('id')
+    .eq('company_id', companyId)
+    .in('status', ACTIVE_SITE_STATUSES)
+    .limit(2);
+
+  if (sites && sites.length === 1) return sites[0].id;
+  return null;
+}
+
 // ── Ingest: dedup + salvataggio spesa ─────────────────────────────────────────
 // Idempotente: la stessa fattura (stesso sdi_invoice_id) non crea mai due spese,
 // anche se il provider ritenta la consegna del webhook.
 async function ingestSupplierInvoice(companyId, invoice) {
   const expenseRow = mapInvoiceResponseToExpense(companyId, invoice);
   if (!expenseRow) return { ok: true, skipped: true, reason: 'not_incoming' };
+
+  expenseRow.site_id = await resolveSiteAssignment(companyId);
 
   const { data: existing } = await supabase
     .from('company_expenses')
@@ -233,7 +254,7 @@ async function ingestSupplierInvoice(companyId, invoice) {
   const { data, error } = await supabase
     .from('company_expenses')
     .insert(expenseRow)
-    .select('id, amount, supplier, expense_date')
+    .select('id, amount, supplier, expense_date, site_id')
     .single();
 
   if (error) throw error;
