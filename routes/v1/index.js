@@ -78,6 +78,11 @@ router.use('/', require('./badgePunch'));
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./workerArea'));
 
+// Fatture fornitore automatiche via SdI: webhook pubblico (autenticato via header
+// segreto per-company, non JWT) + rotte azienda (JWT) per collegare/scollegare.
+// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
+router.use('/', require('./sdiInvoices'));
+
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
