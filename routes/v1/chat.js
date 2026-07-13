@@ -1076,7 +1076,13 @@ Regole:
 - Tutte le celle delle tabelle devono essere stringhe (non numeri, non null).
 - Se il contenuto è principalmente testuale (consigli, normative), crea sezioni con solo text.
 - Se ci sono dati tabulari (presenze, lavoratori, ecc.), crea table appropriate.
-- summary deve essere informativo, non "Ecco il report su..." bensì il contenuto effettivo.`;
+- summary deve essere informativo, non "Ecco il report su..." bensì il contenuto effettivo.
+- summary e section.text devono citare numeri, nomi e dati concreti presenti nella conversazione — MAI frasi generiche di riempimento tipo "sono state completate le lavorazioni previste" senza specificare quali.
+
+REGOLA CRITICA — non copiare mai un calcolo, ricalcolalo:
+- Se un messaggio precedente contiene una percentuale, un totale o un rapporto tra due valori (es. "X è il Y% di Z"), NON riportarlo mai così com'è: individua i due valori assoluti coinvolti nella conversazione e ricalcola tu stesso il rapporto (Y = X / Z * 100) prima di scriverlo nel report.
+- Se la conversazione contiene correzioni dell'utente a un calcolo precedente (es. "no, il totale è sbagliato, è in realtà X"), usa SEMPRE l'ultimo valore corretto dall'utente, mai quello iniziale smentito.
+- Se uno dei due valori assoluti necessari per un rapporto/percentuale non compare con certezza nei messaggi forniti, ometti quella percentuale dal report invece di indovinarla o ricopiarla.`;
 
 // ── Tool definitions ──────────────────────────────────────────────────────────
 const TOOLS = [
@@ -5162,9 +5168,12 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
 }
 
 // ── Struttura JSON per report (export) ───────────────────────────────────────
+// Sonnet, non Haiku: questo step ricalcola percentuali/totali per un documento
+// ufficiale esportato verso l'esterno (es. direttore lavori) — l'affidabilità
+// aritmetica conta più del costo qui.
 async function buildReportJson(messages, client, companyId = null, userId = null) {
   const response = await client.messages.create({
-    model:      'claude-haiku-4-5-20251001',
+    model:      MODEL_SONNET,
     max_tokens: 2048,
     system:     REPORT_SYSTEM_PROMPT,
     messages: [
@@ -5172,13 +5181,25 @@ async function buildReportJson(messages, client, companyId = null, userId = null
       { role: 'user', content: 'Struttura questa conversazione come report JSON professionale.' }
     ],
   });
-  logUsage({ companyId, userId, model: 'claude-haiku-4-5-20251001', callSite: 'report_json', usage: response.usage });
+  logUsage({ companyId, userId, model: MODEL_SONNET, callSite: 'report_json', usage: response.usage });
 
   const raw = response.content.find(b => b.type === 'text')?.text ?? '{}';
   // Estrai il primo blocco JSON valido anche se Claude aggiunge testo fuori
   const match = raw.match(/\{[\s\S]*\}/);
   if (!match) throw new Error('Struttura JSON non trovata nella risposta AI.');
   return JSON.parse(match[0]);
+}
+
+// Rileva se una colonna di tabella è numerica/valuta guardando i valori delle
+// righe — usata per allineare a destra importi e percentuali come in un vero
+// documento finanziario, invece di lasciarli allineati a sinistra come testo.
+function isNumericColumn(rows, colIdx) {
+  const sample = rows
+    .map(r => r[colIdx])
+    .filter(v => v != null && String(v).trim() !== '');
+  if (!sample.length) return false;
+  const numericLike = /^[€$]?\s*-?[\d.,]+\s*%?\s*[€$]?$/;
+  return sample.every(v => numericLike.test(String(v).trim()));
 }
 
 // ── PDF HTML template ─────────────────────────────────────────────────────────
@@ -5198,14 +5219,16 @@ function buildReportHtml(report) {
     : '';
 
   const sectionsHtml = (report.sections || []).map(s => {
-    const tableHtml = s.table && s.table.headers && s.table.rows
-      ? `<table>
-           <thead><tr>${s.table.headers.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+    let tableHtml = '';
+    if (s.table && s.table.headers && s.table.rows) {
+      const numCol = s.table.headers.map((_, i) => isNumericColumn(s.table.rows, i));
+      tableHtml = `<table>
+           <thead><tr>${s.table.headers.map((h, i) => `<th class="${numCol[i] ? 'num' : ''}">${esc(h)}</th>`).join('')}</tr></thead>
            <tbody>${s.table.rows.map(row =>
-              `<tr>${row.map(cell => `<td>${esc(cell)}</td>`).join('')}</tr>`
+              `<tr>${row.map((cell, i) => `<td class="${numCol[i] ? 'num' : ''}">${esc(cell)}</td>`).join('')}</tr>`
             ).join('')}</tbody>
-         </table>`
-      : '';
+         </table>`;
+    }
 
     return `<div class="section">
       <div class="section-title">${esc(s.title)}</div>
@@ -5228,7 +5251,7 @@ function buildReportHtml(report) {
 
   body {
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 11px;
+    font-size: 10.5px;
     color: #1a1a1a;
     background: #fff;
     -webkit-print-color-adjust: exact;
@@ -5241,53 +5264,55 @@ function buildReportHtml(report) {
 
   /* ── Intestazione report ─────────────────────────────── */
   .report-header {
-    background: #000;
+    background: #0a0a0a;
     color: #fff;
-    padding: 18px 16mm 20px;
-    margin: 0 -16mm 24px;
+    padding: 13px 16mm 14px;
+    margin: 0 -16mm 14px;
+    border-top: 2px solid #fff;
     page-break-after: avoid;
   }
 
   .report-brand {
-    font-size: 8px;
+    font-size: 7.5px;
     font-weight: 700;
-    letter-spacing: 2.5px;
-    color: #666;
+    letter-spacing: 2.2px;
+    color: #777;
     text-transform: uppercase;
-    margin-bottom: 10px;
+    margin-bottom: 7px;
   }
 
   .report-title {
-    font-size: 19px;
+    font-size: 17px;
     font-weight: 700;
     color: #fff;
-    line-height: 1.25;
-    margin-bottom: 5px;
+    letter-spacing: -0.2px;
+    line-height: 1.2;
+    margin-bottom: 4px;
   }
 
   .report-subtitle {
-    font-size: 11px;
+    font-size: 10.5px;
     color: #999;
     line-height: 1.4;
   }
 
   .report-meta {
-    font-size: 10px;
-    color: #555;
-    margin-top: 10px;
-    padding-top: 10px;
+    font-size: 9px;
+    color: #666;
+    margin-top: 8px;
+    padding-top: 8px;
     border-top: 1px solid #222;
   }
 
   /* ── Sommario ─────────────────────────────────────────── */
   .summary {
     background: #f7f7f7;
-    border-left: 3px solid #000;
+    border-left: 2.5px solid #0a0a0a;
     border-radius: 0 4px 4px 0;
-    padding: 12px 14px;
-    margin-bottom: 22px;
-    font-size: 11px;
-    line-height: 1.65;
+    padding: 9px 12px;
+    margin-bottom: 12px;
+    font-size: 10.5px;
+    line-height: 1.55;
     color: #333;
     page-break-inside: avoid;
   }
@@ -5296,78 +5321,84 @@ function buildReportHtml(report) {
   .kpi-grid {
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-    margin-bottom: 24px;
+    gap: 8px;
+    margin-bottom: 14px;
     page-break-inside: avoid;
   }
 
   .kpi-card {
-    border: 1px solid #e8e8e8;
-    border-radius: 6px;
-    padding: 11px 13px;
+    background: #fafafa;
+    border-top: 2px solid #0a0a0a;
+    padding: 7px 10px 8px;
   }
 
   .kpi-value {
-    font-size: 22px;
+    font-size: 18px;
     font-weight: 700;
     color: #000;
-    line-height: 1;
-    margin-bottom: 4px;
+    line-height: 1.15;
+    letter-spacing: -0.3px;
+    font-variant-numeric: tabular-nums;
+    margin-bottom: 3px;
   }
 
   .kpi-label {
-    font-size: 9.5px;
+    font-size: 8.5px;
     color: #888;
-    line-height: 1.3;
+    line-height: 1.25;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
   }
 
   /* ── Sezioni ──────────────────────────────────────────── */
   .section {
-    margin-bottom: 26px;
+    margin-bottom: 12px;
   }
 
   .section-title {
-    font-size: 10.5px;
+    font-size: 10px;
     font-weight: 700;
     color: #000;
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    padding-bottom: 5px;
+    padding-bottom: 3px;
     border-bottom: 1.5px solid #000;
-    margin-bottom: 11px;
+    margin-bottom: 7px;
     page-break-after: avoid;
   }
 
   .section-text {
-    font-size: 11px;
-    line-height: 1.65;
+    font-size: 10.5px;
+    line-height: 1.55;
     color: #444;
-    margin-bottom: 11px;
+    margin-bottom: 7px;
   }
 
   /* ── Tabelle ──────────────────────────────────────────── */
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 10px;
-    margin-bottom: 4px;
+    font-size: 9.5px;
+    margin-bottom: 3px;
     page-break-inside: auto;
   }
 
   thead tr { page-break-after: avoid; }
 
   th {
-    background: #000;
+    background: #0a0a0a;
     color: #fff;
-    padding: 7px 10px;
+    padding: 5px 10px;
     text-align: left;
     font-weight: 600;
-    font-size: 9.5px;
+    font-size: 9px;
     letter-spacing: 0.2px;
   }
 
+  th.num, td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
   td {
-    padding: 6px 10px;
+    padding: 4px 10px;
     border-bottom: 1px solid #efefef;
     color: #2a2a2a;
     vertical-align: top;
@@ -5380,11 +5411,11 @@ function buildReportHtml(report) {
 
   /* ── Piè di pagina documento ──────────────────────────── */
   .doc-footer {
-    font-size: 9px;
+    font-size: 8.5px;
     color: #ccc;
     text-align: center;
-    margin-top: 36px;
-    padding-top: 10px;
+    margin-top: 20px;
+    padding-top: 8px;
     border-top: 1px solid #f0f0f0;
   }
 </style>
