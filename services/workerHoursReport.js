@@ -16,6 +16,14 @@
 
 const supabase = require('../lib/supabase');
 
+// Un consulente del lavoro deve poter distinguere una timbratura reale da una
+// generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
+// come se fosse la lettura originale del dispositivo.
+const METHOD_NOTE = {
+  admin_manual_correction:  'Corretto manualmente',
+  auto_exit_on_site_change: 'Uscita auto (cambio cantiere)',
+};
+
 // ── Timezone helpers (Europe/Rome) ────────────────────────────────────────────
 
 function dateKeyRome(ts) {
@@ -82,13 +90,17 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   let q = supabase
     .from('presence_logs')
     .select(`
-      id, worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m,
+      id, worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, method,
       worker:workers (id, full_name, first_name, last_name, fiscal_code)
     `)
     .eq('site_id', siteId)
     .eq('company_id', companyId)
-    .gte('timestamp_server', `${from}T00:00:00.000Z`)
-    .lte('timestamp_server', `${to}T23:59:59.999Z`)
+    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
+    // UTC puri — vedi presenceReport.js per la spiegazione completa. Senza
+    // questo, le timbrature tra mezzanotte e l'1-2 di notte ora di Roma del
+    // primo giorno sparivano dal report "per commercialisti" senza avviso.
+    .gte('timestamp_server', `${from}T00:00:00+02:00`)
+    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(200000);
@@ -99,12 +111,18 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   if (logsErr) { const e = new Error(logsErr.message); e.status = 500; throw e; }
 
   // Group by worker → date
+  // Il filtro sopra è volutamente più largo di [from,to] (vedi commento sulla
+  // query) per non perdere le timbrature vicino a mezzanotte — quindi va
+  // scartato qui ogni log il cui giorno reale a Roma cade fuori dal range
+  // richiesto, altrimenti un turno del giorno prima/dopo il periodo finirebbe
+  // conteggiato due volte (una volta in questo report, una nel successivo).
   const workerMap = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
+    const dk = dateKeyRome(log.timestamp_server);
+    if (dk < from || dk > to) continue;
     const wId = log.worker_id;
     if (!workerMap.has(wId)) workerMap.set(wId, { info: log.worker, dayMap: new Map() });
-    const dk = dateKeyRome(log.timestamp_server);
     const dm = workerMap.get(wId).dayMap;
     if (!dm.has(dk)) dm.set(dk, []);
     dm.get(dk).push(log);
@@ -137,7 +155,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
               exit_time:  fmtTimeRome(next.timestamp_server),
               minutes:    mins,
               hours_str:  fmtDuration(mins),
-              anomaly:    null,
+              anomaly:    METHOD_NOTE[next.method] || METHOD_NOTE[cur.method] || null,
             });
             dayMin += mins;
             i += 2;

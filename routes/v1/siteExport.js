@@ -19,6 +19,13 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Un consulente del lavoro deve poter distinguere una timbratura reale da una
+// generata dal sistema o corretta a mano — vedi services/workerHoursReport.js.
+const METHOD_NOTE = {
+  admin_manual_correction:  'Corretto manualmente',
+  auto_exit_on_site_change: 'Uscita auto (cambio cantiere)',
+};
+
 const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
 const HEADER_FONT = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
 
@@ -86,11 +93,13 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
   // Fetch presenze
   const { data: logs } = await supabase
     .from('presence_logs')
-    .select('worker_id, event_type, timestamp_server, worker:workers(full_name, fiscal_code)')
+    .select('worker_id, event_type, timestamp_server, method, worker:workers(full_name, fiscal_code)')
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    .gte('timestamp_server', `${rangeFrom}T00:00:00.000Z`)
-    .lte('timestamp_server', `${rangeTo}T23:59:59.999Z`)
+    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
+    // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
+    .gte('timestamp_server', `${rangeFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${rangeTo}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(50001);
@@ -176,10 +185,14 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
   });
 
+  // La finestra sopra è più larga di [rangeFrom,rangeTo]: scarta ogni log il
+  // cui giorno reale a Roma cade fuori dal range richiesto, per non contare
+  // due volte lo stesso turno in due export adiacenti.
   const byWorkerDay = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
     const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    if (dateKey < rangeFrom || dateKey > rangeTo) continue;
     const key = `${log.worker_id}::${dateKey}`;
     if (!byWorkerDay.has(key)) byWorkerDay.set(key, { worker: log.worker, dateKey, logs: [] });
     byWorkerDay.get(key).logs.push(log);
@@ -204,6 +217,8 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
         if (next && next.event_type === 'EXIT') {
           hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3600000);
           intervals++;
+          const note = METHOD_NOTE[next.method] || METHOD_NOTE[l.method];
+          if (note) anomalies.push(note);
           i += 2;
         } else {
           anomalies.push('Uscita mancante');

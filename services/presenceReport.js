@@ -265,8 +265,15 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     `)
     .eq('site_id', siteId)
     .eq('company_id', companyId)
-    .gte('timestamp_server', `${from}T00:00:00.000Z`)
-    .lte('timestamp_server', `${to}T23:59:59.999Z`)
+    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
+    // UTC puri — a Roma la mezzanotte non coincide mai con quella UTC (+1/+2h
+    // CET/CEST). Con boundary UTC puri le timbrature tra mezzanotte e l'1-2
+    // di notte ora di Roma del primo giorno sparivano dal report senza
+    // nessun avviso. Il leggero overfetch ai bordi è innocuo: il raggruppamento
+    // per giorno più sotto usa già Europe/Rome, quindi ogni log finisce
+    // comunque nel bucket-giorno corretto.
+    .gte('timestamp_server', `${from}T00:00:00+02:00`)
+    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
     .order('worker_id', { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(LOGS_LIMIT);

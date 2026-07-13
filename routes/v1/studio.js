@@ -2932,6 +2932,13 @@ router.get('/studio/scadenziario.ics', verifyStudioJwt, async (req, res) => {
 // FEATURE: Export ore/presenze per cedolini (payroll)
 // ═══════════════════════════════════════════════════════════════════════════════
 
+// Un consulente del lavoro deve poter distinguere una timbratura reale da una
+// generata dal sistema o corretta a mano — vedi services/workerHoursReport.js.
+const METHOD_NOTE = {
+  admin_manual_correction:  'Corretto manualmente',
+  auto_exit_on_site_change: 'Uscita auto (cambio cantiere)',
+};
+
 router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req, res) => {
   const { companyId } = req.params;
   const access = await checkStudioAccess(req.studioId, companyId);
@@ -2948,7 +2955,7 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
 
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
-    .select('worker_id, event_type, timestamp_server, site_id, workers(full_name, fiscal_code)')
+    .select('worker_id, event_type, timestamp_server, site_id, method, workers(full_name, fiscal_code)')
     .eq('company_id', companyId)
     .gte('timestamp_server', `${from}T00:00:00+02:00`)
     .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
@@ -2958,9 +2965,16 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
   if (logsErr) return res.status(500).json({ error: logsErr.message });
 
   // Raggruppa per worker → giorno, calcola ore da coppie ENTRY/EXIT
+  // La finestra sopra è volutamente più larga del mese (+02:00/+01:00 invece di
+  // Z, per non perdere le timbrature vicino a mezzanotte) — quindi va scartato
+  // qui ogni log il cui giorno reale a Roma non è nel mese richiesto, altrimenti
+  // le ultime/prime ore del mese finiscono conteggiate anche nel cedolino del
+  // mese adiacente (bug reale: doppio conteggio a cavallo di fine mese).
   const byWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.workers) continue;
+    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    if (dateKey.slice(0, 7) !== month) continue;
     if (!byWorker.has(log.worker_id)) {
       byWorker.set(log.worker_id, {
         full_name: log.workers.full_name,
@@ -2968,7 +2982,6 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
         days: new Map(),
       });
     }
-    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
     const worker = byWorker.get(log.worker_id);
     if (!worker.days.has(dateKey)) worker.days.set(dateKey, []);
     worker.days.get(dateKey).push(log);
@@ -2984,19 +2997,21 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
       const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
       const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
       let dayMinutes = 0;
+      let dayNote = null;
 
       for (let i = 0; i < entries.length; i++) {
         const entry = entries[i];
         const exit = exits.find(e => new Date(e.timestamp_server) > new Date(entry.timestamp_server));
         if (exit) {
           dayMinutes += (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000;
+          dayNote = dayNote || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null;
         }
       }
 
       if (dayMinutes > 0) {
         totalDays++;
         totalMinutes += dayMinutes;
-        dayDetails.push({ date: dateKey, hours: Math.round(dayMinutes / 60 * 100) / 100 });
+        dayDetails.push({ date: dateKey, hours: Math.round(dayMinutes / 60 * 100) / 100, note: dayNote });
       }
     }
 
@@ -3025,11 +3040,11 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
 
   // CSV dettagliato (giorno per giorno)
   if (req.query.format === 'csv-detail') {
-    const header = 'Cognome e Nome,Codice Fiscale,Data,Ore';
+    const header = 'Cognome e Nome,Codice Fiscale,Data,Ore,Nota';
     const rows = [];
     for (const r of results) {
       for (const d of r.days) {
-        rows.push(`"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${d.date}","${d.hours}"`);
+        rows.push(`"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${d.date}","${d.hours}","${d.note || ''}"`);
       }
     }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

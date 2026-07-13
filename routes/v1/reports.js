@@ -8,6 +8,13 @@ const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursX
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Un consulente del lavoro deve poter distinguere una timbratura reale da una
+// generata dal sistema o corretta a mano — vedi services/workerHoursReport.js.
+const METHOD_NOTE = {
+  admin_manual_correction:  'Corretto manualmente',
+  auto_exit_on_site_change: 'Uscita auto (cambio cantiere)',
+};
+
 // GET /api/v1/reports/presence?siteId=&date= — CSV singola giornata (PRIVATO)
 // Retrocompatibile: accetta ancora il parametro 'date' per singolo giorno.
 // BOM UTF-8 incluso per apertura corretta in Excel (Windows)
@@ -115,13 +122,15 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select(`
-      worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, site_id,
+      worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, site_id, method,
       worker:workers (id, full_name, fiscal_code)
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    .gte('timestamp_server', `${from}T00:00:00.000Z`)
-    .lte('timestamp_server', `${to}T23:59:59.999Z`)
+    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
+    // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
+    .gte('timestamp_server', `${from}T00:00:00+02:00`)
+    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
     .order('worker_id',         { ascending: true })
     .order('timestamp_server',  { ascending: true })
     .limit(50000);
@@ -131,10 +140,15 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   const limitReached = (logs || []).length === 50000;
 
   // Raggruppa per worker → giorno (timezone Europe/Rome)
+  // La finestra sopra è volutamente più larga di [from,to]: scarta qui ogni
+  // log il cui giorno reale a Roma cade fuori dal range richiesto, altrimenti
+  // un turno a cavallo del limite finirebbe conteggiato anche nell'export
+  // adiacente (stesso bug del doppio conteggio a fine mese di studio.js).
   const byWorkerDay = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
     const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    if (dateKey < from || dateKey > to) continue;
     const mapKey  = `${log.worker_id}::${dateKey}`;
     if (!byWorkerDay.has(mapKey)) {
       byWorkerDay.set(mapKey, { worker: log.worker, dateKey, logs: [] });
@@ -172,6 +186,8 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
         if (next && next.event_type === 'EXIT') {
           hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3_600_000);
           intervals++;
+          const note = METHOD_NOTE[next.method] || METHOD_NOTE[l.method];
+          if (note) anomalies.push(note);
           i += 2;
         } else {
           anomalies.push('Uscita mancante');
@@ -318,13 +334,18 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
     const { data: logs, error: logsErr } = await supabase
       .from('presence_logs')
       .select(`
-        worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m,
+        worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, method,
         worker:workers (id, full_name, fiscal_code)
       `)
       .eq('site_id', siteId)
       .eq('company_id', req.companyId)
-      .gte('timestamp_server', `${from}T00:00:00.000Z`)
-      .lte('timestamp_server', `${to}T23:59:59.999Z`)
+      // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
+      // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
+      // Qui il dump è per singolo log (non raggruppato per giorno), quindi
+      // non serve un filtro finale sul range: ogni riga porta già il suo
+      // timestamp reale, e il leggero overfetch ai bordi non duplica nulla.
+      .gte('timestamp_server', `${from}T00:00:00+02:00`)
+      .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
       .order('worker_id',        { ascending: true })
       .order('timestamp_server', { ascending: true })
       .limit(50000);
@@ -333,7 +354,7 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
 
     const limitReached = (logs || []).length === 50000;
     const rows = [
-      'data,lavoratore,codice_fiscale,evento,timestamp,distanza_m,gps_accuracy_m',
+      'data,lavoratore,codice_fiscale,evento,timestamp,distanza_m,gps_accuracy_m,metodo',
       ...(logs || []).filter(r => r.worker).map(r => [
         new Date(r.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' }),
         `"${(r.worker.full_name || '').replace(/"/g, '""')}"`,
@@ -341,7 +362,8 @@ router.get('/worksites/:id/presence-report', verifySupabaseJwt, async (req, res)
         r.event_type,
         r.timestamp_server,
         r.distance_m     ?? '',
-        r.gps_accuracy_m ?? ''
+        r.gps_accuracy_m ?? '',
+        r.method || ''
       ].join(','))
     ];
     if (limitReached) rows.unshift('# ATTENZIONE: dati troncati a 50.000 righe raw \u2014 export parziale');
@@ -421,11 +443,13 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
   // 2. Presenze su tutti quei cantieri nel range
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
-    .select('worker_id, event_type, timestamp_server, site_id, worker:workers(full_name, fiscal_code)')
+    .select('worker_id, event_type, timestamp_server, site_id, method, worker:workers(full_name, fiscal_code)')
     .eq('company_id', req.companyId)
     .in('site_id', siteIds)
-    .gte('timestamp_server', `${from}T00:00:00.000Z`)
-    .lte('timestamp_server', `${to}T23:59:59.999Z`)
+    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
+    // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
+    .gte('timestamp_server', `${from}T00:00:00+02:00`)
+    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
     .order('site_id',         { ascending: true })
     .order('worker_id',       { ascending: true })
     .order('timestamp_server',{ ascending: true })
@@ -435,10 +459,14 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
   const limitReached = (logs || []).length === 50000;
 
   // 3. Raggruppa per cantiere + worker + giorno
+  // La finestra sopra è più larga di [from,to]: scarta ogni log il cui giorno
+  // reale a Roma cade fuori dal range richiesto, per non contare due volte lo
+  // stesso turno in due export adiacenti.
   const byKey = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
     const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+    if (dateKey < from || dateKey > to) continue;
     const key = `${log.site_id}::${log.worker_id}::${dateKey}`;
     if (!byKey.has(key)) byKey.set(key, { siteId: log.site_id, worker: log.worker, dateKey, logs: [] });
     byKey.get(key).logs.push(log);
@@ -468,6 +496,8 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
         const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
         if (next && next.event_type === 'EXIT') {
           hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3600000);
+          const note = METHOD_NOTE[next.method] || METHOD_NOTE[l.method];
+          if (note) anomalies.push(note);
           i += 2;
         } else { anomalies.push('Uscita mancante'); i += 1; }
       } else { anomalies.push('Uscita senza entrata'); i += 1; }
