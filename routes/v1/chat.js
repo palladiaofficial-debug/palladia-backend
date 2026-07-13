@@ -5224,9 +5224,10 @@ function buildReportHtml(report) {
       const numCol = s.table.headers.map((_, i) => isNumericColumn(s.table.rows, i));
       tableHtml = `<table>
            <thead><tr>${s.table.headers.map((h, i) => `<th class="${numCol[i] ? 'num' : ''}">${esc(h)}</th>`).join('')}</tr></thead>
-           <tbody>${s.table.rows.map(row =>
-              `<tr>${row.map((cell, i) => `<td class="${numCol[i] ? 'num' : ''}">${esc(cell)}</td>`).join('')}</tr>`
-            ).join('')}</tbody>
+           <tbody>${s.table.rows.map(row => {
+              const isTotal = /total/i.test(String(row[0] ?? ''));
+              return `<tr class="${isTotal ? 'total-row' : ''}">${row.map((cell, i) => `<td class="${numCol[i] ? 'num' : ''}">${esc(cell)}</td>`).join('')}</tr>`;
+            }).join('')}</tbody>
          </table>`;
     }
 
@@ -5409,6 +5410,14 @@ function buildReportHtml(report) {
   tbody tr:nth-child(even) td { background: #f9f9f9; }
   tbody tr:last-child td { border-bottom: none; }
 
+  tbody tr.total-row td {
+    background: #fff;
+    font-weight: 700;
+    color: #000;
+    border-top: 1.5px solid #0a0a0a;
+    border-bottom: none;
+  }
+
   /* ── Piè di pagina documento ──────────────────────────── */
   .doc-footer {
     font-size: 8.5px;
@@ -5443,6 +5452,55 @@ function buildReportHtml(report) {
 }
 
 // ── Excel workbook (ExcelJS — styled) ────────────────────────────────────────
+// Converte una stringa "1.800", "€1.800,50" o "22,3%" (formato italiano) in un
+// numero reale + formato Excel — invece di lasciarla come testo, cosi il
+// destinatario puo sommare/ordinare la colonna come in un vero foglio finanziario.
+function itNumberToFloat(s) {
+  const n = parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  return Number.isNaN(n) ? null : n;
+}
+
+function parseNumericCell(raw) {
+  if (raw == null) return null;
+  const s = String(raw).trim();
+  if (!s) return null;
+  const pct = /^(-?[\d.,]+)\s*%$/.exec(s);
+  if (pct) {
+    const n = itNumberToFloat(pct[1]);
+    return n == null ? null : { value: n / 100, numFmt: '0.0%' };
+  }
+  const num = /^[€$]?\s*(-?[\d.,]+)\s*[€$]?$/.exec(s);
+  if (num) {
+    const n = itNumberToFloat(num[1]);
+    if (n == null) return null;
+    const hasCurrency = /[€$]/.test(s);
+    const hasDecimals = !Number.isInteger(n);
+    const fmt = hasCurrency
+      ? (hasDecimals ? '#,##0.00" €"' : '#,##0" €"')
+      : (hasDecimals ? '#,##0.00' : '#,##0');
+    return { value: n, numFmt: fmt };
+  }
+  return null;
+}
+
+// Una colonna e "numerica" solo se TUTTI i valori sono convertibili E c'e un
+// segnale inequivocabile (simbolo €/% nei valori, o intestazione che parla di
+// importi/quantita) — evita di trasformare un numero documento tipo "158053"
+// in "158.053" come fosse una cifra.
+function isMoneyHeader(h) {
+  return /€|\$|import|total|prezzo|costo|valore|percentual|quantit|%/i.test(String(h || ''));
+}
+
+function computeNumericCols(headers, rows) {
+  return headers.map((h, i) => {
+    const vals = rows.map(r => r[i]).filter(v => v != null && String(v).trim() !== '');
+    if (!vals.length) return false;
+    if (!vals.every(v => parseNumericCell(v) !== null)) return false;
+    const hasExplicitUnit = vals.some(v => /[€$%]/.test(String(v)));
+    return hasExplicitUnit || isMoneyHeader(h);
+  });
+}
+
 async function buildReportExcel(report) {
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook();
@@ -5500,27 +5558,42 @@ async function buildReportExcel(report) {
     mergeRow(r.number);
   }
 
-  function addTableHeader(headers) {
+  function addTableHeader(headers, numericCols = []) {
     const r = ws.addRow(headers);
     r.height = 20;
     headers.forEach((h, i) => {
       const c = r.getCell(i + 1);
       c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2D4A6B' } };
       c.font = { bold: true, color: WHITE, size: 9.5, name: 'Calibri' };
-      c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+      c.alignment = { vertical: 'middle', horizontal: numericCols[i] ? 'right' : (i === 0 ? 'left' : 'center') };
       c.border = { bottom: { style: 'thin', color: NAVY } };
       colWidths[i] = Math.max(colWidths[i] || 12, Math.min(String(h).length + 4, 40));
     });
   }
 
-  function addDataRow(values, even) {
-    const r = ws.addRow(values);
+  function addDataRow(values, even, numericCols = []) {
+    const isTotal = /total/i.test(String(values[0] ?? ''));
+    const cellValues = values.map((v, i) => {
+      if (numericCols[i]) {
+        const parsed = parseNumericCell(v);
+        if (parsed) return parsed.value;
+      }
+      return v;
+    });
+    const r = ws.addRow(cellValues);
     r.height = 18;
     values.forEach((v, i) => {
       const c = r.getCell(i + 1);
-      if (even) c.fill = { type: 'pattern', pattern: 'solid', fgColor: LIGHT };
-      c.font = { size: 9.5, name: 'Calibri' };
-      c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+      if (even && !isTotal) c.fill = { type: 'pattern', pattern: 'solid', fgColor: LIGHT };
+      c.font = { size: 9.5, name: 'Calibri', bold: isTotal };
+      if (isTotal) c.border = { top: { style: 'thin', color: NAVY } };
+      if (numericCols[i]) {
+        const parsed = parseNumericCell(v);
+        if (parsed) c.numFmt = parsed.numFmt;
+        c.alignment = { vertical: 'middle', horizontal: 'right' };
+      } else {
+        c.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+      }
       colWidths[i] = Math.max(colWidths[i] || 12, Math.min(String(v ?? '').length + 4, 45));
     });
   }
@@ -5550,12 +5623,15 @@ async function buildReportExcel(report) {
   // ── KPI ──────────────────────────────────────────────────────────────────────
   if (report.kpis?.length) {
     addSection('INDICATORI CHIAVE');
-    addTableHeader(['Valore', 'Indicatore']);
+    addTableHeader(['Valore', 'Indicatore'], [true, false]);
     report.kpis.forEach((k, i) => {
-      const r = ws.addRow([k.value, k.label]);
+      const parsed = parseNumericCell(k.value);
+      const r = ws.addRow([parsed ? parsed.value : k.value, k.label]);
       r.height = 18;
       if (i % 2 === 1) r.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: LIGHT }; });
       r.getCell(1).font = { bold: true, size: 10, name: 'Calibri' };
+      r.getCell(1).alignment = { vertical: 'middle', horizontal: parsed ? 'right' : 'left' };
+      if (parsed) r.getCell(1).numFmt = parsed.numFmt;
       r.getCell(2).font = { size: 9.5, name: 'Calibri' };
     });
     ws.addRow([]).height = 6;
@@ -5569,8 +5645,9 @@ async function buildReportExcel(report) {
     }
     if (s.table?.headers?.length && s.table?.rows?.length) {
       if (!s.text) ws.addRow([]).height = 4;
-      addTableHeader(s.table.headers);
-      s.table.rows.forEach((row, i) => addDataRow(row, i % 2 === 1));
+      const numericCols = computeNumericCols(s.table.headers, s.table.rows);
+      addTableHeader(s.table.headers, numericCols);
+      s.table.rows.forEach((row, i) => addDataRow(row, i % 2 === 1, numericCols));
     }
     ws.addRow([]).height = 6;
   }
