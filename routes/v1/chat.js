@@ -5770,10 +5770,12 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
   const budget = await checkAiBudget(req.companyId);
   if (!budget.allowed) {
     return res.status(403).json({
-      error:   'AI_BUDGET_EXCEEDED',
-      message: `Budget AI mensile del piano (${budget.plan}) superato: $${budget.spend.toFixed(2)} su $${budget.limit}. Ladia torna disponibile dal prossimo mese, oppure aggiorna il piano.`,
-      limit:   budget.limit,
-      spend:   budget.spend,
+      error:     'AI_BUDGET_EXCEEDED',
+      message:   `Budget AI mensile del piano (${budget.plan}) superato: $${budget.spend.toFixed(2)} su $${budget.limit}.`,
+      plan:      budget.plan,
+      limit:     budget.limit,
+      spend:     budget.spend,
+      resets_at: budget.resetsAt,
     });
   }
 
@@ -5955,10 +5957,12 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
   const budget = await checkAiBudget(req.companyId);
   if (!budget.allowed) {
     return res.status(403).json({
-      error:   'AI_BUDGET_EXCEEDED',
-      message: `Budget AI mensile del piano (${budget.plan}) superato: $${budget.spend.toFixed(2)} su $${budget.limit}. Ladia torna disponibile dal prossimo mese, oppure aggiorna il piano.`,
-      limit:   budget.limit,
-      spend:   budget.spend,
+      error:     'AI_BUDGET_EXCEEDED',
+      message:   `Budget AI mensile del piano (${budget.plan}) superato: $${budget.spend.toFixed(2)} su $${budget.limit}.`,
+      plan:      budget.plan,
+      limit:     budget.limit,
+      spend:     budget.spend,
+      resets_at: budget.resetsAt,
     });
   }
 
