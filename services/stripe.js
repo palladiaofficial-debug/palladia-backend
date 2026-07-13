@@ -61,4 +61,26 @@ function getSiteLimit(plan) {
   return null;
 }
 
-module.exports = { getStripe, getPriceId, getSiteLimit, PLAN_LIMITS };
+/**
+ * Budget AI "fair use" mensile per piano, in USD (spesa reale stimata su
+ * ladia_usage_log). Calcolato come ~5x il consumo di un uso quotidiano intenso
+ * per cantiere attivo (~$0.43/mese/cantiere, osservato dal vivo) — margine
+ * ampio per non bloccare mai un cliente onesto, ma fermare un vero fuori scala
+ * (bug in loop, account compromesso). null = nessun limite (enterprise).
+ */
+const AI_BUDGET_LIMITS = {
+  trial:      5,
+  starter:    10,
+  base:       10,   // backward compat
+  grow:       20,
+  pro:        40,
+  business:   100,
+  enterprise: null,
+};
+
+function getAiBudgetLimit(plan) {
+  if (plan in AI_BUDGET_LIMITS) return AI_BUDGET_LIMITS[plan];
+  return null;
+}
+
+module.exports = { getStripe, getPriceId, getSiteLimit, getAiBudgetLimit, PLAN_LIMITS, AI_BUDGET_LIMITS };

@@ -13,7 +13,7 @@ const { getCompanyBrain } = require('../../lib/companyBrain');
 const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConversation } = require('../../services/ladiaMemory');
 const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const { sendAiCreditExhaustedAlert } = require('../../services/email');
-const { logUsage } = require('../../lib/ladiaUsageLog');
+const { logUsage, checkAiBudget } = require('../../lib/ladiaUsageLog');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
@@ -5767,6 +5767,16 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
     return res.status(400).json({ error: 'MESSAGE_TOO_LONG' });
   }
 
+  const budget = await checkAiBudget(req.companyId);
+  if (!budget.allowed) {
+    return res.status(403).json({
+      error:   'AI_BUDGET_EXCEEDED',
+      message: `Budget AI mensile del piano (${budget.plan}) superato: $${budget.spend.toFixed(2)} su $${budget.limit}. Ladia torna disponibile dal prossimo mese, oppure aggiorna il piano.`,
+      limit:   budget.limit,
+      spend:   budget.spend,
+    });
+  }
+
   try {
     const client = getClient();
     let convId = conversation_id || null;
@@ -5940,6 +5950,16 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     if (!img?.data || typeof img.data !== 'string') return res.status(400).json({ error: 'INVALID_IMAGE_DATA' });
     if (!VALID_IMG_TYPES.includes(img.media_type)) return res.status(400).json({ error: 'INVALID_IMAGE_TYPE' });
     if (img.data.length > 7_000_000) return res.status(400).json({ error: 'IMAGE_TOO_LARGE' }); // ~5MB
+  }
+
+  const budget = await checkAiBudget(req.companyId);
+  if (!budget.allowed) {
+    return res.status(403).json({
+      error:   'AI_BUDGET_EXCEEDED',
+      message: `Budget AI mensile del piano (${budget.plan}) superato: $${budget.spend.toFixed(2)} su $${budget.limit}. Ladia torna disponibile dal prossimo mese, oppure aggiorna il piano.`,
+      limit:   budget.limit,
+      spend:   budget.spend,
+    });
   }
 
   // SSE headers — disabilita buffering Nginx/Railway
