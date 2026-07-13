@@ -437,7 +437,7 @@ async function run() {
 
     const { data: workerDRow } = await supabase
       .from('workers')
-      .select('badge_code')
+      .select('id, badge_code')
       .eq('fiscal_code', cfD)
       .maybeSingle();
 

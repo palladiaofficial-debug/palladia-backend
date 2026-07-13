@@ -1420,8 +1420,26 @@
     try { done = !!localStorage.getItem('palladia_pwa_guide_done'); } catch (e) {}
     if (done) return;
 
-    // Breve delay: prima mostra la schermata di timbratura, poi la guida
-    setTimeout(pwaGuideShow, 800);
+    // Bug reale trovato dal vivo (screenshot): il vecchio setTimeout fisso
+    // mostrava la guida 800ms dopo il load SEMPRE, anche sopra "Badge
+    // disattivato" o la guida permessi GPS — due overlay sovrapposti,
+    // testo illeggibile. Ora aspetta che la pagina sia in uno stato "calmo"
+    // (niente caricamento, niente errore, niente guida GPS aperta) prima di
+    // mostrarsi, ritentando invece di sparare alla cieca. Se resta bloccata
+    // (es. badge disattivato per sempre) smette di ritentare dopo 30s.
+    var attempts = 0;
+    (function maybeShow() {
+      attempts++;
+      var gpsGuide = document.getElementById('gps-guide');
+      var gpsOpen  = gpsGuide && !gpsGuide.classList.contains('hidden');
+      var loading  = !!wrap.querySelector('.loading-wrap');
+      var errorScreen = !!wrap.querySelector('.error-wrap');
+      if (gpsOpen || loading || errorScreen) {
+        if (attempts < 20) setTimeout(maybeShow, 1500);
+        return;
+      }
+      pwaGuideShow();
+    })();
   })();
 
   main().catch(function (err) {

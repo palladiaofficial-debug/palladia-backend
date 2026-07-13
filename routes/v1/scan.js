@@ -7,6 +7,15 @@ const { notifyPunch, notifyAnomalousPunch } = require('../../services/telegramNo
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// Genera codice badge univoco: 9 byte -> 18 char hex uppercase (stessa logica
+// di routes/v1/workers.js). workers.badge_code e NOT NULL — un worker creato
+// qui (prima identificazione via QR cantiere) deve averne uno quanto quello
+// creato da chi aggiunge un lavoratore a mano, altrimenti l'INSERT fallisce
+// con 23502 e la prima registrazione di un nuovo lavoratore va sempre in 500.
+function generateBadgeCode() {
+  return crypto.randomBytes(9).toString('hex').toUpperCase();
+}
+
 function haversineM(lat1, lon1, lat2, lon2) {
   const R     = 6_371_000;
   const toRad = d => d * Math.PI / 180;
@@ -272,11 +281,21 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       }
 
       const nameParts = parseFullName(full_name);
-      const { data: newWorker, error: createErr } = await supabase
+      let { data: newWorker, error: createErr } = await supabase
         .from('workers')
-        .insert([{ company_id: companyId, full_name: nameParts.full_name, fiscal_code: fc }])
+        .insert([{ company_id: companyId, full_name: nameParts.full_name, fiscal_code: fc, badge_code: generateBadgeCode() }])
         .select('id, full_name')
         .single();
+
+      // Collisione crittografica sul badge_code (probabilità trascurabile su 2^72,
+      // ma gestita) — un solo retry con un nuovo codice, stesso pattern di workers.js.
+      if (createErr?.code === '23505' && createErr.message.includes('badge_code')) {
+        ({ data: newWorker, error: createErr } = await supabase
+          .from('workers')
+          .insert([{ company_id: companyId, full_name: nameParts.full_name, fiscal_code: fc, badge_code: generateBadgeCode() }])
+          .select('id, full_name')
+          .single());
+      }
 
       if (createErr) {
         console.error('[identify] worker create error:', createErr.code, createErr.message);
