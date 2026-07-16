@@ -98,7 +98,7 @@ router.post('/presence/admin-correction', verifySupabaseJwt, async (req, res) =>
       timestamp:   ts.toISOString(),
       note:        note || null,
     },
-    ip_address: (req.ip || '').slice(0, 45) || null,
+    ip:         (req.ip || '').slice(0, 45) || null,
     user_agent: (req.headers['user-agent'] || '').slice(0, 500) || null,
   }]).then(({ error: e }) => {
     if (e) console.error('[presence/admin-correction] audit log error:', e.message);

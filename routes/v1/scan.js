@@ -806,8 +806,8 @@ router.post('/scan/note', scanLimiter, async (req, res) => {
         worksite_name: site.name,
         session_id:   session.id
       },
-      ip_address: (req.ip || '').slice(0, 45) || null,
-      user_agent: (req.headers['user-agent'] || '').slice(0, 500) || null
+      ip:          (req.ip || '').slice(0, 45) || null,
+      user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null
     }]);
 
   if (insertErr) {
