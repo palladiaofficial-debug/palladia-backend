@@ -400,7 +400,7 @@
     });
   }
 
-  function selectSite(site) {
+  async function selectSite(site) {
     selectedSite = site;
     $('selected-site-name').textContent = site.name;
 
@@ -412,11 +412,23 @@
 
     ['coords-status','pin-status'].forEach(id => { $(id).innerHTML = ''; });
 
-    // QR link
-    const scanUrl = `${location.origin}/scan/${site.id}`;
-    const link    = $('qr-link');
-    link.href         = scanUrl;
-    link.textContent  = scanUrl;
+    // QR link firmato (HMAC, verificato lato server ad ogni identificazione) —
+    // MAI costruire l'URL a mano qui: senza firma il link bypasserebbe il
+    // controllo di sicurezza del QR (vedi routes/v1/scan.js identify).
+    const link = $('qr-link');
+    link.href        = '#';
+    link.textContent = 'Generazione link…';
+    try {
+      const { status, body } = await apiFetch('GET', `/api/v1/sites/${site.id}/qr-link`);
+      if (status === 200 && body.url) {
+        link.href        = body.url;
+        link.textContent = body.url;
+      } else {
+        link.textContent = `Errore nella generazione del link (${status})`;
+      }
+    } catch (e) {
+      link.textContent = 'Errore di rete nella generazione del link';
+    }
 
     $('config-card').style.display = '';
     $('config-card').scrollIntoView({ behavior: 'smooth', block: 'start' });

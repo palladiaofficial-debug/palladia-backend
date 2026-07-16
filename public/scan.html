@@ -859,7 +859,7 @@
     btn.innerHTML = '<span class="spin"></span>Verifica…';
     $('field-error').classList.add('hidden');
 
-    const payload = { worksite_id: WSITE_ID, fiscal_code: cf };
+    const payload = { worksite_id: WSITE_ID, fiscal_code: cf, t: QR_TOKEN, exp: QR_EXP };
     if (nameRequired) payload.full_name = name;
 
     try {
@@ -906,7 +906,11 @@
 
   // ── QR verify ─────────────────────────────────────────────────────────────
   async function verifyQrSignature() {
-    if (!HAS_QR) return true;
+    if (!HAS_QR) {
+      $('site-name').textContent    = 'Link non valido';
+      $('site-address').textContent = 'Questo link non è un QR di cantiere valido. Scansiona il QR ufficiale o richiedilo all\'amministratore.';
+      return false;
+    }
     if (Date.now() / 1000 > Number(QR_EXP)) {
       $('site-name').textContent    = 'QR code scaduto';
       $('site-address').textContent = 'Questo QR non è più valido. Richiedere un nuovo QR all\'amministratore.';

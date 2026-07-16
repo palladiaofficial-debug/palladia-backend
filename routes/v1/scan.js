@@ -221,7 +221,7 @@ router.get('/scan/worksites/:worksiteId', publicScanLimiter, async (req, res) =>
 // La prima volta viene richiesto il nome completo per la registrazione.
 router.post('/scan/identify', identifyLimiter, async (req, res) => {
   try {
-    const { worksite_id, fiscal_code, full_name } = req.body || {};
+    const { worksite_id, fiscal_code, full_name, t, exp } = req.body || {};
 
     if (!worksite_id || !fiscal_code) {
       return res.status(400).json({
@@ -229,6 +229,30 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
         required: ['worksite_id', 'fiscal_code']
       });
     }
+
+    // La firma HMAC del QR è verificata qui, non solo in GET /scan/verify-qr:
+    // quell'endpoint è solo un controllo client-side facoltativo (scan.html lo
+    // chiama prima di mostrare il form) — senza questo controllo, chiunque
+    // scopra un worksite_id potrebbe chiamare identify/creare sessioni per
+    // sempre, a prescindere da un QR firmato scaduto o mai esistito.
+    const expNum = Number(exp);
+    if (!t || !exp || !Number.isFinite(expNum) || expNum <= 0) {
+      return res.status(401).json({ error: 'MISSING_QR_SIGNATURE', message: 'Scansiona il QR del cantiere per procedere.' });
+    }
+    if (Date.now() / 1000 > expNum) {
+      return res.status(401).json({ error: 'QR_EXPIRED', message: 'QR code scaduto. Richiedi un nuovo QR all\'amministratore.' });
+    }
+    const { verifyQrToken } = require('./qr');
+    let sigValid;
+    try {
+      sigValid = verifyQrToken(worksite_id, t, expNum);
+    } catch (e) {
+      return res.status(500).json({ error: 'SIGNING_NOT_CONFIGURED' });
+    }
+    if (!sigValid) {
+      return res.status(401).json({ error: 'INVALID_QR_SIGNATURE', message: 'QR code non valido.' });
+    }
+
     if (!isValidFiscalCode(fiscal_code)) {
       return res.status(400).json({ error: 'INVALID_FISCAL_CODE' });
     }
