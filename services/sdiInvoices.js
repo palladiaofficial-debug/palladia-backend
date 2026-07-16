@@ -372,7 +372,17 @@ async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion
 async function ingestSupplierInvoice(companyId, invoice) {
   const expenseRow = mapInvoiceResponseToExpense(companyId, invoice);
   if (!expenseRow) return { ok: true, skipped: true, reason: 'not_incoming' };
+  return ingestMappedExpense(companyId, expenseRow, invoice);
+}
 
+// ── Ingest condiviso tra provider (Openapi via webhook, A-Cube via consultazione) ──
+// `invoiceForAi` è nella forma { sender: { name }, invoice_lines: [{ description }] }
+// attesa da generateSiteAssignmentProposal/categorizeInvoice — services/sdiConsultation.js
+// costruisce un oggetto equivalente a partire dallo XML FatturaPA, senza dover
+// modificare quelle funzioni pensate originariamente per il payload Openapi.
+// `configTable` indica quale tabella di configurazione aggiornare con
+// last_invoice_received_at/last_poll_at a fine importazione.
+async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = 'sdi_configurations' } = {}) {
   const { siteId, activeSites } = await resolveSiteAssignment(companyId);
   expenseRow.site_id = siteId;
 
@@ -400,14 +410,14 @@ async function ingestSupplierInvoice(companyId, invoice) {
     // cantiere (solo se ancora ambiguo) e categoria (solo se ancora 'altro') —
     // una sola chiamata invece di due quando servono entrambe.
     if (ambiguous) {
-      suggestion = await generateSiteAssignmentProposal(invoice, activeSites, companyId).catch(() => null);
+      suggestion = await generateSiteAssignmentProposal(invoiceForAi, activeSites, companyId).catch(() => null);
       if (suggestion) {
         expenseRow.suggested_site_id = suggestion.site_id;
         expenseRow.suggested_site_reason = suggestion.reason;
       }
     }
     if (needsCategoryGuess) {
-      const aiCategory = await categorizeInvoice(invoice, companyId).catch(() => null);
+      const aiCategory = await categorizeInvoice(invoiceForAi, companyId).catch(() => null);
       if (aiCategory) expenseRow.category = aiCategory;
     }
   }
@@ -431,13 +441,13 @@ async function ingestSupplierInvoice(companyId, invoice) {
 
   if (error) throw error;
 
-  await supabase.from('sdi_configurations')
+  await supabase.from(configTable)
     .update({ last_invoice_received_at: new Date().toISOString() })
     .eq('company_id', companyId);
 
   auditLog({
     companyId,
-    action:     'expense.sdi_auto_import',
+    action:     expenseRow.source === 'sdi_consultation' ? 'expense.sdi_consultation_import' : 'expense.sdi_auto_import',
     targetType: 'company_expense',
     targetId:   data.id,
     payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
@@ -482,5 +492,6 @@ module.exports = {
   resolveCompanyFromHeaders,
   mapInvoiceResponseToExpense,
   ingestSupplierInvoice,
+  ingestMappedExpense,
   confirmLegalStorage,
 };

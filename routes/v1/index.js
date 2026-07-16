@@ -83,6 +83,10 @@ router.use('/', require('./workerArea'));
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./sdiInvoices'));
 
+// Consultazione fatture via Delega Unificata (sola lettura, complementare a sdiInvoices):
+// nessun webhook pubblico, solo rotte azienda (JWT) — vedi services/sdiConsultation.js
+router.use('/', require('./sdiConsultation'));
+
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
