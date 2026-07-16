@@ -299,9 +299,11 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     }
   }
 
-  // Geofence check
+  // Geofence check — se il cantiere non ha coordinate, segnalato con
+  // geofenceActive:false invece di restare silenzioso (vedi routes/v1/scan.js)
   let distanceM = null;
-  if (site.latitude != null && site.longitude != null) {
+  const geofenceActive = site.latitude != null && site.longitude != null;
+  if (geofenceActive) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
     if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m) {
       return res.status(403).json({
@@ -352,6 +354,7 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     event_type:       eventType,
     timestamp_server: tsServer,
     distance_m:       distanceM,
+    geofence_active:  geofenceActive,
     gps_accuracy_m:   accuracyM ? Math.round(accuracyM) : null,
     worker_name:      worker.full_name,
     site_name:        site.name,

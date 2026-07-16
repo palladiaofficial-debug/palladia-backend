@@ -634,9 +634,12 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     return res.status(403).json({ error: 'WORKER_NOT_AUTHORIZED_ON_SITE' });
   }
 
-  // Se il cantiere non ha coordinate GPS la geofence è disabilitata (log senza validazione)
+  // Se il cantiere non ha coordinate GPS la geofence è disabilitata — segnalato
+  // al client con geofenceActive:false invece di restare silenzioso, così la UI
+  // può avvisare che questa timbratura non ha nessuna verifica di posizione.
   let distanceM = null;
-  if (site.latitude != null && site.longitude != null) {
+  const geofenceActive = site.latitude != null && site.longitude != null;
+  if (geofenceActive) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
     if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m) {
       return res.status(403).json({
@@ -692,6 +695,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     event_type:         eventType,
     timestamp_server:   tsServer,
     distance_m:         distanceM,
+    geofence_active:    geofenceActive,
     gps_accuracy_m:     accuracyM != null ? Math.round(accuracyM) : null,
     gps_accuracy_m_raw: accuracyM
   });
