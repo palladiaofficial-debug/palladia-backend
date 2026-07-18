@@ -69,6 +69,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      position: relative;
       padding: calc(20px + env(safe-area-inset-top, 0px)) 0 8px;
     }
     .brand {
@@ -78,6 +79,33 @@
       text-transform: uppercase;
       color: var(--muted);
     }
+
+    /* ── Selettore lingua ── */
+    .lang-switch {
+      position: absolute;
+      right: 0;
+      top: calc(16px + env(safe-area-inset-top, 0px));
+      display: flex;
+      gap: 2px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 3px;
+    }
+    .lang-btn {
+      min-width: 26px;
+      height: 26px;
+      padding: 0 6px;
+      border: none;
+      border-radius: 999px;
+      background: none;
+      font-family: inherit;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .lang-btn.active { background: var(--text); color: #fff; }
 
     /* ── Container ── */
     .wrap {
@@ -513,6 +541,7 @@
 
   <div class="topbar">
     <div class="brand">Palladia</div>
+    <div class="lang-switch" id="lang-switch"></div>
   </div>
 
   <!-- Guida attivazione GPS — si apre quando il permesso è negato -->
@@ -522,11 +551,11 @@
       <div class="gps-guide-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
       </div>
-      <div class="gps-guide-title">Attiva la posizione</div>
-      <div class="gps-guide-sub">Per timbrare la presenza serve il GPS attivo.<br>Segui questi passaggi:</div>
+      <div class="gps-guide-title" id="gps-guide-title"></div>
+      <div class="gps-guide-sub" id="gps-guide-sub"></div>
       <div class="gps-steps" id="gps-steps"></div>
       <div class="gps-guide-note" id="gps-guide-note"></div>
-      <button class="gps-btn-retry" onclick="location.reload()">Ho attivato — Riprova</button>
+      <button class="gps-btn-retry" id="gps-btn-retry" onclick="location.reload()"></button>
     </div>
   </div>
 
@@ -535,11 +564,11 @@
     <div class="pwa-sheet">
       <div class="pwa-handle"></div>
       <div class="pwa-headline" id="pwa-headline">Salva sulla schermata Home</div>
-      <div class="pwa-sub">Così apri Timbratura ogni giorno con un tocco — senza più scansionare il QR code.</div>
+      <div class="pwa-sub" id="pwa-sub"></div>
       <div class="pwa-steps" id="pwa-steps"><!-- riempito da JS --></div>
       <div class="pwa-note" id="pwa-note" style="display:none"></div>
-      <button class="pwa-btn-primary" id="pwa-btn-primary" onclick="pwaGuideAction()">Ho capito — ci provo!</button>
-      <button class="pwa-btn-skip" onclick="pwaGuideSkip()">Adesso no, faccio dopo</button>
+      <button class="pwa-btn-primary" id="pwa-btn-primary" onclick="pwaGuideAction()"></button>
+      <button class="pwa-btn-skip" id="pwa-btn-skip" onclick="pwaGuideSkip()"></button>
     </div>
   </div>
 
@@ -547,12 +576,508 @@
     <!-- Contenuto iniettato da JS -->
     <div class="card loading-wrap">
       <span class="spinner"></span>
-      <div class="loading-text">Lettura badge in corso…</div>
+      <div class="loading-text" id="initial-loading-text">Lettura badge in corso…</div>
     </div>
   </div>
 
   <script>
   'use strict';
+
+  // ── i18n ──────────────────────────────────────────────────────────────────────
+  // Dizionario leggero dedicato a questa sola pagina (stesso pattern di
+  // src/lib/i18n/timbratura.ts nel repo frontend — vedi ARCHITECTURE.md).
+  // Traduzioni curate ma non riviste da un madrelingua: da far rileggere prima
+  // di un rollout oltre il pilota, specialmente le guide GPS/PWA passo-passo.
+  var LANG_CODES = ['it', 'ro', 'sq', 'ar'];
+  var RTL_LANGS  = ['ar'];
+  var LANG_STORAGE_KEY = 'palladia_badge_lang';
+
+  function detectDefaultLang() {
+    try {
+      var saved = localStorage.getItem(LANG_STORAGE_KEY);
+      if (saved && LANG_CODES.indexOf(saved) !== -1) return saved;
+    } catch (e) {}
+    var nav = (navigator.language || '').slice(0, 2).toLowerCase();
+    if (LANG_CODES.indexOf(nav) !== -1) return nav;
+    return 'it';
+  }
+
+  var LANG = detectDefaultLang();
+
+  var I18N = {
+    it: {
+      langNative: 'IT',
+      loadingText: 'Lettura badge in corso…',
+      ifProblems: 'Se hai problemi, avvisa il responsabile.',
+      chooseSite: 'Scegli il cantiere',
+      whereWorking: 'Dove stai lavorando?',
+      selectSiteToPunch: 'Seleziona il cantiere per timbrare la presenza.',
+      inCantiere: 'Sei in cantiere', outCantiere: 'Sei fuori cantiere',
+      cantiereLabel: 'Cantiere',
+      waitingGps: 'In attesa del GPS…',
+      registraUscita: 'REGISTRA USCITA', registraEntrata: 'REGISTRA ENTRATA',
+      inCantiereStatus: 'In cantiere', fuoriCantiereStatus: 'Fuori cantiere',
+      pressButtonHint: 'Premi il pulsante quando entri o esci dal cantiere.',
+      entrataRegistrata: 'Entrata registrata', uscitaRegistrata: 'Uscita registrata',
+      canCloseAfterSuccess: 'Presenza registrata. Puoi chiudere questa pagina.',
+      gpsNotPrecise: 'GPS non abbastanza preciso',
+      gpsRetryHint: "Spostati all'aperto, aspetta qualche secondo e riprova.",
+      retry: 'Riprova',
+      registrazione: 'Registrazione…',
+      gpsUnavailableDevice: 'GPS non disponibile su questo dispositivo',
+      gpsPositionDetected: function (a) { return 'Posizione rilevata (±' + a + 'm)'; },
+      gpsAcquiring: function (a) { return 'GPS in acquisizione… (±' + a + 'm)'; },
+      gpsWeakSignal: function (a) { return "Segnale GPS debole (±" + a + "m) — spostati all'aperto"; },
+      gpsPermissionDeniedFollow: 'Permesso posizione negato — segui la guida qui sotto',
+      gpsSlowRetry: "GPS lento — spostati all'aperto oppure premi il pulsante per riprovare",
+      gpsPositionUnavailableActivate: 'Posizione non disponibile. Attiva la geolocalizzazione.',
+      offlineSavedTitle: 'Salvata offline',
+      offlineSavedHint: 'La timbratura verrà inviata automaticamente<br>quando tornerà la connessione.',
+      canClose: 'Puoi chiudere questa pagina.',
+      offlineBadge: function (n) { return n + ' timbratur' + (n > 1 ? 'e' : 'a') + ' in attesa di connessione…'; },
+      minuteRetry: function (m) { return 'Riprova tra ' + m + ' minut' + (m === 1 ? 'o' : 'i') + '.'; },
+      activatePosition: 'Attiva la posizione',
+      gpsGuideSub: 'Per timbrare la presenza serve il GPS attivo.<br>Segui questi passaggi:',
+      haveActivatedRetry: 'Ho attivato — Riprova',
+      saveToHome: 'Salva sulla schermata Home',
+      saveToHomeSub: 'Così apri Timbratura ogni giorno con un tocco — senza più scansionare il QR code.',
+      understoodTry: 'Ho capito — ci provo!',
+      installNow: 'Installa ora',
+      notNowLater: 'Adesso no, faccio dopo',
+      errorCopy: {
+        BADGE_NOT_FOUND:               { icon: '🚫', title: 'Badge non valido',          sub: 'Avvisa il responsabile.' },
+        BADGE_REVOKED:                 { icon: '🔒', title: 'Badge disattivato',         sub: 'Avvisa il responsabile.' },
+        INVALID_BADGE_CODE:            { icon: '🚫', title: 'Codice non valido',         sub: 'Il QR potrebbe essere danneggiato. Avvisa il responsabile.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'Non autorizzato',           sub: 'Non risulti assegnato a questo cantiere. Avvisa il responsabile.' },
+        COMPANY_MISMATCH:              { icon: '⛔', title: 'Cantiere non valido',       sub: 'Avvisa il responsabile.' },
+        NO_SITES:                      { icon: '○', title: 'Nessun cantiere trovato',   sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
+        GPS_REQUIRED:                  { icon: '📡', title: 'Posizione richiesta',       sub: 'Attiva la geolocalizzazione per registrare la presenza.' },
+        OUTSIDE_GEOFENCE:              { icon: '!', title: 'Sei troppo lontano',        sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
+        PUNCH_TOO_SOON:                { icon: '⏳', title: 'Timbratura già registrata', sub: 'Hai già timbrato di recente. Riprova tra qualche minuto.' },
+        SERVER_ERROR:                  { icon: '!', title: 'Errore temporaneo',         sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
+        NETWORK_ERROR:                 { icon: '📶', title: 'Nessuna connessione',        sub: 'Controlla la connessione a internet e riprova.' },
+      },
+      gpsGuideSteps: {
+        ios: [
+          { n: '1', text: 'Apri <strong>Impostazioni</strong> sul tuo dispositivo' },
+          { n: '2', text: 'Vai su <strong>Privacy e sicurezza</strong>' },
+          { n: '3', text: 'Tocca <strong>Servizi di localizzazione</strong> e assicurati che sia <strong>attivo</strong> (verde)' },
+          { n: '4', text: "Scorri in basso, tocca <strong>Safari</strong> e seleziona <strong>Mentre usi l'app</strong>" },
+        ],
+        samsung: [
+          { n: '1', text: "Tocca l'icona <strong>☰</strong> in basso a destra nel browser" },
+          { n: '2', text: 'Tocca <strong>Impostazioni</strong> → <strong>Autorizzazioni siti</strong> → <strong>Posizione</strong>' },
+          { n: '3', text: 'Assicurati che la posizione sia <strong>attiva</strong>' },
+        ],
+        other: [
+          { n: '1', text: "Tocca il <strong>lucchetto</strong> (o l'icona) nella barra degli indirizzi in alto" },
+          { n: '2', text: 'Tocca <strong>Autorizzazioni</strong> o <strong>Impostazioni sito</strong>' },
+          { n: '3', text: 'Imposta <strong>Posizione</strong> su <strong>Consenti</strong>' },
+        ],
+      },
+      gpsGuideNotes: {
+        ios: 'Dopo aver attivato, torna su questa pagina e tocca <strong>Riprova</strong>. Safari ti chiederà di nuovo il permesso.',
+        samsung: 'In alternativa: tocca il <strong>lucchetto</strong> nella barra degli indirizzi → <strong>Autorizzazioni</strong> → attiva <strong>Posizione</strong>.',
+        other: "Se non vedi l'opzione, vai nelle <strong>Impostazioni del telefono</strong> → <strong>Posizione</strong> e assicurati che sia attiva.",
+      },
+      pwaSteps: {
+        ios: [
+          { n: '1', icon: '⬆️', text: "Tocca il pulsante <strong>Condividi</strong> — l'icona con la freccia verso l'alto, nella barra in basso di Safari" },
+          { n: '2', icon: '➕', text: 'Scorri l\'elenco verso il basso e tocca <strong>"Aggiungi a schermata Home"</strong>' },
+          { n: '3', icon: '✓', text: "Tocca <strong>Aggiungi</strong> in alto a destra — l'icona di Timbratura apparirà sul tuo telefono" },
+        ],
+        samsung: [
+          { n: '1', icon: '☰', text: 'Tocca le <strong>tre linee</strong> in basso a destra (menu del browser)' },
+          { n: '2', icon: '➕', text: 'Tocca <strong>"Aggiungi pagina a"</strong> e poi <strong>"Schermata Home"</strong>' },
+          { n: '3', icon: '✓', text: "Tocca <strong>Aggiungi</strong> — l'icona apparirà sul tuo telefono" },
+        ],
+        firefox: [
+          { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso a destra (menu del browser)' },
+          { n: '2', icon: '↓', text: "Tocca <strong>\"Installa\"</strong> — comparirà un'anteprima dell'app" },
+          { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
+        ],
+        opera: [
+          { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso (menu)' },
+          { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
+          { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
+        ],
+        chrome: [
+          { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in alto a destra (menu del browser)' },
+          { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
+          { n: '3', icon: '✓', text: "Tocca <strong>Aggiungi</strong> per confermare — l'icona apparirà sul tuo telefono" },
+        ],
+      },
+      pwaNotes: {
+        ios: '📌 Su iPhone e iPad questo passaggio si fa solo da <strong>Safari</strong>. Se stai usando un altro browser, aprilo in Safari per poter salvare l\'app.',
+        samsung: null, firefox: null, opera: null, chrome: null,
+      },
+    },
+
+    ro: {
+      langNative: 'RO',
+      loadingText: 'Se citește ecusonul…',
+      ifProblems: 'Dacă ai probleme, anunță responsabilul.',
+      chooseSite: 'Alege șantierul',
+      whereWorking: 'Unde lucrezi?',
+      selectSiteToPunch: 'Selectează șantierul pentru a ponta prezența.',
+      inCantiere: 'Ești pe șantier', outCantiere: 'Ești în afara șantierului',
+      cantiereLabel: 'Șantier',
+      waitingGps: 'Se așteaptă GPS…',
+      registraUscita: 'ÎNREGISTREAZĂ IEȘIREA', registraEntrata: 'ÎNREGISTREAZĂ INTRAREA',
+      inCantiereStatus: 'Pe șantier', fuoriCantiereStatus: 'În afara șantierului',
+      pressButtonHint: 'Apasă butonul când intri sau ieși din șantier.',
+      entrataRegistrata: 'Intrare înregistrată', uscitaRegistrata: 'Ieșire înregistrată',
+      canCloseAfterSuccess: 'Prezență înregistrată. Poți închide această pagină.',
+      gpsNotPrecise: 'GPS insuficient de precis',
+      gpsRetryHint: 'Ieși afară, așteaptă câteva secunde și încearcă din nou.',
+      retry: 'Încearcă din nou',
+      registrazione: 'Se înregistrează…',
+      gpsUnavailableDevice: 'GPS indisponibil pe acest dispozitiv',
+      gpsPositionDetected: function (a) { return 'Poziție detectată (±' + a + 'm)'; },
+      gpsAcquiring: function (a) { return 'Se obține GPS… (±' + a + 'm)'; },
+      gpsWeakSignal: function (a) { return 'Semnal GPS slab (±' + a + 'm) — ieși afară'; },
+      gpsPermissionDeniedFollow: 'Permisiune poziție refuzată — urmează ghidul de mai jos',
+      gpsSlowRetry: 'GPS lent — ieși afară sau apasă butonul pentru a încerca din nou',
+      gpsPositionUnavailableActivate: 'Poziție indisponibilă. Activează geolocalizarea.',
+      offlineSavedTitle: 'Salvat offline',
+      offlineSavedHint: 'Pontajul va fi trimis automat<br>când revine conexiunea.',
+      canClose: 'Poți închide această pagină.',
+      offlineBadge: function (n) { return n + ' ' + (n > 1 ? 'pontaje' : 'pontaj') + ' în așteptarea conexiunii…'; },
+      minuteRetry: function (m) { return 'Încearcă din nou peste ' + m + ' minut' + (m === 1 ? '' : 'e') + '.'; },
+      activatePosition: 'Activează poziția',
+      gpsGuideSub: 'Pentru a ponta prezența este nevoie de GPS activ.<br>Urmează acești pași:',
+      haveActivatedRetry: 'Am activat — Încearcă din nou',
+      saveToHome: 'Salvează pe ecranul principal',
+      saveToHomeSub: 'Astfel deschizi Timbratura în fiecare zi cu o atingere — fără să mai scanezi codul QR.',
+      understoodTry: 'Am înțeles — încerc!',
+      installNow: 'Instalează acum',
+      notNowLater: 'Nu acum, mai târziu',
+      errorCopy: {
+        BADGE_NOT_FOUND:               { icon: '🚫', title: 'Ecuson invalid',            sub: 'Anunță responsabilul.' },
+        BADGE_REVOKED:                 { icon: '🔒', title: 'Ecuson dezactivat',         sub: 'Anunță responsabilul.' },
+        INVALID_BADGE_CODE:            { icon: '🚫', title: 'Cod invalid',               sub: 'Codul QR ar putea fi deteriorat. Anunță responsabilul.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'Neautorizat',                sub: 'Nu ești alocat acestui șantier. Anunță responsabilul.' },
+        COMPANY_MISMATCH:              { icon: '⛔', title: 'Șantier invalid',            sub: 'Anunță responsabilul.' },
+        NO_SITES:                      { icon: '○', title: 'Niciun șantier găsit',       sub: 'Nu ești alocat niciunui șantier activ. Anunță responsabilul.' },
+        GPS_REQUIRED:                  { icon: '📡', title: 'Poziție necesară',           sub: 'Activează geolocalizarea pentru a înregistra prezența.' },
+        OUTSIDE_GEOFENCE:              { icon: '!', title: 'Ești prea departe',          sub: 'Nu ești aproape de șantierul selectat. Dacă ești la fața locului, anunță responsabilul.' },
+        PUNCH_TOO_SOON:                { icon: '⏳', title: 'Pontaj deja înregistrat',    sub: 'Ai pontat deja recent. Încearcă din nou peste câteva minute.' },
+        SERVER_ERROR:                  { icon: '!', title: 'Eroare temporară',           sub: 'Încearcă din nou peste câteva minute. Dacă problema persistă, anunță responsabilul.' },
+        NETWORK_ERROR:                 { icon: '📶', title: 'Fără conexiune',              sub: 'Verifică conexiunea la internet și încearcă din nou.' },
+      },
+      gpsGuideSteps: {
+        ios: [
+          { n: '1', text: 'Deschide <strong>Setări</strong> pe dispozitivul tău' },
+          { n: '2', text: 'Mergi la <strong>Confidențialitate și securitate</strong>' },
+          { n: '3', text: 'Atinge <strong>Servicii de localizare</strong> și asigură-te că este <strong>activ</strong> (verde)' },
+          { n: '4', text: 'Derulează în jos, atinge <strong>Safari</strong> și selectează <strong>Cât timp folosești aplicația</strong>' },
+        ],
+        samsung: [
+          { n: '1', text: 'Atinge pictograma <strong>☰</strong> din dreapta jos în browser' },
+          { n: '2', text: 'Atinge <strong>Setări</strong> → <strong>Permisiuni site-uri</strong> → <strong>Locație</strong>' },
+          { n: '3', text: 'Asigură-te că locația este <strong>activă</strong>' },
+        ],
+        other: [
+          { n: '1', text: 'Atinge <strong>lacătul</strong> (sau pictograma) din bara de adrese' },
+          { n: '2', text: 'Atinge <strong>Permisiuni</strong> sau <strong>Setări site</strong>' },
+          { n: '3', text: 'Setează <strong>Locație</strong> pe <strong>Permite</strong>' },
+        ],
+      },
+      gpsGuideNotes: {
+        ios: 'După activare, revino pe această pagină și atinge <strong>Încearcă din nou</strong>. Safari îți va cere din nou permisiunea.',
+        samsung: 'Alternativ: atinge <strong>lacătul</strong> din bara de adrese → <strong>Permisiuni</strong> → activează <strong>Locație</strong>.',
+        other: 'Dacă nu vezi opțiunea, mergi la <strong>Setările telefonului</strong> → <strong>Locație</strong> și asigură-te că este activă.',
+      },
+      pwaSteps: {
+        ios: [
+          { n: '1', icon: '⬆️', text: 'Atinge butonul <strong>Distribuire</strong> — pictograma cu săgeata în sus, din bara de jos a Safari' },
+          { n: '2', icon: '➕', text: 'Derulează lista în jos și atinge <strong>"Adaugă pe ecranul principal"</strong>' },
+          { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> sus în dreapta — pictograma Timbratura va apărea pe telefon' },
+        ],
+        samsung: [
+          { n: '1', icon: '☰', text: 'Atinge <strong>cele trei linii</strong> din dreapta jos (meniul browserului)' },
+          { n: '2', icon: '➕', text: 'Atinge <strong>"Adaugă pagina la"</strong> apoi <strong>"Ecran principal"</strong>' },
+          { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> — pictograma va apărea pe telefon' },
+        ],
+        firefox: [
+          { n: '1', icon: '⋮', text: 'Atinge <strong>cele trei puncte</strong> din dreapta jos (meniul browserului)' },
+          { n: '2', icon: '↓', text: 'Atinge <strong>"Instalează"</strong> — va apărea o previzualizare a aplicației' },
+          { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> pentru a confirma' },
+        ],
+        opera: [
+          { n: '1', icon: '⋮', text: 'Atinge <strong>cele trei puncte</strong> de jos (meniu)' },
+          { n: '2', icon: '🏠', text: 'Atinge <strong>"Adaugă pe ecranul principal"</strong>' },
+          { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> pentru a confirma' },
+        ],
+        chrome: [
+          { n: '1', icon: '⋮', text: 'Atinge <strong>cele trei puncte</strong> din dreapta sus (meniul browserului)' },
+          { n: '2', icon: '🏠', text: 'Atinge <strong>"Adaugă pe ecranul principal"</strong>' },
+          { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> pentru a confirma — pictograma va apărea pe telefon' },
+        ],
+      },
+      pwaNotes: {
+        ios: '📌 Pe iPhone și iPad acest pas se face doar din <strong>Safari</strong>. Dacă folosești alt browser, deschide-l în Safari pentru a putea salva aplicația.',
+        samsung: null, firefox: null, opera: null, chrome: null,
+      },
+    },
+
+    sq: {
+      langNative: 'SQ',
+      loadingText: 'Duke lexuar kartën…',
+      ifProblems: 'Nëse ke probleme, njofto përgjegjësin.',
+      chooseSite: 'Zgjidh kantierin',
+      whereWorking: 'Ku po punon?',
+      selectSiteToPunch: 'Zgjidh kantierin për të regjistruar praninë.',
+      inCantiere: 'Je në kantier', outCantiere: 'Je jashtë kantierit',
+      cantiereLabel: 'Kantieri',
+      waitingGps: 'Në pritje të GPS…',
+      registraUscita: 'REGJISTRO DALJEN', registraEntrata: 'REGJISTRO HYRJEN',
+      inCantiereStatus: 'Në kantier', fuoriCantiereStatus: 'Jashtë kantierit',
+      pressButtonHint: 'Shtyp butonin kur hyn ose del nga kantieri.',
+      entrataRegistrata: 'Hyrja u regjistrua', uscitaRegistrata: 'Dalja u regjistrua',
+      canCloseAfterSuccess: 'Prania u regjistrua. Mund ta mbyllësh këtë faqe.',
+      gpsNotPrecise: 'GPS jo mjaftueshëm i saktë',
+      gpsRetryHint: 'Dil jashtë, prit disa sekonda dhe provo përsëri.',
+      retry: 'Provo përsëri',
+      registrazione: 'Duke regjistruar…',
+      gpsUnavailableDevice: 'GPS jo i disponueshëm në këtë pajisje',
+      gpsPositionDetected: function (a) { return 'Pozicioni u zbulua (±' + a + 'm)'; },
+      gpsAcquiring: function (a) { return 'Duke marrë GPS… (±' + a + 'm)'; },
+      gpsWeakSignal: function (a) { return 'Sinjal GPS i dobët (±' + a + 'm) — dil jashtë'; },
+      gpsPermissionDeniedFollow: 'Leja e pozicionit u refuzua — ndiq udhëzuesin poshtë',
+      gpsSlowRetry: 'GPS i ngadaltë — dil jashtë ose shtyp butonin për të provuar përsëri',
+      gpsPositionUnavailableActivate: 'Pozicioni nuk është i disponueshëm. Aktivizo gjeolokalizimin.',
+      offlineSavedTitle: 'Ruajtur offline',
+      offlineSavedHint: 'Regjistrimi do të dërgohet automatikisht<br>kur të kthehet lidhja.',
+      canClose: 'Mund ta mbyllësh këtë faqe.',
+      offlineBadge: function (n) { return n + ' ' + (n > 1 ? 'regjistrime' : 'regjistrim') + ' në pritje të lidhjes…'; },
+      minuteRetry: function (m) { return 'Provo përsëri pas ' + m + ' minuta' + (m === 1 ? '' : 'sh') + '.'; },
+      activatePosition: 'Aktivizo pozicionin',
+      gpsGuideSub: 'Për të regjistruar praninë duhet GPS-ja aktive.<br>Ndiq këto hapa:',
+      haveActivatedRetry: 'E aktivizova — Provo përsëri',
+      saveToHome: 'Ruaj në ekranin kryesor',
+      saveToHomeSub: 'Kështu hap Timbratura çdo ditë me një prekje — pa skanuar më kodin QR.',
+      understoodTry: 'E kuptova — po provoj!',
+      installNow: 'Instalo tani',
+      notNowLater: 'Jo tani, më vonë',
+      errorCopy: {
+        BADGE_NOT_FOUND:               { icon: '🚫', title: 'Kartë e pavlefshme',        sub: 'Njofto përgjegjësin.' },
+        BADGE_REVOKED:                 { icon: '🔒', title: 'Karta u çaktivizua',        sub: 'Njofto përgjegjësin.' },
+        INVALID_BADGE_CODE:            { icon: '🚫', title: 'Kod i pavlefshëm',          sub: 'Kodi QR mund të jetë dëmtuar. Njofto përgjegjësin.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'I paautorizuar',             sub: 'Nuk je i caktuar në këtë kantier. Njofto përgjegjësin.' },
+        COMPANY_MISMATCH:              { icon: '⛔', title: 'Kantier i pavlefshëm',       sub: 'Njofto përgjegjësin.' },
+        NO_SITES:                      { icon: '○', title: 'Nuk u gjet asnjë kantier',   sub: 'Nuk je i caktuar në asnjë kantier aktiv. Njofto përgjegjësin.' },
+        GPS_REQUIRED:                  { icon: '📡', title: 'Kërkohet pozicioni',         sub: 'Aktivizo gjeolokalizimin për të regjistruar praninë.' },
+        OUTSIDE_GEOFENCE:              { icon: '!', title: 'Je shumë larg',              sub: 'Nuk je pranë kantierit të zgjedhur. Nëse je në vend, njofto përgjegjësin.' },
+        PUNCH_TOO_SOON:                { icon: '⏳', title: 'Regjistrimi u bë tashmë',    sub: 'Ke regjistruar tashmë kohët e fundit. Provo përsëri pas disa minutash.' },
+        SERVER_ERROR:                  { icon: '!', title: 'Gabim i përkohshëm',         sub: 'Provo përsëri pas disa minutash. Nëse problemi vazhdon, njofto përgjegjësin.' },
+        NETWORK_ERROR:                 { icon: '📶', title: 'Nuk ka lidhje',               sub: 'Kontrollo lidhjen me internetin dhe provo përsëri.' },
+      },
+      gpsGuideSteps: {
+        ios: [
+          { n: '1', text: 'Hap <strong>Cilësimet</strong> në pajisjen tënde' },
+          { n: '2', text: 'Shko te <strong>Privatësia dhe siguria</strong>' },
+          { n: '3', text: 'Prek <strong>Shërbimet e vendndodhjes</strong> dhe sigurohu që të jetë <strong>aktive</strong> (jeshile)' },
+          { n: '4', text: 'Rrëshqit poshtë, prek <strong>Safari</strong> dhe zgjidh <strong>Ndërsa përdor aplikacionin</strong>' },
+        ],
+        samsung: [
+          { n: '1', text: 'Prek ikonën <strong>☰</strong> poshtë djathtas në shfletues' },
+          { n: '2', text: 'Prek <strong>Cilësimet</strong> → <strong>Lejet e faqeve</strong> → <strong>Vendndodhja</strong>' },
+          { n: '3', text: 'Sigurohu që vendndodhja të jetë <strong>aktive</strong>' },
+        ],
+        other: [
+          { n: '1', text: 'Prek <strong>dryn</strong>in (ose ikonën) në shiritin e adresave' },
+          { n: '2', text: 'Prek <strong>Lejet</strong> ose <strong>Cilësimet e faqes</strong>' },
+          { n: '3', text: 'Vendos <strong>Vendndodhjen</strong> në <strong>Lejo</strong>' },
+        ],
+      },
+      gpsGuideNotes: {
+        ios: 'Pas aktivizimit, kthehu në këtë faqe dhe prek <strong>Provo përsëri</strong>. Safari do të kërkojë përsëri lejen.',
+        samsung: 'Ose: prek <strong>drynin</strong> në shiritin e adresave → <strong>Lejet</strong> → aktivizo <strong>Vendndodhjen</strong>.',
+        other: 'Nëse nuk e sheh opsionin, shko te <strong>Cilësimet e telefonit</strong> → <strong>Vendndodhja</strong> dhe sigurohu që të jetë aktive.',
+      },
+      pwaSteps: {
+        ios: [
+          { n: '1', icon: '⬆️', text: 'Prek butonin <strong>Shpërndaj</strong> — ikona me shigjetën lart, në shiritin poshtë të Safari' },
+          { n: '2', icon: '➕', text: 'Rrëshqit listën poshtë dhe prek <strong>"Shto në ekranin kryesor"</strong>' },
+          { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> lart djathtas — ikona e Timbratura do të shfaqet në telefonin tënd' },
+        ],
+        samsung: [
+          { n: '1', icon: '☰', text: 'Prek <strong>tre vijat</strong> poshtë djathtas (menyja e shfletuesit)' },
+          { n: '2', icon: '➕', text: 'Prek <strong>"Shto faqen te"</strong> dhe pastaj <strong>"Ekrani kryesor"</strong>' },
+          { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> — ikona do të shfaqet në telefonin tënd' },
+        ],
+        firefox: [
+          { n: '1', icon: '⋮', text: 'Prek <strong>tre pikat</strong> poshtë djathtas (menyja e shfletuesit)' },
+          { n: '2', icon: '↓', text: 'Prek <strong>"Instalo"</strong> — do të shfaqet një paraqitje e aplikacionit' },
+          { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> për të konfirmuar' },
+        ],
+        opera: [
+          { n: '1', icon: '⋮', text: 'Prek <strong>tre pikat</strong> poshtë (menyja)' },
+          { n: '2', icon: '🏠', text: 'Prek <strong>"Shto në ekranin kryesor"</strong>' },
+          { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> për të konfirmuar' },
+        ],
+        chrome: [
+          { n: '1', icon: '⋮', text: 'Prek <strong>tre pikat</strong> lart djathtas (menyja e shfletuesit)' },
+          { n: '2', icon: '🏠', text: 'Prek <strong>"Shto në ekranin kryesor"</strong>' },
+          { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> për të konfirmuar — ikona do të shfaqet në telefonin tënd' },
+        ],
+      },
+      pwaNotes: {
+        ios: '📌 Në iPhone dhe iPad ky hap bëhet vetëm nga <strong>Safari</strong>. Nëse po përdor një shfletues tjetër, hape në Safari për ta ruajtur aplikacionin.',
+        samsung: null, firefox: null, opera: null, chrome: null,
+      },
+    },
+
+    ar: {
+      langNative: 'ع',
+      loadingText: 'جارٍ قراءة البطاقة…',
+      ifProblems: 'إذا واجهت مشكلة، أبلغ المسؤول.',
+      chooseSite: 'اختر الورشة',
+      whereWorking: 'أين تعمل؟',
+      selectSiteToPunch: 'اختر الورشة لتسجيل الحضور.',
+      inCantiere: 'أنت في الورشة', outCantiere: 'أنت خارج الورشة',
+      cantiereLabel: 'الورشة',
+      waitingGps: 'في انتظار GPS…',
+      registraUscita: 'تسجيل الخروج', registraEntrata: 'تسجيل الدخول',
+      inCantiereStatus: 'في الورشة', fuoriCantiereStatus: 'خارج الورشة',
+      pressButtonHint: 'اضغط الزر عند دخولك أو خروجك من الورشة.',
+      entrataRegistrata: 'تم تسجيل الدخول', uscitaRegistrata: 'تم تسجيل الخروج',
+      canCloseAfterSuccess: 'تم تسجيل الحضور. يمكنك إغلاق هذه الصفحة.',
+      gpsNotPrecise: 'دقة GPS غير كافية',
+      gpsRetryHint: 'اخرج إلى الخارج، انتظر بضع ثوانٍ وحاول مرة أخرى.',
+      retry: 'إعادة المحاولة',
+      registrazione: 'جارٍ التسجيل…',
+      gpsUnavailableDevice: 'نظام GPS غير متوفر على هذا الجهاز',
+      gpsPositionDetected: function (a) { return 'تم تحديد الموقع (±' + a + ' متر)'; },
+      gpsAcquiring: function (a) { return 'جارٍ تحديد GPS… (±' + a + ' متر)'; },
+      gpsWeakSignal: function (a) { return 'إشارة GPS ضعيفة (±' + a + ' متر) — اخرج إلى الخارج'; },
+      gpsPermissionDeniedFollow: 'تم رفض إذن الموقع — اتبع الدليل أدناه',
+      gpsSlowRetry: 'GPS بطيء — اخرج إلى الخارج أو اضغط الزر لإعادة المحاولة',
+      gpsPositionUnavailableActivate: 'الموقع غير متوفر. فعّل تحديد الموقع الجغرافي.',
+      offlineSavedTitle: 'تم الحفظ دون اتصال',
+      offlineSavedHint: 'سيتم إرسال التسجيل تلقائيًا<br>عند عودة الاتصال.',
+      canClose: 'يمكنك إغلاق هذه الصفحة.',
+      offlineBadge: function (n) { return n + ' ' + (n > 1 ? 'تسجيلات' : 'تسجيل') + ' في انتظار الاتصال…'; },
+      minuteRetry: function (m) { return 'حاول مرة أخرى بعد ' + m + ' دقيقة.'; },
+      activatePosition: 'فعّل الموقع',
+      gpsGuideSub: 'لتسجيل الحضور يلزم تفعيل GPS.<br>اتبع هذه الخطوات:',
+      haveActivatedRetry: 'قمت بالتفعيل — إعادة المحاولة',
+      saveToHome: 'الحفظ على الشاشة الرئيسية',
+      saveToHomeSub: 'بهذه الطريقة تفتح تطبيق Timbratura كل يوم بلمسة واحدة — دون مسح رمز QR مرة أخرى.',
+      understoodTry: 'فهمت — سأجرب!',
+      installNow: 'التثبيت الآن',
+      notNowLater: 'ليس الآن، لاحقًا',
+      errorCopy: {
+        BADGE_NOT_FOUND:               { icon: '🚫', title: 'بطاقة غير صالحة',            sub: 'أبلغ المسؤول.' },
+        BADGE_REVOKED:                 { icon: '🔒', title: 'البطاقة معطّلة',              sub: 'أبلغ المسؤول.' },
+        INVALID_BADGE_CODE:            { icon: '🚫', title: 'رمز غير صالح',                sub: 'قد يكون رمز QR تالفًا. أبلغ المسؤول.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'غير مصرح',                    sub: 'أنت غير مُعيَّن لهذه الورشة. أبلغ المسؤول.' },
+        COMPANY_MISMATCH:              { icon: '⛔', title: 'ورشة غير صالحة',              sub: 'أبلغ المسؤول.' },
+        NO_SITES:                      { icon: '○', title: 'لم يتم العثور على ورشة',      sub: 'أنت غير مُعيَّن لأي ورشة نشطة. أبلغ المسؤول.' },
+        GPS_REQUIRED:                  { icon: '📡', title: 'الموقع مطلوب',                sub: 'فعّل تحديد الموقع الجغرافي لتسجيل الحضور.' },
+        OUTSIDE_GEOFENCE:              { icon: '!', title: 'أنت بعيد جدًا',                sub: 'لست بالقرب من الورشة المختارة. إذا كنت في الموقع، أبلغ المسؤول.' },
+        PUNCH_TOO_SOON:                { icon: '⏳', title: 'تم التسجيل بالفعل',           sub: 'لقد سجلت مؤخرًا. حاول مرة أخرى بعد بضع دقائق.' },
+        SERVER_ERROR:                  { icon: '!', title: 'خطأ مؤقت',                     sub: 'حاول مرة أخرى بعد بضع دقائق. إذا استمرت المشكلة، أبلغ المسؤول.' },
+        NETWORK_ERROR:                 { icon: '📶', title: 'لا يوجد اتصال',                 sub: 'تحقق من اتصال الإنترنت وحاول مرة أخرى.' },
+      },
+      gpsGuideSteps: {
+        ios: [
+          { n: '1', text: 'افتح <strong>الإعدادات</strong> على جهازك' },
+          { n: '2', text: 'اذهب إلى <strong>الخصوصية والأمان</strong>' },
+          { n: '3', text: 'اضغط على <strong>خدمات الموقع</strong> وتأكد من أنها <strong>مفعّلة</strong> (خضراء)' },
+          { n: '4', text: 'مرر لأسفل، اضغط على <strong>Safari</strong> واختر <strong>أثناء استخدام التطبيق</strong>' },
+        ],
+        samsung: [
+          { n: '1', text: 'اضغط على أيقونة <strong>☰</strong> أسفل يمين المتصفح' },
+          { n: '2', text: 'اضغط على <strong>الإعدادات</strong> ← <strong>أذونات المواقع</strong> ← <strong>الموقع</strong>' },
+          { n: '3', text: 'تأكد من أن الموقع <strong>مفعّل</strong>' },
+        ],
+        other: [
+          { n: '1', text: 'اضغط على <strong>القفل</strong> (أو الأيقونة) في شريط العنوان' },
+          { n: '2', text: 'اضغط على <strong>الأذونات</strong> أو <strong>إعدادات الموقع</strong>' },
+          { n: '3', text: 'اضبط <strong>الموقع</strong> على <strong>سماح</strong>' },
+        ],
+      },
+      gpsGuideNotes: {
+        ios: 'بعد التفعيل، عد إلى هذه الصفحة واضغط <strong>إعادة المحاولة</strong>. سيطلب Safari الإذن مرة أخرى.',
+        samsung: 'أو: اضغط على <strong>القفل</strong> في شريط العنوان ← <strong>الأذونات</strong> ← فعّل <strong>الموقع</strong>.',
+        other: 'إذا لم تجد الخيار، اذهب إلى <strong>إعدادات الهاتف</strong> ← <strong>الموقع</strong> وتأكد من أنه مفعّل.',
+      },
+      pwaSteps: {
+        ios: [
+          { n: '1', icon: '⬆️', text: 'اضغط على زر <strong>مشاركة</strong> — الأيقونة ذات السهم لأعلى، في الشريط السفلي من Safari' },
+          { n: '2', icon: '➕', text: 'مرر القائمة لأسفل واضغط على <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
+          { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> أعلى اليمين — ستظهر أيقونة Timbratura على هاتفك' },
+        ],
+        samsung: [
+          { n: '1', icon: '☰', text: 'اضغط على <strong>الخطوط الثلاثة</strong> أسفل يمين (قائمة المتصفح)' },
+          { n: '2', icon: '➕', text: 'اضغط <strong>"إضافة الصفحة إلى"</strong> ثم <strong>"الشاشة الرئيسية"</strong>' },
+          { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> — ستظهر الأيقونة على هاتفك' },
+        ],
+        firefox: [
+          { n: '1', icon: '⋮', text: 'اضغط على <strong>النقاط الثلاث</strong> أسفل يمين (قائمة المتصفح)' },
+          { n: '2', icon: '↓', text: 'اضغط <strong>"تثبيت"</strong> — ستظهر معاينة للتطبيق' },
+          { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> للتأكيد' },
+        ],
+        opera: [
+          { n: '1', icon: '⋮', text: 'اضغط على <strong>النقاط الثلاث</strong> أسفل (القائمة)' },
+          { n: '2', icon: '🏠', text: 'اضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
+          { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> للتأكيد' },
+        ],
+        chrome: [
+          { n: '1', icon: '⋮', text: 'اضغط على <strong>النقاط الثلاث</strong> أعلى اليمين (قائمة المتصفح)' },
+          { n: '2', icon: '🏠', text: 'اضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
+          { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> للتأكيد — ستظهر الأيقونة على هاتفك' },
+        ],
+      },
+      pwaNotes: {
+        ios: '📌 على iPhone وiPad، هذه الخطوة تتم فقط من <strong>Safari</strong>. إذا كنت تستخدم متصفحًا آخر، افتح الصفحة في Safari لحفظ التطبيق.',
+        samsung: null, firefox: null, opera: null, chrome: null,
+      },
+    },
+  };
+
+  function t() { return I18N[LANG]; }
+
+  function applyDir() {
+    document.documentElement.dir = RTL_LANGS.indexOf(LANG) !== -1 ? 'rtl' : 'ltr';
+    document.documentElement.lang = LANG;
+  }
+
+  function renderLangSwitch() {
+    var el = document.getElementById('lang-switch');
+    if (!el) return;
+    el.innerHTML = LANG_CODES.map(function (code) {
+      return '<button class="lang-btn' + (code === LANG ? ' active' : '') + '" onclick="setLang(\'' + code + '\')">' +
+        esc(I18N[code].langNative) + '</button>';
+    }).join('');
+  }
+
+  // Ogni render* imposta questo riferimento PRIMA di costruire il markup, così
+  // setLang() può ridisegnare esattamente la schermata attiva senza dover
+  // indovinare lo stato (bug reale trovato dal vivo: cambiare lingua sulla
+  // schermata di errore lasciava il testo in italiano, solo il selettore si
+  // aggiornava — renderError() non era mai tra i casi gestiti qui).
+  var _rerenderCurrent = null;
+
+  function setLang(code) {
+    if (LANG_CODES.indexOf(code) === -1) return;
+    LANG = code;
+    try { localStorage.setItem(LANG_STORAGE_KEY, code); } catch (e) {}
+    applyDir();
+    renderLangSwitch();
+    if (_rerenderCurrent) {
+      _rerenderCurrent();
+    } else {
+      var initialLoading = document.getElementById('initial-loading-text');
+      if (initialLoading) initialLoading.textContent = t().loadingText;
+    }
+  }
+
+  applyDir();
+  renderLangSwitch();
+  document.getElementById('initial-loading-text').textContent = t().loadingText;
 
   // ── Config ────────────────────────────────────────────────────────────────────
   const API = '';
@@ -571,7 +1096,7 @@
   let selectedSite = null;   // {site_id, site_name, address, next_action, …}
   let gpsCoords    = null;   // {latitude, longitude, accuracy} — migliore lettura finora
   let gpsStatus    = 'wait'; // 'wait' | 'ok' | 'warn' | 'error'
-  let gpsText      = 'In attesa del GPS…';
+  let gpsText      = '';
   let gpsWatcher   = null;
   let maxAccuracyM = 500;
   let punching     = false;
@@ -624,30 +1149,16 @@
     var noteEl  = document.getElementById('gps-guide-note');
     if (!stepsEl) return;
 
-    var steps, note;
-    if (isIos) {
-      steps = [
-        { n: '1', text: 'Apri <strong>Impostazioni</strong> sul tuo dispositivo' },
-        { n: '2', text: 'Vai su <strong>Privacy e sicurezza</strong>' },
-        { n: '3', text: 'Tocca <strong>Servizi di localizzazione</strong> e assicurati che sia <strong>attivo</strong> (verde)' },
-        { n: '4', text: 'Scorri in basso, tocca <strong>Safari</strong> e seleziona <strong>Mentre usi l\'app</strong>' },
-      ];
-      note = 'Dopo aver attivato, torna su questa pagina e tocca <strong>Riprova</strong>. Safari ti chiederà di nuovo il permesso.';
-    } else if (isSamsung) {
-      steps = [
-        { n: '1', text: 'Tocca l\'icona <strong>☰</strong> in basso a destra nel browser' },
-        { n: '2', text: 'Tocca <strong>Impostazioni</strong> → <strong>Autorizzazioni siti</strong> → <strong>Posizione</strong>' },
-        { n: '3', text: 'Assicurati che la posizione sia <strong>attiva</strong>' },
-      ];
-      note = 'In alternativa: tocca il <strong>lucchetto</strong> nella barra degli indirizzi → <strong>Autorizzazioni</strong> → attiva <strong>Posizione</strong>.';
-    } else {
-      steps = [
-        { n: '1', text: 'Tocca il <strong>lucchetto</strong> (o l\'icona) nella barra degli indirizzi in alto' },
-        { n: '2', text: 'Tocca <strong>Autorizzazioni</strong> o <strong>Impostazioni sito</strong>' },
-        { n: '3', text: 'Imposta <strong>Posizione</strong> su <strong>Consenti</strong>' },
-      ];
-      note = 'Se non vedi l\'opzione, vai nelle <strong>Impostazioni del telefono</strong> → <strong>Posizione</strong> e assicurati che sia attiva.';
-    }
+    var variant = isIos ? 'ios' : (isSamsung ? 'samsung' : 'other');
+    var steps = t().gpsGuideSteps[variant];
+    var note  = t().gpsGuideNotes[variant];
+
+    var titleEl = document.getElementById('gps-guide-title');
+    var subEl   = document.getElementById('gps-guide-sub');
+    var retryBtn = document.getElementById('gps-btn-retry');
+    if (titleEl) titleEl.textContent = t().activatePosition;
+    if (subEl) subEl.innerHTML = t().gpsGuideSub;
+    if (retryBtn) retryBtn.textContent = t().haveActivatedRetry;
 
     stepsEl.innerHTML = steps.map(function (s) {
       return '<div class="gps-step">' +
@@ -674,7 +1185,7 @@
   function startGps() {
     if (!navigator.geolocation) {
       gpsStatus = 'error';
-      gpsText   = 'GPS non disponibile su questo dispositivo';
+      gpsText   = t().gpsUnavailableDevice;
       updateGpsRow();
       showGpsPermissionGuide();
       return;
@@ -694,14 +1205,14 @@
 
         if (acc <= maxAccuracyM) {
           gpsStatus = 'ok';
-          gpsText   = `Posizione rilevata (±${Math.round(acc)}m)`;
+          gpsText   = t().gpsPositionDetected(Math.round(acc));
         } else if (gpsAttempts <= 2) {
           // Prime letture: di solito da cella, aspettiamo miglioramento
           gpsStatus = 'wait';
-          gpsText   = `GPS in acquisizione… (±${Math.round(acc)}m)`;
+          gpsText   = t().gpsAcquiring(Math.round(acc));
         } else {
           gpsStatus = 'warn';
-          gpsText   = `Segnale GPS debole (±${Math.round(acc)}m) — spostati all'aperto`;
+          gpsText   = t().gpsWeakSignal(Math.round(acc));
         }
 
         updateGpsRow();
@@ -711,7 +1222,7 @@
         if (err.code === 1) {
           // PERMISSION_DENIED — definitivo, mostra guida passo-passo
           gpsStatus = 'error';
-          gpsText   = 'Permesso posizione negato — segui la guida qui sotto';
+          gpsText   = t().gpsPermissionDeniedFollow;
           gpsCoords = null;
           stopGps();
           showGpsPermissionGuide();
@@ -719,7 +1230,7 @@
           // POSITION_UNAVAILABLE o TIMEOUT — temporaneo, continua a watchare
           if (!gpsCoords) {
             gpsStatus = 'warn';
-            gpsText   = 'GPS lento — spostati all\'aperto oppure premi il pulsante per riprovare';
+            gpsText   = t().gpsSlowRetry;
           }
         }
         updateGpsRow();
@@ -789,7 +1300,7 @@
       // GPS non ancora disponibile — bottone disabilitato con spiegazione
       btn.disabled = true;
       const lbl = document.getElementById('btn-label');
-      if (lbl) lbl.textContent = 'In attesa del GPS…';
+      if (lbl) lbl.textContent = t().waitingGps;
     } else {
       // GPS disponibile — bottone attivo con label corretta
       btn.disabled = false;
@@ -797,46 +1308,34 @@
       if (s) {
         const lbl = document.getElementById('btn-label');
         const ico = document.getElementById('btn-icon');
-        if (lbl) lbl.textContent = s.next_action === 'EXIT' ? 'REGISTRA USCITA' : 'REGISTRA ENTRATA';
+        if (lbl) lbl.textContent = s.next_action === 'EXIT' ? t().registraUscita : t().registraEntrata;
         if (ico) ico.textContent = s.next_action === 'EXIT' ? '⏹' : '▶';
       }
     }
   }
 
   // ── Render: errore ─────────────────────────────────────────────────────────────
-  const ERROR_COPY = {
-    BADGE_NOT_FOUND:              { icon: '🚫', title: 'Badge non valido',        sub: 'Avvisa il responsabile.' },
-    BADGE_REVOKED:                { icon: '🔒', title: 'Badge disattivato',       sub: 'Avvisa il responsabile.' },
-    INVALID_BADGE_CODE:           { icon: '🚫', title: 'Codice non valido',       sub: 'Il QR potrebbe essere danneggiato. Avvisa il responsabile.' },
-    WORKER_NOT_AUTHORIZED_ON_SITE:{ icon: '⛔', title: 'Non autorizzato',         sub: 'Non risulti assegnato a questo cantiere. Avvisa il responsabile.' },
-    COMPANY_MISMATCH:             { icon: '⛔', title: 'Cantiere non valido',     sub: 'Avvisa il responsabile.' },
-    NO_SITES:                     { icon: '○', title: 'Nessun cantiere trovato', sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
-    GPS_REQUIRED:                 { icon: '📡', title: 'Posizione richiesta',     sub: 'Attiva la geolocalizzazione per registrare la presenza.' },
-    OUTSIDE_GEOFENCE:             { icon: '!', title: 'Sei troppo lontano',      sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
-    PUNCH_TOO_SOON:               { icon: '⏳', title: 'Timbratura già registrata', sub: 'Hai già timbrato di recente. Riprova tra qualche minuto.' },
-    SERVER_ERROR:                 { icon: '!', title: 'Errore temporaneo',       sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
-    NETWORK_ERROR:                { icon: '📶', title: 'Nessuna connessione',      sub: 'Controlla la connessione a internet e riprova.' },
-  };
-
   function renderError(code, extraSub) {
-    const cfg = ERROR_COPY[code] || ERROR_COPY.SERVER_ERROR;
+    _rerenderCurrent = function () { renderError(code, extraSub); };
+    const cfg = t().errorCopy[code] || t().errorCopy.SERVER_ERROR;
     const sub = extraSub ? `${cfg.sub}<br>${extraSub}` : cfg.sub;
     wrap.innerHTML = `
       <div class="card error-wrap fade-in">
         <span class="error-icon">${cfg.icon}</span>
         <div class="error-title">${cfg.title}</div>
         <div class="error-sub">${sub}</div>
-        <button class="error-retry" onclick="location.reload()">Riprova</button>
+        <button class="error-retry" onclick="location.reload()">${esc(t().retry)}</button>
       </div>
-      <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
+      <div class="hint-help">${esc(t().ifProblems)}</div>`;
   }
 
   // ── Render: selezione cantiere ─────────────────────────────────────────────────
   function renderSiteSelection() {
+    _rerenderCurrent = renderSiteSelection;
     const sites = workerData.sites;
 
     const siteButtons = sites.map(s => {
-      const nextLabel = s.next_action === 'EXIT' ? 'Sei in cantiere' : 'Sei fuori cantiere';
+      const nextLabel = s.next_action === 'EXIT' ? t().inCantiere : t().outCantiere;
       const distStr   = s.distance_m != null ? ` · ${s.distance_m}m` : '';
       return `
         <button class="site-btn" onclick="selectSite('${esc(s.site_id)}')">
@@ -853,27 +1352,30 @@
           : `<div class="avatar">${esc(workerData.worker_initial)}</div>`}
         <div class="worker-info">
           <div class="worker-name">${esc(workerData.worker_name)}</div>
-          <div class="worker-sub">Scegli il cantiere</div>
+          <div class="worker-sub">${esc(t().chooseSite)}</div>
         </div>
       </div>
 
       <div class="card fade-in" style="padding:20px;">
-        <div class="site-select-label">Dove stai lavorando?</div>
-        <div class="site-select-sub">Seleziona il cantiere per timbrare la presenza.</div>
+        <div class="site-select-label">${esc(t().whereWorking)}</div>
+        <div class="site-select-sub">${esc(t().selectSiteToPunch)}</div>
         ${siteButtons}
       </div>
 
-      <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
+      <div class="hint-help">${esc(t().ifProblems)}</div>`;
   }
 
   // ── Render: schermata punch ────────────────────────────────────────────────────
-  function renderPunchScreen() {
+  // isRelang=true → ridisegno per cambio lingua: NON deve far ripartire il GPS
+  // (watchPosition già attivo, riavviarlo duplicherebbe il watcher).
+  function renderPunchScreen(isRelang) {
+    _rerenderCurrent = function () { renderPunchScreen(true); };
     const s           = selectedSite;
     const isExit      = s.next_action === 'EXIT';
     const btnClass    = isExit ? 'exit' : 'entry';
     const btnIcon     = isExit ? '⏹' : '▶';
-    const btnLabel    = isExit ? 'REGISTRA USCITA' : 'REGISTRA ENTRATA';
-    const statusLabel = isExit ? 'In cantiere' : 'Fuori cantiere';
+    const btnLabel    = isExit ? t().registraUscita : t().registraEntrata;
+    const statusLabel = isExit ? t().inCantiereStatus : t().fuoriCantiereStatus;
 
     wrap.innerHTML = `
       <div class="card worker-card fade-in">
@@ -887,7 +1389,7 @@
       </div>
 
       <div class="card site-card fade-in">
-        <div class="site-label">Cantiere</div>
+        <div class="site-label">${esc(t().cantiereLabel)}</div>
         <div class="site-name">${esc(s.site_name)}</div>
         ${s.address ? `<div class="site-address">${esc(s.address)}</div>` : ''}
       </div>
@@ -898,30 +1400,37 @@
       <div class="fade-in" style="display:flex;flex-direction:column;gap:8px;">
         <button class="punch-btn ${btnClass}" id="punch-btn" disabled onclick="doPunch()">
           <span class="punch-icon" id="btn-icon">⏳</span>
-          <span id="btn-label">In attesa del GPS…</span>
+          <span id="btn-label">${esc(t().waitingGps)}</span>
         </button>
 
         <div class="gps-row" id="gps-row">
           <span class="gps-dot wait"></span>
-          <span class="gps-text">In attesa del GPS…</span>
+          <span class="gps-text">${esc(t().waitingGps)}</span>
         </div>
       </div>
 
       <div class="hint-text fade-in">
-        Premi il pulsante quando entri o esci dal cantiere.
+        ${esc(t().pressButtonHint)}
       </div>
-      <div class="hint-help">Se hai problemi, avvisa il responsabile.</div>`;
+      <div class="hint-help">${esc(t().ifProblems)}</div>`;
 
-    // Avvia GPS — i callback aggiorneranno bottone e riga GPS via updatePunchButton/updateGpsRow
-    startGps();
+    if (isRelang) {
+      // Il watcher GPS è già attivo — ripristina solo lo stato già noto nel nuovo markup
+      updateGpsRow();
+      updatePunchButton();
+    } else {
+      // Avvia GPS — i callback aggiorneranno bottone e riga GPS via updatePunchButton/updateGpsRow
+      startGps();
+    }
   }
 
   // ── Render: successo ───────────────────────────────────────────────────────────
   function renderSuccess(eventType, tsServer, siteName) {
+    _rerenderCurrent = function () { renderSuccess(eventType, tsServer, siteName); };
     stopGps();
     const isEntry   = eventType === 'ENTRY';
     const icon      = isEntry ? '✓' : '■';
-    const titleText = isEntry ? 'Entrata registrata' : 'Uscita registrata';
+    const titleText = isEntry ? t().entrataRegistrata : t().uscitaRegistrata;
     const color     = isEntry ? '#22c55e' : '#ef4444';
 
     wrap.innerHTML = `
@@ -932,7 +1441,7 @@
           ${esc(siteName)}<br>
           ${fmtTime(tsServer)}
         </div>
-        <div class="success-close">Presenza registrata. Puoi chiudere questa pagina.</div>
+        <div class="success-close">${esc(t().canCloseAfterSuccess)}</div>
       </div>`;
   }
 
@@ -945,12 +1454,12 @@
     resultCard.style.cssText = 'background:#fffbeb;border:1.5px solid #d97706;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;';
     resultCard.innerHTML = `
       <div style="font-size:28px;margin-bottom:10px;">📡</div>
-      <div style="font-size:17px;font-weight:700;color:#d97706;margin-bottom:6px;">GPS non abbastanza preciso</div>
+      <div style="font-size:17px;font-weight:700;color:#d97706;margin-bottom:6px;">${esc(t().gpsNotPrecise)}</div>
       <div style="font-size:14px;color:#6b7280;margin-bottom:16px;line-height:1.5;">
-        Spostati all'aperto, aspetta qualche secondo e riprova.
+        ${esc(t().gpsRetryHint)}
       </div>
       <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:#000;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;">
-        Riprova
+        ${esc(t().retry)}
       </button>`;
     resultCard.classList.remove('hidden');
   }
@@ -967,7 +1476,7 @@
       btn.disabled = !gpsCoords;
       const lbl = document.getElementById('btn-label');
       if (lbl && selectedSite) {
-        lbl.textContent = selectedSite.next_action === 'EXIT' ? 'REGISTRA USCITA' : 'REGISTRA ENTRATA';
+        lbl.textContent = selectedSite.next_action === 'EXIT' ? t().registraUscita : t().registraEntrata;
       }
       const ico = document.getElementById('btn-icon');
       if (ico && selectedSite) {
@@ -990,7 +1499,7 @@
     if (!gpsCoords) {
       // GPS non disponibile — mostra il messaggio nella riga GPS, non un alert
       gpsStatus = 'error';
-      gpsText   = 'Posizione non disponibile. Attiva la geolocalizzazione.';
+      gpsText   = t().gpsPositionUnavailableActivate;
       updateGpsRow();
       return;
     }
@@ -1002,7 +1511,7 @@
 
     if (btn)   { btn.disabled = true; }
     if (icon)  { icon.innerHTML = '<span class="btn-spinner"></span>'; }
-    if (label) { label.textContent = 'Registrazione…'; }
+    if (label) { label.textContent = t().registrazione; }
 
     try {
       const { status, body } = await apiFetch('POST', `/api/v1/badge/${BADGE_CODE}/punch`, {
@@ -1021,8 +1530,7 @@
       // Errori gestiti
       if (status === 429 && body.error === 'PUNCH_TOO_SOON') {
         const mins = body.retry_after_secs ? Math.ceil(body.retry_after_secs / 60) : 1;
-        renderError('PUNCH_TOO_SOON',
-          mins > 0 ? `Riprova tra ${mins} minut${mins === 1 ? 'o' : 'i'}.` : null);
+        renderError('PUNCH_TOO_SOON', mins > 0 ? t().minuteRetry(mins) : null);
         return;
       }
       if (status === 403 && body.error === 'OUTSIDE_GEOFENCE') {
@@ -1091,15 +1599,16 @@
   }
 
   function renderOfflineSuccess(siteName) {
+    _rerenderCurrent = function () { renderOfflineSuccess(siteName); };
     stopGps();
     wrap.innerHTML =
       '<div class="card fade-in" style="text-align:center;padding:32px 20px;">' +
         '<span style="font-size:56px;display:block;margin-bottom:16px;">📡</span>' +
-        '<div style="font-size:22px;font-weight:800;color:#d97706;margin-bottom:6px;">Salvata offline</div>' +
+        '<div style="font-size:22px;font-weight:800;color:#d97706;margin-bottom:6px;">' + esc(t().offlineSavedTitle) + '</div>' +
         '<div style="font-size:15px;color:#6b7280;margin-bottom:20px;line-height:1.5;">' +
-          esc(siteName) + '<br>La timbratura verrà inviata automaticamente<br>quando tornerà la connessione.' +
+          esc(siteName) + '<br>' + t().offlineSavedHint +
         '</div>' +
-        '<div style="font-size:13px;color:#9ca3af;">Puoi chiudere questa pagina.</div>' +
+        '<div style="font-size:13px;color:#9ca3af;">' + esc(t().canClose) + '</div>' +
       '</div>';
   }
 
@@ -1144,7 +1653,7 @@
         badge.style.cssText = 'position:fixed;top:0;left:0;right:0;background:#d97706;color:#fff;text-align:center;font-size:13px;font-weight:700;padding:6px 12px;z-index:500;';
         document.body.prepend(badge);
       }
-      badge.textContent = q.length + ' timbratur' + (q.length > 1 ? 'e' : 'a') + ' in attesa di connessione…';
+      badge.textContent = t().offlineBadge(q.length);
     } else if (badge) {
       badge.remove();
     }
@@ -1287,7 +1796,7 @@
     _pwaPrompt = e;
     // Aggiorna il bottone se la guida è già aperta
     var btn = document.getElementById('pwa-btn-primary');
-    if (btn) { btn.textContent = 'Installa ora'; }
+    if (btn) { btn.textContent = t().installNow; }
   });
 
   window.addEventListener('appinstalled', function () {
@@ -1307,52 +1816,20 @@
     return 'chrome'; // Chrome, Edge, WebView, default
   }
 
-  var PWA_STEPS = {
-    ios: [
-      { n: '1', icon: '⬆️', text: 'Tocca il pulsante <strong>Condividi</strong> — l\'icona con la freccia verso l\'alto, nella barra in basso di Safari' },
-      { n: '2', icon: '➕', text: 'Scorri l\'elenco verso il basso e tocca <strong>"Aggiungi a schermata Home"</strong>' },
-      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> in alto a destra — l\'icona di Timbratura apparirà sul tuo telefono' },
-    ],
-    samsung: [
-      { n: '1', icon: '☰', text: 'Tocca le <strong>tre linee</strong> in basso a destra (menu del browser)' },
-      { n: '2', icon: '➕', text: 'Tocca <strong>"Aggiungi pagina a"</strong> e poi <strong>"Schermata Home"</strong>' },
-      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> — l\'icona apparirà sul tuo telefono' },
-    ],
-    firefox: [
-      { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso a destra (menu del browser)' },
-      { n: '2', icon: '↓', text: 'Tocca <strong>"Installa"</strong> — comparirà un\'anteprima dell\'app' },
-      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
-    ],
-    opera: [
-      { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso (menu)' },
-      { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
-      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
-    ],
-    chrome: [
-      { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in alto a destra (menu del browser)' },
-      { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
-      { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare — l\'icona apparirà sul tuo telefono' },
-    ],
-  };
-
-  var PWA_NOTES = {
-    ios:     '📌 Su iPhone e iPad questo passaggio si fa solo da <strong>Safari</strong>. Se stai usando un altro browser, aprilo in Safari per poter salvare l\'app.',
-    samsung: null,
-    firefox: null,
-    opera:   null,
-    chrome:  null,
-  };
-
   function pwaGuideBuild() {
     var browser  = pwaDetect();
-    var steps    = PWA_STEPS[browser] || PWA_STEPS.chrome;
-    var note     = PWA_NOTES[browser];
+    var steps    = t().pwaSteps[browser] || t().pwaSteps.chrome;
+    var note     = t().pwaNotes[browser];
     var headline = document.getElementById('pwa-headline');
+    var subEl    = document.getElementById('pwa-sub');
     var stepsEl  = document.getElementById('pwa-steps');
     var noteEl   = document.getElementById('pwa-note');
     var btnEl    = document.getElementById('pwa-btn-primary');
+    var skipEl   = document.getElementById('pwa-btn-skip');
 
-    if (headline) headline.textContent = 'Salva sulla schermata Home';
+    if (headline) headline.textContent = t().saveToHome;
+    if (subEl) subEl.textContent = t().saveToHomeSub;
+    if (skipEl) skipEl.textContent = t().notNowLater;
 
     if (stepsEl) {
       stepsEl.innerHTML = steps.map(function (s) {
@@ -1369,9 +1846,9 @@
       else       { noteEl.style.display = 'none'; }
     }
 
-    // Se il prompt nativo è già disponibile (Android Chrome) cambia il bottone
-    if (btnEl && _pwaPrompt) {
-      btnEl.textContent = 'Installa ora';
+    if (btnEl) {
+      // Se il prompt nativo è già disponibile (Android Chrome) cambia il bottone
+      btnEl.textContent = _pwaPrompt ? t().installNow : t().understoodTry;
     }
   }
 
