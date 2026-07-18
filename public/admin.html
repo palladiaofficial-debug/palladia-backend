@@ -11,453 +11,231 @@
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg:       #0f172a;
-      --surface:  #1e293b;
-      --surface2: #263248;
-      --border:   #334155;
-      --accent:   #3b82f6;
-      --green:    #22c55e;
-      --red:      #ef4444;
-      --amber:    #f59e0b;
-      --text:     #f1f5f9;
-      --muted:    #94a3b8;
-      --radius:   12px;
-      --sidebar-w: 240px;
+      --bg:        #0a1628;
+      --surface:   #111d35;
+      --surface2:  #1a2a45;
+      --surface3:  #1f3254;
+      --border:    rgba(255,255,255,0.08);
+      --border2:   rgba(255,255,255,0.12);
+      --accent:    #3b82f6;
+      --accent-dim: rgba(59,130,246,0.12);
+      --green:     #22c55e;
+      --red:       #ef4444;
+      --amber:     #f59e0b;
+      --text:      #e2e8f0;
+      --text2:     #cbd5e1;
+      --muted:     #64748b;
+      --muted2:    #94a3b8;
+      --radius:    14px;
+      --radius-sm: 8px;
+      --sidebar-w: 228px;
+      --ease:      cubic-bezier(0.4, 0, 0.2, 1);
+      --ease-out:  cubic-bezier(0.0, 0, 0.2, 1);
+      --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+      --dur:       200ms;
+      --dur-fast:  140ms;
     }
-    html, body {
-      height: 100%;
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      font-size: 15px;
-      -webkit-font-smoothing: antialiased;
-      line-height: 1.5;
-    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 15px; -webkit-font-smoothing: antialiased; line-height: 1.5; }
+    * { -webkit-tap-highlight-color: transparent; }
 
-    /* ── Screens ────────────────────────────────────────────────── */
+    /* ── Keyframes ── */
+    @keyframes spin      { to { transform: rotate(360deg); } }
+    @keyframes viewIn    { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes tabIn     { from { opacity:0; transform:translateY(7px);  } to { opacity:1; transform:translateY(0); } }
+    @keyframes fadeIn    { from { opacity:0; } to { opacity:1; } }
+
+    /* ── Screens ── */
     .screen { display: none; }
     .screen.active { display: flex; }
+    #screen-loading { height: 100vh; align-items: center; justify-content: center; flex-direction: column; gap: 16px; }
+    #screen-login   { height: 100vh; align-items: center; justify-content: center; flex-direction: column; padding: 24px 16px; }
+    #screen-app     { flex-direction: column; height: 100vh; }
 
-    /* ── Screen Loading ─────────────────────────────────────────── */
-    #screen-loading {
-      height: 100vh;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 16px;
-    }
-    .spinner {
-      width: 32px; height: 32px;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spinner-sm {
-      display: inline-block;
-      width: 14px; height: 14px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff;
-      border-radius: 50%;
-      animation: spin 0.7s linear infinite;
-      vertical-align: middle;
-      margin-right: 5px;
-    }
+    /* ── Spinner ── */
+    .spinner    { width: 32px; height: 32px; border: 3px solid var(--border2); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+    .spinner-sm { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.25); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 5px; }
 
-    /* ── Screen Login ───────────────────────────────────────────── */
-    #screen-login {
-      height: 100vh;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      padding: 24px 16px;
-    }
-    .login-logo {
-      font-size: 11px;
-      font-weight: 700;
-      letter-spacing: 0.15em;
-      color: var(--muted);
-      text-transform: uppercase;
-      margin-bottom: 10px;
-    }
+    /* ── Login ── */
+    .login-logo  { font-size: 11px; font-weight: 700; letter-spacing: .15em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
     .login-title { font-size: 22px; font-weight: 700; margin-bottom: 28px; }
-    .login-card {
-      width: 100%;
-      max-width: 380px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px 24px;
+    .login-card  { width: 100%; max-width: 380px; background: var(--surface); border: 1px solid var(--border2); border-radius: var(--radius); padding: 28px 24px; box-shadow: 0 8px 40px rgba(0,0,0,0.4); }
+    .form-group  { margin-bottom: 16px; }
+    label { display: block; font-size: 11px; font-weight: 600; color: var(--muted2); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 6px; }
+    input[type=text], input[type=email], input[type=password], input[type=number], input[type=date], select, textarea {
+      width: 100%; background: rgba(255,255,255,0.04); border: 1px solid var(--border2); border-radius: var(--radius-sm); color: var(--text); font-size: 14px; padding: 9px 12px; outline: none; transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); font-family: inherit;
     }
-    .form-group { margin-bottom: 16px; }
-    label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 6px;
-    }
-    input[type=text], input[type=email], input[type=password],
-    input[type=number], input[type=date], select, textarea {
-      width: 100%;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 14px;
-      padding: 9px 12px;
-      outline: none;
-      transition: border-color 0.15s;
-      font-family: inherit;
-    }
-    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
     input::placeholder, textarea::placeholder { color: var(--muted); }
     select option { background: var(--surface); }
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      background: var(--accent);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 600;
-      padding: 12px 18px;
-      min-height: 44px;
-      cursor: pointer;
-      transition: opacity 0.15s;
-      white-space: nowrap;
-    }
-    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-full { width: 100%; justify-content: center; padding: 13px; }
-    .btn-sm { font-size: 13px; padding: 8px 14px; border-radius: 6px; min-height: 36px; }
-    .btn-ghost {
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-    }
-    .btn-ghost:hover { border-color: var(--text); color: var(--text); }
-    .btn-danger { background: var(--red); }
-    .error-msg {
-      margin-top: 10px;
-      font-size: 13px;
-      color: var(--red);
-      min-height: 18px;
-      text-align: center;
-    }
-    .success-msg {
-      margin-top: 10px;
-      font-size: 13px;
-      color: var(--green);
-      min-height: 18px;
-      text-align: center;
-    }
 
-    /* ── Screen App ─────────────────────────────────────────────── */
-    #screen-app {
-      flex-direction: column;
-      height: 100vh;
-    }
+    /* ── Buttons ── */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm); font-size: 14px; font-weight: 600; padding: 12px 18px; min-height: 44px; cursor: pointer; transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast) var(--ease); white-space: nowrap; font-family: inherit; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .btn:hover:not(:disabled) { opacity: .92; box-shadow: 0 3px 10px rgba(59,130,246,0.25); }
+    .btn:active:not(:disabled) { transform: scale(0.965); box-shadow: none; }
+    .btn:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-full   { width: 100%; justify-content: center; padding: 13px; }
+    .btn-sm     { font-size: 13px; padding: 8px 14px; border-radius: 7px; min-height: 36px; }
+    .btn-ghost  { background: rgba(255,255,255,0.05); border: 1px solid var(--border2); color: var(--muted2); box-shadow: none; }
+    .btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.09); border-color: var(--border2); color: var(--text); box-shadow: none; }
+    .btn-danger { background: var(--red); color: #fff; border: none; }
+    .btn-danger:hover:not(:disabled) { box-shadow: 0 3px 10px rgba(239,68,68,0.3); }
+    .error-msg   { margin-top: 10px; font-size: 13px; color: var(--red); min-height: 18px; text-align: center; }
+    .success-msg { margin-top: 10px; font-size: 13px; color: var(--green); min-height: 18px; }
 
-    /* Navbar */
-    .navbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 0 20px;
-      height: 56px;
-      flex-shrink: 0;
-      z-index: 100;
-    }
-    .navbar-brand {
-      font-size: 13px;
-      font-weight: 700;
-      letter-spacing: 0.12em;
-      color: var(--muted);
-      text-transform: uppercase;
-    }
-    .navbar-right {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-    .navbar-email {
-      font-size: 12px;
-      color: var(--muted);
-      display: none;
-    }
-    @media (min-width: 640px) { .navbar-email { display: block; } }
+    /* ── Navbar ── */
+    .navbar { display: flex; align-items: center; justify-content: space-between; background: rgba(17,29,53,0.92); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--border); padding: 0 20px; height: 52px; flex-shrink: 0; z-index: 100; }
+    .navbar-brand { font-size: 13px; font-weight: 700; letter-spacing: .12em; color: var(--muted2); text-transform: uppercase; }
+    .navbar-right { display: flex; align-items: center; gap: 12px; }
+    .navbar-email { font-size: 12px; color: var(--muted); }
+    @media (max-width: 640px) { .navbar-email { display: none; } }
+    .mode-toggle { display: flex; background: rgba(255,255,255,.05); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 2px; }
+    .mode-toggle a, .mode-toggle span { padding: 5px 14px; border-radius: 7px; font-size: 12px; font-weight: 600; text-decoration: none; transition: all var(--dur) var(--ease); }
+    .mode-toggle a { color: var(--muted); }
+    .mode-toggle a:hover { color: var(--text2); }
+    .mode-toggle span { background: var(--accent); color: #fff; box-shadow: 0 1px 4px rgba(59,130,246,0.3); }
 
-    /* App body (sidebar + main) */
-    .app-body {
-      display: flex;
-      flex: 1;
-      overflow: hidden;
-    }
+    /* ── App body ── */
+    .app-body { display: flex; flex: 1; overflow: hidden; }
 
-    /* Sidebar */
-    .sidebar {
-      width: var(--sidebar-w);
-      background: var(--surface);
-      border-right: 1px solid var(--border);
-      flex-shrink: 0;
-      display: flex;
-      flex-direction: column;
-      overflow-y: auto;
-      transition: transform 0.2s;
-    }
-    .sidebar-nav { padding: 12px 8px; }
-    .nav-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 10px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: 14px;
-      color: var(--muted);
-      transition: background 0.1s, color 0.1s;
-      user-select: none;
-    }
-    .nav-item:hover { background: var(--surface2); color: var(--text); }
-    .nav-item.active { background: var(--surface2); color: var(--text); font-weight: 600; }
-    .nav-icon { font-size: 16px; width: 20px; text-align: center; }
+    /* ── Sidebar ── */
+    .sidebar { width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border); flex-shrink: 0; display: flex; flex-direction: column; overflow: hidden; transition: transform var(--dur) var(--ease); }
+    .sidebar-top { flex: 1; overflow-y: auto; padding: 10px 0; }
+    .sidebar-top::-webkit-scrollbar { width: 3px; }
+    .sidebar-top::-webkit-scrollbar-track { background: transparent; }
+    .sidebar-top::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+    .sidebar-section-label { font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; padding: 14px 16px 8px; }
+    .site-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted2); margin: 1px 6px; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease); user-select: none; }
+    .site-item:hover  { background: var(--surface2); color: var(--text); }
+    .site-item.active { background: var(--accent-dim); color: var(--text); font-weight: 600; box-shadow: inset 0 0 0 1px rgba(59,130,246,0.2); }
+    .site-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transition: box-shadow var(--dur) var(--ease); }
+    .site-item.active .site-dot { box-shadow: 0 0 6px currentColor; }
+    .site-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sidebar-footer { border-top: 1px solid var(--border); padding: 10px 6px 12px; display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+    .sidebar-action { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 8px; cursor: pointer; font-size: 13px; color: var(--muted2); transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); user-select: none; }
+    .sidebar-action:hover  { background: var(--surface2); color: var(--text); }
+    .sidebar-action.active { color: var(--text2); }
+    .sidebar-action svg    { flex-shrink: 0; opacity: .7; }
+    .sidebar-new-btn { margin: 8px 0 0; width: calc(100% - 12px); margin-left: 6px; }
 
     @media (max-width: 767px) {
-      .sidebar { position: fixed; top: 56px; left: 0; bottom: 0; z-index: 200; transform: translateX(-100%); }
-      .sidebar.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.4); }
+      .sidebar { position: fixed; top: 52px; left: 0; bottom: 0; z-index: 200; transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); box-shadow: 12px 0 40px rgba(0,0,0,.5); }
       .hamburger { display: flex !important; }
     }
-    .hamburger {
-      display: none;
-      flex-direction: column;
-      gap: 4px;
-      cursor: pointer;
-      padding: 4px;
-      margin-right: 8px;
-    }
-    .hamburger span {
-      display: block;
-      width: 20px; height: 2px;
-      background: var(--muted);
-      border-radius: 2px;
-    }
-    .sidebar-overlay {
-      display: none;
-      position: fixed; inset: 0; z-index: 150;
-      background: rgba(0,0,0,0.4);
-    }
-    .sidebar-overlay.visible { display: block; }
+    .hamburger { display: none; flex-direction: column; gap: 4px; cursor: pointer; padding: 4px; margin-right: 8px; }
+    .hamburger span { display: block; width: 20px; height: 2px; background: var(--muted2); border-radius: 2px; transition: background var(--dur-fast) var(--ease); }
+    .sidebar-overlay { display: none; position: fixed; inset: 0; z-index: 150; background: rgba(0,0,0,.5); backdrop-filter: blur(2px); }
+    .sidebar-overlay.visible { display: block; animation: fadeIn var(--dur) var(--ease); }
 
-    /* Main */
-    .main {
-      flex: 1;
-      overflow-y: auto;
-      padding: 24px 20px 40px;
-    }
-    .section { display: none; }
-    .section.active { display: block; }
-    .section-title {
-      font-size: 20px;
-      font-weight: 700;
-      margin-bottom: 20px;
-    }
+    /* ── Main ── */
+    .main { flex: 1; overflow-y: auto; padding: 32px 28px 56px; scroll-behavior: smooth; }
+    .main::-webkit-scrollbar { width: 4px; }
+    .main::-webkit-scrollbar-track { background: transparent; }
+    .main::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+    @media (max-width: 767px) { .main { padding: 20px 16px 40px; } }
 
-    /* Cards grid */
-    .card-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 20px;
-    }
-    .stat-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      margin-bottom: 8px;
-    }
-    .stat-value {
-      font-size: 32px;
-      font-weight: 700;
-      color: var(--text);
-    }
+    /* ── Views ── */
+    .view { display: none; }
+    .view.active { display: block; animation: viewIn 0.24s var(--ease); }
 
-    /* Site card */
-    .site-card-header {
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      margin-bottom: 10px;
-    }
-    .site-name { font-size: 15px; font-weight: 700; }
-    .site-address { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
-    .badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
-    .badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 20px;
-      border: 1px solid;
-    }
-    .badge-green { color: var(--green); border-color: var(--green); }
-    .badge-red   { color: var(--red);   border-color: var(--red); }
-    .badge-muted { color: var(--muted); border-color: var(--border); }
-    .site-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    /* ── Section divider label ── */
+    .section-divider { display: flex; align-items: center; gap: 12px; margin: 0 0 20px; }
+    .section-divider-label { font-size: 11px; font-weight: 700; letter-spacing: .09em; color: var(--muted); text-transform: uppercase; white-space: nowrap; }
+    .section-divider-line  { flex: 1; height: 1px; background: var(--border); }
 
-    /* Table */
+    /* ── KPI strip ── */
+    .kpi-strip { display: flex; gap: 10px; margin-bottom: 32px; flex-wrap: wrap; }
+    .kpi { flex: 1; min-width: 110px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; box-shadow: 0 1px 3px rgba(0,0,0,0.2), 0 1px 0 rgba(255,255,255,0.025) inset; }
+    .kpi-label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+    .kpi-value { font-size: 34px; font-weight: 800; color: var(--text); letter-spacing: -.02em; }
+
+    /* ── Overview grid ── */
+    .overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+    .ov-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; cursor: pointer; transition: border-color var(--dur) var(--ease), background var(--dur) var(--ease), transform var(--dur) var(--ease-spring), box-shadow var(--dur) var(--ease); box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+    .ov-card:hover { border-color: rgba(59,130,246,.4); background: rgba(59,130,246,.03); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.25), 0 0 0 1px rgba(59,130,246,0.1); }
+    .ov-card:active { transform: scale(0.98); box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+    .ov-card-name    { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+    .ov-card-address { font-size: 12px; color: var(--muted); margin-bottom: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ov-card-footer  { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+    /* ── Badge chips ── */
+    .chip { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 3px 9px; border-radius: 20px; border: 1px solid; line-height: 1.4; }
+    .chip-green { color: var(--green); border-color: rgba(34,197,94,.35); background: rgba(34,197,94,.08); }
+    .chip-amber { color: var(--amber); border-color: rgba(245,158,11,.35); background: rgba(245,158,11,.08); }
+    .chip-muted { color: var(--muted2); border-color: var(--border); background: rgba(255,255,255,.03); }
+
+    /* ── Site detail header ── */
+    .site-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 28px; padding-bottom: 24px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .site-header-name    { font-size: 22px; font-weight: 800; letter-spacing: -.01em; color: var(--text); }
+    .site-header-address { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .site-header-chips   { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+
+    /* ── Tab bar ── */
+    .tab-bar { position: relative; display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 26px; overflow-x: auto; }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-size: 13px; font-weight: 500; padding: 10px 18px; cursor: pointer; margin-bottom: -1px; transition: color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease); white-space: nowrap; font-family: inherit; }
+    .tab:hover { color: var(--text2); }
+    .tab.active { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; animation: tabIn 0.2s var(--ease); }
+
+    /* ── Tab toolbar ── */
+    .tab-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+    .tab-toolbar-left  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .tab-toolbar-right { display: flex; align-items: center; gap: 8px; }
+
+    /* ── Presence summary ── */
+    .presence-summary { display: flex; gap: 20px; flex-wrap: wrap; }
+    .pres-stat { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 500; }
+    .pres-dot  { width: 8px; height: 8px; border-radius: 50%; }
+
+    /* ── Card ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; box-shadow: 0 1px 4px rgba(0,0,0,0.2), 0 1px 0 rgba(255,255,255,0.025) inset; }
+
+    /* ── Table ── */
     .table-wrap { overflow-x: auto; }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 13px;
-    }
-    th {
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 8px 12px;
-      border-bottom: 1px solid var(--border);
-    }
-    td {
-      padding: 10px 12px;
-      border-bottom: 1px solid rgba(51,65,85,0.5);
-      vertical-align: middle;
-    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { text-align: left; font-size: 10.5px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; padding: 10px 14px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.015); }
+    td { padding: 11px 14px; border-bottom: 1px solid rgba(255,255,255,.04); vertical-align: middle; }
     tr:last-child td { border-bottom: none; }
-    tr:hover td { background: rgba(255,255,255,0.02); }
+    tr { transition: background var(--dur-fast) var(--ease); }
+    tr:hover td { background: rgba(255,255,255,.025); }
     .tag-entry { color: var(--green); font-weight: 600; }
     .tag-exit  { color: var(--red);   font-weight: 600; }
 
-    /* Toolbar */
-    .toolbar {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 10px;
-      margin-bottom: 20px;
-    }
-    .toolbar select, .toolbar input { width: auto; min-width: 150px; }
+    /* ── Settings grid ── */
+    .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+    .settings-card-title { display: flex; align-items: center; justify-content: space-between; font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+    .settings-card-desc  { font-size: 12.5px; color: var(--muted2); margin-bottom: 16px; line-height: 1.6; }
+    .settings-card-sub   { font-size: 12px; color: var(--muted); margin: 8px 0 14px; line-height: 1.5; }
 
-    /* Modal */
-    .modal-overlay {
-      display: none;
-      position: fixed; inset: 0; z-index: 500;
-      background: rgba(0,0,0,0.6);
-      align-items: center;
-      justify-content: center;
-      padding: 16px;
-    }
-    .modal-overlay.open { display: flex; }
-    .modal {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 28px 24px;
-      width: 100%;
-      max-width: 480px;
-      max-height: 90vh;
-      overflow-y: auto;
-    }
-    .modal-title {
-      font-size: 17px;
-      font-weight: 700;
-      margin-bottom: 20px;
-    }
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 8px;
-      margin-top: 20px;
-    }
-    .modal-close-btn {
-      position: absolute;
-      top: 10px; right: 14px;
-      background: none;
-      border: none;
-      color: var(--muted);
-      font-size: 20px;
-      cursor: pointer;
-      line-height: 1;
-    }
-    .modal { position: relative; }
+    /* ── Toolbar ── */
+    .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 16px; }
+    .toolbar select, .toolbar input { width: auto; min-width: 140px; }
 
-    /* Copy box */
-    .copy-box {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-    .copy-box input { flex: 1; font-size: 12px; }
-    .copyable-url {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      font-size: 12px;
-      color: var(--muted);
-      word-break: break-all;
-      margin-top: 12px;
-    }
+    /* ── Modal ── */
+    .modal-overlay { display: none; position: fixed; inset: 0; z-index: 500; background: rgba(0,0,0,.65); backdrop-filter: blur(4px); align-items: center; justify-content: center; padding: 16px; }
+    .modal-overlay.open { display: flex; animation: fadeIn var(--dur-fast) var(--ease); }
+    .modal { background: var(--surface); border: 1px solid var(--border2); border-radius: var(--radius); padding: 28px 24px; width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset; animation: viewIn 0.2s var(--ease-spring); }
+    .modal-title   { font-size: 17px; font-weight: 700; margin-bottom: 20px; }
+    .modal-footer  { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; border-top: 1px solid var(--border); padding-top: 18px; }
+    .modal-close-btn { position: absolute; top: 14px; right: 16px; background: rgba(255,255,255,.07); border: none; color: var(--muted2); font-size: 16px; cursor: pointer; line-height: 1; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
+    .modal-close-btn:hover { background: rgba(255,255,255,.12); color: var(--text); }
 
-    /* Toast */
-    #toast-container {
-      position: fixed;
-      bottom: 24px; right: 24px;
-      z-index: 9999;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      pointer-events: none;
-    }
-    .toast {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      padding: 12px 16px;
-      font-size: 14px;
-      max-width: 320px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-      animation: slideIn 0.2s ease;
-      pointer-events: auto;
-    }
+    /* ── Copy box ── */
+    .copyable-url { background: rgba(0,0,0,.3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; font-size: 12px; color: var(--muted2); word-break: break-all; margin-top: 12px; font-family: 'Courier New', monospace; }
+
+    /* ── Toast ── */
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+    .toast { background: var(--surface2); border: 1px solid var(--border2); border-radius: 12px; padding: 13px 18px; font-size: 14px; max-width: 320px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); animation: slideIn 0.22s var(--ease-spring); pointer-events: auto; }
     .toast.success { border-left: 3px solid var(--green); }
     .toast.error   { border-left: 3px solid var(--red); }
-    @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes slideIn { from { transform: translateX(40px) scale(0.96); opacity: 0; } to { transform: translateX(0) scale(1); opacity: 1; } }
 
-    /* Separator */
-    .section-sep {
-      border: none;
-      border-top: 1px solid var(--border);
-      margin: 28px 0;
-    }
-    .section-sub { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: var(--muted); }
-
-    /* Empty state */
-    .empty { text-align: center; padding: 32px 0; color: var(--muted); font-size: 13px; }
-
-    /* Responsive */
-    @media (max-width: 767px) {
-      .main { padding: 16px 12px 32px; }
-      .card-grid { grid-template-columns: 1fr; }
-    }
+    /* ── Misc ── */
+    .empty     { text-align: center; padding: 40px 0; color: var(--muted); font-size: 13px; }
+    .section-sub { font-size: 13px; font-weight: 700; margin-bottom: 14px; color: var(--muted2); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+    .section-sep { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
   </style>
 </head>
 <body>
@@ -470,7 +248,7 @@
 
 <!-- Screen: Login -->
 <div id="screen-login" class="screen">
-  <div class="login-logo">PALLADIA</div>
+  <div class="login-logo" style="display:flex;align-items:center;gap:6px"><svg width="12" height="13" viewBox="0 0 90 100" style="flex-shrink:0" aria-hidden="true"><path fill="currentColor" d="M11 8L29 8L29 74L19 96L11 96Z"/><path fill="currentColor" d="M29 8C52 8 80 17 80 34C80 50 59 61 41 57C33 55 29 50 31 45C33 51 40 54 46 52C59 47 71 39 71 30C71 19 51 15 29 15Z"/></svg>PALLADIA</div>
   <div class="login-title">Accedi al pannello admin</div>
   <div class="login-card">
     <div class="form-group">
@@ -491,89 +269,262 @@
 
   <!-- Navbar -->
   <nav class="navbar">
-    <div style="display:flex;align-items:center;gap:12px">
+    <div style="display:flex;align-items:center;gap:10px">
       <div class="hamburger" id="hamburger" onclick="toggleSidebar()">
         <span></span><span></span><span></span>
       </div>
-      <span class="navbar-brand">PALLADIA</span>
+      <span class="navbar-brand" style="display:inline-flex;align-items:center;gap:6px"><svg width="14" height="16" viewBox="0 0 90 100" style="flex-shrink:0" aria-hidden="true"><path fill="currentColor" d="M11 8L29 8L29 74L19 96L11 96Z"/><path fill="currentColor" d="M29 8C52 8 80 17 80 34C80 50 59 61 41 57C33 55 29 50 31 45C33 51 40 54 46 52C59 47 71 39 71 30C71 19 51 15 29 15Z"/></svg>PALLADIA</span>
     </div>
     <div class="navbar-right">
-      <div style="display:flex;background:rgba(255,255,255,0.06);border-radius:8px;padding:3px;gap:2px;margin-right:8px">
-        <a href="/ladia" style="padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;color:var(--muted);text-decoration:none;transition:all .2s">Ladia</a>
-        <span style="padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;background:var(--accent);color:#fff">Tecnico</span>
+      <div class="mode-toggle">
+        <a href="/ladia">Ladia</a>
+        <span>Tecnico</span>
       </div>
       <span class="navbar-email" id="navbar-email"></span>
       <button class="btn btn-ghost btn-sm" onclick="doLogout()">Esci</button>
     </div>
   </nav>
 
-  <!-- App body -->
+  <!-- Body -->
   <div class="app-body">
-    <!-- Overlay mobile sidebar -->
     <div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
 
     <!-- Sidebar -->
     <aside class="sidebar" id="sidebar">
-      <nav class="sidebar-nav">
-        <div class="nav-item active" onclick="showSection('overview')" data-sec="overview">
-          <span class="nav-icon"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg></span> Panoramica
+      <div class="sidebar-top">
+        <div class="sidebar-section-label">Cantieri</div>
+        <div id="site-list-sidebar">
+          <div style="padding:12px 16px;font-size:12px;color:var(--muted)">Caricamento...</div>
         </div>
-        <div class="nav-item" onclick="showSection('cantieri')" data-sec="cantieri">
-          <span class="nav-icon"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span> Cantieri
+      </div>
+      <div class="sidebar-footer">
+        <div class="sidebar-action" id="action-overview" onclick="showView('overview')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          Panoramica
         </div>
-        <div class="nav-item" onclick="showSection('lavoratori')" data-sec="lavoratori">
-          <span class="nav-icon"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></span> Lavoratori
+        <div class="sidebar-action" id="action-workers" onclick="showView('workers')">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          Tutti i lavoratori
         </div>
-        <div class="nav-item" onclick="showSection('presenze')" data-sec="presenze">
-          <span class="nav-icon"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></span> Presenze
-        </div>
-        <div class="nav-item" onclick="showSection('report')" data-sec="report">
-          <span class="nav-icon"><svg style="width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg></span> Report
-        </div>
-      </nav>
+        <button class="btn btn-sm btn-ghost sidebar-new-btn" onclick="openModal('modal-new-site')">+ Nuovo cantiere</button>
+      </div>
     </aside>
 
     <!-- Main -->
     <main class="main">
 
-      <!-- Panoramica -->
-      <div id="sec-overview" class="section active">
-        <div class="section-title">Panoramica</div>
-        <div class="card-grid">
-          <div class="card">
-            <div class="stat-label">Cantieri attivi</div>
-            <div class="stat-value" id="ov-sites">—</div>
+      <!-- ── VIEW: Overview ── -->
+      <div id="view-overview" class="view active">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px">
+          <div style="font-size:22px;font-weight:800;letter-spacing:-.01em">Panoramica</div>
+          <div style="font-size:12px;color:var(--muted)" id="overview-date"></div>
+        </div>
+        <div class="kpi-strip">
+          <div class="kpi">
+            <div class="kpi-label">Cantieri attivi</div>
+            <div class="kpi-value" id="ov-sites">—</div>
           </div>
-          <div class="card">
-            <div class="stat-label">Lavoratori totali</div>
-            <div class="stat-value" id="ov-workers">—</div>
+          <div class="kpi">
+            <div class="kpi-label">Lavoratori</div>
+            <div class="kpi-value" id="ov-workers">—</div>
           </div>
+          <div class="kpi">
+            <div class="kpi-label">Presenti oggi</div>
+            <div class="kpi-value" id="ov-today">—</div>
+          </div>
+        </div>
+        <div class="section-divider">
+          <span class="section-divider-label">I tuoi cantieri</span>
+          <span class="section-divider-line"></span>
+        </div>
+        <div class="overview-grid" id="overview-sites-grid">
+          <div class="empty">Nessun cantiere</div>
+        </div>
+      </div>
+
+      <!-- ── VIEW: Site detail ── -->
+      <div id="view-site" class="view">
+        <div class="site-header">
+          <div class="site-header-left">
+            <div class="site-header-name" id="site-header-name"></div>
+            <div class="site-header-address" id="site-header-address"></div>
+            <div class="site-header-chips" id="site-header-chips"></div>
+          </div>
+        </div>
+
+        <div class="tab-bar">
+          <button class="tab active" data-tab="oggi"         onclick="showTab('oggi')">Oggi</button>
+          <button class="tab"        data-tab="lavoratori"   onclick="showTab('lavoratori')">Lavoratori</button>
+          <button class="tab"        data-tab="report"       onclick="showTab('report')">Report</button>
+          <button class="tab"        data-tab="impostazioni" onclick="showTab('impostazioni')">Impostazioni</button>
+        </div>
+
+        <!-- Tab: Oggi -->
+        <div id="tab-oggi" class="tab-content active">
+          <div class="tab-toolbar">
+            <div class="tab-toolbar-left">
+              <input type="date" id="oggi-date" onchange="loadSiteOggi()" style="width:auto">
+              <button class="btn btn-sm btn-ghost" onclick="resetOggiDate()">Oggi</button>
+            </div>
+            <div class="presence-summary" id="oggi-summary"></div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Lavoratore</th>
+                    <th>Codice Fiscale</th>
+                    <th>Evento</th>
+                    <th>Ora</th>
+                    <th>Distanza</th>
+                    <th>GPS acc.</th>
+                  </tr>
+                </thead>
+                <tbody id="oggi-body">
+                  <tr><td colspan="6" class="empty">Seleziona un cantiere dalla lista</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Lavoratori -->
+        <div id="tab-lavoratori" class="tab-content">
+          <div class="tab-toolbar">
+            <div class="tab-toolbar-left">
+              <button class="btn btn-sm" onclick="openModal('modal-new-worker')">+ Nuovo lavoratore</button>
+              <button class="btn btn-sm btn-ghost" onclick="openAddToSiteModal()">Aggiungi esistente</button>
+            </div>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Nome</th>
+                    <th>Codice Fiscale</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="site-workers-body">
+                  <tr><td colspan="3" class="empty">Caricamento...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Report -->
+        <div id="tab-report" class="tab-content">
+          <div class="card" style="margin-bottom:16px">
+            <div class="section-divider" style="margin-bottom:16px"><span class="section-divider-label">Esporta presenze</span><span class="section-divider-line"></span></div>
+            <div class="toolbar">
+              <div>
+                <label style="display:inline;margin-right:6px">Dal</label>
+                <input type="date" id="rep-from" style="width:auto">
+              </div>
+              <div>
+                <label style="display:inline;margin-right:6px">Al</label>
+                <input type="date" id="rep-to" style="width:auto">
+              </div>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px">
+              <button class="btn btn-sm" onclick="downloadPresenzePdf()">Scarica PDF</button>
+              <button class="btn btn-sm btn-ghost" onclick="downloadPresenzeCsv()">Scarica CSV</button>
+              <button class="btn btn-sm btn-ghost" onclick="checkMissingExits()">Verifica uscite mancanti</button>
+            </div>
+            <div id="rep-missing-result" class="success-msg"></div>
+          </div>
+
           <div class="card">
-            <div class="stat-label">Timbrature oggi</div>
-            <div class="stat-value" id="ov-today">—</div>
+            <div class="section-divider" style="margin-bottom:16px"><span class="section-divider-label">Accesso ispettore ASL</span><span class="section-divider-line"></span></div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <div class="form-group" style="flex:1;min-width:130px">
+                <label>Dal</label>
+                <input type="date" id="asl-from">
+              </div>
+              <div class="form-group" style="flex:1;min-width:130px">
+                <label>Al</label>
+                <input type="date" id="asl-to">
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Etichetta (opzionale)</label>
+              <input type="text" id="asl-label" placeholder="Es. Verifica ASL Giugno 2026" maxlength="100">
+            </div>
+            <div class="form-group">
+              <label>Validità (giorni)</label>
+              <input type="number" id="asl-ttl" value="30" min="1" max="365">
+            </div>
+            <button class="btn btn-sm" onclick="generateAslLink()">Genera link ASL</button>
+            <div id="asl-link-box" style="display:none;margin-top:16px">
+              <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Link copiabile:</div>
+              <div class="copyable-url" id="asl-link-url"></div>
+              <button class="btn btn-sm btn-ghost" style="margin-top:8px" onclick="copyAslLink()">Copia link</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Impostazioni -->
+        <div id="tab-impostazioni" class="tab-content">
+          <div class="settings-grid">
+            <div class="card">
+              <div class="settings-card-title">
+                <span style="display:flex;align-items:center;gap:8px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
+                  Geofence GPS
+                </span>
+                <span id="set-gps-chip"></span>
+              </div>
+              <div class="settings-card-desc">I lavoratori possono timbrare solo dentro il raggio configurato.</div>
+              <div class="settings-card-sub" id="set-gps-info"></div>
+              <button class="btn btn-sm btn-ghost" onclick="openGpsModalCurrent()">Configura GPS</button>
+            </div>
+            <div class="card">
+              <div class="settings-card-title">
+                <span style="display:flex;align-items:center;gap:8px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                  PIN cantiere
+                </span>
+                <span id="set-pin-chip"></span>
+              </div>
+              <div class="settings-card-desc">I lavoratori inseriscono il PIN ad ogni timbratura.</div>
+              <div class="settings-card-sub" id="set-pin-info"></div>
+              <button class="btn btn-sm btn-ghost" onclick="openPinModalCurrent()">Modifica PIN</button>
+            </div>
+            <div class="card">
+              <div class="settings-card-title">
+                <span style="display:flex;align-items:center;gap:8px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
+                  QR Code
+                </span>
+              </div>
+              <div class="settings-card-desc">Scarica il PDF con il QR da affiggere in cantiere. I lavoratori lo scansionano per timbrare.</div>
+              <button class="btn btn-sm btn-ghost" onclick="downloadQrPdfCurrent()">Scarica PDF QR</button>
+            </div>
+            <div class="card" style="border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.03)">
+              <div class="settings-card-title" style="color:var(--red)">
+                <span style="display:flex;align-items:center;gap:8px">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+                  Zona pericolosa
+                </span>
+              </div>
+              <div class="settings-card-desc">L'eliminazione del cantiere è irreversibile e richiede che non ci siano timbrature associate.</div>
+              <button class="btn btn-sm btn-danger" onclick="openDeleteCurrentSite()">Elimina cantiere</button>
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Cantieri -->
-      <div id="sec-cantieri" class="section">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
-          <div class="section-title" style="margin:0">Cantieri</div>
-          <button class="btn btn-sm" onclick="openModal('modal-new-site')">+ Nuovo cantiere</button>
-        </div>
-        <div class="card-grid" id="sites-list">
-          <div class="empty">Caricamento cantieri...</div>
-        </div>
-      </div>
-
-      <!-- Lavoratori -->
-      <div id="sec-lavoratori" class="section">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-          <div class="section-title" style="margin:0">Lavoratori</div>
+      <!-- ── VIEW: All Workers ── -->
+      <div id="view-workers" class="view">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:10px">
+          <div style="font-size:22px;font-weight:800;letter-spacing:-.01em">Lavoratori</div>
           <button class="btn btn-sm" onclick="openModal('modal-new-worker')">+ Nuovo lavoratore</button>
         </div>
         <div class="toolbar">
-          <select id="workers-filter-site" onchange="loadWorkers()">
+          <select id="workers-filter-site" onchange="loadAllWorkers()">
             <option value="">Tutti i cantieri</option>
           </select>
         </div>
@@ -596,103 +547,11 @@
         </div>
       </div>
 
-      <!-- Presenze -->
-      <div id="sec-presenze" class="section">
-        <div class="section-title">Presenze</div>
-        <div class="toolbar">
-          <select id="pres-site">
-            <option value="">Seleziona cantiere</option>
-          </select>
-          <input type="date" id="pres-date">
-          <button class="btn btn-sm" onclick="loadPresenze()">Carica</button>
-        </div>
-        <div class="card" style="padding:0;overflow:hidden">
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Lavoratore</th>
-                  <th>Codice Fiscale</th>
-                  <th>Evento</th>
-                  <th>Ora</th>
-                  <th>Distanza (m)</th>
-                  <th>GPS (m)</th>
-                </tr>
-              </thead>
-              <tbody id="pres-body">
-                <tr><td colspan="6" class="empty">Seleziona un cantiere e una data</td></tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Report -->
-      <div id="sec-report" class="section">
-        <div class="section-title">Report</div>
-        <div class="card" style="margin-bottom:20px">
-          <div class="toolbar" style="flex-wrap:wrap">
-            <select id="rep-site">
-              <option value="">Seleziona cantiere</option>
-            </select>
-            <div>
-              <label style="display:inline;margin-right:6px">Dal</label>
-              <input type="date" id="rep-from" style="width:auto">
-            </div>
-            <div>
-              <label style="display:inline;margin-right:6px">Al</label>
-              <input type="date" id="rep-to" style="width:auto">
-            </div>
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">
-            <button class="btn btn-sm" onclick="downloadPresenzePdf()">Scarica PDF</button>
-            <button class="btn btn-sm btn-ghost" onclick="downloadPresenzeCsv()">Scarica CSV (riepilogo)</button>
-            <button class="btn btn-sm btn-ghost" onclick="checkMissingExits()">Verifica uscite mancanti</button>
-          </div>
-          <div id="rep-missing-result" class="success-msg"></div>
-        </div>
-
-        <hr class="section-sep">
-        <div class="section-sub">Accesso ispettore ASL</div>
-        <div class="card">
-          <div class="form-group">
-            <label>Cantiere</label>
-            <select id="asl-site">
-              <option value="">Seleziona cantiere</option>
-            </select>
-          </div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap">
-            <div class="form-group" style="flex:1;min-width:130px">
-              <label>Dal</label>
-              <input type="date" id="asl-from">
-            </div>
-            <div class="form-group" style="flex:1;min-width:130px">
-              <label>Al</label>
-              <input type="date" id="asl-to">
-            </div>
-          </div>
-          <div class="form-group">
-            <label>Etichetta (opzionale)</label>
-            <input type="text" id="asl-label" placeholder="Es. Verifica ASL Marzo 2026" maxlength="100">
-          </div>
-          <div class="form-group">
-            <label>Validità (giorni)</label>
-            <input type="number" id="asl-ttl" value="30" min="1" max="365">
-          </div>
-          <button class="btn btn-sm" onclick="generateAslLink()">Genera link ASL</button>
-          <div id="asl-link-box" style="display:none;margin-top:16px">
-            <div style="font-size:13px;color:var(--muted);margin-bottom:6px">Link copiabile:</div>
-            <div class="copyable-url" id="asl-link-url"></div>
-            <button class="btn btn-sm btn-ghost" style="margin-top:8px" onclick="copyAslLink()">Copia link</button>
-          </div>
-        </div>
-      </div>
-
     </main>
   </div>
 </div>
 
-<!-- ── Modals ────────────────────────────────────────────────────── -->
+<!-- ══ Modals ══════════════════════════════════════════════════════ -->
 
 <!-- Nuovo cantiere -->
 <div class="modal-overlay" id="modal-new-site">
@@ -751,9 +610,7 @@
       <label>PIN (lascia vuoto per rimuovere)</label>
       <input type="text" id="pin-value" placeholder="Es. 1234" maxlength="20">
     </div>
-    <div style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:12px">
-      I lavoratori dovranno inserire questo PIN alla timbratura.
-    </div>
+    <div style="font-size:12px;color:var(--muted);margin-top:-8px;margin-bottom:12px">I lavoratori devono inserire questo PIN alla timbratura.</div>
     <div class="error-msg" id="pin-error"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-pin')">Annulla</button>
@@ -776,6 +633,7 @@
       <input type="text" id="nw-cf" placeholder="RSSMRO80A01H501Z" maxlength="16"
              style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
     </div>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:12px" id="nw-assign-note"></div>
     <div class="error-msg" id="nw-error"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-new-worker')">Annulla</button>
@@ -784,10 +642,10 @@
   </div>
 </div>
 
-<!-- Assegna cantiere a lavoratore -->
+<!-- Assegna cantiere a lavoratore (global workers view) -->
 <div class="modal-overlay" id="modal-assign">
   <div class="modal">
-    <div class="modal-title">Assegna cantiere</div>
+    <div class="modal-title">Assegna a cantiere</div>
     <button class="modal-close-btn" onclick="closeModal('modal-assign')">✕</button>
     <input type="hidden" id="assign-worker-id">
     <div class="form-group">
@@ -802,26 +660,40 @@
   </div>
 </div>
 
+<!-- Aggiungi lavoratore esistente al cantiere -->
+<div class="modal-overlay" id="modal-add-to-site">
+  <div class="modal">
+    <div class="modal-title">Aggiungi al cantiere</div>
+    <button class="modal-close-btn" onclick="closeModal('modal-add-to-site')">✕</button>
+    <div class="form-group">
+      <label>Lavoratore</label>
+      <select id="add-to-site-worker-sel"></select>
+    </div>
+    <div class="error-msg" id="add-to-site-error"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-add-to-site')">Annulla</button>
+      <button class="btn btn-sm" id="add-to-site-btn" onclick="doAddToSite()">Aggiungi</button>
+    </div>
+  </div>
+</div>
+
 <!-- Sessioni lavoratore -->
 <div class="modal-overlay" id="modal-sessions">
   <div class="modal">
     <div class="modal-title">Sessioni attive</div>
     <button class="modal-close-btn" onclick="closeModal('modal-sessions')">✕</button>
-    <div id="sessions-list">
-      <div class="empty">Caricamento...</div>
-    </div>
+    <div id="sessions-list"><div class="empty">Caricamento...</div></div>
   </div>
 </div>
 
-<!-- Delete cantiere confirm -->
+<!-- Delete cantiere -->
 <div class="modal-overlay" id="modal-del-site">
   <div class="modal">
     <div class="modal-title">Elimina cantiere</div>
     <button class="modal-close-btn" onclick="closeModal('modal-del-site')">✕</button>
     <input type="hidden" id="del-site-id">
     <p style="font-size:14px;color:var(--muted);margin-bottom:16px">
-      Sei sicuro di voler eliminare il cantiere <strong id="del-site-name"></strong>?
-      L'operazione è irreversibile.
+      Sei sicuro di voler eliminare <strong id="del-site-name"></strong>? L'operazione è irreversibile.
     </p>
     <div class="error-msg" id="del-site-error"></div>
     <div class="modal-footer">
@@ -831,19 +703,20 @@
   </div>
 </div>
 
-<!-- Toast container -->
 <div id="toast-container"></div>
 
-<!-- ── Scripts ───────────────────────────────────────────────────── -->
+<!-- ══ Scripts ═════════════════════════════════════════════════════ -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script>
 'use strict';
 
 // ── State ────────────────────────────────────────────────────────
 let sb = null;
-let _companyId = null;
-let _sites = [];
-let _workers = [];
+let _companyId  = null;
+let _sites      = [];
+let _workers    = [];
+let _currentSite = null;
+let _currentTab  = 'oggi';
 
 // ── Helpers ──────────────────────────────────────────────────────
 async function getJwt() {
@@ -854,16 +727,9 @@ async function getJwt() {
 async function api(method, path, body) {
   const token = await getJwt();
   if (!token) { showLogin(); return { status: 401, ok: false, body: {} }; }
-  const headers = {
-    'Content-Type':  'application/json',
-    'Authorization': `Bearer ${token}`
-  };
+  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
   if (_companyId) headers['X-Company-Id'] = _companyId;
-  const r = await fetch(path, {
-    method,
-    headers,
-    body: body != null ? JSON.stringify(body) : undefined
-  });
+  const r    = await fetch(path, { method, headers, body: body != null ? JSON.stringify(body) : undefined });
   const json = await r.json().catch(() => ({}));
   if (r.status === 401) { await doLogout(); }
   return { status: r.status, ok: r.ok, body: json };
@@ -885,12 +751,8 @@ function setLoading(btnId, on, label) {
   if (!on && label) btn.dataset.label = label;
 }
 
-function openModal(id) {
-  document.getElementById(id).classList.add('open');
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('open');
-}
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
 function toggleSidebar() {
   document.getElementById('sidebar').classList.toggle('open');
@@ -901,21 +763,12 @@ function closeSidebar() {
   document.getElementById('sidebar-overlay').classList.remove('visible');
 }
 
-function showSection(sec) {
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-  document.getElementById('sec-' + sec).classList.add('active');
-  document.querySelector(`[data-sec="${sec}"]`).classList.add('active');
-  closeSidebar();
-  if (sec === 'overview')   loadOverview();
-  if (sec === 'cantieri')   loadSites();
-  if (sec === 'lavoratori') loadWorkers();
-  if (sec === 'presenze')   populatePresenzeSiteSelect();
-  if (sec === 'report')     populateReportSelects();
-}
+function today() { return new Date().toISOString().slice(0, 10); }
 
-function today() {
-  return new Date().toISOString().slice(0, 10);
+function esc(str) {
+  return String(str ?? '')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 
 // ── Auth ─────────────────────────────────────────────────────────
@@ -940,45 +793,35 @@ async function init() {
   });
 
   const { data: { session } } = await sb.auth.getSession();
-  if (session) { checkCompany(session); }
-  else         { showLogin(); }
+  if (session) checkCompany(session);
+  else         showLogin();
 }
 
 async function checkCompany(session) {
   showScreen('screen-loading');
   _companyId = null;
 
-  // 1. Scopri company_id tramite /api/v1/me (no X-Company-Id necessario)
   let meRes;
   try {
-    meRes = await fetch('/api/v1/me', {
-      headers: { 'Authorization': `Bearer ${session.access_token}` }
-    });
+    meRes = await fetch('/api/v1/me', { headers: { 'Authorization': `Bearer ${session.access_token}` } });
   } catch (e) {
     showScreen('screen-login');
-    document.getElementById('login-error').textContent = 'Errore di rete. Verifica la connessione.';
+    document.getElementById('login-error').textContent = 'Errore di rete.';
     return;
   }
 
-  if (meRes.status === 404) {
-    // Utente senza company → onboarding
-    window.location.href = '/onboarding';
-    return;
-  }
-  if (!meRes.ok) {
-    await doLogout();
-    return;
-  }
+  if (meRes.status === 404) { window.location.href = '/onboarding'; return; }
+  if (!meRes.ok) { await doLogout(); return; }
 
   const me = await meRes.json();
   _companyId = me.company_id;
 
-  // 2. Carica cantieri (ora _companyId è noto, api() lo usa nell'header)
   const sitesRes = await api('GET', '/api/v1/sites');
   _sites = sitesRes.ok && Array.isArray(sitesRes.body) ? sitesRes.body : [];
 
   document.getElementById('navbar-email').textContent = session.user?.email || '';
   showScreen('screen-app');
+  renderSiteList();
   loadOverview();
 }
 
@@ -994,9 +837,7 @@ function showLogin() {
 
 async function doLogout() {
   await sb.auth.signOut();
-  _companyId = null;
-  _sites = [];
-  _workers = [];
+  _companyId = null; _sites = []; _workers = []; _currentSite = null;
   showLogin();
 }
 
@@ -1007,13 +848,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const loginBtn = document.getElementById('login-btn');
   const errEl    = document.getElementById('login-error');
 
-  // Set default dates
-  document.getElementById('pres-date').value = today();
-  document.getElementById('pres-date').max   = today();
-  document.getElementById('rep-to').value    = today();
-  document.getElementById('rep-to').max      = today();
-  document.getElementById('rep-from').max    = today();
-  document.getElementById('asl-to').value    = today();
+  document.getElementById('rep-to').value  = today();
+  document.getElementById('rep-to').max    = today();
+  document.getElementById('rep-from').max  = today();
+  document.getElementById('asl-to').value  = today();
+  document.getElementById('oggi-date').value = today();
+  document.getElementById('oggi-date').max   = today();
 
   async function doLogin() {
     errEl.textContent = '';
@@ -1025,358 +865,119 @@ document.addEventListener('DOMContentLoaded', () => {
     const { error } = await sb.auth.signInWithPassword({ email, password: pass });
     loginBtn.disabled = false;
     loginBtn.textContent = 'Accedi';
-    if (error) {
-      if (error.message?.toLowerCase().includes('invalid login')) {
-        errEl.textContent = 'Email o password non corretti';
-      } else {
-        errEl.textContent = error.message || 'Errore di accesso';
-      }
-    }
+    if (error) errEl.textContent = error.message?.toLowerCase().includes('invalid login') ? 'Email o password non corretti' : (error.message || 'Errore');
   }
 
   loginBtn.addEventListener('click', doLogin);
   passEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') doLogin(); });
-
-  init().catch(function (err) {
+  init().catch(err => {
     console.error('[admin] init() failed:', err);
-    document.getElementById('screen-loading').innerHTML =
-      '<div style="color:var(--red);font-size:14px">Errore di caricamento — ricarica la pagina</div>';
+    document.getElementById('screen-loading').innerHTML = '<div style="color:var(--red);font-size:14px">Errore di caricamento — ricarica la pagina</div>';
   });
 });
 
-// ── Overview ─────────────────────────────────────────────────────
-async function loadOverview() {
-  // Sites count
-  document.getElementById('ov-sites').textContent = _sites.length;
+// ── Views ─────────────────────────────────────────────────────────
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + name).classList.add('active');
 
-  // Workers count
-  const wRes = await api('GET', '/api/v1/workers');
-  if (wRes.ok) {
-    const workers = Array.isArray(wRes.body) ? wRes.body : (wRes.body.workers || []);
-    document.getElementById('ov-workers').textContent = workers.length;
-    _workers = workers;
+  document.getElementById('action-overview').classList.toggle('active', name === 'overview');
+  document.getElementById('action-workers').classList.toggle('active',  name === 'workers');
+
+  // Scroll to top smoothly
+  document.querySelector('.main').scrollTo({ top: 0, behavior: 'smooth' });
+
+  if (name !== 'site') {
+    document.querySelectorAll('.site-item').forEach(el => el.classList.remove('active'));
+    if (name === 'overview') loadOverview();
+    if (name === 'workers')  loadAllWorkers();
   }
-
-  // Today punches
-  const dateStr = today();
-  let totalToday = 0;
-  const siteIds = _sites.map(s => s.id);
-  await Promise.all(siteIds.map(async (sid) => {
-    const r = await api('GET', `/api/v1/presence?siteId=${sid}&date=${dateStr}`);
-    if (r.ok) {
-      const rows = Array.isArray(r.body) ? r.body : (r.body.rows || []);
-      totalToday += rows.length;
-    }
-  }));
-  document.getElementById('ov-today').textContent = totalToday;
+  closeSidebar();
 }
 
-// ── Cantieri ─────────────────────────────────────────────────────
-async function loadSites() {
-  const { ok, body } = await api('GET', '/api/v1/sites');
-  if (!ok) { toast('Impossibile caricare i cantieri — riprova', 'error'); return; }
-  _sites = Array.isArray(body) ? body : [];
-  renderSites();
-}
-
-function renderSites() {
-  const el = document.getElementById('sites-list');
+// ── Sidebar site list ──────────────────────────────────────────────
+function renderSiteList() {
+  const el = document.getElementById('site-list-sidebar');
   if (!_sites.length) {
-    el.innerHTML = '<div class="empty" style="padding:32px 16px;text-align:center;"><p style="margin:0 0 12px;color:var(--muted);">Nessun cantiere ancora.</p><button class="btn" onclick="openModal(\'modal-new-site\')" style="margin:0 auto;">+ Crea il primo cantiere</button></div>';
+    el.innerHTML = '<div style="padding:8px 16px;font-size:12px;color:var(--muted)">Nessun cantiere</div>';
     return;
   }
-  el.innerHTML = _sites.map(s => `
-    <div class="card">
-      <div class="site-card-header">
-        <div class="site-name">${esc(s.name)}</div>
-      </div>
-      <div class="site-address">${s.address ? esc(s.address) : '<em style="color:var(--muted)">Indirizzo non impostato</em>'}</div>
-      <div class="badge-row">
-        ${s.has_geofence
-          ? `<span class="badge badge-green">GPS ✓</span>`
-          : `<span class="badge badge-muted">GPS ✗</span>`}
-        ${s.has_pin
-          ? `<span class="badge badge-green">PIN ✓</span>`
-          : `<span class="badge badge-muted">PIN ✗</span>`}
-      </div>
-      <div class="site-actions">
-        <button class="btn btn-sm btn-ghost" onclick="openGpsModal('${s.id}','${esc(s.latitude||'')}','${esc(s.longitude||'')}','${s.geofence_radius_m||120}')">Configura GPS</button>
-        <button class="btn btn-sm btn-ghost" onclick="openPinModal('${s.id}')">PIN</button>
-        <button class="btn btn-sm btn-ghost" onclick="downloadQrPdf('${s.id}','${esc(s.name)}')">Genera QR</button>
-        <button class="btn btn-sm btn-ghost" onclick="openAslModal('${s.id}','${esc(s.name)}')">ASL Link</button>
-        <button class="btn btn-sm btn-danger" onclick="openDeleteSite('${s.id}','${esc(s.name)}')">Elimina</button>
-      </div>
-    </div>
-  `).join('');
+  el.innerHTML = _sites.map(s => {
+    const dotColor = s.has_geofence ? 'var(--accent)' : 'var(--border)';
+    return `<div class="site-item" data-id="${s.id}" onclick="selectSite('${s.id}')">
+      <span class="site-dot" style="background:${dotColor}"></span>
+      <span class="site-item-name">${esc(s.name)}</span>
+    </div>`;
+  }).join('');
 }
 
-async function createSite() {
-  const name    = document.getElementById('ns-name').value.trim();
-  const address = document.getElementById('ns-address').value.trim();
-  const errEl   = document.getElementById('ns-error');
-  errEl.textContent = '';
-  if (name.length < 2) { errEl.textContent = 'Nome obbligatorio (min 2 caratteri)'; return; }
-  setLoading('ns-btn', true, 'Creazione...');
-  const { ok, body } = await api('POST', '/api/v1/sites', { name, address: address || undefined });
-  setLoading('ns-btn', false, 'Crea cantiere');
-  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
-  toast('Cantiere creato');
-  closeModal('modal-new-site');
-  document.getElementById('ns-name').value = '';
-  document.getElementById('ns-address').value = '';
-  await loadSites();
+function selectSite(siteId) {
+  _currentSite = _sites.find(s => s.id === siteId);
+  if (!_currentSite) return;
+
+  document.querySelectorAll('.site-item').forEach(el => el.classList.remove('active'));
+  const item = document.querySelector(`.site-item[data-id="${siteId}"]`);
+  if (item) item.classList.add('active');
+
+  document.getElementById('action-overview').classList.remove('active');
+  document.getElementById('action-workers').classList.remove('active');
+
+  document.getElementById('site-header-name').textContent    = _currentSite.name;
+  document.getElementById('site-header-address').textContent = _currentSite.address || 'Indirizzo non impostato';
+  renderSiteHeaderChips();
+
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-site').classList.add('active');
+  document.querySelector('.main').scrollTo({ top: 0, behavior: 'smooth' });
+
+  // Reset to oggi tab
+  showTab('oggi');
+  closeSidebar();
 }
 
-function openGpsModal(siteId, lat, lon, radius) {
-  document.getElementById('gps-site-id').value = siteId;
-  document.getElementById('gps-lat').value     = lat || '';
-  document.getElementById('gps-lon').value     = lon || '';
-  document.getElementById('gps-radius').value  = radius || 120;
-  document.getElementById('gps-error').textContent = '';
-  openModal('modal-gps');
+function renderSiteHeaderChips() {
+  const s = _currentSite;
+  if (!s) return;
+  const chips = [
+    s.has_geofence
+      ? `<span class="chip chip-green">GPS ✓ ${s.geofence_radius_m || 120}m</span>`
+      : `<span class="chip chip-muted">GPS non configurato</span>`,
+    s.has_pin
+      ? `<span class="chip chip-green">PIN ✓</span>`
+      : `<span class="chip chip-muted">PIN non impostato</span>`
+  ];
+  document.getElementById('site-header-chips').innerHTML = chips.join('');
 }
 
-async function saveGps() {
-  const siteId = document.getElementById('gps-site-id').value;
-  const lat    = parseFloat(document.getElementById('gps-lat').value);
-  const lon    = parseFloat(document.getElementById('gps-lon').value);
-  const radius = parseInt(document.getElementById('gps-radius').value, 10);
-  const errEl  = document.getElementById('gps-error');
-  errEl.textContent = '';
-  if (isNaN(lat) || isNaN(lon)) { errEl.textContent = 'Inserisci latitudine e longitudine valide'; return; }
-  setLoading('gps-btn', true, 'Salvataggio...');
-  const { ok, body } = await api('PATCH', `/api/v1/sites/${siteId}/coords`,
-    { latitude: lat, longitude: lon, geofence_radius_m: radius });
-  setLoading('gps-btn', false, 'Salva');
-  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
-  toast('Coordinate salvate');
-  closeModal('modal-gps');
-  await loadSites();
+// ── Tabs ──────────────────────────────────────────────────────────
+function showTab(tab) {
+  _currentTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab[data-tab="${tab}"]`).classList.add('active');
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+
+  if (!_currentSite) return;
+  if (tab === 'oggi')         loadSiteOggi();
+  if (tab === 'lavoratori')   loadSiteLavoratori();
+  if (tab === 'report')       initReportTab();
+  if (tab === 'impostazioni') updateSettingsCards();
 }
 
-function openPinModal(siteId) {
-  document.getElementById('pin-site-id').value = siteId;
-  document.getElementById('pin-value').value   = '';
-  document.getElementById('pin-error').textContent = '';
-  openModal('modal-pin');
+// ── Tab: Oggi ─────────────────────────────────────────────────────
+function resetOggiDate() {
+  document.getElementById('oggi-date').value = today();
+  loadSiteOggi();
 }
 
-async function savePin() {
-  const siteId   = document.getElementById('pin-site-id').value;
-  const pinCode  = document.getElementById('pin-value').value;
-  const errEl    = document.getElementById('pin-error');
-  errEl.textContent = '';
-  setLoading('pin-btn', true, 'Salvataggio...');
-  const { ok, body } = await api('PATCH', `/api/v1/sites/${siteId}/pin`, { pin_code: pinCode });
-  setLoading('pin-btn', false, 'Salva PIN');
-  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
-  toast(pinCode ? 'PIN impostato' : 'PIN rimosso');
-  closeModal('modal-pin');
-  await loadSites();
-}
+async function loadSiteOggi() {
+  if (!_currentSite) return;
+  const siteId  = _currentSite.id;
+  const dateStr = document.getElementById('oggi-date').value || today();
+  const tbody   = document.getElementById('oggi-body');
+  tbody.innerHTML = '<tr><td colspan="6" class="empty"><span class="spinner-sm"></span> Caricamento...</td></tr>';
+  document.getElementById('oggi-summary').innerHTML = '';
 
-async function downloadQrPdf(siteId, siteName) {
-  toast('Generazione PDF QR in corso...');
-  try {
-    const token = await getJwt();
-    const r = await fetch(`/api/v1/sites/${siteId}/qr-pdf`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'X-Company-Id':  _companyId
-      }
-    });
-    if (!r.ok) {
-      const body = await r.json().catch(() => ({}));
-      toast(body.error || 'Errore generazione PDF', 'error');
-      return;
-    }
-    const blob = await r.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    a.download = `qr-${siteName.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast('PDF QR scaricato');
-  } catch (e) {
-    toast('Operazione non riuscita — controlla la connessione e riprova', 'error');
-  }
-}
-
-function openAslModal(siteId, siteName) {
-  // Popola select report ASL con il sito selezionato
-  showSection('report');
-  const sel = document.getElementById('asl-site');
-  sel.value = siteId;
-  document.getElementById('asl-link-box').style.display = 'none';
-  window.scrollTo(0, document.body.scrollHeight);
-}
-
-function openDeleteSite(siteId, siteName) {
-  document.getElementById('del-site-id').value     = siteId;
-  document.getElementById('del-site-name').textContent = siteName;
-  document.getElementById('del-site-error').textContent = '';
-  openModal('modal-del-site');
-}
-
-async function doDeleteSite() {
-  const siteId = document.getElementById('del-site-id').value;
-  const errEl  = document.getElementById('del-site-error');
-  errEl.textContent = '';
-  setLoading('del-site-btn', true, 'Eliminazione...');
-  const { ok, body } = await api('DELETE', `/api/v1/sites/${siteId}`);
-  setLoading('del-site-btn', false, 'Elimina');
-  if (!ok) {
-    if (body.error === 'SITE_HAS_LOGS') {
-      errEl.textContent = body.message || 'Il cantiere ha timbrature: impossibile eliminare';
-    } else {
-      errEl.textContent = body.message || body.error || 'Errore eliminazione';
-    }
-    return;
-  }
-  toast('Cantiere eliminato');
-  closeModal('modal-del-site');
-  await loadSites();
-}
-
-// ── Lavoratori ────────────────────────────────────────────────────
-async function loadWorkers() {
-  const filterSite = document.getElementById('workers-filter-site').value;
-  let url = '/api/v1/workers';
-  if (filterSite) url += `?siteId=${filterSite}`;
-  const { ok, body } = await api('GET', url);
-  if (!ok) { toast('Impossibile caricare i lavoratori — riprova', 'error'); return; }
-  _workers = Array.isArray(body) ? body : (body.workers || []);
-
-  // Popola filter dropdown
-  const sel = document.getElementById('workers-filter-site');
-  const curr = sel.value;
-  sel.innerHTML = '<option value="">Tutti i cantieri</option>' +
-    _sites.map(s => `<option value="${s.id}"${s.id===curr?' selected':''}>${esc(s.name)}</option>`).join('');
-
-  renderWorkers();
-}
-
-function renderWorkers() {
-  const tbody = document.getElementById('workers-body');
-  if (!_workers.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty" style="padding:24px;text-align:center;color:var(--muted);">Nessun lavoratore aggiunto. Vai sulla dashboard Palladia per aggiungerne.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = _workers.map(w => `
-    <tr>
-      <td>${esc(w.full_name)}</td>
-      <td><code style="font-size:12px">${esc(w.fiscal_code || '')}</code></td>
-      <td><span style="color:var(--muted);font-size:12px">—</span></td>
-      <td style="white-space:nowrap">
-        <button class="btn btn-sm btn-ghost" onclick="openAssignModal('${w.id}')">Assegna</button>
-        <button class="btn btn-sm btn-ghost" onclick="openSessionsModal('${w.id}','${esc(w.full_name)}')">Sessioni</button>
-      </td>
-    </tr>
-  `).join('');
-}
-
-async function createWorker() {
-  const name  = document.getElementById('nw-name').value.trim();
-  const cf    = document.getElementById('nw-cf').value.trim().toUpperCase();
-  const errEl = document.getElementById('nw-error');
-  errEl.textContent = '';
-  if (name.length < 2) { errEl.textContent = 'Nome obbligatorio (min 2 caratteri)'; return; }
-  if (!/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/.test(cf)) {
-    errEl.textContent = 'Codice fiscale non valido';
-    return;
-  }
-  setLoading('nw-btn', true, 'Creazione...');
-  const { ok, body } = await api('POST', '/api/v1/workers', { full_name: name, fiscal_code: cf });
-  setLoading('nw-btn', false, 'Crea lavoratore');
-  if (!ok) {
-    if (body.error === 'DUPLICATE_FISCAL_CODE') {
-      errEl.textContent = 'Codice fiscale già presente';
-    } else {
-      errEl.textContent = body.message || body.error || 'Errore';
-    }
-    return;
-  }
-  toast('Lavoratore creato');
-  closeModal('modal-new-worker');
-  document.getElementById('nw-name').value = '';
-  document.getElementById('nw-cf').value = '';
-  await loadWorkers();
-}
-
-function openAssignModal(workerId) {
-  document.getElementById('assign-worker-id').value = workerId;
-  document.getElementById('assign-error').textContent = '';
-  const sel = document.getElementById('assign-site-sel');
-  sel.innerHTML = _sites.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-  openModal('modal-assign');
-}
-
-async function doAssign() {
-  const workerId = document.getElementById('assign-worker-id').value;
-  const siteId   = document.getElementById('assign-site-sel').value;
-  const errEl    = document.getElementById('assign-error');
-  errEl.textContent = '';
-  if (!siteId) { errEl.textContent = 'Seleziona un cantiere'; return; }
-  setLoading('assign-btn', true, 'Assegnazione...');
-  const { ok, body } = await api('POST', `/api/v1/sites/${siteId}/workers`, { worker_id: workerId });
-  setLoading('assign-btn', false, 'Assegna');
-  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
-  toast('Lavoratore assegnato al cantiere');
-  closeModal('modal-assign');
-  await loadWorkers();
-}
-
-async function openSessionsModal(workerId, workerName) {
-  document.getElementById('sessions-list').innerHTML = '<div class="empty">Caricamento...</div>';
-  openModal('modal-sessions');
-  document.querySelector('#modal-sessions .modal-title').textContent = `Sessioni — ${workerName}`;
-  const { ok, body } = await api('GET', `/api/v1/workers/${workerId}/sessions`);
-  if (!ok) {
-    document.getElementById('sessions-list').innerHTML = '<div class="empty" style="color:var(--red)">Errore caricamento sessioni</div>';
-    return;
-  }
-  const sessions = Array.isArray(body) ? body : (body.sessions || []);
-  if (!sessions.length) {
-    document.getElementById('sessions-list').innerHTML = '<div class="empty">Nessuna sessione attiva</div>';
-    return;
-  }
-  document.getElementById('sessions-list').innerHTML = sessions.map(s => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-      <div>
-        <div style="font-size:13px">${new Date(s.created_at || s.expires_at).toLocaleString('it-IT')}</div>
-        <div style="font-size:11px;color:var(--muted)">Scade: ${new Date(s.expires_at).toLocaleString('it-IT')}</div>
-        ${s.revoked_at ? '<div style="font-size:11px;color:var(--red)">REVOCATA</div>' : ''}
-      </div>
-      ${!s.revoked_at ? `<button class="btn btn-sm btn-danger" onclick="revokeSession('${s.id}', this)">Revoca</button>` : ''}
-    </div>
-  `).join('');
-}
-
-async function revokeSession(sessionId, btn) {
-  btn.disabled = true;
-  btn.textContent = '...';
-  const { ok, body } = await api('DELETE', `/api/v1/sessions/${sessionId}`);
-  if (!ok) { toast(body.error || 'Errore revoca', 'error'); btn.disabled = false; btn.textContent = 'Revoca'; return; }
-  toast('Sessione revocata');
-  btn.textContent = 'Revocata';
-  btn.style.background = 'var(--muted)';
-}
-
-// ── Presenze ──────────────────────────────────────────────────────
-function populatePresenzeSiteSelect() {
-  const sel = document.getElementById('pres-site');
-  sel.innerHTML = '<option value="">Seleziona cantiere</option>' +
-    _sites.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
-}
-
-async function loadPresenze() {
-  const siteId  = document.getElementById('pres-site').value;
-  const dateStr = document.getElementById('pres-date').value;
-  const tbody   = document.getElementById('pres-body');
-  if (!siteId) { toast('Seleziona un cantiere', 'error'); return; }
-  if (!dateStr) { toast('Seleziona una data', 'error'); return; }
-  tbody.innerHTML = '<tr><td colspan="6" class="empty">Caricamento...</td></tr>';
   const { ok, body } = await api('GET', `/api/v1/presence?siteId=${siteId}&date=${dateStr}`);
   if (!ok) {
     tbody.innerHTML = `<tr><td colspan="6" class="empty" style="color:var(--red)">Errore: ${body.error || 'sconosciuto'}</td></tr>`;
@@ -1387,8 +988,17 @@ async function loadPresenze() {
     tbody.innerHTML = '<tr><td colspan="6" class="empty">Nessuna timbratura per questa data</td></tr>';
     return;
   }
+
+  // Compute presenti (last event = ENTRY per worker)
+  const lastByWorker = {};
+  rows.forEach(r => { lastByWorker[r.worker_id || r.worker?.id] = r.event_type; });
+  const presenti = Object.values(lastByWorker).filter(e => e === 'ENTRY').length;
+  document.getElementById('oggi-summary').innerHTML = `
+    <div class="pres-stat"><span class="pres-dot" style="background:var(--green)"></span><strong>${presenti}</strong>&nbsp;presenti</div>
+    <div class="pres-stat"><span class="pres-dot" style="background:var(--border)"></span>${rows.length} timbrature</div>`;
+
   tbody.innerHTML = rows.map(r => {
-    const ts = r.timestamp_server ? new Date(r.timestamp_server).toLocaleTimeString('it-IT') : '—';
+    const ts      = r.timestamp_server ? new Date(r.timestamp_server).toLocaleTimeString('it-IT') : '—';
     const isEntry = r.event_type === 'ENTRY';
     return `<tr>
       <td>${esc(r.worker?.full_name || r.full_name || '—')}</td>
@@ -1401,62 +1011,119 @@ async function loadPresenze() {
   }).join('');
 }
 
-// ── Report ────────────────────────────────────────────────────────
-function populateReportSelects() {
-  ['rep-site','asl-site'].forEach(id => {
-    const sel = document.getElementById(id);
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">Seleziona cantiere</option>' +
-      _sites.map(s => `<option value="${s.id}"${s.id===cur?' selected':''}>${esc(s.name)}</option>`).join('');
-  });
+// ── Tab: Lavoratori (site-specific) ───────────────────────────────
+async function loadSiteLavoratori() {
+  if (!_currentSite) return;
+  const tbody = document.getElementById('site-workers-body');
+  tbody.innerHTML = '<tr><td colspan="3" class="empty"><span class="spinner-sm"></span> Caricamento...</td></tr>';
+
+  const { ok, body } = await api('GET', `/api/v1/workers?siteId=${_currentSite.id}`);
+  if (!ok) { tbody.innerHTML = '<tr><td colspan="3" class="empty" style="color:var(--red)">Errore caricamento lavoratori</td></tr>'; return; }
+
+  const workers = Array.isArray(body) ? body : (body.workers || []);
+  if (!workers.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="empty">Nessun lavoratore assegnato a questo cantiere</td></tr>';
+    return;
+  }
+  tbody.innerHTML = workers.map(w => `
+    <tr>
+      <td>${esc(w.full_name)}</td>
+      <td><code style="font-size:11px">${esc(w.fiscal_code || '')}</code></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-ghost" onclick="openSessionsModal('${w.id}','${esc(w.full_name)}')">Sessioni</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function openAddToSiteModal() {
+  if (!_currentSite) return;
+  const sel   = document.getElementById('add-to-site-worker-sel');
+  const errEl = document.getElementById('add-to-site-error');
+  errEl.textContent = '';
+  sel.innerHTML = '<option value="">Caricamento...</option>';
+  openModal('modal-add-to-site');
+
+  // Load all company workers
+  const { ok, body } = await api('GET', '/api/v1/workers');
+  if (!ok) { sel.innerHTML = '<option value="">Errore caricamento</option>'; return; }
+  const all = Array.isArray(body) ? body : (body.workers || []);
+
+  // Load site workers to exclude already-assigned
+  const siteRes = await api('GET', `/api/v1/workers?siteId=${_currentSite.id}`);
+  const siteWorkerIds = new Set();
+  if (siteRes.ok) {
+    const sw = Array.isArray(siteRes.body) ? siteRes.body : (siteRes.body.workers || []);
+    sw.forEach(w => siteWorkerIds.add(w.id));
+  }
+
+  const available = all.filter(w => !siteWorkerIds.has(w.id));
+  if (!available.length) {
+    sel.innerHTML = '<option value="">Tutti i lavoratori già assegnati</option>';
+    return;
+  }
+  sel.innerHTML = available.map(w => `<option value="${w.id}">${esc(w.full_name)}</option>`).join('');
+}
+
+async function doAddToSite() {
+  if (!_currentSite) return;
+  const workerId = document.getElementById('add-to-site-worker-sel').value;
+  const errEl    = document.getElementById('add-to-site-error');
+  errEl.textContent = '';
+  if (!workerId) { errEl.textContent = 'Seleziona un lavoratore'; return; }
+  setLoading('add-to-site-btn', true, 'Assegnazione...');
+  const { ok, body } = await api('POST', `/api/v1/sites/${_currentSite.id}/workers`, { worker_id: workerId });
+  setLoading('add-to-site-btn', false, 'Aggiungi');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Lavoratore aggiunto al cantiere');
+  closeModal('modal-add-to-site');
+  loadSiteLavoratori();
+}
+
+// ── Tab: Report ───────────────────────────────────────────────────
+function initReportTab() {
+  document.getElementById('rep-missing-result').textContent = '';
+  document.getElementById('asl-link-box').style.display = 'none';
 }
 
 async function downloadPresenzePdf() {
-  const siteId = document.getElementById('rep-site').value;
-  const from   = document.getElementById('rep-from').value;
-  const to     = document.getElementById('rep-to').value;
-  if (!siteId || !from || !to) { toast('Seleziona cantiere e date', 'error'); return; }
-  if (from > to) { toast('La data inizio deve essere prima della data fine', 'error'); return; }
+  if (!_currentSite) return;
+  const from = document.getElementById('rep-from').value;
+  const to   = document.getElementById('rep-to').value;
+  if (!from || !to) { toast('Seleziona le date', 'error'); return; }
+  if (from > to)    { toast('La data inizio deve essere prima della fine', 'error'); return; }
   toast('Generazione PDF...');
   try {
     const token = await getJwt();
-    const url   = `/api/v1/reports/sites/${siteId}/presenze?from=${from}&to=${to}`;
-    const r     = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId } });
-    if (!r.ok) {
-      const body = await r.json().catch(() => ({}));
-      toast(body.error || 'Errore download PDF', 'error'); return;
-    }
+    const r = await fetch(`/api/v1/reports/sites/${_currentSite.id}/presenze?from=${from}&to=${to}`,
+      { headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId } });
+    if (!r.ok) { const b = await r.json().catch(()=>({})); toast(b.error || 'Errore PDF', 'error'); return; }
     const blob = await r.blob();
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = `presenze-${siteId}-${from}-${to}.pdf`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `presenze-${_currentSite.id}-${from}-${to}.pdf`;
     a.click();
     URL.revokeObjectURL(a.href);
-  } catch (e) {
-    toast('Operazione non riuscita — controlla la connessione e riprova', 'error');
-  }
+  } catch { toast('Operazione non riuscita', 'error'); }
 }
 
 async function downloadPresenzeCsv() {
-  const siteId = document.getElementById('rep-site').value;
-  const from   = document.getElementById('rep-from').value;
-  const to     = document.getElementById('rep-to').value;
-  if (!siteId || !from || !to) { toast('Seleziona cantiere e date', 'error'); return; }
+  if (!_currentSite) return;
+  const from = document.getElementById('rep-from').value;
+  const to   = document.getElementById('rep-to').value;
+  if (!from || !to) { toast('Seleziona le date', 'error'); return; }
   toast('Generazione CSV...');
   try {
     const token = await getJwt();
-    const url   = `/api/v1/reports/presence-range?siteId=${siteId}&from=${from}&to=${to}`;
-    const r     = await fetch(url, { headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId } });
-    if (!r.ok) { const b = await r.json().catch(()=>({})); toast(b.error||'Errore CSV','error'); return; }
+    const r = await fetch(`/api/v1/reports/presence-range?siteId=${_currentSite.id}&from=${from}&to=${to}`,
+      { headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId } });
+    if (!r.ok) { const b = await r.json().catch(()=>({})); toast(b.error || 'Errore CSV', 'error'); return; }
     const blob = await r.blob();
-    const a    = document.createElement('a');
-    a.href     = URL.createObjectURL(blob);
-    a.download = `riepilogo-${siteId}-${from}-${to}.csv`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `riepilogo-${_currentSite.id}-${from}-${to}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
-  } catch (e) {
-    toast('Operazione non riuscita — controlla la connessione e riprova', 'error');
-  }
+  } catch { toast('Operazione non riuscita', 'error'); }
 }
 
 async function checkMissingExits() {
@@ -1464,26 +1131,20 @@ async function checkMissingExits() {
   resEl.textContent = 'Controllo in corso...';
   resEl.style.color = 'var(--muted)';
   const { ok, body } = await api('POST', '/api/v1/alerts/check-missing-exits', { date: today(), notify: false });
-  if (!ok) {
-    resEl.textContent = 'Errore: ' + (body.error || 'sconosciuto');
-    resEl.style.color = 'var(--red)';
-    return;
-  }
+  if (!ok) { resEl.textContent = 'Errore: ' + (body.error || 'sconosciuto'); resEl.style.color = 'var(--red)'; return; }
   const count = body.missing_count ?? 0;
   resEl.style.color = count > 0 ? 'var(--amber)' : 'var(--green)';
-  resEl.textContent = count > 0
-    ? `Trovate ${count} uscite mancanti`
-    : 'Nessuna uscita mancante trovata';
+  resEl.textContent = count > 0 ? `Trovate ${count} uscite mancanti` : 'Nessuna uscita mancante';
 }
 
 async function generateAslLink() {
-  const siteId  = document.getElementById('asl-site').value;
+  if (!_currentSite) return;
   const from    = document.getElementById('asl-from').value;
   const to      = document.getElementById('asl-to').value;
   const label   = document.getElementById('asl-label').value.trim() || undefined;
   const ttlDays = parseInt(document.getElementById('asl-ttl').value, 10) || 30;
-  if (!siteId || !from || !to) { toast('Seleziona cantiere e date', 'error'); return; }
-  const { ok, body } = await api('POST', `/api/v1/sites/${siteId}/asl-token`,
+  if (!from || !to) { toast('Seleziona le date', 'error'); return; }
+  const { ok, body } = await api('POST', `/api/v1/sites/${_currentSite.id}/asl-token`,
     { from_date: from, to_date: to, label, ttl_days: ttlDays });
   if (!ok) { toast(body.error || 'Errore generazione link', 'error'); return; }
   const url = body.url || body.link || (window.location.origin + '/asl/' + body.token);
@@ -1497,18 +1158,336 @@ function copyAslLink() {
   navigator.clipboard.writeText(url).then(() => toast('Link copiato')).catch(() => toast('Copia manuale: ' + url));
 }
 
-// ── Utility ───────────────────────────────────────────────────────
-function esc(str) {
-  return String(str ?? '')
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// ── Tab: Impostazioni ─────────────────────────────────────────────
+function updateSettingsCards() {
+  if (!_currentSite) return;
+  const s = _currentSite;
+
+  document.getElementById('set-gps-chip').outerHTML = `<span id="set-gps-chip" class="chip ${s.has_geofence ? 'chip-green' : 'chip-muted'}">${s.has_geofence ? 'Attivo' : 'Non configurato'}</span>`;
+  document.getElementById('set-pin-chip').outerHTML = `<span id="set-pin-chip" class="chip ${s.has_pin ? 'chip-green' : 'chip-muted'}">${s.has_pin ? 'Attivo' : 'Non impostato'}</span>`;
+
+  document.getElementById('set-gps-info').textContent = s.has_geofence
+    ? `Lat: ${s.latitude}, Lon: ${s.longitude} — raggio: ${s.geofence_radius_m || 120}m`
+    : 'Senza GPS i lavoratori possono timbrare da qualsiasi posizione.';
+  document.getElementById('set-pin-info').textContent = s.has_pin
+    ? 'PIN impostato. I lavoratori lo inseriscono ad ogni timbratura.'
+    : 'Senza PIN la timbratura avviene solo con il badge.';
 }
 
-// Chiudi modal cliccando overlay
-document.addEventListener('click', (e) => {
-  if (e.target.classList.contains('modal-overlay')) {
-    e.target.classList.remove('open');
+function openGpsModalCurrent() {
+  if (!_currentSite) return;
+  const s = _currentSite;
+  document.getElementById('gps-site-id').value   = s.id;
+  document.getElementById('gps-lat').value        = s.latitude  || '';
+  document.getElementById('gps-lon').value        = s.longitude || '';
+  document.getElementById('gps-radius').value     = s.geofence_radius_m || 120;
+  document.getElementById('gps-error').textContent = '';
+  openModal('modal-gps');
+}
+
+function openPinModalCurrent() {
+  if (!_currentSite) return;
+  document.getElementById('pin-site-id').value       = _currentSite.id;
+  document.getElementById('pin-value').value         = '';
+  document.getElementById('pin-error').textContent   = '';
+  openModal('modal-pin');
+}
+
+async function downloadQrPdfCurrent() {
+  if (!_currentSite) return;
+  toast('Generazione PDF QR...');
+  try {
+    const token = await getJwt();
+    const r = await fetch(`/api/v1/sites/${_currentSite.id}/qr-pdf`, {
+      headers: { 'Authorization': `Bearer ${token}`, 'X-Company-Id': _companyId }
+    });
+    if (!r.ok) { const b = await r.json().catch(()=>({})); toast(b.error || 'Errore PDF', 'error'); return; }
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `qr-${_currentSite.name.replace(/[^a-z0-9]/gi,'_').toLowerCase()}.pdf`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('PDF QR scaricato');
+  } catch { toast('Operazione non riuscita', 'error'); }
+}
+
+function openDeleteCurrentSite() {
+  if (!_currentSite) return;
+  document.getElementById('del-site-id').value          = _currentSite.id;
+  document.getElementById('del-site-name').textContent  = _currentSite.name;
+  document.getElementById('del-site-error').textContent = '';
+  openModal('modal-del-site');
+}
+
+// ── GPS save ──────────────────────────────────────────────────────
+async function saveGps() {
+  const siteId = document.getElementById('gps-site-id').value;
+  const lat    = parseFloat(document.getElementById('gps-lat').value);
+  const lon    = parseFloat(document.getElementById('gps-lon').value);
+  const radius = parseInt(document.getElementById('gps-radius').value, 10);
+  const errEl  = document.getElementById('gps-error');
+  errEl.textContent = '';
+  if (isNaN(lat) || isNaN(lon)) { errEl.textContent = 'Inserisci latitudine e longitudine valide'; return; }
+  setLoading('gps-btn', true, 'Salvataggio...');
+  const { ok, body } = await api('PATCH', `/api/v1/sites/${siteId}/coords`, { latitude: lat, longitude: lon, geofence_radius_m: radius });
+  setLoading('gps-btn', false, 'Salva');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Coordinate salvate');
+  closeModal('modal-gps');
+  await refreshSites();
+}
+
+// ── PIN save ──────────────────────────────────────────────────────
+async function savePin() {
+  const siteId  = document.getElementById('pin-site-id').value;
+  const pinCode = document.getElementById('pin-value').value;
+  const errEl   = document.getElementById('pin-error');
+  errEl.textContent = '';
+  setLoading('pin-btn', true, 'Salvataggio...');
+  const { ok, body } = await api('PATCH', `/api/v1/sites/${siteId}/pin`, { pin_code: pinCode });
+  setLoading('pin-btn', false, 'Salva PIN');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast(pinCode ? 'PIN impostato' : 'PIN rimosso');
+  closeModal('modal-pin');
+  await refreshSites();
+}
+
+// ── Delete site ───────────────────────────────────────────────────
+async function doDeleteSite() {
+  const siteId = document.getElementById('del-site-id').value;
+  const errEl  = document.getElementById('del-site-error');
+  errEl.textContent = '';
+  setLoading('del-site-btn', true, 'Eliminazione...');
+  const { ok, body } = await api('DELETE', `/api/v1/sites/${siteId}`);
+  setLoading('del-site-btn', false, 'Elimina');
+  if (!ok) {
+    errEl.textContent = body.error === 'SITE_HAS_LOGS'
+      ? (body.message || 'Il cantiere ha timbrature: impossibile eliminare')
+      : (body.message || body.error || 'Errore eliminazione');
+    return;
   }
+  toast('Cantiere eliminato');
+  closeModal('modal-del-site');
+  _currentSite = null;
+  await refreshSites();
+  showView('overview');
+}
+
+// ── Refresh sites ─────────────────────────────────────────────────
+async function refreshSites() {
+  const { ok, body } = await api('GET', '/api/v1/sites');
+  if (ok) _sites = Array.isArray(body) ? body : [];
+  if (_currentSite) _currentSite = _sites.find(s => s.id === _currentSite.id) || null;
+  renderSiteList();
+  if (_currentSite) { renderSiteHeaderChips(); updateSettingsCards(); }
+}
+
+// ── Overview ──────────────────────────────────────────────────────
+async function loadOverview() {
+  document.getElementById('overview-date').textContent =
+    new Date().toLocaleDateString('it-IT', { weekday:'long', day:'numeric', month:'long' });
+
+  document.getElementById('ov-sites').textContent = _sites.length;
+
+  const wRes = await api('GET', '/api/v1/workers');
+  if (wRes.ok) {
+    const workers = Array.isArray(wRes.body) ? wRes.body : (wRes.body.workers || []);
+    document.getElementById('ov-workers').textContent = workers.length;
+    _workers = workers;
+  }
+
+  const dateStr = today();
+  const siteCounts = {};
+  await Promise.all(_sites.map(async s => {
+    const r = await api('GET', `/api/v1/presence?siteId=${s.id}&date=${dateStr}`);
+    if (r.ok) {
+      const rows = Array.isArray(r.body) ? r.body : (r.body.rows || []);
+      // Count presenti (last event per worker = ENTRY)
+      const last = {};
+      rows.forEach(p => { last[p.worker_id || p.worker?.id] = p.event_type; });
+      siteCounts[s.id] = { total: rows.length, presenti: Object.values(last).filter(e => e === 'ENTRY').length };
+    } else {
+      siteCounts[s.id] = { total: 0, presenti: 0 };
+    }
+  }));
+
+  const totalPresenti = Object.values(siteCounts).reduce((sum, c) => sum + c.presenti, 0);
+  document.getElementById('ov-today').textContent = totalPresenti;
+
+  const grid = document.getElementById('overview-sites-grid');
+  if (!_sites.length) {
+    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px 0">
+      <div style="color:var(--muted);font-size:14px;margin-bottom:16px">Nessun cantiere ancora.</div>
+      <button class="btn" onclick="openModal('modal-new-site')">+ Crea il primo cantiere</button>
+    </div>`;
+    return;
+  }
+
+  grid.innerHTML = _sites.map(s => {
+    const counts = siteCounts[s.id] || { total: 0, presenti: 0 };
+    return `<div class="ov-card" onclick="selectSite('${s.id}')">
+      <div class="ov-card-name">${esc(s.name)}</div>
+      <div class="ov-card-address">${s.address ? esc(s.address) : 'Indirizzo non impostato'}</div>
+      <div class="ov-card-footer">
+        <span class="chip ${counts.presenti > 0 ? 'chip-green' : 'chip-muted'}">${counts.presenti} presenti</span>
+        ${s.has_geofence ? '<span class="chip chip-green">GPS ✓</span>' : '<span class="chip chip-muted">GPS ✗</span>'}
+        ${s.has_pin      ? '<span class="chip chip-green">PIN ✓</span>' : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── All Workers (global view) ──────────────────────────────────────
+async function loadAllWorkers() {
+  const filterSite = document.getElementById('workers-filter-site').value;
+  let url = '/api/v1/workers';
+  if (filterSite) url += `?siteId=${filterSite}`;
+  const { ok, body } = await api('GET', url);
+  if (!ok) { toast('Impossibile caricare i lavoratori', 'error'); return; }
+  _workers = Array.isArray(body) ? body : (body.workers || []);
+
+  const sel  = document.getElementById('workers-filter-site');
+  const curr = sel.value;
+  sel.innerHTML = '<option value="">Tutti i cantieri</option>' +
+    _sites.map(s => `<option value="${s.id}"${s.id===curr?' selected':''}>${esc(s.name)}</option>`).join('');
+
+  const tbody = document.getElementById('workers-body');
+  if (!_workers.length) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty">Nessun lavoratore</td></tr>';
+    return;
+  }
+  tbody.innerHTML = _workers.map(w => `
+    <tr>
+      <td>${esc(w.full_name)}</td>
+      <td><code style="font-size:11px">${esc(w.fiscal_code || '')}</code></td>
+      <td><span style="color:var(--muted);font-size:12px">—</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-sm btn-ghost" onclick="openAssignModal('${w.id}')">Assegna</button>
+        <button class="btn btn-sm btn-ghost" onclick="openSessionsModal('${w.id}','${esc(w.full_name)}')">Sessioni</button>
+      </td>
+    </tr>`).join('');
+}
+
+// ── Create site ───────────────────────────────────────────────────
+async function createSite() {
+  const name    = document.getElementById('ns-name').value.trim();
+  const address = document.getElementById('ns-address').value.trim();
+  const errEl   = document.getElementById('ns-error');
+  errEl.textContent = '';
+  if (name.length < 2) { errEl.textContent = 'Nome obbligatorio (min 2 caratteri)'; return; }
+  setLoading('ns-btn', true, 'Creazione...');
+  const { ok, body } = await api('POST', '/api/v1/sites', { name, address: address || undefined });
+  setLoading('ns-btn', false, 'Crea cantiere');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Cantiere creato');
+  closeModal('modal-new-site');
+  document.getElementById('ns-name').value    = '';
+  document.getElementById('ns-address').value = '';
+  await refreshSites();
+  // Navigate to the new site
+  const newSite = body.site || body;
+  if (newSite?.id) selectSite(newSite.id);
+}
+
+// ── Create worker ─────────────────────────────────────────────────
+async function createWorker() {
+  const name  = document.getElementById('nw-name').value.trim();
+  const cf    = document.getElementById('nw-cf').value.trim().toUpperCase();
+  const errEl = document.getElementById('nw-error');
+  errEl.textContent = '';
+  if (name.length < 2) { errEl.textContent = 'Nome obbligatorio'; return; }
+  if (!/^[A-Z]{6}\d{2}[A-Z]\d{2}[A-Z]\d{3}[A-Z]$/.test(cf)) { errEl.textContent = 'Codice fiscale non valido'; return; }
+  setLoading('nw-btn', true, 'Creazione...');
+  const { ok, body } = await api('POST', '/api/v1/workers', { full_name: name, fiscal_code: cf });
+  setLoading('nw-btn', false, 'Crea lavoratore');
+  if (!ok) {
+    errEl.textContent = body.error === 'DUPLICATE_FISCAL_CODE' ? 'Codice fiscale già presente' : (body.message || body.error || 'Errore');
+    return;
+  }
+  // If we're inside a site's lavoratori tab, auto-assign
+  const workerId = body.worker?.id || body.id;
+  if (_currentSite && workerId && document.getElementById('view-site').classList.contains('active')) {
+    await api('POST', `/api/v1/sites/${_currentSite.id}/workers`, { worker_id: workerId });
+    toast('Lavoratore creato e assegnato al cantiere');
+  } else {
+    toast('Lavoratore creato');
+  }
+  closeModal('modal-new-worker');
+  document.getElementById('nw-name').value = '';
+  document.getElementById('nw-cf').value   = '';
+  if (_currentTab === 'lavoratori') loadSiteLavoratori();
+  else if (document.getElementById('view-workers').classList.contains('active')) loadAllWorkers();
+}
+
+// Update "Nuovo lavoratore" modal note based on context
+function openModal(id) {
+  if (id === 'modal-new-worker') {
+    const note = document.getElementById('nw-assign-note');
+    note.textContent = (_currentSite && document.getElementById('view-site').classList.contains('active'))
+      ? `Verrà assegnato automaticamente a "${_currentSite.name}".`
+      : '';
+  }
+  document.getElementById(id).classList.add('open');
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+// ── Assign (global workers view) ──────────────────────────────────
+function openAssignModal(workerId) {
+  document.getElementById('assign-worker-id').value    = workerId;
+  document.getElementById('assign-error').textContent  = '';
+  const sel = document.getElementById('assign-site-sel');
+  sel.innerHTML = _sites.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
+  document.getElementById('modal-assign').classList.add('open');
+}
+
+async function doAssign() {
+  const workerId = document.getElementById('assign-worker-id').value;
+  const siteId   = document.getElementById('assign-site-sel').value;
+  const errEl    = document.getElementById('assign-error');
+  errEl.textContent = '';
+  if (!siteId) { errEl.textContent = 'Seleziona un cantiere'; return; }
+  setLoading('assign-btn', true, 'Assegnazione...');
+  const { ok, body } = await api('POST', `/api/v1/sites/${siteId}/workers`, { worker_id: workerId });
+  setLoading('assign-btn', false, 'Assegna');
+  if (!ok) { errEl.textContent = body.message || body.error || 'Errore'; return; }
+  toast('Lavoratore assegnato al cantiere');
+  document.getElementById('modal-assign').classList.remove('open');
+  loadAllWorkers();
+}
+
+// ── Sessions ──────────────────────────────────────────────────────
+async function openSessionsModal(workerId, workerName) {
+  document.getElementById('sessions-list').innerHTML = '<div class="empty">Caricamento...</div>';
+  document.getElementById('modal-sessions').classList.add('open');
+  document.querySelector('#modal-sessions .modal-title').textContent = `Sessioni — ${workerName}`;
+  const { ok, body } = await api('GET', `/api/v1/workers/${workerId}/sessions`);
+  if (!ok) { document.getElementById('sessions-list').innerHTML = '<div class="empty" style="color:var(--red)">Errore caricamento</div>'; return; }
+  const sessions = Array.isArray(body) ? body : (body.sessions || []);
+  if (!sessions.length) { document.getElementById('sessions-list').innerHTML = '<div class="empty">Nessuna sessione attiva</div>'; return; }
+  document.getElementById('sessions-list').innerHTML = sessions.map(s => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-size:13px">${new Date(s.created_at || s.expires_at).toLocaleString('it-IT')}</div>
+        <div style="font-size:11px;color:var(--muted)">Scade: ${new Date(s.expires_at).toLocaleString('it-IT')}</div>
+        ${s.revoked_at ? '<div style="font-size:11px;color:var(--red)">REVOCATA</div>' : ''}
+      </div>
+      ${!s.revoked_at ? `<button class="btn btn-sm btn-danger" onclick="revokeSession('${s.id}',this)">Revoca</button>` : ''}
+    </div>`).join('');
+}
+
+async function revokeSession(sessionId, btn) {
+  btn.disabled = true; btn.textContent = '...';
+  const { ok, body } = await api('DELETE', `/api/v1/sessions/${sessionId}`);
+  if (!ok) { toast(body.error || 'Errore revoca', 'error'); btn.disabled = false; btn.textContent = 'Revoca'; return; }
+  toast('Sessione revocata');
+  btn.textContent = 'Revocata'; btn.style.background = 'var(--muted)';
+}
+
+// ── Close modal on overlay click ──────────────────────────────────
+document.addEventListener('click', (e) => {
+  if (e.target.classList.contains('modal-overlay')) e.target.classList.remove('open');
 });
 </script>
 </body>

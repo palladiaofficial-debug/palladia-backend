@@ -607,7 +607,7 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
 </head><body><div class="page">
   <div class="header">
     <div class="header-left">
-      <div class="badge badge-palladia">PALLADIA</div>
+      <div class="badge badge-palladia" style="display:inline-flex;align-items:center;gap:4px"><svg width="7" height="8" viewBox="0 0 90 100" style="flex-shrink:0"><path fill="currentColor" d="M11 8L29 8L29 74L19 96L11 96Z"/><path fill="currentColor" d="M29 8C52 8 80 17 80 34C80 50 59 61 41 57C33 55 29 50 31 45C33 51 40 54 46 52C59 47 71 39 71 30C71 19 51 15 29 15Z"/></svg>PALLADIA</div>
       <h1>Registro Meteo Cantiere</h1>
       <p>${esc(site.name)} · ${esc(site.address)}</p>
       <p>Committente: <strong>${esc(site.client) || '—'}</strong> · Periodo: <strong>${period}</strong></p>

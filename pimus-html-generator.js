@@ -234,7 +234,7 @@ function buildCover(d, revision) {
       Documento redatto in conformità al D.Lgs. 81/2008, Art. 136 e Allegato XXII<br/>
       Data documento: ${dataDoc}
     </div>
-    <div class="cover-norm">PALLADIA · Sicurezza sul Lavoro</div>
+    <div class="cover-norm" style="display:flex;align-items:center;gap:4pt"><svg width="7" height="8" viewBox="0 0 90 100" style="flex-shrink:0"><path fill="currentColor" d="M11 8L29 8L29 74L19 96L11 96Z"/><path fill="currentColor" d="M29 8C52 8 80 17 80 34C80 50 59 61 41 57C33 55 29 50 31 45C33 51 40 54 46 52C59 47 71 39 71 30C71 19 51 15 29 15Z"/></svg>PALLADIA · Sicurezza sul Lavoro</div>
   </div>
 </div>`;
 }

@@ -575,7 +575,7 @@ function buildCover(d, revision) {
   return `
 <div class="cover">
   <div class="cover-sidebar">
-    <div class="cover-sidebar-brand">PALLADIA</div>
+    <div class="cover-sidebar-brand" style="display:flex;align-items:center;gap:5pt"><svg width="8" height="9" viewBox="0 0 90 100" style="flex-shrink:0"><path fill="currentColor" d="M11 8L29 8L29 74L19 96L11 96Z"/><path fill="currentColor" d="M29 8C52 8 80 17 80 34C80 50 59 61 41 57C33 55 29 50 31 45C33 51 40 54 46 52C59 47 71 39 71 30C71 19 51 15 29 15Z"/></svg>PALLADIA</div>
 
     <div class="cover-sidebar-item">
       <div class="cover-label">Norma di riferimento</div>

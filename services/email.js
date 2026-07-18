@@ -34,8 +34,9 @@ function layout(title, bodyHtml) {
     <table width="100%" style="max-width:560px;margin-bottom:8px;">
       <tr>
         <td style="padding:0 0 16px 4px;">
-          <span style="font-size:15px;font-weight:800;letter-spacing:0.12em;color:#1a1a1a;text-transform:uppercase;">PALLADIA</span>
-          <span style="font-size:12px;color:#9ca3af;margin-left:10px;font-weight:400;letter-spacing:0;">Gestione Cantieri</span>
+          <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAACz0lEQVR4nOxXTWgTURCeeZuE1poNtRcVBEs9lJhEoaDWNtWrP+hdQUQ8WBERiwcPIhQPevLgxYMHRQ/eREUoPWgkSZseFLuJgsWCCOZQq5iftjHmvXESKSZr0vw0m3rwO+zOezM7+73ZmXlvBawxbOYJ55BnLylwmOelyv3QNJEAyH5JBz/M8xRBE4DmCd3vjSPgJvM8KQqiQH9BZgDiVxbmETGuFEQEqEAi8y0Mr+KLYDWBSiCgDF+e8P1+yhYbgwDkoGkEiK4ooFBe1gBtHILNhLRREPSylz4eb8e86s8DnxTRaCocu8sjCRVggxrBzufSoVigosH+rW3rpXO3ANjHCzjJn6hbIN5x+b3nf6rsgcXw+3i5xwQ0C4GPmXQw+jIZjI4mgkaPIjjCmfKWqfvswhHR+93brCVQCkqFjKdJm7GT5ddMYgto2hj4fB2tIvAbnIQchbN5kaulR9fpBrSUACMZMqYK1QGFPDoGrSbg3NXbxUnZVhggdrYN+bqL9TVXQcOwOy6WvFDm1pWMwUI4Bz2HEejycrvh3i3T9sXZYhvLPoE+4D2OKB5x8hU1O3qYL9fGCfT12avauN0O7qa3uG0/wOIIEyyhpKtm85oJSCnR1Z69tpKNPuDbo2/Qpjnpzpl13JiGExOx2YYJaJqW3wIPufyeM2DaQzjcB12D3gAKmOSI9xbreA9RvCecSoWNe+X81peEBKeZxDMO8QgSvOD6nkMQR5mOp6w5UUQqObww8e5NJZd1EUiGjUh7/w6fXaNL7P4EJ1lnGbMEv3lcKrydnog+r+az7jJcmpz+vARwgcWRjn6vGzXqWtZxsL/zag0WVa3+VtMH5MJkNAqrhOWt+D+Bf57AX0mIhFnzUZUK53ARAAtQWwQQx1Oh6RmwADWVoSJ1HSxCVQIc+6kVj+OWE0CybPVVCfDqZ1Kh6GNYKwKI6iY06S+4En4BAAD//zllH5UAAAAGSURBVAMAiTUTTW0RyRsAAAAASUVORK5CYII=" width="16" height="18" style="vertical-align:middle;margin-right:6px;" alt="" />
+          <span style="font-size:15px;font-weight:800;letter-spacing:0.12em;color:#1a1a1a;text-transform:uppercase;vertical-align:middle;">PALLADIA</span>
+          <span style="font-size:12px;color:#9ca3af;margin-left:10px;font-weight:400;letter-spacing:0;vertical-align:middle;">Gestione Cantieri</span>
         </td>
       </tr>
     </table>

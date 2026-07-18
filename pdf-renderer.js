@@ -48,7 +48,7 @@ function escT(str) {
  */
 function buildHeaderTemplate(docTitle) {
   return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #DDDDDD;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:9px;font-weight:bold;color:#2C2C2C;letter-spacing:0.5pt;line-height:1.1;white-space:nowrap;flex:0 0 auto;">PALLADIA</span>
+  <span style="font-size:9px;font-weight:bold;color:#2C2C2C;letter-spacing:0.5pt;line-height:1.1;white-space:nowrap;flex:0 0 auto;"><svg width="7" height="8" viewBox="0 0 90 100" style="vertical-align:middle;margin-right:4px;"><path fill="#2C2C2C" d="M11 8L29 8L29 74L19 96L11 96Z"/><path fill="#2C2C2C" d="M29 8C52 8 80 17 80 34C80 50 59 61 41 57C33 55 29 50 31 45C33 51 40 54 46 52C59 47 71 39 71 30C71 19 51 15 29 15Z"/></svg>PALLADIA</span>
   <span style="font-size:9px;color:#AAAAAA;line-height:1.1;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding-left:8px;">${escT(docTitle)}</span>
 </div>`;
 }

@@ -3,7 +3,7 @@
   "host": "palladia-backend-production.up.railway.app",
   "name": "Palladia",
   "launcherName": "Palladia",
-  "themeColor": "#1a1a1a",
+  "themeColor": "#0f3d2e",
   "backgroundColor": "#f5f3ee",
   "startUrl": "/",
   "iconUrl": "/icon-pwa-512.png",

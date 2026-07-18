@@ -47,7 +47,6 @@ const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
 const { startDailyStatsCron }       = require('./services/dailyStatsCron');
 const { startSafetyCopilotCron }    = require('./services/safetyCopilotCron');
 const { startSdiConsultationPollCron } = require('./services/sdiConsultationPollCron');
-const { PNG }                       = require('pngjs');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -474,8 +473,7 @@ app.get('/api/parse-diag', verifyJwtOnly, async (req, res) => {
   }
 });
 
-// Favicon — evita 404 nei log
-app.get('/favicon.ico', (req, res) => res.status(204).end());
+// Favicon — servita staticamente da public/favicon.ico (vedi express.static più sotto)
 
 // ── Digital Asset Links (TWA verification) ──────────────────────────────────
 app.get('/.well-known/assetlinks.json', (req, res) => {
@@ -535,34 +533,7 @@ app.get('/lavoratore/:code', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('lavoratore.html', { root: __dirname + '/public' });
 });
-// ── PWA: icone generate in-memory con pngjs ──────────────────────────────────
-let _iconCache = {};
-function buildSolidIcon(size) {
-  if (_iconCache[size]) return _iconCache[size];
-  const png = new PNG({ width: size, height: size });
-  const [r, g, b] = [0x1a, 0x1a, 0x1a]; // #1a1a1a — Palladia primary (near-black)
-  for (let i = 0; i < size * size; i++) {
-    const off = i * 4;
-    png.data[off] = r; png.data[off + 1] = g; png.data[off + 2] = b; png.data[off + 3] = 255;
-  }
-  return (_iconCache[size] = PNG.sync.write(png));
-}
-
-app.get('/icon-pwa-192.png', (_req, res) => {
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.send(buildSolidIcon(192));
-});
-app.get('/icon-pwa-512.png', (_req, res) => {
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.send(buildSolidIcon(512));
-});
-app.get('/apple-touch-icon.png', (_req, res) => {
-  res.setHeader('Content-Type', 'image/png');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
-  res.send(buildSolidIcon(192));
-});
+// Icone PWA/apple-touch-icon — servite staticamente da public/ (vedi express.static più sotto)
 
 // Manifest dinamico per-lavoratore — start_url punta direttamente al badge code
 // DEVE stare PRIMA della route /timbratura/:code e di express.static
