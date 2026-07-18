@@ -77,13 +77,16 @@ async function analyzeChatUpload({ uploadId, companyId, userId, conversationId =
     : { type: 'image',    source: { type: 'base64', media_type: upload.mime_type,      data: b64 } };
 
   const aiClient   = getClient();
+  // NOTA: niente più `betas: ['pdfs-2024-09-25']` — quel flag beta è stato
+  // promosso a supporto nativo e l'API ora rifiuta la richiesta se lo riceve
+  // ("betas: Extra inputs are not permitted"). Trovato con verifica dal vivo
+  // 2026-07-19: il PDF via chat falliva silenziosamente da chissà quanto.
   const createOpts = {
     model:      'claude-haiku-4-5-20251001',
     max_tokens: 1024,
     system:     ANALYSIS_SYSTEM_PROMPT,
     messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: 'Analizza.' }] }],
   };
-  if (isPdf) createOpts.betas = ['pdfs-2024-09-25'];
 
   const aiResp = await aiClient.messages.create(createOpts);
   logUsage({ companyId, userId, conversationId, model: createOpts.model, callSite: 'read_uploaded_document', usage: aiResp.usage });
