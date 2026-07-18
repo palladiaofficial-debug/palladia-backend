@@ -1,5 +1,10 @@
 # Checklist pre-lancio Palladia — test manuale, un flusso alla volta
 
+## ✅ 2026-07-18 — Tutti i bloccanti 🔴 chiusi, pronti per un lancio limitato
+Restano solo voci 🟡/🟢 non bloccanti (rifiniture, o si chiudono da sole al primo cliente reale
+tipo webhook Stripe / portale abbonamento). Vedi sezione 9 dell'analisi strategica del 18/7
+(memoria `strategic_analysis_2026_07_18`) per il piano operativo a 60 giorni.
+
 ## 🔴🔴 CRITICO — 2026-07-09: RLS disabilitato su 24 tabelle, dati cross-tenant esposti
 
 Scoperto testando manualmente la voce di sezione 13 ("provare a modificare l'URL con
@@ -131,7 +136,7 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 - [x] 🔴 `SENTRY_DSN` impostata su Railway (backend) — riverificato 2026-07-09 con `railway variables`, presente
 - [x] 🔴 `VITE_SENTRY_DSN` impostata su Vercel (frontend) — riverificato 2026-07-09 con `vercel env ls production`, presente (35gg)
-- [x] 🟡 Credito Anthropic — **verificato 2026-07-18 con una chiamata reale minima** (Haiku, 5 token): risposta ricevuta senza errore di billing, quindi il credito non è esaurito in questo momento. Non è la stessa cosa di "sapere quanto resta": la chiave API in uso (`sk-ant-api03-...`) non è una Admin Key, quindi non può leggere saldo/soglie da API — quello resta visibile solo su console.anthropic.com → Plans & Billing
+- [x] 🔴 Credito Anthropic sufficiente — **verificato 2026-07-18**: chiamata reale minima confermata funzionante (nessun errore di billing) + saldo controllato manualmente dall'utente su console.anthropic.com → Plans & Billing. Ultimo bloccante della checklist chiuso.
 - [x] 🔴 Migrazione `118_site_bookings.sql` applicata su Supabase — verificato 2026-07-06 con controllo sistematico di tutte le 131 migrazioni contro il DB reale
 - [x] 🔴 Migrazione `119_chat_message_images.sql` applicata su Supabase — verificato 2026-07-06, vedi sopra
 - [x] 🟡 Nessuna conversazione fantasma in `chat_conversations` (0 messaggi) — verificato 2026-07-09: 101 conversazioni totali, 0 senza messaggi
