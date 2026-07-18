@@ -36,7 +36,6 @@ const COLORS = {
 };
 
 const FONT_PATH = path.join(__dirname, 'fonts');
-const BRAND_PATH = path.join(__dirname, 'assets', 'brand');
 const FONT_REGULAR = path.join(FONT_PATH, 'Inter-Regular.ttf');
 const FONT_BOLD    = path.join(FONT_PATH, 'Inter-Bold.ttf');
 
@@ -388,9 +387,8 @@ function renderCoverPage(doc, siteName, revision, posData) {
   doc.rect(0, 0, PAGE_WIDTH, bandH).fillColor(COLORS.primary).fill();
   doc.restore();
 
-  doc.image(path.join(BRAND_PATH, 'mark-white.png'), (PAGE_WIDTH - 20) / 2, 4, { width: 20, height: 22 });
   doc.font('Inter-Bold').fontSize(38).fillColor(COLORS.white);
-  doc.text('PALLADIA', 0, 30, { width: PAGE_WIDTH, align: 'center', characterSpacing: 14 });
+  doc.text('PALLADIA', 0, 26, { width: PAGE_WIDTH, align: 'center', characterSpacing: 14 });
 
   doc.font('Inter').fontSize(13).fillColor(COLORS.white);
   doc.text('Piano Operativo di Sicurezza', 0, 74, { width: PAGE_WIDTH, align: 'center' });
@@ -921,9 +919,8 @@ function generatePdf(content, options = {}) {
     // Header (salta cover)
     if (i > 0) {
       doc.save();
-      doc.image(path.join(BRAND_PATH, 'mark-navy.png'), MARGIN, 19, { width: 8, height: 9 });
       doc.font('Inter-Bold').fontSize(9).fillColor(COLORS.primary);
-      doc.text('PALLADIA', MARGIN + 12, 20);
+      doc.text('PALLADIA', MARGIN, 20);
       doc.font('Inter').fontSize(8).fillColor(COLORS.textGray);
       doc.text(docTitle, MARGIN, 20, { width: CONTENT_WIDTH, align: 'right' });
       doc.moveTo(MARGIN, 36).lineTo(PAGE_WIDTH - MARGIN, 36)
