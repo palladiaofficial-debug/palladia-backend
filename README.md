@@ -7,6 +7,10 @@ REST API server for Palladia, a digital attendance management platform for Itali
 **Deployed on:** Railway
 **Runtime:** Node.js 20 / Express 5
 
+> ⚠️ La sezione "Architecture" sotto è storica (~10 migrazioni, ~15 route —
+> oggi sono 141 e 85+). Per una mappa aggiornata del sistema, le trappole
+> non ovvie e dove sta la conoscenza tribale, vedi **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**.
+
 ---
 
 ## What this server does
