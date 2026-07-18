@@ -251,6 +251,22 @@ Priorità: 🔴 blocca il lancio se rotto — 🟡 va sistemato ma non blocca �
 
 **Bonus confermato durante il test**: disattivare un lavoratore (`is_active=false`) blocca subito la timbratura (`403 BADGE_REVOKED`) — comportamento di sicurezza corretto, scoperto per caso quando il worker di test disattivato in cleanup ha bloccato il round successivo del test.
 
+## 5a. Badge/Timbratura — mega audit 2026-07-13 → 07-18, tutti i 10 bloccanti chiusi
+
+Audit approfondito dedicato (motivato dalla vendita a studi CDL che useranno questi dati
+per le buste paga), 3 agenti paralleli + verifica diretta. 10 bloccanti trovati, **tutti
+risolti e verificati dal vivo**:
+
+- [x] 🔴 Buste paga e storico presenze raggiungibili col solo `badge_code` pubblico (nessun controllo identità) — rimossi i 4 endpoint pubblici, ricollegato il login via CF già pronto in `workerArea.js` ma mai usato dal frontend (commit `28a6338`)
+- [x] 🔴 Firma HMAC del QR cantiere bypassabile — `verify-qr` era solo un check client-side facoltativo, `POST /scan/identify` accettava qualunque worksite_id firmato o no; ora la firma è verificata anche server-side (commit `9fdf8aa`)
+- [x] 🟡 Geofence disattivata (cantiere senza coordinate) segnalata solo in un accordion desktop mai espanso — ora un chip di avviso sempre visibile in Presenze porta alle impostazioni (commit `43d1f62`)
+- [x] 🔴 Bug reale nel salvataggio dell'audit log (`admin_audit_log.ip_address` — colonna inesistente, è `ip`) che faceva fallire `POST /scan/note` con 500 sempre, e perdeva silenziosamente l'audit delle correzioni manuali (`/presence/admin-correction`) — corretto in entrambi i punti (commit `526d2e7`)
+- [x] 🔴 **Turni a cavallo di mezzanotte mai accoppiati ENTRY/EXIT in nessun report** (7 copie indipendenti dello stesso bug — presenceReport.js, workerHoursReport.js, studio.js cedolini CDL, reports.js ×3, siteExport.js): un turno 22:00→06:00 diventava sempre due anomalie false invece di un turno unico, con impatto diretto sul calcolo ore per la busta paga. Unificato in `lib/presencePairing.js` — pairing PRIMA sull'intero stream cronologico, poi assegnazione al giorno di inizio turno. Verificato dal vivo su DB reale: 1 coppia da 8h, 0 anomalie (commit `db9bf6b`)
+- [x] 🔴 Nessuna UI per correggere un'uscita mancante — l'endpoint `/presence/admin-correction` esisteva ma era inutilizzabile in pratica (solo via API diretta). Aggiunta UI in `TimbraturaStorico.tsx` (pulsante header + icona matita sulle uscite mancanti genuine), solo owner/admin. Verificato dal vivo con login reale via Playwright + riscontro in DB (frontend commit `ac6dfea`)
+- [x] Consolidamento delle 4 implementazioni parallele di timbratura (`Timbratura.tsx` ora ha piena parità con `scan.html`, mai usato in produzione): coda offline, conferma POS, nota di uscita — vedi memoria `badge_timbratura_mega_audit_2026_07_13` per il dettaglio completo (frontend commit `ec6eb57`/`32b54bc`)
+
+**Ancora da fare, non bloccante** (8 problemi minori, vedi memoria per dettaglio): sessione rubabile 60gg senza revoca dashboard, buddy-punching via CF calcolabile, rate limit per IP non per cantiere, filtro lavoratore ignorato nell'export frontend, raggruppamento giorno UTC (non Rome) in `TimbraturaStorico.tsx` (client-side, cosmetico — i report ufficiali usati per la busta paga passano tutti da `lib/presencePairing.js` e sono corretti), nessun controllo stato cantiere/abbonamento al momento del punch.
+
 ---
 
 ## 6. Scadenze
