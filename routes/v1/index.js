@@ -159,6 +159,9 @@ router.use('/', require('./chat'));
 // Upload file per chat Ladia (JWT — file temporanei archiviati da Ladia via tool)
 router.use('/', require('./chatUpload'));
 
+// Importazione massiva documenti da zip (JWT — SSE progresso live)
+router.use('/', require('./chatBulkImport'));
+
 // Telegram Bot: link account (JWT) + note cantiere
 router.use('/', require('./telegram'));
 router.use('/', require('./siteNotes'));

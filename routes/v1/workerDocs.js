@@ -18,6 +18,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { analyzeWorkerDoc, analyzeDocumentBuffer, syncToFormazione } = require('../../services/documentAI');
+const { scoreMatch } = require('../../lib/fuzzyMatch');
 const { validate } = require('../../middleware/validate');
 const { createWorkerDocSchema, patchWorkerDocSchema } = require('../../lib/schemas/workerDocs');
 
@@ -351,44 +352,6 @@ router.get('/worker-documents', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.json(data || []);
 });
-
-// ── Fuzzy name matching ────────────────────────────────────────────────────────
-
-function levenshtein(a, b) {
-  const m = a.length, n = b.length;
-  const dp = Array.from({ length: m + 1 }, (_, i) =>
-    Array.from({ length: n + 1 }, (_, j) => i === 0 ? j : j === 0 ? i : 0)
-  );
-  for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
-      dp[i][j] = a[i - 1] === b[j - 1]
-        ? dp[i - 1][j - 1]
-        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-  return dp[m][n];
-}
-
-function normName(s) {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD').replace(/\p{Mn}/gu, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-// Restituisce 0-100; gestisce "ROSSI Mario" vs "Mario Rossi" via token overlap
-function scoreMatch(extracted, workerName) {
-  const a = normName(extracted);
-  const b = normName(workerName);
-  if (!a || !b) return 0;
-  const ta = new Set(a.split(' ').filter(t => t.length > 1));
-  const tb = new Set(b.split(' ').filter(t => t.length > 1));
-  const common = [...ta].filter(t => tb.has(t)).length;
-  const tokenScore = common / Math.max(ta.size, tb.size, 1);
-  const lev = levenshtein(a, b);
-  const levScore = 1 - lev / Math.max(a.length, b.length, 1);
-  return Math.round(tokenScore * 70 + levScore * 30);
-}
 
 // ── POST /api/v1/worker-docs/ai-import — analisi AI + matching senza salvare ──
 router.post('/worker-docs/ai-import',
