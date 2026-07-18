@@ -16,6 +16,7 @@ const router   = require('express').Router();
 const ExcelJS  = require('exceljs');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -91,15 +92,20 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
   if (daysDiff > 366) return res.status(400).json({ error: 'RANGE_TOO_LARGE', message: 'Intervallo massimo 366 giorni' });
 
   // Fetch presenze
+  // Finestra allargata di 1 giorno intero su ciascun lato: permette di
+  // accoppiare correttamente anche un turno a cavallo del bordo
+  // rangeFrom/rangeTo — il pairing avviene su tutto lo stream cronologico
+  // del lavoratore (lib/presencePairing.js), poi si scartano i giorni fuori
+  // [rangeFrom,rangeTo].
+  const fetchFrom = shiftDateStr(rangeFrom, -1);
+  const fetchTo   = shiftDateStr(rangeTo, 1);
   const { data: logs } = await supabase
     .from('presence_logs')
     .select('worker_id, event_type, timestamp_server, method, worker:workers(full_name, fiscal_code)')
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
-    // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
-    .gte('timestamp_server', `${rangeFrom}T00:00:00+02:00`)
-    .lte('timestamp_server', `${rangeTo}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(50001);
@@ -185,52 +191,44 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
   });
 
-  // La finestra sopra è più larga di [rangeFrom,rangeTo]: scarta ogni log il
-  // cui giorno reale a Roma cade fuori dal range richiesto, per non contare
-  // due volte lo stesso turno in due export adiacenti.
-  const byWorkerDay = new Map();
+  // Raggruppa per worker (stream cronologico completo), accoppia PRIMA
+  // (lib/presencePairing.js), poi scarta i giorni fuori [rangeFrom,rangeTo] —
+  // così un turno a cavallo di mezzanotte o del bordo range resta un'unica
+  // coppia invece di spezzarsi in due anomalie.
+  const byWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-    if (dateKey < rangeFrom || dateKey > rangeTo) continue;
-    const key = `${log.worker_id}::${dateKey}`;
-    if (!byWorkerDay.has(key)) byWorkerDay.set(key, { worker: log.worker, dateKey, logs: [] });
-    byWorkerDay.get(key).logs.push(log);
+    if (!byWorker.has(log.worker_id)) byWorker.set(log.worker_id, { worker: log.worker, logs: [] });
+    byWorker.get(log.worker_id).logs.push(log);
   }
 
-  const sortedKeys = Array.from(byWorkerDay.keys()).sort((a, b) => {
-    const [, dA] = a.split('::'); const [, dB] = b.split('::');
-    if (dA !== dB) return dA.localeCompare(dB);
-    return byWorkerDay.get(a).worker.full_name.localeCompare(byWorkerDay.get(b).worker.full_name);
-  });
+  const rows = [];
+  for (const { worker, logs: workerLogs } of byWorker.values()) {
+    const dayMap = pairLogsByDay(workerLogs);
+    for (const [dateKey, dayBucket] of dayMap) {
+      if (dateKey < rangeFrom || dateKey > rangeTo) continue;
+      if (dayBucket.pairs.length === 0 && dayBucket.orphanEntries.length === 0 && dayBucket.orphanExits.length === 0) continue;
+      rows.push({ worker, dateKey, ...dayBucket });
+    }
+  }
 
-  for (const key of sortedKeys) {
-    const { worker, dateKey, logs: dayLogs } = byWorkerDay.get(key);
+  rows.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.worker.full_name.localeCompare(b.worker.full_name));
+
+  for (const { worker, dateKey, pairs, orphanEntries, orphanExits } of rows) {
     const anomalies = [];
     let hoursTotal = 0;
-    let intervals  = 0;
-    let i = 0;
-    while (i < dayLogs.length) {
-      const l = dayLogs[i];
-      if (l.event_type === 'ENTRY') {
-        const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
-        if (next && next.event_type === 'EXIT') {
-          hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3600000);
-          intervals++;
-          const note = METHOD_NOTE[next.method] || METHOD_NOTE[l.method];
-          if (note) anomalies.push(note);
-          i += 2;
-        } else {
-          anomalies.push('Uscita mancante');
-          i += 1;
-        }
-      } else {
-        anomalies.push('Uscita senza entrata');
-        i += 1;
-      }
+    const intervals = pairs.length;
+    for (const { entry, exit } of pairs) {
+      hoursTotal += Math.max(0, (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 3600000);
+      const note = METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method];
+      if (note) anomalies.push({ ts: exit.timestamp_server, label: note });
     }
-    const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
-    const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+    for (const l of orphanEntries) anomalies.push({ ts: l.timestamp_server, label: 'Uscita mancante' });
+    for (const l of orphanExits)   anomalies.push({ ts: l.timestamp_server, label: 'Uscita senza entrata' });
+    anomalies.sort((a, b) => a.ts.localeCompare(b.ts));
+
+    const entries = [...pairs.map(p => p.entry), ...orphanEntries].sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
+    const exits   = [...pairs.map(p => p.exit),  ...orphanExits].sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
     sh3.addRow([
       dateKey,
       worker.full_name,
@@ -239,7 +237,7 @@ router.get('/sites/:siteId/export', verifySupabaseJwt, async (req, res) => {
       exits.length   > 0 ? fmtTime(exits[exits.length - 1].timestamp_server) : '',
       hoursTotal > 0 ? parseFloat(hoursTotal.toFixed(2)) : '',
       intervals,
-      anomalies.join('; '),
+      anomalies.map(a => a.label).join('; '),
     ]);
   }
 

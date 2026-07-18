@@ -1,5 +1,6 @@
 'use strict';
 const { logStudioAction } = require('../../lib/studioAudit');
+const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
 /**
  * routes/v1/studio.js
  * Portale Studio CDL Partner — Consulenti del Lavoro che gestiscono N imprese clienti.
@@ -2953,59 +2954,53 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
   const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
   const to = `${month}-${String(lastDay).padStart(2, '0')}`;
 
+  // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
+  // +02:00/+01:00 invece di Z): permette di accoppiare correttamente anche un
+  // turno a cavallo del bordo mese — il pairing avviene su tutto lo stream
+  // cronologico del lavoratore (lib/presencePairing.js), poi si scartano i
+  // giorni fuori dal mese richiesto.
+  const fetchFrom = shiftDateStr(from, -1);
+  const fetchTo   = shiftDateStr(to, 1);
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select('worker_id, event_type, timestamp_server, site_id, method, workers(full_name, fiscal_code)')
     .eq('company_id', companyId)
-    .gte('timestamp_server', `${from}T00:00:00+02:00`)
-    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id').order('timestamp_server')
     .limit(50000);
 
   if (logsErr) return res.status(500).json({ error: logsErr.message });
 
-  // Raggruppa per worker → giorno, calcola ore da coppie ENTRY/EXIT
-  // La finestra sopra è volutamente più larga del mese (+02:00/+01:00 invece di
-  // Z, per non perdere le timbrature vicino a mezzanotte) — quindi va scartato
-  // qui ogni log il cui giorno reale a Roma non è nel mese richiesto, altrimenti
-  // le ultime/prime ore del mese finiscono conteggiate anche nel cedolino del
-  // mese adiacente (bug reale: doppio conteggio a cavallo di fine mese).
+  // Raggruppa per worker (stream cronologico completo, cross-giorno)
   const byWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.workers) continue;
-    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-    if (dateKey.slice(0, 7) !== month) continue;
     if (!byWorker.has(log.worker_id)) {
       byWorker.set(log.worker_id, {
         full_name: log.workers.full_name,
         fiscal_code: log.workers.fiscal_code,
-        days: new Map(),
+        logs: [],
       });
     }
-    const worker = byWorker.get(log.worker_id);
-    if (!worker.days.has(dateKey)) worker.days.set(dateKey, []);
-    worker.days.get(dateKey).push(log);
+    byWorker.get(log.worker_id).logs.push(log);
   }
 
   const results = [];
   for (const [workerId, worker] of byWorker) {
+    const dayMap = pairLogsByDay(worker.logs);   // ← accoppia PRIMA, sull'intero stream
     let totalMinutes = 0;
     let totalDays = 0;
     const dayDetails = [];
 
-    for (const [dateKey, dayLogs] of worker.days) {
-      const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
-      const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+    for (const [dateKey, { pairs }] of dayMap) {
+      if (dateKey.slice(0, 7) !== month) continue;   // fuori dal mese richiesto
+
       let dayMinutes = 0;
       let dayNote = null;
-
-      for (let i = 0; i < entries.length; i++) {
-        const entry = entries[i];
-        const exit = exits.find(e => new Date(e.timestamp_server) > new Date(entry.timestamp_server));
-        if (exit) {
-          dayMinutes += (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000;
-          dayNote = dayNote || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null;
-        }
+      for (const { entry, exit } of pairs) {
+        dayMinutes += (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000;
+        dayNote = dayNote || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null;
       }
 
       if (dayMinutes > 0) {

@@ -15,6 +15,7 @@
  */
 
 const supabase = require('../lib/supabase');
+const { pairLogsByDay, shiftDateStr } = require('../lib/presencePairing');
 
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
@@ -26,9 +27,6 @@ const METHOD_NOTE = {
 
 // ── Timezone helpers (Europe/Rome) ────────────────────────────────────────────
 
-function dateKeyRome(ts) {
-  return new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-}
 function fmtDateRome(dateKey) {
   const [y, m, d] = dateKey.split('-');
   return `${d}/${m}/${y}`;
@@ -87,6 +85,13 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     .from('companies').select('name').eq('id', companyId).maybeSingle();
 
   // Presence logs
+  // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
+  // +02:00/+01:00 invece di Z): permette di accoppiare correttamente anche un
+  // turno a cavallo del bordo from/to — il pairing avviene su tutto lo stream
+  // cronologico del lavoratore (lib/presencePairing.js), poi si scartano i
+  // giorni fuori [from,to].
+  const fetchFrom = shiftDateStr(from, -1);
+  const fetchTo   = shiftDateStr(to, 1);
   let q = supabase
     .from('presence_logs')
     .select(`
@@ -95,12 +100,8 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     `)
     .eq('site_id', siteId)
     .eq('company_id', companyId)
-    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
-    // UTC puri — vedi presenceReport.js per la spiegazione completa. Senza
-    // questo, le timbrature tra mezzanotte e l'1-2 di notte ora di Roma del
-    // primo giorno sparivano dal report "per commercialisti" senza avviso.
-    .gte('timestamp_server', `${from}T00:00:00+02:00`)
-    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(200000);
@@ -110,62 +111,55 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   const { data: logs, error: logsErr } = await q;
   if (logsErr) { const e = new Error(logsErr.message); e.status = 500; throw e; }
 
-  // Group by worker → date
-  // Il filtro sopra è volutamente più largo di [from,to] (vedi commento sulla
-  // query) per non perdere le timbrature vicino a mezzanotte — quindi va
-  // scartato qui ogni log il cui giorno reale a Roma cade fuori dal range
-  // richiesto, altrimenti un turno del giorno prima/dopo il periodo finirebbe
-  // conteggiato due volte (una volta in questo report, una nel successivo).
-  const workerMap = new Map();
+  // Group by worker (stream cronologico completo, non ancora per giorno)
+  const workerLogsMap = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const dk = dateKeyRome(log.timestamp_server);
-    if (dk < from || dk > to) continue;
     const wId = log.worker_id;
-    if (!workerMap.has(wId)) workerMap.set(wId, { info: log.worker, dayMap: new Map() });
-    const dm = workerMap.get(wId).dayMap;
-    if (!dm.has(dk)) dm.set(dk, []);
-    dm.get(dk).push(log);
+    if (!workerLogsMap.has(wId)) workerLogsMap.set(wId, { info: log.worker, logs: [] });
+    workerLogsMap.get(wId).logs.push(log);
   }
 
   const workers = [];
 
-  for (const [wId, { info, dayMap }] of workerMap) {
+  for (const [wId, { info, logs: workerLogs }] of workerLogsMap) {
+    const dayMap = pairLogsByDay(workerLogs);   // ← accoppia PRIMA, sull'intero stream
     const days = [];
     let totalMinutes = 0;
 
     for (const dk of [...dayMap.keys()].sort()) {
-      const dayLogs = dayMap.get(dk).slice().sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
+      if (dk < from || dk > to) continue;   // fuori dal periodo richiesto
+      const { pairs, orphanEntries, orphanExits } = dayMap.get(dk);
+      if (pairs.length === 0 && orphanEntries.length === 0 && orphanExits.length === 0) continue;
+
+      // Ricompone l'ordine cronologico del giorno tra coppie e orfani
+      const dayEvents = [
+        ...pairs.map(p => ({ ts: p.entry.timestamp_server, pair: p })),
+        ...orphanEntries.map(l => ({ ts: l.timestamp_server, orphanEntry: l })),
+        ...orphanExits.map(l => ({ ts: l.timestamp_server, orphanExit: l })),
+      ].sort((a, b) => a.ts.localeCompare(b.ts));
 
       const entries = [];
       let dayMin = 0;
-      let i = 0;
 
-      while (i < dayLogs.length) {
-        const cur  = dayLogs[i];
-        const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
-
-        if (cur.event_type === 'ENTRY') {
-          if (next && next.event_type === 'EXIT') {
-            const mins = Math.max(0, Math.round(
-              (new Date(next.timestamp_server) - new Date(cur.timestamp_server)) / 60000
-            ));
-            entries.push({
-              entry_time: fmtTimeRome(cur.timestamp_server),
-              exit_time:  fmtTimeRome(next.timestamp_server),
-              minutes:    mins,
-              hours_str:  fmtDuration(mins),
-              anomaly:    METHOD_NOTE[next.method] || METHOD_NOTE[cur.method] || null,
-            });
-            dayMin += mins;
-            i += 2;
-          } else {
-            entries.push({ entry_time: fmtTimeRome(cur.timestamp_server), exit_time: null, minutes: 0, hours_str: '—', anomaly: 'Uscita non registrata' });
-            i += 1;
-          }
+      for (const ev of dayEvents) {
+        if (ev.pair) {
+          const { entry, exit } = ev.pair;
+          const mins = Math.max(0, Math.round(
+            (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000
+          ));
+          entries.push({
+            entry_time: fmtTimeRome(entry.timestamp_server),
+            exit_time:  fmtTimeRome(exit.timestamp_server),
+            minutes:    mins,
+            hours_str:  fmtDuration(mins),
+            anomaly:    METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+          });
+          dayMin += mins;
+        } else if (ev.orphanEntry) {
+          entries.push({ entry_time: fmtTimeRome(ev.orphanEntry.timestamp_server), exit_time: null, minutes: 0, hours_str: '—', anomaly: 'Uscita non registrata' });
         } else {
-          entries.push({ entry_time: null, exit_time: fmtTimeRome(cur.timestamp_server), minutes: 0, hours_str: '—', anomaly: 'Entrata non registrata' });
-          i += 1;
+          entries.push({ entry_time: null, exit_time: fmtTimeRome(ev.orphanExit.timestamp_server), minutes: 0, hours_str: '—', anomaly: 'Entrata non registrata' });
         }
       }
 

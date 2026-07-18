@@ -5,6 +5,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../../services/presenceReport');
 const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
+const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -27,6 +28,13 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
     return res.status(400).json({ error: 'date deve essere YYYY-MM-DD' });
   }
 
+  // Finestra allargata di 1 giorno intero su ciascun lato: permette di
+  // accoppiare correttamente anche un turno a cavallo di mezzanotte che
+  // coinvolge 'date' solo in parte (inizia il giorno prima o finisce quello
+  // dopo) — il pairing avviene su tutto lo stream cronologico del lavoratore
+  // (lib/presencePairing.js), poi si tiene solo il giorno richiesto.
+  const fetchFrom = shiftDateStr(date, -1);
+  const fetchTo   = shiftDateStr(date, 1);
   const { data, error } = await supabase
     .from('presence_logs')
     .select(`
@@ -35,8 +43,8 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    .gte('timestamp_server', `${date}T00:00:00+02:00`)
-    .lte('timestamp_server', `${date}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id',        { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(20000);
@@ -61,21 +69,26 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
     a.worker.full_name.localeCompare(b.worker.full_name, 'it')
   );
 
-  for (const { worker, logs: dayLogs } of sorted) {
-    const anomalies = [];
-    let hoursTotal = 0, intervals = 0, i = 0;
-    while (i < dayLogs.length) {
-      const l = dayLogs[i];
-      if (l.event_type === 'ENTRY') {
-        const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
-        if (next && next.event_type === 'EXIT') {
-          hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3_600_000);
-          intervals++; i += 2;
-        } else { anomalies.push('Uscita mancante'); i += 1; }
-      } else { anomalies.push('Uscita senza entrata'); i += 1; }
+  for (const { worker, logs: workerLogs } of sorted) {
+    const dayMap  = pairLogsByDay(workerLogs);   // ← accoppia PRIMA, sull'intero stream
+    const dayData = dayMap.get(date);
+    if (!dayData) continue;   // nessuna timbratura per questo lavoratore in questo giorno
+
+    const { pairs, orphanEntries, orphanExits } = dayData;
+    const dayLogs = [...pairs.flatMap(p => [p.entry, p.exit]), ...orphanEntries, ...orphanExits];
+
+    const anomalies = [
+      ...orphanEntries.map(l => ({ ts: l.timestamp_server, label: 'Uscita mancante' })),
+      ...orphanExits.map(l => ({ ts: l.timestamp_server, label: 'Uscita senza entrata' })),
+    ].sort((a, b) => a.ts.localeCompare(b.ts)).map(a => a.label);
+    let hoursTotal = 0, intervals = pairs.length;
+    for (const { entry, exit } of pairs) {
+      hoursTotal += Math.max(0, (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 3_600_000);
     }
-    const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
-    const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+    const entries = [...pairs.map(p => p.entry), ...orphanEntries]
+      .sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
+    const exits   = [...pairs.map(p => p.exit),  ...orphanExits]
+      .sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
     const dists   = dayLogs.map(l => l.distance_m).filter(v => v != null);
     const avgDist = dists.length ? Math.round(dists.reduce((a, b) => a + b, 0) / dists.length) : '';
     const methods = [...new Set(dayLogs.map(l => l.method).filter(Boolean))].join('+');
@@ -118,7 +131,13 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   }
 
   // Nessun limite di giorni: l'export annuale è il caso d'uso principale.
-  // Limit righe raw: 50k
+  // Limit righe raw: 50k. Finestra allargata di 1 giorno intero su ciascun
+  // lato (oltre al consueto +02:00/+01:00 invece di Z): permette di
+  // accoppiare correttamente anche un turno a cavallo del bordo from/to — il
+  // pairing avviene su tutto lo stream cronologico del lavoratore
+  // (lib/presencePairing.js), poi si scartano i giorni fuori [from,to].
+  const fetchFrom = shiftDateStr(from, -1);
+  const fetchTo   = shiftDateStr(to, 1);
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select(`
@@ -127,10 +146,8 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     `)
     .eq('site_id', siteId)
     .eq('company_id', req.companyId)
-    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
-    // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
-    .gte('timestamp_server', `${from}T00:00:00+02:00`)
-    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id',         { ascending: true })
     .order('timestamp_server',  { ascending: true })
     .limit(50000);
@@ -139,21 +156,12 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
 
   const limitReached = (logs || []).length === 50000;
 
-  // Raggruppa per worker → giorno (timezone Europe/Rome)
-  // La finestra sopra è volutamente più larga di [from,to]: scarta qui ogni
-  // log il cui giorno reale a Roma cade fuori dal range richiesto, altrimenti
-  // un turno a cavallo del limite finirebbe conteggiato anche nell'export
-  // adiacente (stesso bug del doppio conteggio a fine mese di studio.js).
-  const byWorkerDay = new Map();
+  // Raggruppa per worker (stream cronologico completo, cross-giorno)
+  const byWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-    if (dateKey < from || dateKey > to) continue;
-    const mapKey  = `${log.worker_id}::${dateKey}`;
-    if (!byWorkerDay.has(mapKey)) {
-      byWorkerDay.set(mapKey, { worker: log.worker, dateKey, logs: [] });
-    }
-    byWorkerDay.get(mapKey).logs.push(log);
+    if (!byWorker.has(log.worker_id)) byWorker.set(log.worker_id, { worker: log.worker, logs: [] });
+    byWorker.get(log.worker_id).logs.push(log);
   }
 
   const csvRows = [
@@ -165,42 +173,38 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
   });
 
-  const sortedKeys = Array.from(byWorkerDay.keys()).sort((a, b) => {
-    const [, dayA] = a.split('::'); const [, dayB] = b.split('::');
-    if (dayA !== dayB) return dayA.localeCompare(dayB);
-    return byWorkerDay.get(a).worker.full_name.localeCompare(byWorkerDay.get(b).worker.full_name);
-  });
+  // Accoppia PRIMA sull'intero stream di ogni worker, poi filtra i giorni
+  // fuori [from,to] e appiattisce in righe {worker, dateKey, ...bucket}
+  const rows = [];
+  for (const { worker, logs: workerLogs } of byWorker.values()) {
+    const dayMap = pairLogsByDay(workerLogs);
+    for (const [dateKey, dayBucket] of dayMap) {
+      if (dateKey < from || dateKey > to) continue;
+      if (dayBucket.pairs.length === 0 && dayBucket.orphanEntries.length === 0 && dayBucket.orphanExits.length === 0) continue;
+      rows.push({ worker, dateKey, ...dayBucket });
+    }
+  }
 
-  for (const key of sortedKeys) {
-    const { worker, dateKey, logs: dayLogs } = byWorkerDay.get(key);
+  rows.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.worker.full_name.localeCompare(b.worker.full_name));
 
-    // Pairing sequenziale ENTRY/EXIT
+  for (const { worker, dateKey, pairs, orphanEntries, orphanExits } of rows) {
+    const dayLogs = [...pairs.flatMap(p => [p.entry, p.exit]), ...orphanEntries, ...orphanExits];
+
     const anomalies = [];
     let hoursTotal = 0;
-    let intervals  = 0;
-    let i = 0;
-    while (i < dayLogs.length) {
-      const l = dayLogs[i];
-      if (l.event_type === 'ENTRY') {
-        const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
-        if (next && next.event_type === 'EXIT') {
-          hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3_600_000);
-          intervals++;
-          const note = METHOD_NOTE[next.method] || METHOD_NOTE[l.method];
-          if (note) anomalies.push(note);
-          i += 2;
-        } else {
-          anomalies.push('Uscita mancante');
-          i += 1;
-        }
-      } else {
-        anomalies.push('Uscita senza entrata');
-        i += 1;
-      }
+    const intervals = pairs.length;
+    for (const { entry, exit } of pairs) {
+      hoursTotal += Math.max(0, (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 3_600_000);
+      const note = METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method];
+      if (note) anomalies.push({ ts: exit.timestamp_server, label: note });
     }
+    for (const l of orphanEntries) anomalies.push({ ts: l.timestamp_server, label: 'Uscita mancante' });
+    for (const l of orphanExits)   anomalies.push({ ts: l.timestamp_server, label: 'Uscita senza entrata' });
+    anomalies.sort((a, b) => a.ts.localeCompare(b.ts));
+    const anomalyLabels = anomalies.map(a => a.label);
 
-    const entryLogs = dayLogs.filter(l => l.event_type === 'ENTRY');
-    const exitLogs  = dayLogs.filter(l => l.event_type === 'EXIT');
+    const entryLogs = [...pairs.map(p => p.entry), ...orphanEntries].sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
+    const exitLogs  = [...pairs.map(p => p.exit),  ...orphanExits].sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
     const firstEntry = entryLogs.length > 0 ? fmtTime(entryLogs[0].timestamp_server) : '';
     const lastExit   = exitLogs.length  > 0 ? fmtTime(exitLogs[exitLogs.length - 1].timestamp_server) : '';
 
@@ -210,7 +214,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     const avgAcc  = accs.length  > 0 ? Math.round(accs.reduce((a, b) => a + b, 0)  / accs.length)  : '';
 
     grandHours += hoursTotal; grandIntervals += intervals;
-    if (anomalies.length) grandAnomalies++;
+    if (anomalyLabels.length) grandAnomalies++;
 
     csvRows.push([
       dateKey,
@@ -222,7 +226,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
       intervals,
       avgDist,
       avgAcc,
-      `"${anomalies.join('; ').replace(/"/g, '""')}"`
+      `"${anomalyLabels.join('; ').replace(/"/g, '""')}"`
     ].join(','));
   }
 
@@ -441,15 +445,20 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
   const siteMap  = Object.fromEntries(sites.map(s => [s.id, s.name]));
 
   // 2. Presenze su tutti quei cantieri nel range
+  // Finestra allargata di 1 giorno intero su ciascun lato: permette di
+  // accoppiare correttamente anche un turno a cavallo del bordo from/to — il
+  // pairing avviene su tutto lo stream cronologico del lavoratore per
+  // ciascun cantiere (lib/presencePairing.js), poi si scartano i giorni
+  // fuori [from,to].
+  const fetchFrom = shiftDateStr(from, -1);
+  const fetchTo   = shiftDateStr(to, 1);
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select('worker_id, event_type, timestamp_server, site_id, method, worker:workers(full_name, fiscal_code)')
     .eq('company_id', req.companyId)
     .in('site_id', siteIds)
-    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
-    // UTC puri — vedi services/presenceReport.js per la spiegazione completa.
-    .gte('timestamp_server', `${from}T00:00:00+02:00`)
-    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('site_id',         { ascending: true })
     .order('worker_id',       { ascending: true })
     .order('timestamp_server',{ ascending: true })
@@ -458,54 +467,57 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
   if (logsErr) return res.status(500).json({ error: logsErr.message });
   const limitReached = (logs || []).length === 50000;
 
-  // 3. Raggruppa per cantiere + worker + giorno
-  // La finestra sopra è più larga di [from,to]: scarta ogni log il cui giorno
-  // reale a Roma cade fuori dal range richiesto, per non contare due volte lo
-  // stesso turno in due export adiacenti.
-  const byKey = new Map();
+  // 3. Raggruppa per cantiere + worker (stream cronologico completo)
+  const bySiteWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const dateKey = new Date(log.timestamp_server).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
-    if (dateKey < from || dateKey > to) continue;
-    const key = `${log.site_id}::${log.worker_id}::${dateKey}`;
-    if (!byKey.has(key)) byKey.set(key, { siteId: log.site_id, worker: log.worker, dateKey, logs: [] });
-    byKey.get(key).logs.push(log);
+    const key = `${log.site_id}::${log.worker_id}`;
+    if (!bySiteWorker.has(key)) bySiteWorker.set(key, { siteId: log.site_id, worker: log.worker, logs: [] });
+    bySiteWorker.get(key).logs.push(log);
   }
 
   const fmtTime = ts => new Date(ts).toLocaleTimeString('it-IT', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome',
   });
 
-  const sortedKeys = Array.from(byKey.keys()).sort((a, b) => {
-    const [sA, , dA] = a.split('::'); const [sB, , dB] = b.split('::');
-    if (sA !== sB) return siteMap[sA]?.localeCompare(siteMap[sB] || '') || 0;
-    if (dA !== dB) return dA.localeCompare(dB);
-    return byKey.get(a).worker.full_name.localeCompare(byKey.get(b).worker.full_name);
+  // 4. Accoppia PRIMA sull'intero stream per ogni cantiere+worker, poi
+  // filtra i giorni fuori [from,to] e appiattisce in righe
+  const rows = [];
+  for (const { siteId, worker, logs: swLogs } of bySiteWorker.values()) {
+    const dayMap = pairLogsByDay(swLogs);
+    for (const [dateKey, dayBucket] of dayMap) {
+      if (dateKey < from || dateKey > to) continue;
+      if (dayBucket.pairs.length === 0 && dayBucket.orphanEntries.length === 0 && dayBucket.orphanExits.length === 0) continue;
+      rows.push({ siteId, worker, dateKey, ...dayBucket });
+    }
+  }
+
+  rows.sort((a, b) => {
+    const sCmp = (siteMap[a.siteId] || '').localeCompare(siteMap[b.siteId] || '');
+    if (sCmp !== 0) return sCmp;
+    if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
+    return a.worker.full_name.localeCompare(b.worker.full_name);
   });
 
   const csvRows = ['data,cantiere,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,ore_totali,anomalie'];
   let grandHours = 0, grandAnomalies = 0;
-  for (const key of sortedKeys) {
-    const { siteId, worker, dateKey, logs: dayLogs } = byKey.get(key);
+  for (const { siteId, worker, dateKey, pairs, orphanEntries, orphanExits } of rows) {
     const anomalies = [];
     let hoursTotal = 0;
-    let i = 0;
-    while (i < dayLogs.length) {
-      const l = dayLogs[i];
-      if (l.event_type === 'ENTRY') {
-        const next = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
-        if (next && next.event_type === 'EXIT') {
-          hoursTotal += Math.max(0, (new Date(next.timestamp_server) - new Date(l.timestamp_server)) / 3600000);
-          const note = METHOD_NOTE[next.method] || METHOD_NOTE[l.method];
-          if (note) anomalies.push(note);
-          i += 2;
-        } else { anomalies.push('Uscita mancante'); i += 1; }
-      } else { anomalies.push('Uscita senza entrata'); i += 1; }
+    for (const { entry, exit } of pairs) {
+      hoursTotal += Math.max(0, (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 3600000);
+      const note = METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method];
+      if (note) anomalies.push({ ts: exit.timestamp_server, label: note });
     }
+    for (const l of orphanEntries) anomalies.push({ ts: l.timestamp_server, label: 'Uscita mancante' });
+    for (const l of orphanExits)   anomalies.push({ ts: l.timestamp_server, label: 'Uscita senza entrata' });
+    anomalies.sort((a, b) => a.ts.localeCompare(b.ts));
+    const anomalyLabels = anomalies.map(a => a.label);
+
     grandHours += hoursTotal;
-    if (anomalies.length) grandAnomalies++;
-    const entries = dayLogs.filter(l => l.event_type === 'ENTRY');
-    const exits   = dayLogs.filter(l => l.event_type === 'EXIT');
+    if (anomalyLabels.length) grandAnomalies++;
+    const entries = [...pairs.map(p => p.entry), ...orphanEntries].sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
+    const exits   = [...pairs.map(p => p.exit),  ...orphanExits].sort((a, b) => a.timestamp_server.localeCompare(b.timestamp_server));
     csvRows.push([
       dateKey,
       `"${(siteMap[siteId] || '').replace(/"/g, '""')}"`,
@@ -514,7 +526,7 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
       entries.length > 0 ? fmtTime(entries[0].timestamp_server) : '',
       exits.length   > 0 ? fmtTime(exits[exits.length - 1].timestamp_server) : '',
       hoursTotal > 0 ? hoursTotal.toFixed(2) : '',
-      `"${anomalies.join('; ').replace(/"/g, '""')}"`,
+      `"${anomalyLabels.join('; ').replace(/"/g, '""')}"`,
     ].join(','));
   }
   csvRows.push(['', '', '"TOTALE"', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : ''].join(','));

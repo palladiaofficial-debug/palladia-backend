@@ -15,6 +15,7 @@
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
+const { pairLogsByDay, flattenDayLogs, shiftDateStr } = require('../lib/presencePairing');
 
 // Soglia GPS (stessa del backend punch)
 const GPS_MAX_ACCURACY_M = (() => {
@@ -34,16 +35,6 @@ function esc(s) {
 // ── Timezone helpers — TUTTE le operazioni data/ora usano Europe/Rome ─────────
 
 /**
- * ISO timestamp → "gg/mm/AAAA"  (Europe/Rome)
- * Usato per le colonne Data nella tabella PDF.
- */
-function formatDateRome(ts) {
-  return new Date(ts).toLocaleDateString('it-IT', {
-    day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Rome'
-  });
-}
-
-/**
  * ISO timestamp → "HH:MM"  (Europe/Rome)
  * Usato per le colonne Entrata/Uscita.
  */
@@ -51,16 +42,6 @@ function formatTimeRome(ts) {
   return new Date(ts).toLocaleTimeString('it-IT', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
   });
-}
-
-/**
- * ISO timestamp → "YYYY-MM-DD"  (Europe/Rome)
- * Chiave per il raggruppamento per giorno.
- * Usa locale sv-SE che produce ISO date nativo senza toISOString()
- * (toISOString() sarebbe sempre UTC, sbagliato dopo le 22/23 in estate/inverno).
- */
-function getDateKeyRome(ts) {
-  return new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
 }
 
 // ── Calculation helpers ───────────────────────────────────────────────────────
@@ -120,27 +101,22 @@ function formatAnomalies(list) {
   return Array.from(counts.entries()).map(([name, n]) => n > 1 ? `${name} (×${n})` : name);
 }
 
-// ── pairDayIntervals ──────────────────────────────────────────────────────────
+// ── summarizeDay ──────────────────────────────────────────────────────────────
 /**
- * Accoppia sequenzialmente ENTRY→EXIT per i log di un singolo lavoratore
- * in un singolo giorno (già ordinati per timestamp_server ascending).
+ * Riassume un giorno già accoppiato da pairLogsByDay() (lib/presencePairing.js):
+ * ore totali, prima entrata/ultima uscita, medie GPS, anomalie.
  *
- * Algoritmo lineare O(n):
- *   - ENTRY seguito da EXIT        → coppia valida, ore calcolate
- *   - ENTRY non seguito da EXIT    → coppia incompleta, anomalia "Uscita mancante"
- *   - EXIT senza ENTRY precedente  → anomalia "Uscita senza entrata"
+ * Il pairing ENTRY/EXIT avviene PRIMA (sull'intero stream cronologico del
+ * lavoratore, cross-giorno) — qui si riassume solo il risultato già assegnato
+ * a questo giorno Rome. Questo è ciò che risolve i turni a cavallo di
+ * mezzanotte: una coppia 22:00→06:00 arriva già come un'unica coppia valida
+ * su un solo giorno, non come due anomalie separate.
  *
- * Le anomalie strutturali multiple vengono raggruppate con conteggio:
- *   ["Uscita mancante (×2)", "Uscita senza entrata"]
- *
- * Medie distanza e precisione calcolate su TUTTI i log del giorno,
- * non solo sulle coppie valide (per massima trasparenza nell'audit).
- *
- * @param {Array}  dayLogs        Log del giorno, sorted by timestamp_server asc
+ * @param {{pairs, orphanEntries, orphanExits}} dayBucket  Da pairLogsByDay()
  * @param {number|null} geofenceRadius  geofence_radius_m del cantiere
  * @returns {{
- *   firstEntry:      string|null,   // "HH:MM" — minimo tra i log ENTRY
- *   lastExit:        string|null,   // "HH:MM" — massimo tra i log EXIT
+ *   firstEntry:      string|null,   // "HH:MM" — minimo tra gli ENTRY del giorno
+ *   lastExit:        string|null,   // "HH:MM" — massimo tra gli EXIT del giorno
  *   hoursTotal:      number,        // somma ore coppie valide, 2 decimali
  *   intervalsCount:  number,        // numero coppie valide (ENTRY+EXIT)
  *   avgDist:         number|null,   // media distance_m, arrotondata intero
@@ -148,49 +124,34 @@ function formatAnomalies(list) {
  *   anomalies:       string[]       // anomalie formattate con conteggio
  * }}
  */
-function pairDayIntervals(dayLogs, geofenceRadius) {
-  const rawAnomalies = [];
-  const validPairs   = [];   // { entry, exit } — solo coppie complete
+function summarizeDay(dayBucket, geofenceRadius) {
+  const { pairs, orphanEntries, orphanExits } = dayBucket;
+  const dayLogs = flattenDayLogs(dayBucket);
 
-  let i = 0;
-  while (i < dayLogs.length) {
-    const log = dayLogs[i];
-
-    if (log.event_type === 'ENTRY') {
-      const nextLog = i + 1 < dayLogs.length ? dayLogs[i + 1] : null;
-      if (nextLog && nextLog.event_type === 'EXIT') {
-        // Coppia valida
-        validPairs.push({ entry: log, exit: nextLog });
-        i += 2;
-      } else {
-        // ENTRY senza EXIT: anomalia, non inventare orari
-        rawAnomalies.push('Uscita mancante');
-        i += 1;
-      }
-    } else {
-      // EXIT senza ENTRY precedente (orfana)
-      rawAnomalies.push('Uscita senza entrata');
-      i += 1;
-    }
-  }
+  // Anomalie strutturali in ordine cronologico (stesso ordine del vecchio
+  // scan sequenziale, per compatibilità di lettura)
+  const orphanEvents = [
+    ...orphanEntries.map(l => ({ log: l, label: 'Uscita mancante' })),
+    ...orphanExits.map(l => ({ log: l, label: 'Uscita senza entrata' })),
+  ].sort((a, b) => a.log.timestamp_server.localeCompare(b.log.timestamp_server));
+  const rawAnomalies = orphanEvents.map(oe => oe.label);
 
   // Ore totali = somma coppie valide, arrotondata a 2 decimali
-  const sumH = validPairs.reduce(
+  const sumH = pairs.reduce(
     (s, p) => s + hoursBetween(p.entry.timestamp_server, p.exit.timestamp_server), 0
   );
   const hoursTotal = Math.round(sumH * 100) / 100;
 
-  // Prima entrata = min di tutti i log ENTRY del giorno
-  // Ultima uscita = max di tutti i log EXIT del giorno
-  // (indipendente dal pairing — audit mostra quando è fisicamente arrivato/partito)
-  const entryLogs = dayLogs.filter(l => l.event_type === 'ENTRY');
-  const exitLogs  = dayLogs.filter(l => l.event_type === 'EXIT');
+  // Prima entrata = min tra ENTRY delle coppie + ENTRY orfani del giorno
+  // Ultima uscita = max tra EXIT delle coppie + EXIT orfani del giorno
+  const entryLogs = [...pairs.map(p => p.entry), ...orphanEntries];
+  const exitLogs   = [...pairs.map(p => p.exit),  ...orphanExits];
 
   const firstEntry = entryLogs.length > 0
-    ? formatTimeRome(entryLogs[0].timestamp_server)                        // già sorted asc
+    ? formatTimeRome(entryLogs.reduce((a, b) => a.timestamp_server < b.timestamp_server ? a : b).timestamp_server)
     : null;
   const lastExit   = exitLogs.length > 0
-    ? formatTimeRome(exitLogs[exitLogs.length - 1].timestamp_server)
+    ? formatTimeRome(exitLogs.reduce((a, b) => a.timestamp_server > b.timestamp_server ? a : b).timestamp_server)
     : null;
 
   // Medie su TUTTI i log del giorno (massima trasparenza, incluse coppie parziali)
@@ -212,7 +173,7 @@ function pairDayIntervals(dayLogs, geofenceRadius) {
     firstEntry,
     lastExit,
     hoursTotal,
-    intervalsCount: validPairs.length,
+    intervalsCount: pairs.length,
     avgDist,
     avgAcc,
     methods,
@@ -256,7 +217,14 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   // Limite: 50k record (90gg × 500 lavoratori × 4 timbrature ≈ 180k max teorico;
   // in pratica 50k copre la quasi totalità dei casi reali).
   // Se superato: report parziale + warning nel payload.
-  const LOGS_LIMIT = 50_000;
+  // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
+  // +02:00/+01:00 invece di Z): serve a poter accoppiare correttamente anche
+  // un turno a cavallo del bordo from/to, non solo della mezzanotte interna al
+  // periodo — vedi lib/presencePairing.js. Le righe fuori [from,to] dopo il
+  // pairing vengono scartate più sotto.
+  const LOGS_LIMIT  = 50_000;
+  const fetchFrom    = shiftDateStr(from, -1);
+  const fetchTo      = shiftDateStr(to, 1);
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select(`
@@ -265,15 +233,8 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     `)
     .eq('site_id', siteId)
     .eq('company_id', companyId)
-    // +02:00/+01:00 (non Z): allarga la finestra invece di tagliarla ai bordi
-    // UTC puri — a Roma la mezzanotte non coincide mai con quella UTC (+1/+2h
-    // CET/CEST). Con boundary UTC puri le timbrature tra mezzanotte e l'1-2
-    // di notte ora di Roma del primo giorno sparivano dal report senza
-    // nessun avviso. Il leggero overfetch ai bordi è innocuo: il raggruppamento
-    // per giorno più sotto usa già Europe/Rome, quindi ogni log finisce
-    // comunque nel bucket-giorno corretto.
-    .gte('timestamp_server', `${from}T00:00:00+02:00`)
-    .lte('timestamp_server', `${to}T23:59:59.999+01:00`)
+    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
+    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id', { ascending: true })
     .order('timestamp_server', { ascending: true })
     .limit(LOGS_LIMIT);
@@ -281,37 +242,39 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   if (logsErr) throw new Error('DB_ERROR: ' + logsErr.message);
   const logsLimitReached = (logs || []).length === LOGS_LIMIT;
 
-  // 4. Raggruppa per worker → per giorno (usando timezone Europe/Rome)
-  //    Map<workerId, { worker, days: Map<dateKey, log[]> }>
-  //    dateKey = "YYYY-MM-DD" in ora italiana, NON UTC
+  // 4. Raggruppa per worker (stream cronologico, cross-giorno) → pairing →
+  //    filtro dei giorni al di fuori di [from,to]
   const byWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const wid     = log.worker_id;
-    const dateKey = getDateKeyRome(log.timestamp_server);   // ← timezone Rome
-    if (!byWorker.has(wid)) byWorker.set(wid, { worker: log.worker, days: new Map() });
-    const wEntry = byWorker.get(wid);
-    if (!wEntry.days.has(dateKey)) wEntry.days.set(dateKey, []);
-    wEntry.days.get(dateKey).push(log);
+    const wid = log.worker_id;
+    if (!byWorker.has(wid)) byWorker.set(wid, { worker: log.worker, logs: [] });
+    byWorker.get(wid).logs.push(log);
   }
 
   const rows         = [];
   let   totalHours   = 0;
   const workerIds    = new Set();
-  const totalPunches = (logs || []).length;
+  let   totalPunches = 0;
 
   for (const [, wData] of byWorker) {
-    workerIds.add(wData.worker.id);
+    const dayMap = pairLogsByDay(wData.logs);   // ← accoppia PRIMA, sull'intero stream
 
-    for (const [dateKey, dayLogs] of wData.days) {
-      // dayLogs già ordinati per timestamp_server asc (ORDER BY nella query)
-      const result = pairDayIntervals(dayLogs, site.geofence_radius_m);
+    for (const [dateKey, dayBucket] of dayMap) {
+      if (dateKey < from || dateKey > to) continue;   // fuori dal periodo richiesto
 
-      totalHours += result.hoursTotal;
+      const result = summarizeDay(dayBucket, site.geofence_radius_m);
+      const dayLogCount = dayBucket.pairs.length * 2
+        + dayBucket.orphanEntries.length + dayBucket.orphanExits.length;
+      if (dayLogCount === 0) continue;
+
+      workerIds.add(wData.worker.id);
+      totalPunches += dayLogCount;
+      totalHours   += result.hoursTotal;
 
       rows.push({
         dateKey,
-        date:            formatDateRome(dayLogs[0].timestamp_server),
+        date:            fmtDisplayDate(dateKey),
         worker_name:     wData.worker.full_name,
         fiscal_code:     wData.worker.fiscal_code,
         first_entry:     result.firstEntry,       // "HH:MM" | null
