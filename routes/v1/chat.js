@@ -3103,7 +3103,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const statusFilter = toolInput.status || 'open';
         let q = supabase
           .from('site_notes')
-          .select('id, site_id, title, body, category, urgency, resolved_at, created_at')
+          .select('id, site_id, content, category, urgency, resolved_at, created_at')
           .eq('company_id', companyId)
           .eq('category', 'non_conformita')
           .order('created_at', { ascending: false })
@@ -3701,12 +3701,14 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       }
 
       case 'resolve_nonconformity': {
-        // La select includeva solo id/resolved_at: existing.body era sempre
-        // undefined e ogni risoluzione con note SOVRASCRIVEVA il corpo della NC
-        // invece di accodare — bug preesistente, corretto qui includendo 'body'.
+        // site_notes non ha mai avuto colonne 'title'/'body' (schema reale,
+        // fin dalla creazione in 018_telegram.sql: campo unico 'content') —
+        // un fix precedente aveva introdotto 'body' pensando fosse quello il
+        // nome giusto, rendendo questa select rotta al 100% invece che solo
+        // a volte. Corretto usando 'content', l'unico campo testo reale.
         const { data: existing } = await supabase
           .from('site_notes')
-          .select('id, body, resolved_at')
+          .select('id, content, resolved_at')
           .eq('id', toolInput.nc_id)
           .eq('company_id', companyId)
           .eq('category', 'non_conformita')
@@ -3717,7 +3719,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           resolved_at: new Date().toISOString(),
           resolved_by: userId || null,
         };
-        if (toolInput.resolution_notes) patch.body = (existing.body ? existing.body + '\n\n' : '') + `[RISOLUZIONE] ${toolInput.resolution_notes}`;
+        if (toolInput.resolution_notes) patch.content = (existing.content ? existing.content + '\n\n' : '') + `[RISOLUZIONE] ${toolInput.resolution_notes}`;
         const { data, error } = await supabase
           .from('site_notes')
           .update(patch)
@@ -3729,7 +3731,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const logged = await logAction({
           companyId, userId, req, conversationId: convId,
           resourceName: 'site_notes', action: 'update', recordId: toolInput.nc_id,
-          record: data, previousValues: { resolved_at: null, resolved_by: null, body: existing.body }, changedFields: patch,
+          record: data, previousValues: { resolved_at: null, resolved_by: null, content: existing.content }, changedFields: patch,
         });
         return { success: true, nc_risolta: data, ...logged };
       }
@@ -3986,14 +3988,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       }
 
       case 'archive_document_image': {
+        // site_notes non ha colonne 'title'/'body'/'user_id' (schema reale:
+        // content/author_id/author_name/source) — questo insert falliva
+        // sempre. Titolo ripiegato dentro 'content' insieme al resto.
         const row = {
-          company_id: companyId,
-          site_id:    toolInput.site_id || null,
-          title:      toolInput.title,
-          body:       `[${toolInput.doc_type?.toUpperCase() || 'DOCUMENTO'}] ${toolInput.content_summary}`,
-          category:   'documento',
-          urgency:    toolInput.urgency || 'media',
-          user_id:    userId || null,
+          company_id:  companyId,
+          site_id:     toolInput.site_id || null,
+          author_id:   userId || null,
+          author_name: 'Ladia AI',
+          source:      'web',
+          content:     `${toolInput.title}\n[${toolInput.doc_type?.toUpperCase() || 'DOCUMENTO'}] ${toolInput.content_summary}`,
+          category:    'documento',
+          urgency:     toolInput.urgency || 'media',
         };
         const { data, error } = await supabase.from('site_notes').insert(row).select().single();
         if (error) return { error: error.message };
@@ -6201,8 +6207,8 @@ router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
       supabase.from('workers').select('id, full_name, role, safety_training_expiry, health_fitness_expiry').eq('company_id', companyId).eq('is_active', true).limit(500),
       supabase.from('sites').select('id, name, status, budget_totale, sal_percentuale').eq('company_id', companyId).neq('status', 'chiuso'),
       supabase.from('site_economia_voci').select('site_id, tipo, importo').eq('company_id', companyId),
-      supabase.from('subcontractors').select('id, name, durc_expiry').eq('company_id', companyId).eq('is_active', true).limit(200),
-      supabase.from('site_notes').select('id, site_id, title, urgency, created_at').eq('company_id', companyId).is('resolved_at', null).eq('category', 'non_conformita').order('created_at', { ascending: false }).limit(50),
+      supabase.from('subcontractors').select('id, company_name, durc_expiry').eq('company_id', companyId).eq('is_active', true).limit(200),
+      supabase.from('site_notes').select('id, site_id, content, urgency, created_at').eq('company_id', companyId).is('resolved_at', null).eq('category', 'non_conformita').order('created_at', { ascending: false }).limit(50),
     ]);
 
     const alerts = [];
@@ -6226,7 +6232,7 @@ router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
     for (const s of (subcontractorsRes.data || [])) {
       if (s.durc_expiry) {
         const d = Math.ceil((new Date(s.durc_expiry) - today) / 86400000);
-        if (d <= 14) alerts.push({ severity: d < 0 ? 'critical' : d <= 7 ? 'warning' : 'info', category: 'scadenza', icon: 'company', title: `DURC — ${s.name}`, detail: d < 0 ? `Scaduto da ${Math.abs(d)} giorni` : `Scade tra ${d} giorni`, days: d });
+        if (d <= 14) alerts.push({ severity: d < 0 ? 'critical' : d <= 7 ? 'warning' : 'info', category: 'scadenza', icon: 'company', title: `DURC — ${s.company_name}`, detail: d < 0 ? `Scaduto da ${Math.abs(d)} giorni` : `Scade tra ${d} giorni`, days: d });
       }
     }
 
@@ -6255,7 +6261,7 @@ router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
     for (const nc of ncs) {
       const age = Math.ceil((now - new Date(nc.created_at)) / 86400000);
       if ((nc.urgency === 'critica' || nc.urgency === 'alta') && age >= 7) {
-        alerts.push({ severity: nc.urgency === 'critica' ? 'critical' : 'warning', category: 'nc', icon: 'alert', title: `NC aperta da ${age} giorni — ${siteNameMap[nc.site_id] || 'Cantiere'}`, detail: nc.title, site_id: nc.site_id, site_name: siteNameMap[nc.site_id] });
+        alerts.push({ severity: nc.urgency === 'critica' ? 'critical' : 'warning', category: 'nc', icon: 'alert', title: `NC aperta da ${age} giorni — ${siteNameMap[nc.site_id] || 'Cantiere'}`, detail: nc.content, site_id: nc.site_id, site_name: siteNameMap[nc.site_id] });
       }
     }
 
