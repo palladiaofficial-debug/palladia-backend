@@ -1204,7 +1204,7 @@ const TOOLS = [
         site_id:  { type: 'string', description: 'UUID del cantiere' },
         content:  { type: 'string', description: 'Testo della nota' },
         category: { type: 'string', enum: ['nota', 'non_conformita', 'verbale', 'altro'], description: 'Categoria. Default: nota' },
-        urgency:  { type: 'string', enum: ['normale', 'urgente', 'critico'],              description: 'Urgenza. Default: normale' },
+        urgency:  { type: 'string', enum: ['normale', 'alta', 'critica'],                  description: 'Urgenza. Default: normale' },
       },
       required: ['site_id', 'content'],
     },
@@ -2115,7 +2115,7 @@ IMPORTANTE — mai esporre nomi tecnici di colonna del database all'utente (es. 
         doc_type:        { type: 'string', description: 'Tipo: verbale_cse | ordine | lettera | certificato | planimetria | contratto | foto_cantiere | altro' },
         doc_date:        { type: 'string', description: 'Data documento YYYY-MM-DD' },
         content_summary: { type: 'string', description: 'Riepilogo dettagliato del contenuto estratto dall\'immagine' },
-        urgency:         { type: 'string', enum: ['bassa', 'media', 'alta'], description: 'Urgenza' },
+        urgency:         { type: 'string', enum: ['normale', 'alta', 'critica'], description: 'Urgenza. Default: normale' },
       },
       required: ['title', 'doc_type', 'content_summary']
     }
@@ -3999,7 +3999,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           source:      'web',
           content:     `${toolInput.title}\n[${toolInput.doc_type?.toUpperCase() || 'DOCUMENTO'}] ${toolInput.content_summary}`,
           category:    'documento',
-          urgency:     toolInput.urgency || 'media',
+          urgency:     toolInput.urgency || 'normale',
         };
         const { data, error } = await supabase.from('site_notes').insert(row).select().single();
         if (error) return { error: error.message };
