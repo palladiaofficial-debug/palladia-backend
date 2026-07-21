@@ -2,10 +2,10 @@
 const crypto   = require('crypto');
 const path     = require('path');
 const multer   = require('multer');
-const AdmZip   = require('adm-zip');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { EXT_TO_MIME, safeName, readZipEntries } = require('../../lib/zipIngest');
 
 const BUCKET       = 'site-documents';
 const MAX_SIZE     = 25 * 1024 * 1024;  // 25 MB — file singolo
@@ -20,19 +20,6 @@ const ALLOWED_TYPES = [
   'application/vnd.ms-excel',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 ];
-
-// Le voci dentro uno zip non portano un mimetype affidabile (dipende dal
-// sistema che ha creato l'archivio) — lo deduciamo dall'estensione.
-const EXT_TO_MIME = {
-  '.pdf':  'application/pdf',
-  '.jpg':  'image/jpeg', '.jpeg': 'image/jpeg',
-  '.png':  'image/png',
-  '.webp': 'image/webp',
-  '.doc':  'application/msword',
-  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  '.xls':  'application/vnd.ms-excel',
-  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-};
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -54,20 +41,6 @@ const uploadZip = multer({
     else cb(new Error('Il file deve essere un archivio .zip.'));
   },
 });
-
-// Cartelle/file che i tool di sistema aggiungono agli zip e vanno sempre ignorati.
-function isJunkEntry(entryName) {
-  const base = path.basename(entryName);
-  return entryName.startsWith('__MACOSX/')
-    || base === '.DS_Store' || base === 'Thumbs.db'
-    || base.startsWith('._') || base.startsWith('.');
-}
-
-function safeName(original) {
-  const ext  = path.extname(original) || '';
-  const base = path.basename(original, ext).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
-  return base + ext;
-}
 
 router.use(verifySupabaseJwt);
 
@@ -115,11 +88,15 @@ router.post('/chat/upload',
       return res.status(500).json({ error: 'DB_ERROR' });
     }
 
-    // Pulizia asincrona: rimuove upload > 24h non archiviati
+    // Pulizia asincrona: rimuove upload > 24h non archiviati. Esclude i file
+    // legati a un'Importazione Intelligente (import_batch_id valorizzato):
+    // quelli restano finché il batch non è confermato/annullato, altrimenti
+    // un'importazione lasciata in revisione sparirebbe da sola dopo 24h.
     supabase.from('chat_uploads')
       .select('id, storage_path')
       .eq('company_id', req.companyId)
       .eq('archived', false)
+      .is('import_batch_id', null)
       .lt('created_at', new Date(Date.now() - 86400000).toISOString())
       .then(({ data: stale }) => {
         if (!stale?.length) return;
@@ -153,10 +130,9 @@ router.post('/chat/upload-zip',
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
-    let zip, entries;
+    let entries;
     try {
-      zip = new AdmZip(req.file.buffer);
-      entries = zip.getEntries().filter(e => !e.isDirectory && !isJunkEntry(e.entryName));
+      entries = readZipEntries(req.file.buffer);
     } catch (err) {
       return res.status(400).json({ error: 'ZIP_CORROTTO', detail: err.message });
     }

@@ -162,6 +162,10 @@ router.use('/', require('./chatUpload'));
 // Importazione massiva documenti da zip (JWT — SSE progresso live)
 router.use('/', require('./chatBulkImport'));
 
+// Importazione Intelligente: onboarding principale via zip/cartella, coda +
+// revisione umana prima della scrittura in produzione (JWT)
+router.use('/', require('./smartImport'));
+
 // Telegram Bot: link account (JWT) + note cantiere
 router.use('/', require('./telegram'));
 router.use('/', require('./siteNotes'));

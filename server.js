@@ -47,6 +47,7 @@ const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
 const { startDailyStatsCron }       = require('./services/dailyStatsCron');
 const { startSafetyCopilotCron }    = require('./services/safetyCopilotCron');
 const { startSdiConsultationPollCron } = require('./services/sdiConsultationPollCron');
+const { startSmartImportRecoveryCron } = require('./services/smartImportRecoveryCron');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
 process.on('uncaughtException', (err) => {
@@ -2305,6 +2306,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startSafetyCopilotCron();
     startDailyStatsCron();
     startSdiConsultationPollCron();
+    startSmartImportRecoveryCron();
 
     // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti
     runFormazioneMigration().catch(e => console.error('[migration] formazione:', e.message));

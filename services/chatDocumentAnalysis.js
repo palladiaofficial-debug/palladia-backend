@@ -106,6 +106,7 @@ async function archiveChatUpload({
   uploadId, companyId, userId,
   destination, name, siteId, workerId,
   category, expiryDate, issueDate, issuingBody, courseTypeId,
+  contentHash = null,
   req = null,
 }) {
   const { data: upload } = await supabase
@@ -154,6 +155,7 @@ async function archiveChatUpload({
       company_id: companyId, site_id: siteId, name,
       category:  category || 'altro',
       file_path: permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
+      content_hash: contentHash,
     }).select('id').single();
     docId = d?.id; insertErr = e;
 
@@ -163,6 +165,7 @@ async function archiveChatUpload({
       category:       category || 'altro',
       file_path:      permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
       ai_expiry_date: expiryDate || null,
+      content_hash: contentHash,
     }).select('id').single();
     docId = d?.id; insertErr = e;
 
@@ -172,6 +175,7 @@ async function archiveChatUpload({
       doc_type:    category || 'altro',
       file_path:   permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
       expiry_date: expiryDate || null,
+      content_hash: contentHash,
     }).select('id').single();
     docId = d?.id; insertErr = e;
 
@@ -185,6 +189,7 @@ async function archiveChatUpload({
       issue_date:     issueDate   || null,
       issuing_body:   issuingBody || null,
       course_type_id: courseTypeId || null,
+      content_hash: contentHash,
     }).select('id').single();
     docId = d?.id; insertErr = e;
   }
