@@ -552,11 +552,19 @@ async function finishBatch(batchId, companyId) {
 
   const in60Days = new Date(Date.now() + 60 * 86400000).toISOString().slice(0, 10);
   const today = new Date().toISOString().slice(0, 10);
+  // site_documents/company_documents non hanno una colonna "expiry_date" —
+  // solo "ai_expiry_date" (popolata dall'analisi AI, vedi services/documentAI.js).
+  // worker_documents/worker_certificates usano invece "expiry_date" diretta.
+  const EXPIRY_COLUMN_BY_TABLE = {
+    worker_documents: 'expiry_date', worker_certificates: 'expiry_date',
+    site_documents: 'ai_expiry_date', company_documents: 'ai_expiry_date',
+  };
   let expiringCount = 0;
-  for (const table of ['worker_documents', 'worker_certificates', 'site_documents', 'company_documents']) {
-    const { count } = await supabase
+  for (const [table, col] of Object.entries(EXPIRY_COLUMN_BY_TABLE)) {
+    const { count, error } = await supabase
       .from(table).select('id', { count: 'exact', head: true })
-      .eq('company_id', companyId).gte('expiry_date', today).lte('expiry_date', in60Days);
+      .eq('company_id', companyId).gte(col, today).lte(col, in60Days);
+    if (error) { console.error('[smartImportPipeline] conteggio scadenze fallito:', table, error.message); continue; }
     expiringCount += count || 0;
   }
 
