@@ -427,5 +427,5 @@ module.exports = {
   // Esportati per riuso da services/smartImportAI.js (Importazione Intelligente) —
   // stessi prompt per tipo documento, nessuna duplicazione.
   COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
-  analyzeDocument, downloadFileBuffer, extractFirstJson, normalizeDate,
+  analyzeDocument, downloadFileBuffer, extractFirstJson, normalizeDate, detectCourseTypeName,
 };

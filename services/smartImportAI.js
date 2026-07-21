@@ -182,6 +182,10 @@ async function extractFields({ buffer, mimeType, destination, companyId, userId 
     validityOk: typeof data.validity_ok === 'boolean' ? data.validity_ok : null,
     issues: Array.isArray(data.issues) ? data.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
     siteHint: (data.site_hint || '').trim().slice(0, 200) || null,
+    // Tipo corso granulare (formazione_sicurezza|primo_soccorso|antincendio|...) —
+    // non mostrato in revisione (ridondante con doc_type della classificazione),
+    // ma necessario per risolvere course_type_id alla conferma.
+    docTypeDetected: isWorkerDoc ? (data.doc_type_detected || null) : null,
   };
 }
 

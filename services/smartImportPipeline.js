@@ -20,6 +20,7 @@ const { inspectPdf, extractPdfPages } = require('../lib/pdfSplit');
 const { classifySegments, extractFields } = require('./smartImportAI');
 const { matchWorker, matchSite } = require('../lib/entityMatch');
 const { archiveChatUpload } = require('./chatDocumentAnalysis');
+const { detectCourseTypeName } = require('./documentAI');
 const { checkAiBudget } = require('../lib/ladiaUsageLog');
 const { auditLog } = require('../lib/audit');
 
@@ -349,6 +350,7 @@ async function processOneItem(item, ctx) {
 
     await supabase.from('import_items').update({
       status: 'pending_review', content_hash: hash, doc_type: docType, destination,
+      doc_type_detail: extraction?.docTypeDetected || null,
       extracted_fields: fields, overall_confidence: overallConfidence,
       matched_worker_id: matchedWorkerId, matched_site_id: matchedSiteId,
       worker_match_score: workerScore, site_match_score: siteScore,
@@ -482,10 +484,22 @@ async function confirmItem(itemId, companyId, userId, req = null) {
   // nullable), invece di far fallire la conferma con un errore SQL grezzo.
   const destination = (item.destination === 'worker_certificates' && !issueDate) ? 'worker_documents' : item.destination;
 
+  // Risolve course_type_id dal tipo corso granulare estratto (formazione_sicurezza|
+  // primo_soccorso|...) — senza, il certificato viene scritto ma non compare nella
+  // pagina Documenti/Formazione, che raggruppa per corso.
+  let courseTypeId = null;
+  if (destination === 'worker_certificates' && item.doc_type_detail) {
+    const courseTypeName = detectCourseTypeName(item.doc_type_detail, name);
+    if (courseTypeName) {
+      const { data: ct } = await supabase.from('course_types').select('id').ilike('name', courseTypeName).maybeSingle();
+      courseTypeId = ct?.id || null;
+    }
+  }
+
   const result = await archiveChatUpload({
     uploadId: item.chat_upload_id, companyId, userId,
     destination, name, siteId, workerId,
-    category: sanitizeCategory(destination, item.doc_type), expiryDate, issueDate, issuingBody,
+    category: sanitizeCategory(destination, item.doc_type), expiryDate, issueDate, issuingBody, courseTypeId,
     contentHash: item.content_hash, req,
   });
   if (result?.error) throw new Error(result.error);
