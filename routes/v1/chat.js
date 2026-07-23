@@ -457,15 +457,18 @@ REGOLE SCRITTURA:
   corretta, non un finto "creato con successo".
 
 ANNULLARE UN'AZIONE VIA CHAT (testo, non click sul bottone "Annulla azione" della card):
-- Usa SEMPRE undo_action con l'action_history_id preso dal risultato del tuo tool di scrittura precedente
-  nella stessa conversazione — non esiste altro modo per annullare davvero un dato. Non hai un tool
-  generico "annulla l'ultima cosa" che indovina da solo: se non è chiaro QUALE azione annullare (più
-  scritture recenti), chiedi all'utente quale intende.
+- La tua cronologia di conversazione NON conserva i risultati dei tool dei turni già chiusi — solo il
+  testo. Quindi, a meno che la scrittura da annullare sia avvenuta in QUESTO STESSO turno, non hai già
+  l'action_history_id: chiama SEMPRE PRIMA get_recent_actions per ritrovarlo, poi undo_action. Non
+  esiste altro modo per annullare davvero un dato — mai indovinare un id, mai dire "non posso annullare"
+  senza aver prima controllato get_recent_actions.
+- Non hai un tool generico "annulla l'ultima cosa" che indovina da solo: se get_recent_actions torna più
+  di un'azione plausibile e non è chiaro a quale l'utente si riferisce, elenca le opzioni e chiedi.
 - Vale la stessa regola sopra: comunica il risultato SOLO dopo aver visto la risposta del tool. Un errore
   (es. finestra di 30 minuti scaduta) va riportato per quello che è, mai presentato come un annullamento
   riuscito.
 
-ALTRE AZIONI: create_record (table:'sites'|'site_diary_entries'|'site_suspension_days'), update_sal, update_budget_cantiere, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante, undo_action
+ALTRE AZIONI: create_record (table:'sites'|'site_diary_entries'|'site_suspension_days'), update_sal, update_budget_cantiere, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante, get_recent_actions, undo_action
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -1724,15 +1727,20 @@ IMPORTANTE — mai esporre nomi tecnici di colonna del database all'utente (es. 
     }
   },
   {
+    name: 'get_recent_actions',
+    description: `Elenca le ultime scritture non ancora annullate dell'azienda (create/update/delete), con id, risorsa, riepilogo e data. Usa questo PRIMA di undo_action ogni volta che non hai già un action_history_id fresco nel turno corrente — cosa che succede quasi sempre: la tua cronologia di conversazione NON conserva i risultati dei tool dei turni precedenti, solo il testo. Se l'utente chiede "annulla"/"annulla quella modifica" e la scrittura non è avvenuta nello stesso turno, chiama SEMPRE prima questo tool per ritrovare l'id corretto — non hai altro modo di recuperarlo.`,
+    input_schema: { type: 'object', properties: {}, required: [] }
+  },
+  {
     name: 'undo_action',
     description: `Annulla DAVVERO un'azione di scrittura precedente (create/update/delete) quando l'utente lo chiede a parole in chat — es. "annulla", "annulla quella modifica", "togli quello che hai appena fatto", "non volevo quello". NON è la stessa cosa del bottone "Annulla azione" sulla card (quello funziona già da solo): questo tool serve per quando la richiesta arriva come testo in chat invece che come click.
-Come trovare l'action_history_id: ogni tuo tool di scrittura precedente (create_record/update_record/update_sal/create_phase/ecc.) ha già restituito un campo "actionHistoryId" nel proprio risultato — è nella tua stessa cronologia di conversazione, non serve chiederlo all'utente. Usa quello dell'azione più recente a cui il messaggio si riferisce.
-Se ci sono PIÙ azioni recenti e non è chiaro a quale si riferisce ("annulla" da solo, senza altro contesto, dopo aver fatto 2+ scritture in questo turno o nei turni immediatamente precedenti), NON indovinare: chiedi all'utente quale delle azioni recenti intende, elencandole brevemente.
+Come trovare l'action_history_id: se la scrittura da annullare è avvenuta in QUESTO STESSO turno, il tool di scrittura ha già restituito "actionHistoryId" nel suo risultato, usalo direttamente. In OGNI ALTRO caso (quasi sempre, perché l'utente di solito chiede "annulla" in un messaggio successivo) chiama PRIMA get_recent_actions — la tua cronologia di conversazione non conserva i risultati dei tool dei turni chiusi, quindi un id visto prima non è più recuperabile da lì.
+Se ci sono PIÙ azioni recenti e non è chiaro a quale si riferisce, NON indovinare: elenca le opzioni da get_recent_actions e chiedi all'utente quale intende.
 CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo tool e aver visto success:true nel risultato. Se il tool ritorna un errore (es. FINESTRA_SCADUTA, GIA_ANNULLATA, CONFLITTO, UNDO_NON_DISPONIBILE), riporta all'utente il motivo esatto in italiano semplice — mai fingere che sia andato a buon fine.`,
     input_schema: {
       type: 'object',
       properties: {
-        action_history_id: { type: 'string', description: 'UUID actionHistoryId dell\'azione da annullare, preso dal risultato del tool di scrittura corrispondente in questa conversazione (obbligatorio)' }
+        action_history_id: { type: 'string', description: 'UUID actionHistoryId dell\'azione da annullare — da questo turno se disponibile, altrimenti da get_recent_actions (obbligatorio)' }
       },
       required: ['action_history_id']
     }
@@ -3629,6 +3637,24 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'undo_action': {
         if (!toolInput.action_history_id) return { error: 'action_history_id obbligatorio' };
         return await ladiaGenericTools.undoAction(toolInput.action_history_id, companyId, userId, req);
+      }
+
+      case 'get_recent_actions': {
+        // saveMessages() persiste solo il testo/tool_use del turno, MAI i
+        // tool_result — quindi un actionHistoryId visto in un turno passato
+        // non è più nella cronologia quando l'utente chiede "annulla" in un
+        // messaggio successivo (praticamente sempre). Questo tool è l'unico
+        // modo per undo_action di recuperarlo tra un turno e l'altro
+        // (trovato con un test dal vivo, 2026-07-23).
+        const { data, error } = await supabase
+          .from('ladia_action_history')
+          .select('id, resource, action, summary, created_at')
+          .eq('company_id', companyId)
+          .is('undone_at', null)
+          .order('created_at', { ascending: false })
+          .limit(10);
+        if (error) return { error: error.message };
+        return { actions: data };
       }
 
       case 'update_sal': {
