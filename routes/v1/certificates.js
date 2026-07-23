@@ -111,7 +111,10 @@ router.get('/formazione/dashboard', verifySupabaseJwt, async (req, res) => {
 
   for (const w of workers) {
     const wCerts = certsByWorker[w.id] || [];
-    const hasProblems = wCerts.some(c => c.status !== 'valido');
+    // Un lavoratore SENZA alcun attestato non è "a posto" solo perché
+    // .some() su un array vuoto è vacuamente false — nessuna formazione
+    // caricata è essa stessa un problema (bug audit F-015, 2026-07-22).
+    const hasProblems = wCerts.length === 0 || wCerts.some(c => c.status !== 'valido');
 
     for (const c of wCerts) {
       if (c.status === 'scaduto')     stats.scaduti++;

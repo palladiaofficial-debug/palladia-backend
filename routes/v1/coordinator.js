@@ -95,7 +95,7 @@ router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, validate(cr
 
   if (insertErr) return res.status(500).json({ error: 'INVITE_CREATE_ERROR' });
 
-  const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const appBase = `${req.protocol}://${req.get('host')}`;
   const cseUrl  = `${appBase}/coordinator/${rawToken}`;
   let   portalUrl = cseUrl; // default per inviti senza email
 
@@ -215,7 +215,7 @@ router.patch('/coordinator-invites/:inviteId/refresh-token', verifySupabaseJwt, 
 
   if (updateErr) return res.status(500).json({ error: 'UPDATE_ERROR' });
 
-  const appBase = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+  const appBase = `${req.protocol}://${req.get('host')}`;
   const cseUrl  = `${appBase}/coordinator/${rawToken}`;
   let   portalUrl = cseUrl;
 
@@ -616,7 +616,7 @@ router.post('/coordinator/request-link', recoveryLimiter, validate(requestLinkSc
       .from('sites').select('id, name, address').in('id', siteIds);
     const siteMap = Object.fromEntries((sitesRaw || []).map(s => [s.id, s]));
 
-    const appBase  = (process.env.APP_BASE_URL || '').replace(/\/$/, '');
+    const appBase  = `${req.protocol}://${req.get('host')}`;
     const siteLinks = [];
 
     for (const invite of invites) {

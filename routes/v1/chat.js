@@ -446,8 +446,26 @@ REGOLE SCRITTURA:
 - Esegui SEMPRE direttamente senza chiedere conferma — comunica il risultato DOPO l'azione
 - Se hai solo un nome (lavoratore o cantiere) invece dell'UUID, usa get_workers/get_sites prima per risolvere l'ID
 - In caso di errore dal DB, mostralo all'utente in modo chiaro
+- Se il nome (lavoratore, cantiere, o altro) risolto da get_workers/get_sites/ricerca corrisponde a PIÙ di un
+  risultato, NON scegliere il primo a caso: elenca le opzioni all'utente e chiedi quale intende, esattamente
+  come già fai per i cantieri in CONTINUITÀ DI CONTESTO più sotto — vale per ogni azione di scrittura, non
+  solo per le letture.
+- MAI dichiarare un'azione riuscita ("fatto", "creato", "annullato", "salvato") prima di aver ricevuto un
+  risultato positivo dal tool corrispondente. Se il tool ritorna un errore, o se un record che pensavi di
+  dover creare esiste già (es. il tool torna already_exists), dillo chiaramente invece di rispondere come se
+  l'azione richiesta fosse comunque avvenuta — un "esiste già, non ho creato duplicati" è la risposta
+  corretta, non un finto "creato con successo".
 
-ALTRE AZIONI: create_record (table:'sites'|'site_diary_entries'|'site_suspension_days'), update_sal, update_budget_cantiere, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante
+ANNULLARE UN'AZIONE VIA CHAT (testo, non click sul bottone "Annulla azione" della card):
+- Usa SEMPRE undo_action con l'action_history_id preso dal risultato del tuo tool di scrittura precedente
+  nella stessa conversazione — non esiste altro modo per annullare davvero un dato. Non hai un tool
+  generico "annulla l'ultima cosa" che indovina da solo: se non è chiaro QUALE azione annullare (più
+  scritture recenti), chiedi all'utente quale intende.
+- Vale la stessa regola sopra: comunica il risultato SOLO dopo aver visto la risposta del tool. Un errore
+  (es. finestra di 30 minuti scaduta) va riportato per quello che è, mai presentato come un annullamento
+  riuscito.
+
+ALTRE AZIONI: create_record (table:'sites'|'site_diary_entries'|'site_suspension_days'), update_sal, update_budget_cantiere, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante, undo_action
 
 OBIETTIVI E FOLLOW-UP: resolve_objective
 
@@ -1703,6 +1721,20 @@ IMPORTANTE — mai esporre nomi tecnici di colonna del database all'utente (es. 
         summary: { type: 'string', description: 'Riepilogo leggibile già mostrato all\'utente in chat' }
       },
       required: ['table', 'action', 'payload', 'summary']
+    }
+  },
+  {
+    name: 'undo_action',
+    description: `Annulla DAVVERO un'azione di scrittura precedente (create/update/delete) quando l'utente lo chiede a parole in chat — es. "annulla", "annulla quella modifica", "togli quello che hai appena fatto", "non volevo quello". NON è la stessa cosa del bottone "Annulla azione" sulla card (quello funziona già da solo): questo tool serve per quando la richiesta arriva come testo in chat invece che come click.
+Come trovare l'action_history_id: ogni tuo tool di scrittura precedente (create_record/update_record/update_sal/create_phase/ecc.) ha già restituito un campo "actionHistoryId" nel proprio risultato — è nella tua stessa cronologia di conversazione, non serve chiederlo all'utente. Usa quello dell'azione più recente a cui il messaggio si riferisce.
+Se ci sono PIÙ azioni recenti e non è chiaro a quale si riferisce ("annulla" da solo, senza altro contesto, dopo aver fatto 2+ scritture in questo turno o nei turni immediatamente precedenti), NON indovinare: chiedi all'utente quale delle azioni recenti intende, elencandole brevemente.
+CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo tool e aver visto success:true nel risultato. Se il tool ritorna un errore (es. FINESTRA_SCADUTA, GIA_ANNULLATA, CONFLITTO, UNDO_NON_DISPONIBILE), riporta all'utente il motivo esatto in italiano semplice — mai fingere che sia andato a buon fine.`,
+    input_schema: {
+      type: 'object',
+      properties: {
+        action_history_id: { type: 'string', description: 'UUID actionHistoryId dell\'azione da annullare, preso dal risultato del tool di scrittura corrispondente in questa conversazione (obbligatorio)' }
+      },
+      required: ['action_history_id']
     }
   },
   {
@@ -3592,6 +3624,11 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           companyId, userId,
           conversationId: convId,
         });
+      }
+
+      case 'undo_action': {
+        if (!toolInput.action_history_id) return { error: 'action_history_id obbligatorio' };
+        return await ladiaGenericTools.undoAction(toolInput.action_history_id, companyId, userId, req);
       }
 
       case 'update_sal': {

@@ -20,6 +20,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { auditLog }          = require('../../lib/audit');
 const { validate } = require('../../middleware/validate');
 const { createInviteLinkSchema, approveWorkerSchema, onboardWorkerSchema } = require('../../lib/schemas/workerInvite');
+const { generateBadgeCode } = require('../../lib/badgeCode');
 
 // ── PRIVATO: gestione link ────────────────────────────────────────────────────
 
@@ -228,6 +229,7 @@ router.post('/onboard/:token', validate(onboardWorkerSchema), async (req, res) =
     pending_approval:  true,
     invite_token_id:   invite.id,
     self_submitted_at: new Date().toISOString(),
+    badge_code:        generateBadgeCode(),
   };
 
   const { error: wErr } = await supabase

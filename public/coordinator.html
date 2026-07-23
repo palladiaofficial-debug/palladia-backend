@@ -35,13 +35,17 @@
     .view.active { display: block; }
 
     /* ── Loading ─────────────────────────────────────────────── */
-    #view-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
+    /* Specificità ID + .active (non solo #id): senza .active, la regola
+       .view { display: none; } sopra deve poter vincere. Un #id da solo
+       batte sempre .view.active e la vista resta visibile per sempre anche
+       dopo che showView() rimuove .active (bug audit F-012, 2026-07-22). */
+    #view-loading.active { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 16px; }
     .spinner { width: 32px; height: 32px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .load-text { color: var(--muted); font-size: 13px; }
 
     /* ── Error ───────────────────────────────────────────────── */
-    #view-error { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 12px; padding: 24px; text-align: center; }
+    #view-error.active { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; gap: 12px; padding: 24px; text-align: center; }
     .err-icon { font-size: 48px; }
     .err-title { font-size: 18px; font-weight: 600; color: var(--red); }
     .err-msg { color: var(--muted); max-width: 360px; }

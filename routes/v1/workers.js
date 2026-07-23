@@ -1,5 +1,4 @@
 'use strict';
-const crypto  = require('crypto');
 const router  = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }                    = require('../../middleware/verifyJwt');
@@ -7,6 +6,7 @@ const { validate }                             = require('../../middleware/valid
 const { createWorkerSchema, patchWorkerSchema } = require('../../lib/schemas/worker');
 const { auditLog }          = require('../../lib/audit');
 const { complianceStatus }  = require('../../lib/compliance');
+const { generateBadgeCode } = require('../../lib/badgeCode');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -21,12 +21,6 @@ function parseFullName(fullName) {
   const firstName = spaceIdx > -1 ? trimmed.slice(0, spaceIdx) : trimmed;
   const lastName  = spaceIdx > -1 ? trimmed.slice(spaceIdx + 1).trim() || null : null;
   return { first_name: firstName, last_name: lastName, full_name: trimmed };
-}
-
-// Genera codice badge univoco: 9 byte → 18 char hex uppercase
-// Spazio 2^72 — praticamente non enumerabile
-function generateBadgeCode() {
-  return crypto.randomBytes(9).toString('hex').toUpperCase();
 }
 
 // Campi badge opzionali accettati in POST e PATCH

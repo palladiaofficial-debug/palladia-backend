@@ -47,6 +47,7 @@ const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
 const router   = require('express').Router();
 const crypto   = require('crypto');
 const supabase = require('../../lib/supabase');
+const { generateBadgeCode } = require('../../lib/badgeCode');
 const { verifyStudioJwt, verifyStudioOrCreate } = require('../../middleware/verifyStudio');
 const {
   sendStudioInviteEmail,
@@ -918,19 +919,31 @@ router.post('/studio/clients/:companyId/workers', verifyStudioJwt, validate(crea
   if (!full_name?.trim() || !fiscal_code?.trim()) {
     return res.status(400).json({ error: 'MISSING_FIELDS', message: 'Nome e codice fiscale sono obbligatori' });
   }
+  const normalizedCf = fiscal_code.trim().toUpperCase();
+
+  // Preserva il badge_code esistente su un lavoratore già presente (upsert su
+  // conflitto company_id+fiscal_code) — non invalidare un badge fisico già
+  // stampato solo perché lo studio ha ripetuto l'inserimento.
+  const { data: existing } = await supabase
+    .from('workers')
+    .select('badge_code')
+    .eq('company_id', companyId)
+    .eq('fiscal_code', normalizedCf)
+    .maybeSingle();
 
   const { data, error } = await supabase
     .from('workers')
     .upsert({
       company_id:  companyId,
       full_name:   full_name.trim(),
-      fiscal_code: fiscal_code.trim().toUpperCase(),
+      fiscal_code: normalizedCf,
       is_active:   true,
+      badge_code:  existing?.badge_code || generateBadgeCode(),
     }, { onConflict: 'company_id,fiscal_code' })
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return res.status(500).json({ error: error.message, message: error.message });
   logStudioAction(req.studioId, req.user.id, 'worker.create', { companyId, targetType: 'worker', targetId: data.id, payload: { full_name: data.full_name } });
   res.status(201).json({ worker: data });
 });
@@ -1249,9 +1262,6 @@ router.post('/studio/clients/:companyId/workers/import', verifyStudioJwt, async 
   }
   function isValidCF(cf) {
     return typeof cf === 'string' && /^[A-Z0-9]{16}$/i.test(cf.trim());
-  }
-  function generateBadgeCode() {
-    return require('crypto').randomBytes(9).toString('hex').toUpperCase();
   }
 
   for (let i = 1; i < lines.length; i++) {
@@ -2661,7 +2671,7 @@ router.post('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res)
       protocol_number: protocol_number?.trim() || null,
       notes:           notes?.trim() || null,
       document_url:    document_url?.trim() || null,
-      created_by:      req.studioId,
+      created_by:      req.user.id,
     })
     .select('id, issue_date, expiry_date, protocol_number, notes, document_url, created_at')
     .single();
