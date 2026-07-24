@@ -5984,18 +5984,19 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
 
     // File allegati: inietta lista per i tool read_uploaded_document / archive_document
     if (uploadIds.length > 0) {
-      const { data: uploads } = await supabase
-        .from('chat_uploads')
-        .select('id, original_name, mime_type, size_bytes')
-        .in('id', uploadIds)
-        .eq('company_id', req.companyId)
-        .catch(() => ({ data: null }));
-      if (uploads?.length > 0) {
-        const fileList = uploads.map(u =>
-          `• ${u.original_name} (${u.mime_type}, ${Math.round((u.size_bytes || 0) / 1024)}KB) — upload_id: ${u.id}`
-        ).join('\n');
-        systemPrompt += `\n\n[FILE ALLEGATI DALL'UTENTE]\nProcessa OGNI file con read_uploaded_document poi usa archive_document:\n${fileList}`;
-      }
+      try {
+        const { data: uploads } = await supabase
+          .from('chat_uploads')
+          .select('id, original_name, mime_type, size_bytes')
+          .in('id', uploadIds)
+          .eq('company_id', req.companyId);
+        if (uploads?.length > 0) {
+          const fileList = uploads.map(u =>
+            `• ${u.original_name} (${u.mime_type}, ${Math.round((u.size_bytes || 0) / 1024)}KB) — upload_id: ${u.id}`
+          ).join('\n');
+          systemPrompt += `\n\n[FILE ALLEGATI DALL'UTENTE]\nProcessa OGNI file con read_uploaded_document poi usa archive_document:\n${fileList}`;
+        }
+      } catch { /* non critico */ }
     }
   } catch { /* non critico */ }
 
