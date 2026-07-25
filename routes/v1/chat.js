@@ -3084,7 +3084,12 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
 
         let q = supabase
           .from('subcontractors')
-          .select('id, company_name, contact_person, contact_email, contact_phone, durc_expiry, insurance_expiry, soa_expiry, is_active')
+          // Schema reale (subcontractors): 'email'/'phone', mai avute colonne
+          // 'contact_email'/'contact_phone' — la select con i nomi sbagliati
+          // falliva sempre con "column does not exist", get_subcontractors
+          // non ha mai funzionato. Trovato dal vivo testando create_subcontractor,
+          // stesso disallineamento anche lì (vedi sotto).
+          .select('id, company_name, contact_person, email, phone, durc_expiry, insurance_expiry, soa_expiry, is_active')
           .eq('company_id', companyId);
         if (subIds) q = q.in('id', subIds);
         const { data, error } = await q;
@@ -3940,8 +3945,11 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           company_id: companyId,
           company_name: toolInput.company_name,
           contact_person: toolInput.contact_person || null,
-          contact_email: toolInput.contact_email || null,
-          contact_phone: toolInput.contact_phone || null,
+          // Schema reale: 'email'/'phone' — mai esistite 'contact_email'/
+          // 'contact_phone', l'insert falliva sempre con "column does not
+          // exist" (trovato dal vivo, stesso bug su get_subcontractors sopra).
+          email: toolInput.contact_email || null,
+          phone: toolInput.contact_phone || null,
           durc_expiry: toolInput.durc_expiry || null,
           insurance_expiry: toolInput.insurance_expiry || null,
           soa_expiry: toolInput.soa_expiry || null,
