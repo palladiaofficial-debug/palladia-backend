@@ -63,7 +63,7 @@ router.post('/expenses', validate(createExpenseSchema), async (req, res) => {
       company_id: req.companyId,
       created_by: req.user?.id || null,
     })
-    .select('*, sites(name)')
+    .select('*, sites!site_id(name)')
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -115,7 +115,7 @@ router.put('/expenses/:id', validate(updateExpenseSchema), async (req, res) => {
     .update({ ...req.body, updated_at: new Date().toISOString() })
     .eq('id', req.params.id)
     .eq('company_id', req.companyId)
-    .select('*, sites(name)')
+    .select('*, sites!site_id(name)')
     .single();
 
   if (error) return res.status(500).json({ error: error.message });
@@ -222,7 +222,7 @@ router.get('/expenses/export', async (req, res) => {
 
   let q = supabase
     .from('company_expenses')
-    .select('*, sites(name)')
+    .select('*, sites!site_id(name)')
     .eq('company_id', req.companyId)
     .gte('expense_date', from)
     .lte('expense_date', to)
