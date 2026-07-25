@@ -3980,12 +3980,24 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
+        // Nomi leggibili invece dei soli id — senza questi la card e la prosa
+        // del modello non avevano alcun modo di dire QUALE subappaltatore e
+        // QUALE cantiere, solo UUID. Trovato audit-ando gli altri tool bespoke
+        // sullo stesso pattern di company_id grezzo nella card.
+        const [{ data: sub }, { data: site }] = await Promise.all([
+          supabase.from('subcontractors').select('company_name').eq('id', toolInput.subcontractor_id).maybeSingle(),
+          supabase.from('sites').select('name').eq('id', toolInput.site_id).maybeSingle(),
+        ]);
         const logged = await logAction({
           companyId, userId, req, conversationId: convId,
           resourceName: 'site_subcontractors', action: 'create', recordId: data.id,
-          record: data, changedFields: assignRow,
+          record: data, changedFields: { subappaltatore: sub?.company_name || null, cantiere: site?.name || null },
         });
-        return { success: true, assegnazione_creata: data, ...logged };
+        return {
+          success: true, assegnazione_creata: data,
+          messaggio: `${sub?.company_name || 'Subappaltatore'} assegnato al cantiere ${site?.name || ''}.`,
+          ...logged,
+        };
       }
 
       case 'create_equipment': {
@@ -4032,12 +4044,22 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .select()
           .single();
         if (error) return { error: error.message };
+        // Nomi leggibili invece dei soli id — stesso motivo di
+        // assign_subcontractor_to_site sopra.
+        const [{ data: equip }, { data: site }] = await Promise.all([
+          supabase.from('equipment').select('name').eq('id', toolInput.equipment_id).maybeSingle(),
+          supabase.from('sites').select('name').eq('id', toolInput.site_id).maybeSingle(),
+        ]);
         const logged = await logAction({
           companyId, userId, req, conversationId: convId,
           resourceName: 'site_equipment', action: 'create', recordId: data.id,
-          record: data, changedFields: equipAssignRow,
+          record: data, changedFields: { mezzo: equip?.name || null, cantiere: site?.name || null },
         });
-        return { success: true, assegnazione_creata: data, ...logged };
+        return {
+          success: true, assegnazione_creata: data,
+          messaggio: `${equip?.name || 'Mezzo'} assegnato al cantiere ${site?.name || ''}.`,
+          ...logged,
+        };
       }
 
       case 'get_payslips': {
