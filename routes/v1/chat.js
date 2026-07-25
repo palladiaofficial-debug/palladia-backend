@@ -2756,7 +2756,13 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const logged = await logAction({
           companyId, userId, req, conversationId: convId,
           resourceName: 'site_diary_entries', action: 'create', recordId: data.id,
-          record: data, changedFields: diaryRow,
+          record: data,
+          // Solo i campi che l'utente riconosce come "quello che ho scritto" —
+          // company_id/gli snapshot vuoti sono plumbing interno, e il cantiere
+          // è già nominato nella riga di riepilogo qui sotto: mostrare di nuovo
+          // il suo UUID grezzo nella card non aggiunge nulla, rompe solo la
+          // cura della card.
+          changedFields: { entry_date: today, notes, activities, issues, ...photosPatch },
         });
         return {
           success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes,
@@ -2788,7 +2794,10 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const logged = await logAction({
           companyId, userId, req, conversationId: convId,
           resourceName: 'site_notes', action: 'create', recordId: data.id,
-          record: data, changedFields: noteRow,
+          record: data,
+          // Come create_diary_note sopra: solo i campi che l'utente riconosce,
+          // il cantiere è già nominato nella riga di riepilogo.
+          changedFields: { content: content.trim(), category, urgency },
         });
         return { success: true, cantiere: site.name, note_id: data.id, category, urgency, ...logged };
       }
