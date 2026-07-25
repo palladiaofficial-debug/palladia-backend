@@ -6061,6 +6061,32 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
         }
       } catch { /* non critico */ }
     }
+
+    // chat_uploads non ha conversation_id: chat_messages salva solo testo, non i
+    // blocchi tool_use/tool_result — quindi da questo giro di /chat/stream in poi
+    // l'upload_id reale del file allegato in un turno precedente non è più visibile
+    // al modello (solo il testo che ha scritto lui, che non lo riporta). Trovato dal
+    // vivo: un'archiviazione confermata 2 turni dopo l'analisi falliva con "File non
+    // trovato" perché il modello doveva indovinare l'upload_id a memoria. Reiniettiamo
+    // quindi SEMPRE (non solo quando arriva un nuovo file) i non ancora archiviati di
+    // questo utente nelle ultime 2 ore, cosi' l'id esatto resta disponibile per
+    // archive_document anche a distanza di turni.
+    try {
+      const { data: pending } = await supabase
+        .from('chat_uploads')
+        .select('id, original_name, mime_type, created_at')
+        .eq('company_id', req.companyId)
+        .eq('user_id', req.user.id)
+        .eq('archived', false)
+        .gte('created_at', new Date(Date.now() - 2 * 3600000).toISOString())
+        .not('id', 'in', `(${(uploadIds.length ? uploadIds : ['00000000-0000-0000-0000-000000000000']).join(',')})`)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (pending?.length > 0) {
+        const pendingList = pending.map(u => `• ${u.original_name} — upload_id: ${u.id}`).join('\n');
+        systemPrompt += `\n\n[FILE CARICATI IN QUESTA SESSIONE, NON ANCORA ARCHIVIATI]\nSe l'utente conferma ora l'archiviazione di uno di questi (discusso in un turno precedente), usa ESATTAMENTE questo upload_id per archive_document — non inventarlo a memoria:\n${pendingList}`;
+      }
+    } catch { /* non critico */ }
   } catch { /* non critico */ }
 
   try {

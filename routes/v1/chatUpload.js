@@ -103,7 +103,7 @@ router.post('/chat/upload',
         const paths = stale.map(s => s.storage_path);
         supabase.storage.from(BUCKET).remove(paths).catch(() => {});
         supabase.from('chat_uploads').delete()
-          .in('id', stale.map(s => s.id)).catch(() => {});
+          .in('id', stale.map(s => s.id)).then(() => {}, () => {});
       });
 
     res.json({
