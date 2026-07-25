@@ -4479,8 +4479,21 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         ) / 100;
         await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', computo.id);
 
-        await auditLog({ companyId, userId, action: 'record.create:site_computo_voci', targetType: 'site_computo_voci', targetId: voce.id, payload: row, req });
-        return { success: true, voce_creata: voce, nuovo_totale_contratto: newTotale };
+        const logResult = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_computo_voci', action: 'create',
+          recordId: voce.id, record: voce,
+          auditActionOverride: 'record.create:site_computo_voci',
+        });
+        // allow.create:false su site_computo_voci in ladiaSchemaRegistry.js
+        // blocca già strutturalmente l'undo (UNDO_NON_DISPONIBILE) — corretto,
+        // annullare senza ricalcolare totale_contratto lascerebbe l'aggregato
+        // incoerente. logAction() serve qui solo per audit trail + card verde.
+        // Spread di logResult (non solo actionHistoryId): la card SSE in
+        // routes/v1/chat.js legge result.action/record/summary per decidere
+        // testo e diff — senza questi campi indovinerebbe male (es. "Eliminato"
+        // per una create, dato che il fallback è basato su result.record).
+        return { success: true, voce_creata: voce, nuovo_totale_contratto: newTotale, ...logResult };
       }
 
       case 'delete_computo_voce': {
@@ -4489,7 +4502,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
 
         const { data: voce } = await supabase
           .from('site_computo_voci')
-          .select('id, descrizione, importo, tipo, computo_id')
+          .select('*')
           .eq('id', voce_id)
           .eq('company_id', companyId)
           .single();
@@ -4511,8 +4524,16 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         ) / 100;
         await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', voce.computo_id);
 
-        await auditLog({ companyId, userId, action: 'record.delete:site_computo_voci', targetType: 'site_computo_voci', targetId: voce_id, payload: voce, req });
-        return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale };
+        const logResult = await logAction({
+          companyId, userId, req, conversationId: convId,
+          resourceName: 'site_computo_voci', action: 'delete',
+          recordId: voce_id, fullRowSnapshot: voce,
+          auditActionOverride: 'record.delete:site_computo_voci',
+        });
+        // allow.create:false blocca l'undo di questa delete (UNDO_NON_DISPONIBILE,
+        // vedi il controllo aggiunto in ladiaGenericTools.js) — un re-insert
+        // generico non ricalcolerebbe totale_contratto.
+        return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale, ...logResult };
       }
 
       case 'get_varianti': {
@@ -4995,7 +5016,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           destination, name, siteId: site_id, workerId: worker_id,
           category, expiryDate: expiry_date, issueDate: issue_date,
           issuingBody: issuing_body, courseTypeId: course_type_id,
-          req,
+          req, conversationId: convId,
         });
       }
 

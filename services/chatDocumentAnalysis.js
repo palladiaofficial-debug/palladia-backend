@@ -13,7 +13,7 @@ const path     = require('path');
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { logUsage } = require('../lib/ladiaUsageLog');
-const { auditLog }  = require('../lib/audit');
+const { logAction } = require('../lib/ladiaActionLog');
 
 const BUCKET = 'site-documents';
 
@@ -108,6 +108,7 @@ async function archiveChatUpload({
   category, expiryDate, issueDate, issuingBody, courseTypeId,
   contentHash = null,
   req = null,
+  conversationId = null,
 }) {
   const { data: upload } = await supabase
     .from('chat_uploads')
@@ -202,12 +203,25 @@ async function archiveChatUpload({
   await supabase.from('chat_uploads').update({ archived: true }).eq('id', uploadId);
   supabase.storage.from(BUCKET).remove([upload.storage_path]).catch(() => {});
 
-  await auditLog({ companyId, userId, action: `record.create:${destination}`, targetType: destination, targetId: docId, payload: { name, category, siteId, workerId, expiryDate }, req });
+  // destination è già il nome della risorsa registrata in ladiaSchemaRegistry.js
+  // (site_documents/company_documents/worker_documents/worker_certificates,
+  // tutte bespoke-only con allow:false — l'undo resta non offerto, il file
+  // in storage non verrebbe ripulito da un delete generico) — logAction()
+  // sostituisce il precedente auditLog() diretto: stesso trail legale, più
+  // la riga in ladia_action_history che abilita la card verde di successo.
+  const logResult = await logAction({
+    companyId, userId, req, conversationId,
+    resourceName: destination, action: 'create',
+    recordId: docId,
+    record: { name, category: category || 'altro', site_id: siteId || null, worker_id: workerId || null, expiry_date: expiryDate || null },
+    auditActionOverride: `record.create:${destination}`,
+  });
 
   return {
     success: true, doc_id: docId, destination, name,
     expiry_date: expiryDate || null,
     messaggio: `Documento "${name}" archiviato in ${destination}${expiryDate ? ` — scadenza ${expiryDate}` : ''}.`,
+    ...logResult,
   };
 }
 
