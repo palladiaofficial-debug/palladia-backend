@@ -2404,6 +2404,46 @@ function humanizeToolError(raw) {
   return msg;
 }
 
+// ── READ_FACTS — tool di lettura riusciti che riducono a UNA riga onesta di
+// fatto, mostrata inline nella traccia "N passaggi" (LadiaStepTrace) solo ad
+// accordion espanso — mai generata dal modello, sempre dal risultato vero del
+// tool. I tool a dettaglio singolo/dossier annidato (get_site_detail,
+// get_worker_detail, get_inspection_shield, get_coordinator_notes, ecc.) non
+// hanno volutamente una entry qui: costringerli in una riga rischierebbe di
+// essere fuorviante più che utile. Va tenuto aggiornato quando si aggiunge un
+// nuovo tool get_*/search_* per cui esiste un numero headline onesto.
+const fmtEuro = (n) => `€${Math.round(Number(n) || 0).toLocaleString('it-IT')}`;
+
+const READ_FACTS = {
+  get_workers:              (r) => `${r.total} trovati`,
+  get_sites:                (r) => `${r.total} trovati`,
+  get_presence_today:       (r) => `${r.present_count} presenti`,
+  get_kpi:                  (r) => `${r.workers_total} lavoratori, ${r.sites_active} cantieri attivi`,
+  get_economia:             (r) => `utile ${fmtEuro(r.utile_lordo)}${r.margine_percentuale != null ? ` (margine ${r.margine_percentuale}%)` : ''}`,
+  get_compliance_overview:  (r) => `${r.non_conformi} non conformi, ${r.in_scadenza} in scadenza`,
+  get_upcoming_deadlines:   (r) => `${r.totale} in scadenza${r.scadute > 0 ? ` (${r.scadute} scadute)` : ''}`,
+  get_nonconformities:      (r) => `${r.total} ${r.filtro === 'open' ? 'aperte' : r.filtro === 'closed' ? 'chiuse' : 'trovate'}`,
+  get_expenses_summary:     (r) => `${fmtEuro(r.totale_euro)} — ${r.conteggio} spese`,
+  get_expiring_documents:   (r) => r.riepilogo || r.messaggio || `${(r.scaduti?.length || 0) + (r.in_scadenza?.length || 0)} in scadenza`,
+  search_documents:         (r) => `${(r.risultati || []).length} trovati`,
+  get_site_phases:          (r) => `${r.total} fasi`,
+  get_sal_history:          (r) => `${r.total} SAL registrati`,
+  get_computo_voci:         (r) => `${r.n_voci} voci — ${fmtEuro(r.totale_contratto_attivo)}`,
+  get_payslips:             (r) => `${r.total} trovati`,
+  get_equipment:            (r) => `${r.total} trovati`,
+  get_subcontractors:       (r) => `${r.total} trovati`,
+  get_diary_entries:        (r) => `${r.total} voci`,
+  get_worker_certificates:  (r) => `${r.total} trovati`,
+  get_company_documents:    (r) => `${r.total} trovati`,
+  get_site_costs:           (r) => `${fmtEuro(r.totale_euro)} — ${r.conteggio} voci`,
+  get_capitolato_voci:      (r) => `${r.total} voci — ${fmtEuro(r.totale_contratto)}`,
+  get_site_bookings:        (r) => `${r.total} trovate`,
+  get_suspension_days:      (r) => `${r.total} giorni`,
+  get_weather_log:          (r) => `${r.total} rilevazioni`,
+  get_risk_score:           (r) => (r.label && r.score != null) ? `${r.label} (${r.score}/100)` : undefined,
+  get_company_trends:       (r) => r.totals ? `${r.totals.badge_entries} timbrature ultimi ${r.period_days}gg` : (r.message || undefined),
+};
+
 // ── Tool execution ────────────────────────────────────────────────────────────
 async function executeTool(toolName, toolInput, companyId, userId, req = null, convId = null) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
@@ -6249,6 +6289,18 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               site_id:     block.input?.site_id || null,
               tool_use_id: block.id,
             });
+          } else if (failed && !AGENTIC_WRITE_TOOLS.has(block.name)) {
+            // Nota leggera, sempre visibile inline (mai nascosta
+            // nell'accordion "N passaggi") — stessa garanzia della card
+            // rossa sopra per i fallimenti di scrittura, ma più leggera:
+            // le letture sono molto più frequenti per turno delle
+            // scritture, la stessa card pesante affollerebbe la chat.
+            send({
+              type:        'read_failed',
+              tool:        block.name,
+              message:     humanizeToolError(result.error || result.errore || result.message),
+              tool_use_id: block.id,
+            });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
             send({ type: 'doc_cards', docs: result.risultati.slice(0, 10) });
@@ -6259,14 +6311,20 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
           }
           // Evento dedicato allo stato di esecuzione del singolo tool (per la
           // timeline lato frontend) — ortogonale alle card narrative sopra, che
-          // portano i dati da mostrare; questo porta solo successo/errore.
-          // `failed` calcolato più sopra, riusato anche da record_action_failed.
+          // portano i dati da mostrare; questo porta solo successo/errore, più
+          // (per le letture riuscite) un fatto reale a una riga da READ_FACTS.
+          // `failed` calcolato più sopra, riusato anche da record_action_failed/read_failed.
+          let fact;
+          if (!failed) {
+            try { fact = READ_FACTS[block.name]?.(result) || undefined; } catch { /* mai deve rompere la risposta */ }
+          }
           send({
             type:    'tool_step',
             id:      block.id,
             name:    block.name,
             status:  failed ? 'error' : 'done',
             message: failed ? (result.error || result.errore || result.message || null) : undefined,
+            fact,
           });
           return {
             type:        'tool_result',
