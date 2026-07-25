@@ -2362,6 +2362,40 @@ function buildCachedSystem(fullPrompt) {
   return blocks;
 }
 
+// ── Tool di scrittura — usati per decidere quando un fallimento merita una
+// card rossa visibile in chat (non solo prosa + accordion collassato). I
+// tool get_*/search_* restano esclusi di proposito: un loro errore è un
+// problema di lettura, non una scrittura mancata con conseguenze reali.
+// Va tenuto aggiornato ogni volta che si aggiunge un tool bespoke che scrive.
+const AGENTIC_WRITE_TOOLS = new Set([
+  'create_record', 'update_record',
+  'create_diary_note', 'create_site_note', 'create_expense',
+  'update_sal', 'create_phase', 'update_phase',
+  'create_economia_voce', 'resolve_nonconformity', 'create_site_cost',
+  'remove_worker_from_site', 'create_subcontractor', 'assign_subcontractor_to_site',
+  'create_equipment', 'assign_equipment_to_site',
+  'create_expense_from_image', 'create_ddt_from_image', 'archive_document_image',
+  'resolve_objective', 'update_sal_voce', 'update_prezzo_voce',
+  'update_economia_voce', 'delete_economia_voce', 'emit_sal', 'mark_sal_pagato',
+  'create_computo_voce', 'delete_computo_voce',
+  'create_variante', 'update_variante', 'update_budget_cantiere',
+  'archive_document', 'update_worker', 'undo_action',
+]);
+
+// Ripulisce solo boilerplate tecnico riconoscibile (messaggi Postgres grezzi)
+// senza fabbricare dettagli — tutto il resto passa invariato, compresi i
+// codici già leggibili come RICHIEDE_CONFERMA/FINESTRA_SCADUTA/GIA_ANNULLATA.
+function humanizeToolError(raw) {
+  const msg = String(raw || 'Operazione non riuscita.');
+  if (/duplicate key value violates unique constraint/i.test(msg)) {
+    return 'Esiste già un record con questi dati.';
+  }
+  if (/violates foreign key constraint/i.test(msg)) {
+    return 'Riferimento a un record che non esiste più.';
+  }
+  return msg;
+}
+
 // ── Tool execution ────────────────────────────────────────────────────────────
 async function executeTool(toolName, toolInput, companyId, userId, req = null, convId = null) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
@@ -4118,7 +4152,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'resolve_objective': {
         const { description } = toolInput;
         if (!description) return { error: 'description obbligatoria' };
-        return await resolveObjective(companyId, description);
+        return await resolveObjective(companyId, description, userId, req);
       }
 
       // ── Nuovi tool computo / economia / SAL ───────────────────────────────────
@@ -6067,6 +6101,9 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       const toolResults = await Promise.all(
         toolBlocks.map(async (block) => {
           const result = await executeTool(block.name, block.input, req.companyId, req.user.id, req, convId);
+          // Calcolato qui (non più solo prima di tool_step più sotto) perché
+          // serve anche al ramo record_action_failed appena sotto.
+          const failed = !!(result && (result.error || result.errore || result.success === false));
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
           }
@@ -6145,6 +6182,18 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
               // vedi ladiaEvents.dataChanged() lato client.
               site_id:            result.record?.site_id || block.input?.site_id || null,
             });
+          } else if (AGENTIC_WRITE_TOOLS.has(block.name) && failed) {
+            // Card rossa, sempre visibile inline — l'equivalente in caso di
+            // fallimento della card verde sopra. Il messaggio viene dal
+            // risultato reale del tool, mai generato dal modello.
+            send({
+              type:        'record_action_failed',
+              tool:        block.name,
+              resource:    result.resource || block.input?.table || null,
+              message:     humanizeToolError(result.error || result.errore || result.message),
+              site_id:     block.input?.site_id || null,
+              tool_use_id: block.id,
+            });
           }
           if (block.name === 'search_documents' && Array.isArray(result.risultati) && result.risultati.length > 0) {
             send({ type: 'doc_cards', docs: result.risultati.slice(0, 10) });
@@ -6156,7 +6205,7 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
           // Evento dedicato allo stato di esecuzione del singolo tool (per la
           // timeline lato frontend) — ortogonale alle card narrative sopra, che
           // portano i dati da mostrare; questo porta solo successo/errore.
-          const failed = !!(result && (result.error || result.errore || result.success === false));
+          // `failed` calcolato più sopra, riusato anche da record_action_failed.
           send({
             type:    'tool_step',
             id:      block.id,

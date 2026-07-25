@@ -12,6 +12,7 @@
 const supabase  = require('../lib/supabase');
 const Anthropic = require('@anthropic-ai/sdk');
 const { logUsage } = require('../lib/ladiaUsageLog');
+const { auditLog } = require('../lib/audit');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL     = 'claude-haiku-4-5-20251001';
@@ -261,7 +262,10 @@ Regole:
 }
 
 // ── Segna obiettivo come risolto ─────────────────────────────────────────────
-async function resolveObjective(companyId, description) {
+// userId/req sono opzionali (compatibilità con eventuali altri chiamanti):
+// se assenti, l'azione resta eseguita ma senza traccia in admin_audit_log,
+// mai bloccata dal logging.
+async function resolveObjective(companyId, description, userId, req) {
   // Match per descrizione parziale (case-insensitive) — utile quando Ladia chiama il tool
   const { data } = await supabase
     .from('ladia_objectives')
@@ -278,6 +282,14 @@ async function resolveObjective(companyId, description) {
     .from('ladia_objectives')
     .update({ status: 'resolved', resolved_at: new Date().toISOString() })
     .eq('id', data.id);
+
+  await auditLog({
+    companyId, userId, req,
+    action:     'record.update:ladia_objectives',
+    targetType: 'ladia_objectives',
+    targetId:   data.id,
+    payload:    { status: 'resolved', description: data.description },
+  });
 
   return { success: true, description: data.description };
 }
