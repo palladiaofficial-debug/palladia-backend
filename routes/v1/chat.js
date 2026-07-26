@@ -1012,6 +1012,15 @@ NOMI TECNICI — MAI ESPORLI:
 - Non scrivere mai nomi di colonna/campo del database (es. "safety_training_expiry", "site_id", "company_id") nel testo rivolto all'utente
 - Traduci sempre in etichetta leggibile italiana (es. "Scadenza formazione sicurezza", non "safety_training_expiry")
 
+ECCEZIONE — MOMENTI CHE SE LO MERITANO:
+Se il dato del turno è genuinamente notevole (prima settimana con zero non
+conformità, un rischio segnalato in tempo prima che diventasse un problema,
+un traguardo tipo "primo mese di conformità piena") puoi chiudere — MAI
+aprire — con UNA riga che osserva il fatto con voce, non con entusiasmo
+vuoto. Non "Ottimo lavoro!" — un'osservazione che un ingegnere senior
+farebbe davvero: "Prima settimana pulita da quando tracciamo le idoneità."
+Raro per costruzione: se non è chiaramente vero e specifico, non scriverlo.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SNAPSHOT CANTIERE E OBIETTIVI TRACCIATI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -6067,6 +6076,13 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       .slice(-6)
       .filter(m => m && typeof m.role === 'string' && typeof m.content === 'string')
       .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+    // L'API Anthropic richiede che il primo messaggio dell'array sia sempre
+    // 'user' (il system prompt è un campo a parte, non conta). Un client che
+    // manda una history che inizia con 'assistant' — es. il messaggio di
+    // benvenuto sintetico mostrato a un'azienda con zero cantieri, mai
+    // realmente inviato al modello — romperebbe la chiamata con un 400.
+    // Difesa qui, non solo lato frontend: protegge anche futuri chiamanti.
+    while (dbHistory.length > 0 && dbHistory[0].role !== 'user') dbHistory.shift();
   }
 
   const userText = message.trim() || (uploadIds.length > 0 ? `Allego ${uploadIds.length} documento${uploadIds.length > 1 ? 'i' : ''}.` : '');
@@ -6110,6 +6126,26 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
       getOpenObjectives(req.companyId, _siteIdForContext).catch(() => ''),
     ]);
     if (brain?.text)    systemPrompt = SYSTEM_PROMPT + brain.text;
+    // Azienda appena registrata (zero cantieri) — il frontend mostra già un
+    // messaggio di benvenuto sintetico che chiede il nome del primo cantiere
+    // (mai realmente inviato al modello, vedi il filtro poco sopra su
+    // dbHistory), quindi qui diciamo al modello come interpretare la
+    // risposta dell'utente coerentemente con quello che ha già visto.
+    if (Array.isArray(brain?.sites) && brain.sites.length === 0) {
+      systemPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+AZIENDA APPENA REGISTRATA — ZERO CANTIERI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+L'utente ha appena visto (in chat, non generato da te) un messaggio di
+benvenuto che gli chiedeva il nome del primo cantiere. Se il suo messaggio
+è un nome plausibile di cantiere (indirizzo, nome commerciale, "Via Rossi
+12") crealo SUBITO con create_record (table:'sites', payload:{name}) —
+niente conferma, niente altri dettagli richiesti prima: si arricchiscono
+dopo. Nello stesso turno, dopo la creazione, chiedi il nome del primo
+lavoratore da aggiungere. Se il messaggio non sembra affatto un nome di
+cantiere, rispondi normalmente senza forzare la creazione.`;
+    }
     if (siteCtx)        systemPrompt += `\n\n${siteCtx}`;          // snapshot profondo per-cantiere
     if (memory)         systemPrompt += `\n\n${memory}`;
     if (objectives)     systemPrompt += `\n\n${objectives}`;
