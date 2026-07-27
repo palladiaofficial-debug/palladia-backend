@@ -5807,11 +5807,19 @@ async function autoTitle(conversationId, firstUserMessage, client, companyId = n
       system:     'Il testo utente è il PRIMO MESSAGGIO di una conversazione (può contenere placeholder tipo "[1 immagine]" per una foto allegata altrove, non visibile qui). ' +
                   'Il tuo unico compito è generare un titolo brevissimo (max 5 parole, italiano) che riassuma l\'argomento. ' +
                   'NON rispondere al messaggio, NON commentare cosa manca o cosa non vedi, NON scrivere frasi in prima persona. ' +
-                  'SOLO testo semplice, ZERO markdown, ZERO hashtag #, ZERO asterischi *, ZERO simboli. Esempio: "Presenze cantiere oggi"',
+                  'SOLO testo semplice, ZERO markdown, ZERO hashtag #, ZERO asterischi *, ZERO simboli, ZERO la parola "titolo" o "title", ' +
+                  'ZERO tutto maiuscolo anche se il messaggio dell\'utente lo è. Esempio: "Presenze cantiere oggi"',
       messages:   [{ role: 'user', content: `Primo messaggio: "${firstUserMessage.slice(0, 300)}"` }],
     });
     logUsage({ companyId, userId, conversationId, model: MODEL_HAIKU, callSite: 'auto_title', usage: resp.usage });
     let title = resp.content.find(b => b.type === 'text')?.text?.trim().slice(0, 60) || 'Chat';
+    // Difesa in profondità: stessa pulizia che cleanTitle() fa lato frontend a
+    // ogni render (Pal.tsx) — qui evita di salvare la label trapelata nel DB,
+    // il frontend resta comunque l'ultima linea di difesa per i titoli vecchi.
+    title = title.replace(/\btitol[oi]\s*:\s*/gi, '').replace(/\btitle\s*:\s*/gi, '').trim();
+    if (title.length > 3 && title === title.toUpperCase() && title !== title.toLowerCase()) {
+      title = title.toLowerCase().replace(/(^|\s)\S/g, c => c.toUpperCase());
+    }
     // Guardia: se Haiku ha ignorato l'istruzione e ha risposto come se dovesse
     // soddisfare la richiesta invece di titolarla (es. "Non riesco a vedere
     // l'immagine..."), scarta e usa un fallback innocuo invece di salvare un
