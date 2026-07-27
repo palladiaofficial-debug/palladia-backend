@@ -6345,6 +6345,12 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
               action:             result.action || (result.record ? 'update' : 'delete'),
               summary:            result.undoSummary || result.summary || null,
               action_history_id:  result.actionHistoryId,
+              // undoable: risorse con allow.delete/create false (la maggioranza
+              // dei tool bespoke) rifiuterebbero comunque l'undo al click con
+              // UNDO_NON_DISPONIBILE — meglio non mostrare un bottone che fallisce
+              // sempre. undefined (tool bespoke pre-esistenti a questo campo) resta
+              // true per compatibilità, non un vero "sì".
+              undoable:           result.undoable !== false,
               campi,
               campi_precedenti:   campiPrecedenti,
               // site_id: permette al frontend di sapere quale cantiere è stato
