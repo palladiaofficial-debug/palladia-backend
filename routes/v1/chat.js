@@ -6357,6 +6357,12 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
               // toccato e aggiornare da sola la pagina aperta, se coincide —
               // vedi ladiaEvents.dataChanged() lato client.
               site_id:            result.record?.site_id || block.input?.site_id || null,
+              // record_id: permette al frontend di far LAMPEGGIARE la riga esatta
+              // appena scritta (non solo ricaricare i dati in silenzio) — il "vedi
+              // il risultato muoversi" di cui manca oggi la sensazione rispetto a
+              // Cursor/base44. result.record?.id copre create_record/update_record
+              // generici, result.recordId i tool bespoke via logAction().
+              record_id:          result.record?.id || result.recordId || null,
             });
           } else if (AGENTIC_WRITE_TOOLS.has(block.name) && failed) {
             // Card rossa, sempre visibile inline — l'equivalente in caso di
