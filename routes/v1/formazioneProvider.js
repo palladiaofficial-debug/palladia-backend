@@ -330,7 +330,7 @@ router.post('/formazione/provider/:token/courses', validate(createProviderCourse
       description:            description ? String(description).trim().slice(0, 2000) : null,
       course_type_id,
       price_cents:            Math.max(0, parseInt(price_cents)),
-      delivery_mode:          ['in_aula', 'online', 'blended'].includes(delivery_mode) ? delivery_mode : 'in_aula',
+      delivery_mode:          ['presenza', 'online', 'blended', 'cantiere'].includes(delivery_mode) ? delivery_mode : 'presenza',
       location_city:          location_city ? String(location_city).trim() : null,
       duration_hours:         Math.max(1, parseInt(duration_hours) || 8),
       max_participants:       max_participants ? Math.max(1, parseInt(max_participants)) : null,
