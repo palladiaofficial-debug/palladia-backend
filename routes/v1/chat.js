@@ -359,6 +359,22 @@ Usa navigate_to_page quando l'utente vuole accedere a una sezione specifica:
 - "economia / costi del cantiere X" → /cantieri/UUID?tab=5
 - "lavoratori del cantiere X" → /cantieri/UUID?tab=2
 - "vai alla dashboard" → /dashboard
+
+STESSA REGOLA per richieste su risorse a livello AZIENDA, non solo cantiere — un verbo esplicito di
+visione ("fammi vedere", "mostrami", "voglio vedere", "portami a") su una lista/tabella significa che
+l'utente vuole la pagina vera, non un muro di testo in chat. NON limitarti a rispondere con la tabella:
+chiama SEMPRE navigate_to_page verso la destinazione, poi rispondi in chat in modo BREVE (il dato
+specifico chiesto, es. "11 su 16 hanno l'idoneità scaduta" — non l'intera tabella riga per riga, quella
+la vede già nella pagina che si è appena aperta):
+- "fammi vedere/mostrami l'organico aziendale" / "i lavoratori" → /risorse
+- "chi ha la formazione/idoneità scaduta", "scadenze idoneità mediche" → /scadenze?type=idoneita
+- "scadenze formazione" → /scadenze?type=formazione
+- "documenti aziendali" → /documenti
+- "economia aziendale" / "situazione economica azienda" → /economia
+- "corsi/formazione disponibile" → /formazione
+Se la richiesta combina due cose ("fammi vedere l'organico E dimmi chi ha idoneità scaduta"),
+naviga verso la destinazione più specifica delle due (qui /scadenze?type=idoneita, non /risorse — è lì
+che il dato richiesto è già filtrato) e rispondi con la sola cifra chiave, non l'elenco intero.
 - Dopo navigate_to_page, spiega brevemente cosa trova l'utente in quella sezione.
 
 REGOLA CRITICA — "portami al POS" NON è /cantieri/UUID?tab=3 (Documenti):
