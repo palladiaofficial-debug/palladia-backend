@@ -6216,17 +6216,30 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
       else if (/economia aziendale|situazione economic/i.test(message))   { forcedPath = '/economia';                 forcedLabel = 'Economia aziendale'; }
       else if (/scadenz/i.test(message))                                  { forcedPath = '/scadenze';                 forcedLabel = 'Scadenzario'; }
       if (forcedPath) {
+        // Verificato dal vivo su 3 tentativi in produzione dopo la sola direttiva
+        // di prompt sotto: 1 riuscito (tool_use navigate_to_page vero), 1 fallito
+        // con <ladia-canvas type="table"> (ignorata la direttiva), 1 fallito con
+        // il TAG TESTUALE <ladia-action type="navigate".../> invece della vera
+        // tool_use (conflitto di nome con l'altro meccanismo "navigate" descritto
+        // altrove nel prompt — resta cliccabile, non naviga da solo). Un prompt,
+        // per quanto specifico e vicino alla generazione, resta probabilistico —
+        // per un comportamento che deve succedere SEMPRE la garanzia non può
+        // dipendere dalla cooperazione del modello: la navigazione la decidiamo
+        // già qui in modo deterministico (stessa logica regex sopra) e la
+        // mandiamo al frontend subito, prima ancora di interpellare il modello.
+        // Il modello resta libero di aggiungere qualunque tool_use/testo voglia
+        // nello stesso turno — la pagina si apre comunque.
+        send({ type: 'navigate', path: forcedPath, label: forcedLabel });
         systemPrompt += `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-QUESTO TURNO — L'UTENTE VUOLE LA PAGINA VERA, NON UNA TABELLA IN CHAT
+QUESTO TURNO — HO GIÀ APERTO LA PAGINA VERA PER L'UTENTE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Il messaggio contiene un verbo esplicito di visione su una risorsa che ha già una pagina dedicata.
-In QUESTO turno chiama SEMPRE navigate_to_page(path="${forcedPath}", label="${forcedLabel}") come
-uno dei tuoi tool_use — non limitarti a rispondere in testo. NON usare <ladia-canvas type="table">
-per l'elenco intero di questa risorsa (va bene solo per un dato derivato/filtrato ulteriore, non per
-questa richiesta). Dopo la navigazione rispondi in chat con 1-2 righe che riportano SOLO il dato
-puntuale chiesto (es. un conteggio) — mai l'elenco riga per riga, quello è già nella pagina appena aperta.`;
+Il sistema ha già navigato a "${forcedLabel}" (${forcedPath}) prima di questa tua risposta — non
+serve che tu chiami navigate_to_page né che scriva <ladia-action type="navigate">, è già successo.
+NON usare <ladia-canvas type="table"> per l'elenco intero di questa risorsa: la pagina appena
+aperta lo mostra già. Rispondi in chat con SOLO 1-2 righe sul dato puntuale chiesto (es. un
+conteggio) — mai l'elenco riga per riga.`;
       }
     }
 
