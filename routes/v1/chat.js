@@ -6198,6 +6198,38 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
     if (recent_activity) systemPrompt += `\n\n${recent_activity}`;  // sessione utente (Point 3)
     if (voiceMode)      systemPrompt += VOICE_MODE_PROMPT;          // voice: esegui subito, risposta 2 righe
 
+    // Rilevamento esplicito "mostrami/fammi vedere X" per risorse aziendali con una
+    // pagina dedicata — la regola era già scritta nelle sezioni NAVIGAZIONE/CANVAS
+    // sopra, ma verificato sui log reali che il modello continuava a scegliere
+    // <ladia-canvas type="table"> anche dopo aver reso esplicito il conflitto tra
+    // le due istruzioni statiche (4/4 tentativi in produzione persi contro il
+    // canvas). Una direttiva iniettata qui, specifica per QUESTO turno e vicina
+    // alla fine del prompt, è molto più affidabile di una regola sepolta in un
+    // prompt di migliaia di righe — stesso principio di prossimità già usato per
+    // ZERO CANTIERI sopra.
+    if (/\b(fammi vedere|mostrami|voglio vedere|fatti vedere|portami a)\b/i.test(message || '')) {
+      let forcedPath = null, forcedLabel = null;
+      if (/idoneit[aà]/i.test(message))                                   { forcedPath = '/scadenze?type=idoneita';   forcedLabel = 'Idoneità mediche'; }
+      else if (/formazione/i.test(message) && /scadut|scadenz/i.test(message)) { forcedPath = '/scadenze?type=formazione'; forcedLabel = 'Scadenze formazione'; }
+      else if (/organico|lavorator/i.test(message))                       { forcedPath = '/risorse';                  forcedLabel = 'Organico'; }
+      else if (/document[oi]\s+aziendal/i.test(message))                  { forcedPath = '/documenti';                forcedLabel = 'Documenti azienda'; }
+      else if (/economia aziendale|situazione economic/i.test(message))   { forcedPath = '/economia';                 forcedLabel = 'Economia aziendale'; }
+      else if (/scadenz/i.test(message))                                  { forcedPath = '/scadenze';                 forcedLabel = 'Scadenzario'; }
+      if (forcedPath) {
+        systemPrompt += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+QUESTO TURNO — L'UTENTE VUOLE LA PAGINA VERA, NON UNA TABELLA IN CHAT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Il messaggio contiene un verbo esplicito di visione su una risorsa che ha già una pagina dedicata.
+In QUESTO turno chiama SEMPRE navigate_to_page(path="${forcedPath}", label="${forcedLabel}") come
+uno dei tuoi tool_use — non limitarti a rispondere in testo. NON usare <ladia-canvas type="table">
+per l'elenco intero di questa risorsa (va bene solo per un dato derivato/filtrato ulteriore, non per
+questa richiesta). Dopo la navigazione rispondi in chat con 1-2 righe che riportano SOLO il dato
+puntuale chiesto (es. un conteggio) — mai l'elenco riga per riga, quello è già nella pagina appena aperta.`;
+      }
+    }
+
     // File allegati: inietta lista per i tool read_uploaded_document / archive_document
     if (uploadIds.length > 0) {
       try {
