@@ -110,6 +110,20 @@ async function upsertNotification({ companyId, type, severity, title, body, enti
     .from('notifications')
     .upsert(record, { onConflict: 'company_id,entity_type,entity_id,type' });
 
+  // Trail append-only per il layer "proof of value" (widget/report Palladia) —
+  // `notifications` sopra è stato live e viene CANCELLATO alla risoluzione,
+  // quindi non basta per provare "notificato in anticipo POI risolto in tempo".
+  // Scrittura best-effort: un fallimento qui non deve mai bloccare la notifica
+  // vera e propria all'utente.
+  if (isNew) {
+    try {
+      await supabase.from('expiry_interception_log').insert({
+        company_id: companyId, notification_type: type, entity_type: entityType,
+        entity_id: entityId, severity_at_notify: severity,
+      });
+    } catch { /* best-effort — non deve mai bloccare la notifica vera e propria */ }
+  }
+
   return { isNew, escalated };
 }
 
@@ -139,6 +153,20 @@ async function pruneNotifications(companyId, type, entityType, relevantEntityIds
 
   if (toDelete.length) {
     await supabase.from('notifications').delete().in('id', toDelete.map(n => n.id));
+
+    // Chiude il ciclo nel trail append-only: il problema non è più nel set "in
+    // scadenza" → molto probabilmente rinnovato in tempo. resolved_at è il
+    // segnale grezzo; value_metrics (letto a valle) ri-verifica comunque lo
+    // stato attuale dell'entità prima di contarla come "intercettata davvero".
+    try {
+      await supabase.from('expiry_interception_log')
+        .update({ resolved_at: new Date().toISOString() })
+        .eq('company_id', companyId)
+        .eq('entity_type', entityType)
+        .eq('notification_type', type)
+        .in('entity_id', toDelete.map(n => n.entity_id))
+        .is('resolved_at', null);
+    } catch { /* best-effort */ }
   }
 
   return { resolved };
