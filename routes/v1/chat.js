@@ -26,6 +26,7 @@ const { analyzeChatUpload, archiveChatUpload } = require('../../services/chatDoc
 const {
   chatMessageSchema,
   chatExportSchema,
+  contractExportSchema,
   createConversationSchema,
   patchConversationTitleSchema,
   patchConversationFolderSchema,
@@ -706,6 +707,40 @@ DVR E PIMUS — NON generabili da chat (regola ferrea, nessuna eccezione):
   Restano invece pienamente disponibili, perché sono lettura/ricerca, non generazione: search_documents,
   get_company_documents, get_expiring_documents, leggi_documento_pdf e qualunque altro tool che TROVA o
   LEGGE un DVR/PIMUS già esistente — la restrizione riguarda solo la creazione di contenuto nuovo.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CONTRATTO DI SUBAPPALTO — atto giuridico, non un report
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Un contratto di subappalto è un atto vincolante, non un documento informativo: NON usare mai il bottone
+generico "Esporta in PDF"/"Esporta in Excel" per un contratto (quello resta per report/riepiloghi) — il
+contratto ha un flusso e un template PDF completamente separati, dedicati.
+
+FLUSSO — quando l'utente chiede di preparare/generare un contratto di subappalto:
+1. Raccogli in conversazione TUTTI i dati obbligatori, uno alla volta o insieme se l'utente li dà già
+   raggruppati: ragione sociale, sede legale e P.IVA di ENTRAMBE le parti, nome del legale rappresentante
+   di entrambe, luogo di sottoscrizione, oggetto/descrizione della lavorazione (con quantità e ubicazione
+   cantiere), date di inizio e fine lavori, valore dell'appalto principale, valore del subappalto.
+   REGOLA FERREA: se anche uno di questi manca, NON chiamare draft_subappalto_contract — chiedilo
+   esplicitamente all'utente. Non scrivere mai "da definire"/"da stabilire" in un contratto.
+2. Quando ritieni di avere tutto, chiama draft_subappalto_contract con i dati raccolti (vedi anche i campi
+   opzionali: modalita_pagamento, lavori_in_quota, interferenze_altre_lavorazioni, dpi_specifici,
+   foro_competente, allegati — compilali se sono emersi in chat, altrimenti omettili, il tool applica
+   clausole standard sensate).
+   - Se il tool risponde ready:false con missing_fields → chiedi all'utente esattamente quei campi.
+   - Se risponde blocked:true → il subappalto supera il 30% dell'appalto principale (soglia prudenziale
+     ex art. 119 D.Lgs 36/2023): avvisa chiaramente l'utente e NON proseguire, a meno che confermi
+     esplicitamente di avere già l'autorizzazione del Committente — in tal caso richiama il tool con
+     autorizzazione_committente_confermata:true.
+   - Se risponde ready:true → presenta all'utente un riepilogo chiaro dei dati e dei valori calcolati
+     (incidenza %, penale giornaliera, tetto penale), IN PROSA nella tua risposta (non serve riscrivere
+     l'intero articolato: il PDF ha già il testo legale completo). Chiedi conferma prima di generare.
+3. Solo dopo la conferma dell'utente, scrivi nella risposta un tag <ladia-action type="generate_contract_pdf"
+   .../> con ESATTAMENTE gli stessi nomi di attributo usati come input di draft_subappalto_contract (es.
+   affidataria_ragione_sociale="..." affidataria_sede="..." ... importo_subappalto="82500" ...) più
+   label="Genera contratto PDF". Valori booleani come stringhe "true"/"false", allegati come stringa
+   separata da virgola (es. allegati="Computo metrico, Cronoprogramma"). REGOLA FERREA: mai virgolette
+   doppie dentro un valore, mai scrivere questo tag se draft_subappalto_contract non ha risposto ready:true
+   in questo stesso giro o in uno precedente della stessa conversazione con dati invariati.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 POS AGENTICO — bozza viva compilata in chat (OBBLIGATORIO per ogni POS)
@@ -2381,6 +2416,46 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       required: ['upload_id', 'destination', 'name'],
     },
   },
+  {
+    name: 'draft_subappalto_contract',
+    description:
+      'Valida i dati di un contratto di subappalto (art. 119 D.Lgs 36/2023) raccolti in chat e calcola i valori derivati (incidenza % sull\'appalto principale, penali). NON scrive testo contrattuale e NON genera il PDF: dice solo se i dati sono completi. ' +
+      'REGOLA FERREA: chiama questo tool SOLO quando hai raccolto ogni campo obbligatorio dall\'utente nella conversazione — mai con un valore inventato o un placeholder tipo "da definire"/"da stabilire": se manca anche un solo dato obbligatorio, non chiamare il tool, chiedilo prima esplicitamente. ' +
+      'Se il tool risponde ready:false con missing_fields, chiedi all\'utente esattamente quei campi. Se risponde blocked:true, il subappalto supera il 30% dell\'appalto principale: avvisa l\'utente che serve autorizzazione esplicita del Committente e NON proseguire, a meno che l\'utente confermi di averla già (in tal caso richiama il tool con autorizzazione_committente_confermata:true). ' +
+      'Se risponde ready:true, presenta un riepilogo chiaro dei dati all\'utente e, solo dopo la sua conferma, scrivi in risposta un tag <ladia-action type="generate_contract_pdf" .../> con gli stessi valori come attributi (vedi istruzioni "CONTRATTO DI SUBAPPALTO" nel prompt) per mostrare il bottone di generazione PDF — non inventare mai un tag senza che il tool abbia risposto ready:true.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        affidataria_ragione_sociale:           { type: 'string', description: 'Ragione sociale Impresa Affidataria (di norma l\'azienda dell\'utente)' },
+        affidataria_sede:                      { type: 'string', description: 'Sede legale Impresa Affidataria (via, CAP, città, provincia)' },
+        affidataria_piva:                      { type: 'string', description: 'P.IVA Impresa Affidataria' },
+        affidataria_legale_rappresentante:     { type: 'string', description: 'Nome del legale rappresentante Impresa Affidataria' },
+        subappaltatrice_ragione_sociale:       { type: 'string', description: 'Ragione sociale Subappaltatrice' },
+        subappaltatrice_sede:                  { type: 'string', description: 'Sede legale Subappaltatrice' },
+        subappaltatrice_piva:                  { type: 'string', description: 'P.IVA Subappaltatrice' },
+        subappaltatrice_legale_rappresentante: { type: 'string', description: 'Nome del legale rappresentante Subappaltatrice' },
+        luogo_sottoscrizione:       { type: 'string', description: 'Città di sottoscrizione del contratto' },
+        oggetto_lavorazione:        { type: 'string', description: 'Descrizione della lavorazione, quantità/superficie e ubicazione del cantiere' },
+        data_inizio:                { type: 'string', description: 'Data inizio lavori YYYY-MM-DD' },
+        data_fine:                  { type: 'string', description: 'Data fine lavori YYYY-MM-DD' },
+        importo_appalto_principale: { type: 'number', description: 'Valore totale dell\'appalto principale, IVA esclusa' },
+        importo_subappalto:         { type: 'number', description: 'Valore del presente subappalto, IVA esclusa' },
+        modalita_pagamento:         { type: 'string', description: 'Tranche/SAL concordati con l\'utente, se emersi in chat. Se omesso viene usata una clausola standard (100% a saldo lavori, 30gg data fattura).' },
+        lavori_in_quota:                { type: 'boolean', description: 'true se la lavorazione richiede lavori in quota/ponteggi (aggiunge la clausola PiMUS)' },
+        interferenze_altre_lavorazioni: { type: 'boolean', description: 'true se ci sono interferenze con altre lavorazioni in cantiere nello stesso periodo (aggiunge l\'obbligo DUVRI). Default true se omesso: in un cantiere con subappalto è il caso più comune.' },
+        dpi_specifici:               { type: 'string', description: 'DPI specifici richiesti per QUESTA lavorazione (es. per posa in copertura: imbracatura anticaduta, linee vita, casco con sottogola). Se omesso viene usato un richiamo generico al D.Lgs 81/2008.' },
+        foro_competente:             { type: 'string', description: 'Città del foro competente, se concordata esplicitamente. Se omesso il contratto rimanda al foro competente per territorio ai sensi di legge, senza indicarne uno specifico.' },
+        allegati:                    { type: 'array', items: { type: 'string' }, description: 'Elenco allegati esistenti (es. "Computo metrico", "Cronoprogramma") — solo se realmente presenti/citati in chat.' },
+        autorizzazione_committente_confermata: { type: 'boolean', description: 'true SOLO se l\'utente ha esplicitamente confermato di avere già l\'autorizzazione del Committente per superare il 30%. Non impostarlo mai di tua iniziativa.' },
+      },
+      required: [
+        'affidataria_ragione_sociale', 'affidataria_sede', 'affidataria_piva', 'affidataria_legale_rappresentante',
+        'subappaltatrice_ragione_sociale', 'subappaltatrice_sede', 'subappaltatrice_piva', 'subappaltatrice_legale_rappresentante',
+        'luogo_sottoscrizione', 'oggetto_lavorazione', 'data_inizio', 'data_fine',
+        'importo_appalto_principale', 'importo_subappalto',
+      ],
+    },
+  },
 
 ];
 
@@ -2482,6 +2557,109 @@ const READ_FACTS = {
   get_risk_score:           (r) => (r.label && r.score != null) ? `${r.label} (${r.score}/100)` : undefined,
   get_company_trends:       (r) => r.totals ? `${r.totals.badge_entries} timbrature ultimi ${r.period_days}gg` : (r.message || undefined),
 };
+
+// ── Contratto di subappalto — validazione campi + calcoli deterministici ────
+// Condivisa tra il tool draft_subappalto_contract (preview in chat, sotto) e
+// l'endpoint POST /chat/export-contract (PDF finale, in fondo al file): stessa
+// validazione, stessi numeri — mai un calcolo ricalcolato due volte in modo
+// diverso (vedi anche la regola "ricalcola sempre" di REPORT_SYSTEM_PROMPT).
+const CONTRACT_REQUIRED_FIELDS = [
+  ['affidataria_ragione_sociale', 'Ragione sociale Impresa Affidataria'],
+  ['affidataria_sede', 'Sede legale Impresa Affidataria'],
+  ['affidataria_piva', 'P.IVA Impresa Affidataria'],
+  ['affidataria_legale_rappresentante', 'Legale rappresentante Impresa Affidataria'],
+  ['subappaltatrice_ragione_sociale', 'Ragione sociale Subappaltatrice'],
+  ['subappaltatrice_sede', 'Sede legale Subappaltatrice'],
+  ['subappaltatrice_piva', 'P.IVA Subappaltatrice'],
+  ['subappaltatrice_legale_rappresentante', 'Legale rappresentante Subappaltatrice'],
+  ['luogo_sottoscrizione', 'Luogo di sottoscrizione'],
+  ['oggetto_lavorazione', 'Oggetto della lavorazione'],
+  ['data_inizio', 'Data inizio lavori'],
+  ['data_fine', 'Data fine lavori'],
+  ['importo_appalto_principale', 'Valore appalto principale'],
+  ['importo_subappalto', 'Valore del subappalto'],
+];
+
+const CONTRACT_PLACEHOLDER_RE = /^(da\s*(definire|stabilire|confermare)|tbd|n\/?d|xxx+|\.{3}|-{2,})$/i;
+
+// Campi facoltativi (modalità pagamento, DPI, foro): se il modello scrive un
+// placeholder invece di ometterli, il documento userebbe comunque la clausola
+// standard invece di stampare "da definire" — mai un placeholder nel PDF finale.
+function cleanOptionalText(v) {
+  if (typeof v !== 'string') return null;
+  const trimmed = v.trim();
+  if (!trimmed || CONTRACT_PLACEHOLDER_RE.test(trimmed)) return null;
+  return trimmed;
+}
+
+function computeContractDraft(d) {
+  const missing = CONTRACT_REQUIRED_FIELDS
+    .filter(([key]) => {
+      const v = d[key];
+      if (v === undefined || v === null || v === '') return true;
+      if (typeof v === 'string' && CONTRACT_PLACEHOLDER_RE.test(v.trim())) return true;
+      return false;
+    })
+    .map(([, label]) => label);
+
+  if (missing.length) return { ready: false, missing_fields: missing };
+
+  const dataInizio = new Date(d.data_inizio);
+  const dataFine   = new Date(d.data_fine);
+  if (Number.isNaN(dataInizio.getTime()) || Number.isNaN(dataFine.getTime()) || dataFine <= dataInizio) {
+    return { ready: false, error: 'Date non valide: la data fine deve essere successiva alla data inizio.' };
+  }
+
+  const importoPrincipale = Number(d.importo_appalto_principale);
+  const importoSub        = Number(d.importo_subappalto);
+  if (!(importoPrincipale > 0) || !(importoSub > 0)) {
+    return { ready: false, error: 'Importi non validi: devono essere numeri positivi.' };
+  }
+
+  const incidenza = Math.round((importoSub / importoPrincipale) * 1000) / 10;
+  if (incidenza > 30 && !d.autorizzazione_committente_confermata) {
+    return {
+      ready: false, blocked: true, incidenza_percento: incidenza,
+      importo_appalto_principale: importoPrincipale, importo_subappalto: importoSub,
+    };
+  }
+
+  const penalePromille    = 0.3;
+  const penaleTettoPct    = 10;
+  const penaleGiornaliera = Math.round(importoSub * (penalePromille / 1000) * 100) / 100;
+  const penaleTetto       = Math.round(importoSub * (penaleTettoPct / 100) * 100) / 100;
+
+  const contract = {
+    affidataria: {
+      ragione_sociale: d.affidataria_ragione_sociale, sede: d.affidataria_sede,
+      piva: d.affidataria_piva, legale_rappresentante: d.affidataria_legale_rappresentante,
+    },
+    subappaltatrice: {
+      ragione_sociale: d.subappaltatrice_ragione_sociale, sede: d.subappaltatrice_sede,
+      piva: d.subappaltatrice_piva, legale_rappresentante: d.subappaltatrice_legale_rappresentante,
+    },
+    luogo_sottoscrizione: d.luogo_sottoscrizione,
+    oggetto_lavorazione:  d.oggetto_lavorazione,
+    data_inizio: d.data_inizio,
+    data_fine:   d.data_fine,
+    importo_appalto_principale: importoPrincipale,
+    importo_subappalto:         importoSub,
+    modalita_pagamento: cleanOptionalText(d.modalita_pagamento),
+    lavori_in_quota: !!d.lavori_in_quota,
+    interferenze_altre_lavorazioni: d.interferenze_altre_lavorazioni !== false,
+    dpi_specifici: cleanOptionalText(d.dpi_specifici),
+    foro_competente: cleanOptionalText(d.foro_competente),
+    allegati: Array.isArray(d.allegati) ? d.allegati.filter(Boolean).slice(0, 10) : [],
+    autorizzazione_committente_confermata: !!d.autorizzazione_committente_confermata,
+    incidenza_percento: incidenza,
+    penale_promille: penalePromille,
+    penale_tetto_percento: penaleTettoPct,
+    penale_giornaliera: penaleGiornaliera,
+    penale_tetto_importo: penaleTetto,
+  };
+
+  return { ready: true, contract };
+}
 
 // ── Tool execution ────────────────────────────────────────────────────────────
 async function executeTool(toolName, toolInput, companyId, userId, req = null, convId = null) {
@@ -5206,6 +5384,31 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         };
       }
 
+      case 'draft_subappalto_contract': {
+        const result = computeContractDraft(toolInput);
+
+        if (result.missing_fields) {
+          return {
+            ready: false, missing_fields: result.missing_fields,
+            message: `Mancano ancora questi dati per generare il contratto: ${result.missing_fields.join(', ')}. Chiedili all'utente — non inventarli né scrivere "da definire".`,
+          };
+        }
+        if (result.blocked) {
+          return {
+            ready: false, blocked: true, incidenza_percento: result.incidenza_percento,
+            message: `Il subappalto (€${result.importo_subappalto.toLocaleString('it-IT')}) vale il ${result.incidenza_percento}% dell'appalto principale (€${result.importo_appalto_principale.toLocaleString('it-IT')}) — supera la soglia del 30%. Avvisa l'utente che serve un'autorizzazione esplicita del Committente prima di procedere e NON scrivere il tag del contratto. Se l'utente conferma di avere già l'autorizzazione, richiama questo tool con autorizzazione_committente_confermata:true.`,
+          };
+        }
+        if (!result.ready) {
+          return { ready: false, error: result.error };
+        }
+        return {
+          ready: true,
+          contract: result.contract,
+          message: 'Dati completi e validati. Presenta un riepilogo chiaro all\'utente (in particolare incidenza % e penali calcolate) e, SOLO dopo la sua conferma, scrivi il tag <ladia-action type="generate_contract_pdf" .../> con questi stessi valori come attributi.',
+        };
+      }
+
       default:
         return { error: 'Tool non riconosciuto: ' + toolName };
     }
@@ -5999,6 +6202,219 @@ router.post('/chat/export', verifySupabaseJwt, validate(chatExportSchema), async
 
   } catch (err) {
     console.error('[chat/export] error:', err.message);
+    res.status(500).json({ error: 'EXPORT_ERROR', detail: err.message });
+  }
+});
+
+// ── Template PDF contratto di subappalto ─────────────────────────────────────
+// Deliberatamente SEPARATO da buildReportHtml: un contratto è un atto
+// giuridico, non un report — niente kpi-card, niente numeri "da dashboard".
+// Il testo degli articoli è per lo più boilerplate fisso scritto qui (non
+// dall'AI): solo i dati variabili (parti, importi, date, oggetto) vengono
+// interpolati, così il linguaggio legale resta sempre lo stesso e verificato,
+// invece di essere riscritto ogni volta da un LLM.
+function fmtEuroLegal(n) {
+  return `€ ${Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtDataLegal(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  if (Number.isNaN(d.getTime())) return esc(iso);
+  return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Rome' });
+}
+
+function buildContractHtml(contract) {
+  const c = contract;
+  const oggiLegal = new Date().toLocaleDateString('it-IT', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Rome' });
+  const penaleDisplay = String(c.penale_promille).replace('.', ',');
+
+  const art5Parts = [
+    'La Subappaltatrice si obbliga a redigere e rispettare il proprio Piano Operativo di Sicurezza (POS), coordinandolo con quello dell\'Impresa Affidataria.',
+  ];
+  if (c.interferenze_altre_lavorazioni) {
+    art5Parts.push('In presenza di interferenze con altre lavorazioni contemporaneamente in corso in cantiere, si applicano le prescrizioni del DUVRI predisposto dall\'Impresa Affidataria, che la Subappaltatrice dichiara di aver ricevuto e accettato.');
+  }
+  if (c.lavori_in_quota) {
+    art5Parts.push('Trattandosi di lavorazione che comporta attività in quota, la Subappaltatrice si obbliga al rispetto integrale del PiMUS relativo ai ponteggi/opere provvisionali utilizzati per l\'accesso, non potendo eseguire alcuna lavorazione in quota senza opera provvisionale conforme e verbale di consegna ponteggio sottoscritto.');
+  }
+  art5Parts.push(c.dpi_specifici
+    ? `La Subappaltatrice dota il personale impiegato dei seguenti DPI: ${esc(c.dpi_specifici)}.`
+    : 'La Subappaltatrice dota il personale impiegato di DPI conformi al D.Lgs 81/2008 e specifici per la lavorazione affidata, come da propria valutazione dei rischi.');
+  art5Parts.push('La Subappaltatrice garantisce che ogni lavoratore impiegato abbia una formazione sicurezza aggiornata e specifica per la lavorazione svolta, esibibile su richiesta dell\'Impresa Affidataria o del Coordinatore per la Sicurezza in qualsiasi momento, pena l\'allontanamento immediato dal cantiere.');
+
+  const foroText = c.foro_competente
+    ? `è competente in via esclusiva il Foro di ${esc(c.foro_competente)}`
+    : 'è competente il foro individuato ai sensi di legge';
+
+  const allegatiText = c.allegati.length ? esc(c.allegati.join(', ')) : 'nessun allegato ulteriore alla data di sottoscrizione';
+
+  const articles = [
+    { n: 1, title: 'Oggetto del subappalto',
+      body: `L'Impresa Affidataria affida alla Subappaltatrice, che accetta, l'esecuzione delle seguenti lavorazioni: ${esc(c.oggetto_lavorazione)}.` },
+    { n: 2, title: 'Corrispettivo e modalità di pagamento',
+      body: `Il corrispettivo pattuito per le lavorazioni di cui all'art. 1 è pari a ${fmtEuroLegal(c.importo_subappalto)}, oltre IVA di legge. ${c.modalita_pagamento ? esc(c.modalita_pagamento) : `Il pagamento avviene al 100% dell'importo a 30 giorni data fattura fine mese, previa verifica della regolarità DURC di cui all'art. 6 ed emissione del relativo Stato Avanzamento Lavori a fine lavorazione.`}` },
+    { n: 3, title: 'Termini di esecuzione',
+      body: `I lavori dovranno avere inizio in data ${fmtDataLegal(c.data_inizio)} e concludersi, salvo cause di forza maggiore debitamente documentate, entro il ${fmtDataLegal(c.data_fine)}.` },
+    { n: 4, title: 'Penali',
+      body: `Per ogni giorno naturale e consecutivo di ritardo rispetto al termine di cui all'art. 3, non imputabile a forza maggiore o a fatto dell'Impresa Affidataria, si applica una penale pari allo ${penaleDisplay}‰ (${penaleDisplay} per mille) dell'importo di cui all'art. 2, pari a ${fmtEuroLegal(c.penale_giornaliera)} al giorno, fino a un massimo complessivo del ${c.penale_tetto_percento}% dello stesso importo, pari a ${fmtEuroLegal(c.penale_tetto_importo)}. Oltre tale soglia, l'Impresa Affidataria si riserva la facoltà di risoluzione ai sensi dell'art. 8.` },
+    { n: 5, title: 'Obblighi in materia di sicurezza', body: art5Parts.join(' ') },
+    { n: 6, title: 'Regolarità contributiva',
+      body: 'La Subappaltatrice si obbliga a mantenere costante regolarità contributiva (DURC in corso di validità) per l\'intera durata dei lavori. Il DURC viene verificato dall\'Impresa Affidataria prima dell\'inizio dei lavori e in occasione di ciascuno Stato Avanzamento Lavori; in caso di DURC irregolare, il pagamento della tranche corrispondente è sospeso fino a regolarizzazione, senza che ciò costituisca inadempimento dell\'Impresa Affidataria.' },
+    { n: 7, title: 'Limite quantitativo del subappalto',
+      body: `Importo dell'appalto principale: ${fmtEuroLegal(c.importo_appalto_principale)} (IVA esclusa). Importo del presente subappalto: ${fmtEuroLegal(c.importo_subappalto)} (IVA esclusa). Incidenza: ${c.incidenza_percento}%.${c.autorizzazione_committente_confermata ? ' Le Parti danno atto che, superando tale incidenza la soglia prudenziale del 30%, l\'operazione è stata preventivamente autorizzata dal Committente.' : ''}` },
+    { n: 8, title: 'Recesso e risoluzione',
+      body: 'L\'Impresa Affidataria può risolvere di diritto il presente contratto, ai sensi dell\'art. 1456 c.c., in caso di: DURC irregolare non sanato entro 15 giorni dalla contestazione; violazione degli obblighi di sicurezza di cui all\'art. 5; superamento del tetto penale di cui all\'art. 4; perdita dei requisiti di qualificazione richiesti per le lavorazioni oggetto del presente contratto.' },
+    { n: 9, title: 'Foro competente e legge applicabile',
+      body: `Per ogni controversia relativa al presente contratto ${foroText}. Si applica la legge italiana.` },
+    { n: 10, title: 'Allegati',
+      body: `Fanno parte integrante del presente contratto i seguenti allegati: ${allegatiText}.` },
+  ];
+
+  const articlesHtml = articles.map(a => `
+    <div class="article">
+      <div class="article-title"><span class="article-num">Art. ${a.n}</span> — ${esc(a.title)}</div>
+      <p class="article-body">${a.body}</p>
+    </div>`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: A4; margin: 26mm 0 24mm 0; }
+  body {
+    font-family: Georgia, 'Times New Roman', 'Liberation Serif', serif;
+    font-size: 11px;
+    color: #1a1a1a;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .doc { padding: 0 16mm; }
+
+  .disclaimer {
+    border: 1px solid #999;
+    background: #fafafa;
+    padding: 8px 12px;
+    margin-bottom: 18px;
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 8.5px;
+    line-height: 1.5;
+    color: #555;
+    page-break-inside: avoid;
+  }
+  .disclaimer strong { color: #333; }
+
+  .doc-title { text-align: center; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; margin-bottom: 3px; page-break-after: avoid; }
+  .doc-subtitle { text-align: center; font-size: 9.5px; font-style: italic; color: #555; margin-bottom: 4px; }
+  .doc-place-date { text-align: center; font-size: 10px; color: #333; margin-bottom: 20px; }
+
+  .parties { font-size: 11px; line-height: 1.65; margin-bottom: 6px; }
+  .parties .party-label { font-weight: 700; margin: 10px 0 4px; }
+  .parties .convene { font-weight: 700; text-align: center; margin: 16px 0 22px; letter-spacing: 0.2px; }
+
+  .article { margin-bottom: 13px; page-break-inside: avoid; }
+  .article-title { font-weight: 700; font-size: 11px; margin-bottom: 4px; }
+  .article-num { display: inline-block; min-width: 44px; }
+  .article-body { font-size: 10.5px; line-height: 1.65; color: #222; text-align: left; }
+
+  .signatures { margin-top: 34px; page-break-inside: avoid; }
+  .signatures-label { font-weight: 700; text-align: center; margin-bottom: 26px; }
+  .sign-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .sign-col { font-size: 10px; }
+  .sign-col .sign-role { font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.5px; color: #777; font-family: Arial, Helvetica, sans-serif; margin-bottom: 3px; }
+  .sign-col .sign-name { font-weight: 700; margin-bottom: 34px; }
+  .sign-line { border-top: 1px solid #333; padding-top: 4px; font-size: 8.5px; color: #777; font-family: Arial, Helvetica, sans-serif; }
+  .sign-stamp { margin-top: 30px; font-size: 8.5px; color: #999; font-family: Arial, Helvetica, sans-serif; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="disclaimer"><strong>Bozza generata con assistenza AI</strong> sulla base dei dati forniti in chat. Si raccomanda la verifica di un legale o consulente qualificato prima della sottoscrizione. Palladia non si assume responsabilità per la validità legale del presente documento.</div>
+
+  <div class="doc-title">CONTRATTO DI SUBAPPALTO</div>
+  <div class="doc-subtitle">ai sensi dell'art. 119 D.Lgs. 36/2023</div>
+  <div class="doc-place-date">${esc(c.luogo_sottoscrizione)}, ${oggiLegal}</div>
+
+  <div class="parties">
+    <div>TRA</div>
+    <div class="party-label">${esc(c.affidataria.ragione_sociale)}</div>
+    <div>con sede legale in ${esc(c.affidataria.sede)}, P.IVA ${esc(c.affidataria.piva)}, in persona del legale rappresentante pro tempore Sig. ${esc(c.affidataria.legale_rappresentante)} (di seguito "Impresa Affidataria")</div>
+
+    <div style="margin-top:10px;">E</div>
+    <div class="party-label">${esc(c.subappaltatrice.ragione_sociale)}</div>
+    <div>con sede legale in ${esc(c.subappaltatrice.sede)}, P.IVA ${esc(c.subappaltatrice.piva)}, in persona del legale rappresentante pro tempore Sig. ${esc(c.subappaltatrice.legale_rappresentante)} (di seguito "Subappaltatrice")</div>
+
+    <div class="convene">SI CONVIENE E STIPULA QUANTO SEGUE</div>
+  </div>
+
+  ${articlesHtml}
+
+  <div class="signatures">
+    <div class="signatures-label">Letto, confermato e sottoscritto</div>
+    <div class="sign-grid">
+      <div class="sign-col">
+        <div class="sign-role">Impresa Affidataria</div>
+        <div class="sign-name">${esc(c.affidataria.ragione_sociale)}</div>
+        <div class="sign-line">Luogo e data, firma</div>
+        <div class="sign-stamp">Timbro</div>
+      </div>
+      <div class="sign-col">
+        <div class="sign-role">Subappaltatrice</div>
+        <div class="sign-name">${esc(c.subappaltatrice.ragione_sociale)}</div>
+        <div class="sign-line">Luogo e data, firma</div>
+        <div class="sign-stamp">Timbro</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/v1/chat/export-contract
+// Body: dati strutturati del contratto (vedi contractExportSchema) — mai testo
+// libero. Non passa dall'LLM: i dati arrivano già raccolti/validati in chat
+// dal tool draft_subappalto_contract; qui si ri-validano e si ricalcolano
+// incidenza/penali server-side prima di scrivere qualsiasi numero nel PDF —
+// stessa regola "non fidarsi mai di un calcolo già fatto" applicata all'export
+// report più sopra.
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/chat/export-contract', verifySupabaseJwt, validate(contractExportSchema), async (req, res) => {
+  const result = computeContractDraft(req.body);
+
+  if (result.missing_fields) {
+    return res.status(400).json({ error: 'MISSING_FIELDS', missing_fields: result.missing_fields });
+  }
+  if (result.blocked) {
+    return res.status(400).json({
+      error: 'SUBAPPALTO_LIMIT_EXCEEDED',
+      incidenza_percento: result.incidenza_percento,
+      message: 'Il subappalto supera il 30% dell\'appalto principale: serve autorizzazione esplicita del Committente prima di generare il contratto.',
+    });
+  }
+  if (!result.ready) {
+    return res.status(400).json({ error: 'INVALID_CONTRACT_DATA', detail: result.error });
+  }
+
+  try {
+    const html = buildContractHtml(result.contract);
+    const pdf  = await renderHtmlToPdf(html, {
+      docTitle:   'Contratto di subappalto',
+      footerLeft: 'Contratto di subappalto — art. 119 D.Lgs 36/2023',
+    });
+    res.set({
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': `attachment; filename="contratto-subappalto-${Date.now()}.pdf"`,
+      'Cache-Control':       'no-store',
+    });
+    return res.send(pdf);
+  } catch (err) {
+    console.error('[chat/export-contract] error:', err.message);
     res.status(500).json({ error: 'EXPORT_ERROR', detail: err.message });
   }
 });
@@ -7009,3 +7425,5 @@ module.exports.classifyQuery  = classifyQuery;
 module.exports.MODEL_HAIKU    = MODEL_HAIKU;
 module.exports.MODEL_SONNET   = MODEL_SONNET;
 module.exports.buildCachedSystem = buildCachedSystem;
+module.exports.computeContractDraft = computeContractDraft;
+module.exports.buildContractHtml    = buildContractHtml;

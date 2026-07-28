@@ -60,10 +60,11 @@ function buildHeaderTemplate(docTitle) {
  * → sempre deterministici, zero stima, zero 2-pass manuale.
  * CRITICO: font-size esplicito su ogni <span>, altrimenti Chrome usa 0.
  */
-function buildFooterTemplate(revision) {
+function buildFooterTemplate(revision, footerLeft) {
   const rev = escT(String(revision || 1));
+  const left = escT(footerLeft || 'D.Lgs 81/2008 e s.m.i.');
   return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #DDDDDD;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;white-space:nowrap;">D.Lgs 81/2008 e s.m.i.</span>
+  <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;white-space:nowrap;">${left}</span>
   <span style="font-size:8.5px;color:#444444;font-weight:bold;line-height:1.1;white-space:nowrap;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:8.5px;"></span>&#160;/&#160;<span class="totalPages" style="font-size:8.5px;"></span></span>
   <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">Rev.&#160;${rev}</span>
 </div>`;
@@ -106,7 +107,7 @@ function makePdfOpts(opts = {}) {
     printBackground:     true,
     displayHeaderFooter: true,
     headerTemplate:      buildHeaderTemplate(opts.docTitle || ''),
-    footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1),
+    footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1, opts.footerLeft),
     margin: {
       top:    '26mm',
       bottom: '24mm',
