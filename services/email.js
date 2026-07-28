@@ -1580,6 +1580,101 @@ async function sendStudioExpiryAlertToCompany({ to, companyName, studioName, iss
   });
 }
 
+// ── Layer "proof of value" — report mensile impresa ───────────────────────────
+// "Il tuo mese con Palladia": numeri grandi, zero grafica pesante, leggibile
+// su mobile — pattern richiesto esplicitamente, diverso dal digest scadenze.
+const SEMAFORO_COLOR = { verde: '#10b981', giallo: '#f59e0b', rosso: '#ef4444' };
+const SEMAFORO_LABEL = { verde: 'Conforme', giallo: 'Attenzione', rosso: 'Non conforme' };
+
+async function sendMonthlyValueReport({ to, companyName, monthLabel, semaforo, delta, stats, upcoming }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtEuro(cents) { return Math.round((cents || 0) / 100).toLocaleString('it-IT'); }
+  function fmtDate(d) { return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  const APP_BASE_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
+
+  const statTile = (value, label) => `
+    <td style="text-align:center;padding:16px 12px;border-right:1px solid #f0f0f0;">
+      <div style="font-size:24px;font-weight:800;color:#1a1a1a;">${value}</div>
+      <div style="font-size:10.5px;color:#9ca3af;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;line-height:1.3;">${label}</div>
+    </td>`;
+
+  const semColor = SEMAFORO_COLOR[semaforo.semaforo] || '#9ca3af';
+  const trendLine = delta.available
+    ? (delta.trend === 'migliorato'
+        ? `<span style="color:#10b981;font-weight:700;">↑ Migliorato</span> rispetto al mese scorso (era ${esc(SEMAFORO_LABEL[delta.previous] || delta.previous)})`
+        : delta.trend === 'peggiorato'
+          ? `<span style="color:#ef4444;font-weight:700;">↓ Peggiorato</span> rispetto al mese scorso (era ${esc(SEMAFORO_LABEL[delta.previous] || delta.previous)})`
+          : `Stabile rispetto al mese scorso`)
+    : `Primo mese di tracciamento — da qui in poi vedrai l'andamento`;
+
+  const upcomingRows = (upcoming || []).slice(0, 10).map(u => `
+    <tr>
+      <td style="padding:9px 0;border-bottom:1px solid #f9f9f6;">
+        <table cellpadding="0" cellspacing="0" width="100%"><tr>
+          <td><div style="font-size:13px;color:#374151;">${esc(u.label)}</div></td>
+          <td style="text-align:right;white-space:nowrap;"><div style="font-size:12px;color:#9ca3af;">${fmtDate(u.expiry_date)}</div></td>
+        </tr></table>
+      </td>
+    </tr>`).join('');
+
+  const body = `
+    <p style="margin:0 0 4px;font-size:13px;color:#9ca3af;text-transform:capitalize;">${esc(monthLabel)}</p>
+    <p style="margin:0 0 24px;font-size:20px;font-weight:800;color:#1a1a1a;">Il tuo mese con Palladia — ${esc(companyName)}</p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f5;border-radius:12px;border:1px solid #e5e5e0;padding:18px 20px;margin-bottom:24px;">
+      <tr><td>
+        <table cellpadding="0" cellspacing="0"><tr>
+          <td style="padding-right:12px;">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${semColor};"></span>
+          </td>
+          <td>
+            <div style="font-size:15px;font-weight:700;color:#1a1a1a;">${SEMAFORO_LABEL[semaforo.semaforo] || semaforo.semaforo}</div>
+            <div style="font-size:12.5px;color:#6b7280;margin-top:2px;">${trendLine}</div>
+          </td>
+        </tr></table>
+      </td></tr>
+    </table>
+
+    <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Il mese in numeri</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f5;border-radius:12px;border:1px solid #e5e5e0;margin-bottom:28px;">
+      <tr>
+        ${statTile(stats.oreNelMese.toLocaleString('it-IT'), 'Ore di presenza')}
+        ${statTile(stats.documentiNelMese, 'Documenti generati')}
+        ${statTile(stats.scadenzeNelMese, 'Scadenze gestite')}
+        <td style="text-align:center;padding:16px 12px;">
+          <div style="font-size:24px;font-weight:800;color:#1a1a1a;">${stats.sanzioniNelMeseCents > 0 ? `€${fmtEuro(stats.sanzioniNelMeseCents)}` : '—'}</div>
+          <div style="font-size:10.5px;color:#9ca3af;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;line-height:1.3;">Sanzioni evitate</div>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Il mese prossimo</p>
+    ${upcoming && upcoming.length > 0 ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">
+      ${upcomingRows}
+    </table>
+    ${upcoming.length > 10 ? `<p style="margin:0 0 24px;font-size:12px;color:#9ca3af;">E altre ${upcoming.length - 10} scadenze nei prossimi 30 giorni.</p>` : '<div style="margin-bottom:24px;"></div>'}
+    ` : `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;text-align:center;margin-bottom:24px;">
+      <p style="margin:0;font-size:13px;font-weight:600;color:#16a34a;">Nessuna scadenza nei prossimi 30 giorni.</p>
+    </div>
+    `}
+
+    ${btn('Apri la tua dashboard →', APP_BASE_URL + '/panoramica')}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Ogni numero qui sopra è verificabile: apri la dashboard e clicca su un contatore per vedere l'elenco esatto degli eventi.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `[Palladia] Il tuo mese con Palladia — ${monthLabel}`,
+    html: layout(`Il tuo mese — ${companyName}`, body),
+  });
+}
+
 // ── sendDailyAlertDigest ──────────────────────────────────────────────────────
 // Email digest giornaliera unica — raggruppa tutti gli alert in un'unica email per company.
 // sections: { missingDocs?, workerExpiry?, companyExpiry?, equipmentExpiry? }
@@ -2152,6 +2247,7 @@ module.exports = {
   sendStudioDurcAlert,
   sendWeatherExtremeAlert,
   sendAiCreditExhaustedAlert,
+  sendMonthlyValueReport,
 };
 
 // ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────

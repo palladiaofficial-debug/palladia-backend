@@ -45,6 +45,7 @@ const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCr
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
 const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
 const { startDailyStatsCron }       = require('./services/dailyStatsCron');
+const { startMonthlyReportCron }    = require('./services/monthlyReportCron');
 const { startSafetyCopilotCron }    = require('./services/safetyCopilotCron');
 const { startSdiConsultationPollCron } = require('./services/sdiConsultationPollCron');
 const { startSmartImportRecoveryCron } = require('./services/smartImportRecoveryCron');
@@ -2305,6 +2306,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startStudioDurcAlertCron();
     startSafetyCopilotCron();
     startDailyStatsCron();
+    startMonthlyReportCron();
     startSdiConsultationPollCron();
     startSmartImportRecoveryCron();
 
