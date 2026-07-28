@@ -41,6 +41,7 @@ const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
  *
  * ── Dashboard e digest ──────────────────────────────────────────────────────
  * GET  /api/v1/studio/dashboard
+ * GET  /api/v1/studio/value-metrics       — layer "proof of value" aggregato
  * POST /api/v1/studio/digest/send-now
  */
 
@@ -1731,6 +1732,73 @@ router.get('/studio/dashboard', verifyStudioJwt, async (req, res) => {
   };
 
   res.json({ clients: clientList, alerts: allAlerts.slice(0, 60), summary });
+});
+
+// ── Layer "proof of value" — versione aggregata per lo studio ────────────────
+// Somma i numeri già precalcolati per company (value_metrics, mig. 142) su
+// tutti i clienti attivi dello studio — MAI ricalcolati qui. È la stessa prova
+// verificabile che l'impresa vede su /panoramica, ma aggregata: la prova del
+// lavoro che il consulente può mostrare ai propri clienti.
+router.get('/studio/value-metrics', verifyStudioJwt, async (req, res) => {
+  const { data: clients } = await supabase
+    .from('studio_clients')
+    .select('company_id, companies(id, name)')
+    .eq('studio_id', req.studioId)
+    .eq('status', 'active');
+
+  if (!clients?.length) {
+    return res.json({ has_data: false, clients: [] });
+  }
+
+  const allCompanyIds = clients.map(c => c.company_id);
+  const companyIds    = await filterClientsByCollaborator(req.studioId, req.user.id, req.studioRole, allCompanyIds);
+
+  const { data: rows } = await supabase
+    .from('value_metrics')
+    .select('company_id, scadenze_intercettate, sanzioni_evitate_cents, documenti_generati, ore_presenza_tracciate, has_data, computed_at')
+    .in('company_id', companyIds);
+
+  const nameById = Object.fromEntries(clients.map(c => [c.company_id, c.companies?.name || '—']));
+  const rowById  = Object.fromEntries((rows || []).map(r => [r.company_id, r]));
+
+  let scadenze = 0, sanzioni = 0, documenti = 0, presenze = 0, anyData = false;
+  const perClient = [];
+
+  for (const cid of companyIds) {
+    const r = rowById[cid];
+    const hasData = r?.has_data || false;
+    if (hasData) anyData = true;
+    scadenze  += r?.scadenze_intercettate  || 0;
+    sanzioni  += r?.sanzioni_evitate_cents || 0;
+    documenti += r?.documenti_generati     || 0;
+    presenze  += Number(r?.ore_presenza_tracciate) || 0;
+    perClient.push({
+      company_id:             cid,
+      company_name:           nameById[cid] || '—',
+      scadenze_intercettate:  r?.scadenze_intercettate  || 0,
+      sanzioni_evitate_cents: r?.sanzioni_evitate_cents || 0,
+      documenti_generati:     r?.documenti_generati     || 0,
+      ore_presenza_tracciate: Number(r?.ore_presenza_tracciate) || 0,
+      has_data:               hasData,
+    });
+  }
+
+  perClient.sort((a, b) =>
+    (b.scadenze_intercettate - a.scadenze_intercettate) || (b.documenti_generati - a.documenti_generati)
+  );
+
+  if (!anyData) {
+    return res.json({ has_data: false, clients: perClient });
+  }
+
+  res.json({
+    has_data:               true,
+    scadenze_intercettate:  scadenze,
+    sanzioni_evitate_cents: sanzioni,
+    documenti_generati:     documenti,
+    ore_presenza_tracciate: Math.round(presenze * 10) / 10,
+    clients:                perClient,
+  });
 });
 
 // ── Digest manuale ────────────────────────────────────────────────────────────
