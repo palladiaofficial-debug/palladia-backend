@@ -11,6 +11,7 @@ router.use('/', require('./search'));
 // Route private (JWT + company membership)
 router.use('/', require('./workerDocs'));
 router.use('/', require('./dashboard'));
+router.use('/', require('./valueMetrics'));
 router.use('/', require('./sitesOverview'));
 router.use('/', require('./siteAdmin'));
 router.use('/', require('./siteSchedule'));

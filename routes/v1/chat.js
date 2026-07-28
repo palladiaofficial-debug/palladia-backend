@@ -23,6 +23,7 @@ const { getCompanyPosDefaults } = require('../../lib/posDefaults');
 const { searchLavorazioni } = require('../../lib/lavorazioniCatalog');
 const { isBillingActive } = require('../../lib/billing');
 const { analyzeChatUpload, archiveChatUpload } = require('../../services/chatDocumentAnalysis');
+const { logDocumentExport } = require('../../services/valueMetrics');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -6183,6 +6184,7 @@ router.post('/chat/export', verifySupabaseJwt, validate(chatExportSchema), async
     if (format === 'pdf') {
       const html = buildReportHtml(report);
       const pdf  = await renderHtmlToPdf(html, { docTitle: report.title || 'Report' });
+      await logDocumentExport({ companyId: req.companyId, userId: req.user.id, exportType: 'report_chat_pdf', title: report.title });
       res.set({
         'Content-Type':        'application/pdf',
         'Content-Disposition': `attachment; filename="palladia-report-${ts}.pdf"`,
@@ -6193,6 +6195,7 @@ router.post('/chat/export', verifySupabaseJwt, validate(chatExportSchema), async
 
     // Excel
     const buf = await buildReportExcel(report);
+    await logDocumentExport({ companyId: req.companyId, userId: req.user.id, exportType: 'report_chat_excel', title: report.title });
     res.set({
       'Content-Type':        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="palladia-report-${ts}.xlsx"`,
@@ -6406,6 +6409,10 @@ router.post('/chat/export-contract', verifySupabaseJwt, validate(contractExportS
     const pdf  = await renderHtmlToPdf(html, {
       docTitle:   'Contratto di subappalto',
       footerLeft: 'Contratto di subappalto — art. 119 D.Lgs 36/2023',
+    });
+    await logDocumentExport({
+      companyId: req.companyId, userId: req.user.id, exportType: 'contratto_subappalto',
+      title: `Contratto subappalto — ${result.contract.subappaltatrice.ragione_sociale}`,
     });
     res.set({
       'Content-Type':        'application/pdf',

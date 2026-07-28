@@ -1,6 +1,7 @@
 'use strict';
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
+const { computeAndStoreValueMetrics } = require('./valueMetrics');
 
 async function runDailyStats() {
   const yesterday = new Date();
@@ -18,6 +19,7 @@ async function runDailyStats() {
   }
 
   let ok = 0;
+  let okValueMetrics = 0;
   for (const { id } of companies) {
     try {
       const { error } = await supabase.rpc('compute_company_daily_stats', {
@@ -29,9 +31,18 @@ async function runDailyStats() {
     } catch (e) {
       console.error('[dailyStats] company', id, 'errore:', e.message);
     }
+
+    // Layer "proof of value" — indipendente dal calcolo sopra: un fallimento
+    // qui non deve bloccare le daily stats esistenti, e viceversa.
+    try {
+      await computeAndStoreValueMetrics(id);
+      okValueMetrics++;
+    } catch (e) {
+      console.error('[dailyStats] value-metrics company', id, 'errore:', e.message);
+    }
   }
 
-  console.log(`[dailyStats] ${ok}/${companies.length} companies aggiornate per ${dateStr}`);
+  console.log(`[dailyStats] ${ok}/${companies.length} companies aggiornate per ${dateStr}, value-metrics ${okValueMetrics}/${companies.length}`);
 }
 
 function startDailyStatsCron() {
