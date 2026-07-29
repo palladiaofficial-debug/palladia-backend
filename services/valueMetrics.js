@@ -213,13 +213,15 @@ async function computeScadenzeESanzioni(companyId) {
   let sanzioniCents = 0;
   if (codes.length) {
     const { data: ranges } = await supabase.from('sanction_ranges')
-      .select('violation_code, amount_min_cents, violation_label').in('violation_code', codes);
+      .select('violation_code, amount_min_cents, violation_label, legal_reference, needs_review').in('violation_code', codes);
     const byCode = Object.fromEntries((ranges || []).map(r => [r.violation_code, r]));
     for (const item of items) {
       const r = item.violation_code && byCode[item.violation_code];
       if (r) {
         item.amount_min_cents = r.amount_min_cents;
         item.violation_label  = r.violation_label;
+        item.legal_reference  = r.legal_reference;
+        item.needs_review     = r.needs_review;
         sanzioniCents += r.amount_min_cents;
       }
     }

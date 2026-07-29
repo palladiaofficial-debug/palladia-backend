@@ -55,11 +55,13 @@ router.get('/value-metrics/detail/:metric', verifySupabaseJwt, async (req, res) 
         metric, count, sanzioni_evitate_cents: sanzioniCents,
         items: items.map(i => ({
           entity_type:      i.entity_type,
+          entity_id:         i.entity_id,
           label:             i.label,
           notified_at:       i.notified_at,
           resolved_at:       i.resolved_at,
           violation_label:   i.violation_label || null,
           amount_min_cents:  i.amount_min_cents || null,
+          legal_reference:   i.legal_reference || null,
         })),
       });
     }
@@ -180,6 +182,92 @@ router.get('/value-metrics/monthly-report.pdf', verifySupabaseJwt, async (req, r
     return res.send(pdf);
   } catch (err) {
     console.error('[value-metrics/monthly-report.pdf] error:', err.message);
+    res.status(500).json({ error: 'EXPORT_ERROR', detail: err.message });
+  }
+});
+
+// ── Ricevuta "scadenza intercettata" (on-demand, un singolo evento) ───────────
+// Artefatto di chiusura per il flusso "gestione scadenza" — oggi una notifica
+// risolta spariva in silenzio (pruneNotifications cancella la riga, vedi
+// migrazione 141), senza mai un momento tangibile "hai evitato questo".
+function buildReceiptHtml(item, companyName) {
+  const hasSanction = !!item.violation_label;
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: A4; margin: 26mm 0 24mm 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .doc { padding: 0 16mm; }
+  .header { background: #0a0a0a; color: #fff; padding: 13px 16mm 14px; margin: 0 -16mm 20px; border-top: 2px solid #fff; }
+  .brand { font-size: 7.5px; font-weight: 700; letter-spacing: 2.2px; color: #777; text-transform: uppercase; margin-bottom: 7px; }
+  .title { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -0.2px; }
+  .company { font-size: 10.5px; color: #999; margin-top: 4px; }
+  .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #efefef; }
+  .row .label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3px; color: #888; }
+  .row .value { font-size: 12px; font-weight: 600; color: #1a1a1a; text-align: right; max-width: 60%; }
+  .sanction-box { margin-top: 24px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px 18px; }
+  .sanction-amount { font-size: 22px; font-weight: 800; color: #16a34a; }
+  .sanction-label { font-size: 11px; color: #166534; margin-top: 4px; }
+  .sanction-ref { font-size: 9.5px; color: #4d7c5f; margin-top: 6px; }
+  .review-note { font-size: 8.5px; color: #92702a; background: #fef9e7; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 10px; margin-top: 10px; }
+  .ok-box { margin-top: 24px; background: #f7f7f7; border-left: 2.5px solid #10b981; border-radius: 0 4px 4px 0; padding: 12px 16px; font-size: 11px; color: #333; }
+  .footer-note { margin-top: 30px; font-size: 8.5px; color: #aaa; line-height: 1.6; border-top: 1px solid #f0f0f0; padding-top: 10px; }
+</style>
+</head>
+<body>
+<div class="doc">
+  <div class="header">
+    <div class="brand">Palladia &middot; Ricevuta</div>
+    <div class="title">Scadenza intercettata</div>
+    <div class="company">${esc(companyName)}</div>
+  </div>
+
+  <div class="row"><div class="label">Documento / lavorazione</div><div class="value">${esc(item.label)}</div></div>
+  <div class="row"><div class="label">Notificata il</div><div class="value">${fmtDate(item.notified_at)}</div></div>
+  <div class="row"><div class="label">Risolta il</div><div class="value">${fmtDate(item.resolved_at)}</div></div>
+
+  ${hasSanction ? `
+  <div class="sanction-box">
+    <div class="sanction-amount">${fmtEuro(item.amount_min_cents)} evitati</div>
+    <div class="sanction-label">${esc(item.violation_label)}</div>
+    ${item.legal_reference ? `<div class="sanction-ref">${esc(item.legal_reference)}</div>` : ''}
+    ${item.needs_review ? `<div class="review-note">Importo in fase di verifica legale — non ancora confermato da un consulente del lavoro.</div>` : ''}
+  </div>` : `
+  <div class="ok-box">Scadenza gestita in tempo grazie alla notifica anticipata di Palladia.</div>
+  `}
+
+  <div class="footer-note">
+    Ricevuta generata automaticamente da Palladia sulla base dei dati della piattaforma. Non costituisce un documento legale o fiscale.
+  </div>
+</div>
+</body>
+</html>`;
+}
+
+router.get('/value-metrics/receipt.pdf', verifySupabaseJwt, async (req, res) => {
+  const { entity_type: entityType, entity_id: entityId } = req.query;
+  if (!entityType || !entityId) return res.status(400).json({ error: 'MISSING_PARAMS' });
+
+  try {
+    const { items } = await computeScadenzeESanzioni(req.companyId);
+    const item = items.find(i => i.entity_type === entityType && i.entity_id === entityId);
+    if (!item) return res.status(404).json({ error: 'NOT_FOUND' });
+
+    const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
+    const html = buildReceiptHtml(item, company?.name || 'La tua impresa');
+    const pdf  = await renderHtmlToPdf(html, { docTitle: 'Ricevuta scadenza intercettata', footerLeft: 'Ricevuta — dati verificabili' });
+
+    res.set({
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': `attachment; filename="ricevuta-scadenza-${Date.now()}.pdf"`,
+      'Cache-Control':       'no-store',
+    });
+    return res.send(pdf);
+  } catch (err) {
+    console.error('[value-metrics/receipt.pdf] error:', err.message);
     res.status(500).json({ error: 'EXPORT_ERROR', detail: err.message });
   }
 });
