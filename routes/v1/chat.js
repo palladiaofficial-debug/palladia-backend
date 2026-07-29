@@ -6419,17 +6419,14 @@ function buildContractHtml(contract) {
   .doc { padding: 0 16mm; }
 
   .disclaimer {
-    border: 1px solid #999;
-    background: #fafafa;
-    padding: 8px 12px;
-    margin-bottom: 18px;
+    margin-bottom: 16px;
     font-family: Arial, Helvetica, sans-serif;
-    font-size: 8.5px;
+    font-size: 8px;
+    font-style: italic;
     line-height: 1.5;
-    color: #555;
+    color: #999;
     page-break-inside: avoid;
   }
-  .disclaimer strong { color: #333; }
 
   .doc-title { text-align: center; font-size: 15px; font-weight: 700; letter-spacing: 0.3px; margin-bottom: 3px; page-break-after: avoid; }
   .doc-subtitle { text-align: center; font-size: 9.5px; font-style: italic; color: #555; margin-bottom: 4px; }
@@ -6462,7 +6459,7 @@ function buildContractHtml(contract) {
 <body>
 <div class="doc">
 
-  <div class="disclaimer"><strong>Bozza generata con assistenza AI</strong> sulla base dei dati forniti in chat. Si raccomanda la verifica di un legale o consulente qualificato prima della sottoscrizione. Palladia non si assume responsabilità per la validità legale del presente documento.</div>
+  <div class="disclaimer">Bozza generata con assistenza AI sulla base dei dati forniti in chat. Si raccomanda la verifica di un legale o consulente qualificato prima della sottoscrizione. Palladia non si assume responsabilità per la validità legale del presente documento.</div>
 
   <div class="doc-title">CONTRATTO DI SUBAPPALTO</div>
   <div class="doc-subtitle">ai sensi dell'art. 119 D.Lgs. 36/2023</div>
