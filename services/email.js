@@ -1675,6 +1675,112 @@ async function sendMonthlyValueReport({ to, companyName, monthLabel, semaforo, d
   });
 }
 
+// ── Layer "proof of value" — report mensile aggregato studio CDL ──────────────
+// Un'unica email all'owner dello studio, impaginata per poter essere condivisa
+// con i clienti come prova del lavoro svolto — vedi services/studioMonthlyReport.js.
+async function sendStudioMonthlyValueReport({ to, studioName, monthLabel, totalClients, semaforoCounts, stats, upcoming, clients }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function fmtEuro(cents) { return Math.round((cents || 0) / 100).toLocaleString('it-IT'); }
+  function fmtDate(d) { return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  const APP_BASE_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
+
+  const semRow = (label, count, color) =>
+    `<td style="text-align:center;padding:14px 16px;border-right:1px solid #f0f0f0;">
+       <div style="font-size:22px;font-weight:800;color:${color};">${count}</div>
+       <div style="font-size:10px;color:#9ca3af;margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">${label}</div>
+     </td>`;
+
+  const statTile = (value, label) => `
+    <td style="text-align:center;padding:16px 12px;border-right:1px solid #f0f0f0;">
+      <div style="font-size:22px;font-weight:800;color:#1a1a1a;">${value}</div>
+      <div style="font-size:10px;color:#9ca3af;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;line-height:1.3;">${label}</div>
+    </td>`;
+
+  const clientRows = (clients || []).map(c => `
+    <tr>
+      <td style="padding:9px 8px;border-bottom:1px solid #f9f9f6;font-size:12.5px;color:#1a1a1a;font-weight:600;">${esc(c.companyName)}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #f9f9f6;font-size:12px;color:#6b7280;text-align:center;">${c.oreNelMese}h</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #f9f9f6;font-size:12px;color:#6b7280;text-align:center;">${c.documentiNelMese}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #f9f9f6;font-size:12px;color:#6b7280;text-align:center;">${c.scadenzeNelMese}</td>
+      <td style="padding:9px 8px;border-bottom:1px solid #f9f9f6;font-size:12px;color:#6b7280;text-align:right;">${c.sanzioniNelMeseCents > 0 ? `€${fmtEuro(c.sanzioniNelMeseCents)}` : '—'}</td>
+    </tr>`).join('');
+
+  const upcomingRows = (upcoming || []).slice(0, 12).map(u => `
+    <tr><td style="padding:8px 0;border-bottom:1px solid #f9f9f6;">
+      <table cellpadding="0" cellspacing="0" width="100%"><tr>
+        <td><div style="font-size:12.5px;color:#374151;">${esc(u.label)}</div><div style="font-size:11px;color:#9ca3af;">${esc(u.companyName)}</div></td>
+        <td style="text-align:right;white-space:nowrap;vertical-align:top;"><div style="font-size:12px;color:#9ca3af;">${fmtDate(u.expiry_date)}</div></td>
+      </tr></table>
+    </td></tr>`).join('');
+
+  const body = `
+    <p style="margin:0 0 4px;font-size:13px;color:#9ca3af;text-transform:capitalize;">${esc(monthLabel)}</p>
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Il mese di ${esc(studioName)}</p>
+    <p style="margin:0 0 24px;font-size:13px;color:#6b7280;line-height:1.6;">
+      Il lavoro svolto per i tuoi ${totalClients} client${totalClients === 1 ? 'e' : 'i'} attiv${totalClients === 1 ? 'o' : 'i'} — pensato per essere condiviso con loro come prova concreta.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f5;border-radius:12px;border:1px solid #e5e5e0;margin-bottom:20px;">
+      <tr>
+        ${semRow('Conformi', semaforoCounts.verde || 0, '#10b981')}
+        ${semRow('Attenzione', semaforoCounts.giallo || 0, '#f59e0b')}
+        ${semRow('Non conformi', semaforoCounts.rosso || 0, '#ef4444')}
+        <td style="text-align:center;padding:14px 16px;">
+          <div style="font-size:22px;font-weight:800;color:#1a1a1a;">${totalClients}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;">Clienti</div>
+        </td>
+      </tr>
+    </table>
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8f8f5;border-radius:12px;border:1px solid #e5e5e0;margin-bottom:28px;">
+      <tr>
+        ${statTile(stats.oreNelMese.toLocaleString('it-IT'), 'Ore di presenza')}
+        ${statTile(stats.documentiNelMese, 'Documenti generati')}
+        ${statTile(stats.scadenzeNelMese, 'Scadenze gestite')}
+        <td style="text-align:center;padding:16px 12px;">
+          <div style="font-size:22px;font-weight:800;color:#1a1a1a;">${stats.sanzioniNelMeseCents > 0 ? `€${fmtEuro(stats.sanzioniNelMeseCents)}` : '—'}</div>
+          <div style="font-size:10px;color:#9ca3af;margin-top:4px;font-weight:600;text-transform:uppercase;letter-spacing:0.03em;line-height:1.3;">Sanzioni evitate</div>
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Dettaglio per cliente</p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:28px;">
+      <tr>
+        <td style="padding:0 8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:#9ca3af;">Cliente</td>
+        <td style="padding:0 8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:#9ca3af;text-align:center;">Ore</td>
+        <td style="padding:0 8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:#9ca3af;text-align:center;">Doc.</td>
+        <td style="padding:0 8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:#9ca3af;text-align:center;">Scad.</td>
+        <td style="padding:0 8px 6px;font-size:10px;font-weight:700;text-transform:uppercase;color:#9ca3af;text-align:right;">Sanzioni</td>
+      </tr>
+      ${clientRows}
+    </table>
+
+    <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Il mese prossimo</p>
+    ${upcoming && upcoming.length > 0 ? `
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:8px;">${upcomingRows}</table>
+    ${upcoming.length > 12 ? `<p style="margin:0 0 24px;font-size:12px;color:#9ca3af;">E altre ${upcoming.length - 12} scadenze tra i tuoi clienti.</p>` : '<div style="margin-bottom:24px;"></div>'}
+    ` : `
+    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:16px 20px;text-align:center;margin-bottom:24px;">
+      <p style="margin:0;font-size:13px;font-weight:600;color:#16a34a;">Nessuna scadenza nei prossimi 30 giorni tra i tuoi clienti.</p>
+    </div>
+    `}
+
+    ${btn('Apri il portale studio →', APP_BASE_URL + '/studio')}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Questo report riassume il lavoro svolto da ${esc(studioName)} tramite Palladia — puoi condividerlo con i tuoi clienti così com'è, o usarlo come base per la tua prossima comunicazione.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `[Palladia] Il mese di ${studioName} — ${monthLabel}`,
+    html: layout(`Il mese di ${studioName}`, body),
+  });
+}
+
 // ── sendDailyAlertDigest ──────────────────────────────────────────────────────
 // Email digest giornaliera unica — raggruppa tutti gli alert in un'unica email per company.
 // sections: { missingDocs?, workerExpiry?, companyExpiry?, equipmentExpiry? }
@@ -2248,6 +2354,7 @@ module.exports = {
   sendWeatherExtremeAlert,
   sendAiCreditExhaustedAlert,
   sendMonthlyValueReport,
+  sendStudioMonthlyValueReport,
 };
 
 // ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────

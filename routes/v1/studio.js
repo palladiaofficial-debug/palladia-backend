@@ -55,6 +55,7 @@ const {
   sendStudioPendingInviteEmail,
 } = require('../../services/email');
 const { rendererPool } = require('../../pdf-renderer');
+const { buildStudioMonthlyReportData } = require('../../services/studioMonthlyReport');
 const { validate } = require('../../middleware/validate');
 const {
   onboardSchema,
@@ -1799,6 +1800,119 @@ router.get('/studio/value-metrics', verifyStudioJwt, async (req, res) => {
     ore_presenza_tracciate: Math.round(presenze * 10) / 10,
     clients:                perClient,
   });
+});
+
+// ── PDF "Il mese di [Studio]" (on-demand, stampabile, condivisibile) ─────────
+function _escMR(s) { return s == null ? '—' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function _fmtEuroMR(cents) { return `€${Math.round((cents || 0) / 100).toLocaleString('it-IT')}`; }
+function _fmtDateMR(d) { return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+
+function buildStudioMonthlyReportHtml(data) {
+  const { studioName, monthLabel, totalClients, semaforoCounts, stats, upcoming, clients } = data;
+
+  const clientRows = (clients || []).map(c => `
+    <tr>
+      <td>${_escMR(c.companyName)}</td>
+      <td class="num">${c.oreNelMese}h</td>
+      <td class="num">${c.documentiNelMese}</td>
+      <td class="num">${c.scadenzeNelMese}</td>
+      <td class="num">${c.sanzioniNelMeseCents > 0 ? _fmtEuroMR(c.sanzioniNelMeseCents) : '—'}</td>
+    </tr>`).join('');
+
+  const upcomingRows = (upcoming || []).slice(0, 20).map(u => `
+    <tr><td>${_escMR(u.label)}<span class="muted"> — ${_escMR(u.companyName)}</span></td><td class="num">${_fmtDateMR(u.expiry_date)}</td></tr>`).join('');
+
+  return `<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: A4; margin: 26mm 0 24mm 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5px; color: #1a1a1a; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .doc { padding: 0 16mm; }
+  .report-header { background: #0a0a0a; color: #fff; padding: 13px 16mm 14px; margin: 0 -16mm 14px; border-top: 2px solid #fff; page-break-after: avoid; }
+  .report-brand { font-size: 7.5px; font-weight: 700; letter-spacing: 2.2px; color: #777; text-transform: uppercase; margin-bottom: 7px; }
+  .report-title { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -0.2px; line-height: 1.2; margin-bottom: 4px; }
+  .report-subtitle { font-size: 10.5px; color: #999; text-transform: capitalize; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px; page-break-inside: avoid; }
+  .kpi-card { background: #fafafa; border-top: 2px solid #0a0a0a; padding: 7px 10px 8px; }
+  .kpi-value { font-size: 17px; font-weight: 700; color: #000; line-height: 1.15; letter-spacing: -0.3px; font-variant-numeric: tabular-nums; margin-bottom: 3px; }
+  .kpi-label { font-size: 8px; color: #888; line-height: 1.25; text-transform: uppercase; letter-spacing: 0.2px; }
+  .section-title { font-size: 10px; font-weight: 700; color: #000; letter-spacing: 0.6px; text-transform: uppercase; padding-bottom: 3px; border-bottom: 1.5px solid #000; margin-bottom: 7px; margin-top: 14px; page-break-after: avoid; }
+  table.datatable { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  table.datatable th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 0.2px; color: #888; padding: 4px 6px; border-bottom: 1px solid #ddd; }
+  table.datatable th.num, table.datatable td.num { text-align: right; }
+  table.datatable td { padding: 5px 6px; border-bottom: 1px solid #efefef; color: #2a2a2a; }
+  .muted { color: #999; }
+  .empty-note { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 10px 14px; font-size: 10.5px; color: #16a34a; font-weight: 600; }
+  .doc-footer { font-size: 8.5px; color: #ccc; text-align: center; margin-top: 20px; padding-top: 8px; border-top: 1px solid #f0f0f0; }
+</style>
+</head>
+<body>
+<div class="doc">
+
+  <div class="report-header">
+    <div class="report-brand">Palladia &middot; Il mese del tuo studio</div>
+    <div class="report-title">${_escMR(studioName)}</div>
+    <div class="report-subtitle">${_escMR(monthLabel)} &middot; ${totalClients} client${totalClients === 1 ? 'e' : 'i'}</div>
+  </div>
+
+  <div class="section-title">Stato dei clienti</div>
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-value">${semaforoCounts.verde || 0}</div><div class="kpi-label">Conformi</div></div>
+    <div class="kpi-card"><div class="kpi-value">${semaforoCounts.giallo || 0}</div><div class="kpi-label">Attenzione</div></div>
+    <div class="kpi-card"><div class="kpi-value">${semaforoCounts.rosso || 0}</div><div class="kpi-label">Non conformi</div></div>
+    <div class="kpi-card"><div class="kpi-value">${totalClients}</div><div class="kpi-label">Totale</div></div>
+  </div>
+
+  <div class="section-title">Il mese in numeri</div>
+  <div class="kpi-grid">
+    <div class="kpi-card"><div class="kpi-value">${stats.oreNelMese.toLocaleString('it-IT')}</div><div class="kpi-label">Ore di presenza</div></div>
+    <div class="kpi-card"><div class="kpi-value">${stats.documentiNelMese}</div><div class="kpi-label">Documenti generati</div></div>
+    <div class="kpi-card"><div class="kpi-value">${stats.scadenzeNelMese}</div><div class="kpi-label">Scadenze gestite</div></div>
+    <div class="kpi-card"><div class="kpi-value">${stats.sanzioniNelMeseCents > 0 ? _fmtEuroMR(stats.sanzioniNelMeseCents) : '—'}</div><div class="kpi-label">Sanzioni evitate</div></div>
+  </div>
+
+  <div class="section-title">Dettaglio per cliente</div>
+  <table class="datatable">
+    <thead><tr><th>Cliente</th><th class="num">Ore</th><th class="num">Documenti</th><th class="num">Scadenze</th><th class="num">Sanzioni evitate</th></tr></thead>
+    <tbody>${clientRows}</tbody>
+  </table>
+
+  <div class="section-title">Il mese prossimo</div>
+  ${upcoming && upcoming.length
+    ? `<table class="datatable"><tbody>${upcomingRows}</tbody></table>`
+    : `<div class="empty-note">Nessuna scadenza nei prossimi 30 giorni tra i tuoi clienti.</div>`}
+
+  <div class="doc-footer">Generato da Palladia per ${_escMR(studioName)} &middot; Report basato su dati verificabili, non stime</div>
+</div>
+</body>
+</html>`;
+}
+
+router.get('/studio/value-metrics/monthly-report.pdf', verifyStudioJwt, async (req, res) => {
+  try {
+    const data = await buildStudioMonthlyReportData(req.studioId);
+    if (!data) return res.status(404).json({ error: 'NO_DATA' });
+
+    const html = buildStudioMonthlyReportHtml(data);
+    const pdfBuffer = await rendererPool.render(html, {
+      docTitle:   `Il mese di ${data.studioName}`,
+      footerLeft: 'Report mensile studio — dati verificabili',
+      rev: 1,
+    });
+
+    res.set({
+      'Content-Type':        'application/pdf',
+      'Content-Disposition': `attachment; filename="palladia-report-studio-${Date.now()}.pdf"`,
+      'Cache-Control':       'no-store',
+    });
+    return res.send(pdfBuffer);
+  } catch (err) {
+    console.error('[studio/value-metrics/monthly-report.pdf] error:', err.message);
+    res.status(500).json({ error: 'EXPORT_ERROR', detail: err.message });
+  }
 });
 
 // ── Digest manuale ────────────────────────────────────────────────────────────
