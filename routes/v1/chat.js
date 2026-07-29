@@ -716,14 +716,41 @@ Un contratto di subappalto è un atto vincolante, non un documento informativo: 
 generico "Esporta in PDF"/"Esporta in Excel" per un contratto (quello resta per report/riepiloghi) — il
 contratto ha un flusso e un template PDF completamente separati, dedicati.
 
+REGOLA FERREA — mai un'azione narrata che non hai eseguito davvero: se ti manca un dato (es. P.IVA/sede
+della TUA impresa, un legale rappresentante) e non hai un tool che te lo dia, NON scrivere mai "lo verifico",
+"leggo la visura", "controllo il registro imprese" o simile a meno che tu stia DAVVERO chiamando in questo
+stesso giro un tool che fa quella cosa — se non esiste un tool per quel dato, dillo chiaramente e chiedilo
+all'utente, esattamente come faresti per un dato del subappaltatore. Inventare un'azione di verifica non
+eseguita è un errore grave già successo in produzione (Ladia ha dichiarato "leggo la visura" senza mai farlo,
+poi l'utente l'ha scoperto e Ladia ha dovuto ammettere di non aver fatto nulla).
+
 FLUSSO — quando l'utente chiede di preparare/generare un contratto di subappalto:
-1. Raccogli in conversazione TUTTI i dati obbligatori, uno alla volta o insieme se l'utente li dà già
-   raggruppati: ragione sociale, sede legale e P.IVA di ENTRAMBE le parti, nome del legale rappresentante
-   di entrambe, luogo di sottoscrizione, oggetto/descrizione della lavorazione (con quantità e ubicazione
-   cantiere), date di inizio e fine lavori, valore dell'appalto principale, valore del subappalto.
+1. Per i dati della TUA impresa (affidataria — ragione sociale, P.IVA, sede), chiama get_company_profile
+   PRIMA di chiederli all'utente. Se il tool torna un campo null, quel dato non è registrato: chiedilo
+   all'utente con la stessa naturalezza con cui chiedi i dati del subappaltatore, senza inventare nessuna
+   verifica intermedia. Se il tool restituisce un valore, NON usarlo in silenzio: presentalo all'utente
+   per conferma prima di metterlo nel contratto (es. "Per la tua impresa ho P.IVA X e sede Y — vanno bene o
+   sono cambiati?") — il profilo può essere non aggiornato (es. sede di un ufficio invece della sede legale
+   registrata) e questo è un documento legale, non va assunto corretto senza chiedere. Per i dati del
+   subappaltatore non hai nessun tool — sono sempre dalla conversazione o da un documento che l'utente carica.
+2. Raccogli in conversazione TUTTI i dati obbligatori: ragione sociale, sede legale e P.IVA di ENTRAMBE le
+   parti, nome del legale rappresentante di entrambe, luogo di sottoscrizione, oggetto/descrizione della
+   lavorazione (con quantità e ubicazione cantiere), date di inizio e fine lavori, valore dell'appalto
+   principale, e il valore del subappalto (vedi punto 3 su come calcolarlo).
    REGOLA FERREA: se anche uno di questi manca, NON chiamare draft_subappalto_contract — chiedilo
    esplicitamente all'utente. Non scrivere mai "da definire"/"da stabilire" in un contratto.
-2. Quando ritieni di avere tutto, chiama draft_subappalto_contract con i dati raccolti (vedi anche i campi
+3. CALCOLO DEL VALORE DEL SUBAPPALTO — REGOLA FERREA, mai fare il conto a mente:
+   - Se l'utente ha dato un prezzo per unità di misura (es. "220 al metro per il cornicione, 20 al metro
+     per la facciata") e le quantità separatamente, usa SEMPRE il parametro "voci" del tool (una riga per
+     ogni prezzo diverso, con la sua etichetta/quantità/prezzo) — MAI calcolare tu il totale e passarlo in
+     importo_subappalto. È già successo un errore reale: il modello ha applicato per sbaglio il prezzo di
+     una voce a tutte le altre, gonfiando un contratto di €66.000 prima che l'utente se ne accorgesse.
+   - Usa importo_subappalto diretto SOLO se l'utente ha detto lui stesso un unico totale complessivo, senza
+     scomposizione per voce/prezzo unitario.
+   - Se hai più di una voce/prezzo, presenta SEMPRE il dettaglio riga per riga nel riepilogo prima di
+     chiedere conferma — mai solo il totale — così l'utente può verificare che ogni prezzo sia associato
+     alla voce giusta.
+4. Quando ritieni di avere tutto, chiama draft_subappalto_contract con i dati raccolti (vedi anche i campi
    opzionali: modalita_pagamento, lavori_in_quota, interferenze_altre_lavorazioni, dpi_specifici,
    foro_competente, allegati — compilali se sono emersi in chat, altrimenti omettili, il tool applica
    clausole standard sensate).
@@ -733,15 +760,20 @@ FLUSSO — quando l'utente chiede di preparare/generare un contratto di subappal
      esplicitamente di avere già l'autorizzazione del Committente — in tal caso richiama il tool con
      autorizzazione_committente_confermata:true.
    - Se risponde ready:true → presenta all'utente un riepilogo chiaro dei dati e dei valori calcolati
-     (incidenza %, penale giornaliera, tetto penale), IN PROSA nella tua risposta (non serve riscrivere
-     l'intero articolato: il PDF ha già il testo legale completo). Chiedi conferma prima di generare.
-3. Solo dopo la conferma dell'utente, scrivi nella risposta un tag <ladia-action type="generate_contract_pdf"
+     (incidenza %, penale giornaliera, tetto penale, e il dettaglio voce per voce se presente), IN PROSA
+     nella tua risposta (non serve riscrivere l'intero articolato: il PDF ha già il testo legale completo).
+     Chiedi conferma prima di generare.
+5. Solo dopo la conferma dell'utente, scrivi nella risposta un tag <ladia-action type="generate_contract_pdf"
    .../> con ESATTAMENTE gli stessi nomi di attributo usati come input di draft_subappalto_contract (es.
    affidataria_ragione_sociale="..." affidataria_sede="..." ... importo_subappalto="82500" ...) più
    label="Genera contratto PDF". Valori booleani come stringhe "true"/"false", allegati come stringa
-   separata da virgola (es. allegati="Computo metrico, Cronoprogramma"). REGOLA FERREA: mai virgolette
-   doppie dentro un valore, mai scrivere questo tag se draft_subappalto_contract non ha risposto ready:true
-   in questo stesso giro o in uno precedente della stessa conversazione con dati invariati.
+   separata da virgola (es. allegati="Computo metrico, Cronoprogramma"). Se hai usato "voci" invece di un
+   totale unico, ometti l'attributo importo_subappalto e passa invece voci="Etichetta|quantità|unità|prezzo;;
+   Etichetta2|quantità2|unità2|prezzo2" (pipe tra i campi di una voce, doppio punto e virgola tra le voci —
+   MAI virgole dentro una voce, il numero dei campi e l'ordine sono fissi: etichetta, quantità, unità,
+   prezzo unitario). REGOLA FERREA: mai virgolette doppie dentro un valore, mai scrivere questo tag se
+   draft_subappalto_contract non ha risposto ready:true in questo stesso giro o in uno precedente della
+   stessa conversazione con dati invariati.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 POS AGENTICO — bozza viva compilata in chat (OBBLIGATORIO per ogni POS)
@@ -2418,16 +2450,24 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     },
   },
   {
+    name: 'get_company_profile',
+    description:
+      'Dati anagrafici dell\'impresa (di CHI usa Palladia, non di un cliente/subappaltatore): ragione sociale, P.IVA, sede legale, telefono, email. Usa quando serve compilare un documento con i dati della tua stessa impresa (es. affidataria di un contratto di subappalto, intestazione di una lettera). ' +
+      'REGOLA FERREA: se un campo torna vuoto/null, NON esiste altrove — non descrivere un\'azione di verifica che non stai facendo (es. "leggo la visura", "controllo il registro imprese"): chiedi il dato direttamente all\'utente, con la stessa naturalezza con cui chiederesti il dato di un\'altra azienda. Se invece un campo torna valorizzato, per un documento legale (es. un contratto) NON usarlo in silenzio: mostralo all\'utente e chiedi conferma, il profilo può essere non aggiornato (es. indirizzo di un ufficio invece della sede legale registrata).',
+    input_schema: { type: 'object', properties: {}, required: [] },
+  },
+  {
     name: 'draft_subappalto_contract',
     description:
-      'Valida i dati di un contratto di subappalto (art. 119 D.Lgs 36/2023) raccolti in chat e calcola i valori derivati (incidenza % sull\'appalto principale, penali). NON scrive testo contrattuale e NON genera il PDF: dice solo se i dati sono completi. ' +
-      'REGOLA FERREA: chiama questo tool SOLO quando hai raccolto ogni campo obbligatorio dall\'utente nella conversazione — mai con un valore inventato o un placeholder tipo "da definire"/"da stabilire": se manca anche un solo dato obbligatorio, non chiamare il tool, chiedilo prima esplicitamente. ' +
+      'Valida i dati di un contratto di subappalto (art. 119 D.Lgs 36/2023) raccolti in chat e calcola i valori derivati (incidenza % sull\'appalto principale, penali, e il totale del subappalto se dai le voci). NON scrive testo contrattuale e NON genera il PDF: dice solo se i dati sono completi. ' +
+      'REGOLA FERREA sul totale: se l\'utente ti ha dato un prezzo per unità di misura (es. "220 al metro") e una quantità separatamente, USA SEMPRE il parametro "voci" (una riga per ogni prezzo diverso) e lascia che sia il tool a moltiplicare e sommare — NON calcolare tu il totale a mente e passarlo in importo_subappalto: è già successo un errore reale in produzione (prezzo di una voce applicato per sbaglio a un\'altra, +€66.000 nel totale) proprio perché il modello ha fatto il calcolo da solo invece di lasciarlo al tool. Usa importo_subappalto diretto SOLO se l\'utente ha già detto lui stesso un totale unico, senza scomposizione per voce. ' +
+      'REGOLA FERREA sui dati mancanti: chiama questo tool SOLO quando hai raccolto ogni campo obbligatorio — mai con un valore inventato o un placeholder tipo "da definire"/"da stabilire": se manca anche un solo dato obbligatorio, non chiamare il tool, chiedilo prima esplicitamente. Per i dati della TUA impresa (affidataria), usa PRIMA get_company_profile — se anche quello non li ha, chiedili all\'utente normalmente. Non descrivere MAI un\'azione di verifica/lettura (es. "leggo la visura", "controllo il registro imprese") che non stai eseguendo con un tool reale: se non hai il dato, dillo e chiedilo. ' +
       'Se il tool risponde ready:false con missing_fields, chiedi all\'utente esattamente quei campi. Se risponde blocked:true, il subappalto supera il 30% dell\'appalto principale: avvisa l\'utente che serve autorizzazione esplicita del Committente e NON proseguire, a meno che l\'utente confermi di averla già (in tal caso richiama il tool con autorizzazione_committente_confermata:true). ' +
-      'Se risponde ready:true, presenta un riepilogo chiaro dei dati all\'utente e, solo dopo la sua conferma, scrivi in risposta un tag <ladia-action type="generate_contract_pdf" .../> con gli stessi valori come attributi (vedi istruzioni "CONTRATTO DI SUBAPPALTO" nel prompt) per mostrare il bottone di generazione PDF — non inventare mai un tag senza che il tool abbia risposto ready:true.',
+      'Se risponde ready:true, presenta un riepilogo chiaro dei dati (incluso il dettaglio voce per voce se presente) e, solo dopo la conferma dell\'utente, scrivi in risposta un tag <ladia-action type="generate_contract_pdf" .../> con gli stessi valori come attributi (vedi istruzioni "CONTRATTO DI SUBAPPALTO" nel prompt) — non inventare mai un tag senza che il tool abbia risposto ready:true.',
     input_schema: {
       type: 'object',
       properties: {
-        affidataria_ragione_sociale:           { type: 'string', description: 'Ragione sociale Impresa Affidataria (di norma l\'azienda dell\'utente)' },
+        affidataria_ragione_sociale:           { type: 'string', description: 'Ragione sociale Impresa Affidataria (di norma l\'azienda dell\'utente — prova prima get_company_profile)' },
         affidataria_sede:                      { type: 'string', description: 'Sede legale Impresa Affidataria (via, CAP, città, provincia)' },
         affidataria_piva:                      { type: 'string', description: 'P.IVA Impresa Affidataria' },
         affidataria_legale_rappresentante:     { type: 'string', description: 'Nome del legale rappresentante Impresa Affidataria' },
@@ -2440,7 +2480,21 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
         data_inizio:                { type: 'string', description: 'Data inizio lavori YYYY-MM-DD' },
         data_fine:                  { type: 'string', description: 'Data fine lavori YYYY-MM-DD' },
         importo_appalto_principale: { type: 'number', description: 'Valore totale dell\'appalto principale, IVA esclusa' },
-        importo_subappalto:         { type: 'number', description: 'Valore del presente subappalto, IVA esclusa' },
+        importo_subappalto:         { type: 'number', description: 'Valore TOTALE del subappalto, IVA esclusa — usa questo SOLO se l\'utente ha detto un totale unico. Se invece ha dato prezzo/unità e quantità, usa "voci" e lascia questo campo vuoto: il tool calcola il totale da solo.' },
+        voci: {
+          type: 'array',
+          description: 'Righe di prezzo (una per tipologia di lavorazione con prezzo unitario diverso). Se presente, il tool ricalcola SEMPRE importo_subappalto da qui — ignora qualunque totale tu abbia già sommato a mente.',
+          items: {
+            type: 'object',
+            properties: {
+              label:           { type: 'string', description: 'Descrizione della voce, es. "Ponteggio a servizio cornicione"' },
+              quantita:        { type: 'number', description: 'Quantità (metri lineari, mq, ecc.)' },
+              unita_misura:    { type: 'string', description: 'Unità di misura, es. "ml", "mq". Default "unità" se omessa.' },
+              prezzo_unitario: { type: 'number', description: 'Prezzo per singola unità, IVA esclusa' },
+            },
+            required: ['label', 'quantita', 'prezzo_unitario'],
+          },
+        },
         modalita_pagamento:         { type: 'string', description: 'Tranche/SAL concordati con l\'utente, se emersi in chat. Se omesso viene usata una clausola standard (100% a saldo lavori, 30gg data fattura).' },
         lavori_in_quota:                { type: 'boolean', description: 'true se la lavorazione richiede lavori in quota/ponteggi (aggiunge la clausola PiMUS)' },
         interferenze_altre_lavorazioni: { type: 'boolean', description: 'true se ci sono interferenze con altre lavorazioni in cantiere nello stesso periodo (aggiunge l\'obbligo DUVRI). Default true se omesso: in un cantiere con subappalto è il caso più comune.' },
@@ -2453,7 +2507,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
         'affidataria_ragione_sociale', 'affidataria_sede', 'affidataria_piva', 'affidataria_legale_rappresentante',
         'subappaltatrice_ragione_sociale', 'subappaltatrice_sede', 'subappaltatrice_piva', 'subappaltatrice_legale_rappresentante',
         'luogo_sottoscrizione', 'oggetto_lavorazione', 'data_inizio', 'data_fine',
-        'importo_appalto_principale', 'importo_subappalto',
+        'importo_appalto_principale',
       ],
     },
   },
@@ -2557,6 +2611,7 @@ const READ_FACTS = {
   get_weather_log:          (r) => `${r.total} rilevazioni`,
   get_risk_score:           (r) => (r.label && r.score != null) ? `${r.label} (${r.score}/100)` : undefined,
   get_company_trends:       (r) => r.totals ? `${r.totals.badge_entries} timbrature ultimi ${r.period_days}gg` : (r.message || undefined),
+  get_company_profile:      (r) => r.piva ? `P.IVA ${r.piva}` : 'dati profilo incompleti',
 };
 
 // ── Contratto di subappalto — validazione campi + calcoli deterministici ────
@@ -2578,7 +2633,9 @@ const CONTRACT_REQUIRED_FIELDS = [
   ['data_inizio', 'Data inizio lavori'],
   ['data_fine', 'Data fine lavori'],
   ['importo_appalto_principale', 'Valore appalto principale'],
-  ['importo_subappalto', 'Valore del subappalto'],
+  // 'importo_subappalto' NON è qui: è condizionale — obbligatorio solo se
+  // non sono state fornite 'voci' (prezzo unitario × quantità), controllato
+  // esplicitamente sotto dopo aver processato le voci.
 ];
 
 const CONTRACT_PLACEHOLDER_RE = /^(da\s*(definire|stabilire|confermare)|tbd|n\/?d|xxx+|\.{3}|-{2,})$/i;
@@ -2603,6 +2660,14 @@ function computeContractDraft(d) {
     })
     .map(([, label]) => label);
 
+  const hasVoci = Array.isArray(d.voci) && d.voci.length > 0;
+  if (!hasVoci) {
+    const v = d.importo_subappalto;
+    const importoSubMissing = v === undefined || v === null || v === '' ||
+      (typeof v === 'string' && CONTRACT_PLACEHOLDER_RE.test(v.trim()));
+    if (importoSubMissing) missing.push('Valore del subappalto (oppure le voci prezzo unitario × quantità)');
+  }
+
   if (missing.length) return { ready: false, missing_fields: missing };
 
   const dataInizio = new Date(d.data_inizio);
@@ -2612,7 +2677,35 @@ function computeContractDraft(d) {
   }
 
   const importoPrincipale = Number(d.importo_appalto_principale);
-  const importoSub        = Number(d.importo_subappalto);
+
+  // Se ci sono voci (prezzo unitario × quantità), il totale si ricalcola SEMPRE
+  // qui — mai fidandosi di un importo_subappalto già sommato dal modello.
+  // Nato da un caso reale: il modello ha applicato il prezzo sbagliato a una
+  // voce (moltiplicato tutto per lo stesso prezzo unitario invece di uno per
+  // riga) e ha quasi mandato in firma un contratto con un errore di €66.000.
+  let voci = null;
+  let importoSub;
+  if (Array.isArray(d.voci) && d.voci.length > 0) {
+    const parsedVoci = [];
+    for (const v of d.voci) {
+      const label     = typeof v.label === 'string' ? v.label.trim() : '';
+      const quantita  = Number(v.quantita);
+      const prezzo    = Number(v.prezzo_unitario);
+      if (!label || !(quantita > 0) || !(prezzo > 0)) {
+        return { ready: false, error: `Voce non valida: "${v.label || '(senza nome)'}" — servono etichetta, quantità e prezzo unitario, tutti positivi.` };
+      }
+      const importoVoce = Math.round(quantita * prezzo * 100) / 100;
+      parsedVoci.push({
+        label, quantita, unita_misura: cleanOptionalText(v.unita_misura) || 'unità',
+        prezzo_unitario: prezzo, importo: importoVoce,
+      });
+    }
+    voci = parsedVoci;
+    importoSub = Math.round(parsedVoci.reduce((s, v) => s + v.importo, 0) * 100) / 100;
+  } else {
+    importoSub = Number(d.importo_subappalto);
+  }
+
   if (!(importoPrincipale > 0) || !(importoSub > 0)) {
     return { ready: false, error: 'Importi non validi: devono essere numeri positivi.' };
   }
@@ -2645,6 +2738,7 @@ function computeContractDraft(d) {
     data_fine:   d.data_fine,
     importo_appalto_principale: importoPrincipale,
     importo_subappalto:         importoSub,
+    voci,
     modalita_pagamento: cleanOptionalText(d.modalita_pagamento),
     lavori_in_quota: !!d.lavori_in_quota,
     interferenze_altre_lavorazioni: d.interferenze_altre_lavorazioni !== false,
@@ -5385,6 +5479,23 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         };
       }
 
+      case 'get_company_profile': {
+        const { data: company, error: gcpErr } = await supabase
+          .from('companies')
+          .select('name, piva, address, phone, contact_email')
+          .eq('id', companyId)
+          .maybeSingle();
+        if (gcpErr) return { error: gcpErr.message };
+        return {
+          ragione_sociale: company?.name || null,
+          piva:            company?.piva || null,
+          sede_legale:     company?.address || null,
+          telefono:        company?.phone || null,
+          email:           company?.contact_email || null,
+          nota: 'Se un campo è null, non è registrato nel profilo Palladia — chiedilo direttamente all\'utente.',
+        };
+      }
+
       case 'draft_subappalto_contract': {
         const result = computeContractDraft(toolInput);
 
@@ -6251,11 +6362,21 @@ function buildContractHtml(contract) {
 
   const allegatiText = c.allegati.length ? esc(c.allegati.join(', ')) : 'nessun allegato ulteriore alla data di sottoscrizione';
 
+  const vociTableHtml = (Array.isArray(c.voci) && c.voci.length) ? `
+    <table class="voci-table">
+      <thead><tr><th>Lavorazione</th><th class="num">Quantità</th><th class="num">Prezzo unitario</th><th class="num">Importo</th></tr></thead>
+      <tbody>
+        ${c.voci.map(v => `<tr><td>${esc(v.label)}</td><td class="num">${v.quantita} ${esc(v.unita_misura)}</td><td class="num">${fmtEuroLegal(v.prezzo_unitario)}</td><td class="num">${fmtEuroLegal(v.importo)}</td></tr>`).join('')}
+        <tr class="voci-total"><td colspan="3">Totale</td><td class="num">${fmtEuroLegal(c.importo_subappalto)}</td></tr>
+      </tbody>
+    </table>` : '';
+
   const articles = [
     { n: 1, title: 'Oggetto del subappalto',
       body: `L'Impresa Affidataria affida alla Subappaltatrice, che accetta, l'esecuzione delle seguenti lavorazioni: ${esc(c.oggetto_lavorazione)}.` },
     { n: 2, title: 'Corrispettivo e modalità di pagamento',
-      body: `Il corrispettivo pattuito per le lavorazioni di cui all'art. 1 è pari a ${fmtEuroLegal(c.importo_subappalto)}, oltre IVA di legge. ${c.modalita_pagamento ? esc(c.modalita_pagamento) : `Il pagamento avviene al 100% dell'importo a 30 giorni data fattura fine mese, previa verifica della regolarità DURC di cui all'art. 6 ed emissione del relativo Stato Avanzamento Lavori a fine lavorazione.`}` },
+      body: `Il corrispettivo pattuito per le lavorazioni di cui all'art. 1 è pari a ${fmtEuroLegal(c.importo_subappalto)}, oltre IVA di legge${vociTableHtml ? ', come da dettaglio seguente' : ''}. ${c.modalita_pagamento ? esc(c.modalita_pagamento) : `Il pagamento avviene al 100% dell'importo a 30 giorni data fattura fine mese, previa verifica della regolarità DURC di cui all'art. 6 ed emissione del relativo Stato Avanzamento Lavori a fine lavorazione.`}`,
+      extraHtml: vociTableHtml },
     { n: 3, title: 'Termini di esecuzione',
       body: `I lavori dovranno avere inizio in data ${fmtDataLegal(c.data_inizio)} e concludersi, salvo cause di forza maggiore debitamente documentate, entro il ${fmtDataLegal(c.data_fine)}.` },
     { n: 4, title: 'Penali',
@@ -6277,6 +6398,7 @@ function buildContractHtml(contract) {
     <div class="article">
       <div class="article-title"><span class="article-num">Art. ${a.n}</span> — ${esc(a.title)}</div>
       <p class="article-body">${a.body}</p>
+      ${a.extraHtml || ''}
     </div>`).join('');
 
   return `<!DOCTYPE html>
@@ -6321,6 +6443,11 @@ function buildContractHtml(contract) {
   .article-title { font-weight: 700; font-size: 11px; margin-bottom: 4px; }
   .article-num { display: inline-block; min-width: 44px; }
   .article-body { font-size: 10.5px; line-height: 1.65; color: #222; text-align: left; }
+  table.voci-table { width: 100%; border-collapse: collapse; font-size: 9.5px; margin-top: 8px; font-family: Arial, Helvetica, sans-serif; }
+  table.voci-table th { text-align: left; font-size: 8px; text-transform: uppercase; letter-spacing: 0.2px; color: #777; padding: 4px 6px; border-bottom: 1px solid #999; }
+  table.voci-table th.num, table.voci-table td.num { text-align: right; }
+  table.voci-table td { padding: 5px 6px; border-bottom: 1px solid #eee; color: #222; }
+  table.voci-table tr.voci-total td { font-weight: 700; border-top: 1.5px solid #000; border-bottom: none; color: #000; }
 
   .signatures { margin-top: 34px; page-break-inside: avoid; }
   .signatures-label { font-weight: 700; text-align: center; margin-bottom: 26px; }
