@@ -197,7 +197,12 @@ async function computeScadenzeESanzioni(companyId) {
         entity_type: 'worker_certificate', entity_id: certId,
         label: `${cert.course_types?.name || 'Formazione'} — ${workerName[cert.worker_id] || 'lavoratore'}`,
         category: null, violation_code: cert.course_types?.violation_code || null,
-        notified_at: notif.sent_at, resolved_at: renewal.issue_date,
+        // renewal.issue_date è una colonna `date` (nessun orario): normalizzata
+        // a mezzogiorno UTC per restare un timestamp completo come le altre
+        // fonti (expiry_interception_log.resolved_at è timestamptz) — evita che
+        // il confronto "ultimi 7 giorni" del banner sia sbilanciato dal fuso
+        // orario per essere ancorato alla mezzanotte.
+        notified_at: notif.sent_at, resolved_at: `${renewal.issue_date}T12:00:00.000Z`,
       });
     }
   }
