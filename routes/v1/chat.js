@@ -1,4 +1,5 @@
 'use strict';
+const crypto    = require('crypto');
 const router    = require('express').Router();
 const Sentry    = require('../../lib/sentry');
 const Anthropic = require('@anthropic-ai/sdk');
@@ -725,6 +726,13 @@ eseguita è un errore grave già successo in produzione (Ladia ha dichiarato "le
 poi l'utente l'ha scoperto e Ladia ha dovuto ammettere di non aver fatto nulla).
 
 FLUSSO — quando l'utente chiede di preparare/generare un contratto di subappalto:
+0. Se l'utente ha nominato un cantiere (es. "per corso Sardegna 95"), chiama get_sites e risolvi il site_id
+   corrispondente PRIMA di chiamare draft_subappalto_contract — serve per archiviare il PDF generato nei
+   Documenti di quel cantiere, non solo scaricarlo (prima non veniva salvato da nessuna parte e l'utente
+   non lo ritrovava più: errore reale già successo in produzione). Se non riesci a identificare con
+   certezza il cantiere (non trovato, o l'utente non l'ha specificato), procedi comunque ma avvisa che il
+   contratto verrà archiviato solo nei documenti aziendali generali, non in un cantiere specifico — non
+   inventare mai un site_id.
 1. Per i dati della TUA impresa (affidataria — ragione sociale, P.IVA, sede), chiama get_company_profile
    PRIMA di chiederli all'utente. Se il tool torna un campo null, quel dato non è registrato: chiedilo
    all'utente con la stessa naturalezza con cui chiedi i dati del subappaltatore, senza inventare nessuna
@@ -765,8 +773,10 @@ FLUSSO — quando l'utente chiede di preparare/generare un contratto di subappal
      Chiedi conferma prima di generare.
 5. Solo dopo la conferma dell'utente, scrivi nella risposta un tag <ladia-action type="generate_contract_pdf"
    .../> con ESATTAMENTE gli stessi nomi di attributo usati come input di draft_subappalto_contract (es.
-   affidataria_ragione_sociale="..." affidataria_sede="..." ... importo_subappalto="82500" ...) più
-   label="Genera contratto PDF". Valori booleani come stringhe "true"/"false", allegati come stringa
+   site_id="..." affidataria_ragione_sociale="..." affidataria_sede="..." ... importo_subappalto="82500" ...)
+   più label="Genera contratto PDF". Includi site_id se al punto 0 l'hai risolto — è quello che fa
+   archiviare il PDF nei Documenti del cantiere invece di lasciarlo solo scaricato. Valori booleani come
+   stringhe "true"/"false", allegati come stringa
    separata da virgola (es. allegati="Computo metrico, Cronoprogramma"). Se hai usato "voci" invece di un
    totale unico, ometti l'attributo importo_subappalto e passa invece voci="Etichetta|quantità|unità|prezzo;;
    Etichetta2|quantità2|unità2|prezzo2" (pipe tra i campi di una voce, doppio punto e virgola tra le voci —
@@ -2463,10 +2473,12 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       'REGOLA FERREA sul totale: se l\'utente ti ha dato un prezzo per unità di misura (es. "220 al metro") e una quantità separatamente, USA SEMPRE il parametro "voci" (una riga per ogni prezzo diverso) e lascia che sia il tool a moltiplicare e sommare — NON calcolare tu il totale a mente e passarlo in importo_subappalto: è già successo un errore reale in produzione (prezzo di una voce applicato per sbaglio a un\'altra, +€66.000 nel totale) proprio perché il modello ha fatto il calcolo da solo invece di lasciarlo al tool. Usa importo_subappalto diretto SOLO se l\'utente ha già detto lui stesso un totale unico, senza scomposizione per voce. ' +
       'REGOLA FERREA sui dati mancanti: chiama questo tool SOLO quando hai raccolto ogni campo obbligatorio — mai con un valore inventato o un placeholder tipo "da definire"/"da stabilire": se manca anche un solo dato obbligatorio, non chiamare il tool, chiedilo prima esplicitamente. Per i dati della TUA impresa (affidataria), usa PRIMA get_company_profile — se anche quello non li ha, chiedili all\'utente normalmente. Non descrivere MAI un\'azione di verifica/lettura (es. "leggo la visura", "controllo il registro imprese") che non stai eseguendo con un tool reale: se non hai il dato, dillo e chiedilo. ' +
       'Se il tool risponde ready:false con missing_fields, chiedi all\'utente esattamente quei campi. Se risponde blocked:true, il subappalto supera il 30% dell\'appalto principale: avvisa l\'utente che serve autorizzazione esplicita del Committente e NON proseguire, a meno che l\'utente confermi di averla già (in tal caso richiama il tool con autorizzazione_committente_confermata:true). ' +
-      'Se risponde ready:true, presenta un riepilogo chiaro dei dati (incluso il dettaglio voce per voce se presente) e, solo dopo la conferma dell\'utente, scrivi in risposta un tag <ladia-action type="generate_contract_pdf" .../> con gli stessi valori come attributi (vedi istruzioni "CONTRATTO DI SUBAPPALTO" nel prompt) — non inventare mai un tag senza che il tool abbia risposto ready:true.',
+      'Se risponde ready:true, presenta un riepilogo chiaro dei dati (incluso il dettaglio voce per voce se presente) e, solo dopo la conferma dell\'utente, scrivi in risposta un tag <ladia-action type="generate_contract_pdf" .../> con gli stessi valori come attributi (vedi istruzioni "CONTRATTO DI SUBAPPALTO" nel prompt) — non inventare mai un tag senza che il tool abbia risposto ready:true. ' +
+      'IMPORTANTE su site_id: se lo passi, il PDF generato viene archiviato automaticamente nella scheda Documenti di quel cantiere (così l\'utente lo ritrova dopo, non solo scaricato una volta) — usa SEMPRE get_sites per risolverlo dal nome del cantiere che l\'utente ha menzionato, prima di chiamare questo tool. Se non riesci a risolverlo con certezza (cantiere non trovato o ambiguo), ometti site_id e avvisa l\'utente che il contratto non verrà archiviato in nessun cantiere — non inventare mai un UUID.',
     input_schema: {
       type: 'object',
       properties: {
+        site_id: { type: 'string', description: 'UUID del cantiere (risolto con get_sites) a cui collegare questo subappalto — il PDF verrà archiviato nei Documenti di quel cantiere. Ometti se non riesci a identificarlo con certezza.' },
         affidataria_ragione_sociale:           { type: 'string', description: 'Ragione sociale Impresa Affidataria (di norma l\'azienda dell\'utente — prova prima get_company_profile)' },
         affidataria_sede:                      { type: 'string', description: 'Sede legale Impresa Affidataria (via, CAP, città, provincia)' },
         affidataria_piva:                      { type: 'string', description: 'P.IVA Impresa Affidataria' },
@@ -2739,6 +2751,7 @@ function computeContractDraft(d) {
     importo_appalto_principale: importoPrincipale,
     importo_subappalto:         importoSub,
     voci,
+    site_id: (typeof d.site_id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(d.site_id)) ? d.site_id : null,
     modalita_pagamento: cleanOptionalText(d.modalita_pagamento),
     lavori_in_quota: !!d.lavori_in_quota,
     interferenze_altre_lavorazioni: d.interferenze_altre_lavorazioni !== false,
@@ -6502,6 +6515,52 @@ function buildContractHtml(contract) {
 </html>`;
 }
 
+// ── Archivia il PDF generato nei Documenti (cantiere se site_id presente,
+//    altrimenti azienda) — senza questo, il contratto esisteva SOLO come
+//    download una tantum: l'utente lo generava e poi non lo ritrovava più da
+//    nessuna parte in piattaforma. Riusa lo stesso bucket/pattern di path già
+//    usato da archiveChatUpload (services/chatDocumentAnalysis.js) per i
+//    documenti caricati — qui però il file non è mai stato caricato, è appena
+//    stato generato in memoria, quindi si carica direttamente senza il
+//    passaggio da chat_uploads. Best-effort: un fallimento qui NON deve mai
+//    impedire il download del PDF già pronto.
+const CONTRACT_STORAGE_BUCKET = 'site-documents';
+
+async function archiveGeneratedContractPdf({ companyId, siteId, pdfBuffer, title }) {
+  try {
+    const safeFn = String(title).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) + '.pdf';
+    const newId  = crypto.randomUUID();
+    const permanentPath = siteId
+      ? `${companyId}/${siteId}/${newId}-${safeFn}`
+      : `${companyId}/company/${newId}-${safeFn}`;
+
+    const { error: storErr } = await supabase.storage
+      .from(CONTRACT_STORAGE_BUCKET)
+      .upload(permanentPath, pdfBuffer, { contentType: 'application/pdf', upsert: false });
+    if (storErr) throw storErr;
+
+    if (siteId) {
+      const { error } = await supabase.from('site_documents').insert({
+        company_id: companyId, site_id: siteId, name: title,
+        category: 'altro', file_path: permanentPath,
+        mime_type: 'application/pdf', file_size: pdfBuffer.length,
+      });
+      if (error) throw error;
+    } else {
+      const { error } = await supabase.from('company_documents').insert({
+        company_id: companyId, name: title,
+        category: 'altro', file_path: permanentPath,
+        mime_type: 'application/pdf', file_size: pdfBuffer.length,
+      });
+      if (error) throw error;
+    }
+    return { archived: true, inSite: !!siteId };
+  } catch (err) {
+    console.error('[archiveGeneratedContractPdf] fallito:', err.message);
+    return { archived: false, error: err.message };
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/chat/export-contract
 // Body: dati strutturati del contratto (vedi contractExportSchema) — mai testo
@@ -6534,14 +6593,19 @@ router.post('/chat/export-contract', verifySupabaseJwt, validate(contractExportS
       docTitle:   'Contratto di subappalto',
       footerLeft: 'Contratto di subappalto — art. 119 D.Lgs 36/2023',
     });
+    const title = `Contratto subappalto — ${result.contract.subappaltatrice.ragione_sociale}`;
     await logDocumentExport({
-      companyId: req.companyId, userId: req.user.id, exportType: 'contratto_subappalto',
-      title: `Contratto subappalto — ${result.contract.subappaltatrice.ragione_sociale}`,
+      companyId: req.companyId, userId: req.user.id, exportType: 'contratto_subappalto', title,
+    });
+    const archiveResult = await archiveGeneratedContractPdf({
+      companyId: req.companyId, siteId: result.contract.site_id, pdfBuffer: pdf, title,
     });
     res.set({
       'Content-Type':        'application/pdf',
       'Content-Disposition': `attachment; filename="contratto-subappalto-${Date.now()}.pdf"`,
       'Cache-Control':       'no-store',
+      'X-Contract-Archived': String(archiveResult.archived),
+      'X-Contract-Archived-Site': String(!!result.contract.site_id),
     });
     return res.send(pdf);
   } catch (err) {

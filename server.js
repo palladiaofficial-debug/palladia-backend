@@ -158,7 +158,11 @@ app.use(cors({
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id', 'X-Hint-Company-Id']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Company-Id', 'X-Hint-Company-Id'],
+  // Header custom sulle risposte binarie (es. PDF) che il frontend deve poter
+  // leggere via fetch() — di default il browser espone solo gli header
+  // "safelisted" CORS, non i nostri custom X-*.
+  exposedHeaders: ['X-Contract-Archived', 'X-Contract-Archived-Site'],
 }));
 app.use(requestLogger);
 // ── Supabase Auth Hook — DEVE stare prima di express.json() ─────────────────
