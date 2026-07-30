@@ -6091,14 +6091,18 @@ async function createConversation(companyId, userId, contextType = 'azienda', co
 }
 
 async function loadHistory(conversationId, limit = 20) {
+  // ascending + limit prende i messaggi PIÙ VECCHI, non gli ultimi: per una
+  // conversazione lunga il modello perdeva lo storico recente (es. dati appena
+  // dati dall'utente per un contratto) e vedeva solo turni antichi e non
+  // pertinenti. Prendiamo gli ultimi N in ordine discendente e li rigiriamo.
   const { data, error } = await supabase
     .from('chat_messages')
     .select('role, content')
     .eq('conversation_id', conversationId)
-    .order('created_at', { ascending: true })
+    .order('created_at', { ascending: false })
     .limit(Math.min(limit, 200));
   if (error || !data) return [];
-  return data.map(m => ({ role: m.role, content: m.content }));
+  return data.reverse().map(m => ({ role: m.role, content: m.content }));
 }
 
 async function saveMessages(conversationId, userContent, assistantContent, userImages = []) {
