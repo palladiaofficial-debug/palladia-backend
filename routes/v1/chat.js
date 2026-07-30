@@ -6819,13 +6819,45 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
     // prompt di migliaia di righe — stesso principio di prossimità già usato per
     // ZERO CANTIERI sopra.
     if (/\b(fammi vedere|mostrami|voglio vedere|fatti vedere|portami a)\b/i.test(message || '')) {
+      // Se il messaggio nomina un cantiere specifico, le destinazioni aziendali
+      // generiche sotto sono la pagina SBAGLIATA — bug reale trovato dal vivo
+      // (2026-07-30): "fammi vedere l'organico di Sardegna 88" veniva sempre
+      // mandato a /risorse (organico AZIENDALE, tutti i cantieri), e Ladia
+      // dichiarava comunque "ti porto alla pagina del cantiere" — falso.
+      // Le sezioni con un tab dedicato sul cantiere (organico/documenti/economia,
+      // vedi SECTION_BY_INDEX in SiteDetail.tsx) vanno lì; per le altre
+      // (idoneità/formazione/scadenzario, senza equivalente per-cantiere) non
+      // forziamo nulla — meglio lasciare la richiesta al giudizio del modello
+      // (get_sites + risposta in chat) che mandare comunque alla pagina
+      // aziendale generica, sbagliata quanto la precedente.
+      const STREET_PREFIX_RE = /^(via|corso|piazza|piazzetta|viale|largo|vicolo|strada)\s+/i;
+      const siteNameVariants = (name) => {
+        const stripped = name.replace(STREET_PREFIX_RE, '');
+        return stripped !== name ? [name, stripped] : [name];
+      };
+      const namedSite = Array.isArray(brain?.sites)
+        ? brain.sites.find(s => s.name && siteNameVariants(s.name).some(v =>
+            v.length >= 4 && message.toLowerCase().includes(v.toLowerCase())
+          ))
+        : null;
+
       let forcedPath = null, forcedLabel = null;
-      if (/idoneit[aà]/i.test(message))                                   { forcedPath = '/scadenze?type=idoneita';   forcedLabel = 'Idoneità mediche'; }
-      else if (/formazione/i.test(message) && /scadut|scadenz/i.test(message)) { forcedPath = '/scadenze?type=formazione'; forcedLabel = 'Scadenze formazione'; }
-      else if (/organico|lavorator/i.test(message))                       { forcedPath = '/risorse';                  forcedLabel = 'Organico'; }
-      else if (/document[oi]\s+aziendal/i.test(message))                  { forcedPath = '/documenti';                forcedLabel = 'Documenti azienda'; }
-      else if (/economia aziendale|situazione economic/i.test(message))   { forcedPath = '/economia';                 forcedLabel = 'Economia aziendale'; }
-      else if (/scadenz/i.test(message))                                  { forcedPath = '/scadenze';                 forcedLabel = 'Scadenzario'; }
+      if (namedSite) {
+        const SITE_TAB_BY_KEYWORD = [
+          [/organico|lavorator/i,           2, 'Organico'],
+          [/document[oi]/i,                 3, 'Documenti'],
+          [/economia|situazione economic/i, 5, 'Economia'],
+        ];
+        const hit = SITE_TAB_BY_KEYWORD.find(([re]) => re.test(message));
+        if (hit) { forcedPath = `/cantieri/${namedSite.id}?tab=${hit[1]}`; forcedLabel = `${hit[2]} — ${namedSite.name}`; }
+      } else {
+        if (/idoneit[aà]/i.test(message))                                   { forcedPath = '/scadenze?type=idoneita';   forcedLabel = 'Idoneità mediche'; }
+        else if (/formazione/i.test(message) && /scadut|scadenz/i.test(message)) { forcedPath = '/scadenze?type=formazione'; forcedLabel = 'Scadenze formazione'; }
+        else if (/organico|lavorator/i.test(message))                       { forcedPath = '/risorse';                  forcedLabel = 'Organico'; }
+        else if (/document[oi]\s+aziendal/i.test(message))                  { forcedPath = '/documenti';                forcedLabel = 'Documenti azienda'; }
+        else if (/economia aziendale|situazione economic/i.test(message))   { forcedPath = '/economia';                 forcedLabel = 'Economia aziendale'; }
+        else if (/scadenz/i.test(message))                                  { forcedPath = '/scadenze';                 forcedLabel = 'Scadenzario'; }
+      }
       if (forcedPath) {
         // Verificato dal vivo su 3 tentativi in produzione dopo la sola direttiva
         // di prompt sotto: 1 riuscito (tool_use navigate_to_page vero), 1 fallito
