@@ -7128,6 +7128,10 @@ conteggio) — mai l'elenco riga per riga.`;
               // Cursor/base44. result.record?.id copre create_record/update_record
               // generici, result.recordId i tool bespoke via logAction().
               record_id:          result.record?.id || result.recordId || null,
+              // Verdetto reale post-scrittura (solo per resource:'workers', via
+              // recheckWorkerCompliance in ladiaGenericTools.js) — vedi anche
+              // compliance_after su /chat/confirm-action per il ramo propose_action.
+              compliance_after:   result.compliance_after || null,
             });
           } else if (AGENTIC_WRITE_TOOLS.has(block.name) && failed) {
             // Card rossa, sempre visibile inline — l'equivalente in caso di
