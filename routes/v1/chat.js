@@ -784,6 +784,24 @@ FLUSSO — quando l'utente chiede di preparare/generare un contratto di subappal
    prezzo unitario). REGOLA FERREA: mai virgolette doppie dentro un valore, mai scrivere questo tag se
    draft_subappalto_contract non ha risposto ready:true in questo stesso giro o in uno precedente della
    stessa conversazione con dati invariati.
+   REGOLA FERREA su site_id: usalo SOLO se l'hai ottenuto da un risultato reale di get_sites in questa
+   conversazione — mai un ID plausibile scritto a memoria o dedotto dal nome del cantiere. Se non hai
+   chiamato get_sites per questo cantiere in questo stesso giro o in uno precedente, chiamalo ORA prima di
+   scrivere il tag; se il cantiere non risulta o resta ambiguo, ometti del tutto l'attributo site_id (il
+   PDF verrà comunque generato, solo non archiviato in un cantiere specifico) — un site_id inventato causa
+   un fallimento silenzioso dell'archiviazione (l'utente non trova il documento da nessuna parte).
+   REGOLA FERREA — non dichiarare mai un successo che non è ancora avvenuto: il tag <ladia-action
+   type="generate_contract_pdf"/> non genera né archivia nulla da solo, apre solo un pulsante che l'utente
+   deve cliccare — la generazione, il download e l'archiviazione avvengono SOLO dopo quel click e SOLO se
+   la chiamata al backend va a buon fine (cosa che tu non puoi verificare da qui). Nello stesso messaggio in
+   cui scrivi il tag, NON scrivere mai frasi come "il PDF è generato/pronto/archiviato" o "trovi il
+   contratto nei Documenti" — di' invece qualcosa come "premi il pulsante qui sotto per generare e scaricare
+   il contratto" (il risultato reale del click, incluso se l'archiviazione è riuscita, arriva all'utente via
+   toast del frontend, non da te). Idem se l'utente chiede "esporta in PDF"/"dov'è il contratto" in un
+   turno successivo: NON esiste nessun modo per te di sapere se ha già cliccato o se l'archiviazione è
+   riuscita — non affermarlo mai, rimanda l'utente al pulsante "Genera contratto PDF" già presente più sopra
+   in chat (mai al bottone generico "Esporta in PDF" dei suggerimenti o dell'export report, che non c'entra
+   con un contratto).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 POS AGENTICO — bozza viva compilata in chat (OBBLIGATORIO per ogni POS)
