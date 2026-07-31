@@ -2144,7 +2144,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'resolve_nonconformity',
-    description: 'Chiudi/risolvi una non conformità. Usa per: "chiudi la NC", "NC risolta", "segna come risolta".',
+    description: 'Chiudi/risolvi una non conformità. Usa per: "chiudi la NC", "NC risolta", "segna come risolta". La risposta include rischio_dopo (rischio reale del cantiere ricalcolato dopo la chiusura, stesso motore di get_risk_score) — riportalo sempre testualmente, mai una tua stima: se restano altre NC aperte o il rischio resta alto per altri motivi, dillo chiaramente invece di far credere che chiudere questa NC abbia rimesso tutto a posto.',
     input_schema: {
       type: 'object',
       properties: {
@@ -4227,7 +4227,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         // a volte. Corretto usando 'content', l'unico campo testo reale.
         const { data: existing } = await supabase
           .from('site_notes')
-          .select('id, content, resolved_at')
+          .select('id, content, resolved_at, site_id')
           .eq('id', toolInput.nc_id)
           .eq('company_id', companyId)
           .eq('category', 'non_conformita')
@@ -4252,7 +4252,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           resourceName: 'site_notes', action: 'update', recordId: toolInput.nc_id,
           record: data, previousValues: { resolved_at: null, resolved_by: null, content: existing.content }, changedFields: patch,
         });
-        return { success: true, nc_risolta: data, ...logged };
+        // Rischio reale del cantiere DOPO la risoluzione — stesso "compilatore" già
+        // usato per get_risk_score, non una stima di Ladia su quante NC restano
+        // aperte. Se il livello resta alto (altre NC aperte, o altre dimensioni
+        // compromesse), Ladia deve dirlo, non lasciar intendere che sia tutto risolto.
+        const rischio_dopo = existing.site_id ? await computeRiskScore(existing.site_id, companyId) : null;
+        return {
+          success: true, nc_risolta: data, ...logged,
+          rischio_dopo: rischio_dopo ? {
+            livello: rischio_dopo.level, etichetta: rischio_dopo.label, punteggio: rischio_dopo.score,
+            non_conformita_ancora_aperte: rischio_dopo.dimensions.nonConformity.detail,
+          } : null,
+        };
       }
 
       case 'create_site_cost': {
