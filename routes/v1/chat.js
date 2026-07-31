@@ -2023,7 +2023,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'update_prezzo_voce',
-    description: 'Aggiorna prezzo unitario di una voce del computo. Il server ricalcola automaticamente l\'importo (quantità × nuovo prezzo). REGOLA: chiama get_computo_voci prima, mostra voce + nuovo importo calcolato, chiedi conferma. Usa per: "cambia prezzo fondazioni", "aggiorna €/m²".',
+    description: 'Aggiorna prezzo unitario di una voce del computo. Il server ricalcola automaticamente l\'importo (quantità × nuovo prezzo) E il totale contratto del computo (nuovo_totale_contratto nella risposta) — se cambia in modo apprezzabile, menzionalo. REGOLA: chiama get_computo_voci prima, mostra voce + nuovo importo calcolato, chiedi conferma. Usa per: "cambia prezzo fondazioni", "aggiorna €/m²".',
     input_schema: {
       type: 'object',
       properties: {
@@ -4647,7 +4647,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (isNaN(prezzo) || prezzo < 0) return { error: 'prezzo_unitario deve essere >= 0' };
         const { data: voce, error: fetchErr } = await supabase
           .from('site_computo_voci')
-          .select('quantita')
+          .select('quantita, computo_id')
           .eq('id', voce_id)
           .eq('company_id', companyId)
           .single();
@@ -4671,7 +4671,24 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           resourceName: 'site_computo_voci', action: 'update', recordId: voce_id,
           record: data, previousValues: prezzoBefore || {}, changedFields: patch,
         });
-        return { success: true, voce_aggiornata: data, ...logged };
+        // Ricalcola totale_contratto — stesso motivo di create/delete_computo_voce:
+        // senza questo, un cambio prezzo lascia il totale del computo silenziosamente
+        // disallineato (emit_sal legge il valore salvato su site_computo, non lo
+        // risomma dal vivo) finché qualcun altro non lo tocca di nuovo. Bug reale
+        // trovato durante l'audit dei tool bespoke, mai successo prima in produzione
+        // solo perché nessuno aveva ancora cambiato un prezzo dopo aver emesso un SAL.
+        let nuovo_totale_contratto = null;
+        if (voce.computo_id) {
+          const { data: allVoci } = await supabase
+            .from('site_computo_voci')
+            .select('importo, tipo')
+            .eq('computo_id', voce.computo_id);
+          nuovo_totale_contratto = Math.round(
+            (allVoci || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
+          ) / 100;
+          await supabase.from('site_computo').update({ totale_contratto: nuovo_totale_contratto }).eq('id', voce.computo_id);
+        }
+        return { success: true, voce_aggiornata: data, nuovo_totale_contratto, ...logged };
       }
 
       case 'update_economia_voce': {
