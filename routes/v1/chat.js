@@ -357,10 +357,10 @@ NAVIGAZIONE — navigate_to_page
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Usa navigate_to_page quando l'utente vuole accedere a una sezione specifica:
 - "vai al cantiere X" / "apri cantiere X" → chiama prima get_sites, poi navigate_to_page con /cantieri/UUID
-- "mostrami le presenze del cantiere X" → /cantieri/UUID?tab=0
-- "note e foto del cantiere X" → /cantieri/UUID?tab=4
-- "economia / costi del cantiere X" → /cantieri/UUID?tab=5
-- "lavoratori del cantiere X" → /cantieri/UUID?tab=2
+- "mostrami le presenze del cantiere X" → /cantieri/UUID/presenze
+- "note e foto del cantiere X" → /cantieri/UUID/diario
+- "economia / costi del cantiere X" → /cantieri/UUID/economia
+- "lavoratori del cantiere X" → /cantieri/UUID/organico
 - "vai alla dashboard" → /dashboard
 
 STESSA REGOLA per richieste su risorse a livello AZIENDA, non solo cantiere — un verbo esplicito di
@@ -384,7 +384,7 @@ che il dato richiesto è già filtrato) e rispondi con la sola cifra chiave, non
   per elenchi ad-hoc senza una pagina dedicata (confronti, sottoinsiemi) — per l'elenco INTERO di una
   risorsa che ha già una pagina vera come sopra, naviga, non renderizzare un canvas al posto suo.
 
-REGOLA CRITICA — "portami al POS" NON è /cantieri/UUID?tab=3 (Documenti):
+REGOLA CRITICA — "portami al POS" NON è /cantieri/UUID/documenti (Documenti):
 Il POS ha un meccanismo dedicato — il tag <ladia-action type="generate_doc" docType="pos" .../> (sezione
 POS AGENTICO più sotto) — mai navigate_to_page verso la scheda Documenti come scorciatoia, nemmeno se
 l'utente ripete "portami al pos"/"apri il pos" una seconda volta con insistenza: ripeti lo stesso tag
@@ -650,12 +650,13 @@ TIPI DISPONIBILI:
 
 navigate — naviga a una sezione
   <ladia-action type="navigate" path="/cantieri/UUID" label="Apri cantiere"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=0" label="Presenze"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=1" label="Info cantiere"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=2" label="Lavoratori"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=3" label="Documenti"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=4" label="Diario"/>
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=5" label="Economia"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/presenze" label="Presenze"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/cantiere" label="Info cantiere"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/organico" label="Lavoratori"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/documenti" label="Documenti"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/sicurezza" label="Sicurezza"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/diario" label="Diario"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/economia" label="Economia"/>
   <ladia-action type="navigate" path="/risorse" label="Vai a Risorse"/>
   <ladia-action type="navigate" path="/dashboard" label="Dashboard"/>
   <ladia-action type="navigate" path="/documenti" label="Documenti azienda"/>
@@ -898,7 +899,7 @@ highlight — evidenzia un elemento specifico nella pagina corrente (animazione 
   Dove focusId è l'UUID dell'entità (worker_id, entity_id delle scadenze, etc.)
   POTENTE combinazione: navigate + highlight → l'utente va alla pagina E il record si illumina.
   Per navigate con highlight: aggiungi focusId al tag navigate:
-  <ladia-action type="navigate" path="/cantieri/UUID?tab=2" focusId="WORKER_UUID" label="Vai al lavoratore"/>
+  <ladia-action type="navigate" path="/cantieri/UUID/organico" focusId="WORKER_UUID" label="Vai al lavoratore"/>
 
 quick_ask — proponi domanda di approfondimento rapido (stile chip suggerimento)
   <ladia-action type="quick_ask" prompt="Mostra il risk score del Cantiere X" label="Risk score"/>
@@ -1398,7 +1399,7 @@ const TOOLS = [
       properties: {
         path: {
           type: 'string',
-          description: 'Path della pagina. Esempi: /cantieri/UUID, /dashboard, /risorse, /cantieri/UUID?tab=0 (Presenze), /cantieri/UUID?tab=1 (Info), /cantieri/UUID?tab=2 (Maestranze), /cantieri/UUID?tab=3 (Documenti), /cantieri/UUID?tab=4 (Note e Foto), /cantieri/UUID?tab=5 (Economia)'
+          description: 'Path della pagina. Esempi: /cantieri/UUID, /dashboard, /risorse, /cantieri/UUID/presenze (Presenze), /cantieri/UUID/cantiere (Info), /cantieri/UUID/organico (Maestranze), /cantieri/UUID/documenti (Documenti), /cantieri/UUID/sicurezza (Sicurezza), /cantieri/UUID/diario (Note e Foto), /cantieri/UUID/economia (Economia)'
         },
         label: {
           type: 'string',
@@ -6891,8 +6892,8 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
       // (2026-07-30): "fammi vedere l'organico di Sardegna 88" veniva sempre
       // mandato a /risorse (organico AZIENDALE, tutti i cantieri), e Ladia
       // dichiarava comunque "ti porto alla pagina del cantiere" — falso.
-      // Le sezioni con un tab dedicato sul cantiere (organico/documenti/economia,
-      // vedi SECTION_BY_INDEX in SiteDetail.tsx) vanno lì; per le altre
+      // Le sezioni con una route dedicata sul cantiere (organico/documenti/economia,
+      // vedi src/App.tsx e SiteShell.tsx nel repo frontend) vanno lì; per le altre
       // (idoneità/formazione/scadenzario, senza equivalente per-cantiere) non
       // forziamo nulla — meglio lasciare la richiesta al giudizio del modello
       // (get_sites + risposta in chat) che mandare comunque alla pagina
@@ -6910,13 +6911,13 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
 
       let forcedPath = null, forcedLabel = null;
       if (namedSite) {
-        const SITE_TAB_BY_KEYWORD = [
-          [/organico|lavorator/i,           2, 'Organico'],
-          [/document[oi]/i,                 3, 'Documenti'],
-          [/economia|situazione economic/i, 5, 'Economia'],
+        const SITE_SECTION_BY_KEYWORD = [
+          [/organico|lavorator/i,           'organico', 'Organico'],
+          [/document[oi]/i,                 'documenti', 'Documenti'],
+          [/economia|situazione economic/i, 'economia', 'Economia'],
         ];
-        const hit = SITE_TAB_BY_KEYWORD.find(([re]) => re.test(message));
-        if (hit) { forcedPath = `/cantieri/${namedSite.id}?tab=${hit[1]}`; forcedLabel = `${hit[2]} — ${namedSite.name}`; }
+        const hit = SITE_SECTION_BY_KEYWORD.find(([re]) => re.test(message));
+        if (hit) { forcedPath = `/cantieri/${namedSite.id}/${hit[1]}`; forcedLabel = `${hit[2]} — ${namedSite.name}`; }
       } else {
         if (/idoneit[aà]/i.test(message))                                   { forcedPath = '/scadenze?type=idoneita';   forcedLabel = 'Idoneità mediche'; }
         else if (/formazione/i.test(message) && /scadut|scadenz/i.test(message)) { forcedPath = '/scadenze?type=formazione'; forcedLabel = 'Scadenze formazione'; }
