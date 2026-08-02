@@ -6325,7 +6325,7 @@ router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req,
     try {
       const brain = await getCompanyBrain(supabase, req.companyId);
       if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
-    } catch { /* non critico — Ladia funziona anche senza brain */ }
+    } catch (e) { console.error('[chat] getCompanyBrain fallita per company', req.companyId, ':', e.message); }
 
     const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id, convId);
 
@@ -6846,7 +6846,10 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
   let systemPrompt = SYSTEM_PROMPT;
   try {
     const [brain, siteCtx, memory, objectives] = await Promise.all([
-      getCompanyBrain(supabase, req.companyId).catch(() => null),
+      getCompanyBrain(supabase, req.companyId).catch(e => {
+        console.error('[chat/stream] getCompanyBrain fallita per company', req.companyId, ':', e.message);
+        return null;
+      }),
       _siteIdForContext
         // catch loggato, non silenzioso: un errore qui (es. colonna
         // inesistente in una select) disattiva lo SNAPSHOT CANTIERE per
@@ -6858,8 +6861,14 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
             return null;
           })
         : Promise.resolve(null),
-      getMemory(req.companyId, { siteId: _siteIdForContext, userId: req.user.id }).catch(() => ''),
-      getOpenObjectives(req.companyId, _siteIdForContext).catch(() => ''),
+      getMemory(req.companyId, { siteId: _siteIdForContext, userId: req.user.id }).catch(e => {
+        console.error('[chat/stream] getMemory fallita per company', req.companyId, ':', e.message);
+        return '';
+      }),
+      getOpenObjectives(req.companyId, _siteIdForContext).catch(e => {
+        console.error('[chat/stream] getOpenObjectives fallita per company', req.companyId, ':', e.message);
+        return '';
+      }),
     ]);
     if (brain?.text)    systemPrompt = SYSTEM_PROMPT + brain.text;
     // Azienda appena registrata (zero cantieri) — il frontend mostra già un
