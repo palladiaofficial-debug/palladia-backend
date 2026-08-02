@@ -154,7 +154,7 @@ async function buildEnrichedContext(companyId, siteId) {
     workersRes, timbratureRes, notesRes, ncRes, cfgRes,
   ] = await Promise.all([
     supabase.from('sites')
-      .select('name, address, status, budget_totale, sal_percentuale, descrizione, latitude, longitude, start_date, end_date, client')
+      .select('name, address, status, budget_totale, sal_percentuale, latitude, longitude, start_date, end_date, client')
       .eq('id', siteId).maybeSingle(),
     supabase.from('site_phases')
       .select('id, nome, stato, progresso_percentuale, data_inizio_prevista, data_fine_prevista, importo_contratto, importo_maturato, note')

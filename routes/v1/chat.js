@@ -6848,7 +6848,15 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => 
     const [brain, siteCtx, memory, objectives] = await Promise.all([
       getCompanyBrain(supabase, req.companyId).catch(() => null),
       _siteIdForContext
-        ? buildEnrichedContext(req.companyId, _siteIdForContext).catch(() => null)
+        // catch loggato, non silenzioso: un errore qui (es. colonna
+        // inesistente in una select) disattiva lo SNAPSHOT CANTIERE per
+        // OGNI conversazione con context_id, senza che nulla lo segnali —
+        // esattamente il bug reale trovato il 2026-08-02 (sites.descrizione
+        // non esiste, query falliva sempre, nessuno se n'è accorto).
+        ? buildEnrichedContext(req.companyId, _siteIdForContext).catch(e => {
+            console.error('[chat/stream] buildEnrichedContext fallita per site', _siteIdForContext, ':', e.message);
+            return null;
+          })
         : Promise.resolve(null),
       getMemory(req.companyId, { siteId: _siteIdForContext, userId: req.user.id }).catch(() => ''),
       getOpenObjectives(req.companyId, _siteIdForContext).catch(() => ''),
