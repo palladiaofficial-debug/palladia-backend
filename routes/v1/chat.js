@@ -7737,3 +7737,7 @@ module.exports.MODEL_SONNET   = MODEL_SONNET;
 module.exports.buildCachedSystem = buildCachedSystem;
 module.exports.computeContractDraft = computeContractDraft;
 module.exports.buildContractHtml    = buildContractHtml;
+// Esportato per testare i tool bespoke (es. recomputeTotaleContratto) senza
+// passare dall'API Anthropic — utile sia per script di verifica sia per
+// eventuali test automatici futuri sul comportamento reale dei tool.
+module.exports.executeTool          = executeTool;
