@@ -1047,6 +1047,19 @@ per dire onestamente "era rosso, ora è verde" invece del solo stato finale — 
 giallo anche dopo la scrittura, dillo chiaramente invece di lasciar intendere che la scrittura da sola
 abbia rimesso tutto a posto (es. worker con anche l'altra scadenza scaduta).
 
+REGOLA FERREA — MAI NARRARE UN'AZIONE PRIMA DEL RISULTATO REALE (vale per QUALSIASI tool, scrittura o
+lettura, non solo quelli elencati esplicitamente altrove in questo prompt): non scrivere MAI in prima
+persona di aver fatto, letto, verificato, calcolato o consultato qualcosa ("ho archiviato", "leggo la
+visura", "ho annullato", "ho ricalcolato il totale") finché non hai ricevuto il tool_result di quella
+chiamata e quel risultato conferma un esito positivo (success:true o dati validi, non un campo error).
+Se stai per chiamare un tool, usa un tempo che non implichi un esito già avvenuto ("sto verificando…",
+oppure nessun commento — il risultato arriva comunque a breve), MAI il passato prossimo prima del
+tool_result. Questa regola vale per l'INTERO set AGENTIC_WRITE_TOOLS (create_*/update_*/delete_*/
+archive_*/emit_*/undo_action ecc.) e per ogni tool di lettura che rappresenta una verifica di un
+documento reale (es. leggi_documento_pdf, read_uploaded_document, get_company_profile). Nato da incidenti
+reali in produzione (dichiarazione di successo senza chiamare il tool, "leggo la visura" senza farlo) —
+non ripeterli su nessun tool nuovo, presente o futuro.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 RICONOSCIMENTO IMPLICITO — ZERO PERDITA DI DATI
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2803,6 +2816,24 @@ function computeContractDraft(d) {
   };
 
   return { ready: true, contract };
+}
+
+// Risomma dal vivo le voci di tipo 'voce' del computo e scrive il risultato
+// su site_computo.totale_contratto. Unica implementazione condivisa da
+// update_prezzo_voce/create_computo_voce/delete_computo_voce — prima era
+// triplicata identica in ognuno dei tre case e rischiava di divergere
+// silenziosamente (causa diretta di un bug reale: totale contratto
+// disallineato di €66.000 su un contratto emesso in produzione).
+async function recomputeTotaleContratto(computoId) {
+  const { data: voci } = await supabase
+    .from('site_computo_voci')
+    .select('importo, tipo')
+    .eq('computo_id', computoId);
+  const nuovoTotale = Math.round(
+    (voci || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
+  ) / 100;
+  await supabase.from('site_computo').update({ totale_contratto: nuovoTotale }).eq('id', computoId);
+  return nuovoTotale;
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -4672,23 +4703,10 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           resourceName: 'site_computo_voci', action: 'update', recordId: voce_id,
           record: data, previousValues: prezzoBefore || {}, changedFields: patch,
         });
-        // Ricalcola totale_contratto — stesso motivo di create/delete_computo_voce:
-        // senza questo, un cambio prezzo lascia il totale del computo silenziosamente
+        // Senza questo, un cambio prezzo lascia il totale del computo silenziosamente
         // disallineato (emit_sal legge il valore salvato su site_computo, non lo
-        // risomma dal vivo) finché qualcun altro non lo tocca di nuovo. Bug reale
-        // trovato durante l'audit dei tool bespoke, mai successo prima in produzione
-        // solo perché nessuno aveva ancora cambiato un prezzo dopo aver emesso un SAL.
-        let nuovo_totale_contratto = null;
-        if (voce.computo_id) {
-          const { data: allVoci } = await supabase
-            .from('site_computo_voci')
-            .select('importo, tipo')
-            .eq('computo_id', voce.computo_id);
-          nuovo_totale_contratto = Math.round(
-            (allVoci || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
-          ) / 100;
-          await supabase.from('site_computo').update({ totale_contratto: nuovo_totale_contratto }).eq('id', voce.computo_id);
-        }
+        // risomma dal vivo) finché qualcun altro non lo tocca di nuovo.
+        const nuovo_totale_contratto = voce.computo_id ? await recomputeTotaleContratto(voce.computo_id) : null;
         return { success: true, voce_aggiornata: data, nuovo_totale_contratto, ...logged };
       }
 
@@ -4945,15 +4963,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .single();
         if (error) return { error: error.message };
 
-        // Ricalcola totale_contratto
-        const { data: allVoci } = await supabase
-          .from('site_computo_voci')
-          .select('importo, tipo')
-          .eq('computo_id', computo.id);
-        const newTotale = Math.round(
-          (allVoci || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
-        ) / 100;
-        await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', computo.id);
+        const newTotale = await recomputeTotaleContratto(computo.id);
 
         const logResult = await logAction({
           companyId, userId, req, conversationId: convId,
@@ -4991,14 +5001,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .eq('company_id', companyId);
         if (error) return { error: error.message };
 
-        const { data: remaining } = await supabase
-          .from('site_computo_voci')
-          .select('importo, tipo')
-          .eq('computo_id', voce.computo_id);
-        const newTotale = Math.round(
-          (remaining || []).filter(v => v.tipo === 'voce').reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100
-        ) / 100;
-        await supabase.from('site_computo').update({ totale_contratto: newTotale }).eq('id', voce.computo_id);
+        const newTotale = await recomputeTotaleContratto(voce.computo_id);
 
         const logResult = await logAction({
           companyId, userId, req, conversationId: convId,
