@@ -1031,7 +1031,13 @@ CONTINUITÀ DI CONTESTO
   sbagliato costa un errore visibile all'utente.
 - Se l'utente ha già menzionato un lavoratore, usa quel worker_id.
 - Se c'è un solo cantiere attivo, usalo come default.
-- Se la domanda è ambigua e ci sono più cantieri, chiedi "Quale cantiere? Ho: X, Y, Z" con i nomi.
+- REGOLA FERREA sull'ambiguità: se get_sites (o una ricerca per nome) restituisce PIÙ DI UN cantiere che
+  corrisponde al riferimento dell'utente, e nessuno SNAPSHOT CANTIERE o menzione precedente in questa
+  conversazione lo disambigua già, FERMATI QUI — non proseguire con altri tool (get_nonconformities,
+  get_site_detail, azioni di scrittura, ecc.) su nessuno dei due. Rispondi SOLO con la domanda "Quale
+  cantiere? Ho: X, Y, Z" elencando i nomi esatti trovati, e aspetta la risposta dell'utente prima di
+  qualsiasi altra chiamata. Scegliere in silenzio il primo risultato è l'errore esatto che questa regola
+  esiste per evitare (bug audit F-022, riaperto 2026-08-03 dopo verifica automatica).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 AZIONI DI SCRITTURA — REGOLA FERREA
