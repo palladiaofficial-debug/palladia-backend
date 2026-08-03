@@ -95,8 +95,8 @@ router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, validate(cr
 
   if (insertErr) return res.status(500).json({ error: 'INVITE_CREATE_ERROR' });
 
-  const appBase = `${req.protocol}://${req.get('host')}`;
-  const cseUrl  = `${appBase}/coordinator/${rawToken}`;
+  const frontendBase = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  const cseUrl  = `${frontendBase}/pro/accesso/${rawToken}`;
   let   portalUrl = cseUrl; // default per inviti senza email
 
   if (coordinator_email) {
@@ -215,8 +215,8 @@ router.patch('/coordinator-invites/:inviteId/refresh-token', verifySupabaseJwt, 
 
   if (updateErr) return res.status(500).json({ error: 'UPDATE_ERROR' });
 
-  const appBase = `${req.protocol}://${req.get('host')}`;
-  const cseUrl  = `${appBase}/coordinator/${rawToken}`;
+  const frontendBase = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  const cseUrl  = `${frontendBase}/pro/accesso/${rawToken}`;
   let   portalUrl = cseUrl;
 
   // Se l'invito ha email, ricrea anche la sessione Pro
@@ -231,7 +231,7 @@ router.patch('/coordinator-invites/:inviteId/refresh-token', verifySupabaseJwt, 
         token_hash: proHash,
         expires_at: newExpAt,
       });
-    if (!proErr) portalUrl = `${appBase}/coordinator/accesso/${proRaw}`;
+    if (!proErr) portalUrl = `${frontendBase}/pro/accesso/${proRaw}`;
   }
 
   auditLog({
@@ -616,7 +616,7 @@ router.post('/coordinator/request-link', recoveryLimiter, validate(requestLinkSc
       .from('sites').select('id, name, address').in('id', siteIds);
     const siteMap = Object.fromEntries((sitesRaw || []).map(s => [s.id, s]));
 
-    const appBase  = `${req.protocol}://${req.get('host')}`;
+    const frontendBase = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
     const siteLinks = [];
 
     for (const invite of invites) {
@@ -632,7 +632,7 @@ router.post('/coordinator/request-link', recoveryLimiter, validate(requestLinkSc
       siteLinks.push({
         siteName:    site.name    || 'Cantiere',
         siteAddress: site.address || '',
-        accessUrl:   `${appBase}/coordinator/${rawToken}`,
+        accessUrl:   `${frontendBase}/pro/accesso/${rawToken}`,
         expiresAt:   invite.expires_at,
       });
     }
