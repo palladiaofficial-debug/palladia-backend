@@ -16,7 +16,6 @@ const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const { sendAiCreditExhaustedAlert } = require('../../services/email');
 const { logUsage, checkAiBudget } = require('../../lib/ladiaUsageLog');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
-const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
 const { executeWrite, checkOrProposeGate } = require('../../lib/ladiaWriteExecutor');
 const { buildResultCard } = require('../../lib/resultCardBuilder');
