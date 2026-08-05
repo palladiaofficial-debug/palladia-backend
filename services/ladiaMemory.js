@@ -58,14 +58,13 @@ async function getOpenObjectives(companyId, siteId) {
 
   // Marca come expired obiettivi open rimasti senza risposta per >14 giorni
   const expireDate = new Date(today.getTime() - 14 * 86400000).toISOString().slice(0, 10);
-  await supabase
+  await Promise.resolve(supabase
     .from('ladia_objectives')
     .update({ status: 'expired' })
     .eq('company_id', companyId)
     .eq('status', 'open')
     .not('due_date', 'is', null)
-    .lt('due_date', expireDate)
-    .catch(() => {});
+    .lt('due_date', expireDate)).catch(() => {});
 
   let query = supabase
     .from('ladia_objectives')
@@ -78,7 +77,7 @@ async function getOpenObjectives(companyId, siteId) {
     query = query.or(`site_id.eq.${siteId},site_id.is.null`);
   }
 
-  const { data } = await query.limit(10).catch(() => ({ data: null }));
+  const { data } = await Promise.resolve(query.limit(10)).catch(() => ({ data: null }));
   if (!data?.length) return '';
 
   const overdue  = data.filter(o => o.due_date && o.due_date < todayStr);
