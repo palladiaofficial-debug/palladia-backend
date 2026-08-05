@@ -18,6 +18,7 @@ const { logUsage, checkAiBudget } = require('../../lib/ladiaUsageLog');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
+const { executeWrite } = require('../../lib/ladiaWriteExecutor');
 const { buildRisksPrompt } = require('../../services/posRisksGenerator');
 const { getMissingFields } = require('../../lib/posDraftCompleteness');
 const { getCompanyPosDefaults } = require('../../lib/posDefaults');
@@ -3154,25 +3155,23 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           subcontractors_snapshot: [],
           ...photosPatch,
         };
-        const { data, error } = await supabase
-          .from('site_diary_entries')
-          .upsert(diaryRow, { onConflict: 'site_id,entry_date' })
-          .select('id').single();
-        if (error) return { error: 'DB_ERROR', detail: error.message };
-        const logged = await logAction({
+        const changedFields = { entry_date: today, notes, activities, issues, ...photosPatch };
+        const result = await executeWrite({
+          resourceName: 'site_diary_entries', action: 'create', row: changedFields,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_diary_entries', action: 'create', recordId: data.id,
-          record: data,
+          toolName: 'create_diary_note', toolInput,
+          summary: `Aggiorna diario cantiere ${site.name}`,
           // Solo i campi che l'utente riconosce come "quello che ho scritto" —
           // company_id/gli snapshot vuoti sono plumbing interno, e il cantiere
           // è già nominato nella riga di riepilogo qui sotto: mostrare di nuovo
           // il suo UUID grezzo nella card non aggiunge nulla, rompe solo la
           // cura della card.
-          changedFields: { entry_date: today, notes, activities, issues, ...photosPatch },
+          writeFn: () => supabase.from('site_diary_entries').upsert(diaryRow, { onConflict: 'site_id,entry_date' }).select('id').single(),
         });
+        if (result.error) return result;
         return {
           success: true, cantiere: site.name, entry_date: today, note_aggiunta: notes,
-          foto_allegate: newPhotoUrls.length, ...logged,
+          foto_allegate: newPhotoUrls.length, ...result,
         };
       }
 
@@ -3192,20 +3191,17 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           category,
           urgency,
         };
-        const { data, error } = await supabase
-          .from('site_notes')
-          .insert(noteRow)
-          .select('id').single();
-        if (error) return { error: 'DB_ERROR', detail: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_notes', action: 'create', row: { content: content.trim(), category, urgency },
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_notes', action: 'create', recordId: data.id,
-          record: data,
+          toolName: 'create_site_note', toolInput,
+          summary: `Aggiunge nota al cantiere ${site.name}`,
           // Come create_diary_note sopra: solo i campi che l'utente riconosce,
           // il cantiere è già nominato nella riga di riepilogo.
-          changedFields: { content: content.trim(), category, urgency },
+          writeFn: () => supabase.from('site_notes').insert(noteRow).select('id').single(),
         });
-        return { success: true, cantiere: site.name, note_id: data.id, category, urgency, ...logged };
+        if (result.error) return result;
+        return { success: true, cantiere: site.name, note_id: result.data.id, category, urgency, ...result };
       }
 
       case 'navigate_to_page': {
@@ -3705,18 +3701,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           expense_date:   toolInput.expense_date || todayRome,
           payment_method: toolInput.payment_method || 'bonifico',
         };
-        const { data, error } = await supabase
-          .from('company_expenses')
-          .insert(row)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'company_expenses', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'company_expenses', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_expense', toolInput,
+          summary: `Registra spesa "${toolInput.description}" — €${toolInput.amount}`,
+          writeFn: () => supabase.from('company_expenses').insert(row).select().single(),
         });
-        return { success: true, spesa_creata: data, ...logged };
+        if (result.error) return result;
+        return { success: true, spesa_creata: result.data, ...result };
       }
 
       // ── 13 READ executors ────────────────────────────────────────────────────
@@ -4183,14 +4176,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           data_fine_prevista: toolInput.data_fine_prevista || null,
           note: toolInput.note || null,
         };
-        const { data, error } = await supabase.from('site_phases').insert(row).select().single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_phases', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_phases', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_phase', toolInput,
+          summary: `Crea fase "${toolInput.nome}"`,
+          writeFn: () => supabase.from('site_phases').insert(row).select().single(),
         });
-        return { success: true, fase_creata: data, ...logged };
+        if (result.error) return result;
+        return { success: true, fase_creata: result.data, ...result };
       }
 
       case 'update_phase': {
@@ -4211,14 +4205,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare specificato' };
         const { data: phaseBefore } = await supabase
           .from('site_phases').select(Object.keys(patch).join(',')).eq('id', phaseId).eq('company_id', companyId).single();
-        const { data, error } = await supabase.from('site_phases').update(patch).eq('id', phaseId).eq('company_id', companyId).select().single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_phases', action: 'update', recordId: phaseId, row: patch, previousValues: phaseBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_phases', action: 'update', recordId: phaseId,
-          record: data, previousValues: phaseBefore || {}, changedFields: patch,
+          toolName: 'update_phase', toolInput,
+          summary: 'Aggiorna fase',
+          writeFn: () => supabase.from('site_phases').update(patch).eq('id', phaseId).eq('company_id', companyId).select().single(),
         });
-        return { success: true, fase_aggiornata: data, ...logged };
+        if (result.error) return result;
+        return { success: true, fase_aggiornata: result.data, ...result };
       }
 
       // ── Nuovi tool executor — copertura completa cantiere ─────────────────────
@@ -4251,18 +4246,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           importo: toolInput.importo,
           data_competenza: toolInput.data_competenza || todayRome,
         };
-        const { data, error } = await supabase
-          .from('site_economia_voci')
-          .insert(row)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_economia_voci', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_economia_voci', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_economia_voce', toolInput,
+          summary: `Registra voce economia "${toolInput.voce}" — €${toolInput.importo}`,
+          writeFn: () => supabase.from('site_economia_voci').insert(row).select().single(),
         });
-        return { success: true, voce_creata: data, ...logged };
+        if (result.error) return result;
+        return { success: true, voce_creata: result.data, ...result };
       }
 
       case 'resolve_nonconformity': {
@@ -4324,37 +4316,30 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           data_documento: toolInput.data_documento || todayRome,
           note: toolInput.note || null,
         };
-        const { data, error } = await supabase
-          .from('site_costs')
-          .insert(row)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_costs', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_costs', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_site_cost', toolInput,
+          summary: `Registra costo "${toolInput.descrizione}" — €${toolInput.importo}`,
+          writeFn: () => supabase.from('site_costs').insert(row).select().single(),
         });
-        return { success: true, costo_registrato: data, ...logged };
+        if (result.error) return result;
+        return { success: true, costo_registrato: result.data, ...result };
       }
 
       case 'remove_worker_from_site': {
-        const { data, error } = await supabase
-          .from('worksite_workers')
-          .update({ status: 'inactive' })
-          .eq('worker_id', toolInput.worker_id)
-          .eq('site_id', toolInput.site_id)
-          .eq('company_id', companyId)
-          .eq('status', 'active')
-          .select()
-          .single();
-        if (error) return { error: error.message || 'Assegnazione non trovata.' };
-        const logged = await logAction({
+        const patch = { status: 'inactive' };
+        const result = await executeWrite({
+          resourceName: 'worksite_workers', action: 'update', row: patch, previousValues: { status: 'active' },
           companyId, userId, req, conversationId: convId,
-          resourceName: 'worksite_workers', action: 'update', recordId: data.id,
-          record: data, previousValues: { status: 'active' }, changedFields: { status: 'inactive' },
+          toolName: 'remove_worker_from_site', toolInput,
+          summary: 'Rimuove lavoratore dal cantiere',
+          writeFn: () => supabase.from('worksite_workers').update(patch)
+            .eq('worker_id', toolInput.worker_id).eq('site_id', toolInput.site_id)
+            .eq('company_id', companyId).eq('status', 'active').select().single(),
         });
-        return { success: true, message: 'Lavoratore rimosso dal cantiere.', ...logged };
+        if (result.error) return result;
+        return { success: true, message: 'Lavoratore rimosso dal cantiere.', ...result };
       }
 
       case 'create_subcontractor': {
@@ -4372,18 +4357,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           soa_expiry: toolInput.soa_expiry || null,
           is_active: true,
         };
-        const { data, error } = await supabase
-          .from('subcontractors')
-          .insert(row)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'subcontractors', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'subcontractors', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_subcontractor', toolInput,
+          summary: `Crea subappaltatore "${toolInput.company_name}"`,
+          writeFn: () => supabase.from('subcontractors').insert(row).select().single(),
         });
-        return { success: true, subappaltatore_creato: data, ...logged };
+        if (result.error) return result;
+        return { success: true, subappaltatore_creato: result.data, ...result };
       }
 
       case 'assign_subcontractor_to_site': {
@@ -4399,12 +4381,6 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           site_id: toolInput.site_id,
           company_id: companyId,
         };
-        const { data, error } = await supabase
-          .from('site_subcontractors')
-          .insert(assignRow)
-          .select()
-          .single();
-        if (error) return { error: error.message };
         // Nomi leggibili invece dei soli id — senza questi la card e la prosa
         // del modello non avevano alcun modo di dire QUALE subappaltatore e
         // QUALE cantiere, solo UUID. Trovato audit-ando gli altri tool bespoke
@@ -4413,15 +4389,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           supabase.from('subcontractors').select('company_name').eq('id', toolInput.subcontractor_id).maybeSingle(),
           supabase.from('sites').select('name').eq('id', toolInput.site_id).maybeSingle(),
         ]);
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_subcontractors', action: 'create', row: { subappaltatore: sub?.company_name || null, cantiere: site?.name || null },
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_subcontractors', action: 'create', recordId: data.id,
-          record: data, changedFields: { subappaltatore: sub?.company_name || null, cantiere: site?.name || null },
+          toolName: 'assign_subcontractor_to_site', toolInput,
+          summary: `Assegna ${sub?.company_name || 'subappaltatore'} al cantiere ${site?.name || ''}`,
+          writeFn: () => supabase.from('site_subcontractors').insert(assignRow).select().single(),
         });
+        if (result.error) return result;
         return {
-          success: true, assegnazione_creata: data,
+          success: true, assegnazione_creata: result.data,
           messaggio: `${sub?.company_name || 'Subappaltatore'} assegnato al cantiere ${site?.name || ''}.`,
-          ...logged,
+          ...result,
         };
       }
 
@@ -4436,18 +4415,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           is_active: true,
           status: 'disponibile',
         };
-        const { data, error } = await supabase
-          .from('equipment')
-          .insert(row)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'equipment', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'equipment', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_equipment', toolInput,
+          summary: `Crea mezzo "${toolInput.name}"`,
+          writeFn: () => supabase.from('equipment').insert(row).select().single(),
         });
-        return { success: true, mezzo_creato: data, ...logged };
+        if (result.error) return result;
+        return { success: true, mezzo_creato: result.data, ...result };
       }
 
       case 'assign_equipment_to_site': {
@@ -4463,27 +4439,24 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           site_id: toolInput.site_id,
           company_id: companyId,
         };
-        const { data, error } = await supabase
-          .from('site_equipment')
-          .insert(equipAssignRow)
-          .select()
-          .single();
-        if (error) return { error: error.message };
         // Nomi leggibili invece dei soli id — stesso motivo di
         // assign_subcontractor_to_site sopra.
         const [{ data: equip }, { data: site }] = await Promise.all([
           supabase.from('equipment').select('name').eq('id', toolInput.equipment_id).maybeSingle(),
           supabase.from('sites').select('name').eq('id', toolInput.site_id).maybeSingle(),
         ]);
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_equipment', action: 'create', row: { mezzo: equip?.name || null, cantiere: site?.name || null },
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_equipment', action: 'create', recordId: data.id,
-          record: data, changedFields: { mezzo: equip?.name || null, cantiere: site?.name || null },
+          toolName: 'assign_equipment_to_site', toolInput,
+          summary: `Assegna ${equip?.name || 'mezzo'} al cantiere ${site?.name || ''}`,
+          writeFn: () => supabase.from('site_equipment').insert(equipAssignRow).select().single(),
         });
+        if (result.error) return result;
         return {
-          success: true, assegnazione_creata: data,
+          success: true, assegnazione_creata: result.data,
           messaggio: `${equip?.name || 'Mezzo'} assegnato al cantiere ${site?.name || ''}.`,
-          ...logged,
+          ...result,
         };
       }
 
@@ -4556,14 +4529,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           expense_date:   toolInput.expense_date || todayRome,
           payment_method: toolInput.payment_method || 'altro',
         };
-        const { data, error } = await supabase.from('company_expenses').insert(row).select().single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'company_expenses', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'company_expenses', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_expense_from_image', toolInput,
+          summary: `Registra spesa da immagine "${toolInput.vendor || 'fornitore'}" — €${toolInput.amount}`,
+          writeFn: () => supabase.from('company_expenses').insert(row).select().single(),
         });
-        return { success: true, spesa_creata: data, messaggio: `Spesa di €${toolInput.amount} da "${toolInput.vendor || 'fornitore'}" registrata correttamente.`, ...logged };
+        if (result.error) return result;
+        return { success: true, spesa_creata: result.data, messaggio: `Spesa di €${toolInput.amount} da "${toolInput.vendor || 'fornitore'}" registrata correttamente.`, ...result };
       }
 
       case 'create_ddt_from_image': {
@@ -4578,14 +4552,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           data_documento:   toolInput.ddt_date || todayRome,
           note:             toolInput.image_note || null,
         };
-        const { data, error } = await supabase.from('site_costs').insert(row).select().single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_costs', action: 'create', row,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_costs', action: 'create', recordId: data.id,
-          record: data, changedFields: row,
+          toolName: 'create_ddt_from_image', toolInput,
+          summary: `Registra DDT da immagine "${toolInput.vendor || 'mittente'}" — €${toolInput.amount || 0}`,
+          writeFn: () => supabase.from('site_costs').insert(row).select().single(),
         });
-        return { success: true, ddt_registrato: data, messaggio: `DDT${toolInput.ddt_number ? ' n.' + toolInput.ddt_number : ''} da "${toolInput.vendor || 'mittente'}" registrato correttamente.`, ...logged };
+        if (result.error) return result;
+        return { success: true, ddt_registrato: result.data, messaggio: `DDT${toolInput.ddt_number ? ' n.' + toolInput.ddt_number : ''} da "${toolInput.vendor || 'mittente'}" registrato correttamente.`, ...result };
       }
 
       case 'archive_document_image': {
@@ -4670,20 +4645,16 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (sal_note !== undefined && sal_note !== null) patch.sal_note = sal_note;
         const { data: salVoceBefore } = await supabase
           .from('site_computo_voci').select(Object.keys(patch).join(',')).eq('id', voce_id).eq('company_id', companyId).single();
-        const { data, error } = await supabase
-          .from('site_computo_voci')
-          .update(patch)
-          .eq('id', voce_id)
-          .eq('company_id', companyId)
-          .select('id, descrizione, sal_percentuale, sal_note, importo')
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_computo_voci', action: 'update', recordId: voce_id, row: patch, previousValues: salVoceBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_computo_voci', action: 'update', recordId: voce_id,
-          record: data, previousValues: salVoceBefore || {}, changedFields: patch,
+          toolName: 'update_sal_voce', toolInput,
+          summary: `Aggiorna SAL voce a ${pct}%`,
+          writeFn: () => supabase.from('site_computo_voci').update(patch).eq('id', voce_id).eq('company_id', companyId)
+            .select('id, descrizione, sal_percentuale, sal_note, importo').single(),
         });
-        return { success: true, voce_aggiornata: data, ...logged };
+        if (result.error) return result;
+        return { success: true, voce_aggiornata: result.data, ...result };
       }
 
       case 'update_prezzo_voce': {
@@ -4704,24 +4675,20 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (unita_misura) patch.unita_misura = unita_misura;
         const { data: prezzoBefore } = await supabase
           .from('site_computo_voci').select(Object.keys(patch).join(',')).eq('id', voce_id).eq('company_id', companyId).single();
-        const { data, error } = await supabase
-          .from('site_computo_voci')
-          .update(patch)
-          .eq('id', voce_id)
-          .eq('company_id', companyId)
-          .select('id, descrizione, prezzo_unitario, quantita, unita_misura, importo')
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_computo_voci', action: 'update', recordId: voce_id, row: patch, previousValues: prezzoBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_computo_voci', action: 'update', recordId: voce_id,
-          record: data, previousValues: prezzoBefore || {}, changedFields: patch,
+          toolName: 'update_prezzo_voce', toolInput,
+          summary: `Aggiorna prezzo voce a €${prezzo}`,
+          writeFn: () => supabase.from('site_computo_voci').update(patch).eq('id', voce_id).eq('company_id', companyId)
+            .select('id, descrizione, prezzo_unitario, quantita, unita_misura, importo').single(),
         });
+        if (result.error) return result;
         // Senza questo, un cambio prezzo lascia il totale del computo silenziosamente
         // disallineato (emit_sal legge il valore salvato su site_computo, non lo
         // risomma dal vivo) finché qualcun altro non lo tocca di nuovo.
         const nuovo_totale_contratto = voce.computo_id ? await recomputeTotaleContratto(voce.computo_id) : null;
-        return { success: true, voce_aggiornata: data, nuovo_totale_contratto, ...logged };
+        return { success: true, voce_aggiornata: result.data, nuovo_totale_contratto, ...result };
       }
 
       case 'update_economia_voce': {
@@ -4736,21 +4703,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .from('site_economia_voci')
           .select(Object.keys(patch).join(','))
           .eq('id', voce_id).eq('site_id', site_id).eq('company_id', companyId).single();
-        const { data, error } = await supabase
-          .from('site_economia_voci')
-          .update(patch)
-          .eq('id', voce_id)
-          .eq('site_id', site_id)
-          .eq('company_id', companyId)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_economia_voci', action: 'update', recordId: voce_id, row: patch, previousValues: economiaBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_economia_voci', action: 'update', recordId: voce_id,
-          record: data, previousValues: economiaBefore || {}, changedFields: patch,
+          toolName: 'update_economia_voce', toolInput,
+          summary: 'Aggiorna voce economia',
+          writeFn: () => supabase.from('site_economia_voci').update(patch).eq('id', voce_id).eq('site_id', site_id).eq('company_id', companyId).select().single(),
         });
-        return { success: true, voce_aggiornata: data, ...logged };
+        if (result.error) return result;
+        return { success: true, voce_aggiornata: result.data, ...result };
       }
 
       case 'delete_economia_voce': {
@@ -4764,19 +4725,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .eq('company_id', companyId)
           .single();
         if (!preview) return { error: 'Voce non trovata' };
-        const { error } = await supabase
-          .from('site_economia_voci')
-          .delete()
-          .eq('id', voce_id)
-          .eq('site_id', site_id)
-          .eq('company_id', companyId);
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_economia_voci', action: 'delete', recordId: voce_id, fullRowSnapshot: preview,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_economia_voci', action: 'delete', recordId: voce_id,
-          fullRowSnapshot: preview,
+          toolName: 'delete_economia_voce', toolInput,
+          summary: `Elimina voce economia "${preview.voce}"`,
+          writeFn: () => supabase.from('site_economia_voci').delete().eq('id', voce_id).eq('site_id', site_id).eq('company_id', companyId),
         });
-        return { success: true, voce_eliminata: preview, ...logged };
+        if (result.error) return result;
+        return { success: true, voce_eliminata: preview, ...result };
       }
 
       case 'emit_sal': {
@@ -4970,30 +4927,26 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           sort_order:      sortOrder,
         };
 
-        const { data: voce, error } = await supabase
-          .from('site_computo_voci')
-          .insert(row)
-          .select()
-          .single();
-        if (error) return { error: error.message };
+        const result = await executeWrite({
+          resourceName: 'site_computo_voci', action: 'create', row,
+          companyId, userId, req, conversationId: convId,
+          toolName: 'create_computo_voce', toolInput,
+          summary: `Crea voce computo "${row.descrizione}"`,
+          auditActionOverride: 'record.create:site_computo_voci',
+          writeFn: () => supabase.from('site_computo_voci').insert(row).select().single(),
+        });
+        if (result.error) return result;
 
         const newTotale = await recomputeTotaleContratto(computo.id);
-
-        const logResult = await logAction({
-          companyId, userId, req, conversationId: convId,
-          resourceName: 'site_computo_voci', action: 'create',
-          recordId: voce.id, record: voce,
-          auditActionOverride: 'record.create:site_computo_voci',
-        });
         // allow.create:false su site_computo_voci in ladiaSchemaRegistry.js
         // blocca già strutturalmente l'undo (UNDO_NON_DISPONIBILE) — corretto,
         // annullare senza ricalcolare totale_contratto lascerebbe l'aggregato
-        // incoerente. logAction() serve qui solo per audit trail + card verde.
-        // Spread di logResult (non solo actionHistoryId): la card SSE in
+        // incoerente. executeWrite serve qui solo per audit trail + card verde.
+        // Spread di result (non solo actionHistoryId): la card SSE in
         // routes/v1/chat.js legge result.action/record/summary per decidere
         // testo e diff — senza questi campi indovinerebbe male (es. "Eliminato"
         // per una create, dato che il fallback è basato su result.record).
-        return { success: true, voce_creata: voce, nuovo_totale_contratto: newTotale, ...logResult };
+        return { success: true, voce_creata: result.data, nuovo_totale_contratto: newTotale, ...result };
       }
 
       case 'delete_computo_voce': {
@@ -5008,25 +4961,21 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           .single();
         if (!voce) return { error: 'Voce non trovata' };
 
-        const { error } = await supabase
-          .from('site_computo_voci')
-          .delete()
-          .eq('id', voce_id)
-          .eq('company_id', companyId);
-        if (error) return { error: error.message };
+        const result = await executeWrite({
+          resourceName: 'site_computo_voci', action: 'delete', recordId: voce_id, fullRowSnapshot: voce,
+          companyId, userId, req, conversationId: convId,
+          toolName: 'delete_computo_voce', toolInput,
+          summary: `Elimina voce computo "${voce.descrizione}"`,
+          auditActionOverride: 'record.delete:site_computo_voci',
+          writeFn: () => supabase.from('site_computo_voci').delete().eq('id', voce_id).eq('company_id', companyId),
+        });
+        if (result.error) return result;
 
         const newTotale = await recomputeTotaleContratto(voce.computo_id);
-
-        const logResult = await logAction({
-          companyId, userId, req, conversationId: convId,
-          resourceName: 'site_computo_voci', action: 'delete',
-          recordId: voce_id, fullRowSnapshot: voce,
-          auditActionOverride: 'record.delete:site_computo_voci',
-        });
         // allow.create:false blocca l'undo di questa delete (UNDO_NON_DISPONIBILE,
         // vedi il controllo aggiunto in ladiaGenericTools.js) — un re-insert
         // generico non ricalcolerebbe totale_contratto.
-        return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale, ...logResult };
+        return { success: true, voce_eliminata: { descrizione: voce.descrizione, importo: voce.importo }, nuovo_totale_contratto: newTotale, ...result };
       }
 
       case 'get_varianti': {
@@ -5084,21 +5033,20 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           totale_contratto: 0,
           created_by: userId || null,
         };
-        const { data: variante, error } = await supabase
-          .from('site_computo')
-          .insert(varianteRow)
-          .select().single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_computo', action: 'create', row: varianteRow,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_computo', action: 'create', recordId: variante.id,
-          record: variante, changedFields: varianteRow,
+          toolName: 'create_variante', toolInput,
+          summary: `Crea variante n. ${numero} — ${motivazione}`,
+          writeFn: () => supabase.from('site_computo').insert(varianteRow).select().single(),
         });
+        if (result.error) return result;
+        const variante = result.data;
         return {
           success: true,
           variante: { id: variante.id, numero: variante.numero_variante, stato: variante.stato, motivazione: variante.motivazione },
           istruzione: `Variante ${numero} creata. Aggiungi voci con create_computo_voce passando variante_id: "${variante.id}"`,
-          ...logged,
+          ...result,
         };
       }
 
@@ -5112,20 +5060,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (Object.keys(patch).length === 0) return { error: 'Nessun campo da aggiornare' };
         const { data: varianteBefore } = await supabase
           .from('site_computo').select(Object.keys(patch).join(',')).eq('id', variante_id).eq('company_id', companyId).eq('tipo', 'variante').single();
-        const { data, error } = await supabase
-          .from('site_computo')
-          .update(patch)
-          .eq('id', variante_id).eq('company_id', companyId).eq('tipo', 'variante')
-          .select('id, numero_variante, stato, motivazione, data_approvazione, totale_contratto')
-          .single();
-        if (error) return { error: error.message };
-        if (!data)  return { error: 'Variante non trovata' };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_computo', action: 'update', recordId: variante_id, row: patch, previousValues: varianteBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_computo', action: 'update', recordId: variante_id,
-          record: data, previousValues: varianteBefore || {}, changedFields: patch,
+          toolName: 'update_variante', toolInput,
+          summary: 'Aggiorna variante',
+          writeFn: () => supabase.from('site_computo').update(patch)
+            .eq('id', variante_id).eq('company_id', companyId).eq('tipo', 'variante')
+            .select('id, numero_variante, stato, motivazione, data_approvazione, totale_contratto').single(),
         });
-        return { success: true, variante: data, ...logged };
+        if (result.error) return result;
+        if (!result.data) return { error: 'Variante non trovata' };
+        return { success: true, variante: result.data, ...result };
       }
 
       case 'update_budget_cantiere': {
@@ -5522,14 +5468,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         if (uwActive !== undefined)              patch.is_active              = uwActive;
         if (!Object.keys(patch).length) return { error: 'Nessun campo da aggiornare fornito.' };
         const { data: uwBefore } = await supabase.from('workers').select(Object.keys(patch).join(',')).eq('company_id', companyId).eq('id', uwId).single();
-        const { data: updated, error: uwe } = await supabase.from('workers').update(patch).eq('company_id', companyId).eq('id', uwId).select('id, full_name, ' + Object.keys(patch).join(',')).single();
-        if (uwe) return { error: uwe.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'workers', action: 'update', recordId: uwId, row: patch, previousValues: uwBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'workers', action: 'update', recordId: uwId,
-          record: updated, previousValues: uwBefore || {}, changedFields: patch,
+          toolName: 'update_worker', toolInput,
+          summary: 'Aggiorna dati lavoratore',
+          writeFn: () => supabase.from('workers').update(patch).eq('company_id', companyId).eq('id', uwId).select('id, full_name, ' + Object.keys(patch).join(',')).single(),
         });
-        return { ok: true, success: true, worker: updated, message: `Lavoratore "${updated.full_name}" aggiornato.`, ...logged };
+        if (result.error) return result;
+        return { ok: true, success: true, worker: result.data, message: `Lavoratore "${result.data.full_name}" aggiornato.`, ...result };
       }
 
       case 'get_company_trends': {
@@ -7714,7 +7661,12 @@ router.post('/chat/confirm-action/:id', verifySupabaseJwt, confirmActionLimiter,
 
   const opts = { confirmed: true, conversationId: claimed.conversation_id };
   let result;
-  if (op.action === 'create') {
+  if (op.bespoke) {
+    // Tool bespoke gatato da lib/ladiaWriteExecutor.js (proposeBespokeAction) —
+    // replay dello STESSO dispatcher usato per la chiamata originale, non un
+    // percorso di esecuzione parallelo. _confirmed letto da executeWrite.
+    result = await executeTool(op.tool, { ...op.toolInput, _confirmed: true }, req.companyId, req.user.id, req, claimed.conversation_id);
+  } else if (op.action === 'create') {
     result = await ladiaGenericTools.createRecord(op.resource, op.payload, req.companyId, req.user.id, req, opts);
   } else if (op.action === 'update') {
     result = await ladiaGenericTools.updateRecord(op.resource, op.record_id, op.payload, req.companyId, req.user.id, req, opts);
