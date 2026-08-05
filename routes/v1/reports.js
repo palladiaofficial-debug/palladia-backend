@@ -6,6 +6,7 @@ const { rendererPool }      = require('../../pdf-renderer');
 const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../../services/presenceReport');
 const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
 const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
+const { logDocumentExport } = require('../../services/valueMetrics');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -642,6 +643,111 @@ router.get('/reports/worker-hours-xlsx', verifySupabaseJwt, async (req, res) => 
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Length', xlsxBuffer.length);
   res.send(xlsxBuffer);
+});
+
+// POST /api/v1/reports/presence/close — Ciclo del Risultato, Fase 3.5.
+// "Chiudere" una giornata presenze: RIVERIFICA il pairing (si rifiuta se
+// restano anomalie irrisolte — un controllo reale, non un lock burocratico),
+// poi registra la chiusura. In Mano riusa l'endpoint PDF già esistente
+// (stessi dati ricalcolati, nessuna generazione duplicata).
+router.post('/reports/presence/close', verifySupabaseJwt, async (req, res) => {
+  const { site_id, closure_date } = req.body || {};
+  if (!site_id || !closure_date || !DATE_RE.test(closure_date)) {
+    return res.status(400).json({ error: 'INVALID_PARAMS', message: 'site_id e closure_date (YYYY-MM-DD) obbligatori' });
+  }
+
+  const { data: existing } = await supabase
+    .from('presence_day_closures')
+    .select('id, closed_at')
+    .eq('company_id', req.companyId).eq('site_id', site_id).eq('closure_date', closure_date)
+    .maybeSingle();
+  if (existing) {
+    return res.status(409).json({
+      error: 'ALREADY_CLOSED',
+      message: `Questa giornata è già stata chiusa il ${new Date(existing.closed_at).toLocaleString('it-IT')}.`,
+      closure_id: existing.id,
+    });
+  }
+
+  let summary;
+  try {
+    summary = await buildDailyPresenceSummary(site_id, req.companyId, closure_date, closure_date);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    console.error('[presence/close] data error:', err.message);
+    return res.status(500).json({ error: 'DATA_ERROR', detail: err.message });
+  }
+
+  // RIVERIFICA: rifiuta la chiusura se restano anomalie di pairing non
+  // risolte — non lasciare che un "chiuso" nasconda un'uscita mancante o un
+  // turno anomalo mai corretto.
+  if (summary.anomalies_count > 0) {
+    return res.status(400).json({
+      error: 'ANOMALIES_UNRESOLVED',
+      message: `${summary.anomalies_count} anomalia/e di timbratura da correggere prima di chiudere la giornata.`,
+      anomalies: summary.rows.filter(r => r.anomalies.length > 0).map(r => ({ worker_name: r.worker_name, anomalies: r.anomalies })),
+    });
+  }
+
+  const exportId = await logDocumentExport({
+    companyId: req.companyId, userId: req.user.id, exportType: 'presence_day_closure',
+    title: `Registro presenze — ${summary.site.name} — ${closure_date}`,
+  });
+
+  const { data: closure, error: closureErr } = await supabase.from('presence_day_closures').insert({
+    company_id: req.companyId, site_id, closure_date,
+    closed_by: req.user.id, presence_report_export_id: exportId,
+    worker_count: summary.total_workers, total_hours: summary.total_hours,
+  }).select().single();
+  if (closureErr) return res.status(500).json({ error: 'DB_ERROR', detail: closureErr.message });
+
+  const resultCard = {
+    id: closure.id,
+    title: `Giornata chiusa — ${new Date(closure_date).toLocaleDateString('it-IT')}`,
+    fatto: {
+      verified: true,
+      after: `${summary.total_workers} lavoratori, ${summary.total_hours}h tracciate, nessuna anomalia aperta`,
+      verdict: { kind: 'none' },
+    },
+    inMano: {
+      label: 'registro presenze PDF',
+      downloadUrl: `/api/v1/reports/sites/${site_id}/presenze?from=${closure_date}&to=${closure_date}`,
+      exportType: 'presence_day_closure',
+    },
+    contato: { items: [
+      { kind: 'documento_generato', value: 1, label: 'Registro giornaliero generato', isEstimate: false },
+    ] },
+  };
+
+  res.json({ success: true, closure, resultCard });
+});
+
+// DELETE /api/v1/reports/presence/close/:closureId — riapre una giornata
+// (cancella la riga di lock soft). Nessun vincolo hard su presence_logs da
+// rimuovere: "chiuso" è solo l'esistenza di questa riga.
+router.delete('/reports/presence/close/:closureId', verifySupabaseJwt, async (req, res) => {
+  const { data: closure } = await supabase
+    .from('presence_day_closures').select('id').eq('id', req.params.closureId).eq('company_id', req.companyId).maybeSingle();
+  if (!closure) return res.status(404).json({ error: 'NOT_FOUND' });
+  const { error } = await supabase.from('presence_day_closures').delete().eq('id', req.params.closureId);
+  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  res.json({ success: true });
+});
+
+// GET /api/v1/reports/presence/closures?site_id= — elenco chiusure di un
+// cantiere, per la UI (PresenzeTab.tsx) che deve sapere quali giorni sono
+// già chiusi senza dover tentare una POST e leggere l'errore 409.
+router.get('/reports/presence/closures', verifySupabaseJwt, async (req, res) => {
+  const { site_id } = req.query;
+  if (!site_id) return res.status(400).json({ error: 'INVALID_PARAMS', message: 'site_id obbligatorio' });
+  const { data, error } = await supabase
+    .from('presence_day_closures')
+    .select('id, closure_date, closed_at, worker_count, total_hours')
+    .eq('company_id', req.companyId).eq('site_id', site_id)
+    .order('closure_date', { ascending: false })
+    .limit(90);
+  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  res.json({ closures: data || [] });
 });
 
 module.exports = router;

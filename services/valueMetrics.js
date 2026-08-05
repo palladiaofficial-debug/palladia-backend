@@ -348,12 +348,18 @@ async function computeAndStoreValueMetrics(companyId) {
 // Best-effort: un fallimento qui non deve mai far fallire la risposta PDF/Excel
 // già generata con successo — vedi routes/v1/chat.js (chiamato subito prima di
 // inviare il file al client).
+// Ritorna l'id della riga inserita (null su fallimento best-effort) — usato da
+// chi ha bisogno di collegare l'export a un'altra riga (es. Fase 3.5,
+// presence_day_closures.presence_report_export_id). Nessun chiamante esistente
+// usava il valore di ritorno prima di questa aggiunta, quindi resta
+// retrocompatibile.
 async function logDocumentExport({ companyId, userId, exportType, title }) {
   try {
-    await supabase.from('document_exports').insert({
+    const { data } = await supabase.from('document_exports').insert({
       company_id: companyId, user_id: userId, export_type: exportType, title: title || null,
-    });
-  } catch { /* best-effort */ }
+    }).select('id').single();
+    return data?.id || null;
+  } catch { return null; /* best-effort */ }
 }
 
 // ── Stime ore risparmiate — dichiarate come stime, MAI un conteggio reale ────
