@@ -7306,9 +7306,11 @@ conteggio) — mai l'elenco riga per riga.`;
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/chat/brief — intelligence proattiva giornaliera (no AI, puro DB)
 // Restituisce: scadenze critiche, anomalie budget, cantieri a rischio, KPI snapshot
+// Estratta in funzione condivisa (era inline nella route) per riuso da
+// GET /chat/brief/export (Fase 3.3 "Ciclo del Risultato") senza duplicare la
+// stessa logica di calcolo in due punti.
 // ─────────────────────────────────────────────────────────────────────────────
-router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
-  const companyId = req.companyId;
+async function computeDailyBrief(companyId) {
   const now  = new Date();
   const today = new Date(); today.setHours(0,0,0,0);
   const horizon14 = new Date(today); horizon14.setDate(today.getDate() + 14);
@@ -7403,15 +7405,78 @@ router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
       return 0;
     });
 
-    res.json({
+    return {
       generated_at: new Date().toISOString(),
       kpi,
       alerts: alerts.slice(0, 12), // max 12 alert nel brief
       sites_count: sites.length,
-    });
+    };
   } catch (e) {
     console.error('[brief]', e.message);
+    throw new Error('BRIEF_ERROR');
+  }
+}
+
+router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
+  try {
+    res.json(await computeDailyBrief(req.companyId));
+  } catch {
     res.status(500).json({ error: 'BRIEF_ERROR' });
+  }
+});
+
+// GET /api/v1/chat/brief/export — Ciclo del Risultato: In Mano per il
+// briefing. Stessi dati di /chat/brief (calcolo condiviso, mai ricalcolato
+// due volte in modo diverso), resi come PDF semplice via il motore Puppeteer
+// condiviso — noHeaderFooter perché è un documento "usa e getta", non un
+// documento ufficiale con intestazione/piè di pagina fissi.
+router.get('/chat/brief/export', verifySupabaseJwt, async (req, res) => {
+  try {
+    const brief = await computeDailyBrief(req.companyId);
+    const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
+
+    const SEVERITY_LABEL = { critical: 'Critico', warning: 'Attenzione', info: 'Info' };
+    const rows = brief.alerts.map(a => `
+      <tr>
+        <td style="padding:8px 10px;font-weight:600;">${SEVERITY_LABEL[a.severity] || a.severity}</td>
+        <td style="padding:8px 10px;">${a.title}</td>
+        <td style="padding:8px 10px;color:#555;">${a.detail || ''}</td>
+      </tr>`).join('');
+
+    const html = `
+      <html><head><meta charset="utf-8"><style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #1a1a1a; padding: 24px; }
+        h1 { font-size: 18px; margin-bottom: 4px; }
+        .sub { color: #666; margin-bottom: 20px; }
+        .kpi { display: flex; gap: 16px; margin-bottom: 24px; }
+        .kpi div { border: 1px solid #ddd; border-radius: 8px; padding: 10px 16px; }
+        .kpi b { display: block; font-size: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { text-align: left; padding: 8px 10px; border-bottom: 2px solid #333; }
+        tr:nth-child(even) { background: #fafafa; }
+      </style></head><body>
+        <h1>Briefing Ladia — ${company?.name || ''}</h1>
+        <p class="sub">Generato il ${new Date(brief.generated_at).toLocaleString('it-IT')}</p>
+        <div class="kpi">
+          <div><b>${brief.kpi.sites_active}</b>Cantieri attivi</div>
+          <div><b>${brief.kpi.workers_total}</b>Lavoratori</div>
+          <div><b>${brief.kpi.present_today}</b>Presenti oggi</div>
+          <div><b>${brief.kpi.open_nc}</b>NC aperte</div>
+        </div>
+        ${brief.alerts.length ? `<table><thead><tr><th>Severità</th><th>Titolo</th><th>Dettaglio</th></tr></thead><tbody>${rows}</tbody></table>` : '<p>Nessuna criticità al momento.</p>'}
+      </body></html>`;
+
+    const pdf = await renderHtmlToPdf(html, { noHeaderFooter: true });
+    await logDocumentExport({ companyId: req.companyId, userId: req.user.id, exportType: 'brief_pdf', title: `Briefing — ${new Date(brief.generated_at).toLocaleDateString('it-IT')}` });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="briefing-${new Date(brief.generated_at).toISOString().slice(0, 10)}.pdf"`,
+      'Cache-Control': 'no-store',
+    });
+    res.send(pdf);
+  } catch (e) {
+    console.error('[brief/export]', e.message);
+    res.status(500).json({ error: 'BRIEF_EXPORT_ERROR' });
   }
 });
 
