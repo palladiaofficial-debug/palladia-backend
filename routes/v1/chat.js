@@ -18,7 +18,8 @@ const { logUsage, checkAiBudget } = require('../../lib/ladiaUsageLog');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
-const { executeWrite } = require('../../lib/ladiaWriteExecutor');
+const { executeWrite, checkOrProposeGate } = require('../../lib/ladiaWriteExecutor');
+const { buildResultCard } = require('../../lib/resultCardBuilder');
 const { buildRisksPrompt } = require('../../services/posRisksGenerator');
 const { getMissingFields } = require('../../lib/posDraftCompleteness');
 const { getCompanyPosDefaults } = require('../../lib/posDefaults');
@@ -4277,26 +4278,29 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           resolved_by: userId || null,
         };
         if (toolInput.resolution_notes) patch.content = (existing.content ? existing.content + '\n\n' : '') + `[RISOLUZIONE] ${toolInput.resolution_notes}`;
-        const { data, error } = await supabase
-          .from('site_notes')
-          .update(patch)
-          .eq('id', toolInput.nc_id)
-          .eq('company_id', companyId)
-          .select()
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_notes', action: 'update', recordId: toolInput.nc_id, row: patch,
+          previousValues: { resolved_at: null, resolved_by: null, content: existing.content },
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_notes', action: 'update', recordId: toolInput.nc_id,
-          record: data, previousValues: { resolved_at: null, resolved_by: null, content: existing.content }, changedFields: patch,
+          toolName: 'resolve_nonconformity', toolInput,
+          summary: 'Risolve non conformità',
+          // resultCard: RIVERIFICA generalizzata (lib/complianceRecheck.js,
+          // handler site_notes — stessa logica spostata qui da questo tool)
+          // riusabile anche da altri punti in futuro, senza duplicarla.
+          resultCard: { complianceResource: 'site_notes', title: 'Non conformità risolta' },
+          writeFn: () => supabase.from('site_notes').update(patch).eq('id', toolInput.nc_id).eq('company_id', companyId).select().single(),
         });
+        if (result.error) return result;
         // Rischio reale del cantiere DOPO la risoluzione — stesso "compilatore" già
         // usato per get_risk_score, non una stima di Ladia su quante NC restano
         // aperte. Se il livello resta alto (altre NC aperte, o altre dimensioni
         // compromesse), Ladia deve dirlo, non lasciar intendere che sia tutto risolto.
+        // Campo rischio_dopo mantenuto invariato (contratto già noto al prompt/
+        // frontend) — result.resultCard.fatto.verdict porta la stessa informazione
+        // nella forma generalizzata, per chi la consuma da lì.
         const rischio_dopo = existing.site_id ? await computeRiskScore(existing.site_id, companyId) : null;
         return {
-          success: true, nc_risolta: data, ...logged,
+          success: true, nc_risolta: result.data, ...result,
           rischio_dopo: rischio_dopo ? {
             livello: rischio_dopo.level, etichetta: rischio_dopo.label, punteggio: rischio_dopo.score,
             non_conformita_ancora_aperte: rischio_dopo.dimensions.nonConformity.detail,
@@ -4801,6 +4805,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const margine = Math.round((importoMaturato - totaleCosti) * 100) / 100;
         const margPct = importoMaturato > 0 ? Math.round(margine / importoMaturato * 10000) / 100 : 0;
 
+        // Gate PRIMA della RPC di numerazione (non idempotente — un secondo
+        // giro dopo la conferma non deve consumarne un altro): emit_sal non
+        // aveva MAI un gate di conferma nonostante scriva un vero SAL con
+        // importo_maturato — vedi ladiaSchemaRegistry.js, sensitivity 'medium'.
+        const salGate = await checkOrProposeGate({
+          resourceName: 'site_sal_history', action: 'create', row: { importo_maturato: importoMaturato },
+          companyId, userId, conversationId: convId,
+          toolName: 'emit_sal', toolInput,
+          summary: `Emetti SAL — importo maturato €${importoMaturato}`,
+        });
+        if (salGate) return salGate;
+
         // Numero SAL progressivo atomico
         const { data: nextNum, error: rpcErr } = await supabase.rpc('next_sal_number', { p_site_id: siteId });
         if (rpcErr) return { error: 'Errore numerazione SAL: ' + rpcErr.message };
@@ -4816,14 +4832,14 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           note: toolInput.note || null,
           created_by: userId || null,
         };
-        const { data: sal, error: salErr } = await supabase
-          .from('site_sal_history').insert(snapshot).select().single();
-        if (salErr) return { error: salErr.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_sal_history', action: 'create', row: snapshot,
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_sal_history', action: 'create', recordId: sal.id,
-          record: sal, changedFields: snapshot,
+          toolName: 'emit_sal', toolInput, opts: { confirmed: true }, // già gatato sopra
+          writeFn: () => supabase.from('site_sal_history').insert(snapshot).select().single(),
         });
+        if (result.error) return result;
+        const sal = result.data;
         return {
           success: true,
           sal_emesso: {
@@ -4835,7 +4851,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
             margine: sal.margine, margine_percentuale: sal.margine_percentuale,
           },
           nota: 'SAL registrato con snapshot P&L completo. Scarica il PDF dalla sezione Economia → Storico SAL.',
-          ...logged,
+          ...result,
         };
       }
 
@@ -4845,25 +4861,21 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const { data: salBefore } = await supabase
           .from('site_sal_history').select('pagato_il').eq('id', sal_id).eq('site_id', site_id).eq('company_id', companyId).single();
         const patch = { pagato_il: pagato_il || null };
-        const { data, error } = await supabase
-          .from('site_sal_history')
-          .update(patch)
-          .eq('id', sal_id)
-          .eq('site_id', site_id)
-          .eq('company_id', companyId)
-          .select('id, sal_number, sal_percentuale, importo_maturato, data_emissione, pagato_il')
-          .single();
-        if (error) return { error: error.message };
-        const logged = await logAction({
+        const result = await executeWrite({
+          resourceName: 'site_sal_history', action: 'update', recordId: sal_id, row: patch, previousValues: salBefore || {},
           companyId, userId, req, conversationId: convId,
-          resourceName: 'site_sal_history', action: 'update', recordId: sal_id,
-          record: data, previousValues: salBefore || {}, changedFields: patch,
+          toolName: 'mark_sal_pagato', toolInput,
+          summary: 'Aggiorna incasso SAL',
+          writeFn: () => supabase.from('site_sal_history').update(patch)
+            .eq('id', sal_id).eq('site_id', site_id).eq('company_id', companyId)
+            .select('id, sal_number, sal_percentuale, importo_maturato, data_emissione, pagato_il').single(),
         });
+        if (result.error) return result;
         return {
           success: true,
-          sal: data,
-          stato: data.pagato_il ? `SAL ${data.sal_number} segnato come incassato il ${data.pagato_il}` : `SAL ${data.sal_number} — incasso annullato`,
-          ...logged,
+          sal: result.data,
+          stato: result.data.pagato_il ? `SAL ${result.data.sal_number} segnato come incassato il ${result.data.pagato_il}` : `SAL ${result.data.sal_number} — incasso annullato`,
+          ...result,
         };
       }
 
@@ -5450,13 +5462,27 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           site_id, worker_id,
           category, expiry_date, issue_date, issuing_body, course_type_id,
         } = toolInput;
-        return await archiveChatUpload({
+        // Nessun gate di conferma qui di proposito: il prompt istruisce
+        // esplicitamente Ladia ad archiviare in batch senza chiedere conferma
+        // per singolo file ("CARICAMENTO MULTIPLO... niente conferma per
+        // singolo file"), anche per documenti legal-sensitive — aggiungerne
+        // uno romperebbe quel flusso deliberato. Qui si aggiunge solo la
+        // RIVERIFICA (stato reale ricalcolato sulla destinazione appena
+        // scritta) e il Contato, non la conferma.
+        const archiveResult = await archiveChatUpload({
           uploadId: upload_id, companyId, userId,
           destination, name, siteId: site_id, workerId: worker_id,
           category, expiryDate: expiry_date, issueDate: issue_date,
           issuingBody: issuing_body, courseTypeId: course_type_id,
           req, conversationId: convId,
         });
+        if (archiveResult.error) return archiveResult;
+        const resultCard = await buildResultCard({
+          id: archiveResult.actionHistoryId || String(archiveResult.doc_id),
+          companyId, recordId: archiveResult.doc_id, resourceName: destination,
+          title: `Documento archiviato — ${name}`,
+        });
+        return { ...archiveResult, resultCard };
       }
 
       case 'update_worker': {

@@ -28,6 +28,7 @@
 require('dotenv').config();
 const supabase = require('../lib/supabase');
 const { executeTool } = require('../routes/v1/chat');
+const { buildResultCard } = require('../lib/resultCardBuilder');
 
 const COMPANY_ID = process.env.E2E_COMPANY_ID || 'fda73bf5-403a-4a0e-be6d-501e3f3c5c4d';
 const USER_ID    = process.env.E2E_USER_ID || '';
@@ -91,6 +92,49 @@ async function main() {
     }
     await supabase.from('ladia_pending_actions').delete().eq('id', r2.pending_action_id);
   }
+
+  // 4. emit_sal — prima della Fase 2b non aveva MAI un gate nonostante scriva
+  // un vero SAL con importo_maturato. Verifica che il gate scatti PRIMA della
+  // RPC di numerazione (non idempotente): nessuna riga site_sal_history deve
+  // comparire quando la richiesta resta non confermata.
+  const r4 = await executeTool('emit_sal', { site_id: siteId, note: 'TEST-E2E-write-executor selftest SAL' }, COMPANY_ID, USER_ID, null, null);
+  if (r4.error === 'RICHIEDE_CONFERMA' && r4.pending_action_id) ok('emit_sal richiede conferma (gate presente, prima assente)');
+  else fail('emit_sal richiede conferma (gate presente, prima assente)', r4);
+  if (r4.pending_action_id) {
+    const { data: salRows } = await supabase.from('site_sal_history').select('id').eq('site_id', siteId);
+    if (!salRows?.length) ok('nessun SAL scritto/numerato mentre la richiesta resta non confermata');
+    else fail('nessun SAL scritto/numerato mentre la richiesta resta non confermata', salRows);
+    await supabase.from('ladia_pending_actions').delete().eq('id', r4.pending_action_id);
+  }
+
+  // 5. buildResultCard su company_documents — la RIVERIFICA che archive_document
+  // ora attacca dopo ogni archiviazione (lib/complianceRecheck.js). Verifica
+  // diretta sul recheck, senza dover simulare l'intero upload di un file.
+  const { data: doc } = await supabase.from('company_documents').insert({
+    company_id: COMPANY_ID, name: 'TEST-E2E-write-executor DURC', category: 'durc',
+    file_path: 'test/non-esiste.pdf', ai_expiry_date: '2099-01-01',
+  }).select('id').single();
+  const card = await buildResultCard({
+    id: 'test', title: 'Documento archiviato — test', resourceName: 'company_documents',
+    recordId: doc.id, companyId: COMPANY_ID,
+  });
+  if (card.fatto.verified && card.fatto.verdict.stato === 'ok') ok('buildResultCard su company_documents riverifica lo stato reale (ok, scadenza 2099)');
+  else fail('buildResultCard su company_documents riverifica lo stato reale (ok, scadenza 2099)', card);
+  await supabase.from('company_documents').delete().eq('id', doc.id);
+
+  // 6. resolve_nonconformity — verifica che passi per executeWrite (gate low,
+  // esegue subito) e che il verdetto rischio_dopo/resultCard restino coerenti.
+  const { data: nc } = await supabase.from('site_notes').insert({
+    company_id: COMPANY_ID, site_id: siteId, author_id: USER_ID, author_name: 'Ladia AI', source: 'web',
+    content: 'TEST-E2E-write-executor NC', category: 'non_conformita', urgency: 'normale',
+  }).select('id').single();
+  const r6 = await executeTool('resolve_nonconformity', { nc_id: nc.id, resolution_notes: 'Risolta per test' }, COMPANY_ID, USER_ID, null, null);
+  if (r6.success && r6.rischio_dopo !== undefined && r6.resultCard?.fatto?.verdict?.kind === 'risk_score') {
+    ok('resolve_nonconformity esegue subito (low sensitivity) e produce un verdetto risk_score');
+  } else {
+    fail('resolve_nonconformity esegue subito (low sensitivity) e produce un verdetto risk_score', r6);
+  }
+  await supabase.from('site_notes').delete().eq('id', nc.id);
 
   // Cleanup
   if (r1.data?.id) await supabase.from('site_notes').delete().eq('id', r1.data.id);
