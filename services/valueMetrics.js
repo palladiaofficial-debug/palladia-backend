@@ -356,10 +356,101 @@ async function logDocumentExport({ companyId, userId, exportType, title }) {
   } catch { /* best-effort */ }
 }
 
+// ── Stime ore risparmiate — dichiarate come stime, MAI un conteggio reale ────
+// Ogni voce porta la propria metodologia in italiano: nessun numero "a
+// sensazione" senza una riga che spieghi come è stato ottenuto. Oggetto
+// statico volutamente semplice (nessuna nuova tabella) — se la stima cambia,
+// cambia qui, un solo posto.
+const ESTIMATED_HOURS_SAVED = {
+  pos_generation: {
+    hours: 2.5,
+    label: 'Tempo di stesura POS manuale evitato',
+    methodology: 'Stima dichiarata: confronto con la compilazione manuale di un POS a 14 sezioni da un consulente esterno, non una misura cronometrata su questo cliente.',
+  },
+  document_renewal: {
+    hours: 0.25,
+    label: 'Tempo di verifica/upload manuale evitato',
+    methodology: 'Stima dichiarata: tempo tipico per individuare il documento in scadenza, prepararlo e caricarlo a mano senza l\'assistente.',
+  },
+  smart_import_per_document: {
+    hours: 0.15,
+    label: 'Tempo di catalogazione manuale evitato (per documento)',
+    methodology: 'Stima dichiarata: tempo tipico per aprire, leggere, classificare e archiviare manualmente un singolo documento — moltiplicato per i documenti importati nel batch.',
+  },
+  daily_presence_closure: {
+    hours: 0.3,
+    label: 'Tempo di controllo/compilazione registro evitato',
+    methodology: 'Stima dichiarata: tempo tipico per verificare le timbrature della giornata e compilare a mano il registro per il consulente del lavoro.',
+  },
+};
+
+// ── Delta di valore per una SINGOLA azione (Contato di una ResultCard) ──────
+// Variante scoped-a-un'-entità di computeScadenzeESanzioni: stessa fonte di
+// verità (stesso lookup sanction_ranges/amount_min_cents, mai il max), ma
+// filtrata sull'unico item generato dall'azione appena eseguita — cosi' il
+// numero mostrato in una ResultCard è sempre riconducibile a un evento
+// preciso, mai un aggregato scollegato dall'azione che l'ha prodotto.
+//
+// resourceName è la chiave di risorsa lato Ladia (es. 'company_documents',
+// 'worker_certificates') — mappata al prefisso entity_type usato in
+// expiry_interception_log/computeScadenzeESanzioni qui sotto.
+const ENTITY_TYPE_BY_RESOURCE = {
+  company_documents:   'company_document',
+  worker_documents:     'worker_document',
+  subcontractors:       'subcontractor',
+  equipment:            'equipment',
+  worker_certificates:  'worker_certificate',
+};
+
+async function computeActionValueDelta({ resourceName, recordId, companyId, hoursSavedKey }) {
+  const items = [];
+
+  const entityType = ENTITY_TYPE_BY_RESOURCE[resourceName];
+  if (entityType) {
+    const { items: allItems } = await computeScadenzeESanzioni(companyId);
+    const match = allItems.find(i => i.entity_type === entityType && (
+      i.entity_id === recordId || i.entity_id.startsWith(`${recordId}::`)
+    ));
+    if (match) {
+      items.push({
+        kind: 'scadenza_intercettata',
+        value: 1,
+        label: match.label,
+        isEstimate: false,
+        sourceUrl: '/api/v1/value-metrics/detail/scadenze',
+      });
+      if (match.amount_min_cents) {
+        items.push({
+          kind: 'sanzione_evitata',
+          value: match.amount_min_cents / 100,
+          label: `${match.violation_label || 'Sanzione'} (${match.legal_reference || 'D.Lgs 81/2008'}) — importo minimo`,
+          isEstimate: false,
+          sourceUrl: '/api/v1/value-metrics/detail/sanzioni',
+        });
+      }
+    }
+  }
+
+  if (hoursSavedKey && ESTIMATED_HOURS_SAVED[hoursSavedKey]) {
+    const est = ESTIMATED_HOURS_SAVED[hoursSavedKey];
+    items.push({
+      kind: 'ore_risparmiate',
+      value: est.hours,
+      label: est.label,
+      isEstimate: true,
+      methodology: est.methodology,
+    });
+  }
+
+  return { items };
+}
+
 module.exports = {
   computeScadenzeESanzioni,
   computeDocumentiGenerati,
   computeOrePresenza,
   computeAndStoreValueMetrics,
+  computeActionValueDelta,
   logDocumentExport,
+  ESTIMATED_HOURS_SAVED,
 };
