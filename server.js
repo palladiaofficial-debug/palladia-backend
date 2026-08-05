@@ -16,6 +16,7 @@ const { logUsage } = require('./lib/ladiaUsageLog');
 const { isFeatureEnabled } = require('./lib/featureFlags');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
+const { ESTIMATED_HOURS_SAVED } = require('./services/valueMetrics');
 const { generateDvrHtml }  = require('./dvr-html-generator');
 const { generatePimusHtml } = require('./pimus-html-generator');
 const { rendererPool } = require('./pdf-renderer');
@@ -1462,7 +1463,32 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
       Sentry.captureException(dbErr);
     }
 
-    sseWrite(res, `data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template' })}\n\n`);
+    // Ciclo del Risultato — Fatto (documento salvato, verificato dal roundtrip
+    // DB appena avvenuto, non dichiarato dal frontend) + Contato (documento
+    // generato + stima ore risparmiate, dichiarata come tale). In Mano NON
+    // incluso qui di proposito: il bottone "Scarica PDF" esistente nel
+    // frontend usa già editableRisks (permette modifiche prima del download,
+    // POST /api/generate-pdf) — un downloadUrl generico qui rischierebbe di
+    // scaricare una versione diversa da quella che l'utente ha in mano.
+    // Costruito inline (non via buildResultCard, pensato per il percorso di
+    // scrittura Ladia/compliance) perché un POS non ha uno stato di
+    // conformità da riverificare — solo un salvataggio riuscito.
+    const posEst = ESTIMATED_HOURS_SAVED.pos_generation;
+    const resultCard = posId ? {
+      id: String(posId),
+      title: `POS — Revisione ${revision}`,
+      fatto: {
+        verified: true,
+        after: `Documento salvato (revisione ${revision}${siteId ? ', collegato al cantiere' : ''})`,
+        verdict: { kind: 'none' },
+      },
+      contato: { items: [
+        { kind: 'documento_generato', value: 1, label: 'Documento generato', isEstimate: false },
+        { kind: 'ore_risparmiate', value: posEst.hours, label: posEst.label, isEstimate: true, methodology: posEst.methodology },
+      ] },
+    } : null;
+
+    sseWrite(res, `data: ${JSON.stringify({ type: 'done', posId, revision, mode: 'template', resultCard })}\n\n`);
     sseWrite(res, 'data: [DONE]\n\n');
     if (!res.writableEnded) res.end();
     console.log('[template-stream] complete');
