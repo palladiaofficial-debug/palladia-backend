@@ -20,6 +20,7 @@ const { auditLog } = require('../../lib/audit');
 const { logAction } = require('../../lib/ladiaActionLog');
 const { executeWrite, checkOrProposeGate } = require('../../lib/ladiaWriteExecutor');
 const { buildResultCard } = require('../../lib/resultCardBuilder');
+const { resolveInterceptedExpiry } = require('../../lib/renewalResolution');
 const { buildRisksPrompt } = require('../../services/posRisksGenerator');
 const { getMissingFields } = require('../../lib/posDraftCompleteness');
 const { getCompanyPosDefaults } = require('../../lib/posDefaults');
@@ -5477,10 +5478,25 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           req, conversationId: convId,
         });
         if (archiveResult.error) return archiveResult;
+        // Fase 3.4 "scadenza→rinnovo": se questo documento sostituisce uno che
+        // aveva generato un alert di scadenza ancora aperto, risolvilo SUBITO
+        // invece di aspettare il prossimo giro cron — rende il Contato della
+        // ResultCard verificabile ora, non domani.
+        const renewalResolved = await resolveInterceptedExpiry({
+          companyId, destination, recordId: archiveResult.doc_id, actionHistoryId: archiveResult.actionHistoryId,
+        });
         const resultCard = await buildResultCard({
           id: archiveResult.actionHistoryId || String(archiveResult.doc_id),
           companyId, recordId: archiveResult.doc_id, resourceName: destination,
           title: `Documento archiviato — ${name}`,
+          // In Mano solo se questa scrittura ha davvero risolto una scadenza
+          // intercettata — un upload qualsiasi (non un rinnovo) non genera una
+          // "lettera di conferma rinnovo" che non avrebbe senso.
+          inMano: renewalResolved && archiveResult.actionHistoryId ? {
+            label: 'lettera di conferma rinnovo',
+            downloadUrl: `/api/v1/chat/renewal-letter/${archiveResult.actionHistoryId}`,
+            exportType: 'renewal_letter',
+          } : undefined,
         });
         return { ...archiveResult, resultCard };
       }
@@ -7168,6 +7184,11 @@ conteggio) — mai l'elenco riga per riga.`;
               // recheckWorkerCompliance in ladiaGenericTools.js) — vedi anche
               // compliance_after su /chat/confirm-action per il ramo propose_action.
               compliance_after:   result.compliance_after || null,
+              // Ciclo del Risultato — Fatto/In Mano/Contato quando il tool le
+              // costruisce (executeWrite con resultCard:, archive_document,
+              // resolve_nonconformity). Assente per la maggior parte dei tool
+              // bespoke non ancora estesi — il frontend la mostra solo se presente.
+              result_card:        result.resultCard || null,
             });
           } else if (AGENTIC_WRITE_TOOLS.has(block.name) && failed) {
             // Card rossa, sempre visibile inline — l'equivalente in caso di
@@ -7477,6 +7498,70 @@ router.get('/chat/brief/export', verifySupabaseJwt, async (req, res) => {
   } catch (e) {
     console.error('[brief/export]', e.message);
     res.status(500).json({ error: 'BRIEF_EXPORT_ERROR' });
+  }
+});
+
+// GET /api/v1/chat/renewal-letter/:actionHistoryId — Ciclo del Risultato, In
+// Mano per il flusso scadenza→rinnovo (Fase 3.4). Rilegge la riga FRESCA dalla
+// tabella di destinazione (mai i valori del momento dell'archiviazione) —
+// stesso principio "non fidarsi del payload già in mano" di ogni altra
+// riverifica in questo file.
+router.get('/chat/renewal-letter/:actionHistoryId', verifySupabaseJwt, async (req, res) => {
+  try {
+    const { data: entry } = await supabase
+      .from('ladia_action_history')
+      .select('table_name, record_id, resource, summary, created_at')
+      .eq('id', req.params.actionHistoryId)
+      .eq('company_id', req.companyId)
+      .maybeSingle();
+    if (!entry) return res.status(404).json({ error: 'NOT_FOUND' });
+    if (!['company_documents', 'worker_documents'].includes(entry.table_name)) {
+      return res.status(400).json({ error: 'NOT_A_RENEWAL', detail: 'Questa azione non è un rinnovo documento.' });
+    }
+
+    const isWorkerDoc = entry.table_name === 'worker_documents';
+    const { data: doc } = await supabase
+      .from(entry.table_name)
+      .select(isWorkerDoc ? 'name, category:doc_type, expiry_date, worker_id, workers(full_name)' : 'name, category, ai_expiry_date, expiry_date:ai_expiry_date')
+      .eq('id', entry.record_id)
+      .eq('company_id', req.companyId)
+      .maybeSingle();
+    if (!doc) return res.status(404).json({ error: 'DOCUMENT_NOT_FOUND' });
+
+    const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
+    const entityLabel = isWorkerDoc ? (doc.workers?.full_name || 'lavoratore') : (company?.name || '');
+
+    const html = `
+      <html><head><meta charset="utf-8"><style>
+        body { font-family: Arial, sans-serif; font-size: 13px; color: #1a1a1a; padding: 32px; }
+        h1 { font-size: 17px; margin-bottom: 24px; }
+        table { border-collapse: collapse; width: 100%; margin-top: 12px; }
+        td { padding: 8px 0; border-bottom: 1px solid #eee; }
+        td:first-child { color: #666; width: 220px; }
+        .note { margin-top: 32px; font-size: 11px; color: #888; }
+      </style></head><body>
+        <h1>Conferma rinnovo documento</h1>
+        <table>
+          <tr><td>Documento</td><td>${doc.name || '—'}</td></tr>
+          <tr><td>Categoria</td><td>${doc.category || '—'}</td></tr>
+          <tr><td>${isWorkerDoc ? 'Lavoratore' : 'Azienda'}</td><td>${entityLabel}</td></tr>
+          <tr><td>Nuova scadenza</td><td>${doc.expiry_date ? new Date(doc.expiry_date).toLocaleDateString('it-IT') : 'non impostata'}</td></tr>
+          <tr><td>Rinnovato il</td><td>${new Date(entry.created_at).toLocaleDateString('it-IT')}</td></tr>
+        </table>
+        <p class="note">Documento generato automaticamente da Palladia a conferma dell'avvenuto rinnovo. Non sostituisce l'originale caricato in archivio.</p>
+      </body></html>`;
+
+    const pdf = await renderHtmlToPdf(html, { noHeaderFooter: true });
+    await logDocumentExport({ companyId: req.companyId, userId: req.user.id, exportType: 'report_chat_pdf', title: `Conferma rinnovo — ${doc.name}` });
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="conferma-rinnovo-${req.params.actionHistoryId.slice(0, 8)}.pdf"`,
+      'Cache-Control': 'no-store',
+    });
+    res.send(pdf);
+  } catch (e) {
+    console.error('[renewal-letter]', e.message);
+    res.status(500).json({ error: 'RENEWAL_LETTER_ERROR' });
   }
 });
 
