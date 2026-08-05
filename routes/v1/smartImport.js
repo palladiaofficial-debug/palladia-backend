@@ -13,6 +13,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { chatLimiter } = require('../../middleware/rateLimit');
 const pipeline = require('../../services/smartImportPipeline');
+const { ESTIMATED_HOURS_SAVED } = require('../../services/valueMetrics');
 
 const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500 MB
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB — singolo file dentro zip/cartella
@@ -166,7 +167,34 @@ router.post('/smart-import/staged-entities/:id/reject', async (req, res) => {
 router.post('/smart-import/batches/:id/finish', async (req, res) => {
   try {
     const summary = await pipeline.finishBatch(req.params.id, req.companyId);
-    res.json({ success: true, summary });
+
+    // Ciclo del Risultato — Fatto/Contato costruiti dagli stessi numeri già
+    // ricalcolati dal DB in finishBatch() (mai dichiarati dal frontend). Nessun
+    // verdetto di conformità singolo ha senso per un intero batch: se emergono
+    // documenti già in scadenza entro 60gg, lo si segnala come mismatchWarning
+    // invece di lasciar intendere che l'archivio sia "a posto" e basta.
+    const est = ESTIMATED_HOURS_SAVED.smart_import_per_document;
+    const resultCard = {
+      id: req.params.id,
+      title: 'Importazione confermata',
+      fatto: {
+        verified: true,
+        after: 'Batch confermato e archiviato',
+        verdict: { kind: 'none' },
+        ...(summary.expiring_60d > 0 ? {
+          mismatchWarning: `${summary.expiring_60d} dei documenti importati scadono entro 60 giorni — verificali prima di considerare l'archivio a posto.`,
+        } : {}),
+      },
+      // "Documenti importati" non ripetuto qui: la schermata mostra già una
+      // griglia 2x2 con quel numero (e lavoratori/cantieri creati) — qui solo
+      // il valore che quella griglia non copre.
+      contato: summary.documents_imported > 0 ? { items: [{
+        kind: 'ore_risparmiate', value: Math.round(est.hours * summary.documents_imported * 100) / 100,
+        label: est.label, isEstimate: true, methodology: est.methodology,
+      }] } : undefined,
+    };
+
+    res.json({ success: true, summary, resultCard });
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
