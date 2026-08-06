@@ -4,7 +4,7 @@
  * Parsing ibrido regex+AI di capitolati speciali d'appalto italiani.
  *
  * Flusso:
- *  1. extractPdfText/xlsx → righe reali (coordinate Y pdfjs)
+ *  1. extractPdfText/ExcelJS → righe reali (coordinate Y pdfjs)
  *  2. preFilter → rimuove header/footer ripetuti e font spaziato
  *  3. regexParse → struttura completa; gestisce:
  *     – formula embedded nella riga voce (c.ca / n. x / corpo / comp.unitario)
@@ -17,7 +17,7 @@
  */
 
 const Anthropic = require('@anthropic-ai/sdk');
-const xlsx      = require('xlsx');
+const ExcelJS   = require('exceljs');
 const { extractPdfText } = require('../lib/pdfExtract');
 const { logUsage }       = require('../lib/ladiaUsageLog');
 
@@ -705,21 +705,55 @@ function excelColumnParse(rows, headerRow, colMap) {
 }
 
 // ─── Excel ────────────────────────────────────────────────────────────────────
+
+// Un valore cella ExcelJS può essere primitivo, Date, {richText:[...]} (testo
+// formattato), {formula, result} (formula) o {text, hyperlink} (link) — a
+// differenza di xlsx/raw:false qui i numeri restano number nativi, che
+// parseNum() già gestisce (vedi typeof v === 'number' sotto).
+function cellToValue(cell) {
+  const v = cell.value;
+  if (v == null) return '';
+  if (typeof v !== 'object') return v;
+  if (v instanceof Date) return v;
+  if (Array.isArray(v.richText)) return v.richText.map(t => t.text).join('');
+  if (v.result !== undefined) return v.result;
+  if (v.text !== undefined) return v.text;
+  return '';
+}
+
+// Array-of-arrays su tutte le colonne del foglio (non solo quelle con dati
+// nella singola riga), così gli indici di colMap restano validi riga per riga.
+function worksheetToAOA(worksheet) {
+  const rows = [];
+  const numCols = worksheet.columnCount || 0;
+  worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+    const arr = [];
+    for (let c = 1; c <= numCols; c++) arr.push(cellToValue(row.getCell(c)));
+    rows[rowNumber - 1] = arr;
+  });
+  for (let i = 0; i < (worksheet.rowCount || 0); i++) if (!rows[i]) rows[i] = [];
+  return rows;
+}
+
+function csvCell(v) {
+  if (v == null || v === '') return '';
+  const s = v instanceof Date ? v.toISOString().slice(0, 10) : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
 async function parseExcel(buffer, companyId = null, userId = null) {
-  const workbook = xlsx.read(buffer, { type: 'buffer', cellDates: true });
-  let bestSheet = workbook.SheetNames[0], maxCells = 0;
-  for (const name of workbook.SheetNames) {
-    const sheet = workbook.Sheets[name];
-    const range = xlsx.utils.decode_range(sheet['!ref'] || 'A1:A1');
-    const cells = (range.e.r - range.s.r + 1) * (range.e.c - range.s.c + 1);
-    if (cells > maxCells) { maxCells = cells; bestSheet = name; }
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+
+  let bestSheet = workbook.worksheets[0], maxCells = 0;
+  for (const ws of workbook.worksheets) {
+    const cells = (ws.rowCount || 0) * (ws.columnCount || 0);
+    if (cells > maxCells) { maxCells = cells; bestSheet = ws; }
   }
-  console.log(`[computoParser/parseExcel] "${bestSheet}"`);
+  console.log(`[computoParser/parseExcel] "${bestSheet.name}"`);
 
   // Leggi come array-of-arrays mantenendo la struttura colonne
-  const rows = xlsx.utils.sheet_to_json(workbook.Sheets[bestSheet], {
-    header: 1, defval: '', raw: false,
-  });
+  const rows = worksheetToAOA(bestSheet);
 
   // Tenta parsing column-aware
   const detected = detectHeaderRow(rows);
@@ -739,7 +773,7 @@ async function parseExcel(buffer, companyId = null, userId = null) {
   }
 
   // Fallback: CSV → AI full parse
-  const csv   = xlsx.utils.sheet_to_csv(workbook.Sheets[bestSheet], { blankrows: false });
+  const csv   = rows.filter(r => r.some(c => c !== '' && c != null)).map(r => r.map(csvCell).join(',')).join('\n');
   const lines = csv.split('\n').filter(l => l.replace(/,+/g, '').trim().length > 2);
   const usageAcc = [];
   const result = await runParse(lines, 'parseExcel', usageAcc);
