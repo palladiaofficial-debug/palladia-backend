@@ -4428,7 +4428,6 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           plate_or_serial: toolInput.plate_or_serial || null,
           insurance_expiry: toolInput.insurance_expiry || null,
           is_active: true,
-          status: 'disponibile',
         };
         const result = await executeWrite({
           resourceName: 'equipment', action: 'create', row,
