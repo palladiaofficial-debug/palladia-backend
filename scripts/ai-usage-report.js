@@ -35,7 +35,7 @@ function fmtUsd(n) { return '$' + n.toFixed(4); }
 
   const { data, error } = await supabase
     .from('ladia_usage_log')
-    .select('company_id, model, call_site, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, estimated_cost_usd, created_at')
+    .select('company_id, model, call_site, is_internal, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, estimated_cost_usd, created_at')
     .gte('created_at', since);
 
   if (error) {
@@ -47,9 +47,16 @@ function fmtUsd(n) { return '$' + n.toFixed(4); }
     return;
   }
 
-  const totalCost = data.reduce((s, r) => s + Number(r.estimated_cost_usd), 0);
+  const totalCost    = data.reduce((s, r) => s + Number(r.estimated_cost_usd), 0);
+  const internalRows = data.filter(r => r.is_internal);
+  const externalRows = data.filter(r => !r.is_internal);
+  const internalCost = internalRows.reduce((s, r) => s + Number(r.estimated_cost_usd), 0);
+  const externalCost = externalRows.reduce((s, r) => s + Number(r.estimated_cost_usd), 0);
+
   console.log(`\n=== Spesa AI stimata — ultimi ${days} giorni ===`);
-  console.log(`Chiamate totali: ${data.length}   Costo stimato totale: ${fmtUsd(totalCost)}\n`);
+  console.log(`Chiamate totali: ${data.length}   Costo stimato totale: ${fmtUsd(totalCost)}`);
+  console.log(`  di cui sviluppo/interno (founder/master company): ${fmtUsd(internalCost)} (${internalRows.length} chiamate)`);
+  console.log(`  di cui clienti reali:                             ${fmtUsd(externalCost)} (${externalRows.length} chiamate)\n`);
 
   const byCallSite = {};
   for (const r of data) {
@@ -64,7 +71,7 @@ function fmtUsd(n) { return '$' + n.toFixed(4); }
 
   const byCompany = {};
   for (const r of data) {
-    byCompany[r.company_id] ??= { calls: 0, cost: 0 };
+    byCompany[r.company_id] ??= { calls: 0, cost: 0, internal: r.is_internal };
     byCompany[r.company_id].calls += 1;
     byCompany[r.company_id].cost  += Number(r.estimated_cost_usd);
   }
@@ -72,7 +79,19 @@ function fmtUsd(n) { return '$' + n.toFixed(4); }
   Object.entries(byCompany)
     .sort((a, b) => b[1].cost - a[1].cost)
     .slice(0, 10)
-    .forEach(([companyId, s]) => console.log(`  ${companyId}   ${String(s.calls).padStart(5)} chiamate   ${fmtUsd(s.cost)}`));
+    .forEach(([companyId, s]) => console.log(`  ${companyId}   ${String(s.calls).padStart(5)} chiamate   ${fmtUsd(s.cost)}${s.internal ? '   [interno]' : ''}`));
+
+  const byDay = {};
+  for (const r of externalRows) {
+    const day = r.created_at.slice(0, 10);
+    byDay[day] ??= { calls: 0, cost: 0 };
+    byDay[day].calls += 1;
+    byDay[day].cost  += Number(r.estimated_cost_usd);
+  }
+  console.log('\nPer giorno (solo clienti reali):');
+  Object.entries(byDay)
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .forEach(([day, s]) => console.log(`  ${day}   ${String(s.calls).padStart(5)} chiamate   ${fmtUsd(s.cost)}`));
 
   console.log('');
 })();
