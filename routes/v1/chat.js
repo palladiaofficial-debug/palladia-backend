@@ -1,4 +1,15 @@
 'use strict';
+// ══════════════════════════════════════════════════════════════════════════════
+// QUESTO FILE È CONGELATO (deciso 2026-08-06, dopo due diligence tecnica).
+// 7.893 righe, 86 tool, il file più modificato del repo — troppo caldo per uno
+// smontaggio pre-lancio senza rischiare una settimana di regressioni. Verrà
+// scomposto con calma dopo il lancio, sotto la suite di regressione verde.
+//
+// Da oggi: NESSUN NUOVO TOOL O HANDLER LADIA NASCE QUI. Un nuovo tool va in un
+// modulo separato (vedi lib/ladiaGenericTools.js, lib/ladiaWriteExecutor.js
+// come precedenti) ed è importato da chat.js, non scritto inline in questo
+// file. Congeliamo il debito invece di ingrandirlo.
+// ══════════════════════════════════════════════════════════════════════════════
 const crypto    = require('crypto');
 const router    = require('express').Router();
 const Sentry    = require('../../lib/sentry');

@@ -8,4 +8,8 @@ Una modifica è finita solo quando **tutte** queste condizioni sono vere:
 4. **`AUDIT.md` aggiornato** — vive nel repo frontend (`C:\Users\ricka\palladia\AUDIT.md`), condiviso concettualmente tra i due repo: uno stesso finding può avere causa e fix in uno qualsiasi dei due. Lo stato scritto lì deve riflettere la realtà verificata ORA, non quella dell'ultima sessione — se riapri e correggi un finding già "chiuso", aggiorna la voce invece di aggiungerne una nuova silenziosa.
 5. **Se il flusso è significativo**, si chiude con il Ciclo del Risultato (Fatto → In mano → Contato, componente `ResultCard`) invece che con un generico "salvato" — vedi Prompt A quando sarà implementato.
 
+## routes/v1/chat.js è congelato
+
+Deciso il 2026-08-06 dopo una due diligence tecnica: 7.893 righe, 86 tool, il file più modificato del repo — troppo caldo per uno smontaggio pre-lancio. **Nessun nuovo tool o handler Ladia nasce in questo file.** Un nuovo tool va scritto in un modulo separato (vedi `lib/ladiaGenericTools.js`, `lib/ladiaWriteExecutor.js` come precedenti) e importato da `chat.js`, non aggiunto inline. Lo smontaggio del file esistente si fa con calma dopo il lancio, sotto la suite di regressione verde — non ora.
+
 **Ogni bug trovato d'ora in poi** — da Sentry, da un utente, da un audit — segue sempre questo ordine: prima un finding in `AUDIT.md` con codice progressivo (F-0XX e passi per riprodurlo), poi un test di regressione che lo riproduce e fallisce, **poi** il fix. Mai un fix diretto senza un test che lo protegga: è esattamente il tipo di "risolto ma non verificato" che ha causato le tre regressioni riaperte il 3 agosto 2026.
