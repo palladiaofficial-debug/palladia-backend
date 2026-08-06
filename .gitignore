@@ -6,3 +6,7 @@ C*AppData*
 C*Users*Temp*
 *.tmp
 *.temp
+
+# LADIA_EVALS — id fixture e report generati ad ogni run, non sorgente
+scripts/ladia_evals/.fixture_ids.json
+scripts/ladia_evals/reports/
