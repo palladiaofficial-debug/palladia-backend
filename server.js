@@ -1699,6 +1699,9 @@ app.get('/api/dvr/:dvrId/pdf', verifyJwtOnly, async (req, res) => {
   try {
     const dvr = await checkDocOwnership(req, res, 'dvr_documents', req.params.dvrId);
     if (!dvr) return;
+    if (!await isFeatureEnabled(dvr.company_id, 'dvr')) {
+      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione DVR non disponibile al momento.' });
+    }
 
     const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
 
@@ -1723,6 +1726,9 @@ app.get('/api/dvr/:dvrId/html', verifyJwtOnly, async (req, res) => {
   try {
     const dvr = await checkDocOwnership(req, res, 'dvr_documents', req.params.dvrId);
     if (!dvr) return;
+    if (!await isFeatureEnabled(dvr.company_id, 'dvr')) {
+      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione DVR non disponibile al momento.' });
+    }
 
     const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -1931,6 +1937,9 @@ app.get('/api/pimus/:pimusId/pdf', verifyJwtOnly, async (req, res) => {
   try {
     const pimus = await checkDocOwnership(req, res, 'pimus_documents', req.params.pimusId);
     if (!pimus) return;
+    if (!await isFeatureEnabled(pimus.company_id, 'pimus')) {
+      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione PIMUS non disponibile al momento.' });
+    }
 
     const html     = generatePimusHtml(pimus.pimus_data || {}, pimus.revision, pimus.content || '');
     const ragSoc   = pimus.pimus_data?.ragioneSociale || 'Azienda';

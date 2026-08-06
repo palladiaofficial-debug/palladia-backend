@@ -7,7 +7,7 @@
     "start": "node server.js",
     "lint": "eslint routes/ lib/ middleware/ services/ server.js --max-warnings 20",
     "lint:fix": "eslint routes/ lib/ middleware/ services/ server.js --fix",
-    "test": "node scripts/selftest_api.js && node scripts/selftest_ladia_write_executor.js && node scripts/selftest_smart_import_result_card.js && node scripts/selftest_renewal_resolution.js && node scripts/selftest_presence_closure.js && node scripts/selftest_computo_excel_parse.js",
+    "test": "node scripts/selftest_api.js && node scripts/selftest_ladia_write_executor.js && node scripts/selftest_smart_import_result_card.js && node scripts/selftest_renewal_resolution.js && node scripts/selftest_presence_closure.js && node scripts/selftest_computo_excel_parse.js && node scripts/selftest_dvr_pimus_feature_gate.js",
     "test:scan": "node scripts/selftest_scan.js"
   },
   "keywords": [],
@@ -34,7 +34,6 @@
     "node-cron": "^4.2.1",
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^5.4.624",
-    "pdfkit": "^0.17.2",
     "pino": "^10.3.1",
     "pino-http": "^11.0.0",
     "puppeteer": "^24.37.5",
