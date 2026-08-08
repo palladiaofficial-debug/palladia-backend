@@ -17,6 +17,12 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendExpiryAlert, sendSessionReminder } = require('../../services/email');
+const { extractStorageRef } = require('../../lib/companyStorageCleanup');
+
+// TTL uniforme con gli altri endpoint di download documento (site/company/
+// worker/subcontractor/payslip usano tutti 3600s) — certificati non aveva
+// mai avuto un endpoint dedicato, il frontend apriva pdf_url direttamente.
+const DOWNLOAD_SIGNED_URL_TTL = 3600;
 const { validate } = require('../../middleware/validate');
 const {
   createCertificateSchema,
@@ -294,6 +300,32 @@ router.delete('/certificates/:id', verifySupabaseJwt, async (req, res) => {
   const { error } = await supabase.from('worker_certificates').delete().eq('id', id);
   if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
   res.status(204).end();
+});
+
+// ── GET /api/v1/certificates/:id/download — stessa forma di documents/company-documents/
+// workers/:id/documents/subcontractors/payslips (signed URL, stesso TTL) ────────────────
+router.get('/certificates/:id/download', verifySupabaseJwt, async (req, res) => {
+  const { id } = req.params;
+
+  const { data: cert } = await supabase
+    .from('worker_certificates')
+    .select('id, pdf_url')
+    .eq('id', id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (!cert) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!cert.pdf_url) return res.status(404).json({ error: 'NO_FILE' });
+
+  const ref = extractStorageRef(cert.pdf_url);
+  if (!ref) return res.status(422).json({ error: 'UNRESOLVABLE_FILE_REF' });
+
+  const { data: signed, error } = await supabase.storage
+    .from(ref.bucket)
+    .createSignedUrl(ref.path, DOWNLOAD_SIGNED_URL_TTL);
+
+  if (error) return res.status(500).json({ error: 'STORAGE_ERROR', detail: error.message });
+  res.json({ url: signed.signedUrl });
 });
 
 // ── GET /api/v1/formazione/notifications ─────────────────────────────────────
