@@ -50,7 +50,7 @@ router.get('/archive/documents', async (req, res) => {
       file_path_needs_review, file_size, mime_type, expiry_date, ai_expiry_date,
       content_hash, issued_date, issuing_body, certificate_number, course_type_id,
       period_year, period_month, payslip_status, notes, deleted_at, created_at, updated_at,
-      sites(name), workers(full_name), subcontractors(company_name)
+      sites(name), workers(full_name), subcontractors(company_name), course_types(name)
     `, { count: 'exact' })
     .eq('company_id', companyId)
     .is('deleted_at', null)
@@ -78,8 +78,9 @@ router.get('/archive/documents', async (req, res) => {
       site_name:           d.sites?.name || null,
       worker_name:         d.workers?.full_name || null,
       subcontractor_name:  d.subcontractors?.company_name || null,
+      course_type_name:    d.course_types?.name || null,
       expiry_status:       status,
-      sites: undefined, workers: undefined, subcontractors: undefined,
+      sites: undefined, workers: undefined, subcontractors: undefined, course_types: undefined,
     };
   });
 
