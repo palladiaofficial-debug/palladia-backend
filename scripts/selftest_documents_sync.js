@@ -92,6 +92,8 @@ async function main() {
     const doc = await getDocRow('worker_certificates', row.id);
     check('worker_certificates INSERT sincronizzato con path estratto dalla signed URL', doc && doc.file_path === rawPath && doc.bucket === 'site-documents' && !doc.file_path_needs_review, doc);
     await supabase.from('worker_certificates').delete().eq('id', row.id);
+    const docAfterDelete = await getDocRow('worker_certificates', row.id);
+    check('worker_certificates DELETE rimuove la riga in documents', !docAfterDelete, docAfterDelete);
 
     const { data: unrecognized } = await supabase.from('worker_certificates').insert({ company_id: companyId, worker_id: workerId, issue_date: '2024-01-01', expiry_date: '2099-01-01', issuing_body: 'TEST', pdf_url: 'https://example.com/not-supabase.pdf' }).select().single();
     const doc2 = await getDocRow('worker_certificates', unrecognized.id);
