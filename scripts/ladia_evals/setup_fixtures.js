@@ -307,10 +307,15 @@ async function resetFixturesVerbose(forScenarioId) {
     })));
   }
 
-  // 13. Certificati lavoratori in scadenza entro 60gg (R09) — 2 su 5 lavoratori generici
+  // 13. Certificati lavoratori in scadenza entro 60gg (R09) — 2 su 5 lavoratori generici,
+  //     ENTRAMBI di tipo Antincendio (lo scenario chiede esplicitamente "chi ha il
+  //     certificato antincendio" — senza course_type_id il tipo risulta "N/D" e Ladia
+  //     rifiuta correttamente di rispondere, bug di fixture scambiato per bug di Ladia).
+  const { data: antincendioType } = await supabase.from('course_types')
+    .select('id').ilike('name', 'Antincendio%').limit(1).single();
   await mustInsert('worker_certificates', [
-    { company_id: companyId, worker_id: workers.g1, issue_date: daysFromNow(-300), expiry_date: daysFromNow(20), issuing_body: 'Ente Formazione Test', certificate_number: 'CERT-EVAL-001' },
-    { company_id: companyId, worker_id: workers.g2, issue_date: daysFromNow(-300), expiry_date: daysFromNow(45), issuing_body: 'Ente Formazione Test', certificate_number: 'CERT-EVAL-002' },
+    { company_id: companyId, worker_id: workers.g1, course_type_id: antincendioType.id, issue_date: daysFromNow(-300), expiry_date: daysFromNow(20), issuing_body: 'Ente Formazione Test', certificate_number: 'CERT-EVAL-001' },
+    { company_id: companyId, worker_id: workers.g2, course_type_id: antincendioType.id, issue_date: daysFromNow(-300), expiry_date: daysFromNow(45), issuing_body: 'Ente Formazione Test', certificate_number: 'CERT-EVAL-002' },
   ]);
 
   // 14. Documenti aziendali con scadenze (R04) — 2 entro 30gg, 1 oltre
