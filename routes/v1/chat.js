@@ -7137,12 +7137,16 @@ conteggio) — mai l'elenco riga per riga.`;
               campi_precedenti: campiPrecedenti,
               action_history_id: result.actionHistoryId || null,
             });
-          } else if (result.success && result.actionHistoryId) {
+          } else if (result.success && (result.actionHistoryId || result.undone)) {
             // Card generica "Annulla" per QUALUNQUE tool di scrittura (generico
             // create_record/update_record/delete_record O bespoke via logAction())
             // che abbia registrato l'azione in ladia_action_history — non più
             // condizionata al nome del tool, altrimenti ogni nuovo tool bespoke
             // resterebbe invisibile finché qualcuno non cabla un caso apposta qui.
+            // result.undone (senza actionHistoryId): ramo undo_action — un undo
+            // riuscito non ha un proprio actionHistoryId da offrire (annullare
+            // un annullamento non è supportato), altrimenti la card "Fatto" non
+            // appariva mai per un undo vero (F-029, AUDIT.md).
             let campi = null;
             let campiPrecedenti = null;
             if (result.changedFields) {
@@ -7168,15 +7172,16 @@ conteggio) — mai l'elenco riga per riga.`;
             send({
               type:               'record_action',
               resource:           result.resource || block.input?.table || null,
-              action:             result.action || (result.record ? 'update' : 'delete'),
+              action:             result.undone ? 'undo' : (result.action || (result.record ? 'update' : 'delete')),
               summary:            result.undoSummary || result.summary || null,
               action_history_id:  result.actionHistoryId,
               // undoable: risorse con allow.delete/create false (la maggioranza
               // dei tool bespoke) rifiuterebbero comunque l'undo al click con
               // UNDO_NON_DISPONIBILE — meglio non mostrare un bottone che fallisce
               // sempre. undefined (tool bespoke pre-esistenti a questo campo) resta
-              // true per compatibilità, non un vero "sì".
-              undoable:           result.undoable !== false,
+              // true per compatibilità, non un vero "sì". Un undo riuscito è
+              // sempre undoable:false — annullare un annullamento non esiste.
+              undoable:           result.undone ? false : (result.undoable !== false),
               campi,
               campi_precedenti:   campiPrecedenti,
               // site_id: permette al frontend di sapere quale cantiere è stato

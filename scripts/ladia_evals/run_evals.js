@@ -151,8 +151,16 @@ TRACCIA REALE:
     messages: [{ role: 'user', content: userMsg }],
   });
   const raw = resp.content.find(b => b.type === 'text')?.text || '{}';
+  // Haiku a volte manda newline letterali dentro il valore stringa di "reason"
+  // (JSON non valido — le stringhe non possono contenere \n non escappati).
+  // L'oggetto è piatto (solo valori stringa), quindi sostituire ogni newline
+  // con uno spazio prima del parse è sempre sicuro: non rompe mai la
+  // struttura, al più appiattisce un a-capo dentro il testo del motivo.
+  // Trovato con LADIA_EVALS run 2026-08-08: 3/56 scenari (incl. 2 PASS reali,
+  // R01/M03/M06) contati come FAIL solo per questo — vedi AUDIT.md.
+  const jsonBlob = (raw.match(/\{[\s\S]*\}/)?.[0] || raw).replace(/\r?\n/g, ' ');
   let parsed;
-  try { parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw); }
+  try { parsed = JSON.parse(jsonBlob); }
   catch { parsed = { verdict: 'FAIL', reason: 'Risposta del giudice non parsabile: ' + raw.slice(0, 200) }; }
   return { verdict: parsed.verdict === 'PASS' ? 'PASS' : 'FAIL', reason: parsed.reason || '(nessun motivo)', usage: resp.usage };
 }

@@ -332,14 +332,21 @@ async function main() {
   console.log('\n─────────────────────────────────────────');
   if (failed === 0) {
     console.log(`\x1b[32m✓ Tutti i test passati (${passed} ok, ${skipped} saltati)\x1b[0m\n`);
-    process.exit(0);
+    process.exitCode = 0;
   } else {
     console.error(`\x1b[31m✗ ${failed} test falliti, ${passed} ok, ${skipped} saltati\x1b[0m\n`);
-    process.exit(1);
+    process.exitCode = 1;
   }
+  // process.exitCode invece di process.exit(): il fetch() nativo di Node
+  // (undici) lascia handle keep-alive aperti che un exit forzato tronca a
+  // metà chiusura — su Windows questo fa crashare il processo con
+  // "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)" DOPO aver già
+  // stampato l'esito, interrompendo la catena `&&` di `npm test` prima che
+  // gli script successivi girino mai. exitCode lascia che l'event loop
+  // dreni naturalmente invece di forzare la chiusura a metà.
 }
 
 main().catch(e => {
   console.error('[selftest_api] errore imprevisto:', e.message);
-  process.exit(1);
+  process.exitCode = 1;
 });
