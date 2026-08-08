@@ -6,6 +6,7 @@ const { sendMemberRemovedEmail } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { patchCompanySchema, patchTeamMemberSchema, leaveCompanySchema } = require('../../lib/schemas/company');
 const { isFounder } = require('../../lib/founder');
+const { cleanupCompanyDocumentStorage } = require('../../lib/companyStorageCleanup');
 
 // GET /api/v1/my-company — JWT only, NO X-Company-Id richiesto
 // Header opzionale X-Hint-Company-Id: se fornito e valido per l'utente, lo preferisce.
@@ -505,9 +506,10 @@ router.delete('/companies/:companyId', async (req, res) => {
 
   console.log(`[delete-company] inizio cancellazione transazionale company ${companyId} (owner: ${userId})`);
 
-  // Cleanup Storage best-effort (prima del delete DB — i path sono ancora nel DB)
-  const BUCKETS = ['documents', 'equipment-docs', 'worker-photos', 'company-docs'];
-  for (const bucket of BUCKETS) {
+  // Cleanup Storage best-effort (prima del delete DB — i path sono ancora nel DB).
+  // Bucket legacy con file storicamente diretti sotto companyId/ (nessuna sottocartella nota).
+  const LEGACY_BUCKETS = ['equipment-docs', 'worker-photos', 'company-docs'];
+  for (const bucket of LEGACY_BUCKETS) {
     try {
       const { data: files } = await supabase.storage.from(bucket).list(companyId, { limit: 1000 });
       if (files?.length) {
@@ -515,6 +517,14 @@ router.delete('/companies/:companyId', async (req, res) => {
         await supabase.storage.from(bucket).remove(paths);
       }
     } catch { /* best-effort — continua anche se il bucket non esiste */ }
+  }
+  // site-documents/documents/site-media: i file vivono in sottocartelle (workers/,
+  // subcontractors/, diary/, ecc.) — un list(companyId) non le trova mai (F-032).
+  // I path reali si leggono dalle tabelle invece di indovinare la struttura cartelle.
+  try {
+    await cleanupCompanyDocumentStorage(companyId);
+  } catch (e) {
+    console.error('[delete-company] cleanup storage documenti fallito (best-effort):', e.message);
   }
 
   const { error } = await supabase.rpc('delete_company_cascade', { p_company_id: companyId });
