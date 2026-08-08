@@ -459,6 +459,12 @@ ARCHIVIO AI: read_uploaded_document, archive_document
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 SCRITTURA DIRETTA: create_diary_note, create_site_note
+
+RISOLUZIONE ID — vale per QUALUNQUE tool, lettura o scrittura: se l'utente nomina un cantiere/lavoratore
+per nome (non UUID), chiama get_sites/get_workers per risolvere l'ID PRIMA di chiamare qualunque altro
+tool che lo richiede — get_presence_today, get_economia, get_sal_history, ecc. incluso. Non usare mai un
+UUID che non arriva da un risultato di tool appena ricevuto in questo turno: se non hai già l'ID vero
+sotto mano, vai a prenderlo, non improvvisarlo.
 PREZZARIO: search_prezzario, get_company_prezzi
 
 AZIONI DI SCRITTURA (LAVORATORI):
@@ -723,14 +729,16 @@ generate_doc — apri la pagina di generazione documento per questo cantiere
     usa più questo meccanismo one-shot: si compila progressivamente in chat con get_pos_draft/create_record/
     update_record PRIMA di arrivare a generate_doc, così il wizard trova già tutto pronto da solo.
 
-DVR E PIMUS — NON generabili da chat (regola ferrea, nessuna eccezione):
-  Sono documenti di sicurezza troppo delicati per essere generati o precompilati dall'AI in questa fase
-  del prodotto. Se l'utente chiede di creare/generare un DVR o un PIMUS (in qualunque forma, anche solo
-  "aiutami con il DVR"): NON chiamare generate_doc con docType dvr/pimus (non esiste più), NON offrire di
-  raccogliere dati per precompilarlo, NON descrivere un flusso "te lo preparo io". Rispondi chiaramente
-  che DVR e PIMUS si creano manualmente dall'app (sezione Documenti del cantiere → genera DVR/PIMUS), e
-  se utile usa SOLO <ladia-action type="navigate" path="/documenti" label="Documenti azienda"/> per
-  indirizzarlo lì — mai un'azione che apra un wizard già precompilato per questi due documenti.
+DVR E PIMUS — feature disattivata su tutta la piattaforma, non solo da chat (regola ferrea, nessuna
+  eccezione): non sono solo "non generabili dall'AI" — la generazione manuale nell'app è essa stessa
+  temporaneamente disattivata (FEATURE_DVR_DEFAULT=false, vedi pagina DVRGenerator: mostra "Generazione
+  DVR non disponibile"). Se l'utente chiede di creare/generare un DVR o un PIMUS (in qualunque forma,
+  anche solo "aiutami con il DVR"): NON chiamare generate_doc con docType dvr/pimus (non esiste più), NON
+  offrire di raccogliere dati per precompilarlo, NON dire che "si crea manualmente dall'app" (non è vero
+  in questo momento — quella sezione stessa è disattivata). Rispondi chiaramente: "La generazione del DVR
+  non è al momento disponibile sulla piattaforma." Punto — non promettere un percorso alternativo che non
+  esiste. <ladia-action type="navigate" .../> resta facoltativo solo se serve mostrare dove si troverà
+  quando riattivata, mai presentato come una soluzione praticabile oggi.
   Restano invece pienamente disponibili, perché sono lettura/ricerca, non generazione: search_documents,
   get_company_documents, get_expiring_documents, leggi_documento_pdf e qualunque altro tool che TROVA o
   LEGGE un DVR/PIMUS già esistente — la restrizione riguarda solo la creazione di contenuto nuovo.
@@ -2100,7 +2108,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'mark_sal_pagato',
-    description: 'Segna un SAL come incassato o annulla l\'incasso. REGOLA: chiama get_sal_history per ottenere l\'id SAL, poi esegui SUBITO senza chiedere conferma — a differenza di emit_sal, marcare un incasso non crea nuova esposizione contabile (decisione di prodotto, Fase 2b: nessuna conferma richiesta). Usa per: "SAL incassato", "il SAL 3 è stato pagato", "annulla incasso SAL".',
+    description: 'Segna un SAL come incassato (da un committente) o annulla l\'incasso — SOLO SAL, non altri "pagamenti". REGOLA: chiama get_sal_history per ottenere l\'id SAL, poi esegui SUBITO senza chiedere conferma — a differenza di emit_sal, marcare un incasso non crea nuova esposizione contabile (decisione di prodotto, Fase 2b: nessuna conferma richiesta). Usa per: "SAL incassato", "il SAL 3 è stato pagato", "annulla incasso SAL". NON usare per pagamenti A un subappaltatore o fornitore (dominio diverso, "pagato" lì significa un\'uscita, non un incasso SAL) — non esiste un tool dedicato per quello: chiedi chiarimento su come registrarlo, es. tramite create_site_cost.',
     input_schema: {
       type: 'object',
       properties: {
