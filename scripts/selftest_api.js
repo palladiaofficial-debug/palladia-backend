@@ -324,7 +324,11 @@ async function main() {
     skip('IDOR NC cross-company', 'JWT non disponibile');
   } else {
     const fakeNc = '00000000-0000-4000-8000-000000000098';
-    const r = await req('PATCH', `/api/v1/nonconformities/${fakeNc}`, { status: 'chiusa' }, JWT, COMPANY_ID);
+    // status:'risolta' — unico valore enum valido oltre 'in_lavorazione'
+    // (lib/schemas/nonconformities.js). 'chiusa' non è mai stato un valore
+    // ammesso: il test falliva sempre con 400 VALIDATION_ERROR prima ancora
+    // di raggiungere il controllo IDOR sull'id, senza mai verificarlo davvero.
+    const r = await req('PATCH', `/api/v1/nonconformities/${fakeNc}`, { status: 'risolta' }, JWT, COMPANY_ID);
     check('PATCH /nonconformities/fake → 404/403', r.status === 404 || r.status === 403, r);
   }
 
