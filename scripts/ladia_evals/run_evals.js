@@ -103,7 +103,7 @@ async function runScenario(jwt, companyId, comando) {
       switch (evt.type) {
         case 'text':                 trace.text += evt.delta || ''; break;
         case 'tool_start':           trace.toolStarts.push(...(evt.names || [])); break;
-        case 'tool_step':            trace.toolSteps.push({ name: evt.name, status: evt.status, fact: evt.fact }); break;
+        case 'tool_step':            trace.toolSteps.push({ name: evt.name, status: evt.status, fact: evt.fact, message: evt.message }); break;
         case 'record_action':        trace.recordActions.push({ resource: evt.resource, action: evt.action, campi: evt.campi, site_id: evt.site_id, record_id: evt.record_id, summary: evt.summary }); break;
         case 'pending_action':       trace.pendingActions.push({ summary: evt.summary, pending_action_id: evt.pending_action_id }); break;
         case 'read_failed':          trace.readFailed.push({ tool: evt.tool, message: evt.message }); break;
