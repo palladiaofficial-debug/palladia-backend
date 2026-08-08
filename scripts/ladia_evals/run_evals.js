@@ -146,7 +146,10 @@ TRACCIA REALE:
 - Testo completo risposto da Ladia: "${trace.text.slice(0, 1500)}"`;
 
   const resp = await anthropic.messages.create({
-    model: JUDGE_MODEL, max_tokens: 300,
+    // 300 troncava a metà la risposta JSON per scenari con ragionamento lungo
+    // (es. M02 multistep), rendendola non parsabile indipendentemente dal fix
+    // sui newline sopra — trovato 2026-08-08, stessa famiglia di bug del giudice.
+    model: JUDGE_MODEL, max_tokens: 600,
     system: JUDGE_SYSTEM,
     messages: [{ role: 'user', content: userMsg }],
   });

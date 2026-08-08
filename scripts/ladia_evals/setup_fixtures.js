@@ -76,6 +76,9 @@ async function findOrCreateSite(companyId, row) {
     if (row.budget_totale !== undefined) {
       await supabase.from('sites').update({ budget_totale: row.budget_totale }).eq('id', existing.id);
     }
+    if (row.sal_percentuale !== undefined) {
+      await supabase.from('sites').update({ sal_percentuale: row.sal_percentuale }).eq('id', existing.id);
+    }
     return existing.id;
   }
   const { data, error } = await supabase.from('sites').insert({ company_id: companyId, ...row }).select('id').single();
@@ -176,7 +179,12 @@ async function resetFixturesVerbose(forScenarioId) {
   // 3. Sites — Aurelia (ricco), Ostia (semplice), Ponza×2 (omonimi, SOLO per A01)
   const sites = {};
   for (const [key, row] of Object.entries({
-    aurelia: { name: 'Aurelia', address: 'Via Aurelia 120', city: 'Roma', status: 'attivo', budget_totale: 700000 },
+    // sal_percentuale:15 — riflette il progresso reale già coperto da SAL 1/2
+    // (€100k+€120k emessi, sotto), altrimenti emit_sal calcola sempre importo
+    // maturato €0 (legge sites.sal_percentuale, non lo storico site_sal_history)
+    // e Ladia si rifiuta correttamente di emettere un SAL a valore zero — bug
+    // di fixture scambiato per bug di Ladia in M02/D09 (AUDIT.md, 2026-08-08).
+    aurelia: { name: 'Aurelia', address: 'Via Aurelia 120', city: 'Roma', status: 'attivo', budget_totale: 700000, sal_percentuale: 15 },
     ostia:   { name: 'Ostia',   address: 'Via delle Baleniere 8', city: 'Roma', status: 'attivo' },
     ponza1:  { name: 'Ponza',  address: 'Via Ponza Centro 4',  city: 'Ponza', status: 'attivo' },
     ponza2:  { name: 'Ponza',  address: 'Via del Porto 12',    city: 'Ponza', status: 'attivo' },
@@ -397,6 +405,25 @@ async function resetFixturesVerbose(forScenarioId) {
       { company_id: companyId, user_id: ciUser.id, resource: 'site_phases', table_name: 'site_phases', pk_column: 'id', record_id: u08Phase.id, action: 'create', summary: 'Creata fase: Fase Test U08', created_at: minutesAgo(5) },
       { company_id: companyId, user_id: ciUser.id, resource: 'site_sal_history', table_name: 'site_sal_history', pk_column: 'id', record_id: u08Sal.id, action: 'update', summary: 'Modificato: SAL', created_at: minutesAgo(2) },
     ]);
+  }
+
+  // M05 ("Crea il cantiere 'Via Tiburtina 45'...") presuppone che il cantiere
+  // NON esista ancora — ma una volta che Ladia lo crea davvero in un run, il
+  // sito sopravvive per sempre (sites non è mai hard-deletabile per il
+  // vincolo append-only su presence_logs, vedi wipeMutableStoryState sopra),
+  // quindi ogni run successivo lo trova già esistente e lo scenario non può
+  // più testare una vera creazione (bug di fixture scambiato per bug di
+  // Ladia in M05, AUDIT.md 2026-08-08). "Via Tiburtina 45" non è un cantiere
+  // fixture intenzionale come Aurelia/Ostia/Ponza — è sicuro hard-deletarlo
+  // (mai usato per timbrature) prima di ogni run di questo scenario.
+  if (forScenarioId === 'M05') {
+    const { data: stale } = await supabase.from('sites')
+      .select('id').eq('company_id', companyId).eq('name', 'Via Tiburtina 45').maybeSingle();
+    if (stale) {
+      await supabase.from('worksite_workers').delete().eq('site_id', stale.id);
+      await supabase.from('ladia_action_history').delete().eq('record_id', stale.id);
+      await supabase.from('sites').delete().eq('id', stale.id);
+    }
   }
 
   const result = { companyId, sites, workers, subs };

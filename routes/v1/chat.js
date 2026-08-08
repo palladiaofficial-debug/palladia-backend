@@ -500,6 +500,17 @@ ANNULLARE UN'AZIONE VIA CHAT (testo, non click sul bottone "Annulla azione" dell
   senza aver prima controllato get_recent_actions.
 - Non hai un tool generico "annulla l'ultima cosa" che indovina da solo: se get_recent_actions torna più
   di un'azione plausibile e non è chiaro a quale l'utente si riferisce, elenca le opzioni e chiedi.
+- Se get_recent_actions torna una lista VUOTA (nessuna scrittura recente — es. la sessione ha fatto solo
+  letture) o nessuna voce corrisponde a quello che l'utente descrive, dillo onestamente: "Non trovo quella
+  spesa/azione nella cronologia recente." get_recent_actions NON ha filtro temporale (torna sempre le
+  ultime 10, qualunque età), quindi NON puoi affermare come fatto verificato una causa specifica (es. "è
+  scaduta" detto come certezza) — questo sarebbe un'invenzione spacciata per accertata, identica nella
+  sostanza a dichiarare un successo mai avvenuto. È invece ACCETTABILE ragionare in modo condizionale e
+  dichiarato dalla premessa dell'utente + un fatto vero del sistema: "se l'hai registrata ieri come dici,
+  la finestra di annullamento di 30 minuti sarebbe comunque scaduta" — il condizionale "se" rende chiaro
+  che stai ragionando sulla sua premessa, non affermando di aver verificato l'esistenza o l'età della
+  spesa. Solo se TROVI l'azione e undo_action ritorna FINESTRA_SCADUTA puoi affermarlo senza condizionale,
+  perché a quel punto un tool te l'ha confermato.
 - Vale la stessa regola sopra: comunica il risultato SOLO dopo aver visto la risposta del tool. Un errore
   (es. finestra di 30 minuti scaduta) va riportato per quello che è, mai presentato come un annullamento
   riuscito.
@@ -1127,7 +1138,7 @@ REGOLA COSTI — usare la destinazione giusta:
 REGOLE SPECIALI — tool ad alto impatto:
 • emit_sal: SEMPRE chiama get_economia prima → mostra P&L con importo maturato, costi, margine → chiedi conferma → poi emit_sal. Mai senza conferma esplicita.
 • delete_economia_voce: SEMPRE mostra la voce (descrizione + importo) prima → chiedi conferma → poi delete. Mai in blocco proattivo.
-• update_sal_voce / update_prezzo_voce: chiama get_computo_voci prima per ottenere l'id → mostra "Sto aggiornando [descrizione voce] da X a Y" → poi esegui. Se l'utente specifica una voce per nome, trova la corrispondenza nell'elenco restituito da get_computo_voci (match parziale sulla descrizione).
+• update_sal_voce / update_prezzo_voce: chiama get_computo_voci prima per ottenere l'id → mostra "Sto aggiornando [descrizione voce] da X a Y" → poi esegui. Se l'utente specifica una voce per nome, trova la corrispondenza nell'elenco restituito da get_computo_voci (match parziale sulla descrizione). Se il match parziale trova PIÙ DI UNA voce nello stesso cantiere (es. "scavi" → "scavi di sbancamento" E "scavi a sezione ristretta"), non sceglierne una arbitrariamente: elenca le voci trovate e chiedi quale — questa è l'ambiguità da risolvere, non quale cantiere (se il cantiere è già chiaro dal contesto).
 
 REGOLE:
 1. Il blocco va SEMPRE alla fine, dopo la risposta tecnica — mai in mezzo
@@ -2089,7 +2100,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'mark_sal_pagato',
-    description: 'Segna un SAL come incassato o annulla l\'incasso. REGOLA: chiama get_sal_history per ottenere l\'id SAL e mostrare il SAL prima di aggiornarlo. Usa per: "SAL incassato", "il SAL 3 è stato pagato", "annulla incasso SAL".',
+    description: 'Segna un SAL come incassato o annulla l\'incasso. REGOLA: chiama get_sal_history per ottenere l\'id SAL, poi esegui SUBITO senza chiedere conferma — a differenza di emit_sal, marcare un incasso non crea nuova esposizione contabile (decisione di prodotto, Fase 2b: nessuna conferma richiesta). Usa per: "SAL incassato", "il SAL 3 è stato pagato", "annulla incasso SAL".',
     input_schema: {
       type: 'object',
       properties: {
@@ -2157,7 +2168,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'create_variante',
-    description: 'Crea una nuova variante al computo. Richiede un computo base esistente. REGOLA: mostra il numero progressivo e la motivazione e chiedi conferma prima. Le voci si aggiungono dopo con create_computo_voce passando variante_id. Usa per: "crea variante", "aggiungi addendum", "nuova variante per extra lavori".',
+    description: 'Crea una nuova variante al computo. Richiede un computo base esistente. Campi obbligatori: site_id + motivazione — se mancano ENTRAMBI dal messaggio dell\'utente, chiedili insieme in un\'unica domanda, non uno alla volta. REGOLA: mostra il numero progressivo e la motivazione e chiedi conferma prima. Le voci (con il relativo importo, che questo tool NON ha) si aggiungono dopo con create_computo_voce passando variante_id. Usa per: "crea variante", "aggiungi addendum", "nuova variante per extra lavori".',
     input_schema: {
       type: 'object',
       properties: {
