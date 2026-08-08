@@ -5,8 +5,8 @@
 const supabase = require('../lib/supabase');
 
 async function verifyDocumentsSync() {
-  const { data: tables, error } = await supabase.rpc('verify_documents_sync_tier1');
-  if (error) throw new Error(`verify_documents_sync_tier1 fallita: ${error.message}`);
+  const { data: tables, error } = await supabase.rpc('verify_documents_sync');
+  if (error) throw new Error(`verify_documents_sync fallita: ${error.message}`);
 
   const { data: unresolvedFailures, error: failErr } = await supabase
     .from('document_sync_failures')

@@ -1,8 +1,9 @@
 'use strict';
-// Fase 2, Scaglione 1 — controllo ricorrente per tutto il periodo di doppia
-// scrittura (non un gate una tantum dopo il backfill, per richiesta esplicita).
-// Gira ogni 20 minuti; logga sempre lo stato, con un warning esplicito se
-// emergono disallineamenti o fallimenti di sync non risolti.
+// Fase 2 — controllo ricorrente per tutto il periodo di doppia scrittura, su
+// tutte le tabelle di tutti gli scaglioni attivi (non un gate una tantum dopo
+// il backfill, per richiesta esplicita). Gira ogni 20 minuti; logga sempre lo
+// stato, con un warning esplicito se emergono disallineamenti o fallimenti
+// di sync non risolti.
 const cron = require('node-cron');
 const { verifyDocumentsSync } = require('./documentsSyncVerify');
 

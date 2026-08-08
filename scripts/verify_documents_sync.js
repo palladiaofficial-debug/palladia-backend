@@ -2,17 +2,17 @@
 /**
  * scripts/verify_documents_sync.js
  *
- * Verifica on-demand della sincronizzazione documents (Scaglione 1). Stesso
- * controllo del cron (services/documentsSyncVerifyCron.js), ma per un run
- * manuale con output leggibile. Exit code 1 se trova anomalie — utilizzabile
- * anche in CI/monitoring.
+ * Verifica on-demand della sincronizzazione documents (tutti gli scaglioni
+ * attivi). Stesso controllo del cron (services/documentsSyncVerifyCron.js),
+ * ma per un run manuale con output leggibile. Exit code 1 se trova anomalie —
+ * utilizzabile anche in CI/monitoring.
  */
 'use strict';
 require('dotenv').config();
 const { verifyDocumentsSync } = require('../services/documentsSyncVerify');
 
 async function main() {
-  console.log('\nVerifica sincronizzazione documents — Scaglione 1\n');
+  console.log('\nVerifica sincronizzazione documents\n');
   const report = await verifyDocumentsSync();
 
   for (const t of report.tables) {
