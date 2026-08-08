@@ -161,6 +161,29 @@ router.patch('/payslips/:id/unshare', verifySupabaseJwt, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /api/v1/payslips/:id/download ─────────────────────────────────────────
+// Non esisteva un endpoint di download lato-azienda (solo elimina) — l'helper
+// _signedUrl era già scritto ma mai collegato a nessuna route. Stessa forma
+// degli altri endpoint di download (site/company/worker/subcontractor/certificates).
+router.get('/payslips/:id/download', verifySupabaseJwt, async (req, res) => {
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  const { data: row } = await supabase
+    .from('payslips')
+    .select('file_path')
+    .eq('id', id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (!row) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (!row.file_path) return res.status(404).json({ error: 'NO_FILE' });
+
+  const url = await _signedUrl(row.file_path);
+  if (!url) return res.status(500).json({ error: 'SIGNED_URL_ERROR' });
+  res.json({ url });
+});
+
 // ── DELETE /api/v1/payslips/:id ───────────────────────────────────────────────
 router.delete('/payslips/:id', verifySupabaseJwt, async (req, res) => {
   const { id } = req.params;
