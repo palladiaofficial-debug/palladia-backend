@@ -92,6 +92,18 @@ async function main() {
   const impresaJwt = await signIn(E2E_EMAIL, E2E_PASSWORD);
   const studioJwt = await signIn(E2E_STUDIO_EMAIL, E2E_STUDIO_PASSWORD);
 
+  // ── upload_token: segreto che dà accesso non autenticato al link pubblico,
+  // non deve MAI comparire nella lista per un viewer impresa (routes/v1/archive.js) ──
+  {
+    const listAsImpresa = await call('GET', `/api/v1/archive/documents?source_tables=studio_document_requests`, impresaJwt, E2E_COMPANY_ID);
+    const rowImpresa = listAsImpresa.json?.results?.find((r) => r.legacy_id === request.id);
+    check('GET /archive/documents: upload_token assente/null per viewer impresa', !!rowImpresa && rowImpresa.upload_token == null, rowImpresa);
+
+    const listAsStudio = await call('GET', `/api/v1/archive/documents?source_tables=studio_document_requests`, studioJwt, E2E_COMPANY_ID);
+    const rowStudio = listAsStudio.json?.results?.find((r) => r.legacy_id === request.id);
+    check('GET /archive/documents: upload_token presente per viewer CDL', !!rowStudio && rowStudio.upload_token === request.upload_token, rowStudio);
+  }
+
   // ── (a) impresa sulla propria company ──
   {
     const dl = await call('GET', `/api/v1/archive/studio-shared-documents/${sharedDoc.id}/download`, impresaJwt, E2E_COMPANY_ID);
