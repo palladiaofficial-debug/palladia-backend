@@ -1,11 +1,22 @@
 'use strict';
 /**
  * routes/v1/archive.js
- * Fase 2 — lettura unificata dalla tabella `documents` (Scaglioni 1+2: site,
- * company, worker, worker_certificates, subcontractor, payslips). Sola
- * lettura: le scritture restano sulle tabelle storiche, sincronizzate via
- * trigger (vedi migrazioni 150-155). Ogni riga porta source_table+legacy_id
- * per instradare download/elimina all'endpoint legacy giusto lato frontend.
+ * Fase 2 — lettura unificata dalla tabella `documents` (Scaglioni 1+2+3: site,
+ * company, worker, worker_certificates, subcontractor, payslips,
+ * studio_shared_documents, studio_document_requests). Sola lettura: le
+ * scritture restano sulle tabelle storiche, sincronizzate via trigger (vedi
+ * migrazioni 150-158). Ogni riga porta source_table+legacy_id per instradare
+ * download/elimina all'endpoint legacy giusto lato frontend.
+ *
+ * `ladia_document_templates` è sincronizzata in `documents` (solo per la
+ * ricerca/archivio interni lato Ladia) ma va esclusa qui SEMPRE, hardcoded:
+ * non ha mai una UI umana e questo endpoint restituisce tutte le righe della
+ * company se il chiamante non passa `source_tables` esplicito.
+ *
+ * `upload_token` (studio_document_requests) è un segreto che dà accesso
+ * all'endpoint pubblico non autenticato /studio/upload/:token — esposto nella
+ * risposta solo quando il chiamante è CDL (req.isCdl), mai per un viewer
+ * impresa anche se la riga appartiene alla sua company.
  *
  * GET /api/v1/archive/documents?site_id=&worker_id=&subcontractor_id=&
  *     source_tables=a,b&category=&expiry_status=&q=&page=&page_size=
@@ -27,6 +38,7 @@ function futureDate(days) {
 const KNOWN_SOURCE_TABLES = new Set([
   'site_documents', 'company_documents', 'worker_documents',
   'worker_certificates', 'subcontractor_documents', 'payslips',
+  'studio_shared_documents', 'studio_document_requests',
 ]);
 
 router.get('/archive/documents', async (req, res) => {
@@ -50,10 +62,13 @@ router.get('/archive/documents', async (req, res) => {
       file_path_needs_review, file_size, mime_type, expiry_date, ai_expiry_date,
       content_hash, issued_date, issuing_body, certificate_number, course_type_id,
       period_year, period_month, payslip_status, notes, deleted_at, created_at, updated_at,
+      request_status, due_date, response_url, response_filename, response_notes,
+      reviewer_notes, upload_token,
       sites(name), workers(full_name), subcontractors(company_name), course_types(name)
     `, { count: 'exact' })
     .eq('company_id', companyId)
     .is('deleted_at', null)
+    .neq('source_table', 'ladia_document_templates')
     .order('created_at', { ascending: false })
     .range(from, to);
 
@@ -80,6 +95,7 @@ router.get('/archive/documents', async (req, res) => {
       subcontractor_name:  d.subcontractors?.company_name || null,
       course_type_name:    d.course_types?.name || null,
       expiry_status:       status,
+      upload_token:        req.isCdl ? d.upload_token : null,
       sites: undefined, workers: undefined, subcontractors: undefined, course_types: undefined,
     };
   });

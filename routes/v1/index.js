@@ -145,9 +145,13 @@ router.use('/', require('./companyDocuments'));
 // Hub documenti unificato: search, expiring, site summary (JWT)
 router.use('/', require('./documentsHub'));
 
-// Fase 2 — lettura unificata dalla tabella `documents` (Scaglioni 1+2), dietro
+// Fase 2 — lettura unificata dalla tabella `documents` (Scaglioni 1+2+3), dietro
 // feature flag document_archive_* lato frontend (JWT)
 router.use('/', require('./archive'));
+
+// Fase 2, Scaglione 3 — azioni (download/elimina/revisiona) su
+// studio_shared_documents/studio_document_requests esposte via DocumentArchive (JWT)
+router.use('/', require('./archiveActions'));
 
 // Notifiche in-app scadenze (JWT)
 router.use('/', require('./notifications'));
