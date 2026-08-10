@@ -93,11 +93,15 @@ router.post('/workers/:workerId/certificates/upload', upload.single('file'), asy
   if (!worker) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
   if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
+  // F-037 (AUDIT.md): il bucket 'documents' non esiste più — ogni upload qui
+  // falliva sempre con 500. 'site-documents' è il bucket reale già usato da
+  // tutto il resto della piattaforma (incluso il flusso di archiviazione via
+  // chat Ladia per gli stessi worker_certificates, mai impattato da questo bug).
   const ext  = req.file.mimetype === 'application/pdf' ? 'pdf' : req.file.mimetype.split('/')[1];
   const path = `certificates/${req.companyId}/${workerId}/${Date.now()}.${ext}`;
 
   const { error: upErr } = await supabase.storage
-    .from('documents')
+    .from('site-documents')
     .upload(path, req.file.buffer, { contentType: req.file.mimetype, upsert: false });
 
   if (upErr) {
@@ -105,7 +109,7 @@ router.post('/workers/:workerId/certificates/upload', upload.single('file'), asy
     return res.status(500).json({ error: 'STORAGE_ERROR', detail: upErr.message });
   }
 
-  const { data: signed } = await supabase.storage.from('documents').createSignedUrl(path, 3600);
+  const { data: signed } = await supabase.storage.from('site-documents').createSignedUrl(path, 3600);
 
   res.json({ url: signed?.signedUrl || path, path, mime: req.file.mimetype, size: req.file.size });
 });
