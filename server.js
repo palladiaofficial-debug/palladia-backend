@@ -440,11 +440,6 @@ app.get('/api/v1/push/vapid-public-key', (req, res) => {
   res.json({ vapidPublicKey: key });
 });
 
-// ── TEMP — verifica Sentry Blocco 4 freeze pre-lancio, da rimuovere subito dopo ──
-app.get('/api/v1/_sentrytest', () => {
-  throw new Error('SENTRY-TEST-BACKEND freeze-pre-lancio 2026-08-12');
-});
-
 // ── Badge / Presenze API v1 (auth-protected) ────────────────────────────────
 app.use('/api/v1', v1Router);
 
