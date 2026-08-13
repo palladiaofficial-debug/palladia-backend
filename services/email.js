@@ -2353,6 +2353,7 @@ module.exports = {
   sendStudioDurcAlert,
   sendWeatherExtremeAlert,
   sendAiCreditExhaustedAlert,
+  sendAiSpendCircuitBreakerAlert,
   sendMonthlyValueReport,
   sendStudioMonthlyValueReport,
 };
@@ -2527,5 +2528,35 @@ async function sendAiCreditExhaustedAlert({ detail } = {}) {
     to,
     subject: 'Palladia — Credito Anthropic esaurito, Ladia è offline',
     html: layout('Credito AI esaurito', bodyHtml),
+  });
+}
+
+// ─── Email: circuit breaker spesa AI giornaliera (interno) ──────────────────
+
+/**
+ * @param {{ totalSpendUsd: number, externalSpendUsd: number, thresholdUsd: number, alertDate: string }} opts
+ */
+async function sendAiSpendCircuitBreakerAlert({ totalSpendUsd, externalSpendUsd, thresholdUsd, alertDate }) {
+  const to = process.env.ADMIN_EMAIL || 'palladiaofficial@gmail.com';
+  const bodyHtml = `
+    <p style="margin:0 0 4px;font-size:18px;font-weight:800;color:#1a1a1a;">Spesa AI giornaliera oltre soglia</p>
+    <p style="margin:0 0 24px;font-size:14px;color:#6b7280;line-height:1.6;">
+      La spesa AI stimata di oggi (${alertDate}) ha superato la soglia configurata.
+      Il servizio resta attivo — questa è solo una notifica, non un blocco automatico.
+    </p>
+    <table cellpadding="0" cellspacing="0" style="font-size:14px;color:#1a1a1a;margin-bottom:24px;">
+      <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">Spesa totale oggi</td><td style="font-weight:700;">$${totalSpendUsd.toFixed(2)}</td></tr>
+      <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">di cui clienti reali</td><td style="font-weight:700;">$${externalSpendUsd.toFixed(2)}</td></tr>
+      <tr><td style="padding:2px 16px 2px 0;color:#6b7280;">Soglia configurata</td><td style="font-weight:700;">$${thresholdUsd.toFixed(2)}</td></tr>
+    </table>
+    <p style="margin:0;font-size:12px;color:#9ca3af;">
+      Soglia regolabile con la variabile d'ambiente AI_SPEND_DAILY_LIMIT_USD su Railway.
+    </p>
+  `;
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Palladia — Spesa AI oggi: $${totalSpendUsd.toFixed(2)} (soglia $${thresholdUsd.toFixed(2)})`,
+    html: layout('Spesa AI oltre soglia', bodyHtml),
   });
 }

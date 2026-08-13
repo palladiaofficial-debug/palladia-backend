@@ -18,7 +18,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { chatLimiter } = require('../../middleware/rateLimit');
+const { chatLimiter, userImportLimiter } = require('../../middleware/rateLimit');
 const { checkAiBudget } = require('../../lib/ladiaUsageLog');
 const { analyzeChatUpload, archiveChatUpload } = require('../../services/chatDocumentAnalysis');
 const { bestMatch } = require('../../lib/fuzzyMatch');
@@ -28,7 +28,7 @@ const CONCURRENCY   = 3;   // chiamate Claude Vision in parallelo — non travol
 const WORKER_MATCH_THRESHOLD = 55;
 const SITE_MATCH_THRESHOLD   = 55;
 
-router.post('/chat/bulk-import', verifySupabaseJwt, chatLimiter, async (req, res) => {
+router.post('/chat/bulk-import', verifySupabaseJwt, chatLimiter, userImportLimiter, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }

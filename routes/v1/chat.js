@@ -16,7 +16,7 @@ const Sentry    = require('../../lib/sentry');
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
-const { chatLimiter, confirmActionLimiter } = require('../../middleware/rateLimit');
+const { chatLimiter, userChatLimiter, confirmActionLimiter } = require('../../middleware/rateLimit');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
@@ -6283,7 +6283,7 @@ async function autoTitle(conversationId, firstUserMessage, client, companyId = n
 // Se conversation_id è omesso viene creata una nuova conversazione automaticamente.
 // history (legacy) è ancora accettato ma ignorato se conversation_id è presente.
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/chat', verifySupabaseJwt, validate(chatMessageSchema), async (req, res) => {
+router.post('/chat', verifySupabaseJwt, userChatLimiter, validate(chatMessageSchema), async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }
@@ -6722,7 +6722,7 @@ router.post('/chat/export-contract', verifySupabaseJwt, validate(contractExportS
 // Events: {type:'init',conversation_id} | {type:'tool_start',names:[]} |
 //         {type:'text',delta:''} | {type:'done'} | {type:'error',message:''}
 // ─────────────────────────────────────────────────────────────────────────────
-router.post('/chat/stream', verifySupabaseJwt, chatLimiter, async (req, res) => {
+router.post('/chat/stream', verifySupabaseJwt, chatLimiter, userChatLimiter, async (req, res) => {
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({ error: 'AI_NOT_CONFIGURED' });
   }

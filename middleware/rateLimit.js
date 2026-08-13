@@ -155,6 +155,59 @@ const aiLimiter = rateLimit({
   ...makeStore('ai'),
 });
 
+// ── Rate limiter per utente su /chat/stream — in aggiunta a chatLimiter
+// (che è per company). Protegge lo scenario in cui una company grande ha
+// margine sul limite company-wide ma un singolo utente (script/loop/account
+// compromesso) lo consuma da solo. Soglia larga apposta: un umano che scrive
+// a Ladia, anche velocissimo, non manda più di qualche messaggio al minuto —
+// 30/min è già ben oltre qualunque uso legittimo, solo un loop la raggiunge.
+const userChatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    if (req.user?.id) return `chat:user:${req.user.id}`;
+    const ip = req.ip || '';
+    return `chat:ip:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
+  },
+  handler: (req, res) => {
+    console.warn(`[costGuard] userChatLimiter raggiunto — user=${req.user?.id || 'n/d'} company=${req.companyId || 'n/d'}`);
+    res.status(429).json({
+      error:   'USER_CHAT_RATE_LIMIT',
+      message: 'Stai inviando troppi messaggi in poco tempo. Aspetta qualche secondo e riprova.',
+    });
+  },
+  ...makeStore('userChat'),
+});
+
+// ── Rate limiter per utente sugli upload di Importazione Intelligente ───────
+// In aggiunta a chatLimiter (per company). Un'importazione è un'azione
+// occasionale — anche un onboarding con decine di batch nello stesso giorno
+// resta ben sotto questa soglia; solo uno script che rilancia l'endpoint in
+// loop la raggiunge.
+const userImportLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 ora
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    if (req.user?.id) return `import:user:${req.user.id}`;
+    const ip = req.ip || '';
+    return `import:ip:${ip.startsWith('::ffff:') ? ip.slice(7) : ip || 'unknown'}`;
+  },
+  handler: (req, res) => {
+    console.warn(`[costGuard] userImportLimiter raggiunto — user=${req.user?.id || 'n/d'} company=${req.companyId || 'n/d'}`);
+    res.status(429).json({
+      error:   'USER_IMPORT_RATE_LIMIT',
+      message: 'Troppe importazioni in poco tempo. Aspetta qualche minuto e riprova.',
+    });
+  },
+  ...makeStore('userImport'),
+});
+
 // ── Rate limiter per POST /chat/confirm-action/:id — separato da chatLimiter,
 // non consuma il budget della chat perché è un endpoint REST a parte.
 const confirmActionLimiter = rateLimit({
@@ -194,4 +247,4 @@ const sdiWebhookLimiter = rateLimit({
   ...makeStore('sdiWebhook'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, aiLimiter, publicScanLimiter, confirmActionLimiter, sdiWebhookLimiter };
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, confirmActionLimiter, sdiWebhookLimiter };

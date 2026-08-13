@@ -11,13 +11,17 @@ const multer = require('multer');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { chatLimiter } = require('../../middleware/rateLimit');
+const { chatLimiter, userImportLimiter } = require('../../middleware/rateLimit');
 const pipeline = require('../../services/smartImportPipeline');
 const { ESTIMATED_HOURS_SAVED } = require('../../services/valueMetrics');
 
 const MAX_ZIP_SIZE = 500 * 1024 * 1024; // 500 MB
 const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25 MB — singolo file dentro zip/cartella
-const MAX_FOLDER_FILES = 500;
+// Tetto tecnico multer: più alto del tetto di business (500, applicato con
+// messaggio chiaro da smartImportPipeline.js) — solo per bloccare richieste
+// davvero abnormi prima che saturino la memoria (multer bufferizza tutti i
+// file in RAM prima dell'handler). Vedi commento sopra la route from-files.
+const MULTER_MAX_FILES = 750;
 
 const uploadZip = multer({
   storage: multer.memoryStorage(),
@@ -33,7 +37,7 @@ const uploadZip = multer({
 
 const uploadFolder = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: MAX_FILE_SIZE, files: MAX_FOLDER_FILES },
+  limits: { fileSize: MAX_FILE_SIZE, files: MULTER_MAX_FILES },
 });
 
 router.use('/smart-import', verifySupabaseJwt);
@@ -41,10 +45,14 @@ router.use('/smart-import', verifySupabaseJwt);
 // ── POST /api/v1/smart-import/batches/from-zip ──────────────────────────────
 router.post('/smart-import/batches/from-zip',
   chatLimiter,
+  userImportLimiter,
   (req, res, next) => uploadZip.single('file')(req, res, (err) => {
-    if (err instanceof multer.MulterError)
-      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'ZIP_TOO_LARGE' : err.message });
-    if (err) return res.status(400).json({ error: err.message });
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE')
+        return res.status(400).json({ error: 'ZIP_TOO_LARGE', message: `L'archivio supera il limite di ${MAX_ZIP_SIZE / (1024 * 1024)} MB. Dividilo in più zip più piccoli.` });
+      return res.status(400).json({ error: err.code, message: 'Caricamento non riuscito. Riprova.' });
+    }
+    if (err) return res.status(400).json({ error: err.message, message: err.message });
     next();
   }),
   async (req, res) => {
@@ -65,12 +73,26 @@ router.post('/smart-import/batches/from-zip',
 
 // ── POST /api/v1/smart-import/batches/from-files ────────────────────────────
 // Drag & drop di una cartella intera (webkitdirectory) — multipart con N file.
+// Il tetto tecnico multer (MULTER_MAX_FILES) è volutamente più alto del tetto
+// di business (MAX_BATCH_ITEMS=500, applicato con messaggio chiaro e successo
+// parziale in services/smartImportPipeline.js::createBatchRow) — serve solo
+// a bloccare richieste davvero abnormi prima che saturino la memoria, non a
+// duplicare il limite di 500: senza questo margine, un utente con 501-2000
+// file riceveva un rifiuto secco dell'intera richiesta invece del
+// comportamento gentile "primi 500 importati, il resto con un motivo chiaro"
+// che lo stesso caricamento come zip riceve già oggi.
 router.post('/smart-import/batches/from-files',
   chatLimiter,
-  (req, res, next) => uploadFolder.array('files', MAX_FOLDER_FILES)(req, res, (err) => {
-    if (err instanceof multer.MulterError)
-      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : (err.code === 'LIMIT_FILE_COUNT' ? 'TROPPI_FILE' : err.message) });
-    if (err) return res.status(400).json({ error: err.message });
+  userImportLimiter,
+  (req, res, next) => uploadFolder.array('files', MULTER_MAX_FILES)(req, res, (err) => {
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE')
+        return res.status(400).json({ error: 'FILE_TOO_LARGE', message: `Uno o più file superano il limite di ${MAX_FILE_SIZE / (1024 * 1024)} MB per singolo file.` });
+      if (err.code === 'LIMIT_FILE_COUNT')
+        return res.status(400).json({ error: 'TROPPI_FILE', message: `Puoi caricare al massimo ${MULTER_MAX_FILES} file in un'unica richiesta. Dividi in più caricamenti.` });
+      return res.status(400).json({ error: err.code, message: 'Caricamento non riuscito. Riprova.' });
+    }
+    if (err) return res.status(400).json({ error: err.message, message: err.message });
     next();
   }),
   async (req, res) => {

@@ -80,6 +80,9 @@ async function storeStagingFile({ companyId, userId, batchId, filename, mimeType
 async function createBatchRow({ companyId, userId, source, entries }) {
   const usable = entries.slice(0, MAX_BATCH_ITEMS);
   const overflow = entries.slice(MAX_BATCH_ITEMS).map(e => ({ name: e.name, reason: `Limite di ${MAX_BATCH_ITEMS} file per importazione superato — dividi in più batch.` }));
+  if (overflow.length > 0) {
+    console.warn(`[costGuard] cap ${MAX_BATCH_ITEMS} file raggiunto — company=${companyId} source=${source} richiesti=${entries.length} accettati=${usable.length} scartati=${overflow.length}`);
+  }
   const { data: batch, error: batchErr } = await supabase
     .from('import_batches')
     .insert({ company_id: companyId, user_id: userId, source, status: 'uploading', total_files: usable.length })
@@ -598,5 +601,5 @@ async function finishBatch(batchId, companyId) {
 module.exports = {
   createBatchFromZip, createBatchFromFiles, processBatch, reclaimStuckItems,
   confirmItem, rejectItem, confirmAllGreen, confirmStagedEntity, finishBatch,
-  MAX_BATCH_ITEMS,
+  createBatchRow, MAX_BATCH_ITEMS,
 };
