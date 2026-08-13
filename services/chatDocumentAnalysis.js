@@ -106,6 +106,7 @@ async function archiveChatUpload({
   uploadId, companyId, userId,
   destination, name, siteId, workerId,
   category, expiryDate, issueDate, issuingBody, courseTypeId,
+  periodYear = null, periodMonth = null,
   contentHash = null,
   req = null,
   conversationId = null,
@@ -119,22 +120,30 @@ async function archiveChatUpload({
   if (!upload)         return { error: 'File non trovato o accesso negato.' };
   if (upload.archived) return { error: 'Questo file è già stato archiviato.' };
 
-  const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates'];
+  const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips'];
   if (!validDests.includes(destination)) return { error: 'destination non valida: ' + destination };
   if (destination === 'site_documents' && !siteId)
     return { error: 'site_id obbligatorio per site_documents.' };
-  if ((destination === 'worker_documents' || destination === 'worker_certificates') && !workerId)
+  if ((destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips') && !workerId)
     return { error: 'worker_id obbligatorio per ' + destination + '.' };
+  if (destination === 'payslips' && (!periodYear || !periodMonth))
+    return { error: 'period_year e period_month obbligatori per payslips.' };
 
   const ext    = path.extname(upload.original_name) || '';
   const safeFn = String(name).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) + ext;
   const newId  = crypto.randomUUID();
+  const safeMo = String(periodMonth).padStart(2, '0');
 
   const permanentPath =
     destination === 'site_documents'    ? `${companyId}/${siteId}/${newId}-${safeFn}` :
     destination === 'company_documents' ? `${companyId}/company/${newId}-${safeFn}` :
     destination === 'worker_documents'  ? `${companyId}/${workerId}/${newId}-${safeFn}` :
-    /* worker_certificates */             `${companyId}/${workerId}/certs/${newId}-${safeFn}`;
+    destination === 'worker_certificates' ? `${companyId}/${workerId}/certs/${newId}-${safeFn}` :
+    /* payslips — stesso percorso deterministico usato dall'upload manuale
+       (routes/v1/payslips.js), necessario per l'upsert su company_id+worker_id+
+       period_year+period_month: un secondo import per lo stesso periodo deve
+       sovrascrivere, non duplicare. */
+    `payslips/${companyId}/${workerId}/${periodYear}-${safeMo}.pdf`;
 
   const { data: signedTmp } = await supabase.storage
     .from(BUCKET).createSignedUrl(upload.storage_path, 120);
@@ -146,7 +155,11 @@ async function archiveChatUpload({
 
   const { error: storErr } = await supabase.storage
     .from(BUCKET)
-    .upload(permanentPath, fileBuf, { contentType: upload.mime_type, upsert: false });
+    // payslips: path deterministico per periodo, un secondo import per lo
+    // stesso mese sovrascrive di proposito (stesso comportamento dell'upload
+    // manuale in routes/v1/payslips.js). Tutte le altre destinazioni usano un
+    // newId univoco nel path, quindi upsert:false resta la scelta sicura.
+    .upload(permanentPath, fileBuf, { contentType: upload.mime_type, upsert: destination === 'payslips' });
   if (storErr) return { error: 'Upload permanente fallito: ' + storErr.message };
 
   let docId, insertErr;
@@ -192,6 +205,23 @@ async function archiveChatUpload({
       course_type_id: courseTypeId || null,
       content_hash: contentHash,
     }).select('id').single();
+    docId = d?.id; insertErr = e;
+
+  } else if (destination === 'payslips') {
+    // status:'draft' apposta — anche una busta paga importata in blocco resta
+    // invisibile al lavoratore finché l'azienda non la condivide esplicitamente
+    // (stesso comportamento dell'upload manuale, mai un auto-share).
+    const { data: d, error: e } = await supabase.from('payslips').upsert({
+      company_id: companyId, worker_id: workerId, uploaded_by: userId,
+      period_year: periodYear, period_month: periodMonth,
+      // filename è il nome del FILE (stessa convenzione dell'upload manuale in
+      // routes/v1/payslips.js), non il nome del lavoratore — "name" qui sotto
+      // resta il nome del lavoratore solo per il riepilogo dell'audit trail.
+      filename: upload.original_name, file_path: permanentPath, file_size: upload.size_bytes,
+      status: 'draft', content_hash: contentHash,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'company_id,worker_id,period_year,period_month', ignoreDuplicates: false })
+      .select('id').single();
     docId = d?.id; insertErr = e;
   }
 

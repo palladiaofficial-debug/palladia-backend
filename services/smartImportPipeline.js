@@ -174,7 +174,7 @@ async function createBatchFromFiles({ companyId, userId, files }) {
 
 // ── Dedup ────────────────────────────────────────────────────────────────────
 
-const HASH_TABLES = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates'];
+const HASH_TABLES = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips'];
 
 async function findProductionDuplicate(companyId, hash) {
   for (const table of HASH_TABLES) {
@@ -331,7 +331,7 @@ async function processOneItem(item, ctx) {
     let matchedWorkerId = null, matchedSiteId = null, workerScore = null, siteScore = null;
     let stagedWorkerId = null, stagedSiteId = null;
 
-    if (destination === 'worker_documents' || destination === 'worker_certificates') {
+    if (destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips') {
       const extractedName = fields.issued_to?.value;
       const extractedCf = fields.fiscal_code?.value;
       const m = matchWorker({ name: extractedName, fiscal_code: extractedCf }, ctx.workerCandidates);
@@ -480,12 +480,19 @@ async function confirmItem(itemId, companyId, userId, req = null) {
   const expiryDate = fields.expiry_date?.value || null;
   const issuingBody = fields.issued_by?.value || null;
   const issueDate = fields.issue_date?.value || null;
+  const periodYear = fields.period_year?.value || null;
+  const periodMonth = fields.period_month?.value || null;
 
-  // worker_certificates.issue_date è NOT NULL — se non siamo riusciti a
-  // calcolarla (nessuna scadenza o nessun periodo di rinnovo noto), l'unica
-  // scrittura sicura è nella tabella generica worker_documents (issued_date
-  // nullable), invece di far fallire la conferma con un errore SQL grezzo.
-  const destination = (item.destination === 'worker_certificates' && !issueDate) ? 'worker_documents' : item.destination;
+  // worker_certificates.issue_date e payslips.period_year/period_month sono
+  // NOT NULL — se l'AI non è riuscita a determinarli con certezza, l'unica
+  // scrittura sicura è nella tabella generica worker_documents (nessun campo
+  // obbligatorio equivalente), invece di far fallire la conferma con un
+  // errore SQL grezzo. Per le buste paga il file non va perso: resta comunque
+  // consultabile come documento lavoratore, solo non nella lista buste paga
+  // finché qualcuno non corregge il periodo a mano.
+  let destination = item.destination;
+  if (destination === 'worker_certificates' && !issueDate) destination = 'worker_documents';
+  if (destination === 'payslips' && (!periodYear || !periodMonth)) destination = 'worker_documents';
 
   // Risolve course_type_id dal tipo corso granulare estratto (formazione_sicurezza|
   // primo_soccorso|...) — senza, il certificato viene scritto ma non compare nella
@@ -503,6 +510,7 @@ async function confirmItem(itemId, companyId, userId, req = null) {
     uploadId: item.chat_upload_id, companyId, userId,
     destination, name, siteId, workerId,
     category: sanitizeCategory(destination, item.doc_type), expiryDate, issueDate, issuingBody, courseTypeId,
+    periodYear, periodMonth,
     contentHash: item.content_hash, req,
   });
   if (result?.error) throw new Error(result.error);

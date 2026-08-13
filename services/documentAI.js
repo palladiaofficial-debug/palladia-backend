@@ -87,6 +87,35 @@ Periodi di rinnovo standard D.Lgs. 81/2008:
 
 Output: SOLO JSON grezzo senza markdown.`;
 
+// ── Prompt buste paga (cedolini stipendio) ────────────────────────────────────
+// Struttura diversa da WORKER_DOC_PROMPT: niente scadenza/rinnovo, serve invece
+// il periodo di competenza (mese/anno) per collocare il cedolino nella tabella
+// payslips (vincolo UNIQUE company_id+worker_id+period_year+period_month).
+
+const PAYSLIP_PROMPT = `Sei un esperto di buste paga italiane (cedolini stipendio).
+Analizza il documento e restituisci SOLO un oggetto JSON valido con questa struttura:
+
+{
+  "summary": "<1 frase: lavoratore e periodo di competenza>",
+  "issued_to": "<nome e cognome del lavoratore ESATTAMENTE come appare nel documento; null se anche solo una lettera è incerta>",
+  "fiscal_code": "<codice fiscale italiano 16 caratteri alfanumerici maiuscoli; null se non leggibile con certezza>",
+  "period_year": <anno del periodo di competenza, es. 2026; null se non determinabile>,
+  "period_month": <mese del periodo di competenza, numero intero 1-12; null se non determinabile>
+}
+
+━━━ REGOLA ASSOLUTA — issued_to (nome lavoratore) ━━━
+Trascrivi il nome LETTERA PER LETTERA esattamente come lo vedi scritto.
+NON dedurre, NON completare lettere mancanti, NON normalizzare.
+Se qualsiasi lettera del nome è sfocata, coperta, parzialmente visibile o incerta → issued_to: null.
+È VIETATO inventare o ipotizzare un nome plausibile: null è sempre preferibile a un nome errato.
+
+━━━ REGOLA — periodo di competenza ━━━
+Cerca l'intestazione tipica "Mese di", "Periodo", "Competenza" seguita da mese e anno (es. "Marzo 2026", "03/2026").
+Se il documento riporta un intervallo di date (es. "01/03/2026 - 31/03/2026"), usa il mese/anno di quell'intervallo.
+Restituisci null per period_year/period_month SOLO se davvero non determinabile — non indovinare.
+
+Output: SOLO JSON grezzo senza markdown.`;
+
 // ── Helper: scarica file da Storage ──────────────────────────────────────────
 
 async function downloadFileBuffer(filePath) {
@@ -426,6 +455,6 @@ module.exports = {
   analyzeCompanyDoc, analyzeSiteDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione,
   // Esportati per riuso da services/smartImportAI.js (Importazione Intelligente) —
   // stessi prompt per tipo documento, nessuna duplicazione.
-  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
+  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
   analyzeDocument, downloadFileBuffer, extractFirstJson, normalizeDate, detectCourseTypeName,
 };

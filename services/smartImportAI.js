@@ -16,7 +16,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { extractPdfText } = require('../lib/pdfExtract');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const {
-  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
+  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
   extractFirstJson, normalizeDate,
 } = require('./documentAI');
 
@@ -31,7 +31,7 @@ Rispondi SOLO con JSON valido (niente markdown):
       "start_page": 1,
       "end_page": 1,
       "doc_type": "${DOC_TYPES}",
-      "destination": "site_documents|company_documents|worker_documents|worker_certificates",
+      "destination": "site_documents|company_documents|worker_documents|worker_certificates|payslips",
       "confidence": 0.0
     }
   ]
@@ -40,12 +40,13 @@ Rispondi SOLO con JSON valido (niente markdown):
 Regole:
 - Se il file è un solo documento, restituisci un array con UN solo elemento che copre tutte le pagine.
 - "confidence" indica quanto sei sicuro del tipo rilevato (1.0 = inequivocabile, es. intestazione "DURC" chiara; 0.0 = puro indovinare).
-- destination: worker_documents/worker_certificates per documenti di un singolo lavoratore (idoneità medica, attestati, patenti); site_documents per documenti legati a un cantiere specifico; company_documents per documenti aziendali generali (DURC, visura, assicurazione, SOA, ISO, F24).`;
+- destination: worker_documents/worker_certificates per documenti di un singolo lavoratore (idoneità medica, attestati, patenti); site_documents per documenti legati a un cantiere specifico; company_documents per documenti aziendali generali (DURC, visura, assicurazione, SOA, ISO, F24); payslips per buste paga/cedolini stipendio di un singolo lavoratore (doc_type=busta_paga) — MAI worker_documents per queste.`;
 
 const CONFIDENCE_ADDENDUM = `
 
 Aggiungi anche "field_confidence": un oggetto con un punteggio numerico 0.0-1.0 per ciascuno di questi campi (stessa chiave), che indica quanto sei certo del valore restituito — 1.0 = testo chiaro e univoco, 0.0 = illeggibile o dedotto. Se un campo è null, il suo field_confidence è 0.0.
 Per documenti lavoratore: issued_to, fiscal_code, expiry_date, issued_by.
+Per buste paga: issued_to, fiscal_code, period_year, period_month.
 Per documenti aziendali/cantiere: issued_by, expiry_date, doc_type_detected.
 Aggiungi anche "site_hint": se il documento riguarda un cantiere/lavoro specifico, il nome o indirizzo del cantiere se menzionato nel testo, altrimenti null.
 Output: SOLO JSON grezzo senza markdown.`;
@@ -100,7 +101,8 @@ async function classifySegments({ buffer, mimeType, companyId, userId }) {
  */
 async function extractFields({ buffer, mimeType, destination, companyId, userId }) {
   const isWorkerDoc = destination === 'worker_documents' || destination === 'worker_certificates';
-  const basePrompt  = isWorkerDoc ? WORKER_DOC_PROMPT : COMPANY_DOC_PROMPT;
+  const isPayslip   = destination === 'payslips';
+  const basePrompt  = isPayslip ? PAYSLIP_PROMPT : (isWorkerDoc ? WORKER_DOC_PROMPT : COMPANY_DOC_PROMPT);
   const systemPrompt = basePrompt + CONFIDENCE_ADDENDUM;
 
   const isPdf   = mimeType === 'application/pdf';
@@ -159,7 +161,14 @@ async function extractFields({ buffer, mimeType, destination, companyId, userId 
     derivedIssueDate = d.toISOString().slice(0, 10);
   }
 
-  const extractedFields = isWorkerDoc
+  const extractedFields = isPayslip
+    ? {
+        issued_to:    { value: (data.issued_to || '').trim().slice(0, 200) || null, confidence: conf('issued_to') },
+        fiscal_code:  { value: /^[A-Z0-9]{16}$/.test(String(data.fiscal_code || '').toUpperCase().replace(/\s/g, '')) ? String(data.fiscal_code).toUpperCase().replace(/\s/g, '') : null, confidence: conf('fiscal_code') },
+        period_year:  { value: Number.isInteger(data.period_year) && data.period_year >= 2000 && data.period_year <= 2100 ? data.period_year : null, confidence: conf('period_year') },
+        period_month: { value: Number.isInteger(data.period_month) && data.period_month >= 1 && data.period_month <= 12 ? data.period_month : null, confidence: conf('period_month') },
+      }
+    : isWorkerDoc
     ? {
         issued_to:   { value: (data.issued_to || '').trim().slice(0, 200) || null, confidence: conf('issued_to') },
         fiscal_code: { value: /^[A-Z0-9]{16}$/.test(String(data.fiscal_code || '').toUpperCase().replace(/\s/g, '')) ? String(data.fiscal_code).toUpperCase().replace(/\s/g, '') : null, confidence: conf('fiscal_code') },
