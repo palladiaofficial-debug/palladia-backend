@@ -142,6 +142,20 @@ router.post('/subcontractors', verifySupabaseJwt, validate(createSubcontractorSc
   res.status(201).json(format(data));
 });
 
+// ── GET /api/v1/subcontractors/:id ────────────────────────────────────────────
+router.get('/subcontractors/:id', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('subcontractors')
+    .select(SELECT_COLS)
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json(format(data));
+});
+
 // ── PATCH /api/v1/subcontractors/:id ─────────────────────────────────────────
 router.patch('/subcontractors/:id', verifySupabaseJwt, validate(patchSubcontractorSchema), async (req, res) => {
   const { id } = req.params;
