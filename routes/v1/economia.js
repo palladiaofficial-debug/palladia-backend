@@ -258,7 +258,7 @@ async function calcPnl(siteId, companyId, site) {
       .eq('site_id', siteId).eq('company_id', companyId)
       .order('worker_id').order('timestamp_server'),
     supabase.from('site_costs')
-      .select('id, descrizione, fornitore, importo, tipo, categoria, data_documento, numero_documento')
+      .select('id, descrizione, fornitore, importo, tipo, categoria, data_documento, numero_documento, created_at')
       .eq('site_id', siteId).eq('company_id', companyId)
       .order('categoria').order('data_documento', { ascending: false }),
     supabase.from('workers')
@@ -317,14 +317,14 @@ async function calcPnl(siteId, companyId, site) {
     }
   }
 
-  let totale_mo = 0, workers_no_tariffa = 0;
+  let totale_mo = 0, workers_no_tariffa = 0, ore_non_conteggiate = 0;
   const mo_breakdown = [];
   for (const [wid, s] of Object.entries(sessions)) {
     if (s.hours < 0.01) continue;
     const w = workerMap[wid];
     if (!w) continue;
     const t = parseFloat(w.tariffa_oraria) || 0;
-    if (!t) workers_no_tariffa++;
+    if (!t) { workers_no_tariffa++; ore_non_conteggiate += s.hours; }
     const costo = Math.round(s.hours * t * 100) / 100;
     totale_mo  += costo;
     mo_breakdown.push({
@@ -339,6 +339,7 @@ async function calcPnl(siteId, companyId, site) {
   }
   mo_breakdown.sort((a, b) => b.ore_totali - a.ore_totali);
   totale_mo = Math.round(totale_mo * 100) / 100;
+  ore_non_conteggiate = Math.round(ore_non_conteggiate * 100) / 100;
 
   // 3. Costi diretti
   const costs = costsRes.data || [];
@@ -350,6 +351,13 @@ async function calcPnl(siteId, companyId, site) {
     const cat = c.categoria || 'Altro';
     per_categoria[cat] = (per_categoria[cat] || 0) + Number(c.importo);
   }
+  // Ultimo caricamento (created_at, non data_documento) — segnala se l'utente
+  // ha smesso di tenere aggiornate le spese, indipendentemente dalla data
+  // del documento stesso (che può essere passata anche per una spesa
+  // caricata oggi).
+  const ultima_spesa_caricata = costs.length
+    ? costs.reduce((max, c) => c.created_at > max ? c.created_at : max, costs[0].created_at)
+    : null;
 
   // 4. P&L
   const totale_costi = Math.round((totale_mo + totale_diretti) * 100) / 100;
@@ -365,8 +373,8 @@ async function calcPnl(siteId, companyId, site) {
       sal_percentuale: Number(site.sal_percentuale) || 0,
     },
     contratto: { totale_contratto, importo_maturato, sal_percentuale },
-    costo_mo:  { totale: totale_mo, breakdown: mo_breakdown, workers_no_tariffa },
-    costi_diretti: { totale: totale_diretti, per_tipo, per_categoria, rows: costs },
+    costo_mo:  { totale: totale_mo, breakdown: mo_breakdown, workers_no_tariffa, ore_non_conteggiate },
+    costi_diretti: { totale: totale_diretti, per_tipo, per_categoria, rows: costs, count: costs.length, ultima_spesa_caricata },
     margine:   { valore: margine, percentuale: margine_pct },
     totale_costi,
   };
