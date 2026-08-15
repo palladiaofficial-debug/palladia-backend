@@ -205,6 +205,19 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
   const companyId = req.companyId;
   const { type, key } = req.params;
 
+  // Cartella smart: nessuna "casa" reale, calcolata al volo sulla scadenza —
+  // niente logica di document_extra_homes qui, :key è ignorato (sempre 'tutti').
+  if (type === 'scaduti') {
+    const { data: docs, error } = await baseDocsQueryFull(companyId);
+    if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    const ora = today(), presto = futureDate(30);
+    const scaduti = (docs || []).filter(d => {
+      const s = expiryStatusFor(d, ora, presto);
+      return s === 'scaduto' || s === 'in_scadenza';
+    });
+    return res.json({ type, key, documents: await attachHomes(scaduti) });
+  }
+
   let primaryQuery = baseDocsQueryFull(companyId);
   if (type === 'cantieri')        primaryQuery = primaryQuery.eq('site_id', key);
   else if (type === 'lavoratori') primaryQuery = primaryQuery.eq('worker_id', key);
@@ -261,22 +274,25 @@ async function attachHomes(docs) {
   const ids = docs.map(d => d.id);
   const { data: allExtra } = await supabase
     .from('document_extra_homes')
-    .select('document_id, folder_type, folder_key')
+    .select('id, document_id, folder_type, folder_key')
     .in('document_id', ids);
 
   const extraByDoc = new Map();
   for (const link of (allExtra || [])) {
     if (!extraByDoc.has(link.document_id)) extraByDoc.set(link.document_id, []);
-    extraByDoc.get(link.document_id).push({ type: link.folder_type, key: link.folder_key });
+    extraByDoc.get(link.document_id).push({ id: link.id, type: link.folder_type, key: link.folder_key, extra: true });
   }
 
   return docs.map(d => {
+    // homeId: null per le case primarie (derivate dalle colonne del documento,
+    // niente riga da rimuovere) — solo le case extra hanno un id reale che il
+    // frontend può passare a DELETE /documents/:id/homes/:homeId.
     const homes = [];
-    if (d.site_id)   homes.push({ type: 'site', key: d.site_id });
-    if (d.worker_id) homes.push({ type: 'worker', key: d.worker_id });
-    if (d.owner_type === 'company') homes.push({ type: 'category', key: 'azienda' });
-    if (d.category === 'busta_paga') homes.push({ type: 'category', key: 'buste-paga' });
-    if (FORMAZIONE_CATEGORIES.includes(d.category)) homes.push({ type: 'category', key: 'formazione' });
+    if (d.site_id)   homes.push({ id: null, type: 'site', key: d.site_id, extra: false });
+    if (d.worker_id) homes.push({ id: null, type: 'worker', key: d.worker_id, extra: false });
+    if (d.owner_type === 'company') homes.push({ id: null, type: 'category', key: 'azienda', extra: false });
+    if (d.category === 'busta_paga') homes.push({ id: null, type: 'category', key: 'buste-paga', extra: false });
+    if (FORMAZIONE_CATEGORIES.includes(d.category)) homes.push({ id: null, type: 'category', key: 'formazione', extra: false });
     for (const extra of (extraByDoc.get(d.id) || [])) homes.push(extra);
 
     return {
