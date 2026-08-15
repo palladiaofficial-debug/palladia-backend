@@ -1458,7 +1458,7 @@ const TOOLS = [
       properties: {
         path: {
           type: 'string',
-          description: 'Path della pagina. Esempi: /cantieri/UUID, /dashboard, /risorse, /cantieri/UUID/presenze (Presenze), /cantieri/UUID/cantiere (Info), /cantieri/UUID/organico (Maestranze), /cantieri/UUID/documenti (Documenti), /cantieri/UUID/sicurezza (Sicurezza), /cantieri/UUID/diario (Note e Foto), /cantieri/UUID/economia (Economia)'
+          description: 'Path della pagina. Esempi: /cantieri/UUID, /dashboard, /risorse, /cantieri/UUID/presenze (Presenze), /cantieri/UUID/cantiere (Info), /cantieri/UUID/organico (Maestranze), /cantieri/UUID/documenti (Documenti), /cantieri/UUID/sicurezza (Sicurezza), /cantieri/UUID/diario (Note e Foto), /cantieri/UUID/economia (Economia). Per un lavoratore specifico (recupera l\'UUID con get_workers): /lavoratori/UUID/scheda (Dati anagrafici), /lavoratori/UUID/documenti, /lavoratori/UUID/formazione, /lavoratori/UUID/presenze, /lavoratori/UUID/buste-paga'
         },
         label: {
           type: 'string',
