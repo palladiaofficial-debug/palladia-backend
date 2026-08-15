@@ -329,7 +329,7 @@ async function processOneItem(item, ctx) {
     const overallConfidence = confValues.length ? confValues.reduce((a, b) => a + b, 0) / confValues.length : (seg.confidence || 0);
 
     let matchedWorkerId = null, matchedSiteId = null, workerScore = null, siteScore = null;
-    let stagedWorkerId = null, stagedSiteId = null;
+    let stagedWorkerId = null, stagedSiteId = null, extraSiteId = null;
 
     if (destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips') {
       const extractedName = fields.issued_to?.value;
@@ -341,6 +341,16 @@ async function processOneItem(item, ctx) {
         stagedWorkerId = await upsertStagedEntity(item.batch_id, 'worker', matchKey, {
           full_name: extractedName || null, fiscal_code: extractedCf || null,
         });
+      }
+      // Cartelle Intelligenti (AUDIT.md): il documento è di un lavoratore, ma
+      // se cita anche un cantiere specifico (site_hint, già estratto sopra,
+      // finora usato solo per destination=site_documents) lo colleghiamo come
+      // cartella extra al momento della conferma — stessa matchSite già in
+      // uso per site_documents, nessun nuovo prompt AI.
+      const siteHint = extraction?.siteHint;
+      if (siteHint) {
+        const sm = matchSite({ name: siteHint, address: siteHint }, ctx.siteCandidates);
+        if (sm) extraSiteId = sm.id;
       }
     } else if (destination === 'site_documents') {
       const hint = extraction?.siteHint;
@@ -358,6 +368,7 @@ async function processOneItem(item, ctx) {
       matched_worker_id: matchedWorkerId, matched_site_id: matchedSiteId,
       worker_match_score: workerScore, site_match_score: siteScore,
       staged_worker_id: stagedWorkerId, staged_site_id: stagedSiteId,
+      extra_site_id: extraSiteId,
     }).eq('id', item.id);
   } catch (err) {
     console.error('[smartImportPipeline] item fallito:', item.id, err.message);
@@ -506,9 +517,15 @@ async function confirmItem(itemId, companyId, userId, req = null) {
     }
   }
 
+  // Cartelle Intelligenti (AUDIT.md): per un documento di un lavoratore
+  // (destination !== site_documents), item.extra_site_id — se un cantiere è
+  // stato riconosciuto nel testo — diventa il siteId passato ad
+  // archiveChatUpload, che lo tratta come cantiere extra invece che primario.
+  const effectiveSiteId = destination === 'site_documents' ? siteId : (siteId || item.extra_site_id || null);
+
   const result = await archiveChatUpload({
     uploadId: item.chat_upload_id, companyId, userId,
-    destination, name, siteId, workerId,
+    destination, name, siteId: effectiveSiteId, workerId,
     category: sanitizeCategory(destination, item.doc_type), expiryDate, issueDate, issuingBody, courseTypeId,
     periodYear, periodMonth,
     contentHash: item.content_hash, req,

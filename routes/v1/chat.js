@@ -2545,6 +2545,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
         name:           { type: 'string', description: 'Nome visualizzato del documento (max 80 car)' },
         site_id:        { type: 'string', description: 'UUID cantiere (obbligatorio per site_documents)' },
         worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents e worker_certificates)' },
+        cantiere_hint:  { type: 'string', description: 'Nome/indirizzo del cantiere citato nel documento (da read_uploaded_document), se il documento non è per site_documents ma riguarda comunque un cantiere specifico — es. un attestato del lavoratore che lavora lì. Palladia lo abbina automaticamente.' },
         category:       { type: 'string', description: 'Categoria specifica del documento' },
         expiry_date:    { type: 'string', description: 'Data scadenza YYYY-MM-DD (se rilevata)' },
         issue_date:     { type: 'string', description: 'Data emissione YYYY-MM-DD (per certificati)' },
@@ -5488,7 +5489,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'archive_document': {
         const {
           upload_id, destination, name,
-          site_id, worker_id,
+          site_id, worker_id, cantiere_hint,
           category, expiry_date, issue_date, issuing_body, course_type_id,
         } = toolInput;
         // Nessun gate di conferma qui di proposito: il prompt istruisce
@@ -5501,6 +5502,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const archiveResult = await archiveChatUpload({
           uploadId: upload_id, companyId, userId,
           destination, name, siteId: site_id, workerId: worker_id,
+          siteHint: cantiere_hint,
           category, expiryDate: expiry_date, issueDate: issue_date,
           issuingBody: issuing_body, courseTypeId: course_type_id,
           req, conversationId: convId,

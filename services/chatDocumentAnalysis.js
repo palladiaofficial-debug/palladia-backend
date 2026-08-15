@@ -14,6 +14,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const { logAction } = require('../lib/ladiaActionLog');
+const { matchSite } = require('../lib/entityMatch');
 
 const BUCKET = 'site-documents';
 
@@ -108,6 +109,7 @@ async function archiveChatUpload({
   category, expiryDate, issueDate, issuingBody, courseTypeId,
   periodYear = null, periodMonth = null,
   contentHash = null,
+  siteHint = null,
   req = null,
   conversationId = null,
 }) {
@@ -128,6 +130,23 @@ async function archiveChatUpload({
     return { error: 'worker_id obbligatorio per ' + destination + '.' };
   if (destination === 'payslips' && (!periodYear || !periodMonth))
     return { error: 'period_year e period_month obbligatori per payslips.' };
+
+  // Cartelle Intelligenti (vedi AUDIT.md): oltre alla destinazione primaria,
+  // un documento può avere un cantiere "extra" — un attestato di un lavoratore
+  // che vive anche nel fascicolo del cantiere dove lavora, un DURC aziendale
+  // che serve anche lì. Per site_documents il cantiere È già la destinazione
+  // primaria, quindi non c'è nulla da risolvere.
+  let extraSiteId = null;
+  if (destination !== 'site_documents' && (siteId || siteHint)) {
+    if (siteId) {
+      const { data: siteRow } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', companyId).maybeSingle();
+      if (siteRow) extraSiteId = siteRow.id;
+    } else {
+      const { data: candidates } = await supabase.from('sites').select('id, name, address').eq('company_id', companyId);
+      const match = matchSite({ name: siteHint, address: siteHint }, candidates || []);
+      if (match) extraSiteId = match.id;
+    }
+  }
 
   const ext    = path.extname(upload.original_name) || '';
   const safeFn = String(name).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) + ext;
@@ -184,10 +203,13 @@ async function archiveChatUpload({
     docId = d?.id; insertErr = e;
 
   } else if (destination === 'worker_documents') {
+    // F-044 (AUDIT.md): worker_documents non ha una colonna file_size (a
+    // differenza di site_documents/company_documents) — scriverla faceva
+    // fallire silenziosamente OGNI archiviazione verso questa destinazione.
     const { data: d, error: e } = await supabase.from('worker_documents').insert({
       company_id: companyId, worker_id: workerId, name,
       doc_type:    category || 'altro',
-      file_path:   permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
+      file_path:   permanentPath, mime_type: upload.mime_type,
       expiry_date: expiryDate || null,
       content_hash: contentHash,
     }).select('id').single();
@@ -198,6 +220,10 @@ async function archiveChatUpload({
       .from(BUCKET).createSignedUrl(permanentPath, 31536000);
     const { data: d, error: e } = await supabase.from('worker_certificates').insert({
       company_id:     companyId, worker_id: workerId,
+      // site_id: colonna già esistente su worker_certificates (migrazione 045),
+      // finora mai popolata da qui — un attestato può vivere anche nel cantiere
+      // dove il lavoratore opera oggi (Cartelle Intelligenti, AUDIT.md).
+      site_id:        extraSiteId,
       pdf_url:        longSgn?.signedUrl || permanentPath,
       expiry_date:    expiryDate  || null,
       issue_date:     issueDate   || null,
@@ -232,6 +258,25 @@ async function archiveChatUpload({
 
   await supabase.from('chat_uploads').update({ archived: true }).eq('id', uploadId);
   supabase.storage.from(BUCKET).remove([upload.storage_path]).catch(() => {});
+
+  // Cartelle Intelligenti: worker_certificates ha già scritto site_id sopra —
+  // per le altre destinazioni senza colonna site propria (worker_documents,
+  // payslips, company_documents) il cantiere extra va in document_extra_homes,
+  // agganciato alla riga unificata (documents) appena creata dal trigger di
+  // sync (150-158) — best-effort, un fallimento qui non deve mai far fallire
+  // l'archiviazione del documento.
+  if (extraSiteId && destination !== 'worker_certificates') {
+    try {
+      const { data: unified } = await supabase
+        .from('documents').select('id')
+        .eq('source_table', destination).eq('legacy_id', docId).maybeSingle();
+      if (unified) {
+        await supabase.from('document_extra_homes').upsert({
+          document_id: unified.id, folder_type: 'site', folder_key: extraSiteId, added_by: 'ladia',
+        }, { onConflict: 'document_id,folder_type,folder_key', ignoreDuplicates: true });
+      }
+    } catch { /* best-effort — non deve mai bloccare l'archiviazione */ }
+  }
 
   // destination è già il nome della risorsa registrata in ladiaSchemaRegistry.js
   // (site_documents/company_documents/worker_documents/worker_certificates,
