@@ -103,6 +103,9 @@ async function closeNc(ncId, chatId, companyId) {
  * @param {number} chatId
  * @returns {{ ok: boolean, count: number }}
  */
+// Deve restare in sync con BACKFILL_DAYS in services/missingExitCron.js (F-043).
+const BACKFILL_DAYS = 7;
+
 async function registerMissingExits(siteId, date, companyId, chatId) {
   // Verifica che il cantiere appartenga alla company
   const { data: site } = await supabase
@@ -117,13 +120,18 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
     return { ok: false, count: 0 };
   }
 
-  // Recupera tutti i log del giorno per questo cantiere
+  // Recupera i log per questo cantiere, guardando indietro fino a
+  // BACKFILL_DAYS giorni (F-043, AUDIT.md) — non solo il giorno corrente,
+  // altrimenti un'ENTRY rimasta aperta da giorni non verrebbe mai trovata.
+  const rangeStart = new Date(`${date}T00:00:00.000Z`);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - (BACKFILL_DAYS - 1));
+
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select('worker_id, event_type, timestamp_server')
     .eq('company_id', companyId)
     .eq('site_id', siteId)
-    .gte('timestamp_server', `${date}T00:00:00.000Z`)
+    .gte('timestamp_server', rangeStart.toISOString())
     .lte('timestamp_server', `${date}T23:59:59.999Z`)
     .order('timestamp_server', { ascending: true })
     .limit(5000);
@@ -140,33 +148,37 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
   }
 
   // Solo quelli con ultimo evento = ENTRY
-  const missingWorkerIds = [];
+  const missingEntries = [];
   for (const [workerId, log] of lastByWorker) {
-    if (log.event_type === 'ENTRY') missingWorkerIds.push(workerId);
+    if (log.event_type === 'ENTRY') missingEntries.push({ workerId, entryTimestamp: log.timestamp_server });
   }
 
-  if (!missingWorkerIds.length) {
+  if (!missingEntries.length) {
     await logAction(chatId, companyId, siteId, 'reg_exits', { siteId, date }, 'skipped', 'nessuna uscita mancante');
     return { ok: true, count: 0 };
   }
 
-  // Orario uscita: 17:00 UTC = 18:00 CET / 19:00 CEST
-  // Segnaliamo chiaramente il metodo per il registro presenze
-  const exitTime = new Date(`${date}T17:00:00.000Z`);
-
   // chatId può essere null quando chiamato da cron (auto-execute senza utente)
   const uaSource = chatId ? `ladia-telegram:${chatId}` : 'ladia-cron';
 
-  const inserts = missingWorkerIds.map(workerId => ({
-    company_id:       companyId,
-    site_id:          siteId,
-    worker_id:        workerId,
-    event_type:       'EXIT',
-    timestamp_server: exitTime.toISOString(),
-    method:           'ladia_action',
-    ip:               'ladia',
-    ua:               uaSource,
-  }));
+  // Orario uscita: 17:00 UTC = 18:00 CET / 19:00 CEST DELLO STESSO GIORNO
+  // dell'entrata (non del giorno in cui gira il cron — F-043, AUDIT.md: usare
+  // la data del run avrebbe creato turni di più giorni per le entrate vecchie
+  // recuperate dal backfill).
+  const inserts = missingEntries.map(({ workerId, entryTimestamp }) => {
+    const entryDate = entryTimestamp.slice(0, 10); // YYYY-MM-DD, UTC
+    const exitTime  = new Date(`${entryDate}T17:00:00.000Z`);
+    return {
+      company_id:       companyId,
+      site_id:          siteId,
+      worker_id:        workerId,
+      event_type:       'EXIT',
+      timestamp_server: exitTime.toISOString(),
+      method:           'ladia_action',
+      ip_address:       null,
+      user_agent:       uaSource,
+    };
+  });
 
   const { error: insErr } = await supabase
     .from('presence_logs')
@@ -174,13 +186,13 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
 
   if (insErr) {
     await logAction(chatId, companyId, siteId, 'reg_exits',
-      { siteId, date, count: missingWorkerIds.length }, 'error', insErr.message);
+      { siteId, date, count: missingEntries.length }, 'error', insErr.message);
     return { ok: false, count: 0 };
   }
 
   await logAction(chatId, companyId, siteId, 'reg_exits',
-    { siteId, date, count: missingWorkerIds.length }, 'ok');
-  return { ok: true, count: missingWorkerIds.length };
+    { siteId, date, count: missingEntries.length }, 'ok');
+  return { ok: true, count: missingEntries.length };
 }
 
 // ── 3. Avvisa squadra: allerta meteo ─────────────────────────

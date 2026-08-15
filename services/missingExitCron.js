@@ -24,8 +24,23 @@ const { getCompanyTelegramUsers }             = require('./telegramNotifications
 const tg                                      = require('./telegram');
 const { registerMissingExits }                = require('./ladiaActions');
 
-// ── Helper: trova uscite mancanti per una company in una data ─────────────────
+// ── Helper: trova uscite mancanti per una company, guardando indietro fino a
+//    BACKFILL_DAYS giorni ─────────────────────────────────────────────────────
+//
+// F-043 (AUDIT.md): prima guardava SOLO il giorno corrente — un'ENTRY che il
+// cron non riusciva a chiudere lo stesso giorno (cron fallito, server giù,
+// errore silenzioso) diventava invisibile per sempre ai run successivi,
+// finché il lavoratore non ritimbrava e il tocco veniva erroneamente
+// abbinato come EXIT di quel turno vecchio (vedi anche il fix in
+// punch_atomic, migrazione 161). Guardando indietro su una finestra di
+// giorni si dà al cron la possibilità di recuperare un'entrata rimasta
+// aperta anche se il run del giorno stesso è saltato.
+const BACKFILL_DAYS = 7;
+
 async function checkCompany(companyId, date) {
+  const rangeStart = new Date(`${date}T00:00:00.000Z`);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - (BACKFILL_DAYS - 1));
+
   const { data: logs, error } = await supabase
     .from('presence_logs')
     .select(`
@@ -34,7 +49,7 @@ async function checkCompany(companyId, date) {
       site:sites (id, name, address)
     `)
     .eq('company_id', companyId)
-    .gte('timestamp_server', `${date}T00:00:00.000Z`)
+    .gte('timestamp_server', rangeStart.toISOString())
     .lte('timestamp_server', `${date}T23:59:59.999Z`)
     .order('timestamp_server', { ascending: true })
     .limit(10000);
@@ -70,11 +85,15 @@ async function runMissingExitCheck() {
   const date = new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
   console.log(`[cron] missing-exits check — ${date}`);
 
-  // Recupera tutte le company che hanno almeno un log oggi
+  // Recupera tutte le company che hanno almeno un log nella finestra di
+  // backfill (non solo oggi — altrimenti una company senza timbrature oggi
+  // ma con un'entrata rimasta aperta da giorni non verrebbe mai controllata).
+  const rangeStart = new Date(`${date}T00:00:00.000Z`);
+  rangeStart.setUTCDate(rangeStart.getUTCDate() - (BACKFILL_DAYS - 1));
   const { data: companies, error } = await supabase
     .from('presence_logs')
     .select('company_id')
-    .gte('timestamp_server', `${date}T00:00:00.000Z`)
+    .gte('timestamp_server', rangeStart.toISOString())
     .lte('timestamp_server', `${date}T23:59:59.999Z`);
 
   if (error) {
