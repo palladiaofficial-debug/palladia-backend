@@ -70,15 +70,24 @@ function contentBlockFor(buffer, mimeType) {
     : { type: 'image', source: { type: 'base64', media_type: mimeType, data: buffer.toString('base64') } };
 }
 
+// File più lunghi di questa soglia (es. cedolini di molti dipendenti uniti
+// dal consulente) passano a Sonnet per la classificazione: verificato dal
+// vivo (F-050, AUDIT.md) che Haiku su un file reale di 44 pagine produceva
+// segmentazioni sbagliate e incoerenti da un tentativo all'altro.
+const CLASSIFY_LONG_FILE_PAGE_THRESHOLD = 10;
+
 /**
- * Classifica il file e rileva eventuali documenti multipli. Sempre Haiku:
- * è una lettura veloce, non serve la precisione di Sonnet.
+ * Classifica il file e rileva eventuali documenti multipli. Haiku per i
+ * file brevi (lettura veloce, non serve la precisione di Sonnet); Sonnet
+ * per i file lunghi, dove la precisione conta più della velocità.
  */
-async function classifySegments({ buffer, mimeType, companyId, userId }) {
+async function classifySegments({ buffer, mimeType, companyId, userId, pageCount }) {
   const client = getClient();
+  const isLongFile = Number.isInteger(pageCount) && pageCount > CLASSIFY_LONG_FILE_PAGE_THRESHOLD;
   const createOpts = {
-    model: MODEL_TEXT,
+    model: isLongFile ? MODEL_VISION : MODEL_TEXT,
     max_tokens: 4096,
+    temperature: 0,
     system: CLASSIFY_PROMPT,
     messages: [{ role: 'user', content: [contentBlockFor(buffer, mimeType), { type: 'text', text: 'Analizza.' }] }],
   };

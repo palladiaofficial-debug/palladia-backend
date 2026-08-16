@@ -251,6 +251,7 @@ async function processOneItem(item, ctx) {
       return;
     }
 
+    let pdfPageCount = null;
     if (isPdf) {
       const inspection = await inspectPdf(buffer);
       if (!inspection.ok) {
@@ -266,9 +267,10 @@ async function processOneItem(item, ctx) {
         }).eq('id', item.id);
         return;
       }
+      pdfPageCount = inspection.pageCount;
     }
 
-    const { segments } = await classifySegments({ buffer, mimeType: upload.mime_type, companyId: ctx.companyId, userId: ctx.userId });
+    const { segments } = await classifySegments({ buffer, mimeType: upload.mime_type, companyId: ctx.companyId, userId: ctx.userId, pageCount: pdfPageCount });
     // Un item già figlio di uno split precedente è per costruzione un
     // frammento isolato di UN solo documento — non va mai rispezzato di
     // nuovo, altrimenti su file lunghi con pagine ripetitive lo split può
