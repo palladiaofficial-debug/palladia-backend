@@ -40,7 +40,13 @@ Rispondi SOLO con JSON valido (niente markdown):
 Regole:
 - Se il file è un solo documento, restituisci un array con UN solo elemento che copre tutte le pagine.
 - "confidence" indica quanto sei sicuro del tipo rilevato (1.0 = inequivocabile, es. intestazione "DURC" chiara; 0.0 = puro indovinare).
-- destination: worker_documents/worker_certificates per documenti di un singolo lavoratore (idoneità medica, attestati, patenti); site_documents per documenti legati a un cantiere specifico; company_documents per documenti aziendali generali (DURC, visura, assicurazione, SOA, ISO, F24); payslips per buste paga/cedolini stipendio di un singolo lavoratore (doc_type=busta_paga) — MAI worker_documents per queste.`;
+- destination: worker_documents/worker_certificates per documenti di un singolo lavoratore (idoneità medica, attestati, patenti); site_documents per documenti legati a un cantiere specifico; company_documents per documenti aziendali generali (DURC, visura, assicurazione, SOA, ISO, F24); payslips per buste paga/cedolini stipendio di un singolo lavoratore (doc_type=busta_paga) — MAI worker_documents per queste.
+
+━━━ CASO FREQUENTE: cedolini stipendio (LUL/buste paga) mandati dal consulente del lavoro in un unico PDF ━━━
+Il file tipico contiene UNA busta paga per ciascun dipendente, in sequenza, e ognuna riporta il nome del dipendente in un campo "DIPENDENTE" (o simile) accanto al proprio codice fiscale — quello è l'identificatore del confine tra un documento e il successivo.
+- Una singola busta paga può occupare PIÙ pagine consecutive (tipicamente 1 o 2, a volte di più): finché "DIPENDENTE"/nome/CF resta LO STESSO da una pagina alla successiva, sono la STESSA busta paga — un unico segmento che copre tutte quelle pagine, non un segmento per pagina. Il confine tra due dipendenti diversi è quando nome/CF cambia.
+- Dopo l'ultima busta paga individuale, il file spesso continua con pagine di RIEPILOGO AZIENDALE che NON sono buste paga di nessun lavoratore specifico: titoli come "PROSPETTO CONTABILE", "DIPENDENTI (NORM)", "CO.CO.CO. (NORM)", "PROSPETTO DETTAGLIO QUOTE TFR/FPC", tabelle che elencano MOLTI dipendenti insieme in poche righe ciascuno (invece di un modulo intero a testa), o colonne contabili aggregate (DARE/AVERE, versamenti, contributi totali ditta). Queste pagine vanno classificate con destination "company_documents" (o "altro" se non rientrano in nessun doc_type elencato) e MAI "payslips", anche se citano nomi di dipendenti in una tabella riepilogativa — non sono il cedolino di quel dipendente.
+- Se il file è lungo (molte pagine, molti dipendenti), elenca comunque un segmento per OGNI busta paga individuale — non accorpare dipendenti diversi in un solo segmento e non troncare l'elenco.`;
 
 const CONFIDENCE_ADDENDUM = `
 
@@ -72,7 +78,7 @@ async function classifySegments({ buffer, mimeType, companyId, userId }) {
   const client = getClient();
   const createOpts = {
     model: MODEL_TEXT,
-    max_tokens: 1024,
+    max_tokens: 4096,
     system: CLASSIFY_PROMPT,
     messages: [{ role: 'user', content: [contentBlockFor(buffer, mimeType), { type: 'text', text: 'Analizza.' }] }],
   };
