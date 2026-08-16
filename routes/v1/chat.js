@@ -2704,6 +2704,29 @@ function buildCachedSystem(fullPrompt) {
   return blocks;
 }
 
+// F-055 (AUDIT.md): il loop agentico (fino a 6 iterazioni, vedi sotto) ricostruisce
+// `messages` ogni giro aggiungendo i blocchi tool_use/tool_result del giro precedente,
+// ma senza un breakpoint di cache — ogni iterazione ripagava a prezzo pieno tutto il
+// contenuto già mandato al modello nei giri precedenti dello STESSO turno (osservato:
+// da 1523 a 7650 token non in cache in 5 giri). Marcare `cache_control` sull'ultimo
+// blocco dell'ultimo messaggio a ogni chiamata (pattern raccomandato da Anthropic per
+// conversazioni multi-turno) fa sì che la chiamata successiva ritrovi in cache tutto
+// il prefisso già visto, pagando a prezzo pieno solo l'incremento nuovo. Non muta
+// `messages`: quell'array resta pulito per il salvataggio su chat_messages e per
+// l'append del giro successivo.
+function withCacheBreakpoint(msgs) {
+  if (msgs.length === 0) return msgs;
+  const last = msgs[msgs.length - 1];
+  const blocks = typeof last.content === 'string'
+    ? [{ type: 'text', text: last.content }]
+    : last.content;
+  if (!Array.isArray(blocks) || blocks.length === 0) return msgs;
+  const cachedBlocks = blocks.map((b, i) =>
+    i === blocks.length - 1 ? { ...b, cache_control: { type: 'ephemeral', ttl: '1h' } } : b
+  );
+  return [...msgs.slice(0, -1), { ...last, content: cachedBlocks }];
+}
+
 // ── Tool di scrittura — usati per decidere quando un fallimento merita una
 // card rossa visibile in chat (non solo prosa + accordion collassato). I
 // tool get_*/search_* restano esclusi di proposito: un loro errore è un
@@ -5722,7 +5745,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
     max_tokens: model === MODEL_SONNET ? 4096 : 2048,
     system:     buildCachedSystem(systemPrompt),
     tools:      TOOLS_CACHED,
-    messages,
+    messages:   withCacheBreakpoint(messages),
   });
   logUsage({ companyId, userId, conversationId: convId, model, callSite: 'chat_legacy', usage: response.usage });
 
@@ -5751,7 +5774,7 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
       max_tokens: model === MODEL_SONNET ? 4096 : 2048,
       system:     buildCachedSystem(systemPrompt),
       tools:      TOOLS_CACHED,
-      messages:   [...messages, ...extra],
+      messages:   withCacheBreakpoint([...messages, ...extra]),
     });
     logUsage({ companyId, userId, conversationId: convId, model, callSite: 'chat_legacy', usage: response.usage });
   }
@@ -7138,7 +7161,7 @@ conteggio) — mai l'elenco riga per riga.`;
         max_tokens: model === MODEL_SONNET ? 4096 : 2048,
         system:     buildCachedSystem(systemPrompt),
         tools:      TOOLS_CACHED,
-        messages,
+        messages:   withCacheBreakpoint(messages),
       });
 
       // Itera eventi raw SSE
@@ -7993,6 +8016,7 @@ module.exports.classifyQuery  = classifyQuery;
 module.exports.MODEL_HAIKU    = MODEL_HAIKU;
 module.exports.MODEL_SONNET   = MODEL_SONNET;
 module.exports.buildCachedSystem = buildCachedSystem;
+module.exports.withCacheBreakpoint = withCacheBreakpoint;
 module.exports.computeContractDraft = computeContractDraft;
 module.exports.buildContractHtml    = buildContractHtml;
 // Esportato per testare i tool bespoke (es. recomputeTotaleContratto) senza
