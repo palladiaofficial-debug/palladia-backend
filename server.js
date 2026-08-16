@@ -534,13 +534,27 @@ app.get('/onboarding', (req, res) => {
 app.get('/setup', (req, res) => {
   res.sendFile('setup.html', { root: __dirname + '/public' });
 });
+// Il QR fisico stampato sul badge punta a /badge/:code su QUESTO dominio (il
+// backend) — non si può cambiare senza ristampare i badge già in cantiere.
+// Fino ad oggi serviva public/badge.html (pagina statica, stile proprio) più
+// un link in fondo a public/lavoratore.html (altra pagina statica separata).
+// Nel frattempo è stata costruita — e già rifinita con l'utente — la vera
+// Area Lavoratore in React (src/pages/AreaLavoratore, palladia.net), con lo
+// stesso stile dell'app, tab "Badge" per la conformità (stessa view di
+// badge.html, nessuna funzione persa) e tab "Buste paga" di default. Le due
+// pagine statiche erano rimaste linkate per errore invece di essere
+// pensionate quando la versione React è diventata quella vera — un operaio
+// che scansionava il badge arrivava sulla pagina sbagliata, più lunga e
+// confusionaria, con le buste paga in fondo dopo tutto lo scroll (F-054,
+// AUDIT.md). Redirect lato server (non client-side): affidabile anche se
+// il JS del client è lento o fallisce.
 app.get('/badge/:code', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile('badge.html', { root: __dirname + '/public' });
+  res.redirect(302, `https://palladia.net/area-lavoratore/${encodeURIComponent(req.params.code)}`);
 });
 app.get('/lavoratore/:code', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.sendFile('lavoratore.html', { root: __dirname + '/public' });
+  res.redirect(302, `https://palladia.net/area-lavoratore/${encodeURIComponent(req.params.code)}`);
 });
 // Icone PWA/apple-touch-icon — servite staticamente da public/ (vedi express.static più sotto)
 
