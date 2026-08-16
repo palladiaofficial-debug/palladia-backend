@@ -84,12 +84,30 @@ const CLASSIFY_LONG_FILE_PAGE_THRESHOLD = 10;
 async function classifySegments({ buffer, mimeType, companyId, userId, pageCount }) {
   const client = getClient();
   const isLongFile = Number.isInteger(pageCount) && pageCount > CLASSIFY_LONG_FILE_PAGE_THRESHOLD;
+
+  // Testo-prima-poi-immagini, stessa logica già in uso in extractFields: un
+  // PDF con testo vero (non scansionato) costa una frazione mandando il
+  // testo estratto (con i marcatori "--- Pagina N ---" che extractPdfText
+  // già inserisce, così il modello sa a quale pagina appartiene ogni riga)
+  // invece delle pagine come immagini — trovato guardando i costi reali di
+  // un'importazione (F-052, AUDIT.md): una sola classificazione su un file
+  // di 44 pagine costava $0.43 mandando le pagine come immagini a Sonnet.
+  let messageContent;
+  if (mimeType === 'application/pdf') {
+    const { text: pdfText } = await extractPdfText(buffer, { maxPages: 80 });
+    messageContent = pdfText.trim()
+      ? `Testo estratto dal PDF (i marcatori "--- Pagina N ---" indicano l'inizio di ogni pagina):\n\n${pdfText}\n\nAnalizza questo documento e restituisci il JSON richiesto.`
+      : [contentBlockFor(buffer, mimeType), { type: 'text', text: 'Analizza.' }];
+  } else {
+    messageContent = [contentBlockFor(buffer, mimeType), { type: 'text', text: 'Analizza.' }];
+  }
+
   const createOpts = {
     model: isLongFile ? MODEL_VISION : MODEL_TEXT,
     max_tokens: 4096,
     temperature: 0,
     system: CLASSIFY_PROMPT,
-    messages: [{ role: 'user', content: [contentBlockFor(buffer, mimeType), { type: 'text', text: 'Analizza.' }] }],
+    messages: [{ role: 'user', content: messageContent }],
   };
   const resp = await client.messages.create(createOpts);
   logUsage({ companyId, userId, model: createOpts.model, callSite: 'smart_import_classify', usage: resp.usage });

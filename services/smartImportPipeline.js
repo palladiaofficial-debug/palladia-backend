@@ -270,12 +270,21 @@ async function processOneItem(item, ctx) {
       pdfPageCount = inspection.pageCount;
     }
 
-    const { segments } = await classifySegments({ buffer, mimeType: upload.mime_type, companyId: ctx.companyId, userId: ctx.userId, pageCount: pdfPageCount });
-    // Un item già figlio di uno split precedente è per costruzione un
-    // frammento isolato di UN solo documento — non va mai rispezzato di
-    // nuovo, altrimenti su file lunghi con pagine ripetitive lo split può
-    // ricorrere all'infinito e moltiplicare gli item in coda di revisione.
-    const realSegments = isPdf && segments.length > 1 && !item.parent_item_id ? segments : [segments[0]];
+    // Un item già figlio di uno split precedente (parent_item_id valorizzato)
+    // è per costruzione un frammento isolato di UN solo documento, con
+    // doc_type/destination/confidence già determinati e salvati dal genitore
+    // al momento dello split — richiamare classifySegments qui non solo
+    // rischierebbe di rispezzarlo di nuovo (ricorsione), ma è anche una
+    // chiamata AI reale sprecata il cui risultato veniva scartato: trovato
+    // guardando i costi reali di un'importazione (F-052, AUDIT.md) — su un
+    // file da 16-17 documenti erano 16-17 chiamate Haiku pagate e mai usate.
+    let realSegments;
+    if (item.parent_item_id && item.doc_type) {
+      realSegments = [{ doc_type: item.doc_type, destination: item.destination, confidence: item.overall_confidence || 0 }];
+    } else {
+      const { segments } = await classifySegments({ buffer, mimeType: upload.mime_type, companyId: ctx.companyId, userId: ctx.userId, pageCount: pdfPageCount });
+      realSegments = isPdf && segments.length > 1 && !item.parent_item_id ? segments : [segments[0]];
+    }
 
     if (isPdf && realSegments.length > 1) {
       // PDF con più documenti scansionati insieme: spacchetta in item figli,
@@ -294,6 +303,7 @@ async function processOneItem(item, ctx) {
             batch_id: item.batch_id, chat_upload_id: childUploadId, parent_item_id: item.id,
             page_start: seg.start_page, page_end: endPage, original_name: childName,
             content_hash: sha256(segBuffer), doc_type: seg.doc_type, destination: seg.destination,
+            overall_confidence: seg.confidence || 0,
             status: 'queued',
           });
           added++;
