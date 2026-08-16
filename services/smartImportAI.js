@@ -89,14 +89,37 @@ async function classifySegments({ buffer, mimeType, companyId, userId }) {
   let parsed = {};
   try { const jsonStr = extractFirstJson(raw); if (jsonStr) parsed = JSON.parse(jsonStr); } catch { /* risposta non-JSON */ }
 
-  const segments = Array.isArray(parsed.segments) && parsed.segments.length
-    ? parsed.segments.filter(s => Number.isInteger(s.start_page) && Number.isInteger(s.end_page))
+  const rawSegments = Array.isArray(parsed.segments) && parsed.segments.length
+    ? parsed.segments.filter(s => Number.isInteger(s.start_page) && Number.isInteger(s.end_page) && s.end_page >= s.start_page)
     : [];
+  const segments = dedupeOverlappingSegments(rawSegments);
 
   if (segments.length === 0) {
     return { segments: [{ start_page: 1, end_page: null, doc_type: 'altro', destination: 'company_documents', confidence: 0 }] };
   }
   return { segments };
+}
+
+/**
+ * Su file lunghi e ripetitivi (es. cedolini stipendio di molti dipendenti
+ * uniti) il modello a volte restituisce intervalli di pagine sovrapposti
+ * (es. un segmento grezzo "1-5" insieme a "1-2","2-3","3-4"... già più
+ * fini) — senza questa pulizia ogni sovrapposizione diventa un documento
+ * figlio duplicato nella coda di revisione. Tiene il primo segmento non
+ * sovrapposto in ordine di pagina, preferendo a parità di pagina iniziale
+ * quello con confidence più alta.
+ */
+function dedupeOverlappingSegments(rawSegments) {
+  const sorted = [...rawSegments].sort((a, b) => a.start_page - b.start_page || (b.confidence || 0) - (a.confidence || 0));
+  const accepted = [];
+  let lastEnd = 0;
+  for (const seg of sorted) {
+    if (seg.start_page > lastEnd) {
+      accepted.push(seg);
+      lastEnd = seg.end_page;
+    }
+  }
+  return accepted;
 }
 
 /**

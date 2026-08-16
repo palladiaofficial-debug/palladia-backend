@@ -269,7 +269,11 @@ async function processOneItem(item, ctx) {
     }
 
     const { segments } = await classifySegments({ buffer, mimeType: upload.mime_type, companyId: ctx.companyId, userId: ctx.userId });
-    const realSegments = isPdf && segments.length > 1 ? segments : [segments[0]];
+    // Un item già figlio di uno split precedente è per costruzione un
+    // frammento isolato di UN solo documento — non va mai rispezzato di
+    // nuovo, altrimenti su file lunghi con pagine ripetitive lo split può
+    // ricorrere all'infinito e moltiplicare gli item in coda di revisione.
+    const realSegments = isPdf && segments.length > 1 && !item.parent_item_id ? segments : [segments[0]];
 
     if (isPdf && realSegments.length > 1) {
       // PDF con più documenti scansionati insieme: spacchetta in item figli,
