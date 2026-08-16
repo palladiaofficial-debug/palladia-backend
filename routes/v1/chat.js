@@ -543,15 +543,17 @@ casi: più attestati di formazione di persone diverse, più DURC di imprese dive
 paga"/"cedolini" plurali o "carica questi documenti" riferendosi a un solo file allegato, chiama
 import_multi_document_batch su quel upload_id INVECE di read_uploaded_document — non i due tool insieme
 sullo stesso file. NON dire mai che caricare più cedolini/documenti in un solo file "non è supportato":
-lo è, exactly per questo import_multi_document_batch esiste. Dopo la risposta del tool:
-- Riferisci all'utente quanti documenti ha trovato e per quale destinazione (es. "ho trovato 16 buste
-  paga di luglio, pronte per essere archiviate su ciascun lavoratore"), e MENZIONA il batch_id nel testo
-  della tua risposta (anche tra parentesi, es. "batch a1b2c3d4") — la cronologia conserva solo il tuo
-  testo, non i risultati dei tool dei turni chiusi, quindi se non lo scrivi in chiaro lo perdi e non potrai
-  recuperarlo quando l'utente conferma in un turno successivo.
-- NON scrivere nulla in produzione da solo: chiedi conferma esplicita ("procedo?"), poi chiama
-  confirm_multi_document_batch con ESATTAMENTE quel batch_id (dalla tua risposta precedente in
-  cronologia, mai inventato a memoria) SOLO dopo che l'utente conferma.
+lo è, proprio per questo import_multi_document_batch esiste. Dopo la risposta del tool:
+- Se il messaggio dell'utente conteneva già un'istruzione esplicita di caricamento (es. "caricale",
+  "archiviale", "carica questi documenti sui lavoratori") — stessa logica di CARICAMENTO MULTIPLO più
+  sotto, "niente conferma per singolo file" vale anche qui — chiama SUBITO confirm_multi_document_batch
+  nello stesso turno, senza fermarti a chiedere "procedo?": l'utente l'ha già detto. Riferisci poi cosa hai
+  archiviato davvero (non cosa hai "trovato") — "Archiviate N buste paga" non "Ho trovato N buste paga".
+- Se invece l'utente ha solo allegato il file senza un'istruzione esplicita di caricamento (es. sta solo
+  chiedendo cosa contiene), riferisci quanti documenti hai trovato e per quale destinazione, MENZIONA il
+  batch_id nel testo (anche tra parentesi, es. "batch a1b2c3d4" — la cronologia conserva solo il tuo testo,
+  non i risultati dei tool dei turni chiusi) e chiedi conferma prima di chiamare confirm_multi_document_batch
+  in un turno successivo, con ESATTAMENTE quel batch_id, mai inventato a memoria.
 - confirm_multi_document_batch scrive solo i documenti riconosciuti con alta confidenza — se il risultato
   indica che alcuni restano da rivedere, dillo chiaramente e indirizza l'utente su Importazione
   Intelligente (/importazione-intelligente) per completarli a mano.
@@ -2600,7 +2602,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     name: 'confirm_multi_document_batch',
     description:
       'Scrive in produzione (archivia sui rispettivi lavoratori/cantieri/azienda) i documenti di un batch creato da import_multi_document_batch che sono stati riconosciuti con alta confidenza. ' +
-      'Chiama SOLO dopo import_multi_document_batch E dopo che l\'utente ha confermato esplicitamente di voler procedere — mai in automatico. ' +
+      'Chiama SOLO dopo import_multi_document_batch. Se il messaggio dell\'utente conteneva già un\'istruzione esplicita di caricamento, chiamalo nello stesso turno senza chiedere conferma aggiuntiva (stessa logica di archive_document); altrimenti chiedi conferma prima. ' +
       'I documenti con confidenza bassa NON vengono scritti: restano in coda di revisione manuale su Importazione Intelligente, spiegalo all\'utente se ce ne sono.',
     input_schema: {
       type: 'object',
