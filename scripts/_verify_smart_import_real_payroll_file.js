@@ -115,8 +115,13 @@ async function main() {
     const payslipItems = items.filter(i => i.destination === 'payslips');
     check('sono stati riconosciuti almeno 14 segmenti busta paga (15 dipendenti + eventuale CO.CO.CO.)', payslipItems.length >= 14, { count: payslipItems.length });
 
-    const matchedCount = payslipItems.filter(i => i.matched_worker_id).length;
-    check('la maggioranza delle buste paga è stata abbinata a un lavoratore reale già a sistema (via CF)', matchedCount >= Math.ceil(payslipItems.length * 0.7), { matched: matchedCount, total: payslipItems.length });
+    // Nota: la company CI di test ha lavoratori sintetici (CF fittizi), non
+    // i dipendenti reali del PDF — non ci si aspetta un match diretto qui.
+    // Il comportamento corretto è che OGNI busta paga riconosciuta finisca
+    // o abbinata a un worker esistente (matched_worker_id) o proposta come
+    // nuovo lavoratore da confermare (staged_worker_id): mai persa nel nulla.
+    const identifiedCount = payslipItems.filter(i => i.matched_worker_id || i.staged_worker_id).length;
+    check('ogni busta paga riconosciuta ha un\'identità (match su worker esistente O proposta di nuovo lavoratore) — nessuna persa', identifiedCount === payslipItems.length, { identified: identifiedCount, total: payslipItems.length });
 
     const realWorkerIds = new Set((realWorkers || []).map(w => w.id));
     const matchedToUnknown = payslipItems.filter(i => i.matched_worker_id && !realWorkerIds.has(i.matched_worker_id));
