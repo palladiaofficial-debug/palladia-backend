@@ -647,6 +647,27 @@
           </div>
         </div>
 
+        <!-- Area personale — in alto e non in fondo alla pagina: è quello che
+             cerca un lavoratore che scansiona il proprio badge (busta paga,
+             timbrature), non i dettagli di conformità sotto (pensati per un
+             ispettore in cantiere). -->
+        <div class="card">
+          <a href="/lavoratore/${esc(d.badge_code)}" class="area-link-card">
+            <div class="area-link-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <div class="area-link-info">
+              <div class="area-link-title">Le mie buste paga e timbrature</div>
+              <div class="area-link-sub">Accedi con il tuo codice fiscale</div>
+            </div>
+            <div class="area-link-arrow">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            </div>
+          </a>
+        </div>
+
+        <div class="section-label">Conformità di cantiere · D.Lgs. 81/2008</div>
+
         ${renderDocSection(d)}
 
         <!-- Dettagli impiego -->
@@ -680,6 +701,22 @@
         return;
       }
 
+      // Un lavoratore che ha già verificato il proprio CF su QUESTO telefono
+      // (token salvato da lavoratore.html, valido 30gg) non deve rivedere ogni
+      // volta la pagina di conformità pensata per un ispettore in cantiere —
+      // salta dritto alla sua Area Lavoratore, che è quello che sta cercando
+      // il 99% delle volte (controllare la busta paga). Un telefono che non
+      // ha mai verificato questo codice (un ispettore, o il primo utilizzo
+      // del lavoratore stesso) continua a vedere la pagina di verifica sotto.
+      try {
+        const savedToken = localStorage.getItem('wa_t');
+        const savedCode  = localStorage.getItem('wa_c');
+        if (savedToken && savedCode && savedCode.toUpperCase() === code.toUpperCase()) {
+          window.location.replace('/lavoratore/' + code);
+          return;
+        }
+      } catch { /* localStorage non disponibile (es. modalità privata) — continua normalmente */ }
+
       const apiBase = window.location.origin;
       let data;
       try {
@@ -705,27 +742,6 @@
       }
 
       renderBadge(data);
-
-      // Link all'Area Lavoratore protetta (accesso con CF)
-      const container = document.getElementById('container');
-      if (container) {
-        container.insertAdjacentHTML('beforeend', `
-          <div class="section-label">Area personale</div>
-          <div class="card">
-            <a href="/lavoratore/${esc(code)}" class="area-link-card">
-              <div class="area-link-icon">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              </div>
-              <div class="area-link-info">
-                <div class="area-link-title">Area Lavoratore</div>
-                <div class="area-link-sub">Timbrature, buste paga e documenti</div>
-              </div>
-              <div class="area-link-arrow">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-              </div>
-            </a>
-          </div>`);
-      }
     }
 
     main().catch(function (err) {
