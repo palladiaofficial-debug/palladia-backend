@@ -37,6 +37,7 @@ const { getCompanyPosDefaults } = require('../../lib/posDefaults');
 const { searchLavorazioni } = require('../../lib/lavorazioniCatalog');
 const { isBillingActive } = require('../../lib/billing');
 const { analyzeChatUpload, archiveChatUpload } = require('../../services/chatDocumentAnalysis');
+const { startImportFromChatUpload, confirmHighConfidenceBatch } = require('../../lib/ladiaSmartImportBridge');
 const { logDocumentExport } = require('../../services/valueMetrics');
 const {
   chatMessageSchema,
@@ -455,7 +456,7 @@ METEO E SOSPENSIONI: get_weather_forecast, get_weather_log, get_suspension_days
 ECONOMIA E COSTI: get_site_costs, get_expenses_summary, get_payslips
 TREND E ANALYTICS: get_company_trends (presenze, crescita, utilizzo Ladia negli ultimi N giorni)
 DOCUMENTI: get_site_documents, get_company_documents, get_subcontractor_documents, leggi_documento_pdf, search_documents, get_expiring_documents, get_site_document_summary
-ARCHIVIO AI: read_uploaded_document, archive_document
+ARCHIVIO AI: read_uploaded_document, archive_document, import_multi_document_batch, confirm_multi_document_batch
 DIARIO E LOGISTICA: get_diary_entries, get_site_bookings
 SUBAPPALTATORI E MEZZI: get_subcontractors, get_equipment
 SCRITTURA DIRETTA: create_diary_note, create_site_note
@@ -533,6 +534,30 @@ DOCUMENT INTELLIGENCE — REGOLE:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ARCHIVIO DOCUMENTI AI — REGOLE CRITICHE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FILE CON PIÙ DOCUMENTI UNITI INSIEME (leggi PRIMA del resto):
+Un singolo PDF allegato può contenere PIÙ documenti distinti uniti in sequenza — il caso più comune sono
+le buste paga/cedolini stipendio: il consulente del lavoro manda un unico file con la busta paga di OGNI
+dipendente in coda (a volte anche pagine extra di riepilogo aziendale in fondo, non buste paga). Altri
+casi: più attestati di formazione di persone diverse, più DURC di imprese diverse. Se il file è più di
+1-2 pagine e riguarda potenzialmente più persone/documenti, o se l'utente dice esplicitamente "buste
+paga"/"cedolini" plurali o "carica questi documenti" riferendosi a un solo file allegato, chiama
+import_multi_document_batch su quel upload_id INVECE di read_uploaded_document — non i due tool insieme
+sullo stesso file. NON dire mai che caricare più cedolini/documenti in un solo file "non è supportato":
+lo è, exactly per questo import_multi_document_batch esiste. Dopo la risposta del tool:
+- Riferisci all'utente quanti documenti ha trovato e per quale destinazione (es. "ho trovato 16 buste
+  paga di luglio, pronte per essere archiviate su ciascun lavoratore"), e MENZIONA il batch_id nel testo
+  della tua risposta (anche tra parentesi, es. "batch a1b2c3d4") — la cronologia conserva solo il tuo
+  testo, non i risultati dei tool dei turni chiusi, quindi se non lo scrivi in chiaro lo perdi e non potrai
+  recuperarlo quando l'utente conferma in un turno successivo.
+- NON scrivere nulla in produzione da solo: chiedi conferma esplicita ("procedo?"), poi chiama
+  confirm_multi_document_batch con ESATTAMENTE quel batch_id (dalla tua risposta precedente in
+  cronologia, mai inventato a memoria) SOLO dopo che l'utente conferma.
+- confirm_multi_document_batch scrive solo i documenti riconosciuti con alta confidenza — se il risultato
+  indica che alcuni restano da rivedere, dillo chiaramente e indirizza l'utente su Importazione
+  Intelligente (/importazione-intelligente) per completarli a mano.
+Se invece il file allegato è chiaramente UN solo documento (una singola busta paga, un solo attestato),
+segui il flusso normale sotto (read_uploaded_document + archive_document).
+
 Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
 1. Chiama read_uploaded_document per OGNI upload_id elencato, TUTTI IN PARALLELO nella stessa risposta
    (più tool_use nello stesso turno) — mai un file alla volta in giri separati, anche con 10+ file.
@@ -2541,18 +2566,48 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       type: 'object',
       properties: {
         upload_id:      { type: 'string', description: 'UUID del file da archiviare' },
-        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates'], description: 'Tabella di destinazione' },
+        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips'], description: 'Tabella di destinazione — "payslips" per una singola busta paga/cedolino stipendio di UN lavoratore (mai worker_documents per queste)' },
         name:           { type: 'string', description: 'Nome visualizzato del documento (max 80 car)' },
         site_id:        { type: 'string', description: 'UUID cantiere (obbligatorio per site_documents)' },
-        worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents e worker_certificates)' },
+        worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents, worker_certificates e payslips)' },
         cantiere_hint:  { type: 'string', description: 'Nome/indirizzo del cantiere citato nel documento (da read_uploaded_document), se il documento non è per site_documents ma riguarda comunque un cantiere specifico — es. un attestato del lavoratore che lavora lì. Palladia lo abbina automaticamente.' },
         category:       { type: 'string', description: 'Categoria specifica del documento' },
         expiry_date:    { type: 'string', description: 'Data scadenza YYYY-MM-DD (se rilevata)' },
         issue_date:     { type: 'string', description: 'Data emissione YYYY-MM-DD (per certificati)' },
         issuing_body:   { type: 'string', description: 'Ente emittente (per attestati formazione)' },
         course_type_id: { type: 'string', description: 'UUID tipo corso (per worker_certificates, se noto)' },
+        period_year:    { type: 'number', description: 'Anno del periodo di competenza (obbligatorio per payslips)' },
+        period_month:   { type: 'number', description: 'Mese del periodo di competenza 1-12 (obbligatorio per payslips)' },
       },
       required: ['upload_id', 'destination', 'name'],
+    },
+  },
+  {
+    name: 'import_multi_document_batch',
+    description:
+      'Un file allegato può contenere PIÙ documenti dello stesso tipo uniti insieme (es. le buste paga di più lavoratori in un unico PDF come arrivano dal consulente del lavoro, più attestati di persone diverse, più DURC). ' +
+      'Usa QUESTO tool invece di read_uploaded_document/archive_document quando sospetti (o l\'utente dice) che il file contiene più documenti — NON dire mai che "non è supportato": lo è, tramite questo tool, che spacchetta e classifica ogni documento singolarmente. ' +
+      'Restituisce quanti documenti ha trovato e per quale destinazione, ma NON scrive ancora nulla in produzione — dopo aver riferito il risultato all\'utente, chiedi conferma esplicita prima di chiamare confirm_multi_document_batch.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        upload_id: { type: 'string', description: 'UUID del file caricato (da [FILE ALLEGATI])' },
+      },
+      required: ['upload_id'],
+    },
+  },
+  {
+    name: 'confirm_multi_document_batch',
+    description:
+      'Scrive in produzione (archivia sui rispettivi lavoratori/cantieri/azienda) i documenti di un batch creato da import_multi_document_batch che sono stati riconosciuti con alta confidenza. ' +
+      'Chiama SOLO dopo import_multi_document_batch E dopo che l\'utente ha confermato esplicitamente di voler procedere — mai in automatico. ' +
+      'I documenti con confidenza bassa NON vengono scritti: restano in coda di revisione manuale su Importazione Intelligente, spiegalo all\'utente se ce ne sono.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        batch_id: { type: 'string', description: 'UUID del batch restituito da import_multi_document_batch' },
+      },
+      required: ['batch_id'],
     },
   },
   {
@@ -2665,6 +2720,7 @@ const AGENTIC_WRITE_TOOLS = new Set([
   'create_computo_voce', 'delete_computo_voce',
   'create_variante', 'update_variante', 'update_budget_cantiere',
   'archive_document', 'update_worker', 'undo_action',
+  'confirm_multi_document_batch',
 ]);
 
 // Ripulisce solo boilerplate tecnico riconoscibile (messaggi Postgres grezzi)
@@ -5491,6 +5547,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           upload_id, destination, name,
           site_id, worker_id, cantiere_hint,
           category, expiry_date, issue_date, issuing_body, course_type_id,
+          period_year, period_month,
         } = toolInput;
         // Nessun gate di conferma qui di proposito: il prompt istruisce
         // esplicitamente Ladia ad archiviare in batch senza chiedere conferma
@@ -5505,6 +5562,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           siteHint: cantiere_hint,
           category, expiryDate: expiry_date, issueDate: issue_date,
           issuingBody: issuing_body, courseTypeId: course_type_id,
+          periodYear: period_year, periodMonth: period_month,
           req, conversationId: convId,
         });
         if (archiveResult.error) return archiveResult;
@@ -5529,6 +5587,18 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           } : undefined,
         });
         return { ...archiveResult, resultCard };
+      }
+
+      case 'import_multi_document_batch': {
+        const { upload_id } = toolInput;
+        if (!upload_id) return { error: 'upload_id obbligatorio.' };
+        return await startImportFromChatUpload({ uploadId: upload_id, companyId, userId });
+      }
+
+      case 'confirm_multi_document_batch': {
+        const { batch_id } = toolInput;
+        if (!batch_id) return { error: 'batch_id obbligatorio.' };
+        return await confirmHighConfidenceBatch({ batchId: batch_id, companyId, userId, req });
       }
 
       case 'update_worker': {
@@ -7019,7 +7089,7 @@ conteggio) — mai l'elenco riga per riga.`;
           const fileList = uploads.map(u =>
             `• ${u.original_name} (${u.mime_type}, ${Math.round((u.size_bytes || 0) / 1024)}KB) — upload_id: ${u.id}`
           ).join('\n');
-          systemPrompt += `\n\n[FILE ALLEGATI DALL'UTENTE]\nProcessa OGNI file con read_uploaded_document poi usa archive_document:\n${fileList}`;
+          systemPrompt += `\n\n[FILE ALLEGATI DALL'UTENTE]\nPer ogni file, segui la regola "FILE CON PIÙ DOCUMENTI UNITI INSIEME" più sopra per decidere tra import_multi_document_batch (file con più documenti) e read_uploaded_document+archive_document (un solo documento):\n${fileList}`;
         }
       } catch { /* non critico */ }
     }
