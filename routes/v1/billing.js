@@ -4,6 +4,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate, z }        = require('../../middleware/validate');
 const { getStripe, getPriceId, getSiteLimit } = require('../../services/stripe');
+const { checkAiBudget, formatAiUsageStatus } = require('../../lib/ladiaUsageLog');
 
 const checkoutSchema = z.object({
   plan: z.enum(['starter', 'grow', 'pro', 'business'], {
@@ -38,6 +39,17 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
   const effectiveStatus = isExpired ? 'trial_expired' : data.subscription_status;
   const plan = data.subscription_plan;
 
+  // Utilizzo AI del mese corrente — riusa checkAiBudget (stessa funzione che
+  // fa da gate reale su /chat) così il numero mostrato in UI e quello che
+  // davvero blocca Ladia non possono mai divergere. Un cliente onesto deve
+  // poter vedere quanto ha consumato PRIMA di sbattere contro il limite, non
+  // scoprirlo solo quando Ladia smette di rispondere (vedi AUDIT.md F-056) —
+  // esattamente come Claude Code mostra l'utilizzo prima di esaurirlo.
+  let aiUsage = null;
+  try {
+    aiUsage = formatAiUsageStatus(await checkAiBudget(req.companyId));
+  } catch { /* mai bloccare /billing/status per un guasto sul lato AI usage */ }
+
   res.json({
     status:        effectiveStatus,
     plan,
@@ -47,6 +59,7 @@ router.get('/billing/status', verifySupabaseJwt, async (req, res) => {
     period_end:    data.subscription_current_period_end,
     has_customer:  !!data.stripe_customer_id,
     site_limit:    getSiteLimit(effectiveStatus === 'trial_expired' ? 'trial' : (plan || 'trial')),
+    ai_usage:      aiUsage,
   });
 });
 
