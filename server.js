@@ -355,6 +355,24 @@ app.post('/api/webhooks/stripe',
         }
       }
 
+      // F-058 (AUDIT.md) — avviso al cliente PRIMA del rinnovo automatico,
+      // non solo dopo un pagamento riuscito/fallito. Richiede che 'invoice.upcoming'
+      // sia tra gli enabled_events dell'endpoint su Stripe (dashboard/API).
+      if (event.type === 'invoice.upcoming') {
+        const inv = event.data.object;
+        const { findCompanyByStripeCustomer, getCompanyAdminEmails, buildRenewalNoticeData } = require('./lib/billingRenewalNotice');
+        const company = await findCompanyByStripeCustomer(inv.customer);
+        if (company) {
+          const adminEmails = await getCompanyAdminEmails(company.id);
+          if (adminEmails.length > 0) {
+            const notice = buildRenewalNoticeData(inv);
+            const { sendSubscriptionRenewalNotice } = require('./services/email');
+            await sendSubscriptionRenewalNotice({ to: adminEmails, companyName: company.name, ...notice });
+            console.log(`[stripe-webhook] avviso rinnovo (${notice.amount} ${notice.currency}) inviato a ${adminEmails.length} admin — company ${company.id}`);
+          }
+        }
+      }
+
       if (event.type === 'invoice.payment_failed') {
         const inv = event.data.object;
         const { data: company } = await supabaseW

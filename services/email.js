@@ -2356,6 +2356,7 @@ module.exports = {
   sendAiSpendCircuitBreakerAlert,
   sendMonthlyValueReport,
   sendStudioMonthlyValueReport,
+  sendSubscriptionRenewalNotice,
 };
 
 // ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────
@@ -2528,6 +2529,66 @@ async function sendAiCreditExhaustedAlert({ detail } = {}) {
     to,
     subject: 'Palladia — Credito Anthropic esaurito, Ladia è offline',
     html: layout('Credito AI esaurito', bodyHtml),
+  });
+}
+
+// ─── Email: avviso rinnovo abbonamento (F-058, AUDIT.md) ────────────────────
+
+/**
+ * Avvisa owner/admin PRIMA che Stripe riaddebiti la carta per il rinnovo
+ * dell'abbonamento — invio agganciato all'evento webhook `invoice.upcoming`
+ * (di norma ~7 giorni prima, secondo la configurazione dell'account Stripe).
+ * @param {{ to: string|string[], companyName: string, amount: number, currency: string, renewalDate: string|null, planName: string }} opts
+ */
+async function sendSubscriptionRenewalNotice({ to, companyName, amount, currency, renewalDate, planName }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  const dateLabel = renewalDate
+    ? new Date(renewalDate).toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' })
+    : 'nei prossimi giorni';
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Rinnovo abbonamento in arrivo</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      L'abbonamento di <strong style="color:#1a1a1a;">${esc(companyName)}</strong> su Palladia
+      si rinnoverà automaticamente il <strong style="color:#1a1a1a;">${dateLabel}</strong>.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Dettagli addebito</p>
+          <table cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;min-width:120px;">Piano</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${esc(planName)}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Importo</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${amount.toFixed(2)} ${esc(currency)}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 0;font-size:13px;color:#6b7280;">Data addebito</td>
+              <td style="padding:4px 0;font-size:13px;font-weight:700;color:#1a1a1a;">${dateLabel}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Gestisci abbonamento →', `${APP_URL}/account`)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Nessuna azione richiesta se vuoi continuare — l'addebito avviene automaticamente sulla carta registrata.
+      Per modificare o annullare l'abbonamento prima del rinnovo, vai su Account → Piano &amp; Fatturazione.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Palladia — il tuo abbonamento si rinnova il ${dateLabel} (${amount.toFixed(2)} ${currency})`,
+    html: layout('Rinnovo abbonamento', body),
   });
 }
 
