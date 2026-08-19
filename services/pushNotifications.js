@@ -65,7 +65,13 @@ async function _dispatch(subs, payload) {
     title:              payload.title              || 'Palladia',
     body:               payload.body               || '',
     icon:               payload.icon               || '/icon-192.png',
-    badge:              '/icon-192.png',
+    // Android riduce sempre l'icona della barra di stato al solo canale alpha
+    // (regola di sistema, non aggirabile) — icon-192.png è a colori con sfondo
+    // pieno e senza un alpha sensato, quindi Android mostrava un quadrato
+    // bianco vuoto invece della "P". badge-monochrome.png è la sagoma bianca
+    // del logo su sfondo trasparente, pensata apposta per la barra di stato
+    // (vedi anche public/sw.js e src/sw.js del repo frontend, stesso fix).
+    badge:              '/badge-monochrome.png',
     tag:                payload.tag                || 'palladia',
     requireInteraction: payload.requireInteraction || false,
     silent:             payload.silent             || false,
