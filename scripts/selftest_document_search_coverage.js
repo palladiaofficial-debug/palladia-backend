@@ -11,6 +11,13 @@
  * 2. services/smartImportPipeline.js::sanitizeCategory rietichettava sempre
  *    'contratto'/'capitolato' a 'altro' (CATEGORY_ALLOWLIST non li ammetteva,
  *    né lo faceva il CHECK di site_documents prima della migrazione 167).
+ * 3. Il boost di rilevanza per `tipo` riconosceva solo parole semantiche
+ *    italiane (es. 'assicurazione') — se il chiamante passava direttamente il
+ *    valore letterale della colonna category (es. 'insurance', usato da
+ *    subcontractor_documents invece di 'assicurazione' come site_documents),
+ *    il boost non scattava mai. Non impediva mai di TROVARE il documento (la
+ *    ricerca per nome resta sempre attiva), solo la sua priorità in una lista
+ *    con più risultati.
  *
  * Chiamata diretta alle funzioni contro il DB reale, fixture temporanee
  * create e ripulite dal test stesso.
@@ -18,7 +25,7 @@
 'use strict';
 require('dotenv').config();
 const supabase = require('../lib/supabase');
-const { searchSubcontractorDocuments, searchStudioSharedDocuments, searchPayslips } = require('../services/ladiaDocumentSearch');
+const { searchSubcontractorDocuments, searchStudioSharedDocuments, searchPayslips, matchBoost } = require('../services/ladiaDocumentSearch');
 const { sanitizeCategory } = require('../services/smartImportPipeline');
 
 let passed = 0, failed = 0;
@@ -34,6 +41,13 @@ async function main() {
   check("sanitizeCategory('site_documents','capitolato') resta 'capitolato'", sanitizeCategory('site_documents', 'capitolato') === 'capitolato');
   check("sanitizeCategory('company_documents','contratto') resta 'contratto'", sanitizeCategory('company_documents', 'contratto') === 'contratto');
   check("sanitizeCategory('site_documents','tipo_inventato') ripiega su 'altro' (comportamento invariato)", sanitizeCategory('site_documents', 'tipo_inventato') === 'altro');
+
+  // ── 3. matchBoost riconosce sia il vocabolario semantico che quello letterale ──
+  const SUB_TIPO_CATEGORIES = { durc: ['durc'], assicurazione: ['insurance'], soa: ['soa'] };
+  check("matchBoost: parola semantica italiana ('assicurazione') matcha il valore letterale ('insurance')", matchBoost(SUB_TIPO_CATEGORIES, 'assicurazione', 'insurance') === true);
+  check("matchBoost: valore letterale diretto ('insurance', il bug reale) matcha anche se non è una chiave della mappa", matchBoost(SUB_TIPO_CATEGORIES, 'insurance', 'insurance') === true);
+  check("matchBoost: nessun match tra categorie diverse", matchBoost(SUB_TIPO_CATEGORIES, 'durc', 'insurance') === false);
+  check("matchBoost: tipo assente non fa scattare mai il boost", matchBoost(SUB_TIPO_CATEGORIES, null, 'insurance') === false);
 
   // ── 1. Copertura ricerca documenti ────────────────────────────────────────
   const { data: company, error: companyErr } = await supabase.from('companies').insert({ name: 'TEST-DocSearch-Coverage-Probe' }).select().single();
@@ -51,6 +65,14 @@ async function main() {
       category: 'altro', file_path: `subcontractors/${companyId}/test-contract.pdf`, mime_type: 'application/pdf',
     }).select().single();
     check('Documento subappaltatore di test creato', !!subDoc, subDoc);
+
+    // Stesso subappaltatore, categoria reale 'insurance' (non 'assicurazione') —
+    // verifica dal vivo che il boost scatti col valore letterale del DB, non solo
+    // con la parola semantica italiana.
+    const { data: subDocInsurance } = await supabase.from('subcontractor_documents').insert({
+      company_id: companyId, subcontractor_id: sub.id, name: 'Polizza assicurativa TEST.pdf',
+      category: 'insurance', file_path: `subcontractors/${companyId}/test-insurance.pdf`, mime_type: 'application/pdf',
+    }).select().single();
 
     const { data: studioPartner } = await supabase.from('studio_partners').select('id').limit(1).maybeSingle();
     let studioDoc = null;
@@ -71,6 +93,15 @@ async function main() {
 
     const subResults = await searchSubcontractorDocuments(companyId, null, null);
     check('searchSubcontractorDocuments trova il contratto del subappaltatore', subResults.some(d => d.id === subDoc?.id && d.nome.includes('TEST Subappaltatore SRL')), subResults);
+
+    const subResultsInsurance = await searchSubcontractorDocuments(companyId, null, 'insurance');
+    const insuranceEntry = subResultsInsurance.find(d => d.id === subDocInsurance?.id);
+    const altroEntry     = subResultsInsurance.find(d => d.id === subDoc?.id);
+    check(
+      "tipo='insurance' (valore letterale, il bug reale) alza il punteggio del documento con category='insurance' sopra quello 'altro'",
+      !!insuranceEntry && !!altroEntry && insuranceEntry.score > altroEntry.score,
+      { insuranceEntry, altroEntry },
+    );
 
     if (studioPartner) {
       const studioResults = await searchStudioSharedDocuments(companyId, null);

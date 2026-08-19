@@ -38,6 +38,23 @@ async function getSignedUrl(storagePath) {
 
 // ── Ricerca documenti ─────────────────────────────────────────────────────────
 
+// `tipo` arriva in due vocabolari diversi a seconda del tool chiamante:
+// leggi_documento_pdf passa una parola semantica italiana (il suo enum
+// tipo_documento: durc, assicurazione, capitolato, ...), search_documents passa
+// spesso il valore letterale della colonna category/doc_type nel DB (es. 'dvr',
+// 'durc' — che coincidono per site_documents, ma NON sempre: subcontractor_documents
+// usa 'insurance' dove site_documents usa 'assicurazione'). Prova prima la mappa
+// semantica, poi il valore letterale diretto, così il boost scatta con entrambi i
+// vocabolari — non cambia mai se un documento viene trovato (quello è sempre la
+// ricerca per nome, mai esclusiva), solo l'ordine tra più risultati con lo stesso nome.
+function matchBoost(tipoMap, tipo, actualValue) {
+  if (!tipo || !actualValue) return false;
+  const key = tipo.toLowerCase();
+  const mapped = tipoMap[key];
+  if (mapped) return Array.isArray(mapped) ? mapped.includes(actualValue) : mapped === actualValue;
+  return key === actualValue.toLowerCase();
+}
+
 async function searchLadiaTemplates(companyId, nomeFile, tipo) {
   let q = supabase
     .from('ladia_document_templates')
@@ -52,7 +69,7 @@ async function searchLadiaTemplates(companyId, nomeFile, tipo) {
     capitolato: 'capitolato', contratto: 'contratto', pos: 'POS', psc: 'PSC',
     durc: 'altro', dvr: 'altro', assicurazione: 'altro', attestato: 'altro', certificato: 'altro',
   };
-  const mapped = tipo && tipo !== 'qualsiasi' ? typeMap[tipo.toLowerCase()] : null;
+  const effectiveTipo = tipo && tipo !== 'qualsiasi' ? tipo : null;
 
   const { data } = await q;
   return (data || []).map(d => ({
@@ -63,7 +80,7 @@ async function searchLadiaTemplates(companyId, nomeFile, tipo) {
     extracted_text: d.extracted_text,
     summary:        d.summary,
     key_sections:   d.key_sections,
-    score:          3 + (mapped && d.document_type === mapped ? 2 : 0), // priorità alta — già analizzati
+    score:          3 + (matchBoost(typeMap, effectiveTipo, d.document_type) ? 2 : 0), // priorità alta — già analizzati
   }));
 }
 
@@ -88,12 +105,11 @@ async function searchSiteDocuments(companyId, siteId, nomeFile, tipo) {
   // La categoria è solo un BOOST del punteggio, non un filtro escludente: un
   // documento archiviato con la categoria "sbagliata" dall'utente deve restare
   // trovabile (altrimenti il tool risponde "non trovato" su un doc che esiste).
-  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
   return (data || [])
     .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
     .map(d => ({
       source: 'site_document', id: d.id, nome: d.name, storage_path: d.file_path,
-      score: 2 + (cats?.includes(d.category) ? 2 : 0),
+      score: 2 + (matchBoost(TIPO_CATEGORIES, tipo, d.category) ? 2 : 0),
     }));
 }
 
@@ -115,12 +131,11 @@ async function searchCompanyDocuments(companyId, nomeFile, tipo) {
   if (nomeFile) q = q.ilike('name', `%${nomeFile}%`);
 
   const { data } = await q;
-  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
   return (data || [])
     .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
     .map(d => ({
       source: 'company_document', id: d.id, nome: d.name, storage_path: d.file_path,
-      score: 2 + (cats?.includes(d.category) ? 2 : 0),
+      score: 2 + (matchBoost(TIPO_CATEGORIES, tipo, d.category) ? 2 : 0),
     }));
 }
 
@@ -158,8 +173,6 @@ async function searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore) 
   const { data } = await q;
   if (!data?.length) return [];
 
-  const docTypes = tipo && TIPO_DOC_TYPES[tipo.toLowerCase()];
-
   // Arricchisci con il nome del lavoratore
   const wIds = [...new Set(data.map(d => d.worker_id).filter(Boolean))];
   let workerNames = {};
@@ -176,7 +189,7 @@ async function searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore) 
       id:           d.id,
       nome:         `${workerNames[d.worker_id] || 'Lavoratore'} — ${d.name || d.doc_type}`,
       storage_path: d.file_path,
-      score:        1 + (docTypes?.includes(d.doc_type) ? 1 : 0),
+      score:        1 + (matchBoost(TIPO_DOC_TYPES, tipo, d.doc_type) ? 1 : 0),
     }));
 }
 
@@ -204,14 +217,13 @@ async function searchSubcontractorDocuments(companyId, nomeFile, tipo) {
     (subs || []).forEach(s => { subNames[s.id] = s.company_name; });
   }
 
-  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
   return data
     .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
     .map(d => ({
       source: 'subcontractor_document', id: d.id,
       nome: `${subNames[d.subcontractor_id] || 'Subappaltatore'} — ${d.name}`,
       storage_path: d.file_path,
-      score: 2 + (cats?.includes(d.category) ? 2 : 0),
+      score: 2 + (matchBoost(TIPO_CATEGORIES, tipo, d.category) ? 2 : 0),
     }));
 }
 
@@ -389,4 +401,5 @@ module.exports = {
   searchSubcontractorDocuments,
   searchStudioSharedDocuments,
   searchPayslips,
+  matchBoost,
 };
