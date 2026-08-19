@@ -247,4 +247,36 @@ const sdiWebhookLimiter = rateLimit({
   ...makeStore('sdiWebhook'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, confirmActionLimiter, sdiWebhookLimiter };
+// Webhook fatture via email (Mailgun): chiamato dal provider, non da un browser —
+// stesso limite generoso di sdiWebhookLimiter, per non perdere fatture reali in un
+// giorno di picco (uno zip con più fatture arriva comunque come UNA richiesta).
+const emailIngestWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  message: { error: 'RATE_LIMIT_EXCEEDED' },
+  ...makeStore('emailIngestWebhook'),
+});
+
+// Limite per mittente reale (non solo per la rotta) — un singolo indirizzo
+// compromesso o difettoso non deve poter flooddare una company. Va montato DOPO
+// multer nella catena (serve req.body.sender già parsato) — stesso pattern di
+// checkChatRateLimit in routes/telegram.js, qui però via express-rate-limit per
+// restare coerenti con lo store Redis condiviso.
+const emailIngestSenderLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    const recipient = String(req.body?.recipient || '').toLowerCase();
+    const sender    = String(req.body?.sender || req.body?.from || '').toLowerCase();
+    return `emailIngestSender:${recipient}:${sender}`;
+  },
+  message: { error: 'RATE_LIMIT_EXCEEDED' },
+  ...makeStore('emailIngestSender'),
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter };

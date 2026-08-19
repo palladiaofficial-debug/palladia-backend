@@ -1,22 +1,14 @@
 'use strict';
 const router    = require('express').Router();
 const multer    = require('multer');
-const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { validate }             = require('../../middleware/validate');
 const { aiLimiter }            = require('../../middleware/rateLimit');
-const { withAiLimit }          = require('../../lib/concurrencyLimit');
 const { createExpenseSchema, updateExpenseSchema, CATEGORIES, PAYMENT_METHODS } = require('../../lib/schemas/expenses');
-const { logUsage } = require('../../lib/ladiaUsageLog');
+const { extractExpenseFromDocument } = require('../../lib/expenseOcr');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-let _anthropic = null;
-function getClient() {
-  if (!_anthropic) _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return _anthropic;
-}
 
 router.use(verifySupabaseJwt);
 
@@ -154,7 +146,7 @@ router.get('/expenses/summary', async (req, res) => {
 
   let q = supabase
     .from('company_expenses')
-    .select('amount, category, payment_method, paid_by, expense_date, site_id, is_deductible')
+    .select('amount, category, payment_method, paid_by, expense_date, site_id, is_deductible, is_credit_note')
     .eq('company_id', req.companyId)
     .order('expense_date');
 
@@ -165,8 +157,13 @@ router.get('/expenses/summary', async (req, res) => {
   if (error) return res.status(500).json({ error: error.message });
 
   const expenses = data || [];
-  const total = expenses.reduce((s, e) => s + Number(e.amount), 0);
-  const totalDeductible = expenses.filter(e => e.is_deductible).reduce((s, e) => s + Number(e.amount), 0);
+  // Le note di credito (TD04 e affini, canale email — vedi lib/fatturaPaXmlParser.js)
+  // riducono i costi, non si sommano: l'importo sul documento resta sempre positivo
+  // (CHECK amount > 0), il segno si applica solo qui, in aggregazione.
+  const signedAmount = (e) => e.is_credit_note ? -Number(e.amount) : Number(e.amount);
+
+  const total = expenses.reduce((s, e) => s + signedAmount(e), 0);
+  const totalDeductible = expenses.filter(e => e.is_deductible).reduce((s, e) => s + signedAmount(e), 0);
 
   // Per categoria
   const byCategory = {};
@@ -174,7 +171,7 @@ router.get('/expenses/summary', async (req, res) => {
     const cat = e.category || 'altro';
     if (!byCategory[cat]) byCategory[cat] = { count: 0, total: 0 };
     byCategory[cat].count++;
-    byCategory[cat].total += Number(e.amount);
+    byCategory[cat].total += signedAmount(e);
   }
 
   // Per metodo di pagamento
@@ -183,7 +180,7 @@ router.get('/expenses/summary', async (req, res) => {
     const m = e.payment_method || 'altro';
     if (!byMethod[m]) byMethod[m] = { count: 0, total: 0 };
     byMethod[m].count++;
-    byMethod[m].total += Number(e.amount);
+    byMethod[m].total += signedAmount(e);
   }
 
   // Per pagatore
@@ -192,7 +189,7 @@ router.get('/expenses/summary', async (req, res) => {
     const p = e.paid_by || 'Non specificato';
     if (!byPayer[p]) byPayer[p] = { count: 0, total: 0 };
     byPayer[p].count++;
-    byPayer[p].total += Number(e.amount);
+    byPayer[p].total += signedAmount(e);
   }
 
   // Per mese
@@ -201,7 +198,7 @@ router.get('/expenses/summary', async (req, res) => {
     const m = e.expense_date?.slice(0, 7) || 'sconosciuto';
     if (!byMonth[m]) byMonth[m] = { count: 0, total: 0 };
     byMonth[m].count++;
-    byMonth[m].total += Number(e.amount);
+    byMonth[m].total += signedAmount(e);
   }
 
   res.json({
@@ -232,7 +229,10 @@ router.get('/expenses/export', async (req, res) => {
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
 
-  const header = 'Data,Importo,Descrizione,Categoria,Metodo Pagamento,Rif. Pagamento,Pagato da,Fornitore,N. Fattura,Deducibile,Cantiere,Note';
+  // L'importo in colonna resta sempre quello sul documento (mai negativo, CHECK
+  // amount > 0) — "Nota di Credito" segnala al commercialista quali righe vanno
+  // sottratte, coerente con l'aggregazione di /expenses/summary.
+  const header = 'Data,Importo,Descrizione,Categoria,Metodo Pagamento,Rif. Pagamento,Pagato da,Fornitore,N. Fattura,Nota di Credito,Deducibile,Cantiere,Note';
   const rows = (data || []).map(e => {
     const esc = s => `"${String(s || '').replace(/"/g, '""')}"`;
     return [
@@ -245,6 +245,7 @@ router.get('/expenses/export', async (req, res) => {
       esc(e.paid_by),
       esc(e.supplier),
       esc(e.invoice_number),
+      esc(e.is_credit_note ? 'Sì' : 'No'),
       esc(e.is_deductible ? 'Sì' : 'No'),
       esc(e.sites?.name),
       esc(e.notes),
@@ -296,36 +297,9 @@ router.post('/expenses/scan', aiLimiter, upload.single('file'), async (req, res)
   }
 
   try {
-    const base64 = buffer.toString('base64');
-    const mediaType = mimetype === 'application/pdf' ? 'application/pdf' : mimetype;
-    const sourceType = mimetype === 'application/pdf' ? 'document' : 'image';
-
-    const content = [
-      { type: sourceType, source: { type: 'base64', media_type: mediaType, data: base64 } },
-      { type: 'text', text: `Analizza questa ricevuta/scontrino/fattura ed estrai i dati. Restituisci SOLO JSON valido con questi campi:
-{"amount":null,"description":null,"supplier":null,"invoice_number":null,"expense_date":null,"category":null,"payment_method":null}
-
-Regole:
-- amount: numero decimale (es. 125.50), senza simbolo €
-- expense_date: formato YYYY-MM-DD
-- category: una tra [materiali, carburante, utenze, assicurazioni, tasse_contributi, stipendi, affitto, attrezzature, subappalto, consulenze, manutenzione, trasporti, cancelleria, vitto_alloggio, altro] — scegli la più appropriata
-- payment_method: una tra [contanti, assegno, bonifico, carta, pos, altro] — deduci dal documento se possibile, altrimenti null
-- description: breve descrizione della spesa (max 100 caratteri)
-- null per campi non presenti nel documento` },
-    ];
-
-    const msg = await withAiLimit(() =>
-      getClient().messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        messages: [{ role: 'user', content }],
-      })
-    );
-    logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'expense_scan', usage: msg.usage });
-
-    const text  = msg.content[0]?.text || '{}';
-    const match = text.match(/\{[\s\S]*\}/);
-    const extracted = match ? JSON.parse(match[0]) : {};
+    const extracted = await extractExpenseFromDocument(buffer, mimetype, {
+      companyId: req.companyId, userId: req.user?.id, callSite: 'expense_scan',
+    });
 
     // Verifica duplicato
     let duplicate = null;

@@ -88,6 +88,12 @@ router.use('/', require('./sdiInvoices'));
 // nessun webhook pubblico, solo rotte azienda (JWT) — vedi services/sdiConsultation.js
 router.use('/', require('./sdiConsultation'));
 
+// Fatture fornitore via inoltro email: webhook pubblico (firma Mailgun) + rotte
+// azienda (JWT) per indirizzo dedicato/allowlist/registro. Terzo canale sullo
+// stesso impianto di sdiInvoices/sdiConsultation — vedi services/emailIngestConfig.js.
+// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale.
+router.use('/', require('./emailIngest'));
+
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 

@@ -186,7 +186,7 @@ function mapParsedInvoiceToExpense(companyId, parsed, invoiceId) {
     invoice_number: parsed.docNumber,
     is_deductible: true,
     notes:        'Importata automaticamente dal Cassetto Fiscale (consultazione via delega)',
-    source:       'sdi_consultation',
+    source:       'acube',
     sdi_invoice_id: invoiceId,
     sdi_raw_invoice: parsed,
   };

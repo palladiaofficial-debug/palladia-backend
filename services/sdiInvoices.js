@@ -343,22 +343,26 @@ async function resolveSiteFromSupplierHistory(companyId, supplierVat, activeSite
 // Stessa tabella già in uso per scadenze/alert — compare nel centro notifiche
 // indipendentemente dal fatto che qualcuno abbia la pagina Spese aperta o meno
 // (l'auto-refresh via Realtime copre solo chi ce l'ha già aperta in quel momento).
-async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion, viaHistory }) {
-  const title = ambiguous
-    ? 'Fattura fornitore da assegnare a un cantiere'
-    : 'Nuova fattura fornitore importata';
-  const body = ambiguous
-    ? (suggestion
-        ? `${expense.supplier} · ${expense.amount}€ — Ladia pensa sia per un cantiere specifico, conferma o correggi.`
-        : `${expense.supplier} · ${expense.amount}€ — non sono riuscito a capire per quale cantiere, assegnala tu.`)
-    : (viaHistory
-        ? `${expense.supplier} · ${expense.amount}€ — assegnata come sempre allo stesso cantiere di questo fornitore, nessuna azione richiesta.`
-        : `${expense.supplier} · ${expense.amount}€ — assegnata automaticamente, nessuna azione richiesta.`);
+async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion, viaHistory, pendingReview, pendingReviewReason }) {
+  const title = pendingReview
+    ? 'Possibile fattura già presente — verifica'
+    : ambiguous
+      ? 'Fattura fornitore da assegnare a un cantiere'
+      : 'Nuova fattura fornitore importata';
+  const body = pendingReview
+    ? `${expense.supplier} · ${expense.amount}€ — ${pendingReviewReason || 'sembra già presente come spesa caricata a mano, verifica prima di tenerle entrambe.'}`
+    : ambiguous
+      ? (suggestion
+          ? `${expense.supplier} · ${expense.amount}€ — Ladia pensa sia per un cantiere specifico, conferma o correggi.`
+          : `${expense.supplier} · ${expense.amount}€ — non sono riuscito a capire per quale cantiere, assegnala tu.`)
+      : (viaHistory
+          ? `${expense.supplier} · ${expense.amount}€ — assegnata come sempre allo stesso cantiere di questo fornitore, nessuna azione richiesta.`
+          : `${expense.supplier} · ${expense.amount}€ — assegnata automaticamente, nessuna azione richiesta.`);
 
   await supabase.from('notifications').insert({
     company_id:  companyId,
-    type:        'sdi_invoice_received',
-    severity:    ambiguous ? 'warning' : 'info',
+    type:        pendingReview ? 'email_invoice_possible_duplicate' : 'sdi_invoice_received',
+    severity:    (ambiguous || pendingReview) ? 'warning' : 'info',
     title,
     body,
     entity_type: 'company_expense',
@@ -375,6 +379,22 @@ async function ingestSupplierInvoice(companyId, invoice) {
   return ingestMappedExpense(companyId, expenseRow, invoice);
 }
 
+// Normalizza un numero fattura per il confronto di identità fiscale (dedup canale
+// email): stesso numero scritto "2024/001", "2024-001" o "2024 001" deve confrontare
+// uguale — tiene solo lettere/cifre, minuscolo.
+function normalizeInvoiceNumber(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+// Azione di audit per canale — 'email' aggiunto qui, non nel path Openapi dedicato,
+// perché ingestMappedExpense è il punto di ingest condiviso usato anche dal futuro
+// webhook email (routes/v1/emailIngest.js).
+const INGEST_AUDIT_ACTION = {
+  sdi_auto: 'expense.sdi_auto_import',
+  acube:    'expense.acube_import',
+  email:    'expense.email_import',
+};
+
 // ── Ingest condiviso tra provider (Openapi via webhook, A-Cube via consultazione) ──
 // `invoiceForAi` è nella forma { sender: { name }, invoice_lines: [{ description }] }
 // attesa da generateSiteAssignmentProposal/categorizeInvoice — services/sdiConsultation.js
@@ -382,7 +402,13 @@ async function ingestSupplierInvoice(companyId, invoice) {
 // modificare quelle funzioni pensate originariamente per il payload Openapi.
 // `configTable` indica quale tabella di configurazione aggiornare con
 // last_invoice_received_at/last_poll_at a fine importazione.
-async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = 'sdi_configurations' } = {}) {
+// `dedupExtra: true` (canale email) sostituisce la dedup per sdi_invoice_id — che il
+// canale email non ha, nessun provider assegna un id — con dedup per hash contenuto
+// (match esatto, indice unico lato DB) poi per identità fiscale (P.IVA + numero
+// documento normalizzato + data emissione): lo stesso documento arrivato in formati
+// diversi (XML e p7m dello stesso contenuto) ha hash diversi ma identità fiscale
+// identica. Openapi e A-Cube restano sul dedup per sdi_invoice_id, invariato.
+async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = 'sdi_configurations', dedupExtra = false } = {}) {
   const { siteId, activeSites } = await resolveSiteAssignment(companyId);
   expenseRow.site_id = siteId;
 
@@ -422,15 +448,42 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
     }
   }
 
-  const { data: existing } = await supabase
-    .from('company_expenses')
-    .select('id')
-    .eq('company_id', companyId)
-    .eq('sdi_invoice_id', expenseRow.sdi_invoice_id)
-    .maybeSingle();
+  if (dedupExtra) {
+    if (expenseRow.content_hash) {
+      const { data: byHash } = await supabase
+        .from('company_expenses')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('content_hash', expenseRow.content_hash)
+        .maybeSingle();
+      if (byHash) return { ok: true, skipped: true, reason: 'duplicate_hash', expense_id: byHash.id };
+    }
+    if (expenseRow.supplier_vat && expenseRow.invoice_number && expenseRow.expense_date) {
+      const normalized = normalizeInvoiceNumber(expenseRow.invoice_number);
+      const { data: sameDay } = await supabase
+        .from('company_expenses')
+        .select('id, invoice_number')
+        .eq('company_id', companyId)
+        .eq('supplier_vat', expenseRow.supplier_vat)
+        .eq('expense_date', expenseRow.expense_date);
+      const match = (sameDay || []).find((c) => normalizeInvoiceNumber(c.invoice_number) === normalized);
+      if (match) return { ok: true, skipped: true, reason: 'duplicate_fiscal_identity', expense_id: match.id };
+    }
+  } else if (expenseRow.sdi_invoice_id) {
+    // Guardia esplicita: senza questo `if`, un expenseRow senza sdi_invoice_id (mai il
+    // caso oggi per Openapi/A-Cube, ma da non dare per scontato) farebbe .eq(..., undefined),
+    // che supabase-js ignora silenziosamente — la query perderebbe il filtro e
+    // "trovarebbe" la prima riga qualunque della company, segnalando un falso doppione.
+    const { data: existing } = await supabase
+      .from('company_expenses')
+      .select('id')
+      .eq('company_id', companyId)
+      .eq('sdi_invoice_id', expenseRow.sdi_invoice_id)
+      .maybeSingle();
 
-  if (existing) {
-    return { ok: true, skipped: true, reason: 'duplicate', expense_id: existing.id };
+    if (existing) {
+      return { ok: true, skipped: true, reason: 'duplicate', expense_id: existing.id };
+    }
   }
 
   const { data, error } = await supabase
@@ -447,13 +500,17 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
 
   auditLog({
     companyId,
-    action:     expenseRow.source === 'sdi_consultation' ? 'expense.sdi_consultation_import' : 'expense.sdi_auto_import',
+    action:     INGEST_AUDIT_ACTION[expenseRow.source] || 'expense.sdi_auto_import',
     targetType: 'company_expense',
     targetId:   data.id,
     payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
   });
 
-  await notifyExpenseImported(companyId, data, { ambiguous, suggestion, viaHistory });
+  await notifyExpenseImported(companyId, data, {
+    ambiguous, suggestion, viaHistory,
+    pendingReview:       expenseRow.pending_review || false,
+    pendingReviewReason: expenseRow.pending_review_reason || null,
+  });
 
   return { ok: true, skipped: false, expense: data };
 }
