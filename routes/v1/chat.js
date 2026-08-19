@@ -2416,7 +2416,8 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       '"cosa prevede il POS per questa lavorazione", o qualsiasi domanda che richiede ' +
       'consultare il contenuto di un documento specifico. ' +
       'Copre tutti i PDF caricati: capitolati, POS, PSC, DURC, DVR, attestati, ' +
-      'assicurazioni, contratti, visure, certificati lavoratori.',
+      'assicurazioni, contratti (anche di subappalto), visure, certificati lavoratori, ' +
+      'documenti condivisi col commercialista, cedolini.',
     input_schema: {
       type: 'object',
       properties: {
@@ -2465,14 +2466,16 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   {
     name: 'search_documents',
     description:
-      'Cerca documenti in tutto il sistema Palladia: cantieri, azienda, lavoratori. ' +
+      'Cerca documenti in tutto il sistema Palladia: cantieri, azienda, lavoratori, subappaltatori, ' +
+      'documenti condivisi col commercialista, cedolini. ' +
       'Usa per: "trova il DURC", "dove è il DVR del cantiere X", "documenti di Mario", ' +
-      '"cerca assicurazione", "tutti i POS". Restituisce lista unificata con fonte, tipo, scadenza e link.',
+      '"cerca assicurazione", "tutti i POS", "contratto del subappaltatore Y", "cedolino di Marco a giugno". ' +
+      'Restituisce lista unificata con fonte, tipo, scadenza e link.',
     input_schema: {
       type: 'object',
       properties: {
         query:     { type: 'string',  description: 'Parola chiave nel nome del documento (case-insensitive). Ometti per listare tutti.' },
-        scope:     { type: 'string',  enum: ['all', 'site', 'company', 'workers'], description: 'Dove cercare. Default: all.' },
+        scope:     { type: 'string',  enum: ['all', 'site', 'company', 'workers', 'subcontractors', 'studio', 'payslips'], description: 'Dove cercare. Default: all.' },
         site_id:   { type: 'string',  description: 'Limita ai documenti di un cantiere specifico.' },
         worker_id: { type: 'string',  description: 'Limita ai documenti di un lavoratore specifico.' },
         category:  { type: 'string',  description: 'Filtra per categoria/tipo es. dvr, durc, pos, idoneita_medica, formazione_sicurezza.' },
@@ -5354,6 +5357,40 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
                 download_endpoint: d.pdf_url || null,
               });
             });
+          })(),
+
+          // 6. Documenti subappaltatori (subcontractor_documents) — mancavano, un
+          // contratto/DURC/SOA di un subappaltatore era irraggiungibile da qui.
+          (scope === 'all' || scope === 'subcontractors') && (async () => {
+            const { searchSubcontractorDocuments } = require('../../services/ladiaDocumentSearch');
+            const docs = await searchSubcontractorDocuments(companyId, query, category).catch(() => []);
+            docs.forEach(d => results.push({
+              fonte: 'subappaltatore', id: d.id, nome: d.nome, tipo: category || null,
+              mime_type: 'application/pdf', download_endpoint: null,
+              nota: 'Apri dalla scheda del subappaltatore per il link diretto',
+            }));
+          })(),
+
+          // 7. Documenti condivisi con lo Studio CDL (studio_shared_documents)
+          (scope === 'all' || scope === 'studio') && (async () => {
+            const { searchStudioSharedDocuments } = require('../../services/ladiaDocumentSearch');
+            const docs = await searchStudioSharedDocuments(companyId, query).catch(() => []);
+            docs.forEach(d => results.push({
+              fonte: 'studio_cdl', id: d.id, nome: d.nome,
+              mime_type: 'application/pdf', download_endpoint: null,
+              nota: 'Apri dalla sezione Documenti condivisi con il commercialista',
+            }));
+          })(),
+
+          // 8. Cedolini (payslips)
+          (scope === 'all' || scope === 'payslips') && (async () => {
+            const { searchPayslips } = require('../../services/ladiaDocumentSearch');
+            const docs = await searchPayslips(companyId, query, null).catch(() => []);
+            docs.forEach(d => results.push({
+              fonte: 'cedolino', id: d.id, nome: d.nome, tipo: 'cedolino',
+              mime_type: 'application/pdf', download_endpoint: null,
+              nota: 'Apri dalla sezione Buste paga',
+            }));
           })(),
         ].filter(Boolean));
 

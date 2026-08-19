@@ -3,8 +3,9 @@
  * services/ladiaDocumentSearch.js
  *
  * Cerca documenti in tutti gli archivi Palladia (ladia_document_templates,
- * site_documents, company_documents, worker_documents) e li legge con
- * Claude native PDF API per rispondere a domande specifiche sul loro contenuto.
+ * site_documents, company_documents, worker_documents, subcontractor_documents,
+ * studio_shared_documents, payslips) e li legge con Claude native PDF API per
+ * rispondere a domande specifiche sul loro contenuto.
  *
  * Tutti i PDF risiedono nel bucket 'site-documents' di Supabase Storage.
  */
@@ -179,6 +180,95 @@ async function searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore) 
     }));
 }
 
+async function searchSubcontractorDocuments(companyId, nomeFile, tipo) {
+  const TIPO_CATEGORIES = {
+    durc: ['durc'], assicurazione: ['insurance'], soa: ['soa'], visura: ['visura'], iso: ['iso'],
+  };
+
+  let q = supabase
+    .from('subcontractor_documents')
+    .select('id, name, category, file_path, mime_type, subcontractor_id, created_at')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (nomeFile) q = q.ilike('name', `%${nomeFile}%`);
+
+  const { data } = await q;
+  if (!data?.length) return [];
+
+  const subIds = [...new Set(data.map(d => d.subcontractor_id).filter(Boolean))];
+  let subNames = {};
+  if (subIds.length) {
+    const { data: subs } = await supabase.from('subcontractors').select('id, company_name').in('id', subIds);
+    (subs || []).forEach(s => { subNames[s.id] = s.company_name; });
+  }
+
+  const cats = tipo && TIPO_CATEGORIES[tipo.toLowerCase()];
+  return data
+    .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
+    .map(d => ({
+      source: 'subcontractor_document', id: d.id,
+      nome: `${subNames[d.subcontractor_id] || 'Subappaltatore'} — ${d.name}`,
+      storage_path: d.file_path,
+      score: 2 + (cats?.includes(d.category) ? 2 : 0),
+    }));
+}
+
+async function searchStudioSharedDocuments(companyId, nomeFile) {
+  let q = supabase
+    .from('studio_shared_documents')
+    .select('id, name, file_path, mime_type, created_at')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (nomeFile) q = q.ilike('name', `%${nomeFile}%`);
+
+  const { data } = await q;
+  return (data || [])
+    .filter(d => d.mime_type?.includes('pdf') || d.file_path?.endsWith('.pdf'))
+    .map(d => ({ source: 'studio_shared_document', id: d.id, nome: d.name, storage_path: d.file_path, score: 2 }));
+}
+
+async function searchPayslips(companyId, nomeFile, nomeLavoratore) {
+  let workerIds = null;
+  if (nomeLavoratore) {
+    const { data: workers } = await supabase
+      .from('workers').select('id').eq('company_id', companyId).ilike('full_name', `%${nomeLavoratore}%`).limit(5);
+    if (!workers?.length) return [];
+    workerIds = workers.map(w => w.id);
+  }
+
+  let q = supabase
+    .from('payslips')
+    .select('id, filename, file_path, period_year, period_month, worker_id, created_at')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(25);
+
+  if (workerIds) q = q.in('worker_id', workerIds);
+  if (nomeFile) q = q.ilike('filename', `%${nomeFile}%`);
+
+  const { data } = await q;
+  if (!data?.length) return [];
+
+  const wIds = [...new Set(data.map(d => d.worker_id).filter(Boolean))];
+  let workerNames = {};
+  if (wIds.length) {
+    const { data: ws } = await supabase.from('workers').select('id, full_name').in('id', wIds);
+    (ws || []).forEach(w => { workerNames[w.id] = w.full_name; });
+  }
+
+  // payslips non ha mime_type (sono sempre PDF caricati come tali, vedi routes/v1/payslips.js) — nessun filtro extra necessario.
+  return data.map(d => ({
+    source: 'payslip', id: d.id,
+    nome: `Cedolino ${workerNames[d.worker_id] || 'lavoratore'} — ${String(d.period_month).padStart(2, '0')}/${d.period_year}`,
+    storage_path: d.file_path,
+    score: 1,
+  }));
+}
+
 // ── Lettura documento con Claude ──────────────────────────────────────────────
 
 async function readDocumentWithClaude(doc, domanda) {
@@ -241,14 +331,17 @@ function parseClaudeJson(raw = '') {
  * @returns {{ risposta, citazione, pagina, nome_doc, signed_url, n_trovati, altri_nomi }}
  */
 async function searchAndReadDocument({ companyId, siteId, domanda, tipo, nomeFile, nomeLavoratore }) {
-  const [templates, siteDocs, companyDocs, workerDocs] = await Promise.all([
+  const [templates, siteDocs, companyDocs, workerDocs, subDocs, studioDocs, payslips] = await Promise.all([
     searchLadiaTemplates(companyId, nomeFile, tipo).catch(() => []),
     searchSiteDocuments(companyId, siteId, nomeFile, tipo).catch(() => []),
     searchCompanyDocuments(companyId, nomeFile, tipo).catch(() => []),
     searchWorkerDocuments(companyId, nomeFile, tipo, nomeLavoratore).catch(() => []),
+    searchSubcontractorDocuments(companyId, nomeFile, tipo).catch(() => []),
+    searchStudioSharedDocuments(companyId, nomeFile).catch(() => []),
+    searchPayslips(companyId, nomeFile, nomeLavoratore).catch(() => []),
   ]);
 
-  const allDocs = [...templates, ...siteDocs, ...companyDocs, ...workerDocs];
+  const allDocs = [...templates, ...siteDocs, ...companyDocs, ...workerDocs, ...subDocs, ...studioDocs, ...payslips];
   if (!allDocs.length) {
     return { errore: 'Nessun documento trovato. Verifica che il documento sia caricato su Palladia.' };
   }
@@ -291,4 +384,9 @@ async function searchAndReadDocument({ companyId, siteId, domanda, tipo, nomeFil
   };
 }
 
-module.exports = { searchAndReadDocument };
+module.exports = {
+  searchAndReadDocument,
+  searchSubcontractorDocuments,
+  searchStudioSharedDocuments,
+  searchPayslips,
+};

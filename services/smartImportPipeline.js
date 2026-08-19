@@ -565,9 +565,13 @@ async function rejectItem(itemId, companyId) {
 // attestato_formazione, patente, ecc). Se il tipo rilevato non è ammesso per
 // quella tabella, ripiega su 'altro' invece di far fallire l'insert con un
 // errore SQL grezzo in faccia all'utente in fase di conferma.
+// migrations/167_site_documents_contratto_capitolato.sql ha aggiunto
+// 'contratto'/'capitolato' al CHECK di site_documents — prima finivano
+// sempre silenziosamente rietichettati 'altro' anche quando smartImportAI
+// li classificava correttamente (DOC_TYPES li include già).
 const CATEGORY_ALLOWLIST = {
-  site_documents:    new Set(['pos', 'psc', 'notifica_asl', 'durc', 'dvr', 'assicurazione', 'altro']),
-  company_documents: new Set(['rspp', 'rls', 'medico_competente', 'visite_mediche', 'primo_soccorso', 'emergenze', 'preposto', 'dvr', 'duvri', 'formazione', 'durc', 'visura', 'iso', 'soa', 'assicurazione', 'polizza', 'f24', 'altro']),
+  site_documents:    new Set(['pos', 'psc', 'notifica_asl', 'durc', 'dvr', 'assicurazione', 'contratto', 'capitolato', 'altro']),
+  company_documents: new Set(['rspp', 'rls', 'medico_competente', 'visite_mediche', 'primo_soccorso', 'emergenze', 'preposto', 'dvr', 'duvri', 'formazione', 'durc', 'visura', 'iso', 'soa', 'assicurazione', 'polizza', 'f24', 'contratto', 'capitolato', 'altro']),
 };
 
 function sanitizeCategory(destination, docType) {
@@ -642,5 +646,5 @@ async function finishBatch(batchId, companyId) {
 module.exports = {
   createBatchFromZip, createBatchFromFiles, processBatch, reclaimStuckItems,
   confirmItem, rejectItem, confirmAllGreen, confirmStagedEntity, finishBatch,
-  createBatchRow, MAX_BATCH_ITEMS,
+  createBatchRow, MAX_BATCH_ITEMS, sanitizeCategory,
 };
