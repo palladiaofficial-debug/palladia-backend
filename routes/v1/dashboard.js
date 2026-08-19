@@ -19,7 +19,7 @@ router.get('/dashboard', verifySupabaseJwt, cache(60), async (req, res) => {
 
   const thirtyDaysLater = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-  const [sitesResult, workersResult, presenceResult, docsResult] = await Promise.all([
+  const [sitesResult, workersResult, presenceResult, docsResult, archivedDocsResult] = await Promise.all([
     supabase
       .from('sites')
       .select('id, name, status')
@@ -49,6 +49,15 @@ router.get('/dashboard', verifySupabaseJwt, cache(60), async (req, res) => {
       .not('expiry_date', 'is', null)
       .order('expiry_date', { ascending: false })
       .limit(1000),
+
+    // Conteggio grezzo su tutti i documenti archiviati (tabella unificata,
+    // migrations/150) — alimenta il 4° step della checklist onboarding
+    // ("carica un documento e chiedi a Ladia"), diverso da docsResult sopra
+    // che è solo attestati lavoratore in scadenza.
+    supabase
+      .from('documents')
+      .select('id', { count: 'exact', head: true })
+      .eq('company_id', req.companyId),
   ]);
 
   if (sitesResult.error)   return res.status(500).json({ error: sitesResult.error.message });
@@ -158,6 +167,7 @@ router.get('/dashboard', verifySupabaseJwt, cache(60), async (req, res) => {
       expired_count:  expiredDocs.length,
       expiring_count: expiringDocs.length,
       urgent:         [...expiredDocs, ...expiringDocs].slice(0, 8).map(mapDoc),
+      total_archived: archivedDocsResult.count ?? 0,
     },
   });
 });
