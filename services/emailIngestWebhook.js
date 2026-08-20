@@ -2,12 +2,22 @@
 
 /**
  * services/emailIngestWebhook.js
- * Gestore del webhook Mailgun per il canale fatture via inoltro email. Chiamato da
- * routes/v1/emailIngest.js (rotta pubblica, autenticata via firma Mailgun).
+ * Gestore del webhook per il canale fatture via inoltro email. Chiamato da
+ * routes/v1/emailIngest.js (rotta pubblica, autenticata via header segreto condiviso).
+ *
+ * MTA reale: Cloudflare Email Routing (non Mailgun — Mailgun e Resend sono risultati
+ * bloccati in fase di attivazione account, vedi milestone 7 rivista). Un Cloudflare
+ * Worker (worker/emailIngestWorker.js) riceve l'email grezza sulla zona palladia.net
+ * (catch-all — nessun sottodominio dedicato, per evitare provisioning DNS aggiuntivo
+ * su una zona già attiva), la fa passare per postal-mime e la ripubblica qui come
+ * multipart/form-data nello STESSO formato campo-per-campo già usato per Mailgun
+ * (sender, recipient, subject, message-headers) — così tutta la logica sotto (parsing,
+ * allowlist, dedup, estrazione) resta identica e testata; cambia solo il meccanismo di
+ * autenticazione del webhook (header X-Ingest-Secret invece di firma HMAC nel body).
  *
  * Sequenza (vedi anche il piano approvato per questa milestone):
- *  1. Verifica firma HMAC Mailgun — unico caso di rifiuto non-200, è un confine di
- *     sicurezza vero (stesso trattamento di Stripe in server.js).
+ *  1. Verifica header segreto condiviso — unico caso di rifiuto non-200, è un confine
+ *     di sicurezza vero (stesso trattamento di Stripe in server.js).
  *  2. Risolve la company dal token nel destinatario.
  *  3. Limite dimensione.
  *  4. Allowlist mittente (sconosciuto/bloccato/SPF-DKIM falliti → quarantena, mai
@@ -19,12 +29,11 @@
  *     sempre con pending_review perché nessun umano è presente a confermare
  *     l'estrazione al momento dell'arrivo (a differenza di /expenses/scan manuale).
  *
- * Nota di onestà tecnica: Mailgun è la MTA ricevente della Route — SPF/DKIM sono
- * verificati da Mailgun stessa e stampati come header MIME standard
- * (Authentication-Results / Received-SPF) dentro message-headers, non esposti come
- * campi dedicati nel payload (a differenza di SendGrid). parseAuthResults() legge
- * quegli header col parsing più tollerante possibile — da confermare con un'email
- * reale in Fase 8: se il formato osservato differisce, va aggiornata di conseguenza.
+ * Nota di onestà tecnica: SPF/DKIM sono verificati da Cloudflare stessa a monte del
+ * Worker e stampati come header MIME standard (Authentication-Results) dentro
+ * message-headers, che il Worker ripubblica invariati. parseAuthResults() legge
+ * quegli header col parsing più tollerante possibile — verificato con un'email reale
+ * in Milestone 8: se il formato osservato differisce, va aggiornata di conseguenza.
  */
 
 const crypto   = require('crypto');
@@ -37,15 +46,18 @@ const { resolveCompanyByToken, getSenderRule, logIngestEvent } = require('./emai
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
 
-function verifyMailgunSignature(body) {
-  const signingKey = process.env.MAILGUN_WEBHOOK_SIGNING_KEY;
-  if (!signingKey) return false; // fail-safe: nessuna chiave configurata → nessuna richiesta accettata
-  const { timestamp, token, signature } = body || {};
-  if (!timestamp || !token || !signature) return false;
+// Il Worker Cloudflare è first-party (lo scriviamo e deployiamo noi): un segreto
+// statico condiviso in header è equivalente in sicurezza a una firma HMAC qui, dato
+// che entrambi gli estremi sono sotto il nostro controllo (a differenza di Mailgun,
+// dove la firma provava che il chiamante fosse davvero Mailgun).
+function verifyIngestSecret(headers) {
+  const configured = process.env.CLOUDFLARE_EMAIL_INGEST_SECRET;
+  if (!configured) return false; // fail-safe: nessun segreto configurato → nessuna richiesta accettata
+  const given = headers?.['x-ingest-secret'];
+  if (!given) return false;
 
-  const expected = crypto.createHmac('sha256', signingKey).update(`${timestamp}${token}`).digest('hex');
-  const expectedBuf = Buffer.from(expected, 'hex');
-  const givenBuf = Buffer.from(String(signature), 'hex');
+  const expectedBuf = Buffer.from(configured);
+  const givenBuf = Buffer.from(String(given));
   if (expectedBuf.length !== givenBuf.length) return false; // timingSafeEqual richiede stessa lunghezza
   return crypto.timingSafeEqual(expectedBuf, givenBuf);
 }
@@ -196,8 +208,8 @@ async function importFromCourtesyPdfOnly(companyId, pdfFile, fromAddress, messag
   );
 }
 
-async function handleInboundWebhook(body, files) {
-  if (!verifyMailgunSignature(body)) {
+async function handleInboundWebhook(body, files, headers) {
+  if (!verifyIngestSecret(headers)) {
     return { httpStatus: 401, body: { error: 'INVALID_SIGNATURE' } };
   }
 
@@ -313,4 +325,4 @@ async function handleInboundWebhook(body, files) {
   return { httpStatus: 200, body: { ok: true, outcome, imported: createdExpenseIds.length } };
 }
 
-module.exports = { handleInboundWebhook, verifyMailgunSignature };
+module.exports = { handleInboundWebhook, verifyIngestSecret };

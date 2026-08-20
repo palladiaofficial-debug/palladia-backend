@@ -12,11 +12,12 @@
  * POST   /api/v1/expenses/email-ingest/allowed-senders          — autorizza/blocca un mittente (JWT, owner/admin)
  * DELETE /api/v1/expenses/email-ingest/allowed-senders/:id      — rimuove una regola (JWT, owner/admin)
  * GET    /api/v1/expenses/email-ingest/log                      — registro messaggi, filtrabile (JWT)
- * POST   /api/v1/expenses/email-ingest/webhook                  — ricezione email (PUBBLICO, firma Mailgun)
+ * POST   /api/v1/expenses/email-ingest/webhook                  — ricezione email (PUBBLICO, header segreto Cloudflare Worker)
  *
- * Il webhook è pubblico (autenticato via firma Mailgun, non JWT) — DEVE stare prima
- * di qualsiasi sub-router con router.use(verifySupabaseJwt) globale, stesso motivo
- * già documentato in index.js per scan/badgePunch/webhook SdI.
+ * Il webhook è pubblico (autenticato via header X-Ingest-Secret condiviso col
+ * Cloudflare Worker che riceve la posta, non JWT) — DEVE stare prima di qualsiasi
+ * sub-router con router.use(verifySupabaseJwt) globale, stesso motivo già
+ * documentato in index.js per scan/badgePunch/webhook SdI.
  */
 
 const router   = require('express').Router();
@@ -42,16 +43,17 @@ function isAdminOrOwner(role) {
 }
 
 // ── POST /api/v1/expenses/email-ingest/webhook — PUBBLICO ─────────────────────
-// multer per il multipart/form-data di Mailgun (campi + allegati) — 30MB per
-// singolo file, sotto il limite Mailgun (25MB per l'intero messaggio, quindi già
-// impossibile superarlo per un solo allegato, ma il limite resta come guardia
-// esplicita invece di affidarsi solo al comportamento del provider a monte).
+// multer per il multipart/form-data che il Worker Cloudflare ripubblica (stessi nomi
+// campo di Mailgun Routes: sender/recipient/subject/message-headers + allegati) —
+// 30MB per singolo file, sotto il limite di 25MB per messaggio di Cloudflare Email
+// Routing, ma il limite resta come guardia esplicita invece di affidarsi solo al
+// comportamento del provider a monte.
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024 } });
 
 router.post('/expenses/email-ingest/webhook', emailIngestWebhookLimiter, upload.any(), emailIngestSenderLimiter, async (req, res) => {
   try {
-    const result = await handleInboundWebhook(req.body, req.files || []);
+    const result = await handleInboundWebhook(req.body, req.files || [], req.headers);
     res.status(result.httpStatus || 200).json(result.body || { ok: true });
   } catch (err) {
     console.error('[email-ingest-webhook] errore imprevisto:', err.message);

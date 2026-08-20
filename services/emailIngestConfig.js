@@ -15,9 +15,13 @@
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
 
-// Sottodominio dedicato — isolato dall'MX esistente di palladia.it, vedi Fase 1
-// dell'analisi (nessun impatto sulla posta aziendale esistente).
-const INBOUND_DOMAIN = process.env.EMAIL_INGEST_DOMAIN || 'fatture.palladia.it';
+// Zona palladia.net, catch-all Cloudflare Email Routing (non un sottodominio
+// dedicato come da analisi iniziale — Mailgun/Resend risultati bloccati in fase di
+// attivazione account, ripiegato su Cloudflare Email Routing già attivo sulla zona,
+// vedi worker/emailIngestWorker.js). Gli indirizzi espliciti già in uso su
+// palladia.net (es. info@) hanno priorità sulla regola catch-all — nessuna
+// interferenza con la posta aziendale esistente.
+const INBOUND_DOMAIN = process.env.EMAIL_INGEST_DOMAIN || 'palladia.net';
 
 function generateToken() {
   return crypto.randomBytes(12).toString('hex'); // 24 caratteri esadecimali, non indovinabile

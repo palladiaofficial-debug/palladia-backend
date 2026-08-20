@@ -3,18 +3,18 @@
  * scripts/selftest_email_ingest_webhook.js
  *
  * Regressione end-to-end per POST /api/v1/expenses/email-ingest/webhook: simula una
- * vera richiesta Mailgun (multipart/form-data, firma HMAC valida, allegati REALI —
- * un .p7m firmato via openssl e uno .zip con dentro una fattura) contro il server
- * locale in esecuzione, e verifica riga per riga in company_expenses/email_ingest_log
- * che il risultato sia quello atteso — non solo lo status HTTP della risposta.
+ * vera richiesta del Worker Cloudflare (multipart/form-data, stessi nomi campo di
+ * Mailgun Routes + header X-Ingest-Secret valido, allegati REALI — un .p7m firmato
+ * via openssl e uno .zip con dentro una fattura) contro il server locale in
+ * esecuzione, e verifica riga per riga in company_expenses/email_ingest_log che il
+ * risultato sia quello atteso — non solo lo status HTTP della risposta.
  *
  * Richiede: server avviato su TEST_BASE_URL (default http://localhost:3001) e
- * MAILGUN_WEBHOOK_SIGNING_KEY impostata nello stesso ambiente del server (per poter
- * calcolare una firma che il server accetterà). Se manca, il test si salta.
+ * CLOUDFLARE_EMAIL_INGEST_SECRET impostata nello stesso ambiente del server (per
+ * poter mandare un header che il server accetterà). Se manca, il test si salta.
  *
- * Copre firma/allowlist/dedup/quarantena senza dipendere da DNS o da un vero
- * account Mailgun — quella verifica (email reali attraverso Mailgun vero) è
- * Milestone 8, non questa.
+ * Copre autenticazione/allowlist/dedup/quarantena senza dipendere da DNS o da
+ * un'email reale attraverso Cloudflare — quella verifica è Milestone 8, non questa.
  */
 'use strict';
 require('dotenv').config();
@@ -27,7 +27,7 @@ const AdmZip = require('adm-zip');
 const supabase = require('../lib/supabase');
 
 const BASE = (process.env.TEST_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
-const SIGNING_KEY = process.env.MAILGUN_WEBHOOK_SIGNING_KEY;
+const INGEST_SECRET = process.env.CLOUDFLARE_EMAIL_INGEST_SECRET;
 
 let passed = 0, failed = 0, skipped = 0;
 function ok(name)        { console.log(`  \x1b[32m✓\x1b[0m ${name}`); passed++; }
@@ -77,18 +77,12 @@ function generateP7m(xmlString, workDir) {
   return fs.readFileSync(p7mPath);
 }
 
-function mailgunSignature(timestamp, token) {
-  return crypto.createHmac('sha256', SIGNING_KEY).update(`${timestamp}${token}`).digest('hex');
-}
-
 function buildAuthResultsHeader({ spfPass = true, dkimPass = true } = {}) {
-  return `mx.mailgun.org; spf=${spfPass ? 'pass' : 'fail'} smtp.mailfrom=test; dkim=${dkimPass ? 'pass' : 'fail'} header.d=test`;
+  return `mx.cloudflare.net; spf=${spfPass ? 'pass' : 'fail'} smtp.mailfrom=test; dkim=${dkimPass ? 'pass' : 'fail'} header.d=test`;
 }
 
-async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass = true, validSignature = true }) {
-  const timestamp = String(Math.floor(Date.now() / 1000));
+async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass = true, validSecret = true }) {
   const token = crypto.randomBytes(16).toString('hex');
-  const signature = validSignature ? mailgunSignature(timestamp, token) : 'deadbeef'.repeat(8);
 
   const messageHeaders = JSON.stringify([
     ['Message-Id', `<test-${token}@example.com>`],
@@ -100,15 +94,13 @@ async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass 
   form.append('sender', sender);
   form.append('from', sender);
   form.append('subject', 'Fattura di test — selftest webhook');
-  form.append('timestamp', timestamp);
-  form.append('token', token);
-  form.append('signature', signature);
   form.append('message-headers', messageHeaders);
   for (const f of files) {
     form.append(f.field, new Blob([f.buffer]), f.filename);
   }
 
-  const res = await fetch(`${BASE}/api/v1/expenses/email-ingest/webhook`, { method: 'POST', body: form });
+  const headers = validSecret ? { 'X-Ingest-Secret': INGEST_SECRET } : { 'X-Ingest-Secret': 'chiave-sbagliata' };
+  const res = await fetch(`${BASE}/api/v1/expenses/email-ingest/webhook`, { method: 'POST', body: form, headers });
   const body = await res.json().catch(() => ({}));
   return { status: res.status, body };
 }
@@ -116,8 +108,8 @@ async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass 
 async function main() {
   console.log('\n=== selftest_email_ingest_webhook ===\n');
 
-  if (!SIGNING_KEY) {
-    skip('webhook end-to-end', 'MAILGUN_WEBHOOK_SIGNING_KEY non impostata in questo ambiente');
+  if (!INGEST_SECRET) {
+    skip('webhook end-to-end', 'CLOUDFLARE_EMAIL_INGEST_SECRET non impostata in questo ambiente');
     console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
     return;
   }
@@ -144,14 +136,14 @@ async function main() {
     const { error: allowErr } = await supabase.from('email_ingest_allowed_senders').insert({ company_id: companyId, email_address: allowedSender, action: 'allow' });
     check('Mittente autorizzato in allowlist', !allowErr, allowErr);
 
-    const recipient = `${inboundToken}@fatture.palladia.it`;
+    const recipient = `${inboundToken}@palladia.net`;
 
-    // ── Caso 1: firma non valida → 401, nessun log scritto ──────────────────
-    const badSig = await postWebhook({ recipient, sender: allowedSender, files: [], validSignature: false });
-    check('firma non valida → HTTP 401', badSig.status === 401, badSig);
+    // ── Caso 1: header segreto non valido → 401, nessun log scritto ─────────
+    const badSig = await postWebhook({ recipient, sender: allowedSender, files: [], validSecret: false });
+    check('header segreto non valido → HTTP 401', badSig.status === 401, badSig);
 
     // ── Caso 2: token sconosciuto → 200, outcome unknown_token ──────────────
-    const unknown = await postWebhook({ recipient: 'nonesiste0000@fatture.palladia.it', sender: allowedSender, files: [] });
+    const unknown = await postWebhook({ recipient: 'nonesiste0000@palladia.net', sender: allowedSender, files: [] });
     check('token sconosciuto → outcome unknown_token', unknown.status === 200 && unknown.body.outcome === 'unknown_token', unknown.body);
 
     // ── Caso 3: mittente MAI autorizzato → quarantena ────────────────────────

@@ -1,0 +1,10 @@
+name = "palladia-email-ingest"
+main = "src/emailIngestWorker.js"
+compatibility_date = "2026-08-01"
+account_id = "36e46b4387e7e1c551326f95576f1970"
+
+[vars]
+BACKEND_WEBHOOK_URL = "https://palladia-backend-production.up.railway.app/api/v1/expenses/email-ingest/webhook"
+
+# INGEST_SHARED_SECRET va impostato con `wrangler secret put INGEST_SHARED_SECRET`
+# (stesso valore di CLOUDFLARE_EMAIL_INGEST_SECRET su Railway) — mai in questo file.
