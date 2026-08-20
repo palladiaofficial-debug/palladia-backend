@@ -14,6 +14,7 @@
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
+const { slugifyCompanyName } = require('../lib/emailIngestSlug');
 
 // Zona palladia.net, catch-all Cloudflare Email Routing (non un sottodominio
 // dedicato come da analisi iniziale — Mailgun/Resend risultati bloccati in fase di
@@ -23,8 +24,24 @@ const supabase = require('../lib/supabase');
 // interferenza con la posta aziendale esistente.
 const INBOUND_DOMAIN = process.env.EMAIL_INGEST_DOMAIN || 'palladia.net';
 
-function generateToken() {
-  return crypto.randomBytes(12).toString('hex'); // 24 caratteri esadecimali, non indovinabile
+// L'inbound_token è la parte locale INTERA dell'indirizzo (non solo la parte
+// casuale) — un identificatore opaco, unico, immutabile una volta generato.
+// Include il nome azienda solo per leggibilità al momento della generazione:
+// non viene mai ricalcolato da company.name in seguito, quindi un cambio di
+// ragione sociale non rompe l'inoltro già configurato dal cliente.
+//
+// La parte casuale (12 esadecimali, 48 bit, crypto.randomBytes — mai
+// Math.random) è l'UNICA fonte di sicurezza reale: il prefisso "fatture-" e lo
+// slug azienda sono prevedibili da chiunque conosca il nome dell'azienda,
+// quindi riducono lo spazio di ricerca effettivo alla sola parte casuale. Chi
+// indovinasse un indirizzo valido potrebbe iniettare fatture false in
+// quarantena (non importate senza autorizzazione esplicita, ma comunque
+// rumore) — 48 bit combinati col rate limiting del webhook restano
+// computazionalmente non pratici da forzare via invio email reali.
+function generateToken(companyName) {
+  const random = crypto.randomBytes(6).toString('hex');
+  const slug = slugifyCompanyName(companyName || '');
+  return slug ? `fatture-${slug}-${random}` : `fatture-${random}`;
 }
 
 function fullAddress(token) {
@@ -54,7 +71,8 @@ async function connectCompany(companyId, userId) {
     return { address: fullAddress(data.inbound_token), status: data.status };
   }
 
-  const token = generateToken();
+  const { data: company } = await supabase.from('companies').select('name').eq('id', companyId).maybeSingle();
+  const token = generateToken(company?.name);
   const { data, error } = await supabase
     .from('email_ingest_configurations')
     .insert({ company_id: companyId, inbound_token: token, status: 'active', created_by: userId || null })
@@ -65,9 +83,23 @@ async function connectCompany(companyId, userId) {
 }
 
 // Rigenerazione manuale — recupero da compromissione (l'indirizzo è finito nelle
-// mani sbagliate, o un fornitore lo ha diffuso oltre l'uso previsto).
+// mani sbagliate, o un fornitore lo ha diffuso oltre l'uso previsto). Il vecchio
+// token va ricordato in email_ingest_retired_tokens PRIMA di sovrascriverlo:
+// altrimenti un'email che arriva lì dopo la rigenerazione risulta indistinguibile
+// da un indirizzo mai esistito, invece di un motivo esplicito e tracciabile.
 async function rotateToken(companyId) {
-  const token = generateToken();
+  const { data: existing } = await supabase
+    .from('email_ingest_configurations')
+    .select('inbound_token')
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (!existing) throw new Error('Canale email non collegato per questa azienda');
+
+  const { data: company } = await supabase.from('companies').select('name').eq('id', companyId).maybeSingle();
+  const token = generateToken(company?.name);
+
+  await supabase.from('email_ingest_retired_tokens').insert({ company_id: companyId, token: existing.inbound_token });
+
   const { data, error } = await supabase
     .from('email_ingest_configurations')
     .update({ inbound_token: token, updated_at: new Date().toISOString() })
@@ -75,8 +107,22 @@ async function rotateToken(companyId) {
     .select('inbound_token')
     .maybeSingle();
   if (error) throw error;
-  if (!data) throw new Error('Canale email non collegato per questa azienda');
   return { address: fullAddress(data.inbound_token) };
+}
+
+// Distingue "indirizzo mai esistito" da "indirizzo valido in passato, poi
+// rigenerato" — usato dal webhook per dare un motivo di rifiuto esplicito
+// invece del generico "token non risolto a nessuna azienda".
+async function checkRetiredToken(token) {
+  if (!token) return null;
+  const { data } = await supabase
+    .from('email_ingest_retired_tokens')
+    .select('company_id, retired_at')
+    .eq('token', token)
+    .order('retired_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data || null;
 }
 
 async function getStatus(companyId) {
@@ -253,4 +299,5 @@ module.exports = {
   listIngestLog,
   startTest,
   consumeTestNonce,
+  checkRetiredToken,
 };

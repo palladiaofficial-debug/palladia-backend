@@ -25,7 +25,7 @@ const os   = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const supabase = require('../lib/supabase');
-const { startTest } = require('../services/emailIngestConfig');
+const { startTest, rotateToken } = require('../services/emailIngestConfig');
 
 const BASE = (process.env.TEST_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 const INGEST_SECRET = process.env.CLOUDFLARE_EMAIL_INGEST_SECRET;
@@ -211,6 +211,25 @@ async function main() {
       subject: 'Verifica indirizzo Palladia — PALLADIA-TEST-deadbeefdeadbeef',
     });
     check('nonce inventato → non bypassa nulla (mittente sconosciuto → quarantena)', testFake.status === 200 && testFake.body.outcome === 'quarantined_unknown_sender', testFake.body);
+
+    // ── Caso 9: indirizzo rigenerato — il vecchio rifiuta con motivo esplicito,
+    // non come un token mai esistito; il nuovo funziona normalmente ──────────
+    const oldRecipient = recipient;
+    const rotated = await rotateToken(companyId);
+    const newToken = rotated.address.split('@')[0];
+    check('nuovo indirizzo generato in formato leggibile (fatture-...)', newToken.startsWith('fatture-'), newToken);
+
+    const onOldAddress = await postWebhook({ recipient: oldRecipient, sender: allowedSender, files: [] });
+    check('email sul vecchio indirizzo → outcome token_retired, non unknown_token', onOldAddress.status === 200 && onOldAddress.body.outcome === 'token_retired', onOldAddress.body);
+
+    const { data: retiredLogRow } = await supabase.from('email_ingest_log').select('company_id, reject_reason').eq('company_id', companyId).eq('outcome', 'token_retired').maybeSingle();
+    check('la riga token_retired ha company_id valorizzato (non anonima) e un motivo esplicito', retiredLogRow?.company_id === companyId && /rigenerat/.test(retiredLogRow?.reject_reason || ''), retiredLogRow);
+
+    const onNewAddress = await postWebhook({ recipient: `${newToken}@palladia.net`, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fattura.xml', buffer: Buffer.from(buildFatturaXml({ numero: '2026/WH-ROTATED' }), 'utf8') }] });
+    check('il nuovo indirizzo funziona normalmente → accepted', onNewAddress.status === 200 && onNewAddress.body.outcome === 'accepted', onNewAddress.body);
+
+    const { data: allowedSendersAfterRotate } = await supabase.from('email_ingest_allowed_senders').select('id').eq('company_id', companyId);
+    check('la rigenerazione NON tocca la lista mittenti autorizzati (storico preservato)', (allowedSendersAfterRotate || []).length >= 1, allowedSendersAfterRotate);
 
     // ── Registro: ogni tentativo (anche i rifiutati) ha lasciato una riga ───
     const { data: logRows } = await supabase.from('email_ingest_log').select('outcome').eq('company_id', companyId);

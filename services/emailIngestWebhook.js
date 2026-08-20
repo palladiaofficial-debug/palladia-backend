@@ -41,7 +41,7 @@ const supabase = require('../lib/supabase');
 const { extractInvoiceCandidates } = require('../lib/fatturaPaEnvelopeParser');
 const { extractExpenseFromDocument } = require('../lib/expenseOcr');
 const { ingestMappedExpense } = require('./sdiInvoices');
-const { resolveCompanyByToken, getSenderRule, logIngestEvent, consumeTestNonce } = require('./emailIngestConfig');
+const { resolveCompanyByToken, getSenderRule, logIngestEvent, consumeTestNonce, checkRetiredToken } = require('./emailIngestConfig');
 
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
@@ -230,6 +230,17 @@ async function handleInboundWebhook(body, files, headers) {
   };
 
   if (!companyId) {
+    // Prima di dichiararlo "mai esistito", controlla se era un indirizzo valido
+    // rigenerato nel frattempo — motivo esplicito e tracciabile per l'azienda a
+    // cui apparteneva, non un rifiuto anonimo indistinguibile da uno sconosciuto.
+    const retired = await checkRetiredToken(token).catch(() => null);
+    if (retired) {
+      await logIngestEvent({
+        ...logBase, company_id: retired.company_id, outcome: 'token_retired',
+        reject_reason: `indirizzo rigenerato il ${new Date(retired.retired_at).toISOString().slice(0, 10)}, non più attivo`,
+      });
+      return { httpStatus: 200, body: { ok: true, outcome: 'token_retired' } };
+    }
     await logIngestEvent({ ...logBase, outcome: 'unknown_token', reject_reason: `token '${token}' non risolto a nessuna azienda` });
     return { httpStatus: 200, body: { ok: true, outcome: 'unknown_token' } };
   }
