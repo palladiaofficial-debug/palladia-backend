@@ -25,6 +25,7 @@ const os   = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const supabase = require('../lib/supabase');
+const { startTest } = require('../services/emailIngestConfig');
 
 const BASE = (process.env.TEST_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 const INGEST_SECRET = process.env.CLOUDFLARE_EMAIL_INGEST_SECRET;
@@ -81,7 +82,7 @@ function buildAuthResultsHeader({ spfPass = true, dkimPass = true } = {}) {
   return `mx.cloudflare.net; spf=${spfPass ? 'pass' : 'fail'} smtp.mailfrom=test; dkim=${dkimPass ? 'pass' : 'fail'} header.d=test`;
 }
 
-async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass = true, validSecret = true }) {
+async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass = true, validSecret = true, subject = 'Fattura di test — selftest webhook' }) {
   const token = crypto.randomBytes(16).toString('hex');
 
   const messageHeaders = JSON.stringify([
@@ -93,7 +94,7 @@ async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass 
   form.append('recipient', recipient);
   form.append('sender', sender);
   form.append('from', sender);
-  form.append('subject', 'Fattura di test — selftest webhook');
+  form.append('subject', subject);
   form.append('message-headers', messageHeaders);
   for (const f of files) {
     form.append(f.field, new Blob([f.buffer]), f.filename);
@@ -187,6 +188,29 @@ async function main() {
         fs.rmSync(workDir, { recursive: true, force: true });
       }
     }
+
+    // ── Caso 8: email di prova — nonce valido bypassa l'allowlist, uno finto no ──
+    const { nonce } = await startTest(companyId);
+    const testOk = await postWebhook({
+      recipient, sender: 'chiunque-anche-non-autorizzato@estraneo.it', files: [],
+      subject: `Verifica indirizzo Palladia — PALLADIA-TEST-${nonce}`,
+    });
+    check('nonce di prova valido → test_ok anche da mittente non autorizzato', testOk.status === 200 && testOk.body.outcome === 'test_ok', testOk.body);
+
+    const { data: cfgAfterTest } = await supabase.from('email_ingest_configurations').select('last_test_verified_at, pending_test_nonce').eq('company_id', companyId).maybeSingle();
+    check('last_test_verified_at valorizzato e nonce consumato', !!cfgAfterTest?.last_test_verified_at && !cfgAfterTest?.pending_test_nonce, cfgAfterTest);
+
+    const testReplay = await postWebhook({
+      recipient, sender: 'chiunque-anche-non-autorizzato@estraneo.it', files: [],
+      subject: `Verifica indirizzo Palladia — PALLADIA-TEST-${nonce}`,
+    });
+    check('stesso nonce riusato → non più test_ok (mittente sconosciuto → quarantena)', testReplay.status === 200 && testReplay.body.outcome === 'quarantined_unknown_sender', testReplay.body);
+
+    const testFake = await postWebhook({
+      recipient, sender: 'chiunque-anche-non-autorizzato@estraneo.it', files: [],
+      subject: 'Verifica indirizzo Palladia — PALLADIA-TEST-deadbeefdeadbeef',
+    });
+    check('nonce inventato → non bypassa nulla (mittente sconosciuto → quarantena)', testFake.status === 200 && testFake.body.outcome === 'quarantined_unknown_sender', testFake.body);
 
     // ── Registro: ogni tentativo (anche i rifiutati) ha lasciato una riga ───
     const { data: logRows } = await supabase.from('email_ingest_log').select('outcome').eq('company_id', companyId);

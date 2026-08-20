@@ -2307,8 +2307,34 @@ async function sendEmailChangeEmail({ to, changeUrl }) {
   });
 }
 
+// ─── Email: prova canale fatture via email ───────────────────────────────────
+
+/**
+ * Email di prova per il pulsante "Invia email di prova" del canale fatture via
+ * email — il subject porta il nonce che il webhook riconosce per confermare che
+ * l'indirizzo funziona davvero, senza passare dall'allowlist mittenti (vedi
+ * services/emailIngestConfig.js::consumeTestNonce).
+ * @param {{ to: string, nonce: string }} opts
+ */
+async function sendEmailIngestTestProbe({ to, nonce }) {
+  const body = `
+    <p style="margin:0 0 6px;font-size:18px;font-weight:800;color:#1a1a1a;">Email di prova</p>
+    <p style="margin:0;font-size:14px;color:#6b7280;line-height:1.6;">
+      Se stai leggendo questa email nella tua casella, l'indirizzo dedicato del canale fatture funziona.
+      Puoi ignorarla: Palladia la riconosce automaticamente e conferma la prova da sola, non serve fare nulla qui.
+    </p>
+  `;
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Verifica indirizzo Palladia — PALLADIA-TEST-${nonce}`,
+    html: layout('Email di prova', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
+  sendEmailIngestTestProbe,
   sendPasswordResetEmail,
   sendMissingExitAlert,
   sendInviteEmail,

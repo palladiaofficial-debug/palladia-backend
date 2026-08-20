@@ -41,7 +41,7 @@ const supabase = require('../lib/supabase');
 const { extractInvoiceCandidates } = require('../lib/fatturaPaEnvelopeParser');
 const { extractExpenseFromDocument } = require('../lib/expenseOcr');
 const { ingestMappedExpense } = require('./sdiInvoices');
-const { resolveCompanyByToken, getSenderRule, logIngestEvent } = require('./emailIngestConfig');
+const { resolveCompanyByToken, getSenderRule, logIngestEvent, consumeTestNonce } = require('./emailIngestConfig');
 
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
@@ -232,6 +232,15 @@ async function handleInboundWebhook(body, files, headers) {
   if (!companyId) {
     await logIngestEvent({ ...logBase, outcome: 'unknown_token', reject_reason: `token '${token}' non risolto a nessuna azienda` });
     return { httpStatus: 200, body: { ok: true, outcome: 'unknown_token' } };
+  }
+
+  // Email di prova (pulsante "Invia email di prova"): il nonce nel subject è la
+  // prova di autenticità, non l'identità del mittente — bypassa deliberatamente
+  // l'allowlist qui sotto, prima di qualunque altro controllo.
+  const testedCompanyId = await consumeTestNonce(token, body?.subject).catch(() => null);
+  if (testedCompanyId) {
+    await logIngestEvent({ ...logBase, outcome: 'test_ok' });
+    return { httpStatus: 200, body: { ok: true, outcome: 'test_ok' } };
   }
 
   const { spf, dkim } = parseAuthResults(body);

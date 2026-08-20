@@ -7,6 +7,7 @@
  * POST   /api/v1/expenses/email-ingest/connect                — collega/riattiva (JWT, owner/admin)
  * POST   /api/v1/expenses/email-ingest/rotate-token            — rigenera l'indirizzo (JWT, owner/admin)
  * GET    /api/v1/expenses/email-ingest/status                  — stato + indirizzo (JWT)
+ * POST   /api/v1/expenses/email-ingest/test                     — invia email di prova (JWT)
  * POST   /api/v1/expenses/email-ingest/disconnect               — disattiva (JWT, owner/admin)
  * GET    /api/v1/expenses/email-ingest/allowed-senders          — lista allowlist (JWT)
  * POST   /api/v1/expenses/email-ingest/allowed-senders          — autorizza/blocca un mittente (JWT, owner/admin)
@@ -34,9 +35,11 @@ const {
   upsertAllowedSender,
   removeAllowedSender,
   listIngestLog,
+  startTest,
 } = require('../../services/emailIngestConfig');
 const { handleInboundWebhook } = require('../../services/emailIngestWebhook');
 const { getHealthReport } = require('../../services/emailIngestHealthCheck');
+const { sendEmailIngestTestProbe } = require('../../services/email');
 
 function isAdminOrOwner(role) {
   return role === 'owner' || role === 'admin';
@@ -97,6 +100,17 @@ router.get('/expenses/email-ingest/status', verifySupabaseJwt, async (req, res) 
     res.json(status || { status: 'not_connected' });
   } catch (err) {
     res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+router.post('/expenses/email-ingest/test', verifySupabaseJwt, async (req, res) => {
+  try {
+    const { address, nonce } = await startTest(req.companyId);
+    await sendEmailIngestTestProbe({ to: address, nonce });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[email-ingest] test error:', err.message);
+    res.status(400).json({ error: 'TEST_FAILED', message: err.message });
   }
 });
 

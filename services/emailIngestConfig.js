@@ -82,17 +82,64 @@ async function rotateToken(companyId) {
 async function getStatus(companyId) {
   const { data, error } = await supabase
     .from('email_ingest_configurations')
-    .select('inbound_token, status, last_invoice_received_at, created_at')
+    .select('inbound_token, status, last_invoice_received_at, created_at, pending_test_nonce, pending_test_expires_at, last_test_verified_at')
     .eq('company_id', companyId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  const testPending = !!data.pending_test_nonce && new Date(data.pending_test_expires_at) > new Date();
   return {
     address: fullAddress(data.inbound_token),
     status: data.status,
     last_invoice_received_at: data.last_invoice_received_at,
     created_at: data.created_at,
+    last_test_verified_at: data.last_test_verified_at,
+    test_pending: testPending,
   };
+}
+
+// Prova dell'indirizzo: genera un nonce non indovinabile, valido 10 minuti, da
+// includere nel subject dell'email di prova. Il webhook lo riconosce e conferma la
+// riuscita SENZA passare dall'allowlist mittente — l'autenticità qui la garantisce
+// il nonce (solo noi possiamo averlo generato), non l'identità del mittente reale
+// (che con provider come Resend è un indirizzo envelope VERP imprevedibile).
+const TEST_NONCE_TTL_MS = 10 * 60 * 1000;
+
+async function startTest(companyId) {
+  const nonce = crypto.randomBytes(8).toString('hex');
+  const expiresAt = new Date(Date.now() + TEST_NONCE_TTL_MS).toISOString();
+  const { data, error } = await supabase
+    .from('email_ingest_configurations')
+    .update({ pending_test_nonce: nonce, pending_test_expires_at: expiresAt, updated_at: new Date().toISOString() })
+    .eq('company_id', companyId)
+    .eq('status', 'active')
+    .select('inbound_token')
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error('Canale email non attivo per questa azienda');
+  return { address: fullAddress(data.inbound_token), nonce };
+}
+
+// Chiamata dal webhook: se il subject contiene un nonce di prova valido e non
+// scaduto per QUALSIASI company, la consuma (mai riutilizzabile) e conferma.
+// Ritorna il company_id a cui apparteneva, o null se nessun nonce corrisponde.
+async function consumeTestNonce(token, subject) {
+  const match = String(subject || '').match(/PALLADIA-TEST-([a-f0-9]{16})/);
+  if (!match) return null;
+  const nonce = match[1];
+  const { data } = await supabase
+    .from('email_ingest_configurations')
+    .select('company_id, pending_test_nonce, pending_test_expires_at')
+    .eq('inbound_token', token)
+    .maybeSingle();
+  if (!data || data.pending_test_nonce !== nonce) return null;
+  if (new Date(data.pending_test_expires_at) <= new Date()) return null;
+
+  await supabase
+    .from('email_ingest_configurations')
+    .update({ pending_test_nonce: null, pending_test_expires_at: null, last_test_verified_at: new Date().toISOString() })
+    .eq('company_id', data.company_id);
+  return data.company_id;
 }
 
 async function disconnectCompany(companyId) {
@@ -204,4 +251,6 @@ module.exports = {
   getSenderRule,
   logIngestEvent,
   listIngestLog,
+  startTest,
+  consumeTestNonce,
 };
