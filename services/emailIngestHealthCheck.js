@@ -143,6 +143,15 @@ async function getChannelHealth(companyId, invoices, today) {
   const threshold = typicalGapDays ? typicalGapDays * CADENCE_ANOMALY_MULTIPLIER : 10;
   const silentLongerThanUsual = silentDays != null && silentDays > threshold;
 
+  // Caso distinto e probabilmente più comune di "si è fermato dopo un po'":
+  // il canale è attivo ma non ha MAI ricevuto nulla — inoltro mai configurato
+  // correttamente, indirizzo sbagliato incollato, filtro non salvato. Senza
+  // questo controllo silent_days resta null per sempre (nessun invio storico
+  // da cui calcolarlo) e il problema non verrebbe mai segnalato. Soglia di
+  // 3 giorni dall'attivazione per non disturbare chi si è appena iscritto.
+  const daysSinceSetup = config.created_at ? daysBetween(config.created_at.slice(0, 10), today) : 0;
+  const neverReceivedAfterSetup = config.status === 'active' && !lastReceivedDate && daysSinceSetup >= 3;
+
   return {
     connected: true,
     status: config.status,
@@ -150,6 +159,8 @@ async function getChannelHealth(companyId, invoices, today) {
     silent_days: silentDays,
     typical_gap_days: typicalGapDays ? Math.round(typicalGapDays) : null,
     silent_longer_than_usual: silentLongerThanUsual,
+    never_received_after_setup: neverReceivedAfterSetup,
+    days_since_setup: daysSinceSetup,
   };
 }
 

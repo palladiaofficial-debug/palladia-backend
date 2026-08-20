@@ -67,8 +67,40 @@ async function main() {
 
     check('Canale risulta collegato', report.channel_health.connected === true, report.channel_health);
     check('silent_days calcolato correttamente (~60 giorni)', report.channel_health.silent_days >= 59 && report.channel_health.silent_days <= 61, report.channel_health);
+    check('never_received_after_setup falso quando esiste già uno storico', report.channel_health.never_received_after_setup === false, report.channel_health);
   } finally {
     await supabase.from('companies').delete().eq('id', companyId); // cascade
+  }
+
+  // ── Caso 2: canale attivo da giorni, mai ricevuto nulla — il buco che
+  // silent_days da solo non copre (resta null senza uno storico da cui calcolarlo) ──
+  const { data: company2 } = await supabase.from('companies').insert({ name: 'TEST-Email-Ingest-Health-NeverReceived' }).select().single();
+  const companyId2 = company2.id;
+  try {
+    await supabase.from('email_ingest_configurations').insert({
+      company_id: companyId2, inbound_token: `health-test-2-${companyId2}`, status: 'active',
+      last_invoice_received_at: null,
+      created_at: new Date(Date.now() - 10 * 86400000).toISOString(), // attivato 10gg fa
+    });
+    const report2 = await getHealthReport(companyId2);
+    check('never_received_after_setup vero — attivo da 10gg, mai ricevuto nulla', report2.channel_health.never_received_after_setup === true, report2.channel_health);
+  } finally {
+    await supabase.from('companies').delete().eq('id', companyId2);
+  }
+
+  // ── Caso 3: canale appena attivato (oggi), mai ricevuto nulla — non deve
+  // ancora allarmare, c'è un periodo di grazia di 3 giorni ──
+  const { data: company3 } = await supabase.from('companies').insert({ name: 'TEST-Email-Ingest-Health-JustSetup' }).select().single();
+  const companyId3 = company3.id;
+  try {
+    await supabase.from('email_ingest_configurations').insert({
+      company_id: companyId3, inbound_token: `health-test-3-${companyId3}`, status: 'active',
+      last_invoice_received_at: null,
+    });
+    const report3 = await getHealthReport(companyId3);
+    check('never_received_after_setup falso — canale attivato oggi, periodo di grazia', report3.channel_health.never_received_after_setup === false, report3.channel_health);
+  } finally {
+    await supabase.from('companies').delete().eq('id', companyId3);
   }
 
   console.log(`\n${passed} passati, ${failed} falliti\n`);
