@@ -18,10 +18,25 @@ import PostalMime from 'postal-mime';
 
 export default {
   async email(message, env, ctx) {
+    const startedAt = Date.now();
+    // Tag ogni fase esplicitamente: se il messaggio muore silenziosamente (F-061,
+    // 2026-08-21 — 2 email reali su 3 reinviate non hanno mai raggiunto il backend,
+    // nessuna riga in nessun log), l'unico modo per capire DOVE si è fermato è
+    // `wrangler tail` mentre succede. Senza questi checkpoint, un crash prima del
+    // fetch() è indistinguibile da un crash del runtime che salta anche il catch.
+    let stage = 'start';
     try {
-      const raw = await streamToUint8Array(message.raw, message.rawSize);
-      const parsed = await PostalMime.parse(raw);
+      console.log(`[email-ingest-worker] ricevuto to=${message.to} from=${message.from} rawSize=${message.rawSize}`);
 
+      stage = 'reading-raw-stream';
+      const raw = await streamToUint8Array(message.raw);
+      console.log(`[email-ingest-worker] stream letto: ${raw.length} bytes reali (dichiarati rawSize=${message.rawSize}) — +${Date.now() - startedAt}ms`);
+
+      stage = 'parsing-postal-mime';
+      const parsed = await PostalMime.parse(raw);
+      console.log(`[email-ingest-worker] parsing ok: ${(parsed.attachments || []).length} allegati — +${Date.now() - startedAt}ms`);
+
+      stage = 'building-form-data';
       const headerPairs = [];
       for (const [key, value] of message.headers) headerPairs.push([key, value]);
 
@@ -39,6 +54,7 @@ export default {
         form.append(`attachment-${i}`, new Blob([bytes], { type: att.mimeType || 'application/octet-stream' }), att.filename || `allegato-${i}`);
       }
 
+      stage = 'posting-to-backend';
       const resp = await fetch(env.BACKEND_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'X-Ingest-Secret': env.INGEST_SHARED_SECRET },
@@ -47,22 +63,35 @@ export default {
 
       if (!resp.ok) {
         console.error(`[email-ingest-worker] backend ha risposto ${resp.status}`, await resp.text().catch(() => ''));
+      } else {
+        console.log(`[email-ingest-worker] consegnato al backend — +${Date.now() - startedAt}ms totali`);
       }
     } catch (err) {
-      console.error('[email-ingest-worker] errore imprevisto:', err.message, err.stack);
+      console.error(`[email-ingest-worker] errore imprevisto durante '${stage}' (+${Date.now() - startedAt}ms):`, err.name, err.message, err.stack);
     }
   },
 };
 
-async function streamToUint8Array(stream, size) {
+async function streamToUint8Array(stream) {
+  // Non ci si fida più di `message.rawSize` per pre-allocare: se il conteggio del
+  // runtime differisse anche di un byte dallo stream reale, `Uint8Array.set()` lancia
+  // RangeError PRIMA che venga letto tutto lo stream — un crash silenzioso plausibile
+  // per email più corpose (zip, doppio allegato), mai riprodotto in locale perché lì
+  // lo stream si costruisce da un Blob già noto, non da un vero stream SMTP.
   const reader = stream.getReader();
-  const result = new Uint8Array(size);
-  let offset = 0;
+  const chunks = [];
+  let total = 0;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
-    result.set(value, offset);
-    offset += value.length;
+    chunks.push(value);
+    total += value.length;
+  }
+  const result = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
   }
   return result;
 }
