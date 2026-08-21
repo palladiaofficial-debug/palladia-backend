@@ -15,6 +15,7 @@
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
 const { slugifyCompanyName } = require('../lib/emailIngestSlug');
+const { getProvider } = require('../lib/emailIngestProviders');
 
 // Zona palladia.net, catch-all Cloudflare Email Routing (non un sottodominio
 // dedicato come da analisi iniziale — Mailgun/Resend risultati bloccati in fase di
@@ -128,7 +129,7 @@ async function checkRetiredToken(token) {
 async function getStatus(companyId) {
   const { data, error } = await supabase
     .from('email_ingest_configurations')
-    .select('inbound_token, status, last_invoice_received_at, created_at, pending_test_nonce, pending_test_expires_at, last_test_verified_at')
+    .select('inbound_token, status, last_invoice_received_at, created_at, pending_test_nonce, pending_test_expires_at, last_test_verified_at, delegate_email, delegate_provider, delegate_instructions_sent_at')
     .eq('company_id', companyId)
     .maybeSingle();
   if (error) throw error;
@@ -141,7 +142,36 @@ async function getStatus(companyId) {
     created_at: data.created_at,
     last_test_verified_at: data.last_test_verified_at,
     test_pending: testPending,
+    delegate_email: data.delegate_email,
+    delegate_provider: data.delegate_provider,
+    delegate_instructions_sent_at: data.delegate_instructions_sent_at,
   };
+}
+
+// Delega a un terzo (amministrativa, commercialista, familiare) che gestisce la
+// PEC al posto del titolare — non richiede un account Palladia: l'email stessa
+// contiene indirizzo, istruzioni del provider scelto e spiegazione. Traccia SOLO
+// l'ultimo invio (un upsert, non uno storico): quello che serve al titolare è
+// sapere se e quando ha già delegato, non un log di ogni tentativo.
+async function sendDelegateInstructions(companyId, delegateEmail, providerKey) {
+  const provider = getProvider(providerKey);
+  if (!provider) throw new Error('Provider non riconosciuto');
+
+  const { data: config } = await supabase
+    .from('email_ingest_configurations')
+    .select('inbound_token, status')
+    .eq('company_id', companyId)
+    .maybeSingle();
+  if (!config || config.status !== 'active') throw new Error('Canale email non attivo per questa azienda');
+
+  const sentAt = new Date().toISOString();
+  const { error } = await supabase
+    .from('email_ingest_configurations')
+    .update({ delegate_email: delegateEmail, delegate_provider: providerKey, delegate_instructions_sent_at: sentAt })
+    .eq('company_id', companyId);
+  if (error) throw error;
+
+  return { address: fullAddress(config.inbound_token), provider, sentAt };
 }
 
 // Prova dell'indirizzo: genera un nonce non indovinabile, valido 10 minuti, da
@@ -300,4 +330,5 @@ module.exports = {
   startTest,
   consumeTestNonce,
   checkRetiredToken,
+  sendDelegateInstructions,
 };

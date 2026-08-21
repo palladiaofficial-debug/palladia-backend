@@ -13,6 +13,8 @@
  * POST   /api/v1/expenses/email-ingest/allowed-senders          — autorizza/blocca un mittente (JWT, owner/admin)
  * DELETE /api/v1/expenses/email-ingest/allowed-senders/:id      — rimuove una regola (JWT, owner/admin)
  * GET    /api/v1/expenses/email-ingest/log                      — registro messaggi, filtrabile (JWT)
+ * GET    /api/v1/expenses/email-ingest/providers                — istruzioni per provider, per il wizard (JWT)
+ * POST   /api/v1/expenses/email-ingest/delegate                  — invia le istruzioni a chi gestisce la PEC (JWT, owner/admin)
  * POST   /api/v1/expenses/email-ingest/webhook                  — ricezione email (PUBBLICO, header segreto Cloudflare Worker)
  *
  * Il webhook è pubblico (autenticato via header X-Ingest-Secret condiviso col
@@ -22,10 +24,11 @@
  */
 
 const router   = require('express').Router();
+const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { emailIngestWebhookLimiter, emailIngestSenderLimiter } = require('../../middleware/rateLimit');
-const { upsertAllowedSenderSchema } = require('../../lib/schemas/emailIngest');
+const { upsertAllowedSenderSchema, delegateInstructionsSchema } = require('../../lib/schemas/emailIngest');
 const {
   connectCompany,
   rotateToken,
@@ -36,10 +39,12 @@ const {
   removeAllowedSender,
   listIngestLog,
   startTest,
+  sendDelegateInstructions,
 } = require('../../services/emailIngestConfig');
 const { handleInboundWebhook } = require('../../services/emailIngestWebhook');
 const { getHealthReport } = require('../../services/emailIngestHealthCheck');
-const { sendEmailIngestTestProbe } = require('../../services/email');
+const { sendEmailIngestTestProbe, sendEmailIngestDelegateInstructions } = require('../../services/email');
+const { EMAIL_PROVIDERS } = require('../../lib/emailIngestProviders');
 
 function isAdminOrOwner(role) {
   return role === 'owner' || role === 'admin';
@@ -175,6 +180,30 @@ router.get('/expenses/email-ingest/health', verifySupabaseJwt, async (req, res) 
   } catch (err) {
     console.error('[email-ingest] health error:', err.message);
     res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+router.get('/expenses/email-ingest/providers', verifySupabaseJwt, async (req, res) => {
+  res.json(EMAIL_PROVIDERS);
+});
+
+router.post('/expenses/email-ingest/delegate', verifySupabaseJwt, validate(delegateInstructionsSchema), async (req, res) => {
+  if (!isAdminOrOwner(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo owner e admin possono inviare la delega.' });
+  }
+  try {
+    const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
+    const { address, provider, sentAt } = await sendDelegateInstructions(req.companyId, req.body.delegate_email, req.body.provider_key);
+    await sendEmailIngestDelegateInstructions({
+      to: req.body.delegate_email,
+      companyName: company?.name || 'La tua azienda',
+      address,
+      provider,
+    });
+    res.json({ ok: true, delegate_email: req.body.delegate_email, delegate_provider: req.body.provider_key, delegate_instructions_sent_at: sentAt });
+  } catch (err) {
+    console.error('[email-ingest] delegate error:', err.message);
+    res.status(400).json({ error: 'DELEGATE_FAILED', message: err.message });
   }
 });
 

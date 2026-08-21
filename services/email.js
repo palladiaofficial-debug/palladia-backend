@@ -2332,9 +2332,67 @@ async function sendEmailIngestTestProbe({ to, nonce }) {
   });
 }
 
+/**
+ * Email di delega: inviata a chi gestisce davvero la posta dell'azienda
+ * (amministrativa, commercialista, familiare) quando il titolare non vuole o
+ * non sa configurare l'inoltro di persona. Deve bastare a sé stessa — chi la
+ * riceve non ha e non deve creare un account Palladia, quindi niente link che
+ * richiedano login: solo l'indirizzo da copiare e i passaggi da seguire nella
+ * propria casella di posta.
+ * @param {{ to: string, companyName: string, address: string, provider: { label: string, isPec: boolean, steps: { text: string }[], confirmNote: string } }} opts
+ */
+async function sendEmailIngestDelegateInstructions({ to, companyName, address, provider }) {
+  const stepsHtml = provider.steps.map((step, i) => `
+    <tr>
+      <td style="padding:0 0 14px;vertical-align:top;width:32px;">
+        <div style="width:26px;height:26px;border-radius:50%;background:#1a1a1a;color:#fff;font-size:13px;font-weight:700;text-align:center;line-height:26px;">${i + 1}</div>
+      </td>
+      <td style="padding:0 0 14px 12px;vertical-align:top;">
+        <p style="margin:0;font-size:15px;color:#1a1a1a;line-height:1.6;">${step.text}</p>
+      </td>
+    </tr>
+  `).join('');
+
+  const body = `
+    <p style="margin:0 0 16px;font-size:15px;color:#1a1a1a;line-height:1.7;">
+      L'azienda <strong>${companyName}</strong> ti ha chiesto di impostare un passaggio nella
+      casella di posta che gestisci per lei: da oggi, oltre a te, anche
+      <strong>Palladia</strong> (il gestionale cantieri dell'azienda) deve ricevere una copia
+      delle fatture dei fornitori. Serve solo a registrarle in automatico, senza doverle
+      caricare a mano una per una.
+    </p>
+    <p style="margin:0 0 20px;font-size:15px;color:#1a1a1a;line-height:1.7;">
+      Non devi creare nessun account. Ti bastano i passaggi qui sotto, nella tua casella di posta.
+    </p>
+
+    <div style="margin:0 0 24px;padding:16px 18px;background:#f5f5f0;border-radius:12px;">
+      <p style="margin:0 0 6px;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">Indirizzo da usare</p>
+      <p style="margin:0;font-size:17px;font-weight:700;color:#1a1a1a;word-break:break-all;">${address}</p>
+    </div>
+
+    <p style="margin:0 0 14px;font-size:12px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">Come procedere su ${provider.label}</p>
+    <table width="100%" cellpadding="0" cellspacing="0">${stepsHtml}</table>
+
+    <div style="margin:20px 0 0;padding:14px 16px;background:#f5f5f0;border-radius:10px;">
+      <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">${provider.confirmNote}</p>
+    </div>
+
+    <p style="margin:24px 0 0;font-size:13px;color:#9ca3af;line-height:1.7;">
+      Domande? Scrivi a <a href="mailto:info@palladia.it" style="color:#6b7280;">info@palladia.it</a>.
+    </p>
+  `;
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${companyName} ti ha chiesto di impostare l'inoltro delle fatture`,
+    html: layout('Un passaggio nella tua casella di posta', body),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendEmailIngestTestProbe,
+  sendEmailIngestDelegateInstructions,
   sendPasswordResetEmail,
   sendMissingExitAlert,
   sendInviteEmail,
