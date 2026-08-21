@@ -281,66 +281,81 @@ async function handleInboundWebhook(body, files, headers) {
     return { httpStatus: 200, body: { ok: true, outcome: 'rejected_type' } };
   }
 
-  const allResults = [];
-  for (const file of validAttachments) {
-    allResults.push(...extractInvoiceCandidates(file.originalname, file.buffer));
-  }
-
-  const invoiceCandidates = allResults.filter((r) => r.xml);
-  const courtesyPdfs      = allResults.filter((r) => r.courtesyPdf);
-  const skipped            = allResults.filter((r) => r.skip);
-
-  const createdExpenseIds = [];
-  let anyPendingReview = false;
-  let anyImported = false;
-
-  if (invoiceCandidates.length === 0 && courtesyPdfs.length > 0) {
-    // Nessun XML/p7m nella stessa email — unico caso in cui passiamo dall'OCR,
-    // sempre in pending_review (nessuna conferma umana sincrona disponibile qui).
-    for (const pdf of courtesyPdfs) {
-      const result = await importFromCourtesyPdfOnly(companyId, pdf, fromAddress, messageId).catch((err) => {
-        console.error('[email-ingest] OCR fallback error:', err.message);
-        return null;
-      });
-      if (result?.ok && !result.skipped) {
-        anyImported = true;
-        anyPendingReview = true;
-        createdExpenseIds.push(result.expense.id);
-      }
-    }
-  } else {
-    for (const candidate of invoiceCandidates) {
-      const expenseRow = mapCandidateToExpenseRow(companyId, candidate);
-      expenseRow.source_email = fromAddress;
-      expenseRow.source_message_id = messageId;
-
-      const overlap = await checkOcrOverlap(companyId, candidate.parsed).catch(() => null);
-      if (overlap) {
-        expenseRow.pending_review = true;
-        expenseRow.pending_review_reason = `sembra già presente come spesa caricata il ${overlap.expense_date} (${overlap.supplier}, ${overlap.amount}€) — verifica prima di tenerle entrambe`;
-      }
-
-      const result = await ingestMappedExpense(
-        companyId, expenseRow, toInvoiceShapeForAi(candidate.parsed),
-        { configTable: 'email_ingest_configurations', dedupExtra: true },
-      );
-
-      if (result.ok && !result.skipped) {
-        anyImported = true;
-        createdExpenseIds.push(result.expense.id);
-        if (expenseRow.pending_review) anyPendingReview = true;
-      }
-    }
-  }
-
+  // Da qui in poi si tocca codice di estrazione/parsing di contenuto non fidato
+  // (zip/p7m/XML costruiti da chiunque scriva all'indirizzo aziendale). Un'eccezione
+  // imprevista qui (osservata dal vivo: un bug di libreria su un allegato zip reale,
+  // "Cannot create a Buffer larger than N bytes") non deve MAI risultare in un 200
+  // senza nessuna riga in email_ingest_log — quel messaggio sparirebbe nel nulla,
+  // indistinguibile per l'utente da un'email mai arrivata. Meglio un outcome
+  // 'processing_error' esplicito, con il messaggio d'errore come motivo, che un
+  // buco silenzioso nel registro.
   let outcome;
-  if (anyPendingReview) outcome = 'pending_review';
-  else if (anyImported) outcome = 'accepted';
-  else if (invoiceCandidates.length > 0) outcome = 'duplicate'; // tutti i candidati validi erano già presenti
-  else if (skipped.length > 0 && skipped.every((s) => s.reason === 'sdi_metadata')) outcome = 'sdi_metadata_skipped';
-  else outcome = 'rejected_type';
+  let createdExpenseIds = [];
+  try {
+    const allResults = [];
+    for (const file of validAttachments) {
+      allResults.push(...extractInvoiceCandidates(file.originalname, file.buffer));
+    }
 
-  await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome, created_expense_ids: createdExpenseIds });
+    const invoiceCandidates = allResults.filter((r) => r.xml);
+    const courtesyPdfs      = allResults.filter((r) => r.courtesyPdf);
+    const skipped            = allResults.filter((r) => r.skip);
+
+    let anyPendingReview = false;
+    let anyImported = false;
+
+    if (invoiceCandidates.length === 0 && courtesyPdfs.length > 0) {
+      // Nessun XML/p7m nella stessa email — unico caso in cui passiamo dall'OCR,
+      // sempre in pending_review (nessuna conferma umana sincrona disponibile qui).
+      for (const pdf of courtesyPdfs) {
+        const result = await importFromCourtesyPdfOnly(companyId, pdf, fromAddress, messageId).catch((err) => {
+          console.error('[email-ingest] OCR fallback error:', err.message);
+          return null;
+        });
+        if (result?.ok && !result.skipped) {
+          anyImported = true;
+          anyPendingReview = true;
+          createdExpenseIds.push(result.expense.id);
+        }
+      }
+    } else {
+      for (const candidate of invoiceCandidates) {
+        const expenseRow = mapCandidateToExpenseRow(companyId, candidate);
+        expenseRow.source_email = fromAddress;
+        expenseRow.source_message_id = messageId;
+
+        const overlap = await checkOcrOverlap(companyId, candidate.parsed).catch(() => null);
+        if (overlap) {
+          expenseRow.pending_review = true;
+          expenseRow.pending_review_reason = `sembra già presente come spesa caricata il ${overlap.expense_date} (${overlap.supplier}, ${overlap.amount}€) — verifica prima di tenerle entrambe`;
+        }
+
+        const result = await ingestMappedExpense(
+          companyId, expenseRow, toInvoiceShapeForAi(candidate.parsed),
+          { configTable: 'email_ingest_configurations', dedupExtra: true },
+        );
+
+        if (result.ok && !result.skipped) {
+          anyImported = true;
+          createdExpenseIds.push(result.expense.id);
+          if (expenseRow.pending_review) anyPendingReview = true;
+        }
+      }
+    }
+
+    let rejectReason = null;
+    if (anyPendingReview) outcome = 'pending_review';
+    else if (anyImported) outcome = 'accepted';
+    else if (invoiceCandidates.length > 0) { outcome = 'duplicate'; rejectReason = 'fattura già presente (stesso contenuto o stessa identità fiscale — P.IVA, numero e data)'; }
+    else if (skipped.length > 0 && skipped.every((s) => s.reason === 'sdi_metadata')) { outcome = 'sdi_metadata_skipped'; rejectReason = 'conteneva solo una notifica/ricevuta SdI, non una fattura'; }
+    else { outcome = 'rejected_type'; rejectReason = files.length === 0 ? 'nessun allegato nell\'email' : 'nessun contenuto fattura riconosciuto negli allegati (xml non valido, zip non apribile o senza fatture dentro)'; }
+
+    await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome, reject_reason: rejectReason, created_expense_ids: createdExpenseIds });
+  } catch (err) {
+    console.error('[email-ingest] errore imprevisto in fase di estrazione/importazione:', err.message, err.stack);
+    outcome = 'processing_error';
+    await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome, reject_reason: `errore interno durante l'elaborazione: ${err.message}`, created_expense_ids: createdExpenseIds });
+  }
 
   return { httpStatus: 200, body: { ok: true, outcome, imported: createdExpenseIds.length } };
 }

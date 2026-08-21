@@ -36,7 +36,7 @@ function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (go
 function skip(name, why) { console.log(`  \x1b[33m–\x1b[0m ${name} (skip: ${why})`); skipped++; }
 function check(name, cond, got) { cond ? ok(name) : fail(name, got); }
 
-function buildFatturaXml({ numero, partitaIva = '01234567890', importo = '200.00' }) {
+function buildFatturaXml({ numero, partitaIva = '01234567890', importo = '200.00', tipo = 'TD01' }) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12">
   <FatturaElettronicaHeader>
@@ -50,7 +50,7 @@ function buildFatturaXml({ numero, partitaIva = '01234567890', importo = '200.00
   <FatturaElettronicaBody>
     <DatiGenerali>
       <DatiGeneraliDocumento>
-        <TipoDocumento>TD01</TipoDocumento>
+        <TipoDocumento>${tipo}</TipoDocumento>
         <Numero>${numero}</Numero>
         <Data>2026-08-15</Data>
         <ImportoTotaleDocumento>${importo}</ImportoTotaleDocumento>
@@ -80,6 +80,42 @@ function generateP7m(xmlString, workDir) {
 
 function buildAuthResultsHeader({ spfPass = true, dkimPass = true } = {}) {
   return `mx.cloudflare.net; spf=${spfPass ? 'pass' : 'fail'} smtp.mailfrom=test; dkim=${dkimPass ? 'pass' : 'fail'} header.d=test`;
+}
+
+function buildSdiNotificationXml() {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<RicevutaConsegna versione="1.0">
+  <IdentificativoSdI>12345678</IdentificativoSdI>
+  <NomeFile>IT01234567890_00001.xml</NomeFile>
+  <DataOraRicezione>2026-08-20T10:00:00</DataOraRicezione>
+  <DataOraConsegna>2026-08-20T10:05:00</DataOraConsegna>
+</RicevutaConsegna>`;
+}
+
+// Forza AdmZip a fallire su UN SOLO entry (individuato per nome) impostando un metodo di
+// compressione non supportato (99 = AES) sia nel suo local file header sia nel suo record
+// di central directory — verificato che produce davvero "ADM-ZIP: Invalid/unsupported
+// compression method" da entry.getData(), lasciando intatti gli altri entry dello zip.
+function corruptZipEntryCompressionMethod(zipBuffer, entryName) {
+  const tampered = Buffer.from(zipBuffer);
+
+  // Local file header: signature 0x04034b50, nome file a offset+30 (dopo i 30 byte fissi).
+  for (let i = 0; i < tampered.length - 4; i++) {
+    if (tampered.readUInt32LE(i) !== 0x04034b50) continue;
+    const nameLen = tampered.readUInt16LE(i + 26);
+    if (tampered.subarray(i + 30, i + 30 + nameLen).toString('utf8') === entryName) {
+      tampered.writeUInt16LE(99, i + 8);
+    }
+  }
+  // Central directory record: signature 0x02014b50, nome file a offset+46.
+  for (let i = 0; i < tampered.length - 4; i++) {
+    if (tampered.readUInt32LE(i) !== 0x02014b50) continue;
+    const nameLen = tampered.readUInt16LE(i + 28);
+    if (tampered.subarray(i + 46, i + 46 + nameLen).toString('utf8') === entryName) {
+      tampered.writeUInt16LE(99, i + 10);
+    }
+  }
+  return tampered;
 }
 
 async function postWebhook({ recipient, sender, files, spfPass = true, dkimPass = true, validSecret = true, subject = 'Fattura di test — selftest webhook' }) {
@@ -230,6 +266,113 @@ async function main() {
 
     const { data: allowedSendersAfterRotate } = await supabase.from('email_ingest_allowed_senders').select('id').eq('company_id', companyId);
     check('la rigenerazione NON tocca la lista mittenti autorizzati (storico preservato)', (allowedSendersAfterRotate || []).length >= 1, allowedSendersAfterRotate);
+
+    const currentRecipient = `${newToken}@palladia.net`; // dopo la rotazione del caso 9, questo è l'indirizzo attivo
+
+    // ── Caso 10: zip con PIÙ fatture reali dentro → tutte importate ──────────
+    const zipMulti = new AdmZip();
+    zipMulti.addFile('fattura-a.xml', Buffer.from(buildFatturaXml({ numero: '2026/WH-ZIPA', partitaIva: '10101010101' }), 'utf8'));
+    zipMulti.addFile('fattura-b.xml', Buffer.from(buildFatturaXml({ numero: '2026/WH-ZIPB', partitaIva: '10101010102' }), 'utf8'));
+    const zipMultiRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fatture.zip', buffer: zipMulti.toBuffer() }] });
+    check('zip con 2 fatture reali dentro → accepted, imported 2', zipMultiRes.status === 200 && zipMultiRes.body.outcome === 'accepted' && zipMultiRes.body.imported === 2, zipMultiRes.body);
+
+    // ── Caso 11: XML + PDF di cortesia nella stessa email → PDF ignorato, XML importato ──
+    const courtesyRes = await postWebhook({
+      recipient: currentRecipient, sender: allowedSender,
+      files: [
+        { field: 'attachment-1', filename: 'fattura.xml', buffer: Buffer.from(buildFatturaXml({ numero: '2026/WH-CORTESIA', partitaIva: '11011011011' }), 'utf8') },
+        { field: 'attachment-2', filename: 'cortesia.pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF', 'utf8') },
+      ],
+    });
+    check('XML + PDF di cortesia insieme → accepted, imported 1 (PDF ignorato, non duplicato)', courtesyRes.status === 200 && courtesyRes.body.outcome === 'accepted' && courtesyRes.body.imported === 1, courtesyRes.body);
+
+    // ── Caso 12: nota di credito TD04 (importo POSITIVO come da spec reale) → accepted, is_credit_note ──
+    const creditNoteXml = buildFatturaXml({ numero: '2026/WH-TD04', partitaIva: '12012012012', tipo: 'TD04', importo: '50.00' });
+    const creditRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'notacredito.xml', buffer: Buffer.from(creditNoteXml, 'utf8') }] });
+    check('nota di credito TD04 → accepted', creditRes.status === 200 && creditRes.body.outcome === 'accepted', creditRes.body);
+    const { data: creditRow } = await supabase.from('company_expenses').select('is_credit_note, amount').eq('company_id', companyId).eq('invoice_number', '2026/WH-TD04').maybeSingle();
+    check('is_credit_note true e importo positivo salvato così com\'è nell\'XML', creditRow?.is_credit_note === true && Number(creditRow?.amount) === 50, creditRow);
+
+    // ── Caso 13: solo notifica SdI (nessuna fattura) → sdi_metadata_skipped con motivo esplicito ──
+    const sdiRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'ricevuta.xml', buffer: Buffer.from(buildSdiNotificationXml(), 'utf8') }] });
+    check('solo notifica SdI → sdi_metadata_skipped', sdiRes.status === 200 && sdiRes.body.outcome === 'sdi_metadata_skipped', sdiRes.body);
+    const { data: sdiLog } = await supabase.from('email_ingest_log').select('reject_reason').eq('company_id', companyId).eq('outcome', 'sdi_metadata_skipped').maybeSingle();
+    check('sdi_metadata_skipped ha un motivo esplicito, non null', !!sdiLog?.reject_reason, sdiLog);
+
+    // ── Caso 14: email completamente vuota (nessun allegato) → rifiuto con motivo esplicito ──
+    const emptyRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [] });
+    check('email senza allegati → outcome esplicito (non sparisce)', emptyRes.status === 200 && typeof emptyRes.body.outcome === 'string' && emptyRes.body.outcome !== 'accepted', emptyRes.body);
+
+    // ── Caso 15: XML malformato → rejected_type con motivo esplicito (non più null) ──
+    const malformedRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fattura.xml', buffer: Buffer.from('<?xml version="1.0"?><p:FatturaElettronica><Rotto senza chiusura', 'utf8') }] });
+    check('XML malformato → rejected_type', malformedRes.status === 200 && malformedRes.body.outcome === 'rejected_type', malformedRes.body);
+    const { data: malformedLog } = await supabase.from('email_ingest_log').select('reject_reason').eq('company_id', companyId).eq('outcome', 'rejected_type').eq('subject', 'Fattura di test — selftest webhook').order('created_at', { ascending: false }).limit(1).maybeSingle();
+    check('rejected_type per XML malformato ha un motivo esplicito (fix F-061, prima era null)', !!malformedLog?.reject_reason, malformedLog);
+
+    // ── Caso 16: p7m con firma non valida (bytes di firma alterati) → sbustato comunque ──
+    // Design deliberato (vedi commento in lib/fatturaPaEnvelopeParser.js): questo canale
+    // non verifica la firma crittografica del p7m, la fiducia viene da allowlist+SPF/DKIM.
+    // NOTA: un test dal vivo con email REALE (Gmail→Cloudflare) su un p7m manomesso ha
+    // dato rejected_type, non accepted — causa più probabile: corruzione dei bytes binari
+    // in transito email (fenomeno noto, vedi commento in unwrapP7m), non un problema di
+    // questa validazione. Questo test isola il comportamento del PARSER, senza il transito
+    // email reale, e verifica quindi solo che la mancata verifica-firma sia intenzionale.
+    if (hasOpenssl()) {
+      const workDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'palladia-webhook-p7m-tamper-'));
+      try {
+        const p7mBuf2 = generateP7m(buildFatturaXml({ numero: '2026/WH-P7MTAMPER', partitaIva: '16016016016' }), workDir2);
+        const tamperedP7m = Buffer.from(p7mBuf2);
+        for (let i = tamperedP7m.length - 8; i < tamperedP7m.length; i++) tamperedP7m[i] ^= 0xFF;
+        const tamperRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fattura.xml.p7m', buffer: tamperedP7m }] });
+        check('p7m con firma alterata ma struttura ASN.1 valida → sbustato e accettato (nessuna verifica firma, by design)', tamperRes.status === 200 && tamperRes.body.outcome === 'accepted', tamperRes.body);
+      } finally {
+        fs.rmSync(workDir2, { recursive: true, force: true });
+      }
+    } else {
+      skip('p7m con firma non valida', 'openssl non trovato in PATH');
+    }
+
+    // ── Caso 17: zip corrotto (bytes casuali) → rejected_type con motivo esplicito ──
+    const corruptZipRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fatture.zip', buffer: crypto.randomBytes(256) }] });
+    check('zip corrotto (non apribile) → rejected_type', corruptZipRes.status === 200 && corruptZipRes.body.outcome === 'rejected_type', corruptZipRes.body);
+
+    // ── Caso 18: zip valido con dentro solo un file non-fattura → rejected_type ──
+    const zipNonInvoice = new AdmZip();
+    zipNonInvoice.addFile('foto.jpg', crypto.randomBytes(512));
+    const zipNonInvoiceRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'allegato.zip', buffer: zipNonInvoice.toBuffer() }] });
+    check('zip valido senza nessuna fattura dentro → rejected_type', zipNonInvoiceRes.status === 200 && zipNonInvoiceRes.body.outcome === 'rejected_type', zipNonInvoiceRes.body);
+
+    // ── Caso 19: tipo di allegato non consentito (.docx) → rejected_type con motivo esplicito ──
+    const badTypeRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'documento.docx', buffer: Buffer.from('non è una fattura', 'utf8') }] });
+    check('tipo allegato non consentito (.docx) → rejected_type', badTypeRes.status === 200 && badTypeRes.body.outcome === 'rejected_type', badTypeRes.body);
+
+    // ── Caso 20: allegato oltre il limite di dimensione → rejected_size ──────
+    const oversizeRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fattura.pdf', buffer: Buffer.concat([Buffer.from('%PDF-1.4\n'), crypto.randomBytes(23 * 1024 * 1024)]) }] });
+    check('allegato oltre 22MB → rejected_size', oversizeRes.status === 200 && oversizeRes.body.outcome === 'rejected_size', oversizeRes.body);
+
+    // ── Caso 21: stessa fattura da DUE mittenti diversi (entrambi autorizzati) → duplicate ──
+    // Non dipende dall'identità del mittente per il dedup, solo dal contenuto/identità fiscale.
+    const secondSender = 'commercialista@esempio-test.it';
+    await supabase.from('email_ingest_allowed_senders').insert({ company_id: companyId, email_address: secondSender, action: 'allow' });
+    const twoSenderXml = Buffer.from(buildFatturaXml({ numero: '2026/WH-DUESENDER', partitaIva: '21021021021' }), 'utf8');
+    const firstSenderRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fattura.xml', buffer: twoSenderXml }] });
+    check('stessa fattura, primo mittente → accepted', firstSenderRes.status === 200 && firstSenderRes.body.outcome === 'accepted', firstSenderRes.body);
+    const secondSenderRes = await postWebhook({ recipient: currentRecipient, sender: secondSender, files: [{ field: 'attachment-1', filename: 'fattura.xml', buffer: twoSenderXml }] });
+    check('stessa fattura, MITTENTE DIVERSO ma autorizzato → duplicate comunque (dedup indipendente dal mittente)', secondSenderRes.status === 200 && secondSenderRes.body.outcome === 'duplicate', secondSenderRes.body);
+
+    // ── Caso 22: crash imprevisto durante l'estrazione → mai un 200 senza traccia (fix F-061) ──
+    // Zip valido con 2 entry: una fattura leggibile + una con metodo di compressione non
+    // supportato che fa fallire entry.getData() — prima del fix, questo interrompeva
+    // l'intera estrazione senza scrivere nessuna riga in email_ingest_log (osservato dal
+    // vivo in produzione il 2026-08-21 con un allegato zip reale, errore di libreria
+    // "Cannot create a Buffer larger than N bytes"). Dopo il fix: l'entry corrotta viene
+    // isolata, la fattura valida nello stesso zip viene comunque importata.
+    const mixedZip = new AdmZip();
+    mixedZip.addFile('fattura-valida.xml', Buffer.from(buildFatturaXml({ numero: '2026/WH-MIXEDZIP', partitaIva: '22022022022' }), 'utf8'));
+    mixedZip.addFile('corrotta.xml', Buffer.from('placeholder', 'utf8'));
+    const mixedZipCorrupted = corruptZipEntryCompressionMethod(mixedZip.toBuffer(), 'corrotta.xml');
+    const mixedZipRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fatture.zip', buffer: mixedZipCorrupted }] });
+    check('zip con un entry corrotto + una fattura valida → la fattura valida viene comunque importata (non tutto perso)', mixedZipRes.status === 200 && mixedZipRes.body.outcome === 'accepted' && mixedZipRes.body.imported === 1, mixedZipRes.body);
 
     // ── Registro: ogni tentativo (anche i rifiutati) ha lasciato una riga ───
     const { data: logRows } = await supabase.from('email_ingest_log').select('outcome').eq('company_id', companyId);
