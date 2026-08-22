@@ -7,6 +7,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createEquipmentSchema, patchEquipmentSchema, assignEquipmentSchema } = require('../../lib/schemas/equipment');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { sanitizeExtractedFields } = require('../../lib/ocrSanitize');
 
 let _anthropic = null;
 function getClient() {
@@ -134,7 +135,11 @@ IMPORTANTE:
     logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'equipment_ocr', usage: msg.usage });
     const text = msg.content[0]?.text || '{}';
     const match = text.match(/\{[\s\S]*\}/);
-    const extracted = match ? JSON.parse(match[0]) : {};
+    // Il modello può impacchettare dati "extra" come oggetto annidato su un
+    // documento molto denso invece del testo semplice richiesto dal prompt
+    // (F-066) — sanitizeExtractedFields lo riporta sempre a campi scalari,
+    // altrimenti il frontend crasha renderizzando un oggetto come figlio.
+    const extracted = sanitizeExtractedFields(match ? JSON.parse(match[0]) : {});
 
     res.json({ ok: true, extracted });
   } catch (e) {
@@ -352,7 +357,10 @@ Date in formato YYYY-MM-DD. null per campi non presenti.`;
     logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'equipment_doc_ocr', usage: msg.usage });
     const text = msg.content[0]?.text || '{}';
     const match = text.match(/\{[\s\S]*\}/);
-    aiExtracted = match ? JSON.parse(match[0]) : null;
+    // Stessa sanificazione di /equipment/ocr (F-066) — questo endpoint
+    // persiste ai_extracted su equipment_documents, quindi un oggetto
+    // annidato qui rimarrebbe salvato e rischierebbe di ricrashare in futuro.
+    aiExtracted = match ? sanitizeExtractedFields(JSON.parse(match[0])) : null;
   } catch (e) {
     console.warn('[equipment/docs] OCR skipped:', e.message);
   }
