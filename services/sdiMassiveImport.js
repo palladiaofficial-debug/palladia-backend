@@ -158,8 +158,23 @@ async function getMassiveImportBatchStatus(batchId, companyId) {
   return data;
 }
 
+// Canale one-shot: non ha uno stato "connesso/attivo" come gli altri, solo una
+// cronologia di caricamenti — usata dalla vista unica (services/invoiceChannels.js)
+// per mostrare l'ultimo batch invece di un singolo stato persistente.
+async function listRecentBatches(companyId, limit = 3) {
+  const { data, error } = await supabase
+    .from('sdi_massive_import_batches')
+    .select('id, status, total_candidates, processed_count, imported_count, duplicate_count, pending_review_count, error_count, error_message, created_at, finished_at')
+    .eq('company_id', companyId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data || [];
+}
+
 module.exports = {
   createMassiveImportBatch,
   getMassiveImportBatchStatus,
+  listRecentBatches,
   MAX_CANDIDATES_PER_BATCH,
 };

@@ -2,292 +2,24 @@
 
 /**
  * services/sdiInvoices.js
- * Ricezione automatica fatture fornitore via SdI (Sistema di Interscambio),
- * tramite il provider accreditato Openapi (https://openapi.com), prodotto "SDI".
+ * Motore di ingest condiviso da tutti i canali fatture fornitore attivi
+ * (email — services/emailIngestWebhook.js, delega Cassetto Fiscale A-Cube —
+ * services/sdiConsultation.js, importazione massiva storico —
+ * services/sdiMassiveImport.js): dedup, assegnazione cantiere (euristica +
+ * storico fornitore + Ladia come fallback), categorizzazione, audit log,
+ * notifica in-app — tutto vive qui una volta sola, non in ciascun canale.
  *
- * ENV richieste:
- *   OPENAPI_API_KEY            — Bearer token (sandbox o produzione)
- *   OPENAPI_ENV                 — 'sandbox' | 'production' (default 'sandbox')
- *   OPENAPI_WEBHOOK_URL         — URL pubblico per l'evento supplier-invoice
- *   OPENAPI_LEGAL_STORAGE_WEBHOOK_URL — URL pubblico per la conferma di conservazione
- *
- * Flusso:
- *   1. L'impresa registra il proprio Codice Destinatario sul sito dell'Agenzia
- *      Entrate puntando al codice del provider (PIC7CPS per Openapi) — azione
- *      manuale, fuori da questa integrazione, spetta al titolare dell'impresa.
- *   2. connectCompany() registra l'azienda su Openapi con apply_legal_storage:true
- *      (conservazione sostitutiva a norma inclusa, non solo salvataggio del JSON)
- *      e configura i webhook per fattura passiva + conferma di conservazione.
- *   3. Ogni fattura fornitore in arrivo genera una chiamata al nostro webhook,
- *      già come oggetto JSON strutturato (non XML) — vedi mapInvoiceResponseToExpense.
- *   4. Quando il documento risulta effettivamente conservato, un secondo webhook
- *      conferma lo stato — vedi confirmLegalStorage.
- *
- * NOTA: il campo `auth_header` dell'API Openapi (usato per autenticare le
- * chiamate in ingresso al nostro webhook) è documentato in modo ambiguo nella
- * loro specifica pubblica ("nome dell'header" ma l'esempio mostra un valore
- * tipo "Bearer xxx"). Verifichiamo entrambe le interpretazioni lato nostro
- * (vedi resolveCompanyFromRequest) finché non c'è un account reale con cui
- * confermare il comportamento esatto.
+ * Ospitava anche il canale "Codice Destinatario diretto" via il provider
+ * Openapi (connect/webhook/status/disconnect) — rimosso il 2026-08-22, vedi
+ * AUDIT.md F-063: mai attivato in produzione (OPENAPI_API_KEY mai configurata),
+ * mai raggiungibile da nessuna UI, e con un bug latente sul CHECK constraint di
+ * company_expenses.source che lo avrebbe rotto al primo uso reale. Il nome del
+ * file resta per non rompere i molti import esistenti di ingestMappedExpense.
  */
 
-const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
 const { auditLog } = require('../lib/audit');
 const { generateSiteAssignmentProposal, categorizeInvoice } = require('./ladiaSmartProposal');
-
-const SDI_BASE_URL = {
-  sandbox:    'https://test.sdi.openapi.it',
-  production: 'https://sdi.openapi.it',
-};
-
-function getEnvironment() {
-  return process.env.OPENAPI_ENV === 'production' ? 'production' : 'sandbox';
-}
-
-function getApiKey() {
-  const key = process.env.OPENAPI_API_KEY;
-  if (!key) throw new Error('OPENAPI_API_KEY non configurata');
-  return key;
-}
-
-function getWebhookUrl() {
-  const url = process.env.OPENAPI_WEBHOOK_URL;
-  if (!url) throw new Error('OPENAPI_WEBHOOK_URL non configurata');
-  return url;
-}
-
-function getLegalStorageWebhookUrl() {
-  const url = process.env.OPENAPI_LEGAL_STORAGE_WEBHOOK_URL;
-  if (!url) throw new Error('OPENAPI_LEGAL_STORAGE_WEBHOOK_URL non configurata');
-  return url;
-}
-
-// Openapi vuole il fiscal_id SENZA il prefisso paese (es. "12345678901", non "IT12345678901")
-function normalizeFiscalId(fiscalId) {
-  return String(fiscalId || '').trim().toUpperCase().replace(/^IT/, '');
-}
-
-async function sdiRequest(path, options = {}) {
-  const base = SDI_BASE_URL[getEnvironment()];
-  const res = await fetch(`${base}${path}`, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${getApiKey()}`,
-      'Content-Type':  'application/json',
-      ...(options.headers || {}),
-    },
-  });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const err = new Error(body?.message || body?.['hydra:description'] || `Openapi error ${res.status}`);
-    err.status = res.status;
-    err.body   = body;
-    throw err;
-  }
-  return body;
-}
-
-// ── Collega una company al provider SdI ──────────────────────────────────────
-// Due chiamate: registra l'anagrafica con conservazione a norma attiva, poi
-// configura i webhook per fattura passiva e conferma di conservazione.
-async function connectCompany({ companyId, userId, userEmail, fiscalId }) {
-  const webhookSecret = crypto.randomBytes(24).toString('hex');
-  const normalizedFiscalId = normalizeFiscalId(fiscalId);
-
-  const { data: company } = await supabase.from('companies').select('name').eq('id', companyId).maybeSingle();
-
-  const { data: existing } = await supabase
-    .from('sdi_configurations')
-    .select('id')
-    .eq('company_id', companyId)
-    .maybeSingle();
-
-  const row = {
-    company_id: companyId,
-    fiscal_id:  fiscalId,
-    provider:   'openapi',
-    environment: getEnvironment(),
-    status:     'pending',
-    webhook_secret: webhookSecret,
-    legal_storage_enabled: true,
-    created_by: userId || null,
-    error_message: null,
-  };
-
-  let configRow;
-  if (existing) {
-    const { data, error } = await supabase.from('sdi_configurations')
-      .update({ ...row, updated_at: new Date().toISOString() })
-      .eq('id', existing.id).select().single();
-    if (error) throw error;
-    configRow = data;
-  } else {
-    const { data, error } = await supabase.from('sdi_configurations')
-      .insert(row).select().single();
-    if (error) throw error;
-    configRow = data;
-  }
-
-  try {
-    // 1. Anagrafica + conservazione a norma attiva (apply_legal_storage:true —
-    //    non solo salvare il JSON, conservazione sostitutiva reale lato provider)
-    await sdiRequest('/business_registry_configurations', {
-      method: 'POST',
-      body: JSON.stringify({
-        fiscal_id: normalizedFiscalId,
-        name:      company?.name || 'Azienda',
-        email:     userEmail || 'noreply@palladia.net',
-        apply_signature:     false, // riceviamo soltanto, non firmiamo/inviamo fatture per conto del cliente
-        apply_legal_storage: true,
-      }),
-    });
-
-    // 2. Webhook: fattura passiva ricevuta + conferma di conservazione
-    await sdiRequest('/api_configurations', {
-      method: 'POST',
-      body: JSON.stringify({
-        fiscal_id: normalizedFiscalId,
-        callbacks: [
-          { event: 'supplier-invoice',    url: getWebhookUrl(),              auth_header: `Bearer ${webhookSecret}` },
-          { event: 'legal-storage-receipt', url: getLegalStorageWebhookUrl(), auth_header: `Bearer ${webhookSecret}` },
-        ],
-      }),
-    });
-
-    await supabase.from('sdi_configurations').update({
-      status: 'active',
-      provider_configuration_id: normalizedFiscalId,
-      updated_at: new Date().toISOString(),
-    }).eq('id', configRow.id);
-
-    return { ok: true, status: 'active', legal_storage_enabled: true };
-  } catch (err) {
-    await supabase.from('sdi_configurations').update({
-      status: 'error',
-      error_message: err.message,
-      updated_at: new Date().toISOString(),
-    }).eq('id', configRow.id);
-    throw err;
-  }
-}
-
-async function getConnectionStatus(companyId) {
-  const { data, error } = await supabase
-    .from('sdi_configurations')
-    .select('fiscal_id, provider, environment, status, legal_storage_enabled, last_invoice_received_at, error_message, created_at')
-    .eq('company_id', companyId)
-    .maybeSingle();
-  if (error) throw error;
-  return data || null;
-}
-
-async function disconnectCompany(companyId) {
-  const { error } = await supabase
-    .from('sdi_configurations')
-    .update({ status: 'disabled', updated_at: new Date().toISOString() })
-    .eq('company_id', companyId);
-  if (error) throw error;
-}
-
-// ── Trova la company dal secret ricevuto sul webhook ──────────────────────────
-// Openapi documenta auth_header in modo ambiguo — verifica sia "Authorization:
-// Bearer <secret>" (interpretazione più probabile, coerente col loro esempio)
-// sia l'header custom "x-sdi-webhook-secret" per compatibilità.
-async function resolveCompanyFromHeaders(headers) {
-  const authHeader = headers['authorization'] || '';
-  const bearerSecret = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  const secret = bearerSecret || headers['x-sdi-webhook-secret'] || null;
-  if (!secret) return null;
-
-  const { data } = await supabase
-    .from('sdi_configurations')
-    .select('company_id, status')
-    .eq('webhook_secret', secret)
-    .maybeSingle();
-  if (!data || data.status === 'disabled') return null;
-  return data.company_id;
-}
-
-// ── Mappa una InvoiceResponse (schema Openapi) in una riga company_expenses ──
-// Funzione pura, testabile senza rete: la fattura arriva già strutturata
-// (sender/recipient/invoice_lines/importi separati), non XML da parsare.
-function mapInvoiceResponseToExpense(companyId, invoice) {
-  if (!invoice || typeof invoice !== 'object') {
-    throw new Error('Invoice payload mancante o non valido');
-  }
-  if (invoice.direction && invoice.direction !== 'incoming') {
-    return null; // ignora le fatture emesse (outgoing), qui ci interessano solo quelle passive
-  }
-
-  const amount = invoice.total_gross_amount ?? invoice.total_amount_including_tax ?? invoice.total_payable_amount;
-  if (!amount || amount <= 0) {
-    throw new Error('Fattura senza importo totale valido');
-  }
-
-  const supplierName = invoice.sender?.name || 'Fornitore sconosciuto';
-  const docNumber     = invoice.document_number || null;
-
-  const paymentMeans = Array.isArray(invoice.payment_means) ? invoice.payment_means[0] : null;
-  const paymentMethod = mapPaymentMethod(paymentMeans);
-
-  return {
-    company_id:        companyId,
-    amount:             Math.round(amount * 100) / 100,
-    description:        docNumber ? `Fattura ${docNumber} — ${supplierName}` : `Fattura — ${supplierName}`,
-    category:           categorizeByKeywords(supplierName, invoice.invoice_lines) || 'altro',
-    payment_method:      paymentMethod,
-    supplier:            supplierName,
-    supplier_vat:         invoice.sender?.vat_id || invoice.sender?.tax_code || null,
-    expense_date:        invoice.issue_date || new Date().toISOString().slice(0, 10),
-    invoice_number:       docNumber,
-    is_deductible:       true,
-    notes:               'Importata automaticamente da fattura elettronica (SdI)',
-    source:              'sdi_auto',
-    sdi_invoice_id:       invoice.id,
-    sdi_raw_invoice:      invoice,
-    sdi_legal_storage_status: 'to_be_stored',
-  };
-}
-
-function mapPaymentMethod(paymentMeans) {
-  const code = (paymentMeans?.mode || paymentMeans?.type || '').toUpperCase();
-  if (code.includes('CONT')) return 'contanti';
-  if (code.includes('ASSEG')) return 'assegno';
-  if (code.includes('CARTA')) return 'carta';
-  return 'bonifico'; // default ragionevole per fatture B2B — la maggior parte è bonifico/RIBA
-}
-
-// ── Categorizzazione automatica (euristica a costo zero) ──────────────────────
-// Copre i casi comuni di un'impresa edile guardando fornitore + righe fattura,
-// prima di ricorrere a Ladia (AI, a pagamento) come fallback in ingestSupplierInvoice.
-// Ordine intenzionale: categorie con termini specifici prima, 'materiali' per ultima
-// perché i suoi termini sono i più generici e più a rischio di falsi positivi.
-const CATEGORY_KEYWORDS = {
-  carburante:     ['carburante', 'gasolio', 'diesel', 'benzina', 'gpl', 'stazione di servizio', 'rifornimento carburante'],
-  assicurazioni:  ['assicurazione', 'polizza', 'rc auto', 'premio assicurativo'],
-  affitto:        ['canone di locazione', 'locazione immobile', 'affitto locali', 'affitto capannone'],
-  subappalto:     ['subappalto', 'subappaltatore', 'lavori in subappalto'],
-  consulenze:     ['consulenza', 'onorario', 'parcella', 'prestazione professionale', 'studio tecnico', 'commercialista'],
-  attrezzature:   ['noleggio', 'nolo a caldo', 'nolo a freddo', 'noleggio attrezzatura', 'escavatore', 'gru', 'ponteggio', 'betoniera', 'piattaforma aerea'],
-  manutenzione:   ['manutenzione', 'riparazione', 'tagliando', 'assistenza tecnica'],
-  trasporti:      ['trasporto merci', 'spedizione', 'corriere', 'autotrasporto', 'nolo trasporto'],
-  utenze:         ['energia elettrica', 'elettricità', 'gas naturale', 'metano', 'fornitura acqua', 'telefonia', 'canone internet', 'fibra ottica'],
-  cancelleria:    ['cancelleria', 'materiale ufficio', 'toner', 'carta a4'],
-  vitto_alloggio: ['ristorante', 'hotel', 'albergo', 'vitto', 'pernottamento', 'buoni pasto'],
-  materiali:      ['cemento', 'calcestruzzo', 'sabbia', 'ghiaia', 'mattoni', 'laterizi', 'tondino', 'malta', 'intonaco', 'piastrelle', 'materiale edile', 'ferramenta', 'isolante', 'guaina', 'pittura edile'],
-};
-
-function categorizeByKeywords(supplierName, invoiceLines) {
-  const text = [supplierName, ...(invoiceLines || []).map((l) => l.description)]
-    .filter(Boolean).join(' ').toLowerCase();
-  if (!text.trim()) return null;
-
-  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
-    if (keywords.some((kw) => text.includes(kw))) return category;
-  }
-  return null;
-}
 
 // ── Assegnazione automatica al cantiere ───────────────────────────────────────
 // Euristica deterministica, zero costo AI: se la company ha UN SOLO cantiere
@@ -339,6 +71,13 @@ async function resolveSiteFromSupplierHistory(companyId, supplierVat, activeSite
   return { siteId, occurrences: past.length };
 }
 
+// Normalizza un numero fattura per il confronto di identità fiscale (dedup canale
+// email/massivo): stesso numero scritto "2024/001", "2024-001" o "2024 001" deve
+// confrontare uguale — tiene solo lettere/cifre, minuscolo.
+function normalizeInvoiceNumber(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 // ── Notifica in-app ────────────────────────────────────────────────────────────
 // Stessa tabella già in uso per scadenze/alert — compare nel centro notifiche
 // indipendentemente dal fatto che qualcuno abbia la pagina Spese aperta o meno
@@ -370,53 +109,32 @@ async function notifyExpenseImported(companyId, expense, { ambiguous, suggestion
   }).then(null, (e) => console.error('[sdi] notification insert error:', e.message));
 }
 
-// ── Ingest: dedup + salvataggio spesa ─────────────────────────────────────────
-// Idempotente: la stessa fattura (stesso sdi_invoice_id) non crea mai due spese,
-// anche se il provider ritenta la consegna del webhook.
-async function ingestSupplierInvoice(companyId, invoice) {
-  const expenseRow = mapInvoiceResponseToExpense(companyId, invoice);
-  if (!expenseRow) return { ok: true, skipped: true, reason: 'not_incoming' };
-  return ingestMappedExpense(companyId, expenseRow, invoice);
-}
-
-// Normalizza un numero fattura per il confronto di identità fiscale (dedup canale
-// email): stesso numero scritto "2024/001", "2024-001" o "2024 001" deve confrontare
-// uguale — tiene solo lettere/cifre, minuscolo.
-function normalizeInvoiceNumber(value) {
-  return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-// Azione di audit per canale — 'email' aggiunto qui, non nel path Openapi dedicato,
-// perché ingestMappedExpense è il punto di ingest condiviso usato anche dal futuro
-// webhook email (routes/v1/emailIngest.js).
+// Azione di audit per canale.
 const INGEST_AUDIT_ACTION = {
-  sdi_auto:    'expense.sdi_auto_import',
   acube:       'expense.acube_import',
   email:       'expense.email_import',
   sdi_massive: 'expense.sdi_massive_import',
 };
 
-// ── Ingest condiviso tra provider (Openapi via webhook, A-Cube via consultazione) ──
+// ── Ingest condiviso tra canali (email, A-Cube, importazione massiva) ────────
 // `invoiceForAi` è nella forma { sender: { name }, invoice_lines: [{ description }] }
-// attesa da generateSiteAssignmentProposal/categorizeInvoice — services/sdiConsultation.js
-// costruisce un oggetto equivalente a partire dallo XML FatturaPA, senza dover
-// modificare quelle funzioni pensate originariamente per il payload Openapi.
+// attesa da generateSiteAssignmentProposal/categorizeInvoice.
 // `configTable` indica quale tabella di configurazione aggiornare con
-// last_invoice_received_at/last_poll_at a fine importazione.
-// `dedupExtra: true` (canale email) sostituisce la dedup per sdi_invoice_id — che il
-// canale email non ha, nessun provider assegna un id — con dedup per hash contenuto
-// (match esatto, indice unico lato DB) poi per identità fiscale (P.IVA + numero
-// documento normalizzato + data emissione): lo stesso documento arrivato in formati
-// diversi (XML e p7m dello stesso contenuto) ha hash diversi ma identità fiscale
-// identica. Openapi e A-Cube restano sul dedup per sdi_invoice_id, invariato.
-//
-// `configTable: null` salta l'aggiornamento "ultima fattura ricevuta" — non tutti i
-// chiamanti hanno una configurazione canale a cui appoggiarsi (l'importazione massiva
-// dello storico è un caricamento una tantum, non un canale con uno stato proprio).
-// `silent: true` salta la notifica in-app per singola spesa — usata dall'importazione
-// massiva per non riempire il centro notifiche con centinaia di righe: il riepilogo
-// lì è un'unica schermata a fine caricamento, non un flusso di notifiche.
-async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = 'sdi_configurations', dedupExtra = false, silent = false } = {}) {
+// last_invoice_received_at/last_poll_at a fine importazione — `null` per i
+// chiamanti senza uno stato canale persistente (l'importazione massiva è un
+// caricamento una tantum, non un canale con uno stato proprio).
+// `dedupExtra: true` (canale email/massivo) sostituisce la dedup per
+// sdi_invoice_id — che questi canali non hanno, nessun provider assegna un id —
+// con dedup per hash contenuto (match esatto, indice unico lato DB) poi per
+// identità fiscale (P.IVA + numero documento normalizzato + data emissione): lo
+// stesso documento arrivato in formati diversi (XML e p7m dello stesso
+// contenuto) ha hash diversi ma identità fiscale identica. A-Cube resta sul
+// dedup per sdi_invoice_id, invariato.
+// `silent: true` salta la notifica in-app per singola spesa — usata
+// dall'importazione massiva per non riempire il centro notifiche con centinaia
+// di righe: il riepilogo lì è un'unica schermata a fine caricamento, non un
+// flusso di notifiche.
+async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = null, dedupExtra = false, silent = false } = {}) {
   const { siteId, activeSites } = await resolveSiteAssignment(companyId);
   expenseRow.site_id = siteId;
 
@@ -479,7 +197,7 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
     }
   } else if (expenseRow.sdi_invoice_id) {
     // Guardia esplicita: senza questo `if`, un expenseRow senza sdi_invoice_id (mai il
-    // caso oggi per Openapi/A-Cube, ma da non dare per scontato) farebbe .eq(..., undefined),
+    // caso oggi per A-Cube, ma da non dare per scontato) farebbe .eq(..., undefined),
     // che supabase-js ignora silenziosamente — la query perderebbe il filtro e
     // "trovarebbe" la prima riga qualunque della company, segnalando un falso doppione.
     const { data: existing } = await supabase
@@ -510,7 +228,7 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
 
   auditLog({
     companyId,
-    action:     INGEST_AUDIT_ACTION[expenseRow.source] || 'expense.sdi_auto_import',
+    action:     INGEST_AUDIT_ACTION[expenseRow.source] || 'expense.email_import',
     targetType: 'company_expense',
     targetId:   data.id,
     payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
@@ -527,40 +245,6 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
   return { ok: true, skipped: false, expense: data, ambiguous, viaHistory };
 }
 
-// ── Conferma di conservazione a norma ─────────────────────────────────────────
-// Callback separata dal provider quando il documento risulta effettivamente
-// archiviato (o fallito) presso il servizio di conservazione sostitutiva.
-async function confirmLegalStorage(companyId, payload) {
-  const objectId = payload?.object_id || payload?.data?.object_id;
-  const status   = payload?.status    || payload?.data?.status;
-  if (!objectId) return { ok: true, skipped: true, reason: 'missing_object_id' };
-
-  const patch = {
-    sdi_legal_storage_status: status || 'stored',
-    sdi_legal_storage_object_id: payload?.preserved_object_id || payload?.data?.preserved_object_id || null,
-  };
-  if (status === 'stored') patch.sdi_legal_storage_confirmed_at = new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from('company_expenses')
-    .update(patch)
-    .eq('company_id', companyId)
-    .eq('sdi_invoice_id', objectId)
-    .select('id')
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) return { ok: true, skipped: true, reason: 'expense_not_found' };
-  return { ok: true, expense_id: data.id };
-}
-
 module.exports = {
-  connectCompany,
-  getConnectionStatus,
-  disconnectCompany,
-  resolveCompanyFromHeaders,
-  mapInvoiceResponseToExpense,
-  ingestSupplierInvoice,
   ingestMappedExpense,
-  confirmLegalStorage,
 };

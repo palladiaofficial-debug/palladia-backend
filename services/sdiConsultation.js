@@ -3,20 +3,17 @@
 /**
  * services/sdiConsultation.js
  * Consultazione fatture elettroniche via Delega Unificata sul Cassetto Fiscale
- * dell'Agenzia delle Entrate — meccanismo di SOLA LETTURA, complementare (non
- * sostitutivo) a services/sdiInvoices.js.
+ * dell'Agenzia delle Entrate — meccanismo di SOLA LETTURA.
  *
- * Differenza rispetto al flusso Openapi/SdI esistente:
- *   - sdiInvoices.js sposta il Codice Destinatario: Palladia diventa il ricevente
- *     ufficiale delle fatture passive (azione irreversibile senza ripristino manuale
- *     dell'impresa sul sito dell'Agenzia Entrate).
- *   - Questo modulo NON tocca il Codice Destinatario: chi riceve oggi le fatture
- *     (es. il commercialista) continua a riceverle esattamente come ora. L'Agenzia
- *     delle Entrate conserva comunque una copia di ogni fattura transitata sul
- *     sistema, indipendentemente da chi l'ha ricevuta — questa delega permette di
- *     leggere quella copia via API, senza spostare nulla. È il percorso a rischio
- *     zero per un'impresa che vuole provare Palladia con dati reali prima di
- *     eventualmente passare al collegamento diretto (sdiInvoices.js).
+ * Non tocca il Codice Destinatario: chi riceve oggi le fatture (es. il
+ * commercialista) continua a riceverle esattamente come ora. L'Agenzia delle
+ * Entrate conserva comunque una copia di ogni fattura transitata sul sistema,
+ * indipendentemente da chi l'ha ricevuta — questa delega permette di leggere
+ * quella copia via API, senza spostare nulla. È il percorso a rischio zero per
+ * un'impresa che vuole provare Palladia con dati reali. (Esisteva in origine
+ * anche un canale che spostava il Codice Destinatario — connect/webhook diretto
+ * via Openapi in services/sdiInvoices.js — rimosso il 2026-08-22 perché mai
+ * attivato in produzione: vedi AUDIT.md F-063.)
  *
  * Provider: A-Cube (https://acubeapi.com) — unico tra quelli valutati con un
  * prodotto documentato di consultazione Cassetto Fiscale + Delega Unificata.
@@ -39,8 +36,7 @@
  * assignBrcToAppointee) sono la migliore ricostruzione possibile dalla
  * documentazione pubblica (docs.acubeapi.com/documentation/italy/gov-it/cassettofiscale),
  * che non pubblica lo spec OpenAPI completo senza un account attivo. Vanno
- * confermati/corretti con un account sandbox A-Cube reale — stesso trattamento già
- * riservato all'auth_header ambiguo di Openapi in sdiInvoices.js. Finché non sono
+ * confermati/corretti con un account sandbox A-Cube reale. Finché non sono
  * verificati, pollAndIngestInvoices marca la company in errore invece di fallire
  * silenziosamente, così l'assenza di dati reali è visibile in getStatus().
  */

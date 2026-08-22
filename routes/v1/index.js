@@ -79,25 +79,31 @@ router.use('/', require('./badgePunch'));
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./workerArea'));
 
-// Fatture fornitore automatiche via SdI: webhook pubblico (autenticato via header
-// segreto per-company, non JWT) + rotte azienda (JWT) per collegare/scollegare.
-// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
-router.use('/', require('./sdiInvoices'));
-
-// Consultazione fatture via Delega Unificata (sola lettura, complementare a sdiInvoices):
-// nessun webhook pubblico, solo rotte azienda (JWT) — vedi services/sdiConsultation.js
+// Consultazione fatture via Delega Unificata (sola lettura) — nessun webhook
+// pubblico, solo rotte azienda (JWT) — vedi services/sdiConsultation.js.
+// (Il canale "Codice Destinatario diretto via Openapi", che viveva qui accanto
+// come routes/v1/sdiInvoices.js, è stato rimosso il 2026-08-22: mai attivato in
+// produzione — OPENAPI_API_KEY mai configurata — mai raggiungibile da nessuna UI,
+// e con un bug latente sul CHECK constraint che lo avrebbe rotto al primo uso
+// reale. Vedi AUDIT.md F-063. services/sdiInvoices.js resta, ma solo come motore
+// di ingest condiviso da email/consultazione/massivo — non più home di un canale.)
 router.use('/', require('./sdiConsultation'));
 
 // Fatture fornitore via inoltro email: webhook pubblico (firma Mailgun) + rotte
-// azienda (JWT) per indirizzo dedicato/allowlist/registro. Terzo canale sullo
-// stesso impianto di sdiInvoices/sdiConsultation — vedi services/emailIngestConfig.js.
-// DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale.
+// azienda (JWT) per indirizzo dedicato/allowlist/registro — vedi
+// services/emailIngestConfig.js. DEVE stare prima di qualsiasi sub-router con
+// router.use(verifySupabaseJwt) globale.
 router.use('/', require('./emailIngest'));
 
 // Importazione massiva dello storico fatture (download AdE, portale Fatture e
-// Corrispettivi) — quarto canale sullo stesso impianto, per il passato che email/
-// consultazione non coprono. Solo rotte azienda (JWT) — vedi services/sdiMassiveImport.js.
+// Corrispettivi) — per il passato che email/consultazione non coprono. Solo
+// rotte azienda (JWT) — vedi services/sdiMassiveImport.js.
 router.use('/', require('./sdiMassiveImport'));
+
+// Vista unica sui tre canali fatture fornitore sopra (email, consultazione,
+// importazione massiva) — sola lettura, nessuno stato proprio. Vedi
+// services/invoiceChannels.js.
+router.use('/', require('./invoiceChannels'));
 
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
