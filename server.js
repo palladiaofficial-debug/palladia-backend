@@ -300,16 +300,9 @@ app.post('/api/webhooks/stripe',
 
       // Stripe Connect — aggiorna stato onboarding consulente
       if (event.type === 'account.updated') {
-        const account = event.data.object;
-        const { error: acErr } = await supabaseW
-          .from('consultant_profiles')
-          .update({
-            stripe_onboarding_complete: account.details_submitted,
-            stripe_charges_enabled:     account.charges_enabled,
-            stripe_payouts_enabled:     account.payouts_enabled,
-          })
-          .eq('stripe_account_id', account.id);
-        if (!acErr) console.log(`[stripe-webhook] Connect account ${account.id} aggiornato`);
+        const { handleAccountUpdated } = require('./lib/stripeWebhookHandlers');
+        const result = await handleAccountUpdated(event.data.object);
+        if (result.updated) console.log(`[stripe-webhook] Connect account ${event.data.object.id} aggiornato — profilo ${result.profileId}`);
       }
 
       if (event.type === 'customer.subscription.updated') {
@@ -373,19 +366,12 @@ app.post('/api/webhooks/stripe',
         }
       }
 
+      // F-059 (AUDIT.md) — evento aggiunto agli enabled_events dell'endpoint
+      // insieme ad account.updated sopra, stesso motivo strutturale di F-058.
       if (event.type === 'invoice.payment_failed') {
-        const inv = event.data.object;
-        const { data: company } = await supabaseW
-          .from('companies')
-          .select('id')
-          .eq('stripe_customer_id', inv.customer)
-          .maybeSingle();
-        if (company) {
-          await supabaseW.from('companies')
-            .update({ subscription_status: 'past_due' })
-            .eq('id', company.id);
-          console.log(`[stripe-webhook] company ${company.id} pagamento fallito`);
-        }
+        const { handlePaymentFailed } = require('./lib/stripeWebhookHandlers');
+        const result = await handlePaymentFailed(event.data.object);
+        if (result.updated) console.log(`[stripe-webhook] company ${result.companyId} pagamento fallito`);
       }
     } catch (e) {
       console.error('[stripe-webhook] errore gestione evento:', e.message);
