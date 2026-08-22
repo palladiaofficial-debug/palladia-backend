@@ -143,6 +143,22 @@ IMPORTANTE:
   }
 });
 
+// ── GET /api/v1/equipment/:id ─────────────────────────────────────────────────
+// Nessun filtro is_active — stesso comportamento di GET /subcontractors/:id,
+// consultabile anche archiviato (es. link salvato/condiviso in passato).
+router.get('/equipment/:id', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('equipment')
+    .select('*')
+    .eq('id', req.params.id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json(toApi(data));
+});
+
 // ── POST /api/v1/equipment ────────────────────────────────────────────────────
 router.post('/equipment', verifySupabaseJwt, validate(createEquipmentSchema), async (req, res) => {
   const {
