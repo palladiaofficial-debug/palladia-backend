@@ -25,6 +25,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
 
 router.use(verifySupabaseJwt);
 
@@ -38,12 +39,12 @@ function futureDate(days) {
 const KNOWN_SOURCE_TABLES = new Set([
   'site_documents', 'company_documents', 'worker_documents',
   'worker_certificates', 'subcontractor_documents', 'payslips',
-  'studio_shared_documents', 'studio_document_requests',
+  'studio_shared_documents', 'studio_document_requests', 'equipment_documents',
 ]);
 
 router.get('/archive/documents', async (req, res) => {
   const companyId = req.companyId;
-  const { site_id, worker_id, subcontractor_id, category, expiry_status, q } = req.query;
+  const { site_id, worker_id, subcontractor_id, equipment_id, category, expiry_status, q } = req.query;
 
   const sourceTables = req.query.source_tables
     ? String(req.query.source_tables).split(',').map(s => s.trim()).filter(s => KNOWN_SOURCE_TABLES.has(s))
@@ -58,13 +59,13 @@ router.get('/archive/documents', async (req, res) => {
     .from('documents')
     .select(`
       id, source_table, legacy_id, owner_type, company_id, site_id, worker_id,
-      subcontractor_id, studio_id, name, category, bucket, file_path,
+      subcontractor_id, equipment_id, studio_id, name, category, bucket, file_path,
       file_path_needs_review, file_size, mime_type, expiry_date, ai_expiry_date,
       content_hash, issued_date, issuing_body, certificate_number, course_type_id,
       period_year, period_month, payslip_status, notes, deleted_at, created_at, updated_at,
       request_status, due_date, response_url, response_filename, response_notes,
       reviewer_notes, upload_token,
-      sites(name), workers(full_name), subcontractors(company_name), course_types(name)
+      sites(name), workers(full_name), subcontractors(company_name), course_types(name), equipment(name)
     `, { count: 'exact' })
     .eq('company_id', companyId)
     .is('deleted_at', null)
@@ -75,6 +76,7 @@ router.get('/archive/documents', async (req, res) => {
   if (site_id)           query = query.eq('site_id', site_id);
   if (worker_id)         query = query.eq('worker_id', worker_id);
   if (subcontractor_id)  query = query.eq('subcontractor_id', subcontractor_id);
+  if (equipment_id)      query = query.eq('equipment_id', equipment_id);
   if (category)           query = query.eq('category', category);
   if (sourceTables?.length) query = query.in('source_table', sourceTables);
   if (q)                  query = query.ilike('name', `%${q}%`);
@@ -94,9 +96,10 @@ router.get('/archive/documents', async (req, res) => {
       worker_name:         d.workers?.full_name || null,
       subcontractor_name:  d.subcontractors?.company_name || null,
       course_type_name:    d.course_types?.name || null,
+      equipment_name:      d.equipment?.name || null,
       expiry_status:       status,
       upload_token:        req.isCdl ? d.upload_token : null,
-      sites: undefined, workers: undefined, subcontractors: undefined, course_types: undefined,
+      sites: undefined, workers: undefined, subcontractors: undefined, course_types: undefined, equipment: undefined,
     };
   });
 
@@ -129,7 +132,7 @@ function expiryStatusFor(doc, ora, presto) {
 function baseDocsQuery(companyId) {
   return supabase
     .from('documents')
-    .select('id, source_table, legacy_id, owner_type, site_id, worker_id, subcontractor_id, category, name, expiry_date, ai_expiry_date, created_at')
+    .select('id, source_table, legacy_id, owner_type, site_id, worker_id, subcontractor_id, equipment_id, category, name, expiry_date, ai_expiry_date, created_at')
     .eq('company_id', companyId)
     .is('deleted_at', null)
     .neq('source_table', 'ladia_document_templates');
@@ -144,6 +147,14 @@ router.get('/document-folders', async (req, res) => {
   const { data: sites }   = await supabase.from('sites').select('id').eq('company_id', companyId);
   const { data: workers } = await supabase.from('workers').select('id').eq('company_id', companyId).eq('is_active', true);
   const { data: subs }    = await supabase.from('subcontractors').select('id').eq('company_id', companyId).eq('is_active', true);
+  // 'mezzi' è il primo Scaglione aggiunto dopo che /documenti era già in
+  // produzione per gli altri — a differenza di quelli, qui il flag va
+  // controllato anche lato backend: altrimenti la cartella comparirebbe subito
+  // per ogni azienda al deploy, non solo per chi l'ha verificata dal vivo.
+  const equipmentEnabled = await isFeatureEnabled(companyId, 'document_hub_entry_equipment');
+  const { data: equip }  = equipmentEnabled
+    ? await supabase.from('equipment').select('id').eq('company_id', companyId).eq('is_active', true)
+    : { data: [] };
 
   const ora = today(), presto = futureDate(30);
   const scaduti = (docs || []).filter(d => {
@@ -151,23 +162,25 @@ router.get('/document-folders', async (req, res) => {
     return s === 'scaduto' || s === 'in_scadenza';
   }).length;
 
-  res.json({
-    folders: [
-      { type: 'cantieri',       count: (sites || []).length },
-      { type: 'lavoratori',     count: (workers || []).length },
-      { type: 'subappaltatori', count: (subs || []).length },
-      { type: 'azienda',        count: (docs || []).filter(d => d.owner_type === 'company').length },
-      { type: 'buste-paga',     count: (docs || []).filter(d => d.category === 'busta_paga').length },
-      { type: 'formazione',     count: (docs || []).filter(d => FORMAZIONE_CATEGORIES.includes(d.category)).length },
-      { type: 'scaduti',        count: scaduti, smart: true },
-    ],
-  });
+  const folders = [
+    { type: 'cantieri',       count: (sites || []).length },
+    { type: 'lavoratori',     count: (workers || []).length },
+    { type: 'subappaltatori', count: (subs || []).length },
+    { type: 'azienda',        count: (docs || []).filter(d => d.owner_type === 'company').length },
+    { type: 'buste-paga',     count: (docs || []).filter(d => d.category === 'busta_paga').length },
+    { type: 'formazione',     count: (docs || []).filter(d => FORMAZIONE_CATEGORIES.includes(d.category)).length },
+    { type: 'scaduti',        count: scaduti, smart: true },
+  ];
+  if (equipmentEnabled) folders.push({ type: 'mezzi', count: (equip || []).length });
+
+  res.json({ folders });
 });
 
 const ENTITY_FOLDER_TYPES = {
   cantieri:       { table: 'sites',          nameField: 'name',         keyField: 'site_id',          activeOnly: false },
   lavoratori:     { table: 'workers',        nameField: 'full_name',    keyField: 'worker_id',         activeOnly: true },
   subappaltatori: { table: 'subcontractors', nameField: 'company_name', keyField: 'subcontractor_id',  activeOnly: true },
+  mezzi:          { table: 'equipment',      nameField: 'name',         keyField: 'equipment_id',      activeOnly: true },
 };
 
 // GET /api/v1/document-folders/:type — sottocartelle (cantieri, lavoratori o subappaltatori)
@@ -176,6 +189,9 @@ router.get('/document-folders/:type', async (req, res) => {
   const { type } = req.params;
   const cfg = ENTITY_FOLDER_TYPES[type];
   if (!cfg) return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
+  if (type === 'mezzi' && !(await isFeatureEnabled(companyId, 'document_hub_entry_equipment'))) {
+    return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
+  }
 
   const { data: docs, error } = await baseDocsQuery(companyId);
   if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
@@ -224,10 +240,15 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
     return res.json({ type, key, documents: await attachHomes(scaduti) });
   }
 
+  if (type === 'mezzi' && !(await isFeatureEnabled(companyId, 'document_hub_entry_equipment'))) {
+    return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
+  }
+
   let primaryQuery = baseDocsQueryFull(companyId);
   if (type === 'cantieri')            primaryQuery = primaryQuery.eq('site_id', key);
   else if (type === 'lavoratori')     primaryQuery = primaryQuery.eq('worker_id', key);
   else if (type === 'subappaltatori') primaryQuery = primaryQuery.eq('subcontractor_id', key);
+  else if (type === 'mezzi')          primaryQuery = primaryQuery.eq('equipment_id', key);
   else if (type === 'azienda')        primaryQuery = primaryQuery.eq('owner_type', 'company');
   else if (type === 'buste-paga')     primaryQuery = primaryQuery.eq('category', 'busta_paga');
   else if (type === 'formazione')     primaryQuery = primaryQuery.in('category', FORMAZIONE_CATEGORIES);
@@ -237,8 +258,8 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
   if (primaryErr) return res.status(500).json({ error: 'DB_ERROR', detail: primaryErr.message });
 
   // Documenti la cui casa in questa cartella è AGGIUNTIVA (document_extra_homes)
-  // — i subappaltatori non supportano ancora case extra, solo browsing.
-  const extraFolderType = type === 'cantieri' ? 'site' : type === 'lavoratori' ? 'worker' : type === 'subappaltatori' ? null : 'category';
+  // — i subappaltatori e i mezzi non supportano ancora case extra, solo browsing.
+  const extraFolderType = type === 'cantieri' ? 'site' : type === 'lavoratori' ? 'worker' : (type === 'subappaltatori' || type === 'mezzi') ? null : 'category';
   const { data: extraLinks } = extraFolderType
     ? await supabase.from('document_extra_homes').select('document_id').eq('folder_type', extraFolderType).eq('folder_key', key)
     : { data: [] };
@@ -262,11 +283,11 @@ function baseDocsQueryFull(companyId) {
     .from('documents')
     .select(`
       id, source_table, legacy_id, owner_type, company_id, site_id, worker_id,
-      subcontractor_id, name, category, bucket, file_path, file_size, mime_type,
+      subcontractor_id, equipment_id, name, category, bucket, file_path, file_size, mime_type,
       expiry_date, ai_expiry_date, content_hash, issued_date, issuing_body,
       certificate_number, course_type_id, period_year, period_month, payslip_status,
       notes, deleted_at, created_at, updated_at,
-      sites(name), workers(full_name), subcontractors(company_name), course_types(name)
+      sites(name), workers(full_name), subcontractors(company_name), course_types(name), equipment(name)
     `)
     .eq('company_id', companyId)
     .is('deleted_at', null)
@@ -298,6 +319,7 @@ async function attachHomes(docs) {
     if (d.site_id)   homes.push({ id: null, type: 'site', key: d.site_id, extra: false });
     if (d.worker_id) homes.push({ id: null, type: 'worker', key: d.worker_id, extra: false });
     if (d.subcontractor_id) homes.push({ id: null, type: 'subcontractor', key: d.subcontractor_id, extra: false });
+    if (d.equipment_id) homes.push({ id: null, type: 'equipment', key: d.equipment_id, extra: false });
     if (d.owner_type === 'company') homes.push({ id: null, type: 'category', key: 'azienda', extra: false });
     if (d.category === 'busta_paga') homes.push({ id: null, type: 'category', key: 'buste-paga', extra: false });
     if (FORMAZIONE_CATEGORIES.includes(d.category)) homes.push({ id: null, type: 'category', key: 'formazione', extra: false });
@@ -309,9 +331,10 @@ async function attachHomes(docs) {
       worker_name:   d.workers?.full_name || null,
       subcontractor_name: d.subcontractors?.company_name || null,
       course_type_name: d.course_types?.name || null,
+      equipment_name: d.equipment?.name || null,
       expiry_status: expiryStatusFor(d, ora, presto),
       homes,
-      sites: undefined, workers: undefined, subcontractors: undefined, course_types: undefined,
+      sites: undefined, workers: undefined, subcontractors: undefined, course_types: undefined, equipment: undefined,
     };
   });
 }

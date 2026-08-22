@@ -32,6 +32,7 @@ function calcStatus(row) {
 function toApi(row) {
   return {
     id:                   row.id,
+    name:                 row.name || `${row.type || ''} ${row.model || ''}`.trim() || 'Mezzo',
     type:                 row.type,
     model:                row.model               || '',
     plateOrSerial:        row.plate_or_serial     || '',
@@ -170,6 +171,12 @@ router.post('/equipment', verifySupabaseJwt, validate(createEquipmentSchema), as
       colore:                 colore?.trim()           || null,
       anno_immatricolazione:  annoImmatricolazione?.trim() || null,
       numero_telaio:          numeroTelaio?.trim()     || null,
+      // 'name' non veniva mai scritto da questa rotta (solo dal tool Ladia
+      // create_equipment, migrazione 148) — restava sempre NULL per ogni mezzo
+      // creato dal form diretto. Scoperto costruendo l'unificazione documenti:
+      // la cartella "Mezzi" in /documenti legge questa colonna direttamente,
+      // non passa dal fallback di toApi() qui sotto.
+      name: `${type.trim()} ${model?.trim() || ''}`.trim() || 'Mezzo',
     }])
     .select()
     .single();
@@ -184,7 +191,7 @@ router.patch('/equipment/:id', verifySupabaseJwt, validate(patchEquipmentSchema)
 
   const { data: existing } = await supabase
     .from('equipment')
-    .select('id')
+    .select('id, type, model')
     .eq('id', id)
     .eq('company_id', req.companyId)
     .eq('is_active', true)
@@ -211,6 +218,14 @@ router.patch('/equipment/:id', verifySupabaseJwt, validate(patchEquipmentSchema)
   if (colore             !== undefined) patch.colore                = colore?.trim()        || null;
   if (annoImmatricolazione !== undefined) patch.anno_immatricolazione = annoImmatricolazione?.trim() || null;
   if (numeroTelaio       !== undefined) patch.numero_telaio         = numeroTelaio?.trim()  || null;
+
+  // Stesso fix del POST: se cambia type o model, il nome leggibile va
+  // ricalcolato — altrimenti resterebbe agganciato ai valori vecchi.
+  if (type !== undefined || model !== undefined) {
+    const effectiveType  = patch.type  ?? existing.type;
+    const effectiveModel = patch.model ?? existing.model;
+    patch.name = `${effectiveType || ''} ${effectiveModel || ''}`.trim() || 'Mezzo';
+  }
 
   const { data, error } = await supabase
     .from('equipment')
@@ -348,6 +363,31 @@ Date in formato YYYY-MM-DD. null per campi non presenti.`;
   }
 
   res.status(201).json({ ...doc, ai_extracted: aiExtracted });
+});
+
+// ── GET /api/v1/equipment/:id/documents/:docId/download ──────────────────────
+// Stessa forma di risposta ({url,name}) degli altri adapter dell'archivio
+// unificato (company-documents, workers/:id/documents, ecc.) — vedi
+// DocumentArchive.tsx::resolveUrl, che si aspetta sempre questa forma.
+router.get('/equipment/:id/documents/:docId/download', verifySupabaseJwt, async (req, res) => {
+  const { id, docId } = req.params;
+
+  const { data: doc } = await supabase
+    .from('equipment_documents')
+    .select('file_url, file_name')
+    .eq('id', docId)
+    .eq('equipment_id', id)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+  if (!doc || !doc.file_url) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const path = doc.file_url.includes('/equipment-docs/')
+    ? doc.file_url.split('/equipment-docs/').pop()
+    : doc.file_url;
+  const { data: signed, error: signErr } = await supabase.storage
+    .from('equipment-docs').createSignedUrl(path, 3600);
+  if (signErr || !signed) return res.status(500).json({ error: 'SIGNED_URL_ERROR' });
+  res.json({ url: signed.signedUrl, name: doc.file_name });
 });
 
 // ── DELETE /api/v1/equipment/:id/documents/:docId ─────────────────────────────

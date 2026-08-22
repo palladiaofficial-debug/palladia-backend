@@ -146,17 +146,20 @@ async function main() {
     }
   }
 
-  // ── 5. La funzione di verifica unificata copre ora tutte e 9 le tabelle ──
+  // ── 5. La funzione di verifica unificata copre tutte le tabelle note ──
+  // Aggiornato per lo Scaglione 4 (equipment_documents, migrazioni 172-174):
+  // l'invariante reale è "copre tutto ciò che sappiamo di dover coprire ORA",
+  // non un conteggio congelato al momento in cui questo test fu scritto.
   {
     const { data: report, error } = await supabase.rpc('verify_documents_sync');
     check('verify_documents_sync() risponde senza errore', !error, error);
     const names = (report || []).map(r => r.source_table).sort();
     const expected = [
-      'company_documents', 'ladia_document_templates', 'payslips', 'site_documents',
+      'company_documents', 'equipment_documents', 'ladia_document_templates', 'payslips', 'site_documents',
       'studio_document_requests', 'studio_shared_documents', 'subcontractor_documents',
       'worker_certificates', 'worker_documents',
     ].sort();
-    check('verify_documents_sync() copre tutte e 9 le tabelle', JSON.stringify(names) === JSON.stringify(expected), names);
+    check('verify_documents_sync() copre tutte e 10 le tabelle', JSON.stringify(names) === JSON.stringify(expected), names);
   }
 
   // ── Cleanup ──
