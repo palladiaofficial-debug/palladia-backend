@@ -16,6 +16,7 @@ const multer    = require('multer');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { flattenToText } = require('../../lib/ocrSanitize');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -98,6 +99,14 @@ router.post('/ocr/expiry', verifySupabaseJwt, aiLimiter, upload.single('file'), 
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) throw new Error('Risposta non JSON');
     result = JSON.parse(match[0]);
+    // Stessa sanificazione di equipment.js (F-066/F-067): nessuno schema è
+    // imposto al modello, solo un'istruzione testuale — un campo stringa può
+    // arrivare come oggetto annidato su un documento insolito. confidence
+    // resta un numero, gestito a parte più sotto.
+    result.expiry_date       = flattenToText(result.expiry_date);
+    result.issue_date        = flattenToText(result.issue_date);
+    result.doc_type_detected = flattenToText(result.doc_type_detected);
+    result.holder            = flattenToText(result.holder);
   } catch (e) {
     console.error('[ocr-expiry] AI error:', e.message);
     return res.status(500).json({ error: 'OCR_ERROR', message: e.message });

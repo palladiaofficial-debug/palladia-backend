@@ -8,6 +8,7 @@ const { complianceStatus, overallStatus } = require('../../lib/compliance');
 const { validate } = require('../../middleware/validate');
 const { patchChecklistSchema } = require('../../lib/schemas/baracca');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { sanitizeLabelReasonList } = require('../../lib/ocrSanitize');
 
 let _anthropic = null;
 function getClient() {
@@ -154,7 +155,11 @@ Considera: tipo di lavori, presenza di subappaltatori, lavori in quota, scavi, e
 
     const text = msg.content[0]?.text || '[]';
     const match = text.match(/\[[\s\S]*\]/);
-    const suggestions = match ? JSON.parse(match[0]) : [];
+    const raw = match ? JSON.parse(match[0]) : [];
+    // BaraccaTab.tsx renderizza label/reason direttamente come figli React —
+    // stessa sanificazione di equipment.js (F-066): nessuno schema è imposto
+    // al modello, un campo può arrivare come oggetto annidato.
+    const suggestions = sanitizeLabelReasonList(raw);
     res.json({ suggestions });
   } catch (e) {
     res.status(500).json({ error: 'AI_ERROR', detail: e.message });
