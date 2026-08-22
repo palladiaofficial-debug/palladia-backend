@@ -72,9 +72,11 @@ router.post('/ocr/expiry', verifySupabaseJwt, aiLimiter, upload.single('file'), 
   const mime    = req.file.mimetype;
   const b64     = req.file.buffer.toString('base64');
 
-  // PDF → passa come documento (Claude supporta PDF via base64)
-  const sourceType = mime === 'application/pdf' ? 'base64' : 'base64';
-  const mediaType  = mime === 'application/pdf' ? 'application/pdf' : mime;
+  // PDF → passa come documento, non immagine (F-068: il blocco 'image'
+  // dell'API Anthropic accetta solo jpeg/png/gif/webp — un PDF con
+  // media_type 'application/pdf' lì dentro viene sempre rifiutato con 400.
+  // Stessa distinzione già corretta in routes/v1/equipment.js.
+  const isPdf = mime === 'application/pdf';
 
   let result;
   try {
@@ -86,8 +88,8 @@ router.post('/ocr/expiry', verifySupabaseJwt, aiLimiter, upload.single('file'), 
         role:    'user',
         content: [
           {
-            type:   'image',
-            source: { type: sourceType, media_type: mediaType, data: b64 },
+            type:   isPdf ? 'document' : 'image',
+            source: { type: 'base64', media_type: mime, data: b64 },
           },
           { type: 'text', text: buildPrompt(docType) },
         ],
