@@ -37,9 +37,9 @@
  */
 
 const crypto   = require('crypto');
-const supabase = require('../lib/supabase');
 const { extractInvoiceCandidates } = require('../lib/fatturaPaEnvelopeParser');
 const { extractExpenseFromDocument } = require('../lib/expenseOcr');
+const { toInvoiceShapeForAi, mapCandidateToExpenseRow, checkOcrOverlap } = require('../lib/fatturaCandidateMapper');
 const { ingestMappedExpense } = require('./sdiInvoices');
 const { resolveCompanyByToken, getSenderRule, logIngestEvent, consumeTestNonce, checkRetiredToken } = require('./emailIngestConfig');
 
@@ -110,66 +110,6 @@ function totalSize(files) {
 function hasAllowedExtension(filename) {
   const lower = String(filename || '').toLowerCase();
   return ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext));
-}
-
-function normalizeSupplierName(name) {
-  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function addDaysIso(dateStr, days) {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-// Confronto con le spese caricate a mano (OCR/manuale): stesso fornitore, importo in
-// tolleranza, data vicina → non importare in silenzio, segnala e fai scegliere.
-async function checkOcrOverlap(companyId, { supplierName, amount, issueDate }) {
-  if (!supplierName || !amount || !issueDate) return null;
-
-  const { data } = await supabase
-    .from('company_expenses')
-    .select('id, supplier, amount, expense_date')
-    .eq('company_id', companyId)
-    .eq('source', 'manual')
-    .gte('expense_date', addDaysIso(issueDate, -5))
-    .lte('expense_date', addDaysIso(issueDate, 5));
-
-  const targetSupplier = normalizeSupplierName(supplierName);
-  const tolerance = Math.max(amount * 0.02, 1);
-  return (data || []).find((e) =>
-    normalizeSupplierName(e.supplier) === targetSupplier &&
-    Math.abs(Number(e.amount) - amount) <= tolerance,
-  ) || null;
-}
-
-function toInvoiceShapeForAi(parsed) {
-  return {
-    sender: { name: parsed.supplierName },
-    invoice_lines: (parsed.lineDescriptions || []).map((description) => ({ description })),
-  };
-}
-
-function mapCandidateToExpenseRow(companyId, candidate) {
-  const p = candidate.parsed;
-  return {
-    company_id:        companyId,
-    amount:            p.amount,
-    description:       p.docNumber ? `Fattura ${p.docNumber} — ${p.supplierName}` : `Fattura — ${p.supplierName}`,
-    category:          'altro',
-    payment_method:    p.paymentMethod,
-    supplier:          p.supplierName,
-    supplier_vat:      p.supplierVat,
-    expense_date:      p.issueDate || new Date().toISOString().slice(0, 10),
-    invoice_number:    p.docNumber,
-    is_deductible:     true,
-    notes:             "Importata automaticamente da un'email inoltrata",
-    source:            'email',
-    content_hash:      candidate.contentHash,
-    sdi_document_type: p.documentType,
-    is_credit_note:    !!p.isCreditNote,
-    sdi_raw_invoice:   p,
-  };
 }
 
 // PDF di cortesia isolato (nessun XML/p7m nella stessa email): nessun dato

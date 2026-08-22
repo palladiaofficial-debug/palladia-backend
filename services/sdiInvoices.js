@@ -390,9 +390,10 @@ function normalizeInvoiceNumber(value) {
 // perché ingestMappedExpense è il punto di ingest condiviso usato anche dal futuro
 // webhook email (routes/v1/emailIngest.js).
 const INGEST_AUDIT_ACTION = {
-  sdi_auto: 'expense.sdi_auto_import',
-  acube:    'expense.acube_import',
-  email:    'expense.email_import',
+  sdi_auto:    'expense.sdi_auto_import',
+  acube:       'expense.acube_import',
+  email:       'expense.email_import',
+  sdi_massive: 'expense.sdi_massive_import',
 };
 
 // ── Ingest condiviso tra provider (Openapi via webhook, A-Cube via consultazione) ──
@@ -408,7 +409,14 @@ const INGEST_AUDIT_ACTION = {
 // documento normalizzato + data emissione): lo stesso documento arrivato in formati
 // diversi (XML e p7m dello stesso contenuto) ha hash diversi ma identità fiscale
 // identica. Openapi e A-Cube restano sul dedup per sdi_invoice_id, invariato.
-async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = 'sdi_configurations', dedupExtra = false } = {}) {
+//
+// `configTable: null` salta l'aggiornamento "ultima fattura ricevuta" — non tutti i
+// chiamanti hanno una configurazione canale a cui appoggiarsi (l'importazione massiva
+// dello storico è un caricamento una tantum, non un canale con uno stato proprio).
+// `silent: true` salta la notifica in-app per singola spesa — usata dall'importazione
+// massiva per non riempire il centro notifiche con centinaia di righe: il riepilogo
+// lì è un'unica schermata a fine caricamento, non un flusso di notifiche.
+async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { configTable = 'sdi_configurations', dedupExtra = false, silent = false } = {}) {
   const { siteId, activeSites } = await resolveSiteAssignment(companyId);
   expenseRow.site_id = siteId;
 
@@ -494,9 +502,11 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
 
   if (error) throw error;
 
-  await supabase.from(configTable)
-    .update({ last_invoice_received_at: new Date().toISOString() })
-    .eq('company_id', companyId);
+  if (configTable) {
+    await supabase.from(configTable)
+      .update({ last_invoice_received_at: new Date().toISOString() })
+      .eq('company_id', companyId);
+  }
 
   auditLog({
     companyId,
@@ -506,13 +516,15 @@ async function ingestMappedExpense(companyId, expenseRow, invoiceForAi, { config
     payload:    { amount: data.amount, supplier: data.supplier, sdi_invoice_id: expenseRow.sdi_invoice_id },
   });
 
-  await notifyExpenseImported(companyId, data, {
-    ambiguous, suggestion, viaHistory,
-    pendingReview:       expenseRow.pending_review || false,
-    pendingReviewReason: expenseRow.pending_review_reason || null,
-  });
+  if (!silent) {
+    await notifyExpenseImported(companyId, data, {
+      ambiguous, suggestion, viaHistory,
+      pendingReview:       expenseRow.pending_review || false,
+      pendingReviewReason: expenseRow.pending_review_reason || null,
+    });
+  }
 
-  return { ok: true, skipped: false, expense: data };
+  return { ok: true, skipped: false, expense: data, ambiguous, viaHistory };
 }
 
 // ── Conferma di conservazione a norma ─────────────────────────────────────────

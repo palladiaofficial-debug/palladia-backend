@@ -94,6 +94,11 @@ router.use('/', require('./sdiConsultation'));
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale.
 router.use('/', require('./emailIngest'));
 
+// Importazione massiva dello storico fatture (download AdE, portale Fatture e
+// Corrispettivi) — quarto canale sullo stesso impianto, per il passato che email/
+// consultazione non coprono. Solo rotte azienda (JWT) — vedi services/sdiMassiveImport.js.
+router.use('/', require('./sdiMassiveImport'));
+
 // Documenti di sicurezza: upload/list/download (JWT) + accesso pubblico coordinatore (token)
 router.use('/', require('./documents'));
 
