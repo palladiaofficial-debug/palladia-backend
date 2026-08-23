@@ -16,6 +16,7 @@ const { validate } = require('../../middleware/validate');
 const { extractCertificateSchema } = require('../../lib/schemas/certificateOcr');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { flattenToText } = require('../../lib/ocrSanitize');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -179,6 +180,19 @@ router.post('/workers/:workerId/certificates/extract', aiLimiter, validate(extra
     const jsonMatch = raw.match(/\{[\s\S]*\}/);
     if (!jsonMatch) throw new Error('Risposta non JSON');
     extracted = JSON.parse(jsonMatch[0]);
+    // F-069: stesso pattern F-066/F-067 — nessuno schema è imposto al
+    // modello, solo un'istruzione testuale — un campo atteso come stringa
+    // può arrivare come oggetto annidato su un documento insolito (ha già
+    // fatto crashare .toLowerCase() più sotto su worker_name, due volte in
+    // produzione). confidence resta un oggetto di numeri, non toccato.
+    extracted.worker_name        = flattenToText(extracted.worker_name);
+    extracted.worker_cf          = flattenToText(extracted.worker_cf);
+    extracted.course_name        = flattenToText(extracted.course_name);
+    extracted.course_category    = flattenToText(extracted.course_category);
+    extracted.issue_date         = flattenToText(extracted.issue_date);
+    extracted.issuing_body       = flattenToText(extracted.issuing_body);
+    extracted.certificate_number = flattenToText(extracted.certificate_number);
+    extracted.legal_reference    = flattenToText(extracted.legal_reference);
   } catch (e) {
     console.error('[cert-ocr] Claude error:', e.message);
     return res.status(500).json({ error: 'OCR_ERROR', message: e.message });

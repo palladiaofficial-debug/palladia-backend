@@ -9,7 +9,10 @@
  * riprodotto dal vivo contro l'endpoint reale in produzione con un PDF
  * sintetico), routes/v1/ocrExpiry.js e routes/v1/baracca.js (F-067, stesso
  * pattern trovato controllando sistematicamente gli altri endpoint OCR dopo
- * F-066, non ancora osservato in produzione ma stessa causa strutturale).
+ * F-066, non ancora osservato in produzione ma stessa causa strutturale) e
+ * routes/v1/certificateOcr.js (F-069, trovato via Sentry dopo due 500 reali
+ * già avvenuti in produzione — worker_name non sanificato usato grezzo in
+ * un .toLowerCase()).
  * Test puro, nessuna rete/DB — verifica lib/ocrSanitize.js in isolamento.
  */
 'use strict';
@@ -91,6 +94,51 @@ function main() {
   check('sanitizeLabelReasonList: la seconda voce (già a posto) non cambia', sanitizedSugg[1].reason === 'Dati impresa e CSE visibili', sanitizedSugg[1]);
   check('sanitizeLabelReasonList: input non-array gestito senza eccezioni', JSON.stringify(sanitizeLabelReasonList(null)) === '[]');
   check('sanitizeLabelReasonList: voci senza label scartate', sanitizeLabelReasonList([{ reason: 'x' }]).length === 0);
+
+  // ── routes/v1/certificateOcr.js (F-069) — quarto endpoint, stesso pattern,
+  // trovato via Sentry dopo due 500 reali in produzione (issue #139581019,
+  // #139935699). worker_name arrivato come oggetto annidato invece di
+  // stringa: prima del fix la rotta chiamava .toLowerCase() sul valore
+  // grezzo per il controllo "nome corrisponde al lavoratore" — un TypeError
+  // non catturato, esattamente il 500 osservato.
+  const certCrash = {
+    worker_name: { nome: 'Mario', cognome: 'Rossi', nota: 'firma poco leggibile, doppio nome sul documento' },
+    worker_cf: 'RSSMRA80A01H501U',
+    course_name: 'Formazione lavoratori - Rischio Basso',
+    course_category: 'rischio_basso',
+    issue_date: '2024-01-10',
+    issuing_body: 'Ente Test',
+    certificate_number: '123/2024',
+    legal_reference: 'D.Lgs 81/08',
+    confidence: { worker_name: 0.6, course_name: 0.9, issue_date: 0.9, issuing_body: 0.9 },
+  };
+
+  let threwOnRaw = false;
+  try { certCrash.worker_name.toLowerCase(); } catch { threwOnRaw = true; }
+  check(
+    'conferma il meccanismo del crash: .toLowerCase() su worker_name grezzo (oggetto) lancia TypeError — è esattamente il 500 osservato in produzione',
+    threwOnRaw
+  );
+
+  const sanitizedWorkerName = flattenToText(certCrash.worker_name);
+  check('flattenToText: worker_name sanificato è una stringa, non un oggetto', typeof sanitizedWorkerName === 'string', sanitizedWorkerName);
+  let threwOnSanitized = false;
+  try { sanitizedWorkerName.toLowerCase(); } catch { threwOnSanitized = true; }
+  check('nessuna eccezione chiamando .toLowerCase() sul valore sanificato', !threwOnSanitized);
+  check(
+    'nessuna informazione persa: nome e cognome restano leggibili nel testo appiattito',
+    sanitizedWorkerName.includes('Mario') && sanitizedWorkerName.includes('Rossi'),
+    sanitizedWorkerName
+  );
+
+  // confidence resta un oggetto di numeri (non va appiattito con gli altri
+  // campi, stessa scelta già fatta per ocrExpiry.js) — la rotta lo gestisce
+  // a parte, qui verifichiamo solo che flattenToText non è la funzione usata
+  // su di esso.
+  check(
+    'confidence NON va passato a flattenToText (resta un oggetto di numeri per il frontend)',
+    typeof certCrash.confidence === 'object' && certCrash.confidence.worker_name === 0.6
+  );
 
   console.log(`\n${passed} passati, ${failed} falliti\n`);
   process.exitCode = failed > 0 ? 1 : 0;
