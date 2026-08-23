@@ -159,6 +159,10 @@ router.post('/workers/:workerId/certificates/extract', aiLimiter, validate(extra
   }
 
   // Chiama Claude Vision
+  // F-070: un blocco 'image' accetta solo jpeg/png/gif/webp — un PDF va
+  // inviato come 'document', altrimenti Claude rifiuta con 400 (stesso bug
+  // già corretto in routes/v1/equipment.js e routes/v1/ocrExpiry.js/F-068).
+  const isPdf = imageContent.media_type === 'application/pdf';
   let extracted;
   try {
     const ai = getAI();
@@ -168,7 +172,7 @@ router.post('/workers/:workerId/certificates/extract', aiLimiter, validate(extra
       messages: [{
         role: 'user',
         content: [
-          { type: 'image', source: imageContent },
+          { type: isPdf ? 'document' : 'image', source: imageContent },
           { type: 'text', text: OCR_PROMPT },
         ],
       }],
