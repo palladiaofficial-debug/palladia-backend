@@ -149,7 +149,7 @@ async function main() {
     siteDoc: await uploadSeedFile('site-documents', `${companyId}/seed/site-doc.pdf`, path.join(demoDir, '_demo_prezzario.pdf')),
     certificate: await uploadSeedFile('site-documents', `${companyId}/seed/certificate.pdf`, path.join(demoDir, '_demo_attestato_luigi.pdf')),
     equipmentDoc: await uploadSeedFile('equipment-docs', `${companyId}/seed/equipment-doc.pdf`, path.join(demoDir, '_demo_carta_circolazione.pdf')),
-    expenseReceipt: await uploadSeedFile('company-docs', `${companyId}/seed/receipt.pdf`, path.join(demoDir, '_demo_scontrino_test.pdf')),
+    expenseReceipt: await uploadSeedFile('site-documents', `${companyId}/seed/receipt.pdf`, path.join(demoDir, '_demo_scontrino_test.pdf')),
   };
 
   // 3. Sites -------------------------------------------------------------
@@ -246,8 +246,16 @@ async function main() {
       }
     }
   }
-  console.log(`Generazione presenze: ${presenceRows.length} righe su 3 anni per ${historyWorkers.length} lavoratori`);
-  await batchInsert('presence_logs', presenceRows);
+  // presence_logs è append-only (DELETE bloccato a livello DB, anche con service
+  // role): un rerun che reinserisse tutto duplicherebbe per sempre, senza modo di
+  // pulire dopo. Guardia idempotente: se esistono già righe per questa company, salta.
+  const { count: existingPresenceCount } = await supabase.from('presence_logs').select('id', { count: 'exact', head: true }).eq('company_id', companyId);
+  if (existingPresenceCount > 0) {
+    console.log(`Presenze già esistenti (${existingPresenceCount} righe) — salto la generazione (append-only, non ripulibile in caso di rerun).`);
+  } else {
+    console.log(`Generazione presenze: ${presenceRows.length} righe su 3 anni per ${historyWorkers.length} lavoratori`);
+    await batchInsert('presence_logs', presenceRows);
+  }
 
   // 7. Documenti aziendali (17 categorie x 15) -----------------------------
   const companyDocRows = [];
@@ -262,6 +270,7 @@ async function main() {
       });
     }
   }
+  await supabase.from('company_documents').delete().eq('company_id', companyId);
   await batchInsert('company_documents', companyDocRows);
 
   // 8. Documenti lavoratore (8 per lavoratore) ------------------------------
@@ -278,6 +287,7 @@ async function main() {
       });
     }
   }
+  await supabase.from('worker_documents').delete().eq('company_id', companyId);
   await batchInsert('worker_documents', workerDocRows);
 
   // 9. Attestati/certificati (4 per lavoratore, mix scaduti/in scadenza/validi/soft-deleted) --
@@ -302,6 +312,7 @@ async function main() {
       });
     }
   });
+  await supabase.from('worker_certificates').delete().eq('company_id', companyId);
   await batchInsert('worker_certificates', certRows);
 
   // 10. Mezzi + documenti mezzo ---------------------------------------------
@@ -330,6 +341,7 @@ async function main() {
       equipmentDocRows.push({ company_id: companyId, equipment_id: eqId, doc_type: ['libretto', 'assicurazione', 'revisione', 'collaudo', 'altro'][i], file_name: `mezzo-doc-${i + 1}.pdf`, file_url: seedFiles.equipmentDoc, file_size: 67235, mime_type: 'application/pdf', uploaded_by: user.id });
     }
   }
+  await supabase.from('equipment_documents').delete().eq('company_id', companyId);
   await batchInsert('equipment_documents', equipmentDocRows);
 
   // 11. Documenti cantiere (10 per cantiere) ---------------------------------
@@ -339,6 +351,7 @@ async function main() {
       siteDocRows.push({ company_id: companyId, site_id: siteIds[name], name: `${SITE_DOC_CATEGORIES[i % SITE_DOC_CATEGORIES.length]}-${i + 1}`, category: SITE_DOC_CATEGORIES[i % SITE_DOC_CATEGORIES.length], file_path: seedFiles.siteDoc, file_size: 46360, mime_type: 'application/pdf', uploaded_by: user.id });
     }
   }
+  await supabase.from('site_documents').delete().eq('company_id', companyId);
   await batchInsert('site_documents', siteDocRows);
 
   // 12. Spese/fatture con duplicati e note di credito -----------------------
@@ -353,7 +366,7 @@ async function main() {
       payment_method: randOf(['bonifico', 'contanti', 'carta']),
       supplier, expense_date: dateNDaysAgo(randInt(1, 1000)),
       site_id: siteIds[randOf(Object.keys(siteIds))], receipt_url: seedFiles.expenseReceipt,
-      invoice_number: `${2023 + Math.floor(i / 30)}-${i + 1}`, source: 'manual',
+      invoice_number: `${2023 + Math.floor(i / 30)}-${i + 1}`, source: 'manual', is_credit_note: false,
     });
   }
   // 6 coppie nota di credito (stesso pattern di selftest_expense_credit_note_summary.js)
@@ -361,8 +374,8 @@ async function main() {
     const supplier = randOf(suppliers);
     const amount = randInt(200, 3000);
     const invoiceNumber = `CN-${2025}-${i + 1}`;
-    expenseRows.push({ company_id: companyId, amount, description: `Fattura ${invoiceNumber}`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(randInt(10, 300)), invoice_number: invoiceNumber, source: 'sdi_auto', is_credit_note: false, receipt_url: seedFiles.expenseReceipt });
-    expenseRows.push({ company_id: companyId, amount, description: `Nota di credito ${invoiceNumber}`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(randInt(1, 9)), invoice_number: invoiceNumber, source: 'sdi_auto', is_credit_note: true, sdi_document_type: 'TD04', receipt_url: seedFiles.expenseReceipt });
+    expenseRows.push({ company_id: companyId, amount, description: `Fattura ${invoiceNumber}`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(randInt(10, 300)), invoice_number: invoiceNumber, source: 'acube', is_credit_note: false, receipt_url: seedFiles.expenseReceipt });
+    expenseRows.push({ company_id: companyId, amount, description: `Nota di credito ${invoiceNumber}`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(randInt(1, 9)), invoice_number: invoiceNumber, source: 'acube', is_credit_note: true, sdi_document_type: 'TD04', receipt_url: seedFiles.expenseReceipt });
   }
   // 4 "quasi duplicati" (stesso fornitore+importo+numero fattura simile, hash diverso — il
   // caso che un umano riconoscerebbe ma un sistema ingenuo no; bersaglio della property F-0XX Livello 3)
@@ -370,9 +383,10 @@ async function main() {
     const supplier = randOf(suppliers);
     const amount = randInt(500, 2000);
     const invNum = `DUP-${i + 1}`;
-    expenseRows.push({ company_id: companyId, amount, description: `Fattura ${invNum}`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(50), invoice_number: invNum, source: 'manual', receipt_url: seedFiles.expenseReceipt });
-    expenseRows.push({ company_id: companyId, amount, description: `Fattura ${invNum} (ricaricata)`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(50), invoice_number: invNum + ' ', source: 'manual', receipt_url: seedFiles.expenseReceipt });
+    expenseRows.push({ company_id: companyId, amount, description: `Fattura ${invNum}`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(50), invoice_number: invNum, source: 'manual', is_credit_note: false, receipt_url: seedFiles.expenseReceipt });
+    expenseRows.push({ company_id: companyId, amount, description: `Fattura ${invNum} (ricaricata)`, category: 'materiali', payment_method: 'bonifico', supplier, expense_date: dateNDaysAgo(50), invoice_number: invNum + ' ', source: 'manual', is_credit_note: false, receipt_url: seedFiles.expenseReceipt });
   }
+  await supabase.from('company_expenses').delete().eq('company_id', companyId);
   await batchInsert('company_expenses', expenseRows);
 
   // 13. Riepilogo -------------------------------------------------------------
