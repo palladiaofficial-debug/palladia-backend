@@ -8,6 +8,7 @@ const { validate } = require('../../middleware/validate');
 const { createCompanyPrezzoSchema, patchCompanyPrezzoSchema } = require('../../lib/schemas/prezzario');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { normalizeOfferItems } = require('../../lib/prezzarioOfferSanitize');
 
 let _ai = null;
 function getAI() {
@@ -336,26 +337,12 @@ Includi solo righe con prezzo unitario numerico leggibile. Max 300 voci.`;
       const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
       const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '').trim() : raw;
       const parsed = JSON.parse(json);
-
-      const CATEGORIE = ['Materiali','Manodopera','Noli','Trasporti','Subappalto','Forniture','Altro'];
-      const items = (parsed.items || [])
-        .filter(it => it.descrizione?.trim() && it.prezzo != null && !isNaN(parseFloat(it.prezzo)))
-        .map(it => ({
-          descrizione: it.descrizione.trim().slice(0, 200),
-          um:          it.um?.trim() || null,
-          prezzo:      parseFloat(it.prezzo),
-          categoria:   CATEGORIE.includes(it.categoria) ? it.categoria : 'Altro',
-          fornitore:   (it.fornitore || parsed.fornitore || '').trim().slice(0, 100) || null,
-        }));
+      const { fornitore, data_offerta, items } = normalizeOfferItems(parsed);
 
       if (items.length === 0)
         return res.status(422).json({ error: 'NO_ITEMS', message: 'Nessun prezzo unitario leggibile nel documento.' });
 
-      res.json({
-        fornitore:    parsed.fornitore || null,
-        data_offerta: parsed.data_offerta || null,
-        items,
-      });
+      res.json({ fornitore, data_offerta, items });
     } catch (err) {
       console.error('[prezzario/parse-offerta]', err?.message || err);
       res.status(500).json({ error: 'PARSE_FAILED', message: 'Errore AI. Riprova.' });

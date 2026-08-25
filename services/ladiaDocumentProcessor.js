@@ -82,13 +82,25 @@ async function analyzePdf(pdfBuffer) {
   if (!jsonMatch) throw new Error('Claude non ha restituito un JSON valido');
 
   const parsed = JSON.parse(jsonMatch[0]);
+  return normalizeAnalysis(parsed);
+}
 
-  // Valida e normalizza
+// F-079: stesso pattern strutturale di F-066/067/069/070/077/078 — nessuno
+// schema imposto sul JSON dell'IA. Se `summary`/`extracted_text` arrivano
+// come oggetto invece di stringa (plausibile su un documento con struttura
+// complessa), `.slice()` non esiste su un oggetto plain e lancia TypeError,
+// facendo fallire l'intero processamento del PDF ricevuto da Ladia via
+// Telegram. Ogni voce di `key_sections` va guardata allo stesso modo.
+function normalizeAnalysis(parsed) {
+  const p = parsed && typeof parsed === 'object' ? parsed : {};
+  const asText = (v) => (typeof v === 'string' ? v : '');
   return {
-    document_type:  VALID_TYPES.includes(parsed.document_type) ? parsed.document_type : 'altro',
-    summary:        (parsed.summary || '').slice(0, 2000),
-    key_sections:   Array.isArray(parsed.key_sections) ? parsed.key_sections.slice(0, 15) : [],
-    extracted_text: (parsed.extracted_text || '').slice(0, 20000),
+    document_type:  VALID_TYPES.includes(p.document_type) ? p.document_type : 'altro',
+    summary:        asText(p.summary).slice(0, 2000),
+    key_sections:   (Array.isArray(p.key_sections) ? p.key_sections : [])
+      .slice(0, 15)
+      .map((s) => ({ titolo: asText(s?.titolo).slice(0, 200), contenuto: asText(s?.contenuto).slice(0, 600) })),
+    extracted_text: asText(p.extracted_text).slice(0, 20000),
   };
 }
 
@@ -222,4 +234,6 @@ module.exports = {
   getTemplateIndex,
   getTemplateContent,
   searchTemplates,
+  analyzePdf,
+  normalizeAnalysis,
 };
