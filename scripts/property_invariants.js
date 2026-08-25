@@ -181,6 +181,14 @@ async function loginSeedUser(seed) {
   await supabase.auth.admin.updateUserById(seed.userId, { password: tempPassword });
   const { data: session, error } = await anon.auth.signInWithPassword({ email: seed.email, password: tempPassword });
   if (error) throw error;
+  // Riscrive la password nel seed file: altri consumer (es. il fuzzer di
+  // Livello 2) leggono la stessa password statica dal file — senza questo,
+  // ruotarla qui la invaliderebbe silenziosamente per loro (successo il
+  // 2026-08-25: il fuzzer è fallito al login subito dopo questa property).
+  try {
+    seed.password = tempPassword;
+    fs.writeFileSync(SEED_FILE, JSON.stringify(seed, null, 2));
+  } catch { /* non bloccante */ }
   return session.session.access_token;
 }
 
