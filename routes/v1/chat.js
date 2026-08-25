@@ -26,6 +26,7 @@ const { getMemory, getOpenObjectives, resolveObjective, updateMemoryAfterConvers
 const { buildEnrichedContext } = require('../../services/ladiaEngine');
 const { sendAiCreditExhaustedAlert } = require('../../services/email');
 const { logUsage, checkAiBudget } = require('../../lib/ladiaUsageLog');
+const { extractSuccessfulWriteSummaries } = require('../../lib/ladiaFallbackSummary');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { logAction } = require('../../lib/ladiaActionLog');
 const { executeWrite, checkOrProposeGate } = require('../../lib/ladiaWriteExecutor');
@@ -5816,7 +5817,24 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
     logUsage({ companyId, userId, conversationId: convId, model, callSite: 'chat_legacy', usage: response.usage });
   }
 
-  return response.content.find(b => b.type === 'text')?.text ?? 'Non sono riuscito a elaborare la risposta.';
+  const finalText = response.content.find(b => b.type === 'text')?.text;
+  if (finalText) return finalText;
+
+  // F-080: se il tetto di 6 round di tool-use si esaurisce prima che il
+  // modello produca un blocco di testo finale, `response.content` contiene
+  // solo altri tool_use mai eseguiti — ma le scritture GIÀ eseguite nei round
+  // precedenti (in `extra`) sono reali. Il fallback generico "non sono
+  // riuscito" le nascondeva: riprodotto dal vivo il 25/08/2026 (gate di
+  // lancio, giorno 3) — un lavoratore creato con successo, poi negato dallo
+  // stesso Ladia nel turno successivo ("non ho mai chiamato create_record").
+  const toolResultContents = extra
+    .filter(turn => turn.role === 'user' && Array.isArray(turn.content))
+    .flatMap(turn => turn.content.filter(b => b.type === 'tool_result').map(b => b.content));
+  const successfulWrites = extractSuccessfulWriteSummaries(toolResultContents);
+  if (successfulWrites.length > 0) {
+    return `Ho eseguito questa operazione, ma la conversazione è diventata troppo lunga per generare anche un riepilogo — controlla di persona:\n${successfulWrites.map(s => `• ${s}`).join('\n')}`;
+  }
+  return 'Non sono riuscito a elaborare la risposta.';
 }
 
 // ── Struttura JSON per report (export) ───────────────────────────────────────
@@ -6985,6 +7003,12 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, userChatLimiter, asy
   let messages = [...dbHistory, { role: 'user', content: userContent }];
   let fullAssistantReply = ''; // colleziona testo completo per salvarlo
   let pendingSeparator = false; // separa il testo tra iterazioni diverse del loop agentico (dopo un giro di tool)
+  // F-080: se il tetto di 6 round si esaurisce prima che il modello emetta un
+  // blocco di testo, il turno finirebbe senza alcun testo salvato — pur avendo
+  // già inviato la card "Fatto" (record_action) per una scrittura riuscita.
+  // Tiene traccia dei riepiloghi delle scritture riuscite per sintetizzare una
+  // chiusura onesta invece di lasciare il turno silenzioso (vedi sotto).
+  const successfulWriteSummaries = [];
 
   let aborted = false;
   req.on('close', () => { aborted = true; });
@@ -7322,6 +7346,7 @@ conteggio) — mai l'elenco riga per riga.`;
               campi = Object.keys(c).length > 0 ? c : null;
               campiPrecedenti = Object.keys(cp).length > 0 ? cp : null;
             }
+            if (result.undoSummary || result.summary) successfulWriteSummaries.push(result.undoSummary || result.summary);
             send({
               type:               'record_action',
               resource:           result.resource || block.input?.table || null,
@@ -7420,6 +7445,19 @@ conteggio) — mai l'elenco riga per riga.`;
         { role: 'user',      content: toolResults }
       ];
       if (fullAssistantReply) pendingSeparator = true;
+    }
+
+    // F-080: il tetto di 6 round si è esaurito senza che il modello emettesse
+    // testo (l'ultimo round era ancora tool_use, mai eseguito) — ma se una
+    // scrittura precedente nello stesso turno È riuscita, la card "Fatto" è
+    // già stata inviata sopra: senza questo, il turno si chiudeva muto e
+    // fullAssistantReply restava vuoto, quindi NULLA veniva salvato in
+    // chat_messages (ricaricando la conversazione, la risposta di Ladia
+    // spariva anche se l'azione era realmente avvenuta).
+    if (!aborted && !fullAssistantReply && successfulWriteSummaries.length > 0) {
+      const closing = `Fatto — controlla il riepilogo qui sopra (la conversazione era diventata troppo lunga per aggiungere anche un commento).`;
+      send({ type: 'text', delta: closing });
+      fullAssistantReply = closing;
     }
 
     if (!aborted) {
