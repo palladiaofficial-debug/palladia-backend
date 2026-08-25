@@ -461,7 +461,11 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
     .from('sites')
     .insert({
       name:       name.trim(),
-      address:    address ? String(address).trim() : null,
+      // F-082: sites.address è NOT NULL in DB, ma sia questo endpoint sia
+      // WelcomeWizard.tsx (label "Indirizzo (opzionale)") trattano il campo
+      // come facoltativo — un utente che lo lascia vuoto durante l'onboarding
+      // riceveva l'errore Postgres grezzo al posto del cantiere creato.
+      address:    address ? String(address).trim() : '',
       comune:     comuneVal,
       client:     client  ? String(client).trim()  : null,
       start_date: start_date || null,
