@@ -9,6 +9,10 @@ const { createExpenseSchema, updateExpenseSchema, CATEGORIES, PAYMENT_METHODS } 
 const { extractExpenseFromDocument } = require('../../lib/expenseOcr');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+// F-083: 'company-docs' non esiste mai stato creato come bucket Storage —
+// ogni altra route documenti (companyDocuments.js, workerDocs.js, ecc.) è
+// già su questo bucket, questo file era rimasto indietro nella consolidazione.
+const BUCKET = 'site-documents';
 
 router.use(verifySupabaseJwt);
 
@@ -39,7 +43,7 @@ router.get('/expenses', async (req, res) => {
   const expenses = await Promise.all((data || []).map(async (exp) => {
     if (!exp.receipt_url) return exp;
     const { data: signed } = await supabase.storage
-      .from('company-docs').createSignedUrl(exp.receipt_url, 3600);
+      .from(BUCKET).createSignedUrl(exp.receipt_url, 3600);
     return { ...exp, receipt_signed_url: signed?.signedUrl || null };
   }));
 
@@ -78,14 +82,14 @@ router.post('/expenses/:id/receipt', upload.single('file'), async (req, res) => 
 
   // Rimuovi vecchia ricevuta se presente
   if (expense.receipt_url) {
-    await supabase.storage.from('company-docs').remove([expense.receipt_url]).catch(() => {});
+    await supabase.storage.from(BUCKET).remove([expense.receipt_url]).catch(() => {});
   }
 
   const ext = req.file.originalname.split('.').pop() || 'jpg';
   const storagePath = `${req.companyId}/expenses/${id}.${ext}`;
 
   const { error: upErr } = await supabase.storage
-    .from('company-docs')
+    .from(BUCKET)
     .upload(storagePath, req.file.buffer, { contentType: req.file.mimetype, upsert: true });
 
   if (upErr) return res.status(500).json({ error: 'STORAGE_ERROR', detail: upErr.message });
@@ -95,7 +99,7 @@ router.post('/expenses/:id/receipt', upload.single('file'), async (req, res) => 
     .eq('id', id);
 
   const { data: signed } = await supabase.storage
-    .from('company-docs').createSignedUrl(storagePath, 3600);
+    .from(BUCKET).createSignedUrl(storagePath, 3600);
 
   res.json({ ok: true, receipt_url: storagePath, receipt_signed_url: signed?.signedUrl || null });
 });
@@ -127,7 +131,7 @@ router.delete('/expenses/:id', async (req, res) => {
   if (!expense) return res.status(404).json({ error: 'NOT_FOUND' });
 
   if (expense.receipt_url) {
-    await supabase.storage.from('company-docs').remove([expense.receipt_url]).catch(() => {});
+    await supabase.storage.from(BUCKET).remove([expense.receipt_url]).catch(() => {});
   }
 
   const { error } = await supabase
