@@ -180,6 +180,144 @@ async function main() {
     } catch (e) { skip('WorkerArea cross-worker document', e.message); }
   }
 
+  // ── 5. CSE coordinatore via token — due cantieri, due inviti, cross-site ──
+  if (siteA && B.siteId) {
+    try {
+      async function createCoordInvite(jwt, companyId, siteId, name) {
+        const r = await fetch(`${API_BASE}/sites/${siteId}/coordinator-invites`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': companyId, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coordinator_name: name }),
+        });
+        const body = await r.json();
+        return body.cse_url ? body.cse_url.split('/').pop() : null;
+      }
+      const tokenA = await createCoordInvite(jwtA, companyA.id, siteA.id, 'TEST CSE A');
+      const tokenB = await createCoordInvite(jwtB, B.companyId, B.siteId, 'TEST CSE B');
+
+      if (tokenA && tokenB) {
+        const rCreate = await fetch(`${API_BASE}/coordinator/${tokenA}/nonconformities`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'NC isolamento', description: 'Regression test', category: 'sicurezza', severity: 'media' }),
+        });
+        const nc = await rCreate.json();
+        const ncId = nc?.nonconformity?.id;
+        check_('CSE: creazione NC sul proprio cantiere con token A → ok', rCreate.status === 201 && !!ncId, { status: rCreate.status });
+
+        if (ncId) {
+          const rList = await fetch(`${API_BASE}/coordinator/${tokenB}/nonconformities`);
+          const listB = await rList.json();
+          check_('CSE: token B non vede la NC creata sul cantiere A', Array.isArray(listB) && !listB.some(n => n.id === ncId), listB);
+
+          const rClose = await fetch(`${API_BASE}/coordinator/${tokenB}/nonconformities/${ncId}/close`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close' }),
+          });
+          check_('CSE: token B non può chiudere una NC del cantiere A', rClose.status === 404, { status: rClose.status });
+        }
+
+        const rPortalCross = await fetch(`${API_BASE}/coordinator/portal/${tokenA}/site/${B.siteId}/nonconformities/${ncId || 'x'}/close`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{}',
+        });
+        check_('CSE: token A + siteId di B nel path → rifiuto', rPortalCross.status === 404, { status: rPortalCross.status });
+      } else {
+        skip('CSE coordinatore cross-site', 'creazione inviti fallita');
+      }
+    } catch (e) { skip('CSE coordinatore cross-site', e.message); }
+  } else {
+    skip('CSE coordinatore cross-site', 'siteA o B.siteId mancante');
+  }
+
+  // ── 6. Link pubblico ASL — nessun header, come un ispettore reale ──
+  if (siteA && B.siteId) {
+    try {
+      async function createAslToken(jwt, companyId, siteId) {
+        const r = await fetch(`${API_BASE}/sites/${siteId}/asl-token`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': companyId, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from_date: '2026-01-01', to_date: '2026-12-31', label: 'Regression test' }),
+        });
+        const body = await r.json();
+        return body.url ? body.url.split('/').pop() : null;
+      }
+      const aslTokenA = await createAslToken(jwtA, companyA.id, siteA.id);
+      const aslTokenB = await createAslToken(jwtB, B.companyId, B.siteId);
+
+      if (aslTokenA && aslTokenB) {
+        const rInfoA = await fetch(`${API_BASE}/asl/${aslTokenA}?format=info`);
+        const infoA  = await rInfoA.json();
+        check_('ASL: link pubblico A restituisce il sito A (non B)', infoA?.site?.id === siteA.id, infoA);
+
+        const rInfoB = await fetch(`${API_BASE}/asl/${aslTokenB}?format=info`);
+        const infoB  = await rInfoB.json();
+        check_('ASL: link pubblico B restituisce il sito B (non A)', infoB?.site?.id === B.siteId, infoB);
+
+        // Cross: usare il token A per leggere info del sito B non è nemmeno
+        // possibile via query — il token stesso è la chiave di scoping, non
+        // c'è un siteId separato da manomettere. Verifica comunque che un
+        // parametro iniettato non abbia effetto.
+        const rTamper = await fetch(`${API_BASE}/asl/${aslTokenA}?format=info&site_id=${B.siteId}`);
+        const tamper  = await rTamper.json();
+        check_('ASL: iniettare site_id in query non cambia il sito restituito', tamper?.site?.id === siteA.id, tamper);
+      } else {
+        skip('ASL link pubblico cross-site', 'creazione token fallita');
+      }
+    } catch (e) { skip('ASL link pubblico cross-site', e.message); }
+  } else {
+    skip('ASL link pubblico cross-site', 'siteA o B.siteId mancante');
+  }
+
+  // ── 7. Consulente marketplace — booking di un altro consulente ──
+  try {
+    async function ensureConsultant(admin, email, name) {
+      const { data: list } = await admin.auth.admin.listUsers({ perPage: 1000 });
+      let user = list.users.find(u => u.email === email);
+      if (!user) {
+        const { data, error } = await admin.auth.admin.createUser({ email, password: 'Consult!' + Date.now(), email_confirm: true });
+        if (error) throw error;
+        user = data.user;
+      }
+      const { data: existing } = await admin.from('consultant_profiles').select('id').eq('user_id', user.id).maybeSingle();
+      if (!existing) {
+        await admin.from('consultant_profiles').insert({ user_id: user.id, company_name: name, onboarding_completed: true, is_active: true });
+      }
+      return user.id;
+    }
+    const consultant1Id = await ensureConsultant(admin, 'isolamento-consultant-1@palladia-test.local', 'TEST Consultant 1');
+    const consultant2Id = await ensureConsultant(admin, 'isolamento-consultant-2@palladia-test.local', 'TEST Consultant 2');
+
+    let { data: booking } = await admin.from('course_bookings').select('id').eq('consultant_id', consultant1Id).limit(1).maybeSingle();
+    if (!booking) {
+      const { data: ref } = await admin.from('course_bookings').select('session_id, course_id, worker_id, company_id').limit(1).maybeSingle();
+      if (ref) {
+        const { data: nb } = await admin.from('course_bookings').insert({
+          ...ref, status: 'pending', payment_status: 'unpaid', consultant_id: consultant1Id,
+          total_price_cents: 10000, commission_cents: 1000, provider_payout_cents: 9000,
+        }).select('id').single();
+        booking = nb;
+      }
+    }
+
+    if (booking) {
+      const anonC2 = createClient(SUPABASE_URL, ANON_KEY);
+      const jwtConsultant2 = await sessionFor(admin, anonC2, 'isolamento-consultant-2@palladia-test.local');
+
+      const rGet = await fetch(`${API_BASE}/consultant/bookings/${booking.id}`, { headers: { Authorization: `Bearer ${jwtConsultant2}` } });
+      check_('Consulente: booking di un altro consulente → 404 (non dati)', rGet.status === 404, { status: rGet.status });
+
+      const rConfirm = await fetch(`${API_BASE}/consultant/bookings/${booking.id}/confirm`, {
+        method: 'PATCH', headers: { Authorization: `Bearer ${jwtConsultant2}`, 'Content-Type': 'application/json' }, body: '{}',
+      });
+      check_('Consulente: confermare booking di un altro consulente → 404', rConfirm.status === 404, { status: rConfirm.status });
+
+      const rList = await fetch(`${API_BASE}/consultant/bookings`, { headers: { Authorization: `Bearer ${jwtConsultant2}` } });
+      const listBody = await rList.json();
+      const arr = Array.isArray(listBody) ? listBody : (listBody.bookings || []);
+      check_('Consulente: lista prenotazioni non contiene quella di un collega', !arr.some(b => b.id === booking.id), null);
+    } else {
+      skip('Consulente marketplace cross-consultant', 'nessun booking di riferimento trovato per creare il fixture');
+    }
+  } catch (e) { skip('Consulente marketplace cross-consultant', e.message); }
+
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;
 }
