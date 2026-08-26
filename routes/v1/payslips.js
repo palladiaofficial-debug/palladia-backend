@@ -134,14 +134,16 @@ router.patch('/payslips/:id/share', verifySupabaseJwt, async (req, res) => {
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('payslips')
     .update({ status: 'shared', shared_at: new Date().toISOString(), updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('company_id', req.companyId)
-    .neq('status', 'acknowledged');  // non si ritira una busta già firmata
+    .neq('status', 'acknowledged')  // non si ritira una busta già firmata
+    .select('id');
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data?.length) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ ok: true });
 });
 
@@ -150,14 +152,16 @@ router.patch('/payslips/:id/unshare', verifySupabaseJwt, async (req, res) => {
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('payslips')
     .update({ status: 'draft', shared_at: null, updated_at: new Date().toISOString() })
     .eq('id', id)
     .eq('company_id', req.companyId)
-    .eq('status', 'shared');  // solo shared → draft, non acknowledged
+    .eq('status', 'shared')  // solo shared → draft, non acknowledged
+    .select('id');
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data?.length) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ ok: true });
 });
 
