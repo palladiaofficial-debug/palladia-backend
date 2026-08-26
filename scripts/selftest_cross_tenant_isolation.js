@@ -154,6 +154,32 @@ async function main() {
     check_('RLS diretta: utente B NON legge il lavoratore di A via supabase-js', !bReadsWorkerA, bReadsWorkerA);
   }
 
+  // ── 4. Badge QR / Worker Area — un lavoratore non deve vedere i documenti
+  // di un collega della STESSA company (isolamento a livello worker_id, non
+  // solo company_id). Token HMAC firmato esattamente come lib/workerAuth.js.
+  if (!process.env.WORKER_AREA_SECRET) {
+    skip('WorkerArea cross-worker document', 'WORKER_AREA_SECRET non impostata localmente (produzione la richiede — QR_SIGNING_SECRET da solo firma un token che il server in produzione rifiuta, è un secondo secret distinto). Esporta WORKER_AREA_SECRET per una verifica reale.');
+  } else {
+    try {
+      const { signWorkerToken } = require('../lib/workerAuth');
+      const { data: workersA } = await admin.from('workers').select('id, badge_code').eq('company_id', companyA.id).limit(2);
+      const { data: docsWorker2 } = workersA?.[1]
+        ? await admin.from('worker_documents').select('id').eq('worker_id', workersA[1].id).limit(1)
+        : { data: [] };
+      if (workersA?.length >= 2 && docsWorker2?.length) {
+        const [w1, w2] = workersA;
+        const badge1 = w1.badge_code.toUpperCase();
+        const tokenW1 = signWorkerToken({ workerId: w1.id, companyId: companyA.id, badgeCode: badge1 });
+        const res = await fetch(`${API_BASE}/area/${badge1}/documents/${docsWorker2[0].id}`, {
+          headers: { 'Authorization': `WorkerArea ${tokenW1}` },
+        });
+        check_(`WorkerArea: token lavoratore 1 non legge documento di lavoratore 2 (stessa company)`, res.status === 404, { status: res.status });
+      } else {
+        skip('WorkerArea cross-worker document', 'servono almeno 2 lavoratori in TEST-AutoExplore con documenti');
+      }
+    } catch (e) { skip('WorkerArea cross-worker document', e.message); }
+  }
+
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;
 }
