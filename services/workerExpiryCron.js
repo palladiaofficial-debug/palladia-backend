@@ -15,7 +15,7 @@ const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays,
   severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
@@ -60,7 +60,6 @@ async function runWorkerExpiryCheck() {
     if (!latestByKey.has(key)) latestByKey.set(key, d); // già ordinati DESC
   }
   const relevant = [...latestByKey.values()].filter(d => d.expiry_date <= t30);
-  if (!relevant.length) { console.log('[workerExpiry] nessuna scadenza — skip.'); return; }
 
   const docsWithMeta = relevant.map(d => ({
     ...d,
@@ -74,6 +73,17 @@ async function runWorkerExpiryCheck() {
     if (!byCompany[d.company_id]) byCompany[d.company_id] = [];
     byCompany[d.company_id].push(d);
   }
+
+  // F-088: le company la cui ULTIMA scadenza si è risolta oggi sono uscite da
+  // `byCompany` — senza questo sweep la loro notifica stale non verrebbe mai
+  // rimossa. Va fatto anche se `byCompany` è vuoto (risoluzione globale).
+  const { resolved: orphanResolved } = await pruneOrphanedNotifications('worker_doc_expiry', 'worker_document', new Set(Object.keys(byCompany)));
+  for (const r of orphanResolved) {
+    await notifyResolved(r.companyId, [r], 'Documenti lavoratori aggiornati').catch(() => {});
+  }
+  if (orphanResolved.length) console.log(`[workerExpiry] risolti orfani (ultima scadenza company): ${orphanResolved.length}`);
+
+  if (!relevant.length) { console.log('[workerExpiry] nessuna scadenza — skip.'); return; }
 
   for (const companyId of Object.keys(byCompany)) {
     const items = byCompany[companyId];

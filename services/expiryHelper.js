@@ -172,6 +172,34 @@ async function pruneNotifications(companyId, type, entityType, relevantEntityIds
   return { resolved };
 }
 
+/**
+ * F-088: pruneNotifications() viene chiamata dentro il loop "per company con
+ * scadenze attive OGGI" in tutti i cron di scadenza — una company la cui
+ * ULTIMA scadenza attiva viene risolta (rinnovata) sparisce del tutto da quel
+ * set, quindi il loop non la visita più e la sua notifica ormai stale non
+ * viene mai rimossa (resta agganciata per sempre, "risolto" mai riconosciuto).
+ * Questa funzione fa un secondo giro mirato SOLO alle company che hanno
+ * ancora una notifica di questo tipo ma sono uscite dal set attivo di oggi.
+ */
+async function pruneOrphanedNotifications(type, entityType, activeCompanyIds) {
+  const { data: existing } = await supabase
+    .from('notifications')
+    .select('company_id')
+    .eq('type', type)
+    .eq('entity_type', entityType);
+
+  const orphanCompanyIds = [...new Set((existing || [])
+    .map(n => n.company_id)
+    .filter(id => !activeCompanyIds.has(id)))];
+
+  const allResolved = [];
+  for (const companyId of orphanCompanyIds) {
+    const { resolved } = await pruneNotifications(companyId, type, entityType, new Set());
+    for (const r of resolved) allResolved.push({ ...r, companyId });
+  }
+  return { resolved: allResolved };
+}
+
 module.exports = {
   daysUntil,
   today,
@@ -183,4 +211,5 @@ module.exports = {
   upsertNotification,
   shouldSendTelegram,
   pruneNotifications,
+  pruneOrphanedNotifications,
 };

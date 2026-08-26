@@ -8,7 +8,7 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays, severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
@@ -35,15 +35,23 @@ async function runCompanyDocExpiryCheck() {
     .lte('ai_expiry_date', t30);
 
   if (error) { console.error('[companyDocExpiry] fetch error:', error.message); return; }
-  if (!docs?.length) { console.log('[companyDocExpiry] nessuna scadenza — skip.'); return; }
 
   const byCompany = {};
-  for (const doc of docs) {
+  for (const doc of (docs || [])) {
     const days = daysUntil(doc.ai_expiry_date);
     if (days === null) continue;
     if (!byCompany[doc.company_id]) byCompany[doc.company_id] = [];
     byCompany[doc.company_id].push({ ...doc, days, severity: severityFor(days) });
   }
+
+  // F-088: sweep company la cui ultima scadenza documento si è risolta oggi.
+  const { resolved: orphanResolved } = await pruneOrphanedNotifications('company_doc_expiry', 'company_document', new Set(Object.keys(byCompany)));
+  for (const r of orphanResolved) {
+    await notifyResolved(r.companyId, [r], 'Documenti aziendali aggiornati').catch(() => {});
+  }
+  if (orphanResolved.length) console.log(`[companyDocExpiry] risolti orfani: ${orphanResolved.length}`);
+
+  if (!Object.keys(byCompany).length) { console.log('[companyDocExpiry] nessuna scadenza — skip.'); return; }
 
   for (const companyId of Object.keys(byCompany)) {
     const items = byCompany[companyId];

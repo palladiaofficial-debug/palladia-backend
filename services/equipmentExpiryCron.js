@@ -8,7 +8,7 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays, severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
@@ -32,10 +32,9 @@ async function runEquipmentExpiryCheck() {
     .or(`insurance_expiry.lte.${t30},inspection_date.lte.${t30},maintenance_date.lte.${t30}`);
 
   if (error) { console.error('[equipmentExpiry] fetch error:', error.message); return; }
-  if (!equipment?.length) { console.log('[equipmentExpiry] nessuna scadenza — skip.'); return; }
 
   const byCompany = {};
-  for (const eq of equipment) {
+  for (const eq of (equipment || [])) {
     const issues = [];
     for (const { key, label } of FIELDS) {
       const days = daysUntil(eq[key]);
@@ -46,6 +45,16 @@ async function runEquipmentExpiryCheck() {
     if (!byCompany[eq.company_id]) byCompany[eq.company_id] = [];
     byCompany[eq.company_id].push({ ...eq, issues });
   }
+
+  // F-088: sweep delle company la cui ultima scadenza mezzi si è risolta oggi
+  // (uscite da `byCompany`) — senza questo, la notifica resta orfana per sempre.
+  const { resolved: orphanResolved } = await pruneOrphanedNotifications('equipment_expiry', 'equipment', new Set(Object.keys(byCompany)));
+  for (const r of orphanResolved) {
+    await notifyResolved(r.companyId, [r], 'Scadenze mezzi aggiornate').catch(() => {});
+  }
+  if (orphanResolved.length) console.log(`[equipmentExpiry] risolti orfani: ${orphanResolved.length}`);
+
+  if (!Object.keys(byCompany).length) { console.log('[equipmentExpiry] nessuna scadenza — skip.'); return; }
 
   for (const companyId of Object.keys(byCompany)) {
     const items = byCompany[companyId];

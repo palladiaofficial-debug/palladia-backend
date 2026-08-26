@@ -14,7 +14,7 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays, severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
 const {
   notifyExpiryAlert, notifyResolved,
@@ -101,11 +101,10 @@ async function runSubcontractorExpiryCheck() {
     .or(`durc_expiry.lte.${t30},insurance_expiry.lte.${t30},soa_expiry.lte.${t30}`);
 
   if (error) { console.error('[subcontractorExpiry] fetch error:', error.message); return; }
-  if (!subs?.length) { console.log('[subcontractorExpiry] nessuna scadenza subappaltatori — skip.'); return; }
 
   // Raggruppa per company
   const byCompany = {};
-  for (const sub of subs) {
+  for (const sub of (subs || [])) {
     for (const { field, label } of EXPIRY_FIELDS) {
       if (!sub[field]) continue;
       const days = daysUntil(sub[field]);
@@ -117,6 +116,15 @@ async function runSubcontractorExpiryCheck() {
       });
     }
   }
+
+  // F-088: sweep company la cui ultima scadenza subappaltatore si è risolta oggi.
+  const { resolved: orphanResolved } = await pruneOrphanedNotifications('subcontractor_expiry', 'subcontractor', new Set(Object.keys(byCompany)));
+  for (const r of orphanResolved) {
+    await notifyResolved(r.companyId, [r], 'Subappaltatore aggiornato').catch(() => {});
+  }
+  if (orphanResolved.length) console.log(`[subcontractorExpiry] risolti orfani: ${orphanResolved.length}`);
+
+  if (!Object.keys(byCompany).length) { console.log('[subcontractorExpiry] nessuna scadenza subappaltatori — skip.'); return; }
 
   for (const companyId of Object.keys(byCompany)) {
     const items = byCompany[companyId];

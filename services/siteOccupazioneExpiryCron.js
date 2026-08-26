@@ -16,7 +16,7 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays, severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
 const {
   notifyExpiryAlert, notifyResolved,
@@ -51,16 +51,24 @@ async function runOccupazioneExpiryCheck() {
     .neq('status', 'eliminato');
 
   if (error) { console.error('[occupazioneExpiry] fetch error:', error.message); return; }
-  if (!sites?.length) { console.log('[occupazioneExpiry] nessuna scadenza — skip.'); return; }
 
   // Raggruppa per company
   const byCompany = {};
-  for (const site of sites) {
+  for (const site of (sites || [])) {
     const days = daysUntil(site.suolo_occupazione_end);
     if (days === null) continue;
     if (!byCompany[site.company_id]) byCompany[site.company_id] = [];
     byCompany[site.company_id].push({ ...site, days, severity: severityFor(days) });
   }
+
+  // F-088: sweep company la cui ultima scadenza suolo pubblico si è risolta oggi.
+  const { resolved: orphanResolved } = await pruneOrphanedNotifications('site_occupazione_expiry', 'site', new Set(Object.keys(byCompany)));
+  for (const r of orphanResolved) {
+    await notifyResolved(r.companyId, [r], 'Occupazione suolo aggiornata').catch(() => {});
+  }
+  if (orphanResolved.length) console.log(`[occupazioneExpiry] risolti orfani: ${orphanResolved.length}`);
+
+  if (!Object.keys(byCompany).length) { console.log('[occupazioneExpiry] nessuna scadenza — skip.'); return; }
 
   for (const companyId of Object.keys(byCompany)) {
     const items = byCompany[companyId];
