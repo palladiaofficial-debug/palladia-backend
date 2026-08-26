@@ -88,19 +88,11 @@ router.delete('/worker-invite-links/:id', verifySupabaseJwt, async (req, res) =>
 });
 
 // ── PRIVATO: lavoratori in attesa ─────────────────────────────────────────────
-
-router.get('/workers/pending', verifySupabaseJwt, async (req, res) => {
-  const { data, error } = await supabase
-    .from('workers')
-    .select('id, full_name, fiscal_code, phone, qualification, self_submitted_at, invite_token_id')
-    .eq('company_id', req.companyId)
-    .eq('pending_approval', true)
-    .order('self_submitted_at', { ascending: true })
-    .limit(100);
-
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json(data || []);
-});
+// NOTA F-086: la route GET /workers/pending viveva qui, ma routes/v1/workers.js
+// registra GET /workers/:workerId (route generica) prima che questo file venga
+// richiesto da routes/v1/index.js — stesso pattern di F-082/F-084, :workerId
+// intercettava "pending" come se fosse un id causando un errore Postgres grezzo.
+// Spostata in workers.js, prima di :workerId, contenuto invariato.
 
 router.patch('/workers/:id/approve', verifySupabaseJwt, validate(approveWorkerSchema), async (req, res) => {
   const { id } = req.params;

@@ -294,6 +294,25 @@ router.get('/workers/export', verifySupabaseJwt, async (req, res) => {
   res.end();
 });
 
+// F-086: GET /workers/pending era in routes/v1/workerInvite.js, registrata
+// dopo GET /workers/:workerId nell'ordine globale di routes/v1/index.js —
+// :workerId intercettava "pending" come se fosse un id, causando un errore
+// Postgres grezzo (stesso pattern di F-082/F-084). Spostata qui, prima di
+// :workerId, contenuto invariato.
+// ── GET /api/v1/workers/pending — lavoratori in attesa di approvazione ───────
+router.get('/workers/pending', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('workers')
+    .select('id, full_name, fiscal_code, phone, qualification, self_submitted_at, invite_token_id')
+    .eq('company_id', req.companyId)
+    .eq('pending_approval', true)
+    .order('self_submitted_at', { ascending: true })
+    .limit(100);
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json(data || []);
+});
+
 // ── GET /api/v1/workers/:workerId — dettaglio singolo lavoratore (PRIVATO) ────
 router.get('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
   const { workerId } = req.params;

@@ -2321,21 +2321,55 @@ app.use((err, req, res, next) => {
   }
 });
 
-// Ensure Supabase Storage bucket exists (best-effort, non-blocking)
+// Verifica all'avvio che i bucket Supabase Storage referenziati dal codice
+// esistano davvero (best-effort: crea quello mancante quando possibile) —
+// F-086/BLOCCO 2: F-037 e F-083 erano entrambi bucket inesistenti scoperti
+// solo quando un utente ci sbatteva contro con un 500 silenzioso. Copre TUTTI
+// i bucket "attivi" (referenziati con BUCKET/STORAGE_BUCKET costante, non i
+// legacy best-effort in routes/v1/company.js). STORAGE_BUCKETS_FAIL_FAST=true
+// interrompe l'avvio invece di limitarsi a un warning — spento di default per
+// non rompere un deploy per un problema di storage non bloccante per l'intera app.
+const REQUIRED_STORAGE_BUCKETS = [
+  {
+    name: 'site-documents',
+    options: {
+      public: false,
+      fileSizeLimit: 10485760, // 10 MB
+      allowedMimeTypes: ['application/pdf','image/jpeg','image/png','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    },
+  },
+  { name: 'site-media',     options: { public: false } },
+  { name: 'equipment-docs', options: { public: false } },
+];
+
 const supabaseAdmin = require('./lib/supabase');
-supabaseAdmin.storage.createBucket('site-documents', {
-  public: false,
-  fileSizeLimit: 10485760, // 10 MB
-  allowedMimeTypes: ['application/pdf','image/jpeg','image/png','image/webp','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
-}).then(({ error }) => {
-  if (error && error.message && error.message.toLowerCase().includes('already exists')) {
-    console.log('[storage] Bucket site-documents: already exists ✓');
-  } else if (error) {
-    console.warn('[storage] Bucket creation warning:', error.message);
-  } else {
-    console.log('[storage] Bucket site-documents: created ✓');
+(async () => {
+  const failFast = process.env.STORAGE_BUCKETS_FAIL_FAST === 'true';
+  const missing = [];
+  for (const { name, options } of REQUIRED_STORAGE_BUCKETS) {
+    try {
+      const { error } = await supabaseAdmin.storage.createBucket(name, options);
+      if (error && error.message && error.message.toLowerCase().includes('already exists')) {
+        console.log(`[storage] Bucket ${name}: already exists ✓`);
+      } else if (error) {
+        console.warn(`[storage] Bucket ${name}: creazione fallita —`, error.message);
+        missing.push(name);
+      } else {
+        console.log(`[storage] Bucket ${name}: created ✓`);
+      }
+    } catch (e) {
+      console.warn(`[storage] Bucket ${name}: errore di verifica —`, e.message);
+      missing.push(name);
+    }
   }
-}).catch((e) => console.warn('[storage] Bucket init error:', e.message));
+  if (missing.length) {
+    console.error(`[storage] ATTENZIONE — bucket mancanti/non verificabili: ${missing.join(', ')}. Ogni upload/download su questi bucket fallirà con un 500.`);
+    if (failFast) {
+      console.error('[storage] STORAGE_BUCKETS_FAIL_FAST=true — arresto del server.');
+      process.exit(1);
+    }
+  }
+})();
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ port: PORT }, 'Server avviato');

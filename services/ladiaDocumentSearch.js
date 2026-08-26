@@ -13,6 +13,7 @@
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../lib/supabase');
 const { logUsage } = require('../lib/ladiaUsageLog');
+const { flattenToText } = require('../lib/ocrSanitize');
 
 const BUCKET             = 'site-documents';
 const SIGNED_URL_SECONDS = 24 * 60 * 60; // 24 ore
@@ -324,9 +325,15 @@ function parseClaudeJson(raw = '') {
   if (!match) return { risposta: raw.trim(), citazione: null, pagina: null };
   try {
     const p = JSON.parse(match[0]);
+    // F-086/BLOCCO 2: stesso pattern F-066 — nessuno schema imposto sulla
+    // risposta di Claude, un documento denso può far restituire un oggetto
+    // annidato invece di testo semplice. `citazione` viene renderizzata
+    // direttamente come figlio React in ladiaChatCards.tsx (tipizzata
+    // string|null solo lato TypeScript, nessuna garanzia a runtime) — un
+    // oggetto qui crasherebbe la chat con l'errore #31, come F-066.
     return {
-      risposta: p.risposta || '',
-      citazione: p.citazione || null,
+      risposta: flattenToText(p.risposta) || '',
+      citazione: flattenToText(p.citazione),
       pagina: typeof p.pagina === 'number' ? p.pagina : null,
     };
   } catch {
@@ -402,4 +409,5 @@ module.exports = {
   searchStudioSharedDocuments,
   searchPayslips,
   matchBoost,
+  parseClaudeJson, // esportata solo per il test di regressione F-086 (BLOCCO 2, classe "fiducia cieca IA")
 };

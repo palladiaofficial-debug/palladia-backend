@@ -73,7 +73,10 @@ async function generateAndSave(siteId, companyId, posId, posData) {
   const items = await callAiChecklist(posData, companyId);
   if (!items.length) return;
 
-  const rows = items.map((item, i) => ({
+  // BLOCCO 2/F-086: nessuno schema imposto sull'array restituito da Claude —
+  // un elemento null/non-oggetto (mai osservato, ma non escluso dal prompt)
+  // farebbe crashare item.category sotto. Scartato prima del map, non dopo.
+  const rows = items.filter(item => item && typeof item === 'object').map((item, i) => ({
     site_id:     siteId,
     company_id:  companyId,
     pos_id:      posId || null,
