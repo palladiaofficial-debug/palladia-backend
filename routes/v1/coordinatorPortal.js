@@ -77,6 +77,7 @@ async function getInviteForSite(rawToken, siteId) {
 
   if (resolved.type === 'cse') {
     if (resolved.invite.site_id !== siteId) return null;
+    if (!(await siteIsAccessible(siteId))) return null;
     return { invite: resolved.invite, auth_type: 'cse' };
   }
 
@@ -89,7 +90,16 @@ async function getInviteForSite(rawToken, siteId) {
     .gt('expires_at', new Date().toISOString())
     .maybeSingle();
   if (!data) return null;
+  if (!(await siteIsAccessible(siteId))) return null;
   return { invite: data, auth_type: 'pro' };
+}
+
+// F-092: un cantiere cancellato dalla company (soft delete, sites.status='eliminato')
+// non deve restare raggiungibile da un token CSE/Pro esterno — l'invito non viene
+// revocato automaticamente alla cancellazione, quindi il controllo va fatto qui.
+async function siteIsAccessible(siteId) {
+  const { data } = await supabase.from('sites').select('status').eq('id', siteId).maybeSingle();
+  return !!data && data.status !== 'eliminato';
 }
 
 // Carica tutti i dati completi di un cantiere per un invite
@@ -151,7 +161,7 @@ async function getFullSiteData(invite) {
       .order('doc_type'),
   ]);
 
-  if (!siteR.data) return null;
+  if (!siteR.data || siteR.data.status === 'eliminato') return null;
 
   // Chi è in cantiere (ultimo evento ENTRY nelle ultime 7gg)
   const allLogs = presR.data || [];
