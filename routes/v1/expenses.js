@@ -7,6 +7,7 @@ const { validate }             = require('../../middleware/validate');
 const { aiLimiter }            = require('../../middleware/rateLimit');
 const { createExpenseSchema, updateExpenseSchema, CATEGORIES, PAYMENT_METHODS } = require('../../lib/schemas/expenses');
 const { extractExpenseFromDocument } = require('../../lib/expenseOcr');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 // F-083: 'company-docs' non esiste mai stato creato come bucket Storage —
@@ -37,7 +38,7 @@ router.get('/expenses', async (req, res) => {
   q = q.range(Number(off) || 0, (Number(off) || 0) + (Number(lim) || 50) - 1);
 
   const { data, count, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   // Signed URL per le ricevute
   const expenses = await Promise.all((data || []).map(async (exp) => {
@@ -62,7 +63,7 @@ router.post('/expenses', validate(createExpenseSchema), async (req, res) => {
     .select('*, sites!site_id(name)')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json(data);
 });
 
@@ -114,7 +115,7 @@ router.put('/expenses/:id', validate(updateExpenseSchema), async (req, res) => {
     .select('*, sites!site_id(name)')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   if (!data) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json(data);
 });
@@ -140,7 +141,7 @@ router.delete('/expenses/:id', async (req, res) => {
     .eq('id', req.params.id)
     .eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -158,7 +159,7 @@ router.get('/expenses/summary', async (req, res) => {
   if (to)   q = q.lte('expense_date', to);
 
   const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   const expenses = data || [];
   // Le note di credito (TD04 e affini, canale email — vedi lib/fatturaPaXmlParser.js)
@@ -231,7 +232,7 @@ router.get('/expenses/export', async (req, res) => {
     .order('created_at');
 
   const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   // L'importo in colonna resta sempre quello sul documento (mai negativo, CHECK
   // amount > 0) — "Nota di Credito" segnala al commercialista quali righe vanno
@@ -337,7 +338,7 @@ router.get('/expenses/recurring', async (req, res) => {
     .eq('company_id', req.companyId)
     .eq('is_active', true)
     .order('description');
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data || []);
 });
 
@@ -361,7 +362,7 @@ router.post('/expenses/recurring', async (req, res) => {
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json(data);
 });
 
@@ -371,7 +372,7 @@ router.delete('/expenses/recurring/:id', async (req, res) => {
     .update({ is_active: false })
     .eq('id', req.params.id)
     .eq('company_id', req.companyId);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -420,7 +421,7 @@ router.post('/expenses/recurring/generate', async (req, res) => {
   if (!toInsert.length) return res.json({ generated: 0, message: 'Spese ricorrenti già generate per questo mese' });
 
   const { error } = await supabase.from('company_expenses').insert(toInsert);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ generated: toInsert.length });
 });
 

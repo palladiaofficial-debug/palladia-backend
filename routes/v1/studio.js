@@ -1,6 +1,7 @@
 'use strict';
 const { logStudioAction } = require('../../lib/studioAudit');
 const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
+const { sendDbError } = require('../../lib/httpErrors');
 /**
  * routes/v1/studio.js
  * Portale Studio CDL Partner — Consulenti del Lavoro che gestiscono N imprese clienti.
@@ -227,7 +228,7 @@ router.put('/studio/me', verifyStudioJwt, validate(putStudioMeSchema), async (re
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ studio: data });
 });
 
@@ -242,7 +243,7 @@ router.get('/studio/clients', verifyStudioJwt, async (req, res) => {
     supabase.from('studio_pending_invites').select('*').eq('studio_id', req.studioId).eq('status', 'pending').order('created_at', { ascending: false }),
   ]);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ clients: clients || [], pending_invites: pending || [] });
 });
 
@@ -307,7 +308,7 @@ router.post('/studio/clients/invite', verifyStudioJwt, validate(inviteClientSche
       .select('*, companies(id, name)')
       .single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendDbError(res, error);
 
     const accept_url = `${APP_BASE_URL}/studio/accetta/${invite_token}`;
 
@@ -530,7 +531,7 @@ router.post('/studio/clients/accept/:token', async (req, res) => {
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true, studio_name: relation.studio_partners?.studio_name, client: data });
 });
 
@@ -891,7 +892,7 @@ router.put('/studio/clients/:companyId/profile', verifyStudioJwt, validate(putCl
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ company: data });
 });
 
@@ -908,7 +909,7 @@ router.get('/studio/clients/:companyId/workers', verifyStudioJwt, async (req, re
     .eq('company_id', companyId)
     .order('full_name', { ascending: true });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ workers: data || [], owned_by_studio: access.isOwner });
 });
 
@@ -945,7 +946,7 @@ router.post('/studio/clients/:companyId/workers', verifyStudioJwt, validate(crea
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message, message: error.message });
+  if (error) return sendDbError(res, error);
   logStudioAction(req.studioId, req.user.id, 'worker.create', { companyId, targetType: 'worker', targetId: data.id, payload: { full_name: data.full_name } });
   res.status(201).json({ worker: data });
 });
@@ -969,7 +970,7 @@ router.put('/studio/clients/:companyId/workers/:workerId', verifyStudioJwt, vali
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ worker: data });
 });
 
@@ -984,7 +985,7 @@ router.delete('/studio/clients/:companyId/workers/:workerId', verifyStudioJwt, a
     .eq('id', workerId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -1002,7 +1003,7 @@ router.get('/studio/clients/:companyId/certificates', verifyStudioJwt, async (re
     .is('deleted_at', null)
     .order('expiry_date', { ascending: true });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ certificates: data || [], owned_by_studio: access.isOwner });
 });
 
@@ -1052,7 +1053,7 @@ router.post('/studio/clients/:companyId/certificates', verifyStudioJwt, validate
     .select('*, workers(full_name), course_types(name)')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   logStudioAction(req.studioId, req.user.id, 'cert.create', { companyId, targetType: 'certificate', targetId: data.id });
   res.status(201).json({ certificate: data });
 });
@@ -1081,7 +1082,7 @@ router.put('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt, v
     .select('*, workers(full_name), course_types(name)')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ certificate: data });
 });
 
@@ -1097,7 +1098,7 @@ router.delete('/studio/clients/:companyId/certificates/:certId', verifyStudioJwt
     .eq('company_id', companyId)
     .is('deleted_at', null);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -1551,7 +1552,7 @@ router.delete('/studio/clients/:companyId', verifyStudioJwt, async (req, res) =>
     .eq('studio_id', req.studioId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -1951,7 +1952,7 @@ router.get('/studio/clients/:companyId/sorveglianza', verifyStudioJwt, async (re
     .eq('is_active', true)
     .order('health_fitness_expiry', { ascending: true, nullsFirst: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ workers: data || [], owned_by_studio: access.isOwner });
 });
 
@@ -1973,7 +1974,7 @@ router.put('/studio/clients/:companyId/workers/:workerId/sorveglianza', verifySt
     .select('id, full_name, health_fitness_expiry, safety_training_expiry')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ worker: data });
 });
 
@@ -2013,7 +2014,7 @@ router.put('/studio/clients/:companyId/compliance', verifyStudioJwt, validate(pu
     .from('companies').update(update).eq('id', companyId)
     .select('durc_expiry_date, last_safety_meeting_at').single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data);
 });
 
@@ -2052,7 +2053,7 @@ router.post('/studio/clients/:companyId/safety-roles', verifyStudioJwt, validate
     }, { onConflict: 'company_id,role_type' })
     .select().single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ role: data });
 });
 
@@ -2065,7 +2066,7 @@ router.delete('/studio/clients/:companyId/safety-roles/:roleId', verifyStudioJwt
     .from('company_safety_roles').delete()
     .eq('id', roleId).eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -2528,7 +2529,7 @@ router.post('/studio/clients/:companyId/document-requests', verifyStudioJwt, val
     .select('id, title, document_type, due_date, status, upload_token, created_at')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Invia email al cliente (best-effort)
   try {
@@ -2761,7 +2762,7 @@ router.post('/studio/team/invite', verifyStudioJwt, validate(inviteTeamMemberSch
     .select('id, role, invited_at')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ ok: true, member: { ...data, email, user_id: targetUser.id } });
 });
 
@@ -2822,7 +2823,7 @@ router.get('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res) 
     .eq('company_id', companyId)
     .order('expiry_date', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data || []);
 });
 
@@ -2858,7 +2859,7 @@ router.post('/studio/clients/:companyId/durc', verifyStudioJwt, async (req, res)
     .select('id, issue_date, expiry_date, protocol_number, notes, document_url, created_at')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   logStudioAction(req.studioId, req.user.id, 'durc.add', { companyId, targetType: 'durc', targetId: data.id });
   res.status(201).json(data);
 });
@@ -2875,7 +2876,7 @@ router.delete('/studio/clients/:companyId/durc/:id', verifyStudioJwt, async (req
     .eq('id', id)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(204).end();
 });
 
@@ -2941,7 +2942,7 @@ router.get('/studio/alert-config', verifyStudioJwt, async (req, res) => {
     .select('*')
     .eq('studio_id', req.studioId)
     .order('alert_type');
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   const configMap = Object.fromEntries((data || []).map(c => [c.alert_type, c]));
   const result = ALERT_TYPES.map(t => configMap[t] || {
@@ -2965,7 +2966,7 @@ router.put('/studio/alert-config', verifyStudioJwt, async (req, res) => {
   const { error } = await supabase
     .from('studio_alert_config')
     .upsert(rows, { onConflict: 'studio_id,alert_type' });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true, updated: rows.length });
 });
 
@@ -2986,7 +2987,7 @@ router.get('/studio/audit-log', verifyStudioJwt, async (req, res) => {
   if (action)     q = q.eq('action', action);
 
   const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data || []);
 });
 
@@ -2999,7 +3000,7 @@ router.get('/studio/team/assignments', verifyStudioJwt, async (req, res) => {
     .from('studio_user_clients')
     .select('id, user_id, company_id, assigned_at')
     .eq('studio_id', req.studioId);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data || []);
 });
 
@@ -3019,7 +3020,7 @@ router.post('/studio/team/assignments', verifyStudioJwt, async (req, res) => {
     .insert({ studio_id: req.studioId, user_id, company_id });
   if (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'Assegnazione già esistente' });
-    return res.status(500).json({ error: error.message });
+    return sendDbError(res, error);
   }
   res.status(201).json({ ok: true });
 });
@@ -3033,7 +3034,7 @@ router.delete('/studio/team/assignments/:id', verifyStudioJwt, async (req, res) 
     .delete()
     .eq('id', req.params.id)
     .eq('studio_id', req.studioId);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 

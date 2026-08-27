@@ -18,6 +18,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { getActualWeather }   = require('../../services/weatherService');
 const { validate } = require('../../middleware/validate');
 const { upsertDiarySchema, deletePhotoSchema } = require('../../lib/schemas/diary');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const BUCKET = 'site-documents';
 const upload = multer({
@@ -212,7 +213,7 @@ router.post('/sites/:siteId/diary', verifySupabaseJwt, validate(upsertDiarySchem
     }, { onConflict: 'site_id,entry_date' })
     .select().single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data);
 });
 

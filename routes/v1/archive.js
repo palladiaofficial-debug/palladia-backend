@@ -26,6 +26,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { isFeatureEnabled } = require('../../lib/featureFlags');
+const { sendDbError } = require('../../lib/httpErrors');
 
 router.use(verifySupabaseJwt);
 
@@ -82,7 +83,7 @@ router.get('/archive/documents', async (req, res) => {
   if (q)                  query = query.ilike('name', `%${q}%`);
 
   const { data, error, count } = await query;
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   const ora    = today();
   const presto = futureDate(30);
@@ -142,7 +143,7 @@ function baseDocsQuery(companyId) {
 router.get('/document-folders', async (req, res) => {
   const companyId = req.companyId;
   const { data: docs, error } = await baseDocsQuery(companyId);
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   const { data: sites }   = await supabase.from('sites').select('id').eq('company_id', companyId);
   const { data: workers } = await supabase.from('workers').select('id').eq('company_id', companyId).eq('is_active', true);
@@ -194,7 +195,7 @@ router.get('/document-folders/:type', async (req, res) => {
   }
 
   const { data: docs, error } = await baseDocsQuery(companyId);
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   const ora = today(), presto = futureDate(30);
   const byKey = new Map();
@@ -231,7 +232,7 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
   // niente logica di document_extra_homes qui, :key è ignorato (sempre 'tutti').
   if (type === 'scaduti') {
     const { data: docs, error } = await baseDocsQueryFull(companyId);
-    if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    if (error) return sendDbError(res, error);
     const ora = today(), presto = futureDate(30);
     const scaduti = (docs || []).filter(d => {
       const s = expiryStatusFor(d, ora, presto);
@@ -352,7 +353,7 @@ router.post('/documents/:id/homes', async (req, res) => {
   const { data, error } = await supabase.from('document_extra_homes').upsert({
     document_id: req.params.id, folder_type, folder_key, added_by: req.user.id,
   }, { onConflict: 'document_id,folder_type,folder_key', ignoreDuplicates: true }).select('id').maybeSingle();
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true, id: data?.id || null });
 });
@@ -364,7 +365,7 @@ router.delete('/documents/:id/homes/:homeId', async (req, res) => {
   if (!doc) return res.status(404).json({ error: 'NOT_FOUND' });
 
   const { error } = await supabase.from('document_extra_homes').delete().eq('id', req.params.homeId).eq('document_id', req.params.id);
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true });
 });

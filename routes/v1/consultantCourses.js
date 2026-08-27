@@ -17,6 +17,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt } = require('../../middleware/verifyConsultant');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   createConsultantCourseSchema,
   putConsultantCourseSchema,
@@ -53,7 +54,7 @@ router.get('/consultant/courses', async (req, res) => {
   if (include_draft !== 'true') query = query.eq('is_draft', false);
 
   const { data: courses, error } = await query;
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Aggiungi prossima sessione per ogni corso
   const courseIds = (courses || []).map(c => c.id);
@@ -132,7 +133,7 @@ router.post('/consultant/courses', validate(createConsultantCourseSchema), async
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Crea sessioni iniziali se fornite
   let createdSessions = [];
@@ -181,7 +182,7 @@ router.put('/consultant/courses/:id', validate(putConsultantCourseSchema), async
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ course: data });
 });
@@ -228,7 +229,7 @@ router.post('/consultant/courses/:id/sessions', validate(createConsultantSession
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ session: data });
 });
 
@@ -267,7 +268,7 @@ router.put('/consultant/sessions/:id', validate(putConsultantSessionSchema), asy
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ session: data });
 });
 

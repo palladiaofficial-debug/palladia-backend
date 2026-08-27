@@ -24,6 +24,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { patchFeatureFlagSchema } = require('../../lib/schemas/featureFlags');
 const { FEATURES, FROZEN_FEATURES, MASTER_IDS } = require('../../lib/featureFlags');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // ── GET /api/v1/feature-flags ─────────────────────────────────────────────────
 router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
@@ -76,7 +77,7 @@ router.patch('/feature-flags/:feature', verifySupabaseJwt, validate(patchFeature
     .upsert({ company_id: companyId, feature, enabled, updated_by: req.user?.id },
              { onConflict: 'company_id,feature' });
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true, company_id: companyId, feature, enabled });
 });
 

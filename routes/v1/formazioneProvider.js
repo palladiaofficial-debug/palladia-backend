@@ -25,6 +25,7 @@ const crypto   = require('crypto');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   registerProviderSchema,
   requestLinkSchema,
@@ -342,7 +343,7 @@ router.post('/formazione/provider/:token/courses', validate(createProviderCourse
     .select('id, title, is_draft, is_active')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ ok: true, course: data, message: 'Corso in attesa di revisione dal team Palladia.' });
 });
 
@@ -427,7 +428,7 @@ router.post('/formazione/provider/:token/courses/:courseId/sessions', validate(c
     .select('id, start_date, end_date, available_spots, booked_spots')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ ok: true, session: data });
 });
 

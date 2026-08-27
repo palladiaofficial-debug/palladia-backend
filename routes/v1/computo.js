@@ -26,6 +26,7 @@ const { generateComputoPdf } = require('../../services/computoPdfGenerator');
 const { validate } = require('../../middleware/validate');
 const { createComputoSchema, patchVoceSalSchema } = require('../../lib/schemas/computo');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { sendDbError } = require('../../lib/httpErrors');
 
 let _ai = null;
 function getAI() {
@@ -469,7 +470,7 @@ router.patch('/computo/voci/:voceId/sal', validate(patchVoceSalSchema), async (r
     .eq('id', voceId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true, sal_percentuale: sal });
 });
@@ -511,7 +512,7 @@ router.patch('/computo/voci/:voceId/prezzo', async (req, res) => {
     .eq('id', voceId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true, prezzo_unitario: prezzoNum, unita_misura: patch.unita_misura ?? null, importo });
 });
 
@@ -624,7 +625,7 @@ router.post('/sites/:siteId/computo/voci', async (req, res) => {
     .insert(row)
     .select()
     .single();
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Ricalcola totale_contratto
   const { data: allVoci } = await supabase
@@ -666,7 +667,7 @@ router.delete('/computo/voci/:voceId', async (req, res) => {
     .delete()
     .eq('id', voceId)
     .eq('company_id', companyId);
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Ricalcola totale_contratto
   const { data: remaining } = await supabase
@@ -826,7 +827,7 @@ router.patch('/computo/:id/variante', async (req, res) => {
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'VARIANTE_NOT_FOUND' });
   res.json({ ok: true, variante: data });
 });

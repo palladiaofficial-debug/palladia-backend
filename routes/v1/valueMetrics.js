@@ -21,6 +21,7 @@ const {
   computeScadenzeESanzioni, computeDocumentiGenerati, computeOrePresenza,
 } = require('../../services/valueMetrics');
 const { buildMonthlyReportData } = require('../../services/monthlyValueReport');
+const { sendDbError } = require('../../lib/httpErrors');
 
 router.get('/value-metrics', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase
@@ -29,7 +30,7 @@ router.get('/value-metrics', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .maybeSingle();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   if (!data || !data.has_data) {
     return res.json({ has_data: false });

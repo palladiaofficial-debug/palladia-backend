@@ -8,6 +8,7 @@ const { createSiteSchema, patchSiteSchema } = require('../../lib/schemas/site');
 const { auditLog }          = require('../../lib/audit');
 const { getSiteLimit }      = require('../../services/stripe');
 const { calcEndDate }       = require('../../lib/calcEndDate');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // Tutti gli endpoint richiedono JWT + membership verificata
 // req.companyId è già stato verificato da verifySupabaseJwt
@@ -108,7 +109,7 @@ router.post('/sites/:siteId/restore', verifySupabaseJwt, async (req, res) => {
     .select('id, name, address, status, client, start_date')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+  if (error) return sendDbError(res, error);
 
   auditLog({
     companyId:  req.companyId,
@@ -312,7 +313,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     .select(SELECT_COLS_PATCH)
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+  if (error) return sendDbError(res, error);
 
   auditLog({
     companyId:  req.companyId,
@@ -484,7 +485,7 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
     .select('id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+  if (error) return sendDbError(res, error);
 
   auditLog({
     companyId:  req.companyId,
@@ -573,7 +574,7 @@ router.post('/sites/:siteId/duplicate', verifySupabaseJwt, async (req, res) => {
     .select('id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes')
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+  if (error) return sendDbError(res, error);
 
   auditLog({
     companyId:  req.companyId,

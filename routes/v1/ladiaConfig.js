@@ -4,6 +4,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { activateLadiaSchema } = require('../../lib/schemas/ladiaConfig');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // Piani con accesso a Ladia In Cantiere
 const LADIA_PLANS = new Set(['grow', 'pro', 'business', 'enterprise']);
@@ -115,7 +116,7 @@ router.post('/sites/:siteId/ladia/activate', verifySupabaseJwt, validate(activat
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true, config: data });
 });
 
@@ -133,7 +134,7 @@ router.delete('/sites/:siteId/ladia', verifySupabaseJwt, async (req, res) => {
     .eq('site_id', siteId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -154,7 +155,7 @@ router.get('/sites/:siteId/ladia/briefings', verifySupabaseJwt, async (req, res)
     .order('executed_at', { ascending: false })
     .limit(30);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data || []);
 });
 

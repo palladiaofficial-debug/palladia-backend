@@ -18,6 +18,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendExpiryAlert, sendSessionReminder } = require('../../services/email');
 const { extractStorageRef } = require('../../lib/companyStorageCleanup');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // TTL uniforme con gli altri endpoint di download documento (site/company/
 // worker/subcontractor/payslip usano tutti 3600s) — certificati non aveva
@@ -234,7 +235,7 @@ router.post('/workers/:workerId/certificates', verifySupabaseJwt, validate(creat
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.status(201).json({ ...cert, status: certStatus(cert.expiry_date), days_left: daysLeft(cert.expiry_date) });
 });
@@ -279,7 +280,7 @@ router.put('/certificates/:id', verifySupabaseJwt, validate(updateCertificateSch
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ...cert, status: certStatus(cert.expiry_date), days_left: daysLeft(cert.expiry_date) });
 });
 
@@ -298,7 +299,7 @@ router.delete('/certificates/:id', verifySupabaseJwt, async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'NOT_FOUND' });
 
   const { error } = await supabase.from('worker_certificates').delete().eq('id', id);
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(204).end();
 });
 
@@ -324,7 +325,7 @@ router.get('/certificates/:id/download', verifySupabaseJwt, async (req, res) => 
     .from(ref.bucket)
     .createSignedUrl(ref.path, DOWNLOAD_SIGNED_URL_TTL);
 
-  if (error) return res.status(500).json({ error: 'STORAGE_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ url: signed.signedUrl });
 });
 
@@ -345,7 +346,7 @@ router.get('/formazione/notifications', verifySupabaseJwt, async (req, res) => {
 
   if (error) {
     if (error.code === '42P01') return res.json({ notifications: [], unread_count: 0 });
-    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    return sendDbError(res, error);
   }
 
   const notifications = (data || []).map(n => ({

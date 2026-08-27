@@ -19,6 +19,7 @@ const supabase = require('../../lib/supabase');
 const { verifyConsultantJwt, verifyConsultantOrCreate } = require('../../middleware/verifyConsultant');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   onboardConsultantSchema,
   putConsultantProfileSchema,
@@ -62,7 +63,7 @@ router.post('/consultant/onboard', verifyConsultantOrCreate, validate(onboardCon
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ profile: data });
 });
 
@@ -90,7 +91,7 @@ router.put('/consultant/me', verifyConsultantJwt, validate(putConsultantProfileS
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ profile: data });
 });
 
@@ -107,7 +108,7 @@ router.get('/consultant/clients', verifyConsultantJwt, async (req, res) => {
     .eq('consultant_id', req.consultantId)
     .order('invited_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Per ogni cliente attivo aggiungi contatori rapidi
   const clientIds = (data || []).filter(c => c.status === 'active' && c.companies).map(c => c.companies.id);
@@ -184,7 +185,7 @@ router.post('/consultant/clients/invite', verifyConsultantJwt, validate(inviteCl
 
   if (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'ALREADY_INVITED' });
-    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    return sendDbError(res, error);
   }
 
   // TODO: invia email di invito (quando email template pronto)

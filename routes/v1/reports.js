@@ -7,6 +7,7 @@ const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../..
 const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
 const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
 const { logDocumentExport } = require('../../services/valueMetrics');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -730,7 +731,7 @@ router.delete('/reports/presence/close/:closureId', verifySupabaseJwt, async (re
     .from('presence_day_closures').select('id').eq('id', req.params.closureId).eq('company_id', req.companyId).maybeSingle();
   if (!closure) return res.status(404).json({ error: 'NOT_FOUND' });
   const { error } = await supabase.from('presence_day_closures').delete().eq('id', req.params.closureId);
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ success: true });
 });
 
@@ -746,7 +747,7 @@ router.get('/reports/presence/closures', verifySupabaseJwt, async (req, res) => 
     .eq('company_id', req.companyId).eq('site_id', site_id)
     .order('closure_date', { ascending: false })
     .limit(90);
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ closures: data || [] });
 });
 

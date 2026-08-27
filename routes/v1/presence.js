@@ -2,6 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // GET /api/v1/presence?siteId=&date= — registro presenze giornaliero (PRIVATO)
 // date format: YYYY-MM-DD
@@ -39,7 +40,7 @@ router.get('/presence', verifySupabaseJwt, async (req, res) => {
     .order('timestamp_server', { ascending: true })
     .limit(PRESENCE_MAX_ROWS);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   // Filtra precisamente per giorno Roma (gestisce CET/CEST correttamente)
   const data = (rawData || []).filter(log => {
@@ -71,7 +72,7 @@ router.get('/presence/notes', verifySupabaseJwt, async (req, res) => {
     .order('created_at', { ascending: true })
     .limit(500);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json(data.map(n => ({
     id:           n.id,

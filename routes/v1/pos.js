@@ -3,6 +3,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { getCompanyPosDefaults } = require('../../lib/posDefaults');
+const { sendDbError } = require('../../lib/httpErrors');
 
 /**
  * GET /api/v1/pos
@@ -66,7 +67,7 @@ router.get('/pos/draft', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', companyId)
     .maybeSingle();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ draft: data || null });
 });
 

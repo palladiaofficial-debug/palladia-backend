@@ -29,6 +29,7 @@ const {
 } = require('../../services/email');
 const { complianceStatus } = require('../../lib/compliance');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   createPortalNoteSchema,
   createNonconformitySchema,
@@ -503,7 +504,7 @@ router.post('/coordinator/portal/:token/site/:siteId/nonconformities', coordinat
 
   if (error) {
     console.error('[coordinatorPortal] nonconformity insert error:', error.message, error.code, error.details);
-    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    return sendDbError(res, error);
   }
 
   try {

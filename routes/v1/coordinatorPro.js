@@ -9,6 +9,7 @@ const {
 } = require('../../lib/coordinatorUtils');
 const { complianceStatus } = require('../../lib/compliance');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   patchProMeSchema,
   registerProSchema,
@@ -600,7 +601,7 @@ router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNote
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   // Notifica email all'impresa (best-effort)
   try {

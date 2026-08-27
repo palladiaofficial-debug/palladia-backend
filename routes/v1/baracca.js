@@ -9,6 +9,7 @@ const { validate } = require('../../middleware/validate');
 const { patchChecklistSchema } = require('../../lib/schemas/baracca');
 const { logUsage } = require('../../lib/ladiaUsageLog');
 const { sanitizeLabelReasonList } = require('../../lib/ocrSanitize');
+const { sendDbError } = require('../../lib/httpErrors');
 
 let _anthropic = null;
 function getClient() {
@@ -120,7 +121,7 @@ router.patch('/sites/:siteId/baracca/checklist', verifySupabaseJwt, validate(pat
       updated_at: new Date().toISOString(),
     }, { onConflict: 'site_id,item_key' });
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 

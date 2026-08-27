@@ -19,6 +19,7 @@ const { verifyConsultantJwt } = require('../../middleware/verifyConsultant');
 const { sendCertificatesUploaded } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { uploadCertificatesSchema } = require('../../lib/schemas/consultantBookings');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // Scoped a /consultant — vedi commento in consultantCourses.js.
 router.use('/consultant', verifyConsultantJwt);
@@ -161,7 +162,7 @@ router.get('/consultant/bookings', async (req, res) => {
   if (status) query = query.eq('status', status);
 
   const { data, error, count } = await query;
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ bookings: data || [], total: count || 0, limit, offset });
 });
 

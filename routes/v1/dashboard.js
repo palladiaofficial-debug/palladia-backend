@@ -3,6 +3,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { cache } = require('../../middleware/cache');
+const { sendDbError } = require('../../lib/httpErrors');
 
 /**
  * GET /api/v1/dashboard
@@ -60,8 +61,8 @@ router.get('/dashboard', verifySupabaseJwt, cache(60), async (req, res) => {
       .eq('company_id', req.companyId),
   ]);
 
-  if (sitesResult.error)   return res.status(500).json({ error: sitesResult.error.message });
-  if (workersResult.error) return res.status(500).json({ error: workersResult.error.message });
+  if (sitesResult.error) return sendDbError(res, sitesResult.error);
+  if (workersResult.error) return sendDbError(res, workersResult.error);
 
   if (presenceResult.error) {
     console.error('[dashboard] presence query error:', presenceResult.error.message, presenceResult.error.details);

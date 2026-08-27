@@ -5,6 +5,7 @@ const Sentry   = require('../../lib/sentry');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { parseCapitolatoPDF } = require('../../services/capitolatoParser');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 15 * 1024 * 1024; // 15 MB
@@ -180,7 +181,7 @@ router.delete('/sites/:siteId/capitolato', verifySupabaseJwt, async (req, res) =
   const { error } = await supabase.from('capitolato_voci').delete()
     .eq('site_id', siteId).eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 

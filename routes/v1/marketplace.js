@@ -17,6 +17,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendProviderApplicationAlert } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { registerProviderSchema } = require('../../lib/schemas/marketplace');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // course-types è pubblico (usato anche in form add-certificate senza marketplace)
 // I marketplace endpoint richiedono JWT per associare i lavoratori dell'impresa
@@ -89,7 +90,7 @@ router.get('/course-types', verifySupabaseJwt, async (req, res) => {
     .order('risk_level', { ascending: false })
     .order('name');
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ course_types: data || [] });
 });
 
@@ -156,7 +157,7 @@ router.get('/marketplace/courses', verifySupabaseJwt, async (req, res) => {
   query = query.range(offset, offset + limit - 1);
 
   const { data: courses, error, count } = await query;
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Carica i profili consulenti per i corsi con consultant_id
   const consultantIds = [...new Set((courses || []).filter(c => c.consultant_id).map(c => c.consultant_id))];
@@ -450,7 +451,7 @@ router.post('/marketplace/providers/register', validate(registerProviderSchema),
 
   if (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'EMAIL_ALREADY_REGISTERED', message: 'Email già registrata' });
-    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    return sendDbError(res, error);
   }
 
   // Notifica admin (fire-and-forget — non blocca la risposta)

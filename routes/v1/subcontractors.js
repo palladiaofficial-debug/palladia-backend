@@ -5,6 +5,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   createSubcontractorSchema,
   patchSubcontractorSchema,
@@ -138,7 +139,7 @@ router.post('/subcontractors', verifySupabaseJwt, validate(createSubcontractorSc
     .select(SELECT_COLS)
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json(format(data));
 });
 
@@ -191,7 +192,7 @@ router.patch('/subcontractors/:id', verifySupabaseJwt, validate(patchSubcontract
     .select(SELECT_COLS)
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json(format(data));
 });
 
@@ -228,7 +229,7 @@ router.get('/sites/:siteId/subcontractors', verifySupabaseJwt, async (req, res) 
     .eq('company_id', req.companyId)
     .order('assigned_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   const result = (data || [])
     .filter(r => r.subcontractor?.is_active !== false)
@@ -260,7 +261,7 @@ router.post('/sites/:siteId/subcontractors', verifySupabaseJwt, validate(assignS
     company_id: req.companyId, site_id: siteId, subcontractor_id, role: role || null,
   }]);
   if (error?.code === '23505') return res.status(409).json({ error: 'ALREADY_ASSIGNED' });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ ok: true });
 });
 
@@ -269,7 +270,7 @@ router.delete('/sites/:siteId/subcontractors/:assignId', verifySupabaseJwt, asyn
   const { error } = await supabase
     .from('site_subcontractors').delete()
     .eq('id', assignId).eq('site_id', siteId).eq('company_id', req.companyId);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -479,7 +480,7 @@ router.get('/sites/:siteId/workforce', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .eq('status', 'active');
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   const today = Date.now();
   function subStatus(sub) {

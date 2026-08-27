@@ -18,6 +18,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   patchEconomiaSettingsSchema,
   createVoceSchema,
@@ -123,7 +124,7 @@ router.patch('/sites/:siteId/economia/settings', validate(patchEconomiaSettingsS
   if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
   const { error } = await supabase.from('sites').update(patch).eq('id', siteId).eq('company_id', companyId);
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true, ...patch });
 });
@@ -217,7 +218,7 @@ router.patch('/sites/:siteId/economia/voci/:id', validate(patchVoceSchema), asyn
     .eq('site_id', siteId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true });
 });
@@ -240,7 +241,7 @@ router.delete('/sites/:siteId/economia/voci/:id', async (req, res) => {
     .eq('site_id', siteId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true });
 });
@@ -904,7 +905,7 @@ router.patch('/sites/:siteId/economia/sal-history/:id', validate(patchSalHistory
     .eq('site_id', siteId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true, pagato_il: value });
 });
 
@@ -945,7 +946,7 @@ router.delete('/sites/:siteId/economia/sal-history/:id', async (req, res) => {
     .eq('site_id', siteId)
     .eq('company_id', companyId);
 
-  if (error) return res.status(500).json({ error: 'INTERNAL', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   res.json({ ok: true });
 });

@@ -4,6 +4,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { createPhaseSchema, patchPhaseSchema, assignWorkersSchema } = require('../../lib/schemas/sitePhases');
+const { sendDbError } = require('../../lib/httpErrors');
 
 function isUuid(v) {
   return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
@@ -87,7 +88,7 @@ router.post('/sites/:siteId/phases', verifySupabaseJwt, validate(createPhaseSche
     })
     .select().single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ ...data, workers: [], costi_reali: 0, sforamento: false });
 });
 
@@ -125,7 +126,7 @@ router.patch('/sites/:siteId/phases/:phaseId', verifySupabaseJwt, validate(patch
     .eq('company_id', req.companyId)
     .select().single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'PHASE_NOT_FOUND' });
   res.json(data);
 });
@@ -140,7 +141,7 @@ router.delete('/sites/:siteId/phases/:phaseId', verifySupabaseJwt, async (req, r
     .delete()
     .eq('id', phaseId).eq('site_id', siteId).eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -165,7 +166,7 @@ router.post('/sites/:siteId/phases/:phaseId/workers', verifySupabaseJwt, validat
   const { error } = await supabase.from('site_phase_workers')
     .upsert(rows, { onConflict: 'phase_id,worker_id', ignoreDuplicates: true });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -177,7 +178,7 @@ router.delete('/sites/:siteId/phases/:phaseId/workers/:workerId', verifySupabase
   const { error } = await supabase.from('site_phase_workers')
     .delete().eq('phase_id', phaseId).eq('worker_id', workerId).eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 

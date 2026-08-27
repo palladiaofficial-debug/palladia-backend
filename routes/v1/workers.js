@@ -7,6 +7,7 @@ const { createWorkerSchema, patchWorkerSchema } = require('../../lib/schemas/wor
 const { auditLog }          = require('../../lib/audit');
 const { complianceStatus }  = require('../../lib/compliance');
 const { generateBadgeCode } = require('../../lib/badgeCode');
+const { sendDbError } = require('../../lib/httpErrors');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -118,13 +119,13 @@ router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (
     // Retry automatico con un nuovo codice
     record.badge_code = generateBadgeCode();
     const retry = await supabase.from('workers').insert([record]).select(WORKER_SELECT).single();
-    if (retry.error) return res.status(400).json({ error: retry.error.message });
+    if (retry.error) return sendDbError(res, retry.error, 400);
     auditLog({ companyId: req.companyId, userId: req.user?.id, userRole: req.userRole,
       action: 'worker.create', targetType: 'worker', targetId: retry.data.id,
       payload: { full_name: retry.data.full_name, fiscal_code: retry.data.fiscal_code }, req });
     return res.status(201).json(retry.data);
   }
-  if (error) return res.status(400).json({ error: error.message });
+  if (error) return sendDbError(res, error, 400);
 
   auditLog({
     companyId:  req.companyId,
@@ -156,7 +157,7 @@ router.get('/workers', verifySupabaseJwt, async (req, res) => {
       .eq('site_id', siteId)
       .eq('company_id', req.companyId);
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendDbError(res, error);
     return res.json(data);
   }
 
@@ -167,7 +168,7 @@ router.get('/workers', verifySupabaseJwt, async (req, res) => {
     .eq('is_active', true)
     .order('full_name');
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data);
 });
 
@@ -324,7 +325,7 @@ router.get('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .maybeSingle();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
   res.json(data);
 });
@@ -421,7 +422,7 @@ router.delete('/sites/:siteId/workers/:workerId', verifySupabaseJwt, async (req,
     .eq('worker_id', workerId)
     .eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   auditLog({
     companyId:  req.companyId,
@@ -597,7 +598,7 @@ router.patch('/workers/:workerId', verifySupabaseJwt, validate(patchWorkerSchema
     .select(WORKER_SELECT)
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   if (!data) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
 
   auditLog({

@@ -21,6 +21,7 @@ const { analyzeWorkerDoc, analyzeDocumentBuffer, syncToFormazione } = require('.
 const { scoreMatch } = require('../../lib/fuzzyMatch');
 const { validate } = require('../../middleware/validate');
 const { createWorkerDocSchema, patchWorkerDocSchema } = require('../../lib/schemas/workerDocs');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -192,7 +193,7 @@ router.post('/workers/:workerId/documents',
 
     if (error) {
       if (filePath) await supabase.storage.from(BUCKET).remove([filePath]).catch(() => {});
-      return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+      return sendDbError(res, error);
     }
 
     await syncWorkerExpiry(data.doc_type, workerId, req.companyId);

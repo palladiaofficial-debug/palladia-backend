@@ -8,6 +8,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { validate } = require('../../middleware/validate');
 const { patchCostSchema } = require('../../lib/schemas/siteCosts');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { sendDbError } = require('../../lib/httpErrors');
 
 let _ai = null;
 function getAI() {
@@ -141,7 +142,7 @@ router.post('/sites/:siteId/costs',
       created_by:         `web:${req.user.id}`,
     }).select().single();
 
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) return sendDbError(res, error);
     res.status(201).json(data);
   }
 );
@@ -177,7 +178,7 @@ router.patch('/sites/:siteId/costs/:costId', verifySupabaseJwt, validate(patchCo
     .eq('id', costId).eq('site_id', siteId).eq('company_id', req.companyId)
     .select().single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'COST_NOT_FOUND' });
   res.json(data);
 });
@@ -195,7 +196,7 @@ router.delete('/sites/:siteId/costs/:costId', verifySupabaseJwt, async (req, res
   const { error } = await supabase.from('site_costs')
     .delete().eq('id', costId).eq('site_id', siteId).eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   // Rimuovi file allegato dallo storage (fire-and-forget)
   if (row?.file_url) {

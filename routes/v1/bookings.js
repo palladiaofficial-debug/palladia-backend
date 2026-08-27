@@ -15,6 +15,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { checkoutBookingSchema, reviewBookingSchema } = require('../../lib/schemas/bookings');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const FRONTEND_URL = () => (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -281,7 +282,7 @@ router.get('/bookings', async (req, res) => {
   if (status) query = query.eq('status', status);
 
   const { data, error, count } = await query;
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   // Arricchisci con has_review per mostrare prompt recensione
   let reviewedIds = new Set();

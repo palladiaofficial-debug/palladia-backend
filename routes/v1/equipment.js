@@ -8,6 +8,7 @@ const { validate } = require('../../middleware/validate');
 const { createEquipmentSchema, patchEquipmentSchema, assignEquipmentSchema } = require('../../lib/schemas/equipment');
 const { logUsage } = require('../../lib/ladiaUsageLog');
 const { sanitizeExtractedFields } = require('../../lib/ocrSanitize');
+const { sendDbError } = require('../../lib/httpErrors');
 
 let _anthropic = null;
 function getClient() {
@@ -61,7 +62,7 @@ router.get('/equipment', verifySupabaseJwt, async (req, res) => {
     .eq('is_active', true)
     .order('created_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json((data || []).map(toApi));
 });
 
@@ -202,7 +203,7 @@ router.post('/equipment', verifySupabaseJwt, validate(createEquipmentSchema), as
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json(toApi(data));
 });
 
@@ -256,7 +257,7 @@ router.patch('/equipment/:id', verifySupabaseJwt, validate(patchEquipmentSchema)
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(toApi(data));
 });
 
@@ -270,7 +271,7 @@ router.delete('/equipment/:id', verifySupabaseJwt, async (req, res) => {
     .eq('id', id)
     .eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -289,7 +290,7 @@ router.get('/equipment/:id/documents', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .order('uploaded_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   const docs = await Promise.all((data || []).map(async (doc) => {
     if (!doc.file_url) return doc;
@@ -442,7 +443,7 @@ router.delete('/equipment/:id/documents/:docId', verifySupabaseJwt, async (req, 
     .eq('id', docId)
     .eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -460,7 +461,7 @@ router.get('/sites/:siteId/equipment', verifySupabaseJwt, async (req, res) => {
     .eq('company_id', req.companyId)
     .order('assigned_at', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   const result = (data || [])
     .filter(r => r.equipment?.is_active !== false)
@@ -490,7 +491,7 @@ router.post('/sites/:siteId/equipment', verifySupabaseJwt, validate(assignEquipm
     company_id: req.companyId, site_id: siteId, equipment_id,
   }]);
   if (error?.code === '23505') return res.status(409).json({ error: 'ALREADY_ASSIGNED' });
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ ok: true });
 });
 
@@ -499,7 +500,7 @@ router.delete('/sites/:siteId/equipment/:assignId', verifySupabaseJwt, async (re
   const { error } = await supabase
     .from('site_equipment').delete()
     .eq('id', assignId).eq('site_id', siteId).eq('company_id', req.companyId);
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 

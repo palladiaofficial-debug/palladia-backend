@@ -5,6 +5,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { calcEndDate }       = require('../../lib/calcEndDate');
 const { validate } = require('../../middleware/validate');
 const { createSuspensionDaySchema } = require('../../lib/schemas/siteSchedule');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const VALID_REASONS = ['pioggia', 'vento', 'neve', 'altro'];
 
@@ -100,7 +101,7 @@ router.post('/sites/:siteId/suspension-days', verifySupabaseJwt, validate(create
     if (error.code === '23505') {
       return res.status(409).json({ error: 'DAY_ALREADY_EXISTS', message: `${day} è già segnato come giorno di sospensione.` });
     }
-    return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+    return sendDbError(res, error);
   }
 
   // Ricalcola fine lavori
@@ -137,7 +138,7 @@ router.delete('/sites/:siteId/suspension-days/:dayId', verifySupabaseJwt, async 
     .eq('site_id', siteId)
     .eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+  if (error) return sendDbError(res, error);
 
   await recalcEndDate(siteId, req.companyId);
 

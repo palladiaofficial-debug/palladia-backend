@@ -9,6 +9,7 @@ const { createCompanyPrezzoSchema, patchCompanyPrezzoSchema } = require('../../l
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { logUsage } = require('../../lib/ladiaUsageLog');
 const { normalizeOfferItems } = require('../../lib/prezzarioOfferSanitize');
+const { sendDbError } = require('../../lib/httpErrors');
 
 let _ai = null;
 function getAI() {
@@ -35,7 +36,7 @@ router.get('/prezzario/regioni', verifySupabaseJwt, async (req, res) => {
     .order('regione')
     .order('anno', { ascending: false });
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   // Deduplica
   const seen = new Set();
@@ -111,7 +112,7 @@ router.get('/prezzario/search', verifySupabaseJwt, async (req, res) => {
       .ilike('descrizione', `%${q}%`)
       .limit(limit);
 
-    if (fallback.error) return res.status(500).json({ error: fallback.error.message });
+    if (fallback.error) return sendDbError(res, fallback.error);
     return res.json({ voci: fallback.data, total: fallback.data.length, regione, anno });
   }
 
@@ -132,7 +133,7 @@ router.get('/prezzario/categorie', verifySupabaseJwt, async (req, res) => {
   if (anno) query = query.eq('anno', anno);
 
   const { data, error } = await query;
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
 
   const categorie = [...new Set((data || []).map(r => r.categoria))].sort();
   res.json({ categorie, regione, anno });
@@ -174,7 +175,7 @@ router.get('/company-prezzi', verifySupabaseJwt, async (req, res) => {
     return res.json({ prezzi: fb, total: fb.length });
   }
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ prezzi: data, total: data.length });
 });
 
@@ -207,7 +208,7 @@ router.post('/company-prezzi', verifySupabaseJwt, validate(createCompanyPrezzoSc
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json(data);
 });
 
@@ -235,7 +236,7 @@ router.patch('/company-prezzi/:id', verifySupabaseJwt, validate(patchCompanyPrez
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   if (!data) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json(data);
 });
@@ -248,7 +249,7 @@ router.delete('/company-prezzi/:id', verifySupabaseJwt, async (req, res) => {
     .eq('id', req.params.id)
     .eq('company_id', req.companyId);
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ ok: true });
 });
 
@@ -278,7 +279,7 @@ router.post('/company-prezzi/bulk', verifySupabaseJwt, async (req, res) => {
   if (rows.length === 0) return res.status(400).json({ error: 'NO_VALID_ITEMS' });
 
   const { data, error } = await supabase.from('company_prezzi').insert(rows).select();
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ saved: data.length, items: data });
 });
 

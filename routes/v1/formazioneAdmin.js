@@ -19,6 +19,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendProviderApprovedEmail } = require('../../services/email');
 const { syncToFormazione } = require('../../services/documentAI');
 const { validate } = require('../../middleware/validate');
+const { sendDbError } = require('../../lib/httpErrors');
 const {
   createAdminProviderSchema,
   putAdminProviderSchema,
@@ -90,7 +91,7 @@ router.post('/admin/providers', validate(createAdminProviderSchema), async (req,
 
   if (error) {
     if (error.code === '23505') return res.status(409).json({ error: 'EMAIL_DUPLICATE' });
-    return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+    return sendDbError(res, error);
   }
   res.status(201).json({ provider: data });
 });
@@ -115,7 +116,7 @@ router.put('/admin/providers/:id', validate(putAdminProviderSchema), async (req,
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ provider: data });
 });
@@ -177,7 +178,7 @@ router.post('/admin/providers/:id/courses', validate(createAdminCourseSchema), a
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ course: data });
 });
 
@@ -196,7 +197,7 @@ router.put('/admin/courses/:id', validate(putAdminCourseSchema), async (req, res
 
   const { data, error } = await supabase
     .from('marketplace_courses').update(updates).eq('id', id).select().single();
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ course: data });
 });
@@ -217,7 +218,7 @@ router.post('/admin/courses/:id/sessions', validate(createAdminSessionSchema), a
     .select()
     .single();
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.status(201).json({ session: data });
 });
 
@@ -243,7 +244,7 @@ router.get('/admin/bookings', async (req, res) => {
   if (status) query = query.eq('status', status);
 
   const { data, error, count } = await query;
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
   res.json({ bookings: data || [], total: count || 0 });
 });
 
@@ -338,7 +339,7 @@ router.post('/admin/migrate-formazione', async (req, res) => {
     .in('doc_type', FORMAZIONE_TYPES)
     .limit(5000);
 
-  if (error) return res.status(500).json({ error: 'DB_ERROR', detail: error.message });
+  if (error) return sendDbError(res, error);
 
   const stats = { total: docs.length, processed: 0, skipped_no_date: 0, errors: 0 };
 

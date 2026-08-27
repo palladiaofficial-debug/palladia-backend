@@ -4,6 +4,7 @@ const supabase  = require('../../lib/supabase');
 const Anthropic = require('@anthropic-ai/sdk');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { logUsage } = require('../../lib/ladiaUsageLog');
+const { sendDbError } = require('../../lib/httpErrors');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -108,7 +109,7 @@ router.get('/sites/:siteId/setup-checklist', verifySupabaseJwt, async (req, res)
     .order('priority', { ascending: true }) // 'high' < 'normal' alfabeticamente → high prima
     .order('sort_order');
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data || []);
 });
 
@@ -189,7 +190,7 @@ router.patch('/sites/:siteId/setup-checklist/:itemId', verifySupabaseJwt, async 
     .select('id, done, done_at')
     .single();
 
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) return sendDbError(res, error);
   res.json(data);
 });
 

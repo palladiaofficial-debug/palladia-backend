@@ -2312,12 +2312,21 @@ app.get('/api/pdf-smoke', verifyJwtOnly, async (req, res) => {
 app.use((err, req, res, next) => {
   logger.error({ err, requestId: req.id, method: req.method, path: req.path }, 'app error');
   // Invia a Sentry solo errori 5xx non previsti (non errori client 4xx)
-  if (!err.status || err.status >= 500) {
+  const isServerError = !err.status || err.status >= 500;
+  if (isServerError) {
     Sentry.captureException(err, { extra: { method: req.method, path: req.path } });
     errorBuffer.push(err, req);
   }
   if (!res.headersSent) {
-    res.status(err.status || 500).json({ error: 'APP_ERROR', detail: err.message });
+    // BLOCCO 5 (F-089): un 5xx non previsto arrivato qui via next(err) — non un
+    // res.json diretto di una route — portava comunque err.message grezzo (stack
+    // Postgres/Node) fino al client in `detail`. I pochi err.status<500 lanciati
+    // deliberatamente nel codice (es. lib/acubeClient.js) hanno messaggi brevi e
+    // già pensati per emergere, quindi restano invariati.
+    const detail = isServerError
+      ? 'Si è verificato un errore imprevisto. Riprova o contatta il supporto se il problema persiste.'
+      : err.message;
+    res.status(err.status || 500).json({ error: 'APP_ERROR', detail });
   }
 });
 
