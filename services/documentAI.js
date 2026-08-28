@@ -43,6 +43,32 @@ Periodi standard: DURC=3 mesi (renewal_years=0, calcola comunque scadenza), DVR=
 SOA=5 anni, ISO=3 anni, assicurazione=1 anno, polizza=1 anno, visura=nessuna scadenza (null).
 Scrivi issues solo se ci sono problemi reali. Output: SOLO JSON grezzo senza markdown.`;
 
+// ── Prompt documenti mezzi/veicoli (F-096, AUDIT.md) ──────────────────────────
+// Stessa struttura di COMPANY_DOC_PROMPT (riusata dall'Importazione Intelligente
+// per condividere la logica di confidence/expiry già in produzione) più i due
+// campi che identificano IL mezzo specifico — mai richiesti per un documento
+// aziendale generico.
+
+const EQUIPMENT_DOC_PROMPT = `Sei un esperto di documentazione di mezzi e veicoli aziendali italiani (libretto di circolazione, assicurazione, revisione).
+Analizza il documento e restituisci SOLO un oggetto JSON valido con questa struttura:
+
+{
+  "summary": "<2-3 frasi: cosa è, quale mezzo, cosa attesta>",
+  "doc_type_detected": "<libretto_circolazione|assicurazione_mezzo|revisione_mezzo|altro>",
+  "expiry_date": "<YYYY-MM-DD oppure null solo se impossibile determinare>",
+  "renewal_years": <numero intero anni tra un rinnovo e l'altro, null se non applicabile>,
+  "issued_by": "<ente o compagnia assicurativa che ha emesso il documento, null se non leggibile>",
+  "vehicle_plate": "<targa o numero di telaio/matricola del mezzo, null se non leggibile>",
+  "vehicle_hint": "<marca/modello o nome del mezzo, usato per abbinarlo solo se la targa non è leggibile — altrimenti null>",
+  "issues": ["<eventuale problema: documento scaduto, firma mancante, dati incompleti, ecc.>"],
+  "validity_ok": <true se il documento sembra valido e completo, false se ci sono problemi>
+}
+
+REGOLA CRITICA PER expiry_date: se il documento ha una data di emissione ma NON una scadenza esplicita,
+e conosci il periodo standard, CALCOLA la scadenza. Periodi standard: assicurazione=1 anno, revisione=1-2
+anni a seconda del tipo di mezzo, libretto di circolazione=nessuna scadenza (null).
+Scrivi issues solo se ci sono problemi reali. Output: SOLO JSON grezzo senza markdown.`;
+
 // ── Prompt documenti lavoratori ───────────────────────────────────────────────
 
 const WORKER_DOC_PROMPT = `Sei un esperto di sicurezza sul lavoro italiana (D.Lgs. 81/2008) e certificazioni lavoratori.
@@ -455,6 +481,6 @@ module.exports = {
   analyzeCompanyDoc, analyzeSiteDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione,
   // Esportati per riuso da services/smartImportAI.js (Importazione Intelligente) —
   // stessi prompt per tipo documento, nessuna duplicazione.
-  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
+  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, EQUIPMENT_DOC_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
   analyzeDocument, downloadFileBuffer, extractFirstJson, normalizeDate, detectCourseTypeName,
 };

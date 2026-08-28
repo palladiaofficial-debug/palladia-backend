@@ -18,7 +18,7 @@ const supabase = require('../lib/supabase');
 const { safeName, mimeForName, readZipEntries } = require('../lib/zipIngest');
 const { inspectPdf, extractPdfPages } = require('../lib/pdfSplit');
 const { classifySegments, extractFields } = require('./smartImportAI');
-const { matchWorker, matchSite } = require('../lib/entityMatch');
+const { matchWorker, matchSite, matchEquipment } = require('../lib/entityMatch');
 const { archiveChatUpload } = require('./chatDocumentAnalysis');
 const { detectCourseTypeName } = require('./documentAI');
 const { checkAiBudget } = require('../lib/ladiaUsageLog');
@@ -346,8 +346,21 @@ async function processOneItem(item, ctx) {
 
     let matchedWorkerId = null, matchedSiteId = null, workerScore = null, siteScore = null;
     let stagedWorkerId = null, stagedSiteId = null, extraSiteId = null;
+    let matchedEquipmentId = null, equipmentScore = null;
 
-    if (destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips') {
+    if (destination === 'equipment_documents') {
+      // F-096 (AUDIT.md): a differenza di lavoratore/cantiere, un mezzo senza
+      // corrispondenza NON viene proposto in creazione — troppi campi
+      // obbligatori (tipo, proprietà...) per dedurli in modo affidabile da un
+      // libretto/assicurazione scansionati. Resta in pending_review senza
+      // matched_equipment_id: l'utente lo carica da Risorse se non trova match.
+      const plate = extraction?.vehiclePlate;
+      const hint = extraction?.vehicleHint;
+      if (plate || hint) {
+        const m = matchEquipment({ plate, name: hint || plate }, ctx.equipmentCandidates);
+        if (m) { matchedEquipmentId = m.id; equipmentScore = m.score; }
+      }
+    } else if (destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips') {
       const extractedName = fields.issued_to?.value;
       const extractedCf = fields.fiscal_code?.value;
       const m = matchWorker({ name: extractedName, fiscal_code: extractedCf }, ctx.workerCandidates);
@@ -377,6 +390,8 @@ async function processOneItem(item, ctx) {
       }
     }
 
+    const equipmentUnmatched = destination === 'equipment_documents' && !matchedEquipmentId;
+
     await supabase.from('import_items').update({
       status: 'pending_review', content_hash: hash, doc_type: docType, destination,
       doc_type_detail: extraction?.docTypeDetected || null,
@@ -385,6 +400,13 @@ async function processOneItem(item, ctx) {
       worker_match_score: workerScore, site_match_score: siteScore,
       staged_worker_id: stagedWorkerId, staged_site_id: stagedSiteId,
       extra_site_id: extraSiteId,
+      matched_equipment_id: matchedEquipmentId, equipment_match_score: equipmentScore,
+      // F-096: nessun errore bloccante — l'item resta comunque in
+      // pending_review con i campi estratti visibili, solo senza un mezzo
+      // risolto. error_message qui è solo un avviso per la revisione, non
+      // uno stato 'error' (che il resto della pipeline riserva a fallimenti
+      // reali: PDF corrotto, budget superato, ecc.).
+      error_message: equipmentUnmatched ? 'Mezzo non riconosciuto — nessuna corrispondenza per targa/nome in Risorse.' : null,
     }).eq('id', item.id);
   } catch (err) {
     console.error('[smartImportPipeline] item fallito:', item.id, err.message);
@@ -420,11 +442,15 @@ async function processBatch(batchId) {
 
   await supabase.from('import_batches').update({ status: 'processing' }).eq('id', batchId);
 
-  const [{ data: workers }, { data: sites }] = await Promise.all([
+  const [{ data: workers }, { data: sites }, { data: equipment }] = await Promise.all([
     supabase.from('workers').select('id, full_name, fiscal_code').eq('company_id', batch.company_id).eq('is_active', true),
     supabase.from('sites').select('id, name, address').eq('company_id', batch.company_id).neq('status', 'chiuso'),
+    supabase.from('equipment').select('id, name, type, model, plate_or_serial').eq('company_id', batch.company_id).eq('is_active', true),
   ]);
-  const ctx = { companyId: batch.company_id, userId: batch.user_id, workerCandidates: workers || [], siteCandidates: sites || [] };
+  const ctx = {
+    companyId: batch.company_id, userId: batch.user_id,
+    workerCandidates: workers || [], siteCandidates: sites || [], equipmentCandidates: equipment || [],
+  };
 
   // Ciclo finché ci sono item in coda — gestisce anche i figli creati dallo split.
   for (;;) {
@@ -502,6 +528,14 @@ async function confirmItem(itemId, companyId, userId, req = null) {
   if (!workerId && item.staged_worker_id) workerId = await confirmStagedEntity(item.staged_worker_id, companyId);
   if (!siteId && item.staged_site_id) siteId = await confirmStagedEntity(item.staged_site_id, companyId);
 
+  // F-096: nessun fallback silenzioso su company_documents per un documento
+  // mezzo senza match — è esattamente l'anti-pattern chiuso da F-094/F-095
+  // (un documento veicolo che finisce genericamente altrove, invisibile
+  // dalla scheda del mezzo). Rifiuta con un messaggio chiaro invece.
+  if (item.destination === 'equipment_documents' && !item.matched_equipment_id) {
+    throw new Error('Mezzo non riconosciuto per questo documento — nessuna corrispondenza per targa/nome in Risorse. Carica il documento singolarmente dalla scheda del mezzo giusto.');
+  }
+
   const fields = item.extracted_fields || {};
   const name = fields.issued_to?.value || fields.doc_type_detected?.value || item.doc_type || item.original_name;
   const expiryDate = fields.expiry_date?.value || null;
@@ -541,7 +575,7 @@ async function confirmItem(itemId, companyId, userId, req = null) {
 
   const result = await archiveChatUpload({
     uploadId: item.chat_upload_id, companyId, userId,
-    destination, name, siteId: effectiveSiteId, workerId,
+    destination, name, siteId: effectiveSiteId, workerId, equipmentId: item.matched_equipment_id,
     category: sanitizeCategory(destination, item.doc_type), expiryDate, issueDate, issuingBody, courseTypeId,
     periodYear, periodMonth,
     contentHash: item.content_hash, req,

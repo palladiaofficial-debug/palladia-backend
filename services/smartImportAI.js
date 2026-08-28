@@ -16,11 +16,11 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { extractPdfText } = require('../lib/pdfExtract');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const {
-  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
+  COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, EQUIPMENT_DOC_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,
   extractFirstJson, normalizeDate,
 } = require('./documentAI');
 
-const DOC_TYPES = 'idoneita_medica|attestato_formazione|durc|visura|assicurazione|dvr|pos|psc|capitolato|contratto|busta_paga|f24|iso|soa|permesso|patente|altro';
+const DOC_TYPES = 'idoneita_medica|attestato_formazione|durc|visura|assicurazione|dvr|pos|psc|capitolato|contratto|busta_paga|f24|iso|soa|permesso|patente|libretto_circolazione|assicurazione_mezzo|revisione_mezzo|altro';
 
 const CLASSIFY_PROMPT = `Analizza il documento allegato. Può contenere UN SOLO documento oppure PIÙ documenti scansionati/uniti insieme (es. più attestati di formazione di lavoratori diversi, o DURC di più imprese, uniti in un unico PDF). Individua ogni documento distinto e per ciascuno l'intervallo di pagine che occupa.
 
@@ -31,7 +31,7 @@ Rispondi SOLO con JSON valido (niente markdown):
       "start_page": 1,
       "end_page": 1,
       "doc_type": "${DOC_TYPES}",
-      "destination": "site_documents|company_documents|worker_documents|worker_certificates|payslips",
+      "destination": "site_documents|company_documents|worker_documents|worker_certificates|payslips|equipment_documents",
       "confidence": 0.0
     }
   ]
@@ -40,7 +40,7 @@ Rispondi SOLO con JSON valido (niente markdown):
 Regole:
 - Se il file è un solo documento, restituisci un array con UN solo elemento che copre tutte le pagine.
 - "confidence" indica quanto sei sicuro del tipo rilevato (1.0 = inequivocabile, es. intestazione "DURC" chiara; 0.0 = puro indovinare).
-- destination: worker_documents/worker_certificates per documenti di un singolo lavoratore (idoneità medica, attestati, patenti); site_documents per documenti legati a un cantiere specifico; company_documents per documenti aziendali generali (DURC, visura, assicurazione, SOA, ISO, F24); payslips per buste paga/cedolini stipendio di un singolo lavoratore (doc_type=busta_paga) — MAI worker_documents per queste.
+- destination: worker_documents/worker_certificates per documenti di un singolo lavoratore (idoneità medica, attestati, patenti); site_documents per documenti legati a un cantiere specifico; company_documents per documenti aziendali generali (DURC, visura, assicurazione, SOA, ISO, F24); payslips per buste paga/cedolini stipendio di un singolo lavoratore (doc_type=busta_paga) — MAI worker_documents per queste; equipment_documents per libretto di circolazione/assicurazione/revisione di un MEZZO o VEICOLO (doc_type=libretto_circolazione|assicurazione_mezzo|revisione_mezzo) — MAI company_documents per questi, anche se non è chiaro a quale mezzo specifico si riferiscano.
 
 ━━━ CASO FREQUENTE: cedolini stipendio (LUL/buste paga) mandati dal consulente del lavoro in un unico PDF ━━━
 Il file tipico contiene UNA busta paga per ciascun dipendente, in sequenza, e ognuna riporta il nome del dipendente in un campo "DIPENDENTE" (o simile) accanto al proprio codice fiscale — quello è l'identificatore del confine tra un documento e il successivo.
@@ -156,9 +156,10 @@ function dedupeOverlappingSegments(rawSegments) {
  * va su Haiku, scansioni/immagini vanno su Sonnet.
  */
 async function extractFields({ buffer, mimeType, destination, companyId, userId }) {
-  const isWorkerDoc = destination === 'worker_documents' || destination === 'worker_certificates';
-  const isPayslip   = destination === 'payslips';
-  const basePrompt  = isPayslip ? PAYSLIP_PROMPT : (isWorkerDoc ? WORKER_DOC_PROMPT : COMPANY_DOC_PROMPT);
+  const isWorkerDoc    = destination === 'worker_documents' || destination === 'worker_certificates';
+  const isPayslip      = destination === 'payslips';
+  const isEquipmentDoc = destination === 'equipment_documents';
+  const basePrompt  = isPayslip ? PAYSLIP_PROMPT : isWorkerDoc ? WORKER_DOC_PROMPT : isEquipmentDoc ? EQUIPMENT_DOC_PROMPT : COMPANY_DOC_PROMPT;
   const systemPrompt = basePrompt + CONFIDENCE_ADDENDUM;
 
   const isPdf   = mimeType === 'application/pdf';
@@ -247,7 +248,11 @@ async function extractFields({ buffer, mimeType, destination, companyId, userId 
     validityOk: typeof data.validity_ok === 'boolean' ? data.validity_ok : null,
     issues: Array.isArray(data.issues) ? data.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
     siteHint: (data.site_hint || '').trim().slice(0, 200) || null,
-    // Tipo corso granulare (formazione_sicurezza|primo_soccorso|antincendio|...) —
+    // Solo per equipment_documents (F-096, AUDIT.md) — targa/nome del mezzo,
+    // stesso ruolo di siteHint ma per risolvere matchEquipment alla conferma.
+    vehiclePlate: isEquipmentDoc ? ((data.vehicle_plate || '').trim().slice(0, 50) || null) : null,
+    vehicleHint:  isEquipmentDoc ? ((data.vehicle_hint  || '').trim().slice(0, 200) || null) : null,
+    // Tipo corso granulare (formazione_sicurezza/primo_soccorso/antincendio/...) —
     // non mostrato in revisione (ridondante con doc_type della classificazione),
     // ma necessario per risolvere course_type_id alla conferma.
     docTypeDetected: isWorkerDoc ? (data.doc_type_detected || null) : null,
