@@ -28,7 +28,8 @@ const { reviewDocumentRequestSchema } = require('../../lib/schemas/studio');
 
 const BUCKET = 'site-documents';
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/archive', verifySupabaseJwt);
 
 // ── studio_shared_documents ──────────────────────────────────────────────────
 

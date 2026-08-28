@@ -42,7 +42,8 @@ const uploadZip = multer({
   },
 });
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/chat/upload', verifySupabaseJwt);
 
 // ── POST /api/v1/chat/upload ─────────────────────────────────────────────────
 router.post('/chat/upload',

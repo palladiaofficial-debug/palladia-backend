@@ -12,7 +12,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped ai propri path — vedi archive.js per la spiegazione.
+router.use(['/documents/search', '/documents/expiring', '/sites/:siteId/documents'], verifySupabaseJwt);
 
 function today() {
   return new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });

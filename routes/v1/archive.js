@@ -28,7 +28,13 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { isFeatureEnabled } = require('../../lib/featureFlags');
 const { sendDbError } = require('../../lib/httpErrors');
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped ai propri path — un router.use(verifySupabaseJwt)
+// non scoped viene eseguito da Express per OGNI richiesta che attraversa
+// questo router (anche quando nessuna sua rotta corrisponde), perché tutti i
+// router in routes/v1/index.js sono montati su '/'. Con ~15 file così,
+// ogni richiesta si autenticava fino a 14 volte di troppo prima di
+// raggiungere la rotta giusta (~400ms ciascuna, verificato nei log Railway).
+router.use(['/archive', '/document-folders', '/documents'], verifySupabaseJwt);
 
 function today() {
   return new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });

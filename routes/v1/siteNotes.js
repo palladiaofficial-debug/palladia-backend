@@ -35,7 +35,8 @@ const upload = multer({
   },
 });
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/site-notes', verifySupabaseJwt);
 
 // Durata signed URL: 1 ora
 const SIGNED_URL_TTL = 3600;

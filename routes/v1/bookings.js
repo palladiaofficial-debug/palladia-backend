@@ -44,7 +44,8 @@ function buildIcs({ title, start, end, location, description, uid }) {
   ].filter(Boolean).join('\r\n');
 }
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/bookings', verifySupabaseJwt);
 
 // ── POST /api/v1/bookings/checkout ────────────────────────────────────────────
 

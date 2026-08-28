@@ -76,7 +76,8 @@ const CATEGORY_TO_COURSE_NAME = {
   badge_patentino:   'Badge Patentino - D.L. 159/2025',
 };
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/workers/:workerId/certificates', verifySupabaseJwt);
 
 // ── POST /api/v1/workers/:workerId/certificates/upload ────────────────────────
 

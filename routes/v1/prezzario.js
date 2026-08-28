@@ -30,13 +30,11 @@ const upload = multer({
 // ── GET /api/v1/prezzario/regioni ─────────────────────────────────────────────
 // Restituisce regioni e anni disponibili nel prezzario.
 router.get('/prezzario/regioni', verifySupabaseJwt, async (req, res) => {
-  const _t = Date.now();
   const { data, error } = await supabase
     .from('prezzario_voci')
     .select('regione, anno')
     .order('regione')
     .order('anno', { ascending: false });
-  console.log('[F-100 diag] prezzario_voci query took', Date.now() - _t, 'ms');
 
   if (error) return sendDbError(res, error);
 

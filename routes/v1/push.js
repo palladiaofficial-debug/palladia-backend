@@ -18,7 +18,8 @@ router.get('/push/vapid-public-key', (req, res) => {
   res.json({ vapidPublicKey: key });
 });
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/push', verifySupabaseJwt);
 
 // Salva o aggiorna la subscription del dispositivo corrente
 router.post('/push/subscribe', async (req, res) => {

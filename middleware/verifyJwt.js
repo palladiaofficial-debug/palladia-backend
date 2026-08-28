@@ -59,7 +59,6 @@ function enforceViewerReadOnly(req, res, role) {
  *   403 — utente non appartiene alla company
  */
 async function verifySupabaseJwt(req, res, next) {
-  if (req._diagT0) console.log('[F-100 diag] time before verifySupabaseJwt starts:', Date.now() - req._diagT0, 'ms for', req.originalUrl);
   // 1. Estrai JWT dall'header Authorization
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ')) {
@@ -69,10 +68,8 @@ async function verifySupabaseJwt(req, res, next) {
 
   // 2. Valida JWT con Supabase Auth (call HTTP a Supabase Auth server)
   let user;
-  const _t0 = Date.now();
   try {
     const { data, error } = await supabase.auth.getUser(jwt);
-    console.log('[F-100 diag] getUser took', Date.now() - _t0, 'ms for', req.method, req.originalUrl);
     if (error || !data?.user) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
@@ -90,7 +87,6 @@ async function verifySupabaseJwt(req, res, next) {
 
   // 4. Verifica membership reale in company_users (con retry su errore transitorio)
   let membership = null;
-  const _t1 = Date.now();
   for (let attempt = 1; attempt <= 2; attempt++) {
     const { data, error: memberErr } = await supabase
       .from('company_users')
@@ -99,7 +95,6 @@ async function verifySupabaseJwt(req, res, next) {
       .eq('user_id', user.id)
       .maybeSingle();
 
-    console.log('[F-100 diag] company_users lookup took', Date.now() - _t1, 'ms (attempt', attempt, ') for', req.originalUrl);
     if (!memberErr) { membership = data; break; }
     if (attempt === 2) {
       console.error('[auth] membership check failed after retry:', memberErr.message);
@@ -170,9 +165,7 @@ async function verifySupabaseJwt(req, res, next) {
   req.userRole  = membership.role;
 
   if (!enforceViewerReadOnly(req, res, membership.role)) return;
-  const _t2 = Date.now();
   if (!await enforceBillingForWrites(req, res, companyId)) return;
-  console.log('[F-100 diag] enforceBillingForWrites took', Date.now() - _t2, 'ms, total middleware', Date.now() - _t0, 'ms for', req.originalUrl);
 
   next();
 }

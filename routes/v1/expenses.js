@@ -15,7 +15,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 // già su questo bucket, questo file era rimasto indietro nella consolidazione.
 const BUCKET = 'site-documents';
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/expenses', verifySupabaseJwt);
 
 // ── GET /api/v1/expenses — lista spese con filtri ───────────────────────────
 router.get('/expenses', async (req, res) => {

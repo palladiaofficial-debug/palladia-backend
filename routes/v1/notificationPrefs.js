@@ -11,7 +11,8 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped al proprio path — vedi archive.js per la spiegazione.
+router.use('/notification-preferences', verifySupabaseJwt);
 
 // ── GET: leggi preferenze correnti ─────────────────────────────────────────
 router.get('/notification-preferences', async (req, res) => {

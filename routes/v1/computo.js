@@ -50,7 +50,8 @@ const upload = multer({
   },
 });
 
-router.use(verifySupabaseJwt);
+// F-100 (AUDIT.md): scoped ai propri path — vedi archive.js per la spiegazione.
+router.use(['/sites/:siteId/computo', '/computo'], verifySupabaseJwt);
 
 const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
