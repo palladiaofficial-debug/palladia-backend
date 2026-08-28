@@ -565,20 +565,9 @@ async function rejectItem(itemId, companyId) {
 // attestato_formazione, patente, ecc). Se il tipo rilevato non è ammesso per
 // quella tabella, ripiega su 'altro' invece di far fallire l'insert con un
 // errore SQL grezzo in faccia all'utente in fase di conferma.
-// migrations/167_site_documents_contratto_capitolato.sql ha aggiunto
-// 'contratto'/'capitolato' al CHECK di site_documents — prima finivano
-// sempre silenziosamente rietichettati 'altro' anche quando smartImportAI
-// li classificava correttamente (DOC_TYPES li include già).
-const CATEGORY_ALLOWLIST = {
-  site_documents:    new Set(['pos', 'psc', 'notifica_asl', 'durc', 'dvr', 'assicurazione', 'contratto', 'capitolato', 'altro']),
-  company_documents: new Set(['rspp', 'rls', 'medico_competente', 'visite_mediche', 'primo_soccorso', 'emergenze', 'preposto', 'dvr', 'duvri', 'formazione', 'durc', 'visura', 'iso', 'soa', 'assicurazione', 'polizza', 'f24', 'contratto', 'capitolato', 'altro']),
-};
-
-function sanitizeCategory(destination, docType) {
-  const allowed = CATEGORY_ALLOWLIST[destination];
-  if (!allowed) return docType || 'altro'; // worker_documents/worker_certificates: doc_type libero, nessun CHECK
-  return allowed.has(docType) ? docType : 'altro';
-}
+// Estratto in lib/documentCategory.js (F-094, AUDIT.md) — riusato anche da
+// services/chatDocumentAnalysis.js, che non aveva questa protezione.
+const { sanitizeCategory } = require('../lib/documentCategory');
 
 const GREEN_THRESHOLD = 0.85;
 

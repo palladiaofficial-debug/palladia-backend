@@ -15,6 +15,7 @@ const supabase = require('../lib/supabase');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const { logAction } = require('../lib/ladiaActionLog');
 const { matchSite } = require('../lib/entityMatch');
+const { sanitizeCategory } = require('../lib/documentCategory');
 
 const BUCKET = 'site-documents';
 
@@ -186,7 +187,7 @@ async function archiveChatUpload({
   if (destination === 'site_documents') {
     const { data: d, error: e } = await supabase.from('site_documents').insert({
       company_id: companyId, site_id: siteId, name,
-      category:  category || 'altro',
+      category:  sanitizeCategory('site_documents', category),
       file_path: permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
       content_hash: contentHash,
     }).select('id').single();
@@ -195,7 +196,7 @@ async function archiveChatUpload({
   } else if (destination === 'company_documents') {
     const { data: d, error: e } = await supabase.from('company_documents').insert({
       company_id: companyId, name,
-      category:       category || 'altro',
+      category:       sanitizeCategory('company_documents', category),
       file_path:      permanentPath, mime_type: upload.mime_type, file_size: upload.size_bytes,
       ai_expiry_date: expiryDate || null,
       content_hash: contentHash,
