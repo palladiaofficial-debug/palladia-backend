@@ -14,10 +14,11 @@ const Anthropic = require('@anthropic-ai/sdk');
 const supabase = require('../lib/supabase');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const { logAction } = require('../lib/ladiaActionLog');
-const { matchSite } = require('../lib/entityMatch');
+const { matchSite, matchEquipment } = require('../lib/entityMatch');
 const { sanitizeCategory } = require('../lib/documentCategory');
 
 const BUCKET = 'site-documents';
+const EQUIPMENT_BUCKET = 'equipment-docs';
 
 let _anthropic = null;
 function getClient() {
@@ -27,8 +28,8 @@ function getClient() {
 
 const ANALYSIS_SYSTEM_PROMPT = `Analizza il documento allegato e rispondi SOLO con JSON valido (niente markdown):
 {
-  "doc_type": "idoneita_medica|attestato_formazione|durc|visura|assicurazione|dvr|pos|psc|capitolato|contratto|busta_paga|f24|iso|soa|permesso|patente|altro",
-  "destination": "site_documents|company_documents|worker_documents|worker_certificates",
+  "doc_type": "idoneita_medica|attestato_formazione|durc|visura|assicurazione|dvr|pos|psc|capitolato|contratto|busta_paga|f24|iso|soa|permesso|patente|libretto_circolazione|assicurazione_mezzo|revisione_mezzo|altro",
+  "destination": "site_documents|company_documents|worker_documents|worker_certificates|equipment_documents",
   "name": "nome breve descrittivo max 80 car",
   "expiry_date": "YYYY-MM-DD oppure null",
   "issue_date": "YYYY-MM-DD oppure null",
@@ -36,9 +37,12 @@ const ANALYSIS_SYSTEM_PROMPT = `Analizza il documento allegato e rispondi SOLO c
   "worker_cf": "codice fiscale maiuscolo oppure null",
   "issuing_body": "ente emittente oppure null",
   "cantiere_hint": "nome cantiere se menzionato oppure null",
+  "vehicle_plate": "targa o numero di telaio/matricola del mezzo, se il documento riguarda un veicolo/mezzo — altrimenti null",
+  "vehicle_hint": "marca/modello o nome del mezzo se la targa non è leggibile — altrimenti null",
   "category": "categoria per la tabella oppure null",
   "summary": "max 2 righe descrizione"
-}`;
+}
+Un libretto di circolazione, un'assicurazione o una revisione di un veicolo/mezzo (non un lavoratore) vanno SEMPRE con destination="equipment_documents", mai company_documents.`;
 
 /**
  * Scarica un chat_upload, lo manda a Claude Vision, restituisce l'analisi
@@ -106,11 +110,12 @@ async function analyzeChatUpload({ uploadId, companyId, userId, conversationId =
  */
 async function archiveChatUpload({
   uploadId, companyId, userId,
-  destination, name, siteId, workerId,
+  destination, name, siteId, workerId, equipmentId,
   category, expiryDate, issueDate, issuingBody, courseTypeId,
   periodYear = null, periodMonth = null,
   contentHash = null,
   siteHint = null,
+  equipmentHint = null,
   req = null,
   conversationId = null,
 }) {
@@ -123,7 +128,7 @@ async function archiveChatUpload({
   if (!upload)         return { error: 'File non trovato o accesso negato.' };
   if (upload.archived) return { error: 'Questo file è già stato archiviato.' };
 
-  const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips'];
+  const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents'];
   if (!validDests.includes(destination)) return { error: 'destination non valida: ' + destination };
   if (destination === 'site_documents' && !siteId)
     return { error: 'site_id obbligatorio per site_documents.' };
@@ -131,6 +136,22 @@ async function archiveChatUpload({
     return { error: 'worker_id obbligatorio per ' + destination + '.' };
   if (destination === 'payslips' && (!periodYear || !periodMonth))
     return { error: 'period_year e period_month obbligatori per payslips.' };
+
+  // equipment_documents: risolvi il mezzo per id diretto o per targa/nome
+  // (stesso pattern di matchSite sopra) — a differenza del cantiere "extra",
+  // qui il mezzo è la destinazione primaria: senza un match non si scrive.
+  let resolvedEquipmentId = null;
+  if (destination === 'equipment_documents') {
+    if (equipmentId) {
+      const { data: eqRow } = await supabase.from('equipment').select('id').eq('id', equipmentId).eq('company_id', companyId).maybeSingle();
+      resolvedEquipmentId = eqRow?.id || null;
+    } else if (equipmentHint) {
+      const { data: candidates } = await supabase.from('equipment').select('id, name, type, model, plate_or_serial').eq('company_id', companyId).eq('is_active', true);
+      const match = matchEquipment({ plate: equipmentHint, name: equipmentHint }, candidates || []);
+      resolvedEquipmentId = match?.id || null;
+    }
+    if (!resolvedEquipmentId) return { error: 'Mezzo non trovato — indica equipment_id o una targa/nome che corrisponda a un mezzo in Risorse.' };
+  }
 
   // Cartelle Intelligenti (vedi AUDIT.md): oltre alla destinazione primaria,
   // un documento può avere un cantiere "extra" — un attestato di un lavoratore
@@ -159,11 +180,16 @@ async function archiveChatUpload({
     destination === 'company_documents' ? `${companyId}/company/${newId}-${safeFn}` :
     destination === 'worker_documents'  ? `${companyId}/${workerId}/${newId}-${safeFn}` :
     destination === 'worker_certificates' ? `${companyId}/${workerId}/certs/${newId}-${safeFn}` :
+    destination === 'equipment_documents' ? `${companyId}/${resolvedEquipmentId}/${newId}-${safeFn}` :
     /* payslips — stesso percorso deterministico usato dall'upload manuale
        (routes/v1/payslips.js), necessario per l'upsert su company_id+worker_id+
        period_year+period_month: un secondo import per lo stesso periodo deve
        sovrascrivere, non duplicare. */
     `payslips/${companyId}/${workerId}/${periodYear}-${safeMo}.pdf`;
+
+  // equipment_documents vive in un bucket separato (routes/v1/equipment.js),
+  // non in quello condiviso dalle altre 4 destinazioni.
+  const destBucket = destination === 'equipment_documents' ? EQUIPMENT_BUCKET : BUCKET;
 
   const { data: signedTmp } = await supabase.storage
     .from(BUCKET).createSignedUrl(upload.storage_path, 120);
@@ -174,7 +200,7 @@ async function archiveChatUpload({
   const fileBuf = Buffer.from(await dlResp.arrayBuffer());
 
   const { error: storErr } = await supabase.storage
-    .from(BUCKET)
+    .from(destBucket)
     // payslips: path deterministico per periodo, un secondo import per lo
     // stesso mese sovrascrive di proposito (stesso comportamento dell'upload
     // manuale in routes/v1/payslips.js). Tutte le altre destinazioni usano un
@@ -250,10 +276,23 @@ async function archiveChatUpload({
     }, { onConflict: 'company_id,worker_id,period_year,period_month', ignoreDuplicates: false })
       .select('id').single();
     docId = d?.id; insertErr = e;
+
+  } else if (destination === 'equipment_documents') {
+    // Nessuna colonna expiry_date/content_hash su questa tabella (migrazione
+    // 014) — a differenza delle altre 5 destinazioni, la scadenza di un mezzo
+    // vive su equipment.insurance_expiry/inspection_date, non sul documento.
+    const { data: d, error: e } = await supabase.from('equipment_documents').insert({
+      company_id: companyId, equipment_id: resolvedEquipmentId,
+      doc_type:  category || 'altro',
+      file_name: name, file_url: permanentPath,
+      file_size: upload.size_bytes, mime_type: upload.mime_type,
+      uploaded_by: userId,
+    }).select('id').single();
+    docId = d?.id; insertErr = e;
   }
 
   if (insertErr) {
-    supabase.storage.from(BUCKET).remove([permanentPath]).catch(() => {});
+    supabase.storage.from(destBucket).remove([permanentPath]).catch(() => {});
     return { error: 'Errore DB: ' + insertErr.message };
   }
 
@@ -280,16 +319,17 @@ async function archiveChatUpload({
   }
 
   // destination è già il nome della risorsa registrata in ladiaSchemaRegistry.js
-  // (site_documents/company_documents/worker_documents/worker_certificates,
-  // tutte bespoke-only con allow:false — l'undo resta non offerto, il file
-  // in storage non verrebbe ripulito da un delete generico) — logAction()
+  // (site_documents/company_documents/worker_documents/worker_certificates/
+  // equipment_documents, tutte bespoke-only con allow:false — l'undo resta
+  // non offerto, il file in storage non verrebbe ripulito da un delete
+  // generico) — logAction()
   // sostituisce il precedente auditLog() diretto: stesso trail legale, più
   // la riga in ladia_action_history che abilita la card verde di successo.
   const logResult = await logAction({
     companyId, userId, req, conversationId,
     resourceName: destination, action: 'create',
     recordId: docId,
-    record: { name, category: category || 'altro', site_id: siteId || null, worker_id: workerId || null, expiry_date: expiryDate || null },
+    record: { name, category: category || 'altro', site_id: siteId || null, worker_id: workerId || null, equipment_id: resolvedEquipmentId || null, expiry_date: expiryDate || null },
     auditActionOverride: `record.create:${destination}`,
   });
 

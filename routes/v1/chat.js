@@ -590,6 +590,9 @@ Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
 - Per idoneità mediche, patenti, formazione: destination="worker_documents" o "worker_certificates"
 - Per DURC, ISO, SOA, assicurazione, visura: destination="company_documents"
 - Per POS, PSC, DVR, documenti legati a un cantiere: destination="site_documents"
+- Per libretto di circolazione, assicurazione o revisione di un mezzo/veicolo: destination="equipment_documents",
+  con equipment_hint = targa (vehicle_plate) o marca/modello (vehicle_hint) da read_uploaded_document — MAI
+  company_documents per questi, anche se non trovi subito il mezzo corrispondente
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COSA VEDE L'UTENTE MENTRE AGISCI (leggi prima di rispondere a domande su te stessa)
@@ -2572,11 +2575,13 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       type: 'object',
       properties: {
         upload_id:      { type: 'string', description: 'UUID del file da archiviare' },
-        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips'], description: 'Tabella di destinazione — "payslips" per una singola busta paga/cedolino stipendio di UN lavoratore (mai worker_documents per queste)' },
+        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents'], description: 'Tabella di destinazione — "payslips" per una singola busta paga/cedolino stipendio di UN lavoratore (mai worker_documents per queste); "equipment_documents" per libretto/assicurazione/revisione di un mezzo, mai company_documents' },
         name:           { type: 'string', description: 'Nome visualizzato del documento (max 80 car)' },
         site_id:        { type: 'string', description: 'UUID cantiere (obbligatorio per site_documents)' },
         worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents, worker_certificates e payslips)' },
         cantiere_hint:  { type: 'string', description: 'Nome/indirizzo del cantiere citato nel documento (da read_uploaded_document), se il documento non è per site_documents ma riguarda comunque un cantiere specifico — es. un attestato del lavoratore che lavora lì. Palladia lo abbina automaticamente.' },
+        equipment_id:   { type: 'string', description: 'UUID mezzo (per equipment_documents, se già noto da una chiamata precedente)' },
+        equipment_hint: { type: 'string', description: 'Targa o marca/modello del mezzo citato nel documento (da read_uploaded_document, campo vehicle_plate/vehicle_hint) — obbligatorio per equipment_documents se equipment_id non è noto. Palladia lo abbina automaticamente.' },
         category:       { type: 'string', description: 'Categoria specifica del documento' },
         expiry_date:    { type: 'string', description: 'Data scadenza YYYY-MM-DD (se rilevata)' },
         issue_date:     { type: 'string', description: 'Data emissione YYYY-MM-DD (per certificati)' },
@@ -5609,6 +5614,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const {
           upload_id, destination, name,
           site_id, worker_id, cantiere_hint,
+          equipment_id, equipment_hint,
           category, expiry_date, issue_date, issuing_body, course_type_id,
           period_year, period_month,
         } = toolInput;
@@ -5623,6 +5629,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           uploadId: upload_id, companyId, userId,
           destination, name, siteId: site_id, workerId: worker_id,
           siteHint: cantiere_hint,
+          equipmentId: equipment_id, equipmentHint: equipment_hint,
           category, expiryDate: expiry_date, issueDate: issue_date,
           issuingBody: issuing_body, courseTypeId: course_type_id,
           periodYear: period_year, periodMonth: period_month,
