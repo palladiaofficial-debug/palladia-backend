@@ -2,8 +2,18 @@
 const router = require('express').Router();
 const { apiLimiter } = require('../../middleware/rateLimit');
 
+// F-100 diag temporaneo: marker prima del rate limiter
+router.use((req, res, next) => { req._diagT0 = Date.now(); next(); });
+
 // Rate limit globale su tutto /api/v1/
-router.use(apiLimiter);
+const _apiLimiterWrapped = (req, res, next) => {
+  const t = Date.now();
+  apiLimiter(req, res, (...args) => {
+    console.log('[F-100 diag] apiLimiter took', Date.now() - t, 'ms for', req.originalUrl);
+    next(...args);
+  });
+};
+router.use(_apiLimiterWrapped);
 
 // Ricerca globale (JWT)
 router.use('/', require('./search'));

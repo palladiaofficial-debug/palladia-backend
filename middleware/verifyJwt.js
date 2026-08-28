@@ -59,6 +59,7 @@ function enforceViewerReadOnly(req, res, role) {
  *   403 — utente non appartiene alla company
  */
 async function verifySupabaseJwt(req, res, next) {
+  if (req._diagT0) console.log('[F-100 diag] time before verifySupabaseJwt starts:', Date.now() - req._diagT0, 'ms for', req.originalUrl);
   // 1. Estrai JWT dall'header Authorization
   const auth = req.headers['authorization'];
   if (!auth || !auth.startsWith('Bearer ')) {
