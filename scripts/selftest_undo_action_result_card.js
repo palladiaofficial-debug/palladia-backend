@@ -36,7 +36,12 @@ function check(name, cond, got) { cond ? ok(name) : fail(name, got); }
 async function main() {
   const { data: users } = await supabase.auth.admin.listUsers();
   const ciUser = users?.users?.find(u => u.email === CI_EMAIL);
-  if (!ciUser) { console.log('  – skip (utente CI non trovato — TEST_CI_EMAIL)'); process.exit(0); }
+  // process.exitCode (non process.exit()): uscire subito qui mentre la
+  // richiesta HTTP di listUsers() appena fatta sta ancora chiudendo i suoi
+  // handle di rete faceva crashare Node su Windows (libuv assertion
+  // "UV_HANDLE_CLOSING", trovato dal vivo 2026-08-28) — lasciare il loop
+  // eventi drenare naturalmente evita la race.
+  if (!ciUser) { console.log('  – skip (utente CI non trovato — TEST_CI_EMAIL)'); process.exitCode = 0; return; }
 
   const { data: note, error: noteErr } = await supabase.from('site_notes').insert({
     company_id: COMPANY_ID, site_id: SITE_ID, category: 'nota', urgency: 'normale',
