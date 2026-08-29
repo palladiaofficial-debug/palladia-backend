@@ -76,7 +76,7 @@ async function main() {
 
     // L'amministratore genera il PIN (endpoint autenticato, company-scoped).
     const genRes = await fetch(`${API_BASE}/workers/${worker.id}/area-pin`, {
-      method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': E2E_COMPANY_ID, 'Content-Type': 'application/json' },
     });
     const genBody = await genRes.json();
     check('generazione PIN riesce e ritorna 6 cifre', genRes.status === 200 && /^\d{6}$/.test(genBody.pin || ''), genBody);
@@ -111,7 +111,7 @@ async function main() {
 
     // Rigenerare il PIN invalida quello vecchio.
     const regenRes = await fetch(`${API_BASE}/workers/${worker.id}/area-pin`, {
-      method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': E2E_COMPANY_ID, 'Content-Type': 'application/json' },
     });
     const regenBody = await regenRes.json();
     const oldPinRes = await fetch(`${API_BASE}/area/${badgeCode}/auth`, {
