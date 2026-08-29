@@ -40,7 +40,7 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     .select(`
       id, company_id,
       full_name, photo_url, hire_date, birth_date, qualification, role,
-      employer_name, subcontracting_auth, fiscal_code, birth_place,
+      employer_name, subcontracting_auth, birth_place,
       safety_training_expiry, health_fitness_expiry,
       badge_code, is_active, created_at,
       company:companies ( name )
@@ -77,7 +77,13 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     qualification:       worker.qualification    || null,
     role:                worker.role             || null,
     hire_date:           worker.hire_date        || null,
-    fiscal_code:         worker.fiscal_code      || null,
+    // fiscal_code NON esposto qui (F-102): questo endpoint è pubblico, senza
+    // auth, pensato per la verifica ispettore in cantiere. Lo stesso codice
+    // fiscale è l'unico fattore richiesto da POST /area/:code/auth per
+    // entrare nell'area personale (buste paga/presenze) — regalarlo qui
+    // rendeva quel gate completamente inutile: bastava il badge_code
+    // pubblico per leggere lo stipendio di chiunque, senza mai vedere il
+    // badge fisico.
     birth_date:          worker.birth_date       || null,
     birth_place:         worker.birth_place      || null,
     subcontracting_auth: worker.subcontracting_auth || false,
@@ -247,7 +253,6 @@ function buildBadgePdfHtml({
   qrTimbrataUrl, qrVerifyDataUrl,
 }) {
   const codeFormatted = (worker.badge_code || '').replace(/(.{6})/g, '$1-').replace(/-$/, '');
-  const cfUpper = worker.fiscal_code ? worker.fiscal_code.toUpperCase() : null;
   const sexLabel = sexStr === 'M' ? 'Maschio' : sexStr === 'F' ? 'Femmina' : null;
 
   // ── FRONTE ────────────────────────────────────────────────────────────────
@@ -279,7 +284,6 @@ function buildBadgePdfHtml({
       ${dobStr     ? `<div class="fl-row"><span class="fl-lbl">Nato il </span>${esc(dobStr)}</div>`    : ''}
       ${birthPlace ? `<div class="fl-row"><span class="fl-lbl">Luogo </span>${esc(birthPlace)}</div>` : ''}
       ${sexLabel   ? `<div class="fl-row"><span class="fl-lbl">Sesso </span>${esc(sexLabel)}</div>`   : ''}
-      ${cfUpper    ? `<div class="fl-row"><span class="fl-lbl">CF </span>${esc(cfUpper)}</div>`       : ''}
     </div>
 
   </div>
