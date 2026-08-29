@@ -34,7 +34,8 @@ function layout(title, bodyHtml) {
     <table width="100%" style="max-width:560px;margin-bottom:8px;">
       <tr>
         <td style="padding:0 0 16px 4px;">
-          <span style="font-size:15px;font-weight:800;letter-spacing:0.12em;color:#1a1a1a;text-transform:uppercase;vertical-align:middle;">PALLADIA</span>
+          <img src="https://palladia.net/icon-512.png" width="20" height="20" alt="" style="border-radius:5px;vertical-align:middle;display:inline-block;" />
+          <span style="font-size:15px;font-weight:800;letter-spacing:-0.01em;color:#0f3d2e;text-transform:uppercase;vertical-align:middle;margin-left:8px;">PALLADIA</span>
           <span style="font-size:12px;color:#9ca3af;margin-left:10px;font-weight:400;letter-spacing:0;vertical-align:middle;">Gestione Cantieri</span>
         </td>
       </tr>
@@ -44,8 +45,8 @@ function layout(title, bodyHtml) {
 
       <!-- Hero band -->
       <tr>
-        <td style="background:#1a1a1a;padding:36px 40px 32px;">
-          <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#6b7280;">Palladia</p>
+        <td style="background:#22384f;padding:36px 40px 32px;">
+          <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#9db3c7;">Palladia</p>
           <h1 style="margin:0;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;line-height:1.2;">${title}</h1>
         </td>
       </tr>
@@ -80,7 +81,7 @@ function layout(title, bodyHtml) {
 }
 
 function btn(text, href) {
-  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:14px 32px;background:#1a1a1a;color:#ffffff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700;letter-spacing:0.01em;">${text}</a>`;
+  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:14px 32px;background:#22384f;color:#ffffff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700;letter-spacing:0.01em;">${text}</a>`;
 }
 
 // ─── Email: Benvenuto ──────────────────────────────────────────────────────
