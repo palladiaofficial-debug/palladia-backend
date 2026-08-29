@@ -5,7 +5,7 @@
  *
  * Regressione F-102 (AUDIT.md) — GET /api/v1/badge/:code (endpoint pubblico,
  * pensato per la verifica ispettore in cantiere) restituiva anche il campo
- * `fiscal_code` del lavoratore. Quello stesso codice fiscale è l'unico
+ * `fiscal_code` del lavoratore. Quello stesso codice fiscale era l'unico
  * fattore richiesto da POST /api/v1/area/:code/auth per entrare nell'area
  * personale (storico presenze + buste paga). Risultato: chiunque conoscesse
  * solo il badge_code (18 caratteri esadecimali, pubblico via QR/URL) poteva,
@@ -14,10 +14,11 @@
  * lavoratore e scaricare le buste paga — verificato dal vivo in produzione
  * su un lavoratore di test reale prima del fix (catena completa riuscita).
  *
- * Fix: fiscal_code rimosso dalla risposta pubblica di /badge/:code (e dal
- * PDF badge stampabile). Il gate su /area/:code/auth resta invariato — il
- * problema non era lì, era l'endpoint pubblico che regalava il "segreto"
- * richiesto un passo prima.
+ * Fix in due parti: fiscal_code rimosso dalla risposta pubblica di
+ * /badge/:code (e dal PDF badge stampabile) — questo file. Il login stesso è
+ * stato anche spostato dal CF (calcolabile pubblicamente da nome+data+luogo
+ * di nascita) a un PIN assegnato dall'amministratore fuori banda — vedi
+ * scripts/selftest_worker_area_pin_login.js.
  *
  * Uso: node scripts/selftest_badge_public_fiscal_code_exposure.js
  */
@@ -71,23 +72,14 @@ async function main() {
     check('la risposta pubblica continua a contenere i campi legittimi per l\'ispettore (nome, stato conformità)',
       badgeBody.full_name === 'TEST-E2E F102 Regressione' && 'overall_status' in badgeBody, badgeBody);
 
-    // Verifica che il gate su /area/:code/auth resti comunque solido: un
-    // attaccante che NON conosce il vero CF (perché non più nella risposta
-    // pubblica) non può autenticarsi tentando un CF a caso.
-    const wrongAuthRes = await fetch(`${API_BASE}/area/${badgeCode}/auth`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cf: 'ZZZZZZ00Z00Z000Z' }),
-    });
-    check('login area lavoratore con CF indovinato a caso viene rifiutato', wrongAuthRes.status === 401, wrongAuthRes.status);
-
-    // Il vero lavoratore, che il CF lo conosce davvero, deve continuare a poter accedere.
-    const rightAuthRes = await fetch(`${API_BASE}/area/${badgeCode}/auth`, {
+    // Il login ora richiede un PIN (F-102) — il CF, anche quello vero, non è
+    // più accettato come credenziale in nessun caso.
+    const cfAuthRes = await fetch(`${API_BASE}/area/${badgeCode}/auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cf: fiscalCode }),
     });
-    check('login area lavoratore con il vero CF continua a funzionare (nessuna regressione per l\'uso legittimo)', rightAuthRes.status === 200, rightAuthRes.status);
+    check('login area lavoratore col vecchio CF (anche quello vero) non funziona più', cfAuthRes.status === 400, cfAuthRes.status);
   } finally {
     await supabase.from('workers').delete().eq('id', worker.id);
   }

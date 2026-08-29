@@ -13,7 +13,8 @@ const router    = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const supabase  = require('../../lib/supabase');
 const { resolveWorkerByBadge } = require('../../lib/workerByBadge');
-const { signWorkerToken, compareCf, verifyWorkerArea, TOKEN_TTL } = require('../../lib/workerAuth');
+const { signWorkerToken, verifyWorkerArea, TOKEN_TTL } = require('../../lib/workerAuth');
+const { verifyPin } = require('../../lib/pinHash');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
 
 // ── Rate limit: 5 tentativi ogni 15 min per IP ──────────────────────────────
@@ -34,17 +35,24 @@ const areaLimiter = rateLimit({
 });
 
 // ── POST /api/v1/area/:code/auth ─────────────────────────────────────────────
+// F-102 (AUDIT.md): il login usava il codice fiscale come unico fattore — ma
+// il CF è calcolabile pubblicamente da nome+data+luogo di nascita (mostrati
+// per forza sulla stessa pagina badge per la verifica ispettore), quindi non
+// è mai stato un vero segreto. Sostituito con un PIN numerico assegnato
+// dall'amministratore fuori banda (POST /workers/:workerId/area-pin in
+// routes/v1/workers.js) — mai stampato sul badge, mai in una risposta
+// pubblica, salvato solo come hash bcrypt.
 router.post('/area/:code/auth', authLimiter, async (req, res) => {
   const { code } = req.params;
-  const { cf }   = req.body || {};
+  const { pin }  = req.body || {};
 
-  if (!cf || typeof cf !== 'string' || cf.trim().length !== 16) {
-    return res.status(400).json({ error: 'INVALID_CF', message: 'Il codice fiscale deve avere 16 caratteri.' });
+  if (!pin || typeof pin !== 'string' || !/^\d{6}$/.test(pin.trim())) {
+    return res.status(400).json({ error: 'INVALID_PIN', message: 'Il PIN deve avere 6 cifre.' });
   }
 
   const worker = await resolveWorkerByBadge(code);
   if (!worker) {
-    return res.status(401).json({ error: 'AUTH_FAILED', message: 'Codice fiscale non corretto.' });
+    return res.status(401).json({ error: 'AUTH_FAILED', message: 'PIN non corretto.' });
   }
   if (!worker.is_active) {
     return res.status(403).json({ error: 'WORKER_INACTIVE', message: 'Lavoratore non attivo.' });
@@ -52,12 +60,15 @@ router.post('/area/:code/auth', authLimiter, async (req, res) => {
 
   const { data: full } = await supabase
     .from('workers')
-    .select('fiscal_code')
+    .select('area_pin_hash')
     .eq('id', worker.id)
     .maybeSingle();
 
-  if (!full?.fiscal_code || !compareCf(cf, full.fiscal_code)) {
-    return res.status(401).json({ error: 'AUTH_FAILED', message: 'Codice fiscale non corretto.' });
+  if (!full?.area_pin_hash) {
+    return res.status(401).json({ error: 'PIN_NOT_SET', message: 'PIN non ancora impostato. Contatta il tuo datore di lavoro per riceverlo.' });
+  }
+  if (!(await verifyPin(pin.trim(), full.area_pin_hash))) {
+    return res.status(401).json({ error: 'AUTH_FAILED', message: 'PIN non corretto.' });
   }
 
   const token = signWorkerToken({

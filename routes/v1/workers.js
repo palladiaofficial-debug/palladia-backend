@@ -8,6 +8,7 @@ const { auditLog }          = require('../../lib/audit');
 const { complianceStatus }  = require('../../lib/compliance');
 const { generateBadgeCode } = require('../../lib/badgeCode');
 const { sendDbError } = require('../../lib/httpErrors');
+const { hashPin } = require('../../lib/pinHash');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -613,6 +614,44 @@ router.patch('/workers/:workerId', verifySupabaseJwt, validate(patchWorkerSchema
   });
 
   res.json(data);
+});
+
+// ── POST /api/v1/workers/:workerId/area-pin — genera/rigenera il PIN accesso
+// area lavoratore (buste paga/presenze). Sostituisce il vecchio login col
+// codice fiscale (F-102, AUDIT.md): il CF è calcolabile pubblicamente da
+// nome+data+luogo di nascita, quindi non è mai stato un vero segreto. Il PIN
+// va comunicato al lavoratore FUORI da questo sistema (di persona, telefono)
+// — non finisce mai sul badge stampato né in nessuna risposta pubblica.
+// Il valore in chiaro è restituito UNA SOLA VOLTA in questa risposta: non
+// viene salvato né loggato da nessuna parte, solo il suo hash bcrypt.
+router.post('/workers/:workerId/area-pin', verifySupabaseJwt, async (req, res) => {
+  const { workerId } = req.params;
+
+  const pin = String(Math.floor(100000 + Math.random() * 900000)); // 6 cifre
+  const pinHash = await hashPin(pin);
+
+  const { data, error } = await supabase
+    .from('workers')
+    .update({ area_pin_hash: pinHash, area_pin_set_at: new Date().toISOString() })
+    .eq('id', workerId)
+    .eq('company_id', req.companyId)
+    .select('id, full_name')
+    .maybeSingle();
+
+  if (error) return sendDbError(res, error);
+  if (!data) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+
+  auditLog({
+    companyId:  req.companyId,
+    userId:     req.user?.id,
+    userRole:   req.userRole,
+    action:     'worker.area_pin_regenerated',
+    targetType: 'worker',
+    targetId:   workerId,
+    req,
+  });
+
+  res.json({ pin, worker_id: data.id, full_name: data.full_name });
 });
 
 // ── POST /api/v1/workers/import — importa CSV lavoratori (PRIVATO) ───────────
