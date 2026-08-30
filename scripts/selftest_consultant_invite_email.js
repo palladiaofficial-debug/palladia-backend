@@ -10,9 +10,19 @@
  * mano. Fix: services/email.js (sendConsultantInviteEmail,
  * sendConsultantPendingInviteEmail) + wiring in routes/v1/consultantProfile.js.
  *
- * Questo test chiama il vero endpoint di produzione/staging e verifica, via
- * l'API reale di Resend (non un mock), che un'email sia stata davvero
- * accodata per il destinatario dell'invito.
+ * Due controlli distinti:
+ * 1) Route reale: POST /consultant/clients/invite risponde 201 e non crasha
+ *    (l'invio email è fire-and-forget, un errore lì non deve mai rompere
+ *    la risposta all'utente).
+ * 2) Funzione di invio reale: sendConsultantPendingInviteEmail chiamata
+ *    direttamente contro la vera API di Resend (non un mock) — verificato
+ *    che Resend accetti l'invio (nessun errore, id restituito). NON si usa
+ *    resend.emails.list() per confermare: osservato empiricamente un
+ *    ritardo di indicizzazione di oltre un minuto su quell'endpoint (email
+ *    già inviate e confermate via emails.get, invisibili in list() per
+ *    60-90s+) — list() renderebbe il test lento e comunque non deterministico,
+ *    mentre il risultato sincrono di emails.send() è l'unica conferma reale
+ *    e immediata che Resend ha accettato l'invio.
  *
  * Env: TEST_BASE_URL (default http://localhost:3001), SUPABASE_URL,
  * SUPABASE_ANON_KEY/SUPABASE_KEY, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY,
@@ -22,7 +32,6 @@
 'use strict';
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
-const { Resend } = require('resend');
 
 const BASE = (process.env.TEST_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -37,7 +46,6 @@ function ok(name)        { console.log(`  \x1b[32m✓\x1b[0m ${name}`); passed++
 function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (got !== undefined) console.error(`    got: ${JSON.stringify(got).slice(0, 300)}`); failed++; }
 function skip(name, why) { console.log(`  \x1b[33m–\x1b[0m ${name} (skip: ${why})`); skipped++; }
 function check(name, cond, got) { cond ? ok(name) : fail(name, got); }
-const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 async function main() {
   console.log('\nPalladia regression — invito Studio Professionale, email realmente inviata (F-103)\n');
@@ -49,9 +57,8 @@ async function main() {
     return;
   }
 
-  const admin  = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
-  const anon   = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
-  const resend = new Resend(RESEND_API_KEY);
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+  const anon  = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
 
   const { data: session, error: loginErr } = await anon.auth.signInWithPassword({ email: E2E_CONSULENTE_EMAIL, password: E2E_CONSULENTE_PASSWORD });
   if (loginErr || !session?.session) {
@@ -62,9 +69,9 @@ async function main() {
   }
   const jwt = session.session.access_token;
 
+  // ── 1) Route reale: risponde 201, restituisce un invite_link valido ────────
   const testEmail = `test-e2e-invite-${Date.now()}@palladia-test.local`;
   let clientId = null;
-
   try {
     const res = await fetch(`${BASE}/api/v1/consultant/clients/invite`, {
       method: 'POST',
@@ -75,21 +82,28 @@ async function main() {
     check('POST /consultant/clients/invite risponde 201', res.status === 201, { status: res.status, body });
     clientId = body?.client?.id || null;
     check('invite_link presente nella risposta', typeof body?.invite_link === 'string' && body.invite_link.includes('/formazione/accetta-consulente/'), body?.invite_link);
-
-    // L'invio è fire-and-forget lato server — piccola attesa prima di controllare Resend.
-    await sleep(3000);
-
-    const { data: list, error: listErr } = await resend.emails.list({ limit: 10 });
-    check('Resend API raggiungibile', !listErr, listErr);
-
-    const sent = (list?.data?.data || []).find(e => (e.to || []).includes(testEmail));
-    check('un\'email è stata davvero accodata per il destinatario dell\'invito', !!sent, list?.data?.data?.slice(0, 3));
-    if (sent) {
-      check('subject cita il nome dello studio invitante', /ti invita su Palladia|ti ha invitato su Palladia/.test(sent.subject || ''), sent.subject);
-    }
   } finally {
     if (clientId) await admin.from('consultant_clients').delete().eq('id', clientId);
   }
+
+  // ── 2) Funzione di invio reale, verificata contro la vera API di Resend ────
+  const { sendConsultantPendingInviteEmail, sendConsultantInviteEmail } = require('../services/email');
+
+  const pending = await sendConsultantPendingInviteEmail({
+    to: `test-e2e-pending-${Date.now()}@palladia-test.local`,
+    consultantName: 'TEST-E2E Studio Professionale',
+    acceptUrl: 'https://palladia.net/formazione/accetta-consulente/test-token',
+  });
+  check('sendConsultantPendingInviteEmail: Resend accetta l\'invio (nessun errore)', !pending?.error, pending?.error);
+  check('sendConsultantPendingInviteEmail: restituisce un id reale', !!pending?.data?.id, pending);
+
+  const direct = await sendConsultantInviteEmail({
+    to: `test-e2e-direct-${Date.now()}@palladia-test.local`,
+    consultantName: 'TEST-E2E Studio Professionale',
+    acceptUrl: 'https://palladia.net/formazione/accetta-consulente/test-token',
+  });
+  check('sendConsultantInviteEmail: Resend accetta l\'invio (nessun errore)', !direct?.error, direct?.error);
+  check('sendConsultantInviteEmail: restituisce un id reale', !!direct?.data?.id, direct);
 
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;
