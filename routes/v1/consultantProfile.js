@@ -78,7 +78,7 @@ router.get('/consultant/me', verifyConsultantJwt, async (req, res) => {
 router.put('/consultant/me', verifyConsultantJwt, validate(putConsultantProfileSchema), async (req, res) => {
   const allowed = [
     'company_name','vat_number','registration_number','operative_regions',
-    'bio','photo_url','accreditation_bodies','years_experience',
+    'bio','photo_url','accreditation_bodies','years_experience','sells_courses',
   ];
   const updates = Object.fromEntries(
     Object.entries(req.body || {}).filter(([k]) => allowed.includes(k))
