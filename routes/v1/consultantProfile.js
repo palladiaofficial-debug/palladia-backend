@@ -314,6 +314,44 @@ router.get('/consultant/clients/:companyId/formazione', verifyConsultantJwt, asy
   res.json({ stats, workers: result });
 });
 
+// ── GET /api/v1/consultant/clients/invite-preview/:token ──────────────────────
+// Pubblico (nessun JWT) — usato dalla pagina di accettazione per mostrare A CHI
+// è destinato l'invito PRIMA di autenticarsi/accettare, cosi' un utente loggato
+// con l'account sbagliato lo scopre subito invece di scoprirlo (o peggio, non
+// scoprirlo affatto) dopo aver già premuto "Accetta". Espone solo il minimo:
+// niente id interni, niente altri dati del consulente.
+
+router.get('/consultant/clients/invite-preview/:token', async (req, res) => {
+  const { token } = req.params;
+
+  const { data: rel } = await supabase
+    .from('consultant_clients')
+    .select('status, invite_email, company_id, consultant_id')
+    .eq('invite_token', token)
+    .maybeSingle();
+
+  if (!rel) return res.status(404).json({ error: 'INVITE_NOT_FOUND' });
+
+  const { data: profile } = await supabase
+    .from('consultant_profiles')
+    .select('company_name')
+    .eq('user_id', rel.consultant_id)
+    .maybeSingle();
+
+  let companyName = null;
+  if (rel.company_id) {
+    const { data: co } = await supabase.from('companies').select('name').eq('id', rel.company_id).maybeSingle();
+    companyName = co?.name || null;
+  }
+
+  res.json({
+    status:          rel.status,
+    consultant_name: profile?.company_name || null,
+    invite_email:    rel.invite_email || null,
+    company_name:    companyName,
+  });
+});
+
 // ── POST /api/v1/consultant/clients/accept/:token ─────────────────────────────
 // Chiamato dall'impresa (JWT impresa) per accettare l'invito del consulente
 
@@ -322,7 +360,7 @@ router.post('/consultant/clients/accept/:token', verifySupabaseJwt, async (req, 
 
   const { data: rel } = await supabase
     .from('consultant_clients')
-    .select('id, status, company_id')
+    .select('id, status, company_id, invite_email')
     .eq('invite_token', token)
     .maybeSingle();
 
@@ -332,6 +370,14 @@ router.post('/consultant/clients/accept/:token', verifySupabaseJwt, async (req, 
   // Verifica che chi accetta sia un membro dell'azienda (già fatto da verifySupabaseJwt)
   if (rel.company_id && rel.company_id !== req.companyId) {
     return res.status(403).json({ error: 'WRONG_COMPANY' });
+  }
+
+  // F-103 — invito solo-email (nessun company_id noto al momento dell'invito):
+  // prima non c'era NESSUN controllo qui, quindi chiunque fosse autenticato con
+  // QUALUNQUE azienda poteva accettare, legando la propria azienda — sbagliata —
+  // all'invito. Verifica che l'email autenticata corrisponda a quella invitata.
+  if (!rel.company_id && rel.invite_email && rel.invite_email.toLowerCase() !== (req.user.email || '').toLowerCase()) {
+    return res.status(403).json({ error: 'EMAIL_MISMATCH', expected_email: rel.invite_email });
   }
 
   const { error } = await supabase

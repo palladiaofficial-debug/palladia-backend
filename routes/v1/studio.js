@@ -403,6 +403,26 @@ router.post('/studio/clients/invite', verifyStudioJwt, validate(inviteClientSche
   });
 });
 
+// F-103 — pubblico, nessun JWT: usato dalla pagina di accettazione per
+// mostrare A CHI è destinato l'invito prima di autenticarsi/accettare.
+router.get('/studio/pending-invites/invite-preview/:token', async (req, res) => {
+  const { token } = req.params;
+  const { data: pending } = await supabase
+    .from('studio_pending_invites')
+    .select('status, contact_email, company_name, studio_partners(studio_name)')
+    .eq('invite_token', token)
+    .maybeSingle();
+
+  if (!pending) return res.status(404).json({ error: 'INVITE_NOT_FOUND' });
+
+  res.json({
+    status:            pending.status,
+    studio_name:       pending.studio_partners?.studio_name || null,
+    contact_email:     pending.contact_email || null,
+    company_name_hint: pending.company_name || null,
+  });
+});
+
 // Accetta un pending invite (impresa appena registrata su Palladia).
 // Il token viene dalla email "pending invite" — l'impresa si è registrata, ora collega l'azienda.
 router.post('/studio/pending-invites/accept/:token', async (req, res) => {
@@ -430,6 +450,16 @@ router.post('/studio/pending-invites/accept/:token', async (req, res) => {
   if (!pending) return res.status(404).json({ error: 'Invito non trovato o non valido' });
   if (pending.status === 'accepted') {
     return res.status(409).json({ error: 'ALREADY_ACCEPTED', studio_name: pending.studio_partners?.studio_name });
+  }
+
+  // F-103 — prima nessun controllo qui: chiunque fosse autenticato con
+  // QUALSIASI azienda (la prima trovata come owner/admin, in ordine
+  // arbitrario) poteva accettare un pending invite destinato a un contatto
+  // email completamente diverso, legando la propria azienda — sbagliata —
+  // all'invito dello studio. Stesso identico gap del flusso Consulente
+  // (vedi routes/v1/consultantProfile.js), corretto con lo stesso pattern.
+  if (pending.contact_email && pending.contact_email.toLowerCase() !== (user.email || '').toLowerCase()) {
+    return res.status(403).json({ error: 'EMAIL_MISMATCH', expected_email: pending.contact_email });
   }
 
   // L'utente deve essere owner/admin di almeno un'azienda
