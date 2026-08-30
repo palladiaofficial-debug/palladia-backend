@@ -1447,6 +1447,101 @@ async function sendStudioPendingInviteEmail({ to, studioName, companyNameHint, a
 }
 
 /**
+ * F-103 — invito da uno Studio Professionale (RSPP/CSP/CSE/direzione lavori)
+ * a un'impresa GIÀ registrata su Palladia (company_id noto). Prima di questo
+ * fix l'endpoint POST /consultant/clients/invite non inviava mai nessuna
+ * email — il TODO era rimasto tale, l'unico output era l'invite_link
+ * mostrato al consulente da copiare a mano.
+ * @param {{ to: string, consultantName: string, acceptUrl: string }} opts
+ */
+async function sendConsultantInviteEmail({ to, consultantName, acceptUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Invito da ${esc(consultantName)}</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      <strong style="color:#1a1a1a;">${esc(consultantName)}</strong> ti ha invitato a collegarti su Palladia,
+      la piattaforma per la sicurezza sul lavoro nei cantieri.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Cosa significa accettare</p>
+          <ul style="margin:0;padding:0 0 0 16px;">
+            <li style="padding:4px 0;font-size:13px;color:#374151;line-height:1.5;">Potrà monitorare le scadenze formative dei tuoi lavoratori</li>
+            <li style="padding:4px 0;font-size:13px;color:#374151;line-height:1.5;">Non può modificare nulla senza il tuo consenso — solo consultare</li>
+            <li style="padding:4px 0;font-size:13px;color:#374151;line-height:1.5;">Potrà proporti corsi di formazione dedicati</li>
+          </ul>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Accetta la collaborazione →', acceptUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Se non conosci ${esc(consultantName)} o non ti aspettavi questo invito, ignora questa email.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${consultantName} ti ha invitato su Palladia`,
+    html: layout(`Invito — ${consultantName}`, body),
+  });
+}
+
+/**
+ * F-103 — invito da uno Studio Professionale a un'impresa contattata solo
+ * per email (nessun company_id noto al momento dell'invito — potrebbe già
+ * avere un account Palladia con un'altra email associata, o non averne
+ * ancora uno). A differenza del flusso Studio CDL non esiste un secondo
+ * endpoint dedicato alla registrazione: il link porta comunque alla stessa
+ * pagina di accettazione, che ora reindirizza al login se non autenticati.
+ * @param {{ to: string, consultantName: string, acceptUrl: string }} opts
+ */
+async function sendConsultantPendingInviteEmail({ to, consultantName, acceptUrl }) {
+  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Invito da ${esc(consultantName)}</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      <strong style="color:#1a1a1a;">${esc(consultantName)}</strong> vuole collegarsi con la tua impresa su Palladia,
+      la piattaforma per la sicurezza sul lavoro nei cantieri.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Come funziona</p>
+          <ul style="margin:0;padding:0 0 0 16px;">
+            <li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.5;"><strong>1.</strong> Se hai già un account Palladia, accedi e clicca sul bottone qui sotto</li>
+            <li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.5;"><strong>2.</strong> Se non ce l'hai, creane uno gratuito su palladia.net/register, poi riapri questo stesso link</li>
+            <li style="padding:5px 0;font-size:13px;color:#374151;line-height:1.5;"><strong>3.</strong> ${esc(consultantName)} monitorerà scadenze e formazione per te</li>
+          </ul>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Accetta l\'invito →', acceptUrl)}
+
+    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;">
+      Se non conosci ${esc(consultantName)} o non ti aspettavi questo invito, ignora questa email — non verrà creato nessun collegamento senza la tua azione.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `${consultantName} ti invita su Palladia`,
+    html: layout(`Invito da ${consultantName}`, body),
+  });
+}
+
+/**
  * Digest settimanale per lo studio CDL: riepilogo stato conformità di tutti i clienti.
  * @param {{ to: string, studioName: string, summary: object, issues: Array }} opts
  */
@@ -2422,6 +2517,8 @@ module.exports = {
   sendQuoteReceivedCompany,
   sendStudioInviteEmail,
   sendStudioPendingInviteEmail,
+  sendConsultantInviteEmail,
+  sendConsultantPendingInviteEmail,
   sendStudioWeeklyDigest,
   sendStudioExpiryAlertToCompany,
   sendProviderMagicLinkEmail,

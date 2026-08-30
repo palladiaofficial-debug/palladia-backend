@@ -20,12 +20,15 @@ const { verifyConsultantJwt, verifyConsultantOrCreate } = require('../../middlew
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { sendDbError } = require('../../lib/httpErrors');
+const { sendConsultantInviteEmail, sendConsultantPendingInviteEmail } = require('../../services/email');
 const {
   onboardConsultantSchema,
   putConsultantProfileSchema,
   inviteClientSchema,
   putClientRelationSchema,
 } = require('../../lib/schemas/consultantProfile');
+
+const APP_BASE_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
 // ── POST /api/v1/consultant/onboard ───────────────────────────────────────────
 
@@ -188,8 +191,32 @@ router.post('/consultant/clients/invite', verifyConsultantJwt, validate(inviteCl
     return sendDbError(res, error);
   }
 
-  // TODO: invia email di invito (quando email template pronto)
-  res.status(201).json({ client: data, invite_link: `${process.env.FRONTEND_URL || ''}/formazione/accetta-consulente/${token}` });
+  const acceptUrl = `${APP_BASE_URL}/formazione/accetta-consulente/${token}`;
+  const consultantName = req.consultant?.company_name || 'Un consulente';
+
+  // F-103 — prima di questo fix l'endpoint non inviava mai alcuna email: il
+  // consulente doveva copiare/incollare l'invite_link a mano. Fire-and-forget,
+  // non deve bloccare/far fallire la risposta se Resend ha un problema.
+  if (company_id) {
+    supabase
+      .from('company_users')
+      .select('user_id')
+      .eq('company_id', company_id)
+      .eq('role', 'owner')
+      .maybeSingle()
+      .then(async ({ data: owner }) => {
+        if (!owner?.user_id) return;
+        const { data: { user } } = await supabase.auth.admin.getUserById(owner.user_id);
+        if (!user?.email) return;
+        await sendConsultantInviteEmail({ to: user.email, consultantName, acceptUrl });
+      })
+      .catch(err => console.error('[consultant] sendConsultantInviteEmail:', err.message));
+  } else {
+    sendConsultantPendingInviteEmail({ to: row.invite_email, consultantName, acceptUrl })
+      .catch(err => console.error('[consultant] sendConsultantPendingInviteEmail:', err.message));
+  }
+
+  res.status(201).json({ client: data, invite_link: acceptUrl });
 });
 
 // ── PUT /api/v1/consultant/clients/:id ────────────────────────────────────────
