@@ -18,6 +18,21 @@ function getResend() {
 
 // ─── Template helpers ──────────────────────────────────────────────────────
 
+// Redesign 2026-08-30 (F-103, su richiesta dell'utente — "raggiungiamo il
+// livello di comunicazioni di OpenAI"): via il banner navy a piena tinta,
+// via il footer di una riga senza identità legale, più spazio usato ai lati
+// (padding ridotto, container più largo). Stessi colori del brand (nessuna
+// palette nuova — #22384F/#1A1714/#F6F4F0 sono già i token reali del
+// prodotto, vedi src/index.css). Font di sistema INVARIATI dentro l'email:
+// Outlook e molti client mobile ignorano i font custom, non è un compromesso
+// di design, è compatibilità email reale.
+//
+// NOTA per chi tocca questo file: ~30 delle funzioni sendXxxEmail qui sotto
+// ripetono il proprio titolo come prima riga del bodyHtml (retaggio del
+// vecchio hero navy, che aveva bisogno di un titolo "rinforzato" sotto).
+// Con l'hero ora su sfondo bianco quella riga è ridondante — da ripulire
+// caso per caso quando si tocca la funzione, non è stato fatto in blocco qui
+// per contenere il rischio di un edit meccanico su 30 funzioni diverse.
 function layout(title, bodyHtml) {
   return `<!DOCTYPE html>
 <html lang="it">
@@ -26,54 +41,47 @@ function layout(title, bodyHtml) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>${title}</title>
 </head>
-<body style="margin:0;padding:0;background:#f5f5f0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f0;padding:48px 16px;">
+<body style="margin:0;padding:0;background:#F6F4F0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#F6F4F0;padding:40px 12px;">
   <tr><td align="center">
 
-    <!-- Logo strip sopra la card -->
-    <table width="100%" style="max-width:560px;margin-bottom:8px;">
+    <!-- Logo lockup -->
+    <table width="100%" style="max-width:640px;margin-bottom:20px;">
       <tr>
-        <td style="padding:0 0 16px 4px;">
-          <img src="https://palladia.net/icon-512.png" width="20" height="20" alt="" style="border-radius:5px;vertical-align:middle;display:inline-block;" />
-          <span style="font-size:15px;font-weight:800;letter-spacing:-0.01em;color:#0f3d2e;text-transform:uppercase;vertical-align:middle;margin-left:8px;">PALLADIA</span>
-          <span style="font-size:12px;color:#9ca3af;margin-left:10px;font-weight:400;letter-spacing:0;vertical-align:middle;">Gestione Cantieri</span>
+        <td style="padding:0 8px;">
+          <img src="https://palladia.net/icon-512.png" width="22" height="22" alt="" style="border-radius:6px;vertical-align:middle;display:inline-block;" />
+          <span style="font-size:15px;font-weight:800;letter-spacing:-0.01em;color:#1A1714;text-transform:uppercase;vertical-align:middle;margin-left:9px;">Palladia</span>
         </td>
       </tr>
     </table>
 
-    <table width="100%" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08),0 8px 24px rgba(0,0,0,0.04);">
-
-      <!-- Hero band -->
+    <!-- Card principale -->
+    <table width="100%" style="max-width:640px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 1px 2px rgba(26,23,20,0.06),0 12px 32px rgba(26,23,20,0.06);">
       <tr>
-        <td style="background:#22384f;padding:36px 40px 32px;">
-          <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.1em;text-transform:uppercase;color:#9db3c7;">Palladia</p>
-          <h1 style="margin:0;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:-0.02em;line-height:1.2;">${title}</h1>
-        </td>
-      </tr>
-
-      <!-- Body -->
-      <tr>
-        <td style="padding:36px 40px;">
+        <td style="padding:44px 32px 40px;">
+          <h1 style="margin:0 0 24px;font-size:26px;font-weight:800;color:#1A1714;letter-spacing:-0.02em;line-height:1.25;">${title}</h1>
           ${bodyHtml}
         </td>
       </tr>
+    </table>
 
-      <!-- Divider + Footer -->
+    <!-- Footer -->
+    <table width="100%" style="max-width:640px;margin-top:24px;">
       <tr>
-        <td style="padding:0 40px 32px;">
-          <table width="100%" cellpadding="0" cellspacing="0">
-            <tr><td style="border-top:1px solid #f0f0f0;padding-top:24px;">
-              <p style="margin:0;font-size:11px;color:#9ca3af;line-height:1.8;">
-                Palladia &mdash; Gestione Cantieri e Sicurezza sul Lavoro<br/>
-                Hai ricevuto questa email perché hai creato un account su Palladia.<br/>
-                Se non sei stato tu, <a href="mailto:info@palladia.net" style="color:#6b7280;">contattaci</a>.
-              </p>
-            </td></tr>
-          </table>
+        <td style="padding:0 8px;text-align:center;">
+          <p style="margin:0 0 4px;font-size:12.5px;font-weight:700;color:#3E3A32;">Palladia</p>
+          <p style="margin:0 0 12px;font-size:12px;color:#8A8171;line-height:1.6;">Gestione Cantieri e Sicurezza sul Lavoro &middot; Sede legale: Genova (GE), Italia</p>
+          <p style="margin:0;font-size:12px;color:#8A8171;">
+            <a href="https://palladia.net/termini" style="color:#8A8171;text-decoration:underline;">Termini</a>
+            &nbsp;&middot;&nbsp;
+            <a href="https://palladia.net/privacy" style="color:#8A8171;text-decoration:underline;">Privacy</a>
+            &nbsp;&middot;&nbsp;
+            <a href="mailto:info@palladia.net" style="color:#8A8171;text-decoration:underline;">Contattaci</a>
+          </p>
         </td>
       </tr>
-
     </table>
+
   </td></tr>
 </table>
 </body>
@@ -81,7 +89,7 @@ function layout(title, bodyHtml) {
 }
 
 function btn(text, href) {
-  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:14px 32px;background:#22384f;color:#ffffff;text-decoration:none;border-radius:10px;font-size:14px;font-weight:700;letter-spacing:0.01em;">${text}</a>`;
+  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:16px 36px;background:#22384F;color:#ffffff;text-decoration:none;border-radius:100px;font-size:15px;font-weight:700;letter-spacing:0.01em;">${text}</a>`;
 }
 
 // ─── Email: Benvenuto ──────────────────────────────────────────────────────
@@ -1458,7 +1466,6 @@ async function sendConsultantInviteEmail({ to, consultantName, acceptUrl }) {
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   const body = `
-    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Invito da ${esc(consultantName)}</p>
     <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
       <strong style="color:#1a1a1a;">${esc(consultantName)}</strong> ti ha invitato a collegarti su Palladia,
       la piattaforma per la sicurezza sul lavoro nei cantieri.
@@ -1489,7 +1496,7 @@ async function sendConsultantInviteEmail({ to, consultantName, acceptUrl }) {
     from: FROM,
     to,
     subject: `${consultantName} ti ha invitato su Palladia`,
-    html: layout(`Invito — ${consultantName}`, body),
+    html: layout(`Invito da ${consultantName}`, body),
   });
 }
 
@@ -1506,7 +1513,6 @@ async function sendConsultantPendingInviteEmail({ to, consultantName, acceptUrl 
   function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
   const body = `
-    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Invito da ${esc(consultantName)}</p>
     <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
       <strong style="color:#1a1a1a;">${esc(consultantName)}</strong> vuole collegarsi con la tua impresa su Palladia,
       la piattaforma per la sicurezza sul lavoro nei cantieri.
