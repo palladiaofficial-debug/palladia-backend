@@ -16,6 +16,7 @@ const { logUsage } = require('../lib/ladiaUsageLog');
 const { logAction } = require('../lib/ladiaActionLog');
 const { matchSite, matchEquipment } = require('../lib/entityMatch');
 const { sanitizeCategory } = require('../lib/documentCategory');
+const { syncWorkerExpiry } = require('../lib/workerDocSync');
 
 const BUCKET = 'site-documents';
 const EQUIPMENT_BUCKET = 'equipment-docs';
@@ -298,6 +299,16 @@ async function archiveChatUpload({
 
   await supabase.from('chat_uploads').update({ archived: true }).eq('id', uploadId);
   supabase.storage.from(BUCKET).remove([upload.storage_path]).catch(() => {});
+
+  // F-105 (AUDIT.md): il caricamento manuale (routes/v1/workerDocs.js) risincronizza
+  // sempre workers.health_fitness_expiry/safety_training_expiry dopo un idoneità
+  // medica o un attestato formazione — questo percorso (archiviazione via chat,
+  // tool Ladia archive_document) non lo faceva MAI: il documento finiva nel
+  // registro ma lo stato di conformità mostrato in Organico/badge restava quello
+  // vecchio, mentre Ladia dichiarava comunque "Fatto" — un falso successo.
+  if (destination === 'worker_documents') {
+    await syncWorkerExpiry(category || 'altro', workerId, companyId).catch(() => {});
+  }
 
   // Cartelle Intelligenti: worker_certificates ha già scritto site_id sopra —
   // per le altre destinazioni senza colonna site propria (worker_documents,

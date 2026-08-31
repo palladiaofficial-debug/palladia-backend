@@ -22,6 +22,7 @@ const { scoreMatch } = require('../../lib/fuzzyMatch');
 const { validate } = require('../../middleware/validate');
 const { createWorkerDocSchema, patchWorkerDocSchema } = require('../../lib/schemas/workerDocs');
 const { sendDbError } = require('../../lib/httpErrors');
+const { syncWorkerExpiry } = require('../../lib/workerDocSync');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -74,32 +75,6 @@ async function verifyWorker(workerId, companyId) {
     .eq('company_id', companyId)
     .maybeSingle();
   return !!data;
-}
-
-async function syncWorkerExpiry(docType, workerId, companyId) {
-  const field = docType === 'idoneita_medica'      ? 'health_fitness_expiry'
-    : docType === 'formazione_sicurezza' ? 'safety_training_expiry'
-    : null;
-  if (!field) return;
-  // Usa MAX(ai_expiry_date, expiry_date) coerente con BadgeModal.computeDocStatus.
-  // expiry_date (confermato dall'utente) ha priorità su ai_expiry_date (AI fallibile)
-  const { data } = await supabase
-    .from('worker_documents')
-    .select('expiry_date, ai_expiry_date')
-    .eq('worker_id',  workerId)
-    .eq('company_id', companyId)
-    .eq('doc_type',   docType);
-
-  const maxExpiry = (data || [])
-    .map(d => d.expiry_date || d.ai_expiry_date)
-    .filter(Boolean)
-    .sort()
-    .at(-1) || null;
-
-  await supabase.from('workers')
-    .update({ [field]: maxExpiry })
-    .eq('id', workerId)
-    .eq('company_id', companyId);
 }
 
 const SELECT_FIELDS = `
