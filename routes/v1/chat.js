@@ -592,7 +592,13 @@ Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
 - Per POS, PSC, DVR, documenti legati a un cantiere: destination="site_documents"
 - Per libretto di circolazione, assicurazione o revisione di un mezzo/veicolo: destination="equipment_documents",
   con equipment_hint = targa (vehicle_plate) o marca/modello (vehicle_hint) da read_uploaded_document — MAI
-  company_documents per questi, anche se non trovi subito il mezzo corrispondente
+  company_documents per questi, anche se non trovi subito il mezzo corrispondente.
+  IMPORTANTE: archiviare il documento NON aggiorna da solo la scadenza sulla scheda del mezzo (equipment.insurance_expiry/
+  inspection_date — quella che genera gli alert automatici). Se da read_uploaded_document hai una expiry_date per
+  un'assicurazione o una revisione, DOPO l'archiviazione chiedi esplicitamente all'utente se vuole aggiornare anche la
+  scheda del mezzo con quella data (mostragli data letta vs data attuale se le conosci) — solo se conferma, chiama
+  update_record su table="equipment" con quel campo. Mai aggiornarlo senza conferma: una lettura OCR sbagliata
+  sovrascriverebbe silenziosamente una data corretta.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 COSA VEDE L'UTENTE MENTRE AGISCI (leggi prima di rispondere a domande su te stessa)

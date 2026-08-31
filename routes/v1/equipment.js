@@ -9,6 +9,7 @@ const { createEquipmentSchema, patchEquipmentSchema, assignEquipmentSchema } = r
 const { logUsage } = require('../../lib/ladiaUsageLog');
 const { sanitizeExtractedFields } = require('../../lib/ocrSanitize');
 const { sendDbError } = require('../../lib/httpErrors');
+const { suggestEquipmentExpiryUpdates } = require('../../lib/equipmentExpirySuggest');
 
 let _anthropic = null;
 function getClient() {
@@ -311,7 +312,7 @@ router.post('/equipment/:id/documents', verifySupabaseJwt, upload.single('file')
   const { id } = req.params;
   if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
-  const { data: eq } = await supabase.from('equipment').select('id')
+  const { data: eq } = await supabase.from('equipment').select('id, insurance_expiry, inspection_date')
     .eq('id', id).eq('company_id', req.companyId).eq('is_active', true).single();
   if (!eq) return res.status(404).json({ error: 'NOT_FOUND' });
 
@@ -387,7 +388,15 @@ Date in formato YYYY-MM-DD. null per campi non presenti.`;
     return res.status(500).json({ error: 'DB_ERROR', detail: insertErr.message });
   }
 
-  res.status(201).json({ ...doc, ai_extracted: aiExtracted });
+  // F-105 (sweep, AUDIT.md): un documento caricato qui non aggiornava MAI
+  // equipment.insurance_expiry/inspection_date — il campo che genera davvero
+  // gli alert di scadenza (services/equipmentExpiryCron.js). Mai scritto in
+  // automatico dall'OCR (rischio di sovrascrivere silenziosamente una data
+  // corretta con una letta male) — solo proposto; l'utente applica con la
+  // PATCH /equipment/:id già esistente, nessun nuovo endpoint necessario.
+  const suggestedUpdates = suggestEquipmentExpiryUpdates(eq, aiExtracted);
+
+  res.status(201).json({ ...doc, ai_extracted: aiExtracted, suggested_updates: suggestedUpdates });
 });
 
 // ── GET /api/v1/equipment/:id/documents/:docId/download ──────────────────────
