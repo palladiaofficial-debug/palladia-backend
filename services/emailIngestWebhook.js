@@ -37,6 +37,7 @@
  */
 
 const crypto   = require('crypto');
+const supabase = require('../lib/supabase');
 const { extractInvoiceCandidates } = require('../lib/fatturaPaEnvelopeParser');
 const { extractExpenseFromDocument } = require('../lib/expenseOcr');
 const { toInvoiceShapeForAi, mapCandidateToExpenseRow, checkOcrOverlap } = require('../lib/fatturaCandidateMapper');
@@ -45,6 +46,22 @@ const { resolveCompanyByToken, getSenderRule, logIngestEvent, consumeTestNonce, 
 
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
+
+// Bucket DEDICATO (non 'site-documents', quello condiviso da expenses.js/
+// companyDocuments.js): il suo allowlist MIME copre solo pdf/immagini/word,
+// non xml/p7m/zip — i formati REALI di una fattura elettronica. Allargare
+// l'allowlist del bucket condiviso avrebbe aperto quei tipi anche a upload
+// non correlati (ricevute, documenti cantiere); un bucket a parte, privato,
+// con l'allowlist minima per questo solo scopo, non tocca nessun'altra rotta.
+const QUARANTINE_BUCKET = 'email-ingest-quarantine';
+
+function contentTypeForFilename(filename) {
+  const lower = String(filename || '').toLowerCase();
+  if (lower.endsWith('.p7m')) return 'application/pkcs7-mime';
+  if (lower.endsWith('.zip')) return 'application/zip';
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  return 'application/xml'; // .xml, e fallback per estensioni già filtrate a monte da hasAllowedExtension
+}
 
 // Il Worker Cloudflare è first-party (lo scriviamo e deployiamo noi): un segreto
 // statico condiviso in header è equivalente in sicurezza a una firma HMAC qui, dato
@@ -148,6 +165,162 @@ async function importFromCourtesyPdfOnly(companyId, pdfFile, fromAddress, messag
   );
 }
 
+// F-104 (AUDIT.md): un mittente sconosciuto la cui email viene poi approvata
+// (Account → Fatture via Email) non recuperava mai il messaggio che l'aveva
+// fatto comparire in quarantena — solo gli invii successivi venivano
+// importati. Per renderlo recuperabile, un'email quarantined_unknown_sender
+// con almeno un allegato di estensione ammessa ora conserva quegli allegati
+// in Storage (vedi storeQuarantinedAttachments) PRIMA di scartare il
+// messaggio; quando il mittente viene poi autorizzato, recoverQuarantinedForSender
+// li scarica e li fa passare per la STESSA identica funzione di estrazione/
+// import usata dal webhook in tempo reale — stesso codice, stesso dedup,
+// stessa logica pending_review, nessuna scorciatoia parallela.
+async function extractAndImport(companyId, files, fromAddress, messageId) {
+  const validAttachments = files.filter((f) => hasAllowedExtension(f.originalname));
+  if (files.length > 0 && validAttachments.length === 0) {
+    return { outcome: 'rejected_type', rejectReason: 'nessun allegato con estensione ammessa (xml, p7m, zip, pdf)', createdExpenseIds: [] };
+  }
+
+  // Vedi commento originale su handleInboundWebhook: un'eccezione imprevista qui
+  // non deve mai risultare in un esito silenzioso — sempre un outcome esplicito.
+  try {
+    const allResults = [];
+    for (const file of validAttachments) {
+      allResults.push(...extractInvoiceCandidates(file.originalname, file.buffer));
+    }
+
+    const invoiceCandidates = allResults.filter((r) => r.xml);
+    const courtesyPdfs      = allResults.filter((r) => r.courtesyPdf);
+    const skipped            = allResults.filter((r) => r.skip);
+
+    let anyPendingReview = false;
+    let anyImported = false;
+    const createdExpenseIds = [];
+
+    if (invoiceCandidates.length === 0 && courtesyPdfs.length > 0) {
+      for (const pdf of courtesyPdfs) {
+        const result = await importFromCourtesyPdfOnly(companyId, pdf, fromAddress, messageId).catch((err) => {
+          console.error('[email-ingest] OCR fallback error:', err.message);
+          return null;
+        });
+        if (result?.ok && !result.skipped) {
+          anyImported = true;
+          anyPendingReview = true;
+          createdExpenseIds.push(result.expense.id);
+        }
+      }
+    } else {
+      for (const candidate of invoiceCandidates) {
+        const expenseRow = mapCandidateToExpenseRow(companyId, candidate);
+        expenseRow.source_email = fromAddress;
+        expenseRow.source_message_id = messageId;
+
+        const overlap = await checkOcrOverlap(companyId, candidate.parsed).catch(() => null);
+        if (overlap) {
+          expenseRow.pending_review = true;
+          expenseRow.pending_review_reason = `sembra già presente come spesa caricata il ${overlap.expense_date} (${overlap.supplier}, ${overlap.amount}€) — verifica prima di tenerle entrambe`;
+        }
+
+        const result = await ingestMappedExpense(
+          companyId, expenseRow, toInvoiceShapeForAi(candidate.parsed),
+          { configTable: 'email_ingest_configurations', dedupExtra: true },
+        );
+
+        if (result.ok && !result.skipped) {
+          anyImported = true;
+          createdExpenseIds.push(result.expense.id);
+          if (expenseRow.pending_review) anyPendingReview = true;
+        }
+      }
+    }
+
+    let outcome;
+    let rejectReason = null;
+    if (anyPendingReview) outcome = 'pending_review';
+    else if (anyImported) outcome = 'accepted';
+    else if (invoiceCandidates.length > 0) { outcome = 'duplicate'; rejectReason = 'fattura già presente (stesso contenuto o stessa identità fiscale — P.IVA, numero e data)'; }
+    else if (skipped.length > 0 && skipped.every((s) => s.reason === 'sdi_metadata')) { outcome = 'sdi_metadata_skipped'; rejectReason = 'conteneva solo una notifica/ricevuta SdI, non una fattura'; }
+    else { outcome = 'rejected_type'; rejectReason = files.length === 0 ? 'nessun allegato nell\'email' : 'nessun contenuto fattura riconosciuto negli allegati (xml non valido, zip non apribile o senza fatture dentro)'; }
+
+    return { outcome, rejectReason, createdExpenseIds };
+  } catch (err) {
+    console.error('[email-ingest] errore imprevisto in fase di estrazione/importazione:', err.message, err.stack);
+    return { outcome: 'processing_error', rejectReason: `errore interno durante l'elaborazione: ${err.message}`, createdExpenseIds: [] };
+  }
+}
+
+// Conserva SOLO gli allegati di estensione ammessa (mai file arbitrari) di un
+// messaggio che sta per essere quarantenato — se l'upload fallisce (Storage
+// giù, ecc.) il messaggio resta comunque quarantenato normalmente, semplicemente
+// senza possibilità di recupero futuro: mai far fallire il webhook per questo.
+async function storeQuarantinedAttachments(companyId, files) {
+  const validAttachments = files.filter((f) => hasAllowedExtension(f.originalname));
+  if (validAttachments.length === 0) return null;
+
+  const stored = [];
+  for (const [i, f] of validAttachments.entries()) {
+    const safeName = String(f.originalname || `allegato-${i}`).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storagePath = `email-ingest-quarantine/${companyId}/${Date.now()}-${crypto.randomBytes(6).toString('hex')}-${safeName}`;
+    const { error } = await supabase.storage.from(QUARANTINE_BUCKET).upload(storagePath, f.buffer, { contentType: contentTypeForFilename(f.originalname) });
+    if (error) throw error;
+    stored.push({ filename: f.originalname, storage_path: storagePath, size_bytes: f.buffer?.length || 0 });
+  }
+  return stored;
+}
+
+// Chiamata da routes/v1/emailIngest.js quando un mittente viene autorizzato
+// (action: 'allow') — recupera TUTTI i messaggi ancora recuperabili da quel
+// mittente per questa azienda, non solo l'ultimo, in caso ne fossero arrivati
+// più d'uno prima dell'approvazione.
+async function recoverQuarantinedForSender(companyId, emailAddress) {
+  const normalized = String(emailAddress || '').trim().toLowerCase();
+  const { data: rows, error } = await supabase
+    .from('email_ingest_log')
+    .select('id, from_address, message_id, quarantined_attachments')
+    .eq('company_id', companyId)
+    .eq('from_address', normalized)
+    .eq('outcome', 'quarantined_unknown_sender')
+    .is('recovered_at', null)
+    .not('quarantined_attachments', 'is', null)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  if (!rows || rows.length === 0) return { recoveredMessages: 0, importedExpenseIds: [] };
+
+  const importedExpenseIds = [];
+  let recoveredMessages = 0;
+
+  for (const row of rows) {
+    const attachments = Array.isArray(row.quarantined_attachments) ? row.quarantined_attachments : [];
+    if (attachments.length === 0) continue;
+
+    const files = [];
+    for (const att of attachments) {
+      const { data: blob, error: dlErr } = await supabase.storage.from(QUARANTINE_BUCKET).download(att.storage_path);
+      if (dlErr || !blob) {
+        console.error('[email-ingest] recupero quarantena: download fallito per', att.storage_path, dlErr?.message);
+        continue;
+      }
+      files.push({ originalname: att.filename, buffer: Buffer.from(await blob.arrayBuffer()) });
+    }
+    if (files.length === 0) continue;
+
+    const result = await extractAndImport(companyId, files, row.from_address, row.message_id);
+    recoveredMessages += 1;
+    importedExpenseIds.push(...result.createdExpenseIds);
+
+    await supabase
+      .from('email_ingest_log')
+      .update({
+        recovered_at: new Date().toISOString(),
+        recovered_outcome: result.outcome,
+        recovered_expense_ids: result.createdExpenseIds,
+      })
+      .eq('id', row.id);
+  }
+
+  return { recoveredMessages, importedExpenseIds };
+}
+
 async function handleInboundWebhook(body, files, headers) {
   if (!verifyIngestSecret(headers)) {
     return { httpStatus: 401, body: { error: 'INVALID_SIGNATURE' } };
@@ -207,7 +380,17 @@ async function handleInboundWebhook(body, files, headers) {
     return { httpStatus: 200, body: { ok: true, outcome: 'blocked_sender' } };
   }
   if (senderRule !== 'allow') {
-    await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome: 'quarantined_unknown_sender', reject_reason: 'mittente mai autorizzato per questa azienda' });
+    // F-104: conserva gli allegati (se presenti e di estensione ammessa) PRIMA
+    // di scartare — se l'upload fallisce non deve mai bloccare la risposta al
+    // webhook, il messaggio resta comunque quarantenato normalmente.
+    const quarantinedAttachments = await storeQuarantinedAttachments(companyId, files).catch((err) => {
+      console.error('[email-ingest] impossibile conservare gli allegati in quarantena:', err.message);
+      return null;
+    });
+    await logIngestEvent({
+      ...logBase, spf_result: spf, dkim_result: dkim, outcome: 'quarantined_unknown_sender',
+      reject_reason: 'mittente mai autorizzato per questa azienda', quarantined_attachments: quarantinedAttachments,
+    });
     return { httpStatus: 200, body: { ok: true, outcome: 'quarantined_unknown_sender' } };
   }
   if (spf === 'fail' || dkim === 'fail') {
@@ -215,89 +398,9 @@ async function handleInboundWebhook(body, files, headers) {
     return { httpStatus: 200, body: { ok: true, outcome: 'quarantined_failed_auth' } };
   }
 
-  const validAttachments = files.filter((f) => hasAllowedExtension(f.originalname));
-  if (files.length > 0 && validAttachments.length === 0) {
-    await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome: 'rejected_type', reject_reason: 'nessun allegato con estensione ammessa (xml, p7m, zip, pdf)' });
-    return { httpStatus: 200, body: { ok: true, outcome: 'rejected_type' } };
-  }
-
-  // Da qui in poi si tocca codice di estrazione/parsing di contenuto non fidato
-  // (zip/p7m/XML costruiti da chiunque scriva all'indirizzo aziendale). Un'eccezione
-  // imprevista qui (osservata dal vivo: un bug di libreria su un allegato zip reale,
-  // "Cannot create a Buffer larger than N bytes") non deve MAI risultare in un 200
-  // senza nessuna riga in email_ingest_log — quel messaggio sparirebbe nel nulla,
-  // indistinguibile per l'utente da un'email mai arrivata. Meglio un outcome
-  // 'processing_error' esplicito, con il messaggio d'errore come motivo, che un
-  // buco silenzioso nel registro.
-  let outcome;
-  let createdExpenseIds = [];
-  try {
-    const allResults = [];
-    for (const file of validAttachments) {
-      allResults.push(...extractInvoiceCandidates(file.originalname, file.buffer));
-    }
-
-    const invoiceCandidates = allResults.filter((r) => r.xml);
-    const courtesyPdfs      = allResults.filter((r) => r.courtesyPdf);
-    const skipped            = allResults.filter((r) => r.skip);
-
-    let anyPendingReview = false;
-    let anyImported = false;
-
-    if (invoiceCandidates.length === 0 && courtesyPdfs.length > 0) {
-      // Nessun XML/p7m nella stessa email — unico caso in cui passiamo dall'OCR,
-      // sempre in pending_review (nessuna conferma umana sincrona disponibile qui).
-      for (const pdf of courtesyPdfs) {
-        const result = await importFromCourtesyPdfOnly(companyId, pdf, fromAddress, messageId).catch((err) => {
-          console.error('[email-ingest] OCR fallback error:', err.message);
-          return null;
-        });
-        if (result?.ok && !result.skipped) {
-          anyImported = true;
-          anyPendingReview = true;
-          createdExpenseIds.push(result.expense.id);
-        }
-      }
-    } else {
-      for (const candidate of invoiceCandidates) {
-        const expenseRow = mapCandidateToExpenseRow(companyId, candidate);
-        expenseRow.source_email = fromAddress;
-        expenseRow.source_message_id = messageId;
-
-        const overlap = await checkOcrOverlap(companyId, candidate.parsed).catch(() => null);
-        if (overlap) {
-          expenseRow.pending_review = true;
-          expenseRow.pending_review_reason = `sembra già presente come spesa caricata il ${overlap.expense_date} (${overlap.supplier}, ${overlap.amount}€) — verifica prima di tenerle entrambe`;
-        }
-
-        const result = await ingestMappedExpense(
-          companyId, expenseRow, toInvoiceShapeForAi(candidate.parsed),
-          { configTable: 'email_ingest_configurations', dedupExtra: true },
-        );
-
-        if (result.ok && !result.skipped) {
-          anyImported = true;
-          createdExpenseIds.push(result.expense.id);
-          if (expenseRow.pending_review) anyPendingReview = true;
-        }
-      }
-    }
-
-    let rejectReason = null;
-    if (anyPendingReview) outcome = 'pending_review';
-    else if (anyImported) outcome = 'accepted';
-    else if (invoiceCandidates.length > 0) { outcome = 'duplicate'; rejectReason = 'fattura già presente (stesso contenuto o stessa identità fiscale — P.IVA, numero e data)'; }
-    else if (skipped.length > 0 && skipped.every((s) => s.reason === 'sdi_metadata')) { outcome = 'sdi_metadata_skipped'; rejectReason = 'conteneva solo una notifica/ricevuta SdI, non una fattura'; }
-    else { outcome = 'rejected_type'; rejectReason = files.length === 0 ? 'nessun allegato nell\'email' : 'nessun contenuto fattura riconosciuto negli allegati (xml non valido, zip non apribile o senza fatture dentro)'; }
-
-    await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome, reject_reason: rejectReason, created_expense_ids: createdExpenseIds });
-  } catch (err) {
-    console.error('[email-ingest] errore imprevisto in fase di estrazione/importazione:', err.message, err.stack);
-    outcome = 'processing_error';
-    await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome, reject_reason: `errore interno durante l'elaborazione: ${err.message}`, created_expense_ids: createdExpenseIds });
-  }
-
-  return { httpStatus: 200, body: { ok: true, outcome, imported: createdExpenseIds.length } };
+  const result = await extractAndImport(companyId, files, fromAddress, messageId);
+  await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome: result.outcome, reject_reason: result.rejectReason, created_expense_ids: result.createdExpenseIds });
+  return { httpStatus: 200, body: { ok: true, outcome: result.outcome, imported: result.createdExpenseIds.length } };
 }
 
-module.exports = { handleInboundWebhook, verifyIngestSecret };
+module.exports = { handleInboundWebhook, verifyIngestSecret, recoverQuarantinedForSender };

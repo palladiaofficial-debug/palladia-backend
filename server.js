@@ -2349,6 +2349,17 @@ const REQUIRED_STORAGE_BUCKETS = [
   },
   { name: 'site-media',     options: { public: false } },
   { name: 'equipment-docs', options: { public: false } },
+  {
+    // F-104: allegati di email quarantenate (mittente mai visto), conservati
+    // per il recupero al momento dell'approvazione — bucket dedicato perché
+    // xml/p7m/zip non sono ammessi nell'allowlist di site-documents.
+    name: 'email-ingest-quarantine',
+    options: {
+      public: false,
+      fileSizeLimit: 22 * 1024 * 1024, // stesso limite di MAX_MESSAGE_SIZE_BYTES in emailIngestWebhook.js
+      allowedMimeTypes: ['application/xml', 'application/pkcs7-mime', 'application/zip', 'application/pdf'],
+    },
+  },
 ];
 
 const supabaseAdmin = require('./lib/supabase');

@@ -24,11 +24,15 @@ const fs   = require('fs');
 const os   = require('os');
 const path = require('path');
 const AdmZip = require('adm-zip');
+const { createClient } = require('@supabase/supabase-js');
 const supabase = require('../lib/supabase');
 const { startTest, rotateToken } = require('../services/emailIngestConfig');
 
 const BASE = (process.env.TEST_BASE_URL || 'http://localhost:3001').replace(/\/$/, '');
 const INGEST_SECRET = process.env.CLOUDFLARE_EMAIL_INGEST_SECRET;
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const ANON_KEY = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
+const TEST_EMAIL = 'ci-test@palladia.internal'; // stesso utente CI usato altrove (vedi memoria feedback_otp_session_instead_of_password_reset)
 
 let passed = 0, failed = 0, skipped = 0;
 function ok(name)        { console.log(`  \x1b[32m✓\x1b[0m ${name}`); passed++; }
@@ -159,13 +163,38 @@ async function main() {
     return;
   }
 
-  const { data: company, error: companyErr } = await supabase.from('companies').insert({ name: 'TEST-Email-Ingest-Webhook-Probe' }).select().single();
+  // trial_ends_at nel futuro: la company temporanea deve superare enforceBillingForWrites
+  // per il Caso 23 (F-104), che chiama la vera rotta HTTP protetta da JWT, non solo la
+  // funzione di servizio — stesso principio "verificato dal vivo" delle altre regressioni.
+  const { data: company, error: companyErr } = await supabase.from('companies')
+    .insert({ name: 'TEST-Email-Ingest-Webhook-Probe', trial_ends_at: '2099-01-01T00:00:00Z' })
+    .select().single();
   check('Creata azienda temporanea', !companyErr && company, companyErr);
   if (!company) { console.log(`\n${passed} passati, ${failed} falliti\n`); process.exitCode = 1; return; }
   const companyId = company.id;
   const inboundToken = crypto.randomBytes(12).toString('hex');
   const allowedSender = 'fornitore@esempio-test.it';
 
+  // Sessione reale (JWT) dell'utente CI, aggiunto come owner della company temporanea —
+  // serve SOLO al Caso 23, per chiamare la vera rotta HTTP invece della sola funzione di
+  // servizio. Se manca l'ambiente CI (utente non trovato), il Caso 23 si salta pulito.
+  let testJwt = null;
+  if (SUPABASE_URL && ANON_KEY) {
+    const { data: users } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 }); // default perPage (50) rischia di non includere l'utente CI in un ambiente con molti utenti
+    const ciUser = users?.users?.find((u) => u.email === TEST_EMAIL);
+    if (ciUser) {
+      await supabase.from('company_users').insert({ company_id: companyId, user_id: ciUser.id, role: 'owner' });
+      const { data: link } = await supabase.auth.admin.generateLink({ type: 'magiclink', email: TEST_EMAIL });
+      const tokenHash = link ? new URL(link.properties.action_link).searchParams.get('token') : null;
+      if (tokenHash) {
+        const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+        const { data: verified } = await anon.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+        testJwt = verified?.session?.access_token || null;
+      }
+    }
+  }
+
+  let quarantineStoragePaths = []; // dichiarata qui, non dentro try: deve restare visibile al finally per la pulizia
   try {
     const { error: cfgErr } = await supabase.from('email_ingest_configurations').insert({ company_id: companyId, inbound_token: inboundToken, status: 'active' });
     check('Configurazione canale email creata', !cfgErr, cfgErr);
@@ -374,11 +403,77 @@ async function main() {
     const mixedZipRes = await postWebhook({ recipient: currentRecipient, sender: allowedSender, files: [{ field: 'attachment-1', filename: 'fatture.zip', buffer: mixedZipCorrupted }] });
     check('zip con un entry corrotto + una fattura valida → la fattura valida viene comunque importata (non tutto perso)', mixedZipRes.status === 200 && mixedZipRes.body.outcome === 'accepted' && mixedZipRes.body.imported === 1, mixedZipRes.body);
 
+    // ── Caso 23 (F-104): mittente MAI visto invia una fattura reale → quarantena
+    // CON allegato conservato. Approvare quel mittente (via la VERA rotta HTTP,
+    // JWT reale, non solo la funzione di servizio) deve recuperare ESATTAMENTE
+    // quella fattura, non solo abilitare i prossimi invii — questo era il bug:
+    // il messaggio che faceva comparire il mittente in quarantena spariva per
+    // sempre anche dopo l'approvazione. ────────────────────────────────────
+    if (!testJwt) {
+      skip('F-104: recupero fattura da quarantena dopo approvazione mittente', 'sessione JWT di test non disponibile in questo ambiente');
+    } else {
+      const recoverySender = 'fornitore-recuperabile@esempio-test.it';
+      const recoveryXml = Buffer.from(buildFatturaXml({ numero: '2026/WH-RECOVERY', partitaIva: '23023023023' }), 'utf8');
+
+      const quarantinedResult = await postWebhook({
+        recipient: currentRecipient, sender: recoverySender,
+        files: [{ field: 'attachment-1', filename: 'fattura.xml', buffer: recoveryXml }],
+      });
+      check('F-104: fattura reale da mittente mai visto → quarantined_unknown_sender (non scartata a caso)', quarantinedResult.status === 200 && quarantinedResult.body.outcome === 'quarantined_unknown_sender', quarantinedResult.body);
+
+      const { data: quarantinedLogRow } = await supabase.from('email_ingest_log')
+        .select('id, quarantined_attachments')
+        .eq('company_id', companyId).eq('from_address', recoverySender).eq('outcome', 'quarantined_unknown_sender')
+        .order('created_at', { ascending: false }).limit(1).maybeSingle();
+      check('F-104: l\'allegato è stato conservato per un eventuale recupero (quarantined_attachments valorizzato)', Array.isArray(quarantinedLogRow?.quarantined_attachments) && quarantinedLogRow.quarantined_attachments.length === 1, quarantinedLogRow);
+      quarantineStoragePaths = (quarantinedLogRow?.quarantined_attachments || []).map((a) => a.storage_path);
+
+      const { data: expensesBeforeApproval } = await supabase.from('company_expenses').select('id').eq('company_id', companyId).eq('invoice_number', '2026/WH-RECOVERY');
+      check('F-104: prima dell\'approvazione, ancora nessuna spesa creata (comportamento corretto in quarantena)', (expensesBeforeApproval || []).length === 0, expensesBeforeApproval);
+
+      const approveRes = await fetch(`${BASE}/api/v1/expenses/email-ingest/allowed-senders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${testJwt}`, 'x-company-id': companyId },
+        body: JSON.stringify({ email_address: recoverySender, action: 'allow' }),
+      });
+      const approveBody = await approveRes.json().catch(() => ({}));
+      check('F-104: approvazione mittente (rotta HTTP reale) → 201 con recovered_messages=1', approveRes.status === 201 && approveBody.recovered_messages === 1, approveBody);
+      check('F-104: la risposta di approvazione riporta l\'id della spesa recuperata', Array.isArray(approveBody.recovered_expense_ids) && approveBody.recovered_expense_ids.length === 1, approveBody);
+
+      const { data: expensesAfterApproval } = await supabase.from('company_expenses').select('id, supplier, amount').eq('company_id', companyId).eq('invoice_number', '2026/WH-RECOVERY');
+      check('F-104 FIX: la fattura quarantenata è stata importata al momento dell\'approvazione — non più persa', expensesAfterApproval?.length === 1 && expensesAfterApproval[0].supplier === 'Fornitore Webhook Test SRL', expensesAfterApproval);
+
+      const { data: logRowAfterRecovery } = await supabase.from('email_ingest_log').select('recovered_at, recovered_outcome, recovered_expense_ids').eq('id', quarantinedLogRow.id).maybeSingle();
+      check('F-104: la riga di log originale riflette il recupero (recovered_at + recovered_outcome=accepted)', !!logRowAfterRecovery?.recovered_at && logRowAfterRecovery?.recovered_outcome === 'accepted', logRowAfterRecovery);
+
+      // Idempotenza: riapprovare lo stesso mittente non deve reimportare la stessa fattura una seconda volta.
+      const secondApproveRes = await fetch(`${BASE}/api/v1/expenses/email-ingest/allowed-senders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${testJwt}`, 'x-company-id': companyId },
+        body: JSON.stringify({ email_address: recoverySender, action: 'allow' }),
+      });
+      const secondApproveBody = await secondApproveRes.json().catch(() => ({}));
+      check('F-104: riapprovare lo stesso mittente non recupera di nuovo (già recuperato → 0)', secondApproveRes.status === 201 && secondApproveBody.recovered_messages === 0, secondApproveBody);
+
+      const { data: expensesAfterSecondApproval } = await supabase.from('company_expenses').select('id').eq('company_id', companyId).eq('invoice_number', '2026/WH-RECOVERY');
+      check('F-104: nessuna spesa duplicata dal doppio recupero', (expensesAfterSecondApproval || []).length === 1, expensesAfterSecondApproval);
+
+      // Dopo l'approvazione, i PROSSIMI invii dallo stesso mittente continuano a funzionare normalmente.
+      const followUpRes = await postWebhook({
+        recipient: currentRecipient, sender: recoverySender,
+        files: [{ field: 'attachment-1', filename: 'fattura2.xml', buffer: Buffer.from(buildFatturaXml({ numero: '2026/WH-RECOVERY-2', partitaIva: '23023023023' }), 'utf8') }],
+      });
+      check('F-104: dopo l\'approvazione, i prossimi invii dallo stesso mittente continuano a importarsi normalmente', followUpRes.status === 200 && followUpRes.body.outcome === 'accepted', followUpRes.body);
+    }
+
     // ── Registro: ogni tentativo (anche i rifiutati) ha lasciato una riga ───
     const { data: logRows } = await supabase.from('email_ingest_log').select('outcome').eq('company_id', companyId);
     check('email_ingest_log ha almeno una riga per ciascun esito atteso', ['unknown_token', 'quarantined_unknown_sender', 'quarantined_failed_auth', 'accepted', 'duplicate'].every((o) => (logRows || []).some((r) => r.outcome === o) || o === 'unknown_token' /* company_id null, non in questa query */), logRows);
     check('email_ingest_log copre quarantined/accepted/duplicate per questa company', ['quarantined_unknown_sender', 'quarantined_failed_auth', 'accepted', 'duplicate'].every((o) => (logRows || []).some((r) => r.outcome === o)), logRows);
   } finally {
+    if (quarantineStoragePaths.length > 0) {
+      await supabase.storage.from('email-ingest-quarantine').remove(quarantineStoragePaths).catch(() => {});
+    }
     await supabase.from('companies').delete().eq('id', companyId); // cascade su tutte le tabelle email_ingest_*
   }
 

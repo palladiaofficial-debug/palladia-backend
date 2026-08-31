@@ -41,7 +41,7 @@ const {
   startTest,
   sendDelegateInstructions,
 } = require('../../services/emailIngestConfig');
-const { handleInboundWebhook } = require('../../services/emailIngestWebhook');
+const { handleInboundWebhook, recoverQuarantinedForSender } = require('../../services/emailIngestWebhook');
 const { getHealthReport } = require('../../services/emailIngestHealthCheck');
 const { sendEmailIngestTestProbe, sendEmailIngestDelegateInstructions } = require('../../services/email');
 const { EMAIL_PROVIDERS } = require('../../lib/emailIngestProviders');
@@ -145,7 +145,24 @@ router.post('/expenses/email-ingest/allowed-senders', verifySupabaseJwt, validat
   }
   try {
     const row = await upsertAllowedSender(req.companyId, req.user.id, req.body.email_address, req.body.action);
-    res.status(201).json(row);
+
+    // F-104 (AUDIT.md): approvare un mittente non recuperava mai il messaggio
+    // che l'aveva fatto comparire in quarantena, solo gli invii successivi.
+    // Recupera qui, in modo sincrono, i messaggi già conservati da quel
+    // mittente — solo per 'allow', mai per 'block'.
+    let recovered = { recoveredMessages: 0, importedExpenseIds: [] };
+    if (req.body.action === 'allow') {
+      recovered = await recoverQuarantinedForSender(req.companyId, req.body.email_address).catch((err) => {
+        console.error('[email-ingest] recupero quarantena dopo approvazione fallito:', err.message);
+        return { recoveredMessages: 0, importedExpenseIds: [] };
+      });
+    }
+
+    res.status(201).json({
+      ...row,
+      recovered_messages: recovered.recoveredMessages,
+      recovered_expense_ids: recovered.importedExpenseIds,
+    });
   } catch (err) {
     res.status(500).json({ error: 'DB_ERROR', message: err.message });
   }

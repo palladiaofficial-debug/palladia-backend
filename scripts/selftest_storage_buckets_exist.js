@@ -13,7 +13,7 @@ const { createClient } = require('@supabase/supabase-js');
 // con una costante BUCKET/STORAGE_BUCKET in routes/v1 e services (non i
 // legacy best-effort in routes/v1/company.js LEGACY_BUCKETS, che tollerano
 // già esplicitamente un bucket mancante).
-const REQUIRED_BUCKETS = ['site-documents', 'site-media', 'equipment-docs'];
+const REQUIRED_BUCKETS = ['site-documents', 'site-media', 'equipment-docs', 'email-ingest-quarantine'];
 
 async function main() {
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
