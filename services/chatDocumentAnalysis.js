@@ -17,6 +17,7 @@ const { logAction } = require('../lib/ladiaActionLog');
 const { matchSite, matchEquipment } = require('../lib/entityMatch');
 const { sanitizeCategory } = require('../lib/documentCategory');
 const { syncWorkerExpiry } = require('../lib/workerDocSync');
+const { syncToFormazione } = require('./documentAI');
 
 const BUCKET = 'site-documents';
 const EQUIPMENT_BUCKET = 'equipment-docs';
@@ -308,6 +309,23 @@ async function archiveChatUpload({
   // vecchio, mentre Ladia dichiarava comunque "Fatto" — un falso successo.
   if (destination === 'worker_documents') {
     await syncWorkerExpiry(category || 'altro', workerId, companyId).catch(() => {});
+
+    // Sweep F-105: stesso identico gap, terza istanza — un attestato di
+    // formazione (antincendio/primo soccorso/lavori in quota/ponteggi/
+    // gruista, oltre a formazione_sicurezza già coperta sopra) archiviato via
+    // chat non generava/aggiornava mai la riga worker_certificates
+    // corrispondente, a differenza del caricamento manuale (routes/v1/
+    // workerDocs.js, stessa chiamata, dati manuali "senza AI" — qui i dati
+    // sono quelli già confermati dall'utente nella card di conferma, non
+    // diversi in affidabilità). Fire-and-forget come nell'originale: non deve
+    // mai far fallire l'archiviazione del documento.
+    const { data: longSgn } = await supabase.storage.from(destBucket).createSignedUrl(permanentPath, 31536000);
+    syncToFormazione(
+      docId, workerId, companyId,
+      category || 'altro', name,
+      issueDate || null, expiryDate || null,
+      null, longSgn?.signedUrl || null,
+    ).catch(() => {});
   }
 
   // Cartelle Intelligenti: worker_certificates ha già scritto site_id sopra —

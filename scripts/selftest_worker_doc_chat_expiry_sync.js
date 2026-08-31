@@ -125,6 +125,23 @@ async function main() {
     check('archiveChatUpload (patente_guida) → success', res4.success === true, res4);
     const { data: workerAfter4 } = await supabase.from('workers').select('health_fitness_expiry, safety_training_expiry').eq('id', workerId).maybeSingle();
     check('un documento non-idoneità/non-formazione non tocca nessuno dei due campi', workerAfter4?.health_fitness_expiry === '2027-07-30' && workerAfter4?.safety_training_expiry === '2028-03-15', workerAfter4);
+
+    // ── Caso 5 (sweep F-105): "lavori_quota" → deve generare/aggiornare anche
+    // worker_certificates (syncToFormazione), non solo il documento in
+    // worker_documents — stessa classe di bug, terza istanza trovata nello
+    // sweep sistematico chiesto dall'utente dopo il finding originale. ──────
+    const uploadId5 = await uploadChatFile(companyId, userId, 'lavori-quota.pdf');
+    const res5 = await archiveChatUpload({
+      uploadId: uploadId5, companyId, userId,
+      destination: 'worker_documents', name: 'Lavori in quota — TEST F105 Worker',
+      workerId, category: 'lavori_quota', expiryDate: '2029-06-01',
+    });
+    check('archiveChatUpload (lavori_quota) → success', res5.success === true, res5);
+    const { data: certRow } = await supabase.from('worker_certificates')
+      .select('expiry_date, course_types(name)')
+      .eq('worker_id', workerId).eq('company_id', companyId)
+      .order('created_at', { ascending: false }).limit(1).maybeSingle();
+    check('SWEEP F-105: worker_certificates creato/aggiornato anche da un\'archiviazione via chat (prima solo il caricamento manuale lo faceva)', certRow?.expiry_date === '2029-06-01' && certRow?.course_types?.name === 'Lavori in quota', certRow);
   } finally {
     await supabase.from('companies').delete().eq('id', companyId); // cascade su workers/worker_documents
   }
