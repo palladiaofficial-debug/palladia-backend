@@ -45,10 +45,19 @@ const { handleInboundWebhook, recoverQuarantinedForSender } = require('../../ser
 const { getHealthReport } = require('../../services/emailIngestHealthCheck');
 const { sendEmailIngestTestProbe, sendEmailIngestDelegateInstructions } = require('../../services/email');
 const { EMAIL_PROVIDERS } = require('../../lib/emailIngestProviders');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
 
 function isAdminOrOwner(role) {
   return role === 'owner' || role === 'admin';
 }
+
+// F-106 (AUDIT.md, 2026-09-01): nuove attivazioni/riattivazioni e nuove deleghe
+// sospese — il wizard non avvisa che l'inoltro devia TUTTA la posta in arrivo,
+// non solo le fatture. Le aziende già connesse restano operative (status/test/
+// disconnect/allowed-senders/log invariati): questo blocca solo la creazione
+// di NUOVE configurazioni di inoltro sulla casella di un cliente.
+const EMAIL_INGEST_DISABLED_MESSAGE =
+  'Il canale "Fatture via Email" è temporaneamente sospeso per nuove attivazioni mentre rivediamo le istruzioni di inoltro. Contattaci se ti serve con urgenza.';
 
 // ── POST /api/v1/expenses/email-ingest/webhook — PUBBLICO ─────────────────────
 // multer per il multipart/form-data che il Worker Cloudflare ripubblica (stessi nomi
@@ -77,6 +86,9 @@ router.post('/expenses/email-ingest/webhook', emailIngestWebhookLimiter, upload.
 router.post('/expenses/email-ingest/connect', verifySupabaseJwt, async (req, res) => {
   if (!isAdminOrOwner(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo owner e admin possono collegare il canale email.' });
+  }
+  if (!(await isFeatureEnabled(req.companyId, 'email_ingest_manual_forward_setup'))) {
+    return res.status(423).json({ error: 'FEATURE_DISABLED', message: EMAIL_INGEST_DISABLED_MESSAGE });
   }
   try {
     const result = await connectCompany(req.companyId, req.user.id);
@@ -207,6 +219,9 @@ router.get('/expenses/email-ingest/providers', verifySupabaseJwt, async (req, re
 router.post('/expenses/email-ingest/delegate', verifySupabaseJwt, validate(delegateInstructionsSchema), async (req, res) => {
   if (!isAdminOrOwner(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo owner e admin possono inviare la delega.' });
+  }
+  if (!(await isFeatureEnabled(req.companyId, 'email_ingest_manual_forward_setup'))) {
+    return res.status(423).json({ error: 'FEATURE_DISABLED', message: EMAIL_INGEST_DISABLED_MESSAGE });
   }
   try {
     const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
