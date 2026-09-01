@@ -68,8 +68,15 @@ function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (go
   }
 
   console.log(`\n${passed} passati, ${failed} falliti\n`);
-  process.exit(failed > 0 ? 1 : 0);
+  // process.exitCode invece di process.exit(): quest'ultimo, su Windows, ha
+  // fatto crashare il processo con "Assertion failed: !(handle->flags &
+  // UV_HANDLE_CLOSING)" subito dopo l'ultima query supabase — troncando
+  // silenziosamente la catena `&&` di npm test per ogni script elencato dopo
+  // questo (scoperto mentre si aggiungeva selftest_worker_certificates_chat_
+  // sync.js, F-107, in coda alla stessa catena). exitCode lascia l'event loop
+  // drenare da solo, nessun handle chiuso a forza.
+  process.exitCode = failed > 0 ? 1 : 0;
 })().catch(e => {
   console.error('Errore imprevisto:', e.message);
-  process.exit(1);
+  process.exitCode = 1;
 });

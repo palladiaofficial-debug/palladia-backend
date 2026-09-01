@@ -408,26 +408,46 @@ function detectCourseTypeName(docType, docName) {
   }
 }
 
-async function syncToFormazione(docId, workerId, companyId, docType, docName, issueDate, expiryDate, issuedBy, fileUrl) {
-  if (!FORMAZIONE_SYNC_TYPES.has(docType)) return;
-  const courseTypeName = detectCourseTypeName(docType, docName);
-  if (!courseTypeName) return;
+// F-107 (AUDIT.md): destination="worker_certificates" di archive_document
+// chiamava un INSERT diretto (chatDocumentAnalysis.js), mai questa funzione —
+// per un lavoratore che aveva già un certificato per lo stesso course_type
+// (caso comune: rinnovo formazione) questo creava una riga ORFANA duplicata
+// (course_type_id spesso null, mai risolto) invece di aggiornare quella
+// esistente, e non passava mai da syncWorkerExpiry: il rinnovo restava
+// invisibile a Organico/badge finché qualcuno non pativa scrivere a mano
+// workers.safety_training_expiry, disallineandolo dal vero stato dei
+// certificati. Ora questa funzione è l'UNICO punto che scrive su
+// worker_certificates per un documento via chat, con upsert reale
+// (courseTypeId esplicito se noto, altrimenti risoluzione per nome) e
+// restituisce l'id della riga così il chiamante può registrarla nell'audit
+// trail. opts.siteId: cantiere "extra" (Cartelle Intelligenti), solo su insert.
+async function syncToFormazione(docId, workerId, companyId, docType, docName, issueDate, expiryDate, issuedBy, fileUrl, opts = {}) {
+  const { explicitCourseTypeId = null, siteId = null } = opts;
+  if (!FORMAZIONE_SYNC_TYPES.has(docType)) return null;
 
-  const { data: ct } = await supabase
-    .from('course_types')
-    .select('id, validity_years')
-    .ilike('name', courseTypeName)
-    .maybeSingle();
-  if (!ct) return; // course_type non ancora nel DB
+  let courseTypeId = explicitCourseTypeId || null;
+  let validityYears = null;
+  if (courseTypeId) {
+    const { data: ct } = await supabase.from('course_types').select('id, validity_years').eq('id', courseTypeId).maybeSingle();
+    if (!ct) return null; // id passato da Ladia ma inesistente — non inventare
+    validityYears = ct.validity_years;
+  } else {
+    const courseTypeName = detectCourseTypeName(docType, docName);
+    if (!courseTypeName) return null;
+    const { data: ct } = await supabase.from('course_types').select('id, validity_years').ilike('name', courseTypeName).maybeSingle();
+    if (!ct) return null; // course_type non ancora nel DB
+    courseTypeId = ct.id;
+    validityYears = ct.validity_years;
+  }
 
   // Calcola issue_date se mancante
   let resolvedIssue = issueDate || null;
-  if (!resolvedIssue && expiryDate && ct.validity_years) {
+  if (!resolvedIssue && expiryDate && validityYears) {
     const d = new Date(expiryDate);
-    d.setFullYear(d.getFullYear() - ct.validity_years);
+    d.setFullYear(d.getFullYear() - validityYears);
     resolvedIssue = d.toISOString().slice(0, 10);
   }
-  if (!resolvedIssue || !expiryDate) return; // dati insufficienti
+  if (!resolvedIssue || !expiryDate) return null; // dati insufficienti
 
   const body = (issuedBy || '').trim() || 'Non specificato';
 
@@ -437,7 +457,7 @@ async function syncToFormazione(docId, workerId, companyId, docType, docName, is
     .select('id, expiry_date')
     .eq('worker_id', workerId)
     .eq('company_id', companyId)
-    .eq('course_type_id', ct.id)
+    .eq('course_type_id', courseTypeId)
     .order('expiry_date', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -449,17 +469,20 @@ async function syncToFormazione(docId, workerId, companyId, docType, docName, is
         .update({ issue_date: resolvedIssue, expiry_date: expiryDate, issuing_body: body, pdf_url: fileUrl || null })
         .eq('id', existing.id);
     }
-  } else {
-    await supabase.from('worker_certificates').insert({
-      company_id:     companyId,
-      worker_id:      workerId,
-      course_type_id: ct.id,
-      issue_date:     resolvedIssue,
-      expiry_date:    expiryDate,
-      issuing_body:   body,
-      pdf_url:        fileUrl || null,
-    });
+    return { id: existing.id, courseTypeId };
   }
+
+  const { data: inserted } = await supabase.from('worker_certificates').insert({
+    company_id:     companyId,
+    worker_id:      workerId,
+    site_id:        siteId,
+    course_type_id: courseTypeId,
+    issue_date:     resolvedIssue,
+    expiry_date:    expiryDate,
+    issuing_body:   body,
+    pdf_url:        fileUrl || null,
+  }).select('id').single();
+  return { id: inserted?.id, courseTypeId };
 }
 
 // ── Analisi generica per documenti subappaltatori ─────────────────────────────

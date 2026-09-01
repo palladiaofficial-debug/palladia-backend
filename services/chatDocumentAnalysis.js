@@ -247,20 +247,39 @@ async function archiveChatUpload({
   } else if (destination === 'worker_certificates') {
     const { data: longSgn } = await supabase.storage
       .from(BUCKET).createSignedUrl(permanentPath, 31536000);
-    const { data: d, error: e } = await supabase.from('worker_certificates').insert({
-      company_id:     companyId, worker_id: workerId,
-      // site_id: colonna già esistente su worker_certificates (migrazione 045),
-      // finora mai popolata da qui — un attestato può vivere anche nel cantiere
-      // dove il lavoratore opera oggi (Cartelle Intelligenti, AUDIT.md).
-      site_id:        extraSiteId,
-      pdf_url:        longSgn?.signedUrl || permanentPath,
-      expiry_date:    expiryDate  || null,
-      issue_date:     issueDate   || null,
-      issuing_body:   issuingBody || null,
-      course_type_id: courseTypeId || null,
-      content_hash: contentHash,
-    }).select('id').single();
-    docId = d?.id; insertErr = e;
+    // F-107 (AUDIT.md): un insert diretto qui, invece di passare da
+    // syncToFormazione come fa il ramo worker_documents sotto, creava una riga
+    // ORFANA duplicata ogni volta che il lavoratore aveva già un certificato
+    // per lo stesso corso (il caso comune: un rinnovo) — course_type_id quasi
+    // sempre null perché mai risolto per nome, e nessun aggiornamento del
+    // certificato esistente. syncToFormazione fa l'upsert vero (aggiorna la
+    // riga esistente per worker+course_type, altrimenti inserisce) e risolve
+    // course_type_id per nome quando Ladia non lo passa esplicitamente.
+    const synced = await syncToFormazione(
+      null, workerId, companyId,
+      category || 'altro', name,
+      issueDate || null, expiryDate || null,
+      issuingBody || null, longSgn?.signedUrl || permanentPath,
+      { explicitCourseTypeId: courseTypeId || null, siteId: extraSiteId },
+    );
+    if (synced?.id) {
+      docId = synced.id;
+    } else {
+      // category non riconducibile a un course_type esistente (o dati
+      // insufficienti): meglio salvare comunque il documento con quello che
+      // abbiamo — un fallback, non il percorso normale — che perderlo.
+      const { data: d, error: e } = await supabase.from('worker_certificates').insert({
+        company_id:     companyId, worker_id: workerId,
+        site_id:        extraSiteId,
+        pdf_url:        longSgn?.signedUrl || permanentPath,
+        expiry_date:    expiryDate  || null,
+        issue_date:     issueDate   || null,
+        issuing_body:   issuingBody || null,
+        course_type_id: courseTypeId || null,
+        content_hash: contentHash,
+      }).select('id').single();
+      docId = d?.id; insertErr = e;
+    }
 
   } else if (destination === 'payslips') {
     // status:'draft' apposta — anche una busta paga importata in blocco resta
@@ -326,6 +345,16 @@ async function archiveChatUpload({
       issueDate || null, expiryDate || null,
       null, longSgn?.signedUrl || null,
     ).catch(() => {});
+
+  } else if (destination === 'worker_certificates') {
+    // F-107 (AUDIT.md): simmetrico al ramo sopra — un certificato archiviato
+    // qui invece che in worker_documents aggiornava già worker_certificates
+    // (vedi il ramo di insert più sopra, ora via syncToFormazione), ma MAI
+    // workers.safety_training_expiry: il rinnovo restava "Non conforme" in
+    // Organico finché qualcuno non lo forzava a mano. syncWorkerExpiry ora
+    // considera anche worker_certificates per formazione_sicurezza (vedi
+    // lib/workerDocSync.js), quindi questa chiamata basta a riallinearlo.
+    await syncWorkerExpiry(category || 'altro', workerId, companyId).catch(() => {});
   }
 
   // Cartelle Intelligenti: worker_certificates ha già scritto site_id sopra —
