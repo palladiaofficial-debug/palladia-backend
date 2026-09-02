@@ -32,8 +32,11 @@ async function main() {
   console.log('\n=== Setup CI Test User ===\n');
 
   // 1. Trova o crea utente CI
+  // listUsers() senza perPage vede solo i primi 50 utenti (default Supabase) —
+  // stesso bug scoperto in F-104, qui rischiava di tentare di ricreare un
+  // utente già esistente solo perché escluso dalla prima pagina.
   let userId;
-  const { data: existingUsers } = await supabase.auth.admin.listUsers();
+  const { data: existingUsers } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const existing = existingUsers?.users?.find(u => u.email === CI_EMAIL);
 
   if (existing) {

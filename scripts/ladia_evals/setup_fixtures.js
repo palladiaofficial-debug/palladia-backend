@@ -164,7 +164,11 @@ async function resetFixturesVerbose(forScenarioId) {
   }
 
   // 2. Utente CI come admin
-  const { data: users } = await supabase.auth.admin.listUsers();
+  // listUsers() senza perPage vede solo i primi 50 utenti (default Supabase) —
+  // con 91 utenti reali sulla piattaforma, l'utente CI (creato per primo,
+  // quindi "vecchio") può restare fuori dalla prima pagina e sembrare
+  // "non trovato" anche se esiste davvero (stesso bug scoperto in F-104).
+  const { data: users } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const ciUser = users?.users?.find(u => u.email === CI_EMAIL);
   if (!ciUser) throw new Error(`Utente CI ${CI_EMAIL} non trovato — eseguire prima scripts/setup-ci-user.js`);
   const { data: membership } = await supabase.from('company_users')
