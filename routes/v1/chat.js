@@ -522,6 +522,16 @@ ANNULLARE UN'AZIONE VIA CHAT (testo, non click sul bottone "Annulla azione" dell
 - Vale la stessa regola sopra: comunica il risultato SOLO dopo aver visto la risposta del tool. Un errore
   (es. finestra di 30 minuti scaduta) va riportato per quello che è, mai presentato come un annullamento
   riuscito.
+- Se undo_action ritorna UNDO_NON_DISPONIBILE, RIPORTA il motivo esatto e FERMATI — non eseguire di tua
+  iniziativa un tool diverso (es. remove_worker_from_site, delete_*) come "rimedio" al posto dell'undo
+  rifiutato, nemmeno se tecnicamente produce un risultato simile. L'utente ha chiesto un annullamento
+  (che presuppone tornare allo stato di prima), non un'azione sostitutiva decisa da te — eseguirla e poi
+  dire "annullato"/"fatto" è lo stesso identico problema di fiducia di un falso successo, anche se il
+  motivo del rifiuto era stato riportato onestamente un attimo prima (trovato in LADIA_EVALS, F-118,
+  2026-09-02: creare un lavoratore e assegnarlo a un cantiere, poi provare ad annullare — undo rifiutato
+  correttamente, ma poi Ladia chiamava comunque remove_worker_from_site senza che l'utente lo avesse
+  chiesto). Se serve davvero disfare l'effetto, PROPONI l'azione alternativa esplicitamente e aspetta un
+  sì.
 
 ALTRE AZIONI: create_record (table:'sites'|'site_diary_entries'|'site_suspension_days'), update_sal, update_budget_cantiere, create_phase, update_phase, create_site_note, create_site_cost, create_economia_voce, update_economia_voce, delete_economia_voce, resolve_nonconformity, create_subcontractor, assign_subcontractor_to_site, create_equipment, assign_equipment_to_site, update_sal_voce, update_prezzo_voce, create_computo_voce, delete_computo_voce, emit_sal, mark_sal_pagato, get_varianti, create_variante, update_variante, get_recent_actions, undo_action
 
@@ -2985,6 +2995,23 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
   const fromUtc   = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
 
   try {
+    // F-117 (AUDIT.md, LADIA_EVALS 2026-09-02): il modello a volte chiama un
+    // tool con site_id/worker_id="placeholder" (o simili, es. "get_from_sites")
+    // invece del vero UUID risolto da get_sites/get_workers nello stesso
+    // turno — un errore Postgres grezzo ("invalid input syntax for type uuid")
+    // è un segnale di recupero debole. Un errore strutturato ed esplicito qui,
+    // PRIMA di qualunque query, dà al modello un'istruzione correttiva
+    // immediata e inequivocabile. Non elimina il comportamento alla radice
+    // (probabilistico, stesso principio di F-081) ma rende il recupero più
+    // affidabile della sola auto-correzione su un errore DB generico.
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    for (const [field, resolveTool] of [['site_id', 'get_sites'], ['worker_id', 'get_workers']]) {
+      const val = toolInput?.[field];
+      if (val != null && typeof val === 'string' && !UUID_RE.test(val)) {
+        return { error: `${field} non è un UUID valido (hai passato "${val}") — chiama prima ${resolveTool} per ottenere l'id reale, non indovinarlo né usare un placeholder.` };
+      }
+    }
+
     switch (toolName) {
 
       case 'get_sites': {
