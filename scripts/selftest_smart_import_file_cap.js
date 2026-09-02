@@ -62,7 +62,7 @@ async function main() {
   let batchId = null;
   let tempCompanyId = null;
   try {
-    const { data: anyUser } = await admin.auth.admin.listUsers();
+    const { data: anyUser } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     const someUserId = anyUser?.users?.[0]?.id;
     const { data: company } = await admin.from('companies').insert({ name: `TEST-FileCap-${Date.now()}` }).select('id').single();
     tempCompanyId = company.id;
@@ -82,7 +82,7 @@ async function main() {
 
   // ── Parte 1: HTTP end-to-end, nessun batch reale creato ────────────────────
   try {
-    const { data: users } = await admin.auth.admin.listUsers();
+    const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     const user = users?.users?.find((u) => u.email === TEST_EMAIL);
     if (!user) throw new Error('utente ci-test non trovato');
 

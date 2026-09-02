@@ -40,7 +40,7 @@ async function main() {
   const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
   const anon  = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
 
-  const { data: users } = await admin.auth.admin.listUsers();
+  const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const user = users?.users?.find((u) => u.email === TEST_EMAIL);
   if (!user) {
     skip('note di credito in summary', `utente ${TEST_EMAIL} non trovato in questo ambiente`);

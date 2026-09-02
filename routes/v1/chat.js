@@ -4259,7 +4259,11 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
 
       case 'undo_action': {
         if (!toolInput.action_history_id) return { error: 'action_history_id obbligatorio' };
-        return await ladiaGenericTools.undoAction(toolInput.action_history_id, companyId, userId, req);
+        // F-112 (AUDIT.md, LADIA_EVALS 2026-09-02): annullare via chat la
+        // creazione di un record a sensibilità medium/high (es. un SAL
+        // emesso) ora passa dallo stesso gate della creazione originale —
+        // vedi ladiaGenericTools.undoActionGated per il dettaglio.
+        return await ladiaGenericTools.undoActionGated(toolInput.action_history_id, companyId, userId, req, { conversationId: convId, toolInput });
       }
 
       case 'get_recent_actions': {
@@ -7293,7 +7297,18 @@ conteggio) — mai l'elenco riga per riga.`;
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
           }
-          if (block.name === 'propose_action' && result.proposed) {
+          // F-112 (AUDIT.md, LADIA_EVALS 2026-09-02): questo evento SSE
+          // scattava SOLO per propose_action — ma checkOrProposeGate() (usata
+          // da emit_sal e ora da undo_action per le create a sensibilità
+          // medium/high) produce lo STESSO identico shape RICHIEDE_CONFERMA/
+          // pending_action_id per qualunque tool bespoke, senza mai emettere
+          // questo evento: la card di conferma non compariva mai in UI, un
+          // vicolo cieco silenzioso (il modello riceve l'errore ma non ha modo
+          // di far comparire un bottone reale legato a quel pending_action_id
+          // — solo il tag <ladia-action type="confirm"> generico, che
+          // reinvia testo, non l'id). Generalizzato alla condizione reale:
+          // qualunque risultato con un pending_action_id da confermare.
+          if ((block.name === 'propose_action' && result.proposed) || (result.requires_confirmation && result.pending_action_id)) {
             send({
               type:              'pending_action',
               pending_action_id: result.pending_action_id,

@@ -34,7 +34,7 @@ function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (go
 function check(name, cond, got) { cond ? ok(name) : fail(name, got); }
 
 async function main() {
-  const { data: users } = await supabase.auth.admin.listUsers();
+  const { data: users } = await supabase.auth.admin.listUsers({ page: 1, perPage: 1000 });
   const ciUser = users?.users?.find(u => u.email === CI_EMAIL);
   // process.exitCode (non process.exit()): uscire subito qui mentre la
   // richiesta HTTP di listUsers() appena fatta sta ancora chiudendo i suoi

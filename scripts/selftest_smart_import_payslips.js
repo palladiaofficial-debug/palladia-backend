@@ -69,7 +69,7 @@ async function main() {
       company_id: companyId, full_name: 'Mario Rossi', fiscal_code: 'RSSMRA80A01H501U', badge_code: crypto.randomBytes(9).toString('hex').toUpperCase(),
     }).select('id').single();
     workerId = worker.id;
-    const { data: users } = await admin.auth.admin.listUsers();
+    const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
     const someUserId = users?.users?.[0]?.id;
 
     // ── 1+2) archiveChatUpload con destination='payslips' scrive in payslips ──
