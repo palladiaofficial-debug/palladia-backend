@@ -343,10 +343,18 @@ async function resetFixturesVerbose(forScenarioId) {
   if (forScenarioId === 'U04') {
     // "l'ultima azione della sessione è un emit_sal già confermato e scritto"
     const { data: sal } = await supabase.from('site_sal_history')
-      .select('id').eq('site_id', sites.aurelia).eq('sal_number', 2).single();
+      .select('id, importo_maturato').eq('site_id', sites.aurelia).eq('sal_number', 2).single();
     await mustInsert('ladia_action_history', {
       company_id: companyId, user_id: ciUser.id, resource: 'site_sal_history', table_name: 'site_sal_history',
       pk_column: 'id', record_id: sal.id, action: 'create',
+      // F-112 (AUDIT.md): un vero emit_sal registra changed_fields col
+      // record intero (incluso importo_maturato, sensitivity 'medium' in
+      // ladiaSchemaRegistry.js) — senza questo campo qui, undoActionGated()
+      // calcola sensitivity 'low' (nessuna chiave presente) e il gate non
+      // scatta mai: lo scenario non testerebbe la condizione reale che
+      // vuole verificare. Trovato riverificando U04 dal vivo in produzione
+      // subito dopo il fix, con esattamente questo fixture.
+      changed_fields: { importo_maturato: sal.importo_maturato },
       summary: 'Emesso SAL 2', created_at: minutesAgo(1),
     });
   }
