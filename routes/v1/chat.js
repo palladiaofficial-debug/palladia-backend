@@ -7296,7 +7296,12 @@ conteggio) — mai l'elenco riga per riga.`;
       }
 
       const toolBlocks = collectedContent.filter(b => b.type === 'tool_use');
-      send({ type: 'tool_start', names: toolBlocks.map(b => b.name), ids: toolBlocks.map(b => b.id) });
+      // `inputs` (F-114-adiacente, 2026-09-02): aggiunto per dare a
+      // LADIA_EVALS visibilità sugli argomenti REALI passati ad ogni tool —
+      // prima la traccia vedeva solo i nomi, rendendo impossibile distinguere
+      // "Ladia ha risolto il cantiere sbagliato" da "il tool ha un bug" per
+      // scenari come R11/M02. Puramente additivo, il frontend ignora il campo.
+      send({ type: 'tool_start', names: toolBlocks.map(b => b.name), ids: toolBlocks.map(b => b.id), inputs: toolBlocks.map(b => b.input) });
 
       // Esegui tool in parallelo
       const toolResults = await Promise.all(

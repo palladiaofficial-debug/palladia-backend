@@ -83,7 +83,7 @@ async function runScenario(jwt, companyId, comando) {
   }
 
   const trace = {
-    text: '', toolStarts: [], toolSteps: [], recordActions: [],
+    text: '', toolStarts: [], toolCalls: [], toolSteps: [], recordActions: [],
     pendingActions: [], readFailed: [], recordActionFailed: [], navigate: [], error: null,
   };
   const reader = res.body.getReader();
@@ -102,7 +102,12 @@ async function runScenario(jwt, companyId, comando) {
       try { evt = JSON.parse(line.slice(6)); } catch { continue; }
       switch (evt.type) {
         case 'text':                 trace.text += evt.delta || ''; break;
-        case 'tool_start':           trace.toolStarts.push(...(evt.names || [])); break;
+        case 'tool_start':
+          trace.toolStarts.push(...(evt.names || []));
+          // F-114-adiacente (2026-09-02): args reali, non solo nomi — vedi
+          // il campo 'inputs' aggiunto all'evento SSE in routes/v1/chat.js.
+          (evt.names || []).forEach((name, i) => trace.toolCalls.push({ name, args: evt.inputs?.[i] }));
+          break;
         case 'tool_step':            trace.toolSteps.push({ name: evt.name, status: evt.status, fact: evt.fact, message: evt.message }); break;
         case 'record_action':        trace.recordActions.push({ resource: evt.resource, action: evt.action, campi: evt.campi, site_id: evt.site_id, record_id: evt.record_id, summary: evt.summary }); break;
         case 'pending_action':       trace.pendingActions.push({ summary: evt.summary, pending_action_id: evt.pending_action_id }); break;
@@ -136,7 +141,7 @@ Stato iniziale: ${scenario.stato_iniziale}
 Comportamento atteso: ${JSON.stringify(scenario.atteso)}
 
 TRACCIA REALE:
-- Tool chiamati (in ordine): ${JSON.stringify(trace.toolStarts)}
+- Tool chiamati con argomenti REALI (in ordine — usa questo, non solo i nomi, per giudicare se Ladia ha risolto correttamente riferimenti come nomi di cantiere/lavoratore in ID reali prima di chiamare un tool che li richiede): ${JSON.stringify(trace.toolCalls)}
 - Esiti tool (nome/stato/fatto): ${JSON.stringify(trace.toolSteps)}
 - Scritture REALI eseguite (record_action): ${JSON.stringify(trace.recordActions)}
 - Azioni proposte in attesa di conferma (pending_action): ${JSON.stringify(trace.pendingActions)}
@@ -311,7 +316,7 @@ async function main() {
       report += `- Atteso: ${JSON.stringify(r.atteso)}\n`;
       report += `- Motivo fallimento: ${a.reason}\n`;
       if (a.trace) {
-        report += `- Tool chiamati: ${JSON.stringify(a.trace.toolStarts)}\n`;
+        report += `- Tool chiamati con argomenti: ${JSON.stringify(a.trace.toolCalls)}\n`;
         report += `- Scritture reali: ${JSON.stringify(a.trace.recordActions)}\n`;
         report += `- Testo Ladia: "${(a.trace.text || '').slice(0, 500)}"\n`;
       }
