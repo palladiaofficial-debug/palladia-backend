@@ -1646,7 +1646,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1657,7 +1657,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD. Default: oggi.' },
         to_date: { type: 'string', description: 'Data fine YYYY-MM-DD. Default: from_date.' }
       },
@@ -1670,7 +1670,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1681,7 +1681,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1704,7 +1704,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1733,7 +1733,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1744,7 +1744,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1755,7 +1755,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
         to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' }
       },
@@ -1768,7 +1768,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
         to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' }
       },
@@ -1781,7 +1781,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1792,7 +1792,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD' },
         to_date: { type: 'string', description: 'Data fine YYYY-MM-DD' }
       },
@@ -1816,7 +1816,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         unread_only: { type: 'boolean', description: 'true = solo non lette. Default: false.' }
       },
       required: ['site_id']
@@ -1828,7 +1828,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         status: { type: 'string', enum: ['aperta', 'in_lavorazione', 'risolta', 'chiusa', 'all'], description: 'Default: aperta.' }
       },
       required: ['site_id']
@@ -1853,7 +1853,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio)' },
+        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio). Se non lo conosci, chiama prima get_workers per trovarlo — mai un placeholder o un valore indovinato.' },
         from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD (obbligatorio)' },
         to_date: { type: 'string', description: 'Data fine YYYY-MM-DD (obbligatorio)' }
       },
@@ -1875,7 +1875,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1886,7 +1886,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -1897,7 +1897,7 @@ const TOOLS = [
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -2008,7 +2008,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         sal_percentuale: { type: 'number', description: 'Nuova SAL % 0-100 (obbligatorio)' }
       },
       required: ['site_id', 'sal_percentuale']
@@ -2020,7 +2020,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         nome: { type: 'string', description: 'Nome della fase (obbligatorio)' },
         data_inizio_prevista: { type: 'string', description: 'Data inizio prevista YYYY-MM-DD' },
         data_fine_prevista: { type: 'string', description: 'Data fine prevista YYYY-MM-DD' },
@@ -2066,7 +2066,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         tipo: { type: 'string', enum: ['costo', 'ricavo'], description: 'Tipo voce (obbligatorio)' },
         categoria: { type: 'string', description: 'Categoria es. materiali, manodopera, noli, sicurezza, subappalto, sal, acconto' },
         voce: { type: 'string', description: 'Descrizione della voce (obbligatorio)' },
@@ -2099,7 +2099,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         voce_id: { type: 'string', description: 'UUID voce da eliminare (id da get_economia, obbligatorio)' }
       },
       required: ['site_id', 'voce_id']
@@ -2137,7 +2137,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         note:    { type: 'string', description: 'Note sul SAL (opzionale)' }
       },
       required: ['site_id']
@@ -2206,7 +2206,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['site_id']
     }
@@ -2257,7 +2257,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         descrizione: { type: 'string', description: 'Descrizione del costo (obbligatorio)' },
         importo: { type: 'number', description: 'Importo in euro (obbligatorio)' },
         fornitore: { type: 'string', description: 'Nome fornitore' },
@@ -2275,8 +2275,8 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio)' },
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        worker_id: { type: 'string', description: 'UUID lavoratore (obbligatorio). Se non lo conosci, chiama prima get_workers per trovarlo — mai un placeholder o un valore indovinato.' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['worker_id', 'site_id']
     }
@@ -2305,7 +2305,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       type: 'object',
       properties: {
         subcontractor_id: { type: 'string', description: 'UUID subappaltatore (obbligatorio)' },
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['subcontractor_id', 'site_id']
     }
@@ -2332,7 +2332,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       type: 'object',
       properties: {
         equipment_id: { type: 'string', description: 'UUID mezzo (obbligatorio)' },
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' }
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' }
       },
       required: ['equipment_id', 'site_id']
     }
@@ -2356,7 +2356,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
     input_schema: {
       type: 'object',
       properties: {
-        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio)' },
+        site_id: { type: 'string', description: 'UUID cantiere (obbligatorio). Se non lo conosci, chiama prima get_sites per trovarlo — mai un placeholder o un valore indovinato.' },
         from_date: { type: 'string', description: 'Data inizio YYYY-MM-DD. Default: oggi.' },
         to_date: { type: 'string', description: 'Data fine YYYY-MM-DD. Default: +7 giorni.' }
       },
