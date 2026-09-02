@@ -4609,14 +4609,24 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           if (workerIds.length === 0) return { error: `Nessun lavoratore trovato per "${toolInput.worker_name}"` };
         }
 
+        // F-113 (AUDIT.md, LADIA_EVALS 2026-09-02, scenario R10): questa query
+        // selezionava/ordinava per colonne 'month'/'original_name' che non
+        // esistono su payslips (le colonne reali sono period_year/period_month/
+        // filename, vedi migrazione payslips) — falliva SEMPRE con un errore
+        // Postgres grezzo, per ogni chiamata, da quando questo tool esiste. Mai
+        // scoperto prima perché mai coperto da un test o da uno scenario eval.
         let q = supabase
           .from('payslips')
-          .select('id, worker_id, month, original_name, file_size, created_at')
+          .select('id, worker_id, period_year, period_month, filename, file_size, created_at')
           .eq('company_id', companyId)
-          .order('month', { ascending: false })
+          .order('period_year', { ascending: false })
+          .order('period_month', { ascending: false })
           .limit(50);
         if (workerIds) q = q.in('worker_id', workerIds);
-        if (toolInput.month) q = q.eq('month', toolInput.month);
+        if (toolInput.month) {
+          const [y, m] = toolInput.month.split('-').map(Number);
+          if (y && m) q = q.eq('period_year', y).eq('period_month', m);
+        }
 
         const { data, error } = await q;
         if (error) return { error: error.message };
@@ -4629,6 +4639,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         }
         const cedolini = (data || []).map(p => ({
           ...p,
+          periodo: `${p.period_year}-${String(p.period_month).padStart(2, '0')}`,
           lavoratore: wNames[p.worker_id] || p.worker_id,
         }));
         return { cedolini, total: cedolini.length };
