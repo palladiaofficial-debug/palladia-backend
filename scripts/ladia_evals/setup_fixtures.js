@@ -56,7 +56,7 @@ async function wipeMutableStoryState(companyId) {
     'worksite_workers',
     'site_notes', 'site_costs', 'site_weather_logs',
     'site_computo_voci', 'site_computo', 'site_sal_history',
-    'site_subcontractors',
+    'site_subcontractors', 'site_suspension_days', 'payslips',
     'worker_certificates', 'company_documents',
   ];
   for (const t of tables) {
@@ -288,6 +288,21 @@ async function resetFixturesVerbose(forScenarioId) {
   await mustInsert('site_weather_logs', {
     company_id: companyId, site_id: sites.aurelia, log_date: daysFromNow(-1),
     precipitation_mm: 2.4, wind_max_kmh: 18, temp_min_c: 14, temp_max_c: 22, weather_desc: 'Pioggia debole',
+  });
+
+  // 11b. Cedolino Mario Rossi mese scorso (R10) + giorno di sospensione pioggia
+  //      oggi su Aurelia (R11, e riusato identico da W10 per testare il
+  //      riconoscimento di un duplicato — F-021).
+  const lastMonth = new Date(); lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1);
+  await mustInsert('payslips', {
+    company_id: companyId, worker_id: workers.marioRossi,
+    period_year: lastMonth.getUTCFullYear(), period_month: lastMonth.getUTCMonth() + 1,
+    filename: 'cedolino-eval-test.pdf', file_path: `payslips/${companyId}/eval-test.pdf`,
+    file_size: 1000, status: 'draft',
+  });
+  await mustInsert('site_suspension_days', {
+    company_id: companyId, site_id: sites.aurelia, day: daysFromNow(0), reason: 'pioggia',
+    notes: 'Fixture eval — R11/W10', created_by: ciUser.id,
   });
 
   // 12. Computo base + voci — Aurelia (scavi ambigue per A08/D06, calcestruzzo per M06),
