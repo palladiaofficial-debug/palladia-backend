@@ -202,6 +202,10 @@ router.use('/', require('./siteExport'));
 // SAL — Stato Avanzamento Lavori: budget, costi, ricavi per cantiere
 router.use('/', require('./economia'));
 
+// Controllo Economico (AUDIT.md F-119): registro unico movimenti, moltiplicatore
+// costo-azienda, contratti di subappalto — dietro feature flag economia_controllo_v1
+router.use('/', require('./economiaControllo'));
+
 // Gestione Spese Aziendali: tracciamento uscite, ricevute, export commercialista
 router.use('/', require('./expenses'));
 
