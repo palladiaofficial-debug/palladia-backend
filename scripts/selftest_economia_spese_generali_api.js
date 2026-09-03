@@ -56,7 +56,7 @@ async function main() {
   const anon  = createClient(SUPABASE_URL, ANON_KEY,    { auth: { autoRefreshToken: false, persistSession: false } });
 
   const email = `test-economia-spese-generali-${Date.now()}@palladia-test.internal`;
-  let companyId, otherCompanyId, siteAId, siteBId, siteNoBudgetId, userId;
+  let companyId, otherCompanyId, siteAId, siteBId, siteNoBudgetId, siteChiusoId, userId;
 
   try {
     const { data: company } = await admin.from('companies').insert({ name: 'TEST-EconomiaSpeseGenerali-API', moltiplicatore_costo_manodopera: 1.00 }).select().single();
@@ -67,6 +67,8 @@ async function main() {
     siteBId = siteB.id;
     const { data: siteC } = await admin.from('sites').insert({ company_id: companyId, name: 'TEST site senza budget', status: 'attivo', address: 'Via Test C' }).select().single();
     siteNoBudgetId = siteC.id;
+    const { data: siteD } = await admin.from('sites').insert({ company_id: companyId, name: 'TEST site chiuso con budget', status: 'chiuso', address: 'Via Test D' }).select().single();
+    siteChiusoId = siteD.id;
     const { data: otherCompany } = await admin.from('companies').insert({ name: 'TEST-EconomiaSpeseGenerali-API-Other' }).select().single();
     otherCompanyId = otherCompany.id;
 
@@ -119,6 +121,13 @@ async function main() {
 
     // ── Confronto cantieri ────────────────────────────────────────────────
     {
+      // siteChiuso: un cantiere concluso con budget deve comparire nel confronto
+      // (non solo gli 'attivo' — verificato dal vivo che l'esclusione originale
+      // nascondeva l'unico cantiere reale comparabile della company master).
+      const { data: computoChiuso } = await admin.from('site_computo').insert({
+        company_id: companyId, site_id: siteChiusoId, tipo: 'base', nome: 'TEST computo chiuso', totale_contratto: 8000,
+      }).select().single();
+
       // siteB: budget più piccolo ma con un costo che abbassa il margine netto sotto siteA
       await apiCall(jwt, companyId, 'PATCH', `/sites/${siteBId}/economia-controllo/budget-manuale`, { manodopera: 5000 });
       const { data: exp } = await admin.from('company_expenses').insert({
@@ -132,15 +141,18 @@ async function main() {
 
       const a = r.body?.cantieri?.find(c => c.site_id === siteAId);
       const b = r.body?.cantieri?.find(c => c.site_id === siteBId);
+      const d = r.body?.cantieri?.find(c => c.site_id === siteChiusoId);
       check('Confronto cantieri: siteA presente con margine netto 90%', a?.margine_netto?.percentuale === 90, a);
       // siteB: budget 5000, costo 3000 -> margine diretto 2000 (40%), quota 10%*5000=500, netto 1500 (30%)
       check('Confronto cantieri: siteB presente con margine netto 30%', b?.margine_netto?.percentuale === 30, b);
+      check('Confronto cantieri: cantiere CHIUSO con budget compare comunque (non solo attivo)', !!d && d.budget_totale === 8000, d);
 
       const idxA = r.body.cantieri.findIndex(c => c.site_id === siteAId);
       const idxB = r.body.cantieri.findIndex(c => c.site_id === siteBId);
       check('Confronto cantieri: ordinati per margine netto decrescente (A 90% prima di B 30%)', idxA !== -1 && idxB !== -1 && idxA < idxB, { idxA, idxB });
 
       await admin.from('company_expenses').delete().eq('id', exp.id);
+      await admin.from('site_computo').delete().eq('id', computoChiuso.id);
     }
 
     // ── Cross-tenant ──────────────────────────────────────────────────────
@@ -152,6 +164,7 @@ async function main() {
     try { if (siteAId) await admin.from('sites').delete().eq('id', siteAId); } catch { /* best-effort */ }
     try { if (siteBId) await admin.from('sites').delete().eq('id', siteBId); } catch { /* best-effort */ }
     try { if (siteNoBudgetId) await admin.from('sites').delete().eq('id', siteNoBudgetId); } catch { /* best-effort */ }
+    try { if (siteChiusoId) await admin.from('sites').delete().eq('id', siteChiusoId); } catch { /* best-effort */ }
     try { if (companyId) await admin.from('company_feature_flags').delete().eq('company_id', companyId).eq('feature', 'economia_controllo_v1'); } catch { /* best-effort */ }
     try { if (userId) await admin.auth.admin.deleteUser(userId); } catch { /* best-effort */ }
     try { if (companyId) await admin.from('companies').delete().eq('id', companyId); } catch { /* best-effort */ }

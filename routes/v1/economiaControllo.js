@@ -510,16 +510,20 @@ router.patch('/sites/:siteId/economia-controllo/budget-manuale', validate(budget
 });
 
 // ── Confronto tra cantieri (BLOCCO 5) ────────────────────────────────────────
-// Margine diretto e netto per ogni cantiere attivo — per capire quale tipo di
-// lavoro rende davvero, non solo quale ha il margine più alto in valore
-// assoluto. Una query sola sul registro (filtrata per company, non per
-// cantiere) invece di N chiamate all'overview: qui non serve il dettaglio
+// Margine diretto e netto per ogni cantiere — per capire quale tipo di lavoro
+// rende davvero, non solo quale ha il margine più alto in valore assoluto.
+// Include anche i cantieri chiusi (esclude solo 'eliminato'): un cantiere
+// concluso ha il quadro costi più affidabile di uno ancora in corso, ed è
+// spesso il confronto più utile — verificato dal vivo: filtrare solo
+// 'attivo' nascondeva l'unico cantiere reale con un budget da confrontare.
+// Una query sola sul registro (filtrata per company, non per cantiere)
+// invece di N chiamate all'overview: qui non serve il dettaglio
 // per-lavoratore/drill-down, solo i totali.
 router.get('/economia-controllo/confronto-cantieri', async (req, res) => {
   const { companyId } = req;
 
   const [sitesRes, movRes, companyRes] = await Promise.all([
-    supabase.from('sites').select('id, name, status').eq('company_id', companyId).eq('status', 'attivo').order('name'),
+    supabase.from('sites').select('id, name, status').eq('company_id', companyId).neq('status', 'eliminato').order('name'),
     supabase.from('site_economia_movimenti').select('site_id, tipo, categoria, importo').eq('company_id', companyId),
     supabase.from('companies').select('percentuale_spese_generali').eq('id', companyId).maybeSingle(),
   ]);
