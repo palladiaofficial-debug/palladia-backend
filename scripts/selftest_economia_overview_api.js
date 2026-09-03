@@ -129,12 +129,17 @@ async function main() {
 
     // ── Timbrature → manodopera (moltiplicatore 1.00 per isolare il calcolo) ──
     {
+      // Schema reale di presence_logs (verificato dal vivo, drift non tracciato
+      // nelle migrazioni: niente action/scanned_at/timestamp_device come nella
+      // 001 originale) — company_id/site_id/worker_id/event_type/timestamp_server.
       const day = new Date().toISOString().slice(0, 10);
-      await admin.from('presence_logs').insert([
-        { company_id: companyId, site_id: siteId, worker_id: workerId, event_type: 'ENTRY', timestamp_server: `${day}T08:00:00Z`, timestamp_device: `${day}T08:00:00Z` },
-        { company_id: companyId, site_id: siteId, worker_id: workerId, event_type: 'EXIT',  timestamp_server: `${day}T16:00:00Z`, timestamp_device: `${day}T16:00:00Z` },
+      const { error: presenceErr } = await admin.from('presence_logs').insert([
+        { company_id: companyId, site_id: siteId, worker_id: workerId, event_type: 'ENTRY', timestamp_server: `${day}T08:00:00Z` },
+        { company_id: companyId, site_id: siteId, worker_id: workerId, event_type: 'EXIT',  timestamp_server: `${day}T16:00:00Z` },
       ]);
-      await admin.rpc('sync_site_mo_consuntivo', { p_site_id: siteId });
+      check('Timbrature inserite senza errore', !presenceErr, presenceErr);
+      const { error: syncErr } = await admin.rpc('sync_site_mo_consuntivo', { p_site_id: siteId });
+      check('sync_site_mo_consuntivo eseguita senza errore', !syncErr, syncErr);
 
       const r = await apiCall(jwt, companyId, 'GET', `/sites/${siteId}/economia-controllo/overview`);
       check('Overview: 8h × 20€/h = 160€ in consuntivo.manodopera (moltiplicatore 1.00)', r.body?.consuntivo?.per_categoria?.manodopera === 160, r.body?.consuntivo);
