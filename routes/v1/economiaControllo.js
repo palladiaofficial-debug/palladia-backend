@@ -268,16 +268,18 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
   const site = await resolveSite(siteId, companyId);
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
-  const [siteFullRes, cmeRes, movRes, workersRes, presenceRes, nonAttribuiteRes] = await Promise.all([
+  const [siteFullRes, cmeRes, movRes, workersRes, presenceRes, nonAttribuiteRes, companyRes] = await Promise.all([
     supabase.from('sites').select('name, sal_percentuale').eq('id', siteId).maybeSingle(),
     supabase.from('site_computo').select('id').eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'base').limit(1),
     supabase.from('site_economia_movimenti')
-      .select('tipo, categoria, importo, data_competenza, sorgente, source_table, note, created_at')
-      .eq('site_id', siteId).eq('company_id', companyId),
+      .select('id, tipo, categoria, importo, data_competenza, sorgente, source_table, note, created_at')
+      .eq('site_id', siteId).eq('company_id', companyId)
+      .order('data_competenza', { ascending: false }),
     supabase.from('workers').select('id, full_name, tariffa_oraria').eq('company_id', companyId),
     supabase.from('presence_logs').select('worker_id, event_type, timestamp_server')
       .eq('site_id', siteId).eq('company_id', companyId).order('worker_id').order('timestamp_server'),
     supabase.from('company_expenses').select('id, amount').eq('company_id', companyId).is('site_id', null),
+    supabase.from('companies').select('moltiplicatore_costo_manodopera').eq('id', companyId).maybeSingle(),
   ]);
 
   if (movRes.error) return sendDbError(res, movRes.error);
@@ -344,14 +346,24 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
       s.pending = null;
     }
   }
+  const moltiplicatore = Number(companyRes.data?.moltiplicatore_costo_manodopera ?? 1.45);
   let oreTotali = 0;
   const lavoratoriSenzaTariffa = [];
+  const manodoperaBreakdown = [];
   for (const [wid, s] of Object.entries(sessions)) {
     if (s.hours < 0.01) continue;
     oreTotali += s.hours;
     const w = workerMap[wid];
-    if (w && !(Number(w.tariffa_oraria) > 0)) lavoratoriSenzaTariffa.push(w.full_name);
+    if (!w) continue;
+    const tariffa = Number(w.tariffa_oraria) || 0;
+    if (!tariffa) { lavoratoriSenzaTariffa.push(w.full_name); continue; }
+    manodoperaBreakdown.push({
+      worker_id: wid, full_name: w.full_name,
+      ore: Math.round(s.hours * 100) / 100, tariffa_oraria: tariffa,
+      costo: Math.round(s.hours * tariffa * moltiplicatore * 100) / 100,
+    });
   }
+  manodoperaBreakdown.sort((a, b) => b.ore - a.ore);
 
   const fattureRighe = righe.filter(r => r.sorgente === 'fattura');
   const ultimaRegistrazione = righe.length
@@ -366,6 +378,9 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
     impegnato,
     consuntivo,
     ricavo,
+    righe,
+    manodopera_breakdown: manodoperaBreakdown,
+    moltiplicatore_costo_manodopera: moltiplicatore,
     margine: { valore: margine, percentuale: margine_percentuale, costo_a_finire, trend },
     costo_consumato_pct,
     allarme_ritmo,
