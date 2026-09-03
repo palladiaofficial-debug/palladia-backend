@@ -14,6 +14,11 @@
  *
  * GET   /api/v1/economia-controllo/moltiplicatore              — moltiplicatore costo-azienda dell'azienda
  * PATCH /api/v1/economia-controllo/moltiplicatore              — aggiorna il moltiplicatore
+ * GET   /api/v1/economia-controllo/spese-generali              — percentuale spese generali (Blocco 5)
+ * PATCH /api/v1/economia-controllo/spese-generali              — aggiorna la percentuale
+ * GET   /api/v1/economia-controllo/confronto-cantieri           — margine diretto/netto per ogni cantiere attivo (Blocco 5)
+ * GET   /api/v1/sites/:siteId/economia-controllo/overview       — schermata Economia aggregata (Blocco 3)
+ * PATCH /api/v1/sites/:siteId/economia-controllo/budget-manuale — budget manuale per cantieri senza CME (Blocco 3)
  * GET   /api/v1/sites/:siteId/subcontracts                     — elenco contratti subappalto del cantiere
  * POST  /api/v1/sites/:siteId/subcontracts                     — crea contratto (stato default 'emesso' → riga impegnato automatica)
  * PATCH /api/v1/sites/:siteId/subcontracts/:id                 — modifica contratto
@@ -35,6 +40,7 @@ const {
   createSubcontractSalSchema,
   budgetManualeSchema,
   CATEGORIE_BUDGET,
+  patchSpeseGeneraliSchema,
 } = require('../../lib/schemas/economiaControllo');
 
 const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -82,6 +88,26 @@ router.patch('/economia-controllo/moltiplicatore', validate(patchMoltiplicatoreS
   }
 
   res.json({ ok: true, moltiplicatore_costo_manodopera });
+});
+
+// ── Spese generali (BLOCCO 5) — percentuale unica, non un riparto algoritmico ──
+
+router.get('/economia-controllo/spese-generali', async (req, res) => {
+  const { data, error } = await supabase
+    .from('companies').select('percentuale_spese_generali').eq('id', req.companyId).maybeSingle();
+  if (error) return sendDbError(res, error);
+  res.json({
+    percentuale_spese_generali: Number(data?.percentuale_spese_generali ?? 0),
+    spiegazione: 'Percentuale del budget di ogni cantiere allocata a copertura delle spese generali aziendali (ufficio, assicurazioni, mezzi, amministrazione) — non calcolata automaticamente, la imposti tu in base a quanto pesano davvero sul fatturato. 0% = nessuna allocazione, il margine netto coincide col margine diretto.',
+  });
+});
+
+router.patch('/economia-controllo/spese-generali', validate(patchSpeseGeneraliSchema), async (req, res) => {
+  const { percentuale_spese_generali } = req.body;
+  const { error } = await supabase.from('companies')
+    .update({ percentuale_spese_generali }).eq('id', req.companyId);
+  if (error) return sendDbError(res, error);
+  res.json({ ok: true, percentuale_spese_generali });
 });
 
 // ── Contratti di subappalto ──────────────────────────────────────────────────
@@ -268,6 +294,15 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
   const site = await resolveSite(siteId, companyId);
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
+  // sync_site_mo_consuntivo() è on-demand (migrazione 187), non un trigger —
+  // finora veniva richiamata solo dal backfill una tantum o dal PATCH
+  // moltiplicatore (che risincronizza tutti i cantieri). Senza questa
+  // chiamata, nuove timbrature dopo l'ultimo di quei due eventi non
+  // sarebbero mai riflesse nel registro: bug di staleness silenzioso, non
+  // dichiarato altrove. Qui, esattamente come previsto dal commento della
+  // migrazione 187 ("in futuro dal caricamento della schermata Economia").
+  await supabase.rpc('sync_site_mo_consuntivo', { p_site_id: siteId }).then(null, () => {});
+
   const [siteFullRes, cmeRes, movRes, workersRes, presenceRes, nonAttribuiteRes, companyRes] = await Promise.all([
     supabase.from('sites').select('name, sal_percentuale, status').eq('id', siteId).maybeSingle(),
     supabase.from('site_computo').select('id').eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'base').limit(1),
@@ -279,7 +314,7 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
     supabase.from('presence_logs').select('worker_id, event_type, timestamp_server')
       .eq('site_id', siteId).eq('company_id', companyId).order('worker_id').order('timestamp_server'),
     supabase.from('company_expenses').select('id, amount').eq('company_id', companyId).is('site_id', null),
-    supabase.from('companies').select('moltiplicatore_costo_manodopera').eq('id', companyId).maybeSingle(),
+    supabase.from('companies').select('moltiplicatore_costo_manodopera, percentuale_spese_generali').eq('id', companyId).maybeSingle(),
   ]);
 
   if (movRes.error) return sendDbError(res, movRes.error);
@@ -300,6 +335,17 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
   const budgetRipartito = !hasCme && CATEGORIE_BUDGET.some(c => budget.per_categoria[c] > 0);
 
   const { margine, margine_percentuale, costo_a_finire } = calcolaMargine(righe, budget.totale || null);
+
+  // ── BLOCCO 5 — margine netto dopo spese generali ────────────────────────────
+  // Quota = percentuale unica × budget del cantiere (non un riparto di
+  // company_recurring_expenses: vedi migrazione 191). Sempre calcolato e
+  // mostrato accanto al margine diretto, mai al posto suo — due numeri
+  // distinti, mai confusi (vincolo esplicito dell'utente).
+  const percentualeSpeseGenerali = Number(companyRes.data?.percentuale_spese_generali ?? 0);
+  const quotaSpeseGenerali = budget.totale > 0 ? Math.round(budget.totale * percentualeSpeseGenerali / 100 * 100) / 100 : 0;
+  const margineNetto = margine !== null ? Math.round((margine - quotaSpeseGenerali) * 100) / 100 : null;
+  const margineNettoPct = margineNetto !== null && budget.totale > 0
+    ? Math.round((margineNetto / budget.totale) * 1000) / 10 : null;
 
   const costo_consumato_pct = budget.totale > 0 ? Math.round((consuntivo.totale / budget.totale) * 1000) / 10 : null;
 
@@ -403,6 +449,12 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
     manodopera_breakdown: manodoperaBreakdown,
     moltiplicatore_costo_manodopera: moltiplicatore,
     margine: { valore: margine, percentuale: margine_percentuale, costo_a_finire, trend },
+    spese_generali: {
+      percentuale: percentualeSpeseGenerali,
+      quota: quotaSpeseGenerali,
+      spiegazione: 'Percentuale del budget allocata a copertura di ufficio, assicurazioni, mezzi, amministrazione — impostata una volta dal titolare, non calcolata automaticamente.',
+    },
+    margine_netto: { valore: margineNetto, percentuale: margineNettoPct },
     costo_consumato_pct,
     allarme_ritmo,
     affidabilita: {
@@ -455,6 +507,52 @@ router.patch('/sites/:siteId/economia-controllo/budget-manuale', validate(budget
   }
 
   res.json({ ok: true });
+});
+
+// ── Confronto tra cantieri (BLOCCO 5) ────────────────────────────────────────
+// Margine diretto e netto per ogni cantiere attivo — per capire quale tipo di
+// lavoro rende davvero, non solo quale ha il margine più alto in valore
+// assoluto. Una query sola sul registro (filtrata per company, non per
+// cantiere) invece di N chiamate all'overview: qui non serve il dettaglio
+// per-lavoratore/drill-down, solo i totali.
+router.get('/economia-controllo/confronto-cantieri', async (req, res) => {
+  const { companyId } = req;
+
+  const [sitesRes, movRes, companyRes] = await Promise.all([
+    supabase.from('sites').select('id, name, status').eq('company_id', companyId).eq('status', 'attivo').order('name'),
+    supabase.from('site_economia_movimenti').select('site_id, tipo, categoria, importo').eq('company_id', companyId),
+    supabase.from('companies').select('percentuale_spese_generali').eq('id', companyId).maybeSingle(),
+  ]);
+  if (sitesRes.error) return sendDbError(res, sitesRes.error);
+  if (movRes.error) return sendDbError(res, movRes.error);
+
+  const percentualeSpeseGenerali = Number(companyRes.data?.percentuale_spese_generali ?? 0);
+  const righePerSite = {};
+  for (const r of (movRes.data || [])) {
+    (righePerSite[r.site_id] || (righePerSite[r.site_id] = [])).push(r);
+  }
+
+  const risultati = (sitesRes.data || []).map(site => {
+    const righe = righePerSite[site.id] || [];
+    const budget = sommaPerCategoria(righe, 'budget');
+    const { margine, margine_percentuale } = calcolaMargine(righe, budget.totale || null);
+    const quota = budget.totale > 0 ? Math.round(budget.totale * percentualeSpeseGenerali / 100 * 100) / 100 : 0;
+    const margineNetto = margine !== null ? Math.round((margine - quota) * 100) / 100 : null;
+    const margineNettoPct = margineNetto !== null && budget.totale > 0
+      ? Math.round((margineNetto / budget.totale) * 1000) / 10 : null;
+    return {
+      site_id: site.id, site_name: site.name, budget_totale: budget.totale,
+      margine_diretto: { valore: margine, percentuale: margine_percentuale },
+      margine_netto: { valore: margineNetto, percentuale: margineNettoPct },
+    };
+  }).filter(r => r.budget_totale > 0) // un cantiere senza budget non è confrontabile, non un margine 0% fuorviante
+    .sort((a, b) => (b.margine_netto.percentuale ?? -Infinity) - (a.margine_netto.percentuale ?? -Infinity));
+
+  res.json({
+    percentuale_spese_generali: percentualeSpeseGenerali,
+    cantieri: risultati,
+    cantieri_esclusi_senza_budget: (sitesRes.data || []).length - risultati.length,
+  });
 });
 
 module.exports = router;
