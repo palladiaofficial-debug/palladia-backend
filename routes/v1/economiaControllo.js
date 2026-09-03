@@ -33,15 +33,17 @@ const {
   createSubcontractSchema,
   patchSubcontractSchema,
   createSubcontractSalSchema,
+  budgetManualeSchema,
+  CATEGORIE_BUDGET,
 } = require('../../lib/schemas/economiaControllo');
 
 const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
 
-router.use(['/sites/:siteId/subcontracts', '/economia-controllo'], verifySupabaseJwt);
+router.use(['/sites/:siteId/subcontracts', '/sites/:siteId/economia-controllo', '/economia-controllo'], verifySupabaseJwt);
 
 // Guardia flag: 404 come TIPO_NON_VALIDO in archive.js — il modulo non deve
 // essere scopribile da chi non ce l'ha attivo, non solo nascosto in UI.
-router.use(['/sites/:siteId/subcontracts', '/economia-controllo'], async (req, res, next) => {
+router.use(['/sites/:siteId/subcontracts', '/sites/:siteId/economia-controllo', '/economia-controllo'], async (req, res, next) => {
   const enabled = await isFeatureEnabled(req.companyId, 'economia_controllo_v1');
   if (!enabled) return res.status(404).json({ error: 'NOT_FOUND' });
   next();
@@ -206,6 +208,215 @@ router.delete('/sites/:siteId/subcontracts/:id/sal/:salId', async (req, res) => 
   const { error } = await supabase.from('site_subcontract_sal').delete()
     .eq('id', salId).eq('subcontract_id', id).eq('site_id', siteId).eq('company_id', companyId);
   if (error) return sendDbError(res, error);
+  res.json({ ok: true });
+});
+
+// ── BLOCCO 3 — Schermata Economia: overview aggregata dal registro unico ────
+// Un solo endpoint che legge site_economia_movimenti e restituisce già tutto
+// ciò che serve alla gerarchia visiva richiesta (numero grande, barra doppia,
+// 4 righe categoria, riga di affidabilità) — nessun calcolo di margine nel
+// frontend, stesso principio di calcPnl() in economia.js (v1): un'unica fonte
+// di verità lato server.
+
+const CATEGORIE_REGISTRO = ['manodopera', 'materiali', 'subappalti', 'noleggi', 'altro'];
+
+function sommaPerCategoria(righe, tipo) {
+  const out = Object.fromEntries(CATEGORIE_REGISTRO.map(c => [c, 0]));
+  let totale = 0;
+  for (const r of righe) {
+    if (r.tipo !== tipo) continue;
+    const imp = Number(r.importo) || 0;
+    out[r.categoria] = (out[r.categoria] || 0) + imp;
+    totale += imp;
+  }
+  for (const c of CATEGORIE_REGISTRO) out[c] = Math.round(out[c] * 100) / 100;
+  return { per_categoria: out, totale: Math.round(totale * 100) / 100 };
+}
+
+// Ricalcola il margine "a budget" da un sottoinsieme di righe già filtrato —
+// usata sia per il valore attuale sia per il confronto a 30gg (stessa
+// funzione, input diverso, mai due formule che possono disallinearsi).
+function calcolaMargine(righe, budgetTotale) {
+  const budget     = sommaPerCategoria(righe, 'budget');
+  const impegnato   = sommaPerCategoria(righe, 'impegnato');
+  const consuntivo  = sommaPerCategoria(righe, 'consuntivo');
+  const bTot = budgetTotale != null ? budgetTotale : budget.totale;
+
+  // Costo a finire stimato: per i subappalti l'impegnato è il valore
+  // contrattuale pieno (mai decrementato dai SAL, vedi migrazione 185) — usare
+  // consuntivo+impegnato sommerebbe due volte la stessa spesa. Per le altre
+  // categorie non esiste ancora un concetto di "impegnato" (Blocco 1/2):
+  // il costo a finire stimato è quanto già consuntivato, cioè un floor
+  // conservativo "se nient'altro cresce da qui a fine lavori" — non una
+  // proiezione sul ritmo di spesa (quella è il Blocco 6, deliberatamente
+  // rimandato). Etichettato come "a budget", mai spacciato per predittivo.
+  const costoAFinire =
+    consuntivo.per_categoria.manodopera +
+    consuntivo.per_categoria.materiali +
+    consuntivo.per_categoria.noleggi +
+    consuntivo.per_categoria.altro +
+    Math.max(impegnato.per_categoria.subappalti, consuntivo.per_categoria.subappalti);
+
+  const margine = bTot > 0 ? Math.round((bTot - costoAFinire) * 100) / 100 : null;
+  const margine_percentuale = margine !== null && bTot > 0 ? Math.round((margine / bTot) * 1000) / 10 : null;
+  return { margine, margine_percentuale, costo_a_finire: Math.round(costoAFinire * 100) / 100 };
+}
+
+router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
+  const { companyId } = req;
+  const { siteId }    = req.params;
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  const [siteFullRes, cmeRes, movRes, workersRes, presenceRes, nonAttribuiteRes] = await Promise.all([
+    supabase.from('sites').select('name, sal_percentuale').eq('id', siteId).maybeSingle(),
+    supabase.from('site_computo').select('id').eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'base').limit(1),
+    supabase.from('site_economia_movimenti')
+      .select('tipo, categoria, importo, data_competenza, sorgente, source_table, note, created_at')
+      .eq('site_id', siteId).eq('company_id', companyId),
+    supabase.from('workers').select('id, full_name, tariffa_oraria').eq('company_id', companyId),
+    supabase.from('presence_logs').select('worker_id, event_type, timestamp_server')
+      .eq('site_id', siteId).eq('company_id', companyId).order('worker_id').order('timestamp_server'),
+    supabase.from('company_expenses').select('id, amount').eq('company_id', companyId).is('site_id', null),
+  ]);
+
+  if (movRes.error) return sendDbError(res, movRes.error);
+
+  const righe    = movRes.data || [];
+  const hasCme   = (cmeRes.data || []).length > 0;
+  const avanzamento_pct = Number(siteFullRes.data?.sal_percentuale) || 0;
+
+  const budget     = sommaPerCategoria(righe, 'budget');
+  const impegnato  = sommaPerCategoria(righe, 'impegnato');
+  const consuntivo = sommaPerCategoria(righe, 'consuntivo');
+  const ricavo     = sommaPerCategoria(righe, 'ricavo');
+
+  // Ripartizione budget: la CME scrive un'unica riga aggregata in 'altro'
+  // (nessuno spacchettamento per categoria nel computo metrico) — dichiarato
+  // esplicitamente, non nascosto: il previsto per-categoria è "non ripartito"
+  // in quel caso, mai un numero indovinato.
+  const budgetRipartito = !hasCme && CATEGORIE_BUDGET.some(c => budget.per_categoria[c] > 0);
+
+  const { margine, margine_percentuale, costo_a_finire } = calcolaMargine(righe, budget.totale || null);
+
+  const costo_consumato_pct = budget.totale > 0 ? Math.round((consuntivo.totale / budget.totale) * 1000) / 10 : null;
+
+  // Allarme "stai spendendo più veloce di quanto avanzi" — unica proiezione a
+  // ritmo ammessa nel Blocco 3 (vincolata a questa riga d'allarme, per
+  // esplicita richiesta utente), stessa formula già in uso in
+  // EconomiaTab.tsx (proiezione fine lavori) per coerenza col resto dell'app.
+  let allarme_ritmo = null;
+  if (budget.totale > 0 && avanzamento_pct > 1 && costo_consumato_pct !== null && costo_consumato_pct > avanzamento_pct) {
+    const costoProiettato = consuntivo.totale / (avanzamento_pct / 100);
+    const margineARitmo   = Math.round((budget.totale - costoProiettato) * 100) / 100;
+    allarme_ritmo = {
+      margine_a_ritmo_attuale: margineARitmo,
+      messaggio: `Stai spendendo più velocemente di quanto avanzi — al ritmo attuale il margine scende a ${margineARitmo.toLocaleString('it-IT', { maximumFractionDigits: 0 })} €`,
+    };
+  }
+
+  // Trend 30gg: stesso calcolo del margine, ma solo sulle righe già esistenti
+  // 30 giorni fa — un confronto reale su dati storici del registro, non una
+  // proiezione. "dati_insufficienti" se il cantiere/registro è più giovane.
+  const soglia30gg = new Date(Date.now() - 30 * 86400000).toISOString();
+  const righePassate = righe.filter(r => r.created_at < soglia30gg);
+  let trend = 'dati_insufficienti';
+  if (righePassate.length > 0) {
+    const bPassato = sommaPerCategoria(righePassate, 'budget').totale || budget.totale;
+    const mPassato = calcolaMargine(righePassate, bPassato || null).margine_percentuale;
+    if (mPassato !== null && margine_percentuale !== null) {
+      const delta = margine_percentuale - mPassato;
+      trend = delta > 1 ? 'migliora' : delta < -1 ? 'peggiora' : 'stabile';
+    }
+  }
+
+  // Manodopera: ore appaiate ENTRY/EXIT (stessa logica di calcPnl in
+  // economia.js) — serve qui solo per la riga di affidabilità (ore totali,
+  // lavoratori senza tariffa), il costo vero è già nel registro via
+  // sync_site_mo_consuntivo().
+  const workerMap = Object.fromEntries((workersRes.data || []).map(w => [w.id, w]));
+  const sessions = {};
+  for (const log of (presenceRes.data || [])) {
+    const s = sessions[log.worker_id] || (sessions[log.worker_id] = { pending: null, hours: 0 });
+    if (log.event_type === 'ENTRY') s.pending = new Date(log.timestamp_server).getTime();
+    else if (log.event_type === 'EXIT' && s.pending) {
+      s.hours += Math.max(0, Math.min((new Date(log.timestamp_server).getTime() - s.pending) / 3600000, 24));
+      s.pending = null;
+    }
+  }
+  let oreTotali = 0;
+  const lavoratoriSenzaTariffa = [];
+  for (const [wid, s] of Object.entries(sessions)) {
+    if (s.hours < 0.01) continue;
+    oreTotali += s.hours;
+    const w = workerMap[wid];
+    if (w && !(Number(w.tariffa_oraria) > 0)) lavoratoriSenzaTariffa.push(w.full_name);
+  }
+
+  const fattureRighe = righe.filter(r => r.sorgente === 'fattura');
+  const ultimaRegistrazione = righe.length
+    ? righe.reduce((max, r) => (r.created_at > max ? r.created_at : max), righe[0].created_at)
+    : null;
+  const nonAttribuite = nonAttribuiteRes.data || [];
+
+  res.json({
+    site: { name: siteFullRes.data?.name || null, avanzamento_pct },
+    has_cme: hasCme,
+    budget: { ...budget, ripartito: budgetRipartito },
+    impegnato,
+    consuntivo,
+    ricavo,
+    margine: { valore: margine, percentuale: margine_percentuale, costo_a_finire, trend },
+    costo_consumato_pct,
+    allarme_ritmo,
+    affidabilita: {
+      fatture_count: fattureRighe.length,
+      ultima_registrazione: ultimaRegistrazione,
+      ore_totali: Math.round(oreTotali * 100) / 100,
+      lavoratori_senza_tariffa: lavoratoriSenzaTariffa,
+      fatture_non_attribuite_company: {
+        count: nonAttribuite.length,
+        importo: Math.round(nonAttribuite.reduce((s, r) => s + Number(r.amount), 0) * 100) / 100,
+      },
+    },
+  });
+});
+
+// ── Budget manuale per cantiere senza computo metrico (Blocco 3) ────────────
+// Sola alternativa quando il cantiere non ha un CME: totale + le 4 categorie
+// (vincolo esplicito dell'utente — "deve funzionare anche senza computo
+// metrico"). Ogni categoria genera/aggiorna una riga 'budget' sorgente
+// 'manuale' — stesso registro, nessuna tabella parallela. DELETE+INSERT per
+// categoria (stesso pattern dei trigger di sync) per restare idempotente
+// senza dipendere dal vincolo UNIQUE (che non si applica alle righe manuali,
+// source_table/source_id sono NULL — vedi migrazione 185).
+router.patch('/sites/:siteId/economia-controllo/budget-manuale', validate(budgetManualeSchema), async (req, res) => {
+  const { companyId, user } = req;
+  const { siteId }          = req.params;
+  const site = await resolveSite(siteId, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  const { data: cme } = await supabase.from('site_computo').select('id').eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'base').limit(1);
+  if ((cme || []).length > 0) {
+    return res.status(409).json({ error: 'CME_PRESENTE', message: 'Questo cantiere ha già un computo metrico — il budget si imposta lì, non manualmente.' });
+  }
+
+  for (const categoria of CATEGORIE_BUDGET) {
+    if (!(categoria in req.body)) continue;
+    const valore = req.body[categoria];
+    const { error: delErr } = await supabase.from('site_economia_movimenti')
+      .delete().eq('site_id', siteId).eq('company_id', companyId)
+      .eq('tipo', 'budget').eq('categoria', categoria).eq('sorgente', 'manuale');
+    if (delErr) return sendDbError(res, delErr);
+    if (valore != null && valore > 0) {
+      const { error: insErr } = await supabase.from('site_economia_movimenti').insert({
+        company_id: companyId, site_id: siteId, tipo: 'budget', categoria, importo: valore,
+        sorgente: 'manuale', note: 'Budget impostato manualmente', created_by: user.id,
+      });
+      if (insErr) return sendDbError(res, insErr);
+    }
+  }
+
   res.json({ ok: true });
 });
 
