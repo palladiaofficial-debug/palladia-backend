@@ -35,7 +35,12 @@ async function getMov(sourceTable, sourceId) {
 async function main() {
   console.log('\nPalladia site_economia_movimenti sync regression — BLOCCO 1 (F-119)\n');
 
-  const { data: company } = await supabase.from('companies').insert({ name: 'TEST-EconomiaSync-Probe' }).select().single();
+  // moltiplicatore_costo_manodopera esplicito a 1.00: questo test isola il
+  // calcolo ore × tariffa nuda (BLOCCO 1) dal moltiplicatore costo-azienda
+  // (BLOCCO 2, migrazione 190, stessa funzione sync_site_mo_consuntivo) —
+  // quel comportamento ha la propria suite dedicata in
+  // selftest_economia_controllo_api.js.
+  const { data: company } = await supabase.from('companies').insert({ name: 'TEST-EconomiaSync-Probe', moltiplicatore_costo_manodopera: 1.00 }).select().single();
   check('Creata azienda temporanea', !!company);
   const companyId = company.id;
   const { data: site } = await supabase.from('sites').insert({ company_id: companyId, name: 'TEST site economia', status: 'attivo', address: 'Via Test 1' }).select().single();
