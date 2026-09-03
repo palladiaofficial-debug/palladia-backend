@@ -17,6 +17,8 @@
  * GET   /api/v1/economia-controllo/spese-generali              — percentuale spese generali (Blocco 5)
  * PATCH /api/v1/economia-controllo/spese-generali              — aggiorna la percentuale
  * GET   /api/v1/economia-controllo/confronto-cantieri           — margine diretto/netto per ogni cantiere attivo (Blocco 5)
+ * POST  /api/v1/economia-controllo/validazione-mensile          — registra il margine reale di un mese, snapshot del margine Palladia (strumento di validazione, sezione VALIDAZIONE)
+ * GET   /api/v1/economia-controllo/validazione-mensile          — storico + verdetto "pronto per altri clienti" (3 mesi consecutivi <5%)
  * GET   /api/v1/sites/:siteId/economia-controllo/overview       — schermata Economia aggregata (Blocco 3)
  * PATCH /api/v1/sites/:siteId/economia-controllo/budget-manuale — budget manuale per cantieri senza CME (Blocco 3)
  * GET   /api/v1/sites/:siteId/subcontracts                     — elenco contratti subappalto del cantiere
@@ -41,6 +43,7 @@ const {
   budgetManualeSchema,
   CATEGORIE_BUDGET,
   patchSpeseGeneraliSchema,
+  createValidazioneMensileSchema,
 } = require('../../lib/schemas/economiaControllo');
 
 const isUuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
@@ -556,6 +559,95 @@ router.get('/economia-controllo/confronto-cantieri', async (req, res) => {
     percentuale_spese_generali: percentualeSpeseGenerali,
     cantieri: risultati,
     cantieri_esclusi_senza_budget: (sitesRes.data || []).length - risultati.length,
+  });
+});
+
+// ── Validazione mensile (gate non negoziabile prima del Blocco 6/altri clienti) ──
+// "Prepara fin da subito uno strumento di confronto che renda facile fare
+// questa verifica mensile" — vincolo esplicito dell'utente nella sezione
+// VALIDAZIONE. Il Blocco 6 (predittivo) resta rimandato finché questo
+// strumento non mostra 3 mesi consecutivi con scostamento <5%.
+router.post('/economia-controllo/validazione-mensile', validate(createValidazioneMensileSchema), async (req, res) => {
+  const { companyId, user } = req;
+  const { site_id, mese, margine_reale, note } = req.body;
+  const site = await resolveSite(site_id, companyId);
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+
+  const mesePrimo = mese.length === 7 ? `${mese}-01` : mese;
+
+  // Snapshot del margine netto calcolato da Palladia ORA, stessa logica
+  // dell'overview — non un valore che l'utente potrebbe far combaciare a
+  // mano, calcolato server-side dal registro.
+  await supabase.rpc('sync_site_mo_consuntivo', { p_site_id: site_id }).then(null, () => {});
+  const [movRes, companyRes] = await Promise.all([
+    supabase.from('site_economia_movimenti').select('tipo, categoria, importo').eq('site_id', site_id).eq('company_id', companyId),
+    supabase.from('companies').select('percentuale_spese_generali').eq('id', companyId).maybeSingle(),
+  ]);
+  if (movRes.error) return sendDbError(res, movRes.error);
+
+  const righe = movRes.data || [];
+  const budget = sommaPerCategoria(righe, 'budget');
+  const { margine } = calcolaMargine(righe, budget.totale || null);
+  const percentualeSpeseGenerali = Number(companyRes.data?.percentuale_spese_generali ?? 0);
+  const quota = budget.totale > 0 ? Math.round(budget.totale * percentualeSpeseGenerali / 100 * 100) / 100 : 0;
+  const marginePalladia = margine !== null ? Math.round((margine - quota) * 100) / 100 : 0;
+
+  const scostamentoPct = margine_reale !== 0
+    ? Math.round((Math.abs(margine_reale - marginePalladia) / Math.abs(margine_reale)) * 1000) / 10
+    : (marginePalladia === 0 ? 0 : 100);
+
+  const { data: row, error } = await supabase.from('economia_validazione_mensile')
+    .upsert({
+      company_id: companyId, site_id, mese: mesePrimo, margine_reale,
+      margine_palladia: marginePalladia, scostamento_pct: scostamentoPct,
+      note: note || null, created_by: user.id,
+    }, { onConflict: 'site_id,mese' })
+    .select().single();
+  if (error) return sendDbError(res, error);
+
+  res.status(201).json(row);
+});
+
+router.get('/economia-controllo/validazione-mensile', async (req, res) => {
+  const { companyId } = req;
+  const { data, error } = await supabase.from('economia_validazione_mensile')
+    .select('*, site:sites(name)').eq('company_id', companyId).order('mese', { ascending: false });
+  if (error) return sendDbError(res, error);
+
+  const righe = data || [];
+
+  // Verdetto: aggregato mensile su TUTTI i cantieri tracciati quel mese
+  // (somma margine_reale vs somma margine_palladia) — una verifica mensile
+  // unica per l'azienda, non 3 mesi buoni per cantiere isolatamente diversi
+  // tra loro. Richiede mesi CONSECUTIVI, non 3 mesi buoni sparsi nel tempo.
+  const perMese = {};
+  for (const r of righe) {
+    const m = perMese[r.mese] || (perMese[r.mese] = { reale: 0, palladia: 0 });
+    m.reale += Number(r.margine_reale);
+    m.palladia += Number(r.margine_palladia);
+  }
+  const mesiOrdinati = Object.keys(perMese).sort().reverse(); // più recente prima
+  const mesiConScostamento = mesiOrdinati.map(m => {
+    const { reale, palladia } = perMese[m];
+    const scostamento = reale !== 0 ? Math.round((Math.abs(reale - palladia) / Math.abs(reale)) * 1000) / 10 : (palladia === 0 ? 0 : 100);
+    return { mese: m, margine_reale: Math.round(reale * 100) / 100, margine_palladia: Math.round(palladia * 100) / 100, scostamento_pct: scostamento };
+  });
+
+  let mesiConsecutiviSottoSoglia = 0;
+  for (const m of mesiConScostamento) {
+    if (m.scostamento_pct < 5) mesiConsecutiviSottoSoglia++;
+    else break; // deve essere una striscia consecutiva a partire dal mese più recente
+  }
+  const pronto = mesiConsecutiviSottoSoglia >= 3;
+
+  res.json({
+    voci: righe,
+    riepilogo_mensile: mesiConScostamento,
+    mesi_consecutivi_sotto_soglia: mesiConsecutiviSottoSoglia,
+    pronto_per_altri_clienti: pronto,
+    messaggio: pronto
+      ? `${mesiConsecutiviSottoSoglia} mesi consecutivi sotto il 5% — il modulo può essere mostrato ad altri clienti.`
+      : `${mesiConsecutiviSottoSoglia}/3 mesi consecutivi sotto il 5% — ancora dietro flag, non mostrare ad altri clienti.`,
   });
 });
 
