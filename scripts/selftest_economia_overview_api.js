@@ -59,7 +59,7 @@ async function main() {
   const anon  = createClient(SUPABASE_URL, ANON_KEY,    { auth: { autoRefreshToken: false, persistSession: false } });
 
   const email = `test-economia-overview-${Date.now()}@palladia-test.internal`;
-  let companyId, otherCompanyId, siteId, cmeSiteId, userId, workerId, subcontractId, expenseId, computoId;
+  let companyId, otherCompanyId, siteId, cmeSiteId, gapSiteId, userId, workerId, subcontractId, expenseId, computoId, gapExpenseId;
 
   try {
     const { data: company } = await admin.from('companies').insert({ name: 'TEST-EconomiaOverview-API', moltiplicatore_costo_manodopera: 1.00 }).select().single();
@@ -68,6 +68,8 @@ async function main() {
     siteId = site.id;
     const { data: cmeSite } = await admin.from('sites').insert({ company_id: companyId, name: 'TEST site CME', status: 'attivo', address: 'Via Test 2' }).select().single();
     cmeSiteId = cmeSite.id;
+    const { data: gapSite } = await admin.from('sites').insert({ company_id: companyId, name: 'TEST site gap', status: 'attivo', address: 'Via Test 3' }).select().single();
+    gapSiteId = gapSite.id;
     const { data: otherCompany } = await admin.from('companies').insert({ name: 'TEST-EconomiaOverview-API-Other' }).select().single();
     otherCompanyId = otherCompany.id;
     const { data: worker } = await admin.from('workers').insert({
@@ -189,6 +191,32 @@ async function main() {
       check('PATCH budget-manuale su cantiere con CME rifiutato (409)', r2.status === 409, r2);
     }
 
+    // ── BLOCCO 4: promemoria "buco di alimentazione" ─────────────────────
+    {
+      const day = new Date().toISOString().slice(0, 10);
+      const { error: presenceErr } = await admin.from('presence_logs').insert([
+        { company_id: companyId, site_id: gapSiteId, worker_id: workerId, event_type: 'ENTRY', timestamp_server: `${day}T08:00:00Z` },
+        { company_id: companyId, site_id: gapSiteId, worker_id: workerId, event_type: 'EXIT',  timestamp_server: `${day}T10:00:00Z` },
+      ]);
+      check('Timbrature sul cantiere "gap" inserite senza errore', !presenceErr, presenceErr);
+      await admin.rpc('sync_site_mo_consuntivo', { p_site_id: gapSiteId });
+
+      const r1 = await apiCall(jwt, companyId, 'GET', `/sites/${gapSiteId}/economia-controllo/overview`);
+      check('Cantiere attivo + timbrature recenti + zero costi materiali → alimentazione_gap presente',
+        r1.body?.affidabilita?.alimentazione_gap !== null && r1.body.affidabilita.alimentazione_gap.giorni_senza_costi === null,
+        r1.body?.affidabilita);
+
+      const { data: gapExp } = await admin.from('company_expenses').insert({
+        company_id: companyId, site_id: gapSiteId, amount: 200, description: 'TEST fattura recente gap',
+        category: 'materiali', expense_date: day,
+      }).select().single();
+      gapExpenseId = gapExp.id;
+
+      const r2 = await apiCall(jwt, companyId, 'GET', `/sites/${gapSiteId}/economia-controllo/overview`);
+      check('Dopo una fattura materiali recente, alimentazione_gap torna null',
+        r2.body?.affidabilita?.alimentazione_gap === null, r2.body?.affidabilita);
+    }
+
     // ── Cross-tenant ──────────────────────────────────────────────────────
     {
       const r = await apiCall(jwt, otherCompanyId, 'GET', `/sites/${siteId}/economia-controllo/overview`);
@@ -198,12 +226,14 @@ async function main() {
     try { if (computoId) await admin.from('site_computo').delete().eq('id', computoId); } catch { /* best-effort */ }
     try { if (subcontractId) await admin.from('site_subcontracts').delete().eq('id', subcontractId); } catch { /* best-effort */ }
     try { if (expenseId) await admin.from('company_expenses').delete().eq('id', expenseId); } catch { /* best-effort */ }
+    try { if (gapExpenseId) await admin.from('company_expenses').delete().eq('id', gapExpenseId); } catch { /* best-effort */ }
     try { if (workerId) await admin.from('presence_logs').delete().eq('worker_id', workerId); } catch { /* best-effort */ }
     try { if (workerId) await admin.from('workers').delete().eq('id', workerId); } catch { /* best-effort */ }
     try { if (companyId) await admin.from('company_feature_flags').delete().eq('company_id', companyId).eq('feature', 'economia_controllo_v1'); } catch { /* best-effort */ }
     try { if (userId) await admin.auth.admin.deleteUser(userId); } catch { /* best-effort */ }
     try { if (siteId) await admin.from('sites').delete().eq('id', siteId); } catch { /* best-effort */ }
     try { if (cmeSiteId) await admin.from('sites').delete().eq('id', cmeSiteId); } catch { /* best-effort */ }
+    try { if (gapSiteId) await admin.from('sites').delete().eq('id', gapSiteId); } catch { /* best-effort */ }
     try { if (companyId) await admin.from('companies').delete().eq('id', companyId); } catch { /* best-effort */ }
     try { if (otherCompanyId) await admin.from('companies').delete().eq('id', otherCompanyId); } catch { /* best-effort */ }
   }

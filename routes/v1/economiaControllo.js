@@ -269,7 +269,7 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
   const [siteFullRes, cmeRes, movRes, workersRes, presenceRes, nonAttribuiteRes, companyRes] = await Promise.all([
-    supabase.from('sites').select('name, sal_percentuale').eq('id', siteId).maybeSingle(),
+    supabase.from('sites').select('name, sal_percentuale, status').eq('id', siteId).maybeSingle(),
     supabase.from('site_computo').select('id').eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'base').limit(1),
     supabase.from('site_economia_movimenti')
       .select('id, tipo, categoria, importo, data_competenza, sorgente, source_table, note, created_at')
@@ -371,6 +371,27 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
     : null;
   const nonAttribuite = nonAttribuiteRes.data || [];
 
+  // ── BLOCCO 4 — promemoria "buco di alimentazione" ──────────────────────────
+  // Cantiere attivo + timbrature recenti ma nessun costo materiali/noleggi/
+  // subappalti/altro registrato da GIORNI_SOGLIA giorni: quasi certamente un
+  // buco di alimentazione (nessuno carica le fatture), non un cantiere senza
+  // spese davvero. La manodopera è esclusa apposta — si autoalimenta dalle
+  // timbrature e non è un segnale di "nessuno sta caricando i costi".
+  const GIORNI_SOGLIA = 14;
+  const sogliaAlimentazione = new Date(Date.now() - GIORNI_SOGLIA * 86400000);
+  const hasTimbratureRecenti = (presenceRes.data || []).some(p => new Date(p.timestamp_server) >= sogliaAlimentazione);
+  const ultimoCostoNonMo = righe
+    .filter(r => r.tipo === 'consuntivo' && r.categoria !== 'manodopera')
+    .reduce((max, r) => (!max || r.data_competenza > max ? r.data_competenza : max), null);
+  const giorniSenzaCosti = ultimoCostoNonMo
+    ? Math.floor((Date.now() - new Date(ultimoCostoNonMo + 'T00:00:00').getTime()) / 86400000)
+    : null;
+  const alimentazioneGap = (
+    siteFullRes.data?.status === 'attivo' &&
+    hasTimbratureRecenti &&
+    (giorniSenzaCosti === null || giorniSenzaCosti >= GIORNI_SOGLIA)
+  ) ? { giorni_senza_costi: giorniSenzaCosti, soglia_giorni: GIORNI_SOGLIA } : null;
+
   res.json({
     site: { name: siteFullRes.data?.name || null, avanzamento_pct },
     has_cme: hasCme,
@@ -385,6 +406,7 @@ router.get('/sites/:siteId/economia-controllo/overview', async (req, res) => {
     costo_consumato_pct,
     allarme_ritmo,
     affidabilita: {
+      alimentazione_gap: alimentazioneGap,
       fatture_count: fattureRighe.length,
       ultima_registrazione: ultimaRegistrazione,
       ore_totali: Math.round(oreTotali * 100) / 100,
