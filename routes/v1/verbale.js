@@ -19,6 +19,8 @@ const { coordinatorLimiter } = require('../../middleware/rateLimit');
 const { rendererPool } = require('../../pdf-renderer');
 const { complianceStatus } = require('../../lib/compliance');
 
+const COORDINATOR_PHOTO_BUCKET = 'site-documents';
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function hashToken(t) {
@@ -90,7 +92,7 @@ async function buildVerbaleData(invite) {
       .in('status', ['aperta', 'in_lavorazione'])
       .order('created_at', { ascending: false }),
     supabase.from('site_coordinator_notes')
-      .select('id, note_type, content, created_at')
+      .select('id, note_type, content, created_at, photo_path, gps_lat, gps_lng')
       .eq('invite_id', invite.id)
       .order('created_at', { ascending: false })
       .limit(10),
@@ -115,12 +117,25 @@ async function buildVerbaleData(invite) {
     }));
   }
 
+  // Firma le foto di sopralluogo (bucket privato) — l'immagine deve essere
+  // raggiungibile dal browser Puppeteer che renderizza il PDF (networkidle0
+  // attende il caricamento), non un link pubblico permanente.
+  const allNotes = notesRes.data || [];
+  const notesWithPhoto = allNotes.filter(n => n.photo_path);
+  if (notesWithPhoto.length > 0) {
+    await Promise.all(notesWithPhoto.map(async n => {
+      const { data } = await supabase.storage
+        .from(COORDINATOR_PHOTO_BUCKET).createSignedUrl(n.photo_path, 300);
+      n.photo_signed_url = data?.signedUrl || null;
+    }));
+  }
+
   return {
     site:    siteRes.data,
     company: companyRes.data,
     workers,
     nc:      ncRes.data || [],
-    notes:   notesRes.data || [],
+    notes:   allNotes,
   };
 }
 
@@ -178,7 +193,13 @@ function buildVerbaleHtml(invite, data) {
     </tr>`;
   }).join('');
 
-  const noteItems = notes.map(n => {
+  // Le note con una foto allegata alimentano la sezione "Sopralluogo
+  // fotografico" (il pezzo che myAEDES documentava bene e che qui mancava);
+  // quelle di solo testo restano nella sezione "Note del Coordinatore" com'era.
+  const textNotes  = notes.filter(n => !n.photo_path);
+  const photoNotes = notes.filter(n => n.photo_path && n.photo_signed_url);
+
+  const noteItems = textNotes.map(n => {
     const label = NOTE_LABEL[n.note_type] || n.note_type;
     const noteColor = n.note_type === 'warning' ? '#ef4444' : n.note_type === 'approval' ? '#22c55e' : n.note_type === 'request' ? '#f59e0b' : '#6b7280';
     return `<div style="padding:10px 0;border-bottom:1px solid #f0f0ed;">
@@ -187,6 +208,19 @@ function buildVerbaleHtml(invite, data) {
         <span style="font-size:9px;color:#9ca3af;">${fmtDateShort(n.created_at)}</span>
       </div>
       <p style="margin:0;font-size:10.5px;color:#374151;line-height:1.6;">${esc(n.content)}</p>
+    </div>`;
+  }).join('');
+
+  const photoItems = photoNotes.map(n => {
+    const dt = new Date(n.created_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const gps = (n.gps_lat != null && n.gps_lng != null)
+      ? `<div class="ph-gps">📍 ${Number(n.gps_lat).toFixed(5)}, ${Number(n.gps_lng).toFixed(5)}</div>` : '';
+    return `<div class="ph-card">
+      <img src="${esc(n.photo_signed_url)}" class="ph-img" />
+      <div class="ph-body">
+        <p class="ph-note">${esc(n.content)}</p>
+        <div class="ph-meta"><span>${dt}</span>${gps}</div>
+      </div>
     </div>`;
   }).join('');
 
@@ -323,6 +357,18 @@ function buildVerbaleHtml(invite, data) {
     font-size: 11px;
     color: #9ca3af;
   }
+
+  /* Sopralluogo fotografico */
+  .ph-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6mm; }
+  .ph-card {
+    border: 1px solid #e5e5e0; border-radius: 6px; overflow: hidden;
+    break-inside: avoid; page-break-inside: avoid;
+  }
+  .ph-img { width: 100%; height: 42mm; object-fit: cover; display: block; background: #f3f3f0; }
+  .ph-body { padding: 3mm 4mm 4mm; }
+  .ph-note { font-size: 10px; color: #1a1a1a; line-height: 1.5; margin-bottom: 2mm; }
+  .ph-meta { display: flex; justify-content: space-between; font-size: 8px; color: #9ca3af; }
+  .ph-gps { font-variant-numeric: tabular-nums; }
 
   /* Firma */
   .firma-section {
@@ -494,12 +540,20 @@ function buildVerbaleHtml(invite, data) {
   <!-- 4. NOTE DI SOPRALLUOGO -->
   <div class="section">
     <div class="section-title">4. Note del Coordinatore</div>
-    ${notes.length > 0 ? noteItems : '<div class="empty-state">Nessuna nota registrata.</div>'}
+    ${textNotes.length > 0 ? noteItems : '<div class="empty-state">Nessuna nota registrata.</div>'}
   </div>
 
-  <!-- 5. FIRMA -->
+  <!-- 5. SOPRALLUOGO FOTOGRAFICO -->
   <div class="section">
-    <div class="section-title">5. Firme</div>
+    <div class="section-title">5. Sopralluogo Fotografico</div>
+    ${photoNotes.length > 0
+      ? `<div class="ph-grid">${photoItems}</div>`
+      : '<div class="empty-state">Nessuna foto di sopralluogo caricata.</div>'}
+  </div>
+
+  <!-- 6. FIRMA -->
+  <div class="section">
+    <div class="section-title">6. Firme</div>
     <div class="firma-section">
       <div>
         <div class="firma-space"></div>

@@ -10,9 +10,12 @@
 // Endpoint pubblici (token nel path) — accesso coordinatore:
 //   GET    /api/v1/coordinator/:token                       — dati cantiere (portale sicurezza)
 //   GET    /api/v1/coordinator/:token/notes                 — note del coordinatore
-//   POST   /api/v1/coordinator/:token/notes                 — aggiunge nota
+//   POST   /api/v1/coordinator/:token/notes                 — aggiunge nota (photo_path/gps_lat/gps_lng opzionali)
+//   POST   /api/v1/coordinator/:token/notes/photo            — carica foto sopralluogo, restituisce {url,path}
 // ─────────────────────────────────────────────────────────────────────────────
 const crypto   = require('crypto');
+const path     = require('path');
+const multer   = require('multer');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const rateLimit                = require('express-rate-limit');
@@ -524,6 +527,23 @@ router.get('/coordinator/:token', coordinatorLimiter, async (req, res) => {
   });
 });
 
+const COORDINATOR_PHOTO_BUCKET = 'site-documents';
+const coordinatorPhotoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Solo immagini consentite (JPG, PNG, WebP).'));
+  },
+});
+
+async function signCoordinatorPhoto(photoPath) {
+  if (!photoPath) return null;
+  const { data } = await supabase.storage
+    .from(COORDINATOR_PHOTO_BUCKET).createSignedUrl(photoPath, 60 * 60 * 24 * 7);
+  return data?.signedUrl || null;
+}
+
 // ── GET /api/v1/coordinator/:token/notes ─────────────────────────────────────
 router.get('/coordinator/:token/notes', coordinatorLimiter, async (req, res) => {
   const invite = await resolveInvite(req.params.token);
@@ -531,21 +551,57 @@ router.get('/coordinator/:token/notes', coordinatorLimiter, async (req, res) => 
 
   const { data, error } = await supabase
     .from('site_coordinator_notes')
-    .select('id, note_type, content, coordinator_name, created_at')
+    .select('id, note_type, content, coordinator_name, created_at, photo_path, gps_lat, gps_lng')
     .eq('site_id', invite.site_id)
     .order('created_at', { ascending: false })
     .limit(100);
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json(data);
+
+  const withPhotos = await Promise.all((data || []).map(async n => ({
+    ...n, photo_signed_url: await signCoordinatorPhoto(n.photo_path),
+  })));
+  res.json(withPhotos);
 });
+
+// ── POST /api/v1/coordinator/:token/notes/photo — carica una foto di sopralluogo ──
+// Restituisce { url, path }: il client passa poi "path" come photo_path nella
+// POST .../notes che segue. Stesso pattern di sites/:id/diary/photos, ma
+// autenticato dal token del coordinatore invece che da un JWT aziendale —
+// il path include invite_id, mai fornito dal client, sempre risolto dal token.
+router.post('/coordinator/:token/notes/photo',
+  coordinatorLimiter,
+  (req, res, next) => coordinatorPhotoUpload.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const invite = await resolveInvite(req.params.token);
+    if (!invite) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const ext      = path.extname(req.file.originalname) || '.jpg';
+    const fileId    = crypto.randomUUID();
+    const filePath  = `${invite.company_id}/coordinator/${invite.site_id}/${invite.id}/${fileId}${ext}`;
+
+    const { error: storageErr } = await supabase.storage
+      .from(COORDINATOR_PHOTO_BUCKET).upload(filePath, req.file.buffer, {
+        contentType: req.file.mimetype, upsert: false,
+      });
+    if (storageErr) return res.status(500).json({ error: 'UPLOAD_ERROR', detail: storageErr.message });
+
+    res.json({ url: await signCoordinatorPhoto(filePath), path: filePath });
+  }
+);
 
 // ── POST /api/v1/coordinator/:token/notes ────────────────────────────────────
 router.post('/coordinator/:token/notes', coordinatorLimiter, validate(createCoordinatorNoteSchema), async (req, res) => {
   const invite = await resolveInvite(req.params.token);
   if (!invite) return res.status(404).json({ error: 'TOKEN_INVALID_OR_EXPIRED' });
 
-  const { note_type, content } = req.body;
+  const { note_type, content, photo_path, gps_lat, gps_lng } = req.body;
   const VALID_TYPES = ['observation', 'request', 'approval', 'warning'];
 
   if (!content || !String(content).trim() || String(content).trim().length < 3) {
@@ -553,6 +609,14 @@ router.post('/coordinator/:token/notes', coordinatorLimiter, validate(createCoor
   }
   if (note_type && !VALID_TYPES.includes(note_type)) {
     return res.status(400).json({ error: `note_type non valido. Valori: ${VALID_TYPES.join(', ')}` });
+  }
+  // photo_path deve appartenere a QUESTO invito — il prefisso lo garantisce
+  // (assegnato server-side in .../notes/photo, mai scelto dal client), ma lo
+  // verifichiamo comunque esplicitamente: un token non deve poter agganciare
+  // a una propria nota la foto caricata da un altro coordinatore/cantiere.
+  const expectedPrefix = `${invite.company_id}/coordinator/${invite.site_id}/${invite.id}/`;
+  if (photo_path && !String(photo_path).startsWith(expectedPrefix)) {
+    return res.status(400).json({ error: 'PHOTO_PATH_MISMATCH' });
   }
 
   const { data: note, error: insertErr } = await supabase
@@ -564,11 +628,15 @@ router.post('/coordinator/:token/notes', coordinatorLimiter, validate(createCoor
       note_type:        note_type || 'observation',
       content:          String(content).trim().slice(0, 2000),
       coordinator_name: invite.coordinator_name,
+      photo_path:       photo_path || null,
+      gps_lat:          gps_lat ?? null,
+      gps_lng:          gps_lng ?? null,
     }])
-    .select('id, note_type, content, coordinator_name, created_at')
+    .select('id, note_type, content, coordinator_name, created_at, photo_path, gps_lat, gps_lng')
     .single();
 
   if (insertErr) return res.status(500).json({ error: 'NOTE_INSERT_ERROR' });
+  note.photo_signed_url = await signCoordinatorPhoto(note.photo_path);
 
   // Email notifica all'impresa (best-effort, non blocca)
   try {

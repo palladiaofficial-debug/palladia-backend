@@ -1,5 +1,7 @@
 'use strict';
 const crypto = require('crypto');
+const path   = require('path');
+const multer = require('multer');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const {
@@ -29,6 +31,22 @@ function isValidToken(t) {
 
 function appUrl() {
   return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
+}
+
+const COORDINATOR_PHOTO_BUCKET = 'site-documents';
+const coordinatorPhotoUploadPro = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Solo immagini consentite (JPG, PNG, WebP).'));
+  },
+});
+async function signCoordinatorPhotoPro(photoPath) {
+  if (!photoPath) return null;
+  const { data } = await supabase.storage
+    .from(COORDINATOR_PHOTO_BUCKET).createSignedUrl(photoPath, 60 * 60 * 24 * 7);
+  return data?.signedUrl || null;
 }
 
 // complianceStatus importato da lib/compliance.js
@@ -433,7 +451,7 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
       .limit(1000),
 
     supabase.from('site_coordinator_notes')
-      .select('id, note_type, content, coordinator_name, is_read, created_at')
+      .select('id, note_type, content, coordinator_name, is_read, created_at, photo_path, gps_lat, gps_lng')
       .eq('site_id', siteId)
       .order('created_at', { ascending: false })
       .limit(50),
@@ -515,6 +533,9 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
 
   const ncList      = ncR.data    || [];
   const openNcCount = ncList.filter(n => n.status === 'aperta' || n.status === 'in_lavorazione').length;
+  const notesWithPhotos = await Promise.all((notesR.data || []).map(async n => ({
+    ...n, photo_signed_url: await signCoordinatorPhotoPro(n.photo_path),
+  })));
 
   // Stato sicurezza calcolato + issues attivi
   const safetyStatus  = computeSafetyStatus(workers, ncList);
@@ -552,7 +573,7 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
     workers,
     on_site_count:    onSiteIds.size,
     presence_summary: presenceSummary,
-    notes:            notesR.data  || [],
+    notes:            notesWithPhotos,
     nonconformities:  ncList,
     open_nc_count:    openNcCount,
     visits:           visitsR.data || [],
@@ -561,6 +582,47 @@ router.get('/coordinator/pro/:token/site/:siteId', async (req, res) => {
   });
 });
 
+// ── POST /api/v1/coordinator/pro/:token/site/:siteId/notes/photo ─────────────
+// Carica una foto di sopralluogo, stesso schema del flusso token-singolo in
+// coordinator.js — restituisce { url, path } da passare come photo_path nella
+// POST .../notes che segue.
+router.post('/coordinator/pro/:token/site/:siteId/notes/photo',
+  (req, res, next) => coordinatorPhotoUploadPro.single('file')(req, res, (err) => {
+    if (err instanceof multer.MulterError)
+      return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const session = await resolveProSession(req.params.token);
+    if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const { siteId } = req.params;
+    const { data: invite } = await supabase
+      .from('site_coordinator_invites')
+      .select('id, company_id')
+      .eq('coordinator_email', session.email)
+      .eq('site_id', siteId)
+      .eq('is_active', true)
+      .gt('expires_at', new Date().toISOString())
+      .maybeSingle();
+    if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
+
+    const ext      = path.extname(req.file.originalname) || '.jpg';
+    const fileId    = crypto.randomUUID();
+    const filePath  = `${invite.company_id}/coordinator/${siteId}/${invite.id}/${fileId}${ext}`;
+
+    const { error: storageErr } = await supabase.storage
+      .from(COORDINATOR_PHOTO_BUCKET).upload(filePath, req.file.buffer, {
+        contentType: req.file.mimetype, upsert: false,
+      });
+    if (storageErr) return res.status(500).json({ error: 'UPLOAD_ERROR', detail: storageErr.message });
+
+    res.json({ url: await signCoordinatorPhotoPro(filePath), path: filePath });
+  }
+);
+
 // ── POST /api/v1/coordinator/pro/:token/site/:siteId/notes ───────────────────
 // Il professionista aggiunge una nota su un cantiere
 router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNoteSchema), async (req, res) => {
@@ -568,7 +630,7 @@ router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNote
   if (!session) return res.status(401).json({ error: 'INVALID_TOKEN' });
 
   const { siteId } = req.params;
-  const { note_type = 'observation', content } = req.body;
+  const { note_type = 'observation', content, photo_path, gps_lat, gps_lng } = req.body;
   const now = new Date().toISOString();
 
   if (!content || typeof content !== 'string' || content.trim().length < 3 || content.length > 2000) {
@@ -588,6 +650,11 @@ router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNote
 
   if (!invite) return res.status(403).json({ error: 'ACCESS_DENIED' });
 
+  const expectedPrefix = `${invite.company_id}/coordinator/${siteId}/${invite.id}/`;
+  if (photo_path && !String(photo_path).startsWith(expectedPrefix)) {
+    return res.status(400).json({ error: 'PHOTO_PATH_MISMATCH' });
+  }
+
   const { data: note, error } = await supabase
     .from('site_coordinator_notes')
     .insert({
@@ -597,11 +664,15 @@ router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNote
       note_type: safeType,
       content: content.trim(),
       coordinator_name: invite.coordinator_name,
+      photo_path: photo_path || null,
+      gps_lat:    gps_lat ?? null,
+      gps_lng:    gps_lng ?? null,
     })
     .select()
     .single();
 
   if (error) return sendDbError(res, error);
+  note.photo_signed_url = await signCoordinatorPhotoPro(note.photo_path);
 
   // Notifica email all'impresa (best-effort)
   try {
