@@ -80,10 +80,10 @@ async function main() {
     const meseFa = (n) => { const d = new Date(); d.setUTCMonth(d.getUTCMonth() - n); return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`; };
     {
       const r = await apiCall(jwt, companyId, 'POST', '/economia-controllo/validazione-mensile', {
-        site_id: siteId, mese: meseFa(2), margine_reale: 7000, // 30% di scostamento da 10000
+        site_id: siteId, mese: meseFa(2), margine_reale: 7000, // |7000-10000|/7000*100 = 42.9% (percentuale d'errore standard, denominatore = valore reale)
       });
       check('POST validazione mensile (mese-2, scostamento alto) creato', r.status === 201 && r.body.margine_palladia === 10000, r.body);
-      check('Scostamento calcolato correttamente (30%)', r.body?.scostamento_pct === 30, r.body);
+      check('Scostamento calcolato correttamente (42.9%, denominatore = margine reale)', r.body?.scostamento_pct === 42.9, r.body);
     }
 
     // ── Mese 2 e 3 (i 2 più recenti): scostamento basso (<5%) ─────────────
@@ -111,8 +111,8 @@ async function main() {
     {
       const r = await apiCall(jwt, companyId, 'GET', '/economia-controllo/validazione-mensile');
       check('GET validazione mensile: 3 voci (una per mese, upsert non ha duplicato)', r.body?.voci?.length === 3, r.body?.voci);
-      // Solo gli ultimi 2 mesi (i più recenti) sono sotto il 5% — il mese più vecchio (30%) rompe la striscia
-      check('Verdetto: solo 2 mesi consecutivi sotto soglia (il terzo, più vecchio, ha 30%)', r.body?.mesi_consecutivi_sotto_soglia === 2, r.body);
+      // Solo gli ultimi 2 mesi (i più recenti) sono sotto il 5% — il mese più vecchio (42.9%) rompe la striscia
+      check('Verdetto: solo 2 mesi consecutivi sotto soglia (il terzo, più vecchio, ha 42.9%)', r.body?.mesi_consecutivi_sotto_soglia === 2, r.body);
       check('Verdetto: NON ancora pronto per altri clienti (servono 3 consecutivi, non solo 2)', r.body?.pronto_per_altri_clienti === false, r.body);
       check('Messaggio verdetto presente e leggibile', typeof r.body?.messaggio === 'string' && r.body.messaggio.length > 10, r.body?.messaggio);
     }
