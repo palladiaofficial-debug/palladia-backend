@@ -674,21 +674,24 @@ router.post('/coordinator/pro/:token/site/:siteId/notes', validate(createProNote
   if (error) return sendDbError(res, error);
   note.photo_signed_url = await signCoordinatorPhotoPro(note.photo_path);
 
-  // Notifica email all'impresa (best-effort)
-  try {
-    const { data: site } = await supabase.from('sites').select('name').eq('id', siteId).single();
-    const { sendCoordinatorNoteAlert } = require('../../services/email');
-    await sendCoordinatorNoteAlert({
-      companyId: invite.company_id,
-      siteName: site?.name || siteId,
-      coordinatorName: invite.coordinator_name,
-      noteType: safeType,
-      content: content.trim(),
-      siteUrl: `${appUrl()}/cantieri/${siteId}`,
-    });
-  } catch { /* non blocca la risposta */ }
-
+  // Risponde SUBITO — vedi la stessa nota in coordinator.js (F-120): l'email
+  // era commentata "non blocca la risposta" ma la awaitava, 3-4s in più per
+  // ogni nota, scoperto testando dal vivo il flusso foto appena aggiunto.
   res.json({ ok: true, note });
+
+  supabase.from('sites').select('name').eq('id', siteId).single()
+    .then(({ data: site }) => {
+      const { sendCoordinatorNoteAlert } = require('../../services/email');
+      return sendCoordinatorNoteAlert({
+        companyId: invite.company_id,
+        siteName: site?.name || siteId,
+        coordinatorName: invite.coordinator_name,
+        noteType: safeType,
+        content: content.trim(),
+        siteUrl: `${appUrl()}/cantieri/${siteId}`,
+      });
+    })
+    .catch(() => { /* best-effort, non blocca la risposta (davvero, ora) */ });
 });
 
 // ── POST /api/v1/coordinator/pro/:token/telegram-code ─────────────────────────

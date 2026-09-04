@@ -638,24 +638,23 @@ router.post('/coordinator/:token/notes', coordinatorLimiter, validate(createCoor
   if (insertErr) return res.status(500).json({ error: 'NOTE_INSERT_ERROR' });
   note.photo_signed_url = await signCoordinatorPhoto(note.photo_path);
 
-  // Email notifica all'impresa (best-effort, non blocca)
-  try {
-    const { data: site } = await supabase
-      .from('sites').select('name').eq('id', invite.site_id).maybeSingle();
+  // Risponde SUBITO — la nota (con foto, se presente) è già salvata. L'email
+  // era commentata "non blocca la risposta" ma la awaitava comunque: un CSE
+  // su un cantiere reale aspettava 3-4s in più per un semplice invio nota,
+  // scoperto testando dal vivo il flusso foto appena aggiunto (F-120). L'invio
+  // email resta best-effort, ma davvero in background ora.
+  res.status(201).json({ ok: true, note });
 
-    await sendCoordinatorNoteAlert({
+  supabase.from('sites').select('name').eq('id', invite.site_id).maybeSingle()
+    .then(({ data: site }) => sendCoordinatorNoteAlert({
       companyId:       invite.company_id,
       siteName:        site?.name || 'Cantiere',
       coordinatorName: invite.coordinator_name,
       noteType:        note.note_type,
       content:         note.content,
       siteUrl:         `${(process.env.FRONTEND_URL || '').replace(/\/$/, '')}/cantieri/${invite.site_id}`,
-    });
-  } catch (emailErr) {
-    console.warn('[coordinator] note alert email failed:', emailErr.message);
-  }
-
-  res.status(201).json({ ok: true, note });
+    }))
+    .catch(emailErr => console.warn('[coordinator] note alert email failed:', emailErr.message));
 });
 
 // ── POST /api/v1/coordinator/request-link — recupero link via email (PUBBLICO) ─
