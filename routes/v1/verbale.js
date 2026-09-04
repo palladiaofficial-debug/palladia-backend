@@ -212,9 +212,15 @@ function buildVerbaleHtml(invite, data) {
   }).join('');
 
   const photoItems = photoNotes.map(n => {
-    const dt = new Date(n.created_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    // timeZone esplicito: il renderer PDF gira sul server (UTC), il verbale
+    // è per cantieri italiani — senza questo l'ora sul documento è sbagliata
+    // di 1-2 ore. Trovato guardando davvero il PDF generato, non solo il codice.
+    const dt = new Date(n.created_at).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+    // Niente emoji: il motore di rendering PDF (Puppeteer/Chromium headless)
+    // non garantisce un font con glifi emoji disponibile — 📍 appariva come
+    // carattere mancante nel PDF reale generato, non solo in teoria.
     const gps = (n.gps_lat != null && n.gps_lng != null)
-      ? `<div class="ph-gps">📍 ${Number(n.gps_lat).toFixed(5)}, ${Number(n.gps_lng).toFixed(5)}</div>` : '';
+      ? `<div class="ph-gps">GPS ${Number(n.gps_lat).toFixed(5)}, ${Number(n.gps_lng).toFixed(5)}</div>` : '';
     return `<div class="ph-card">
       <img src="${esc(n.photo_signed_url)}" class="ph-img" />
       <div class="ph-body">
