@@ -65,20 +65,35 @@ router.get('/search', verifySupabaseJwt, async (req, res) => {
 
     supabase
       .from('documents')
-      .select('id, name, category')
+      .select('id, name, category, owner_type, site_id, worker_id, subcontractor_id, equipment_id')
       .eq('company_id', companyId)
+      .is('deleted_at', null)
       .not('name', 'is', null)
       .ilike('name', term)
       .order('name')
       .limit(5),
   ]);
 
+  // F-130 (AUDIT.md): prima la ricerca apriva sempre l'hub generico
+  // /documenti, mai il documento trovato — perché quella pagina non aveva
+  // una URL per la cartella giusta. Da quando ce l'ha, basta calcolare qui
+  // il percorso della cartella (stesse regole di attachHomes in archive.js)
+  // e restituirlo già pronto: il frontend fa solo `/documenti/${folderPath}`.
+  function folderPathFor(d) {
+    if (d.site_id)           return `cantieri/${d.site_id}`;
+    if (d.worker_id)         return `lavoratori/${d.worker_id}`;
+    if (d.subcontractor_id)  return `subappaltatori/${d.subcontractor_id}`;
+    if (d.equipment_id)      return `mezzi/${d.equipment_id}`;
+    if (d.owner_type === 'company') return 'azienda';
+    return '';
+  }
+
   res.json({
     sites:         (sitesRes.data      || []).map(s => ({ id: s.id, name: s.name,     address: s.address,      status: s.status,    type: 'site' })),
     workers:       (workersRes.data    || []).map(w => ({ id: w.id, name: w.full_name,                             sub: w.fiscal_code, active: w.is_active, type: 'worker' })),
     subcontractors:(subsRes.data       || []).map(s => ({ id: s.id, name: s.company_name,                          sub: s.fiscal_code, status: s.status,    type: 'subcontractor' })),
     equipment:     (equipmentRes.data  || []).map(e => ({ id: e.id, name: e.name || `${e.type} ${e.model || ''}`.trim(), sub: e.plate_or_serial || e.type,   type: 'equipment' })),
-    documents:     (documentsRes.data  || []).map(d => ({ id: d.id, name: d.name,                                  sub: d.category,    type: 'document' })),
+    documents:     (documentsRes.data  || []).map(d => ({ id: d.id, name: d.name, sub: d.category, type: 'document', folderPath: folderPathFor(d) })),
   });
 });
 
