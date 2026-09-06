@@ -7266,6 +7266,15 @@ conteggio) — mai l'elenco riga per riga.`;
     const client = getClient();
     const model  = images.length > 0 ? MODEL_SONNET : classifyQuery(message);
 
+    // Seguito di F-118 (AUDIT.md): record_id di ogni undo_action rifiutato
+    // con UNDO_NON_DISPONIBILE in QUESTO turno — letto da checkOrProposeGate
+    // (lib/ladiaWriteExecutor.js) via req._blockedUndoTargets per bloccare
+    // un'azione alternativa sullo stesso record eseguita di iniziativa del
+    // modello invece che proposta e confermata. Mutato in place (mai
+    // riassegnato) così ogni lettura successiva tramite req vede l'aggiornamento.
+    const blockedUndoTargets = [];
+    req._blockedUndoTargets = blockedUndoTargets;
+
     // Loop agentico con streaming — max 4 iterazioni
     for (let iter = 0; iter < 6 && !aborted; iter++) {
       const collectedContent = [];
@@ -7337,6 +7346,12 @@ conteggio) — mai l'elenco riga per riga.`;
           // Calcolato qui (non più solo prima di tool_step più sotto) perché
           // serve anche al ramo record_action_failed appena sotto.
           const failed = !!(result && (result.error || result.errore || result.success === false));
+          // Seguito di F-118: memorizza il record per il resto del turno —
+          // vedi blockedUndoTargets sopra e checkOrProposeGate in
+          // lib/ladiaWriteExecutor.js.
+          if (block.name === 'undo_action' && result?.error === 'UNDO_NON_DISPONIBILE' && result.recordId) {
+            blockedUndoTargets.push(String(result.recordId));
+          }
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });
           }

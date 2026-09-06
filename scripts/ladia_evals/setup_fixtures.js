@@ -58,6 +58,12 @@ async function wipeMutableStoryState(companyId) {
     'site_computo_voci', 'site_computo', 'site_sal_history',
     'site_subcontractors', 'site_suspension_days', 'payslips',
     'worker_certificates', 'company_documents',
+    // Mancava (trovato costruendo il dbVerify di W12/AUDIT.md, seguito F-129):
+    // una create_expense davvero eseguita da un run precedente (bug o corsa)
+    // restava qui per sempre, rendendo un controllo "questa tabella deve
+    // essere vuota per questo scenario" inaffidabile — un residuo vecchio
+    // sarebbe stato scambiato per una scrittura di QUESTO run.
+    'company_expenses',
   ];
   for (const t of tables) {
     const { error } = await supabase.from(t).delete().eq('company_id', companyId);
