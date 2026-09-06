@@ -73,6 +73,18 @@ async function wipeMutableStoryState(companyId) {
   // reale) — non ha il vincolo append-only, va ripulito per riscenario "nessun
   // escavatore con quella targa".
   await supabase.from('equipment').delete().eq('company_id', companyId).eq('plate_or_serial', 'AB123CD');
+
+  // Lavoratore di test creato da U09 (create_record reale, "nessun lavoratore
+  // con questo CF esiste" è la premessa dello scenario) — trovato dal vivo il
+  // 2026-09-06 (seguito F-118, AUDIT.md): senza questa pulizia, il PRIMO
+  // tentativo di ogni run lo crea per davvero e resta per sempre (workers è
+  // esclusa dalla wipe list sopra di proposito, per proteggere le fixture
+  // fisse come Mario Rossi) — ogni ripetizione successiva dello stesso
+  // scenario (repeat:5, o un run futuro) trovava il CF già occupato e Ladia,
+  // correttamente, rifiutava il duplicato invece di procedere come lo
+  // scenario si aspetta. worksite_workers/ladia_action_history collegate sono
+  // già ripulite sopra per l'intera company — qui basta la riga workers.
+  await supabase.from('workers').delete().eq('company_id', companyId).eq('fiscal_code', 'FRRBRN85M01H501Z');
 }
 
 async function findOrCreateSite(companyId, row) {
