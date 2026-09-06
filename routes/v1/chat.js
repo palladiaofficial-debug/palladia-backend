@@ -29,7 +29,7 @@ const { logUsage, checkAiBudget } = require('../../lib/ladiaUsageLog');
 const { extractSuccessfulWriteSummaries } = require('../../lib/ladiaFallbackSummary');
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { logAction } = require('../../lib/ladiaActionLog');
-const { executeWrite, checkOrProposeGate } = require('../../lib/ladiaWriteExecutor');
+const { executeWrite, checkOrProposeGate, collectBlockCandidates } = require('../../lib/ladiaWriteExecutor');
 const { buildResultCard } = require('../../lib/resultCardBuilder');
 const { resolveInterceptedExpiry } = require('../../lib/renewalResolution');
 const { buildRisksPrompt } = require('../../services/posRisksGenerator');
@@ -7351,6 +7351,32 @@ conteggio) — mai l'elenco riga per riga.`;
           // lib/ladiaWriteExecutor.js.
           if (block.name === 'undo_action' && result?.error === 'UNDO_NON_DISPONIBILE' && result.recordId) {
             blockedUndoTargets.push(String(result.recordId));
+          }
+          // Seguito F-118, LADIA_EVALS 2026-09-06 (U09, 4/5 falliti dopo il
+          // primo fix): il modello non chiamava MAI undo_action — lo saltava
+          // perché il risultato della create originale (create_record
+          // generico, es. assegnazione worker→cantiere) porta già
+          // `undoable: false` (isUndoable() in lib/ladiaActionLog.js, da
+          // resource.allow.delete=false su worksite_workers). Vedendolo, il
+          // modello concludeva da solo "l'undo non serve" e andava dritto a
+          // un tool alternativo (remove_worker_from_site) — bypassando non il
+          // gate di undo_action, ma undo_action stesso. Stesso blocco quindi
+          // per QUALUNQUE scrittura riuscita in questo turno il cui esito
+          // porta undoable:false, non solo per un undo_action già fallito.
+          if (result?.success && result?.undoable === false) {
+            const undoableFalseId = result.record?.id ?? result.recordId ?? result.deleted_id;
+            if (undoableFalseId) blockedUndoTargets.push(String(undoableFalseId));
+            // Non basta l'id della riga appena creata: per una riga-ponte
+            // come worksite_workers, quell'id (della riga di assegnazione)
+            // è DIVERSO dal worker_id che un tool alternativo userebbe per
+            // riferirsi alla stessa entità (remove_worker_from_site prende
+            // worker_id, non l'id della riga worksite_workers) — trovato dal
+            // vivo il 2026-09-06: senza questo, il gate non scattava mai per
+            // il worksite_workers reale. site_id/company_id restano esclusi
+            // di proposito: troppo generici (condivisi da qualunque altra
+            // scrittura sullo stesso cantiere) — includerli romperebbe le
+            // richieste composte legittime su entità diverse.
+            for (const v of collectBlockCandidates(block.input)) blockedUndoTargets.push(v);
           }
           if (block.name === 'navigate_to_page' && result.navigated) {
             send({ type: 'navigate', path: result.path, label: result.label });

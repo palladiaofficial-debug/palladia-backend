@@ -19,6 +19,16 @@
  * dal gate di conferma, indipendentemente dalla sensitivity propria della
  * risorsa.
  *
+ * Seguito 2026-09-06 (LADIA_EVALS reale su produzione, scenario U09: 4/5
+ * ancora falliti dopo il primo fix): il modello non chiamava MAI undo_action
+ * — lo saltava perché il risultato della create originale (create_record
+ * generico) porta già `undoable: false` (worksite_workers.allow.delete=false),
+ * e concludeva da solo "l'undo non serve" andando dritto a
+ * remove_worker_from_site. blockedUndoTargets ora si popola anche da questo
+ * segnale (qualunque scrittura riuscita con undoable:false), non solo da un
+ * undo_action già fallito — vedi Passo 6 sotto, che NON chiama mai
+ * undoActionGated/undo_action, esattamente come nella traccia reale.
+ *
  * Chiama DIRETTAMENTE undoActionGated() ed executeWrite() — le stesse
  * funzioni a cui delegano rispettivamente il case 'undo_action' e il case
  * 'remove_worker_from_site' di routes/v1/chat.js (non una reimplementazione
@@ -34,8 +44,8 @@ require('dotenv').config();
 const supabase = require('../lib/supabase');
 const { getResource } = require('../lib/ladiaSchemaRegistry');
 const { logActionHistory } = require('../lib/ladiaActionLog');
-const { undoActionGated } = require('../lib/ladiaGenericTools');
-const { executeWrite } = require('../lib/ladiaWriteExecutor');
+const { undoActionGated, createRecord } = require('../lib/ladiaGenericTools');
+const { executeWrite, collectBlockCandidates } = require('../lib/ladiaWriteExecutor');
 
 const COMPANY_ID = process.env.TEST_COMPANY_ID || 'd5dd4e79-635b-4ceb-ae74-9548a1dcfee1';
 const SITE_ID    = process.env.TEST_SITE_ID    || 'b4d201dd-4721-42bb-89b9-2736f6e52038';
@@ -82,6 +92,19 @@ async function makeWorkerAssignedToSite(fiscalCodeSuffix, ciUserId) {
   return { workerId: worker.id, historyId };
 }
 
+// Come workerA/workerB, ma NON pre-assegnato via insert diretto — l'assegnazione
+// arriva più sotto tramite createRecord() vero, per ottenere un undoable:false
+// genuino (il ramo dedupeCheck di createRecord ritorna prima di calcolarlo).
+async function makeUnassignedWorker(fiscalCodeSuffix) {
+  const { data: worker, error } = await supabase.from('workers').insert({
+    company_id: COMPANY_ID, full_name: `Selftest F118-Followup ${fiscalCodeSuffix}`,
+    fiscal_code: `TSTF18${fiscalCodeSuffix}A01H501Z`,
+    badge_code: `SELFTEST-F118-${fiscalCodeSuffix}-${Date.now()}`, is_active: true,
+  }).select('id').single();
+  if (error) throw new Error(`Setup worker fallito: ${error.message}`);
+  return worker.id;
+}
+
 async function cleanup(workerIds) {
   await supabase.from('worksite_workers').delete().eq('company_id', COMPANY_ID).in('worker_id', workerIds);
   await supabase.from('ladia_action_history').delete().eq('company_id', COMPANY_ID).in('record_id', workerIds);
@@ -98,6 +121,7 @@ async function main() {
 
   const workerA = await makeWorkerAssignedToSite('1', ciUser.id); // quello il cui undo verrà rifiutato
   const workerB = await makeWorkerAssignedToSite('2', ciUser.id); // non correlato — non deve essere toccato dal gate
+  const workerCId = await makeUnassignedWorker('3'); // assegnato più sotto via createRecord — undo_action mai chiamato in questo passo
 
   try {
     // ── Passo 1: l'undo del lavoratore A viene rifiutato (workers.allow.delete=false) ──
@@ -135,8 +159,28 @@ async function main() {
     await supabase.from('worksite_workers').update({ status: 'active' }).eq('worker_id', workerA.workerId).eq('site_id', SITE_ID);
     const baseline = await removeWorkerFromSiteAsChatJsWould(workerA.workerId, SITE_ID, { _userId: ciUser.id }, false);
     check('senza alcun blockedUndoTargets (baseline pre-fix) la rimozione riesce subito — nessuna regressione sul caso comune', baseline?.success === true, baseline);
+
+    // ── Passo 6: undo_action MAI chiamato — solo undoable:false sulla create ──
+    // Riproduce esattamente la traccia reale trovata su produzione (LADIA_EVALS
+    // U09, 2026-09-06): il modello assegna con create_record, vede
+    // undoable:false, e salta dritto a remove_worker_from_site senza mai
+    // tentare l'annullamento.
+    const assignResult = await createRecord('worksite_workers', { worker_id: workerCId, site_id: SITE_ID }, COMPANY_ID, ciUser.id, null, { conversationId: null });
+    check('create_record su worksite_workers riesce ed espone undoable:false', assignResult?.success === true && assignResult?.undoable === false, assignResult);
+
+    // req popolato SOLO dal segnale undoable:false — stessa identica logica
+    // aggiunta in routes/v1/chat.js (collectBlockCandidates sul block.input
+    // originale, non solo l'id della riga risultante), nessuna chiamata a
+    // undo_action qui.
+    const originalToolInput = { table: 'worksite_workers', payload: { worker_id: workerCId, site_id: SITE_ID } };
+    const blockedIdsFromUndoableFalse = [String(assignResult.record.id), ...collectBlockCandidates(originalToolInput)];
+    const reqFromUndoableFalse = { _blockedUndoTargets: blockedIdsFromUndoableFalse, _userId: ciUser.id };
+    const blockedNoUndo = await removeWorkerFromSiteAsChatJsWould(workerCId, SITE_ID, reqFromUndoableFalse, false);
+    check('remove_worker_from_site viene gatato anche se undo_action non è mai stato chiamato', blockedNoUndo?.error === 'RICHIEDE_CONFERMA' && blockedNoUndo?.requires_confirmation === true, blockedNoUndo);
+    const { data: assignCAfterGate } = await supabase.from('worksite_workers').select('status').eq('worker_id', workerCId).eq('site_id', SITE_ID).single();
+    check('il lavoratore C NON è stato rimosso dal solo gate (senza aver mai chiamato undo_action)', assignCAfterGate?.status === 'active', assignCAfterGate);
   } finally {
-    await cleanup([workerA.workerId, workerB.workerId]);
+    await cleanup([workerA.workerId, workerB.workerId, workerCId]);
   }
 
   console.log(`\n${passed} passati, ${failed} falliti\n`);
