@@ -19,8 +19,9 @@ const crypto    = require('crypto');
 const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
-const { notifyPunch }        = require('../../services/telegramNotifications');
+const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch } = require('../../services/telegramNotifications');
 const { publicScanLimiter }  = require('../../middleware/rateLimit');
+const { complianceStatus }   = require('../../lib/compliance');
 
 // Riusa il publicScanLimiter centralizzato (Redis-aware quando REDIS_URL è configurata)
 const badgePunchLimiter = publicScanLimiter;
@@ -255,7 +256,7 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   // Risolvi badge → lavoratore
   const { data: worker, error: workerErr } = await supabase
     .from('workers')
-    .select('id, full_name, is_active, company_id')
+    .select('id, full_name, is_active, company_id, safety_training_expiry, health_fitness_expiry')
     .eq('badge_code', code.toUpperCase())
     .maybeSingle();
 
@@ -306,6 +307,24 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   if (geofenceActive) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
     if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m) {
+      // F-138 (AUDIT.md): il tentativo viene rifiutato ma non deve restare
+      // invisibile all'amministratore — audit trail + notifica, stesso canale
+      // già usato per le timbrature riuscite.
+      supabase.from('admin_audit_log').insert([{
+        company_id:  worker.company_id,
+        user_id:     null,
+        user_role:   'worker_badge',
+        action:      'punch.rejected_geofence',
+        target_type: 'worker',
+        target_id:   worker.id,
+        payload:     { site_id, site_name: site.name, distance_m: distanceM, max_allowed_m: site.geofence_radius_m },
+        ip:          (req.ip || '').slice(0, 45) || null,
+        user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null,
+      }]).then(({ error }) => { if (error) console.error('[badge-punch] audit log rejected_geofence error:', error.message); });
+
+      notifyRejectedGeofencePunch(worker.company_id, site_id, site.name, worker.full_name, distanceM, site.geofence_radius_m)
+        .catch(e => console.error('[badge-punch] notifyRejectedGeofencePunch error:', e.message));
+
       return res.status(403).json({
         error:         'OUTSIDE_GEOFENCE',
         distance_m:    distanceM,
@@ -350,14 +369,45 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   const eventType = punchResult.event_type;
   const tsServer  = punchResult.timestamp_server;
 
+  // F-139 (AUDIT.md): la timbratura non viene bloccata da un documento scaduto
+  // (policy scelta) — ma su un'ENTRY lo segnaliamo all'operaio nella risposta
+  // stessa e all'amministratore via notifica, invece di lasciarlo passare in
+  // silenzio come accadeva prima di questo fix.
+  let complianceWarning = null;
+  if (eventType === 'ENTRY') {
+    const expiredFields = [];
+    if (complianceStatus(worker.safety_training_expiry) === 'expired') expiredFields.push('safety_training');
+    if (complianceStatus(worker.health_fitness_expiry)  === 'expired') expiredFields.push('health_fitness');
+
+    if (expiredFields.length > 0) {
+      complianceWarning = { expired: expiredFields };
+
+      supabase.from('admin_audit_log').insert([{
+        company_id:  worker.company_id,
+        user_id:     null,
+        user_role:   'worker_badge',
+        action:      'punch.expired_compliance',
+        target_type: 'worker',
+        target_id:   worker.id,
+        payload:     { site_id, site_name: site.name, expired: expiredFields },
+        ip:          ipAddress,
+        user_agent:  userAgent,
+      }]).then(({ error }) => { if (error) console.error('[badge-punch] audit log expired_compliance error:', error.message); });
+
+      notifyExpiredComplianceAtPunch(worker.company_id, site_id, site.name, worker.full_name, expiredFields)
+        .catch(e => console.error('[badge-punch] notifyExpiredComplianceAtPunch error:', e.message));
+    }
+  }
+
   res.json({
-    event_type:       eventType,
-    timestamp_server: tsServer,
-    distance_m:       distanceM,
-    geofence_active:  geofenceActive,
-    gps_accuracy_m:   accuracyM ? Math.round(accuracyM) : null,
-    worker_name:      worker.full_name,
-    site_name:        site.name,
+    event_type:         eventType,
+    timestamp_server:   tsServer,
+    distance_m:         distanceM,
+    geofence_active:    geofenceActive,
+    gps_accuracy_m:     accuracyM ? Math.round(accuracyM) : null,
+    worker_name:        worker.full_name,
+    site_name:          site.name,
+    compliance_warning: complianceWarning,
   });
 
   // Telegram punch notification (fire-and-forget)

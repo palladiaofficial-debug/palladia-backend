@@ -612,6 +612,72 @@ async function notifyAnomalousPunch(companyId, siteId, siteName, workerName, eve
   if (sends.length) await Promise.allSettled(sends);
 }
 
+/**
+ * Alert timbratura RIFIUTATA per geofence (F-138, AUDIT.md).
+ * A differenza di notifyAnomalousPunch (punch riuscito ma segnalato), qui il
+ * punch non è mai stato scritto in presence_logs — è l'unico segnale che
+ * l'amministratore riceve di questo tentativo.
+ */
+async function notifyRejectedGeofencePunch(companyId, siteId, siteName, workerName, distanceM, maxAllowedM) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+
+  let users;
+  try {
+    users = await getCompanyTelegramUsers(companyId);
+  } catch (e) {
+    console.error('[notifyRejectedGeofencePunch] getCompanyTelegramUsers error:', e.message);
+    return;
+  }
+  if (!users.length) return;
+
+  const text =
+    `🚫 <b>Timbratura rifiutata — fuori zona</b>\n` +
+    `👷 <b>${esc(workerName)}</b> ha provato a timbrare su <b>${esc(siteName)}</b>\n` +
+    `📍 Distanza: ${Math.round(distanceM)}m (massimo consentito ${maxAllowedM}m)\n` +
+    `<i>Il tentativo non è stato registrato — nessuna presenza scritta.</i>`;
+
+  const sends = users.map(u => {
+    if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) return null;
+    if ((u.notificationLevel || 'balanced') === 'quiet') return null;
+    return tg.sendMessage(u.chatId, text).catch(e => console.error('[notifyRejectedGeofencePunch] error:', e.message));
+  }).filter(Boolean);
+
+  if (sends.length) await Promise.allSettled(sends);
+}
+
+/**
+ * Alert formazione/idoneità scaduta rilevata al momento della timbratura (F-139, AUDIT.md).
+ * Il punch è comunque riuscito (policy scelta: permetti + avvisa) — questo
+ * notifica l'amministratore, il lavoratore vede l'avviso lato frontend.
+ */
+async function notifyExpiredComplianceAtPunch(companyId, siteId, siteName, workerName, expiredFields) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+
+  let users;
+  try {
+    users = await getCompanyTelegramUsers(companyId);
+  } catch (e) {
+    console.error('[notifyExpiredComplianceAtPunch] getCompanyTelegramUsers error:', e.message);
+    return;
+  }
+  if (!users.length) return;
+
+  const labels = expiredFields.map(f => f === 'safety_training' ? 'formazione sicurezza' : 'idoneità sanitaria');
+  const text =
+    `⚠️ <b>Timbratura con documento scaduto</b>\n` +
+    `👷 <b>${esc(workerName)}</b> ha timbrato su <b>${esc(siteName)}</b>\n` +
+    `📄 Scaduta: ${esc(labels.join(', '))}\n` +
+    `<i>L'entrata è stata comunque registrata — regolarizza il documento.</i>`;
+
+  const sends = users.map(u => {
+    if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) return null;
+    if ((u.notificationLevel || 'balanced') === 'quiet') return null;
+    return tg.sendMessage(u.chatId, text).catch(e => console.error('[notifyExpiredComplianceAtPunch] error:', e.message));
+  }).filter(Boolean);
+
+  if (sends.length) await Promise.allSettled(sends);
+}
+
 module.exports = {
   notifyCompany,
   notifyCoordinators,
@@ -622,6 +688,8 @@ module.exports = {
   notifyAutoExec,
   notifyPunch,
   notifyAnomalousPunch,
+  notifyRejectedGeofencePunch,
+  notifyExpiredComplianceAtPunch,
   notifySiteTeam,
   sendCustomNotification,
   getCompanyTelegramUsers,
