@@ -20,11 +20,11 @@ const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
 const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch } = require('../../services/telegramNotifications');
-const { publicScanLimiter }  = require('../../middleware/rateLimit');
+const { badgePunchLimiter }  = require('../../middleware/rateLimit');
 const { complianceStatus }   = require('../../lib/compliance');
 
-// Riusa il publicScanLimiter centralizzato (Redis-aware quando REDIS_URL è configurata)
-const badgePunchLimiter = publicScanLimiter;
+// F-145 (AUDIT.md): limiter dedicato, chiave IP+badge_code (non solo IP come
+// il publicScanLimiter che riusava prima) — vedi middleware/rateLimit.js.
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

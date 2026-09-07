@@ -63,9 +63,13 @@ const scanLimiter = rateLimit({
 // Key: IP + worksite_id — evita flooding su un singolo cantiere
 // Usa validate:false per disabilitare il check IPv6 (il proxy Railway
 // restituisce già IPv4 grazie a "trust proxy: 1" in server.js)
+// F-145 (AUDIT.md, 2026-09-07): 10/min bastava per un test ma non per una
+// squadra reale che identifica/timbra insieme all'inizio turno dietro la
+// stessa WiFi/NAT di cantiere (stesso IP, quindi stessa chiave) — alzato a
+// 60/min, resta comunque scoped per singolo cantiere, non un limite globale.
 const identifyLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 10,
+  max: 60,
   standardHeaders: true,
   legacyHeaders:   false,
   validate:        { keyGeneratorIpFallback: false },
@@ -235,6 +239,31 @@ const publicScanLimiter = rateLimit({
   ...makeStore('publicScan'),
 });
 
+// ── Rate limiter per /api/v1/badge/:code/punch-context e /punch ──────────────
+// F-145 (AUDIT.md, 2026-09-07): prima riusava publicScanLimiter, quindi per
+// SOLO IP — su un cantiere reale più lavoratori dietro la stessa WiFi/NAT
+// condividono lo stesso IP pubblico, quindi una squadra che timbra insieme al
+// mattino poteva esaurire il budget e bloccare timbrature legittime di ALTRI
+// lavoratori, non di un aggressore. Ogni badge_code è già un segreto
+// personale con 72 bit di entropia (lib/badgeCode.js) — chiave su IP+codice
+// dà a ciascun lavoratore il proprio budget, indipendente dagli altri sullo
+// stesso IP, mantenendo comunque un limite per singolo badge_code.
+const badgePunchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    const raw  = req.ip || '';
+    const ip   = raw.startsWith('::ffff:') ? raw.slice(7) : (raw || 'unknown');
+    const code = (req.params && req.params.code) || 'unknown';
+    return `badgePunch:${ip}:${code}`;
+  },
+  message: { error: 'RATE_LIMIT_EXCEEDED' },
+  ...makeStore('badgePunch'),
+});
+
 // Webhook fatture SdI: chiamato dal provider (Openapi), non da un browser —
 // limite generoso per non perdere fatture reali in un giorno di picco, ma
 // comunque presente per non lasciare la rotta senza nessun freno.
@@ -279,4 +308,4 @@ const emailIngestSenderLimiter = rateLimit({
   ...makeStore('emailIngestSender'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter };
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter };
