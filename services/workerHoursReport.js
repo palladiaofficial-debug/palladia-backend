@@ -21,8 +21,14 @@ const { pairLogsByDay, shiftDateStr } = require('../lib/presencePairing');
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
 // come se fosse la lettura originale del dispositivo.
 const METHOD_NOTE = {
-  admin_manual_correction:  'Corretto manualmente',
-  auto_exit_on_site_change: 'Uscita auto (cambio cantiere)',
+  admin_manual_correction:       'Corretto manualmente',
+  auto_exit_on_site_change:      'Uscita auto (cambio cantiere)',
+  // F-146 (AUDIT.md): mancavano queste due — un'uscita indovinata dal
+  // sistema finiva in busta paga identica a una timbratura reale, senza
+  // alcuna annotazione (services/missingExitCron.js, ladiaActions.js e il
+  // guard anti-turno-fantasma in migrations/161_punch_atomic_...sql).
+  ladia_action:                  'Uscita auto (turno lasciato aperto)',
+  auto_exit_stale_before_reopen: 'Uscita auto (turno anomalo, chiuso automaticamente)',
 };
 
 // ── Timezone helpers (Europe/Rome) ────────────────────────────────────────────

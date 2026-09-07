@@ -23,8 +23,11 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — vedi services/workerHoursReport.js.
 const METHOD_NOTE = {
-  admin_manual_correction:  'Corretto manualmente',
-  auto_exit_on_site_change: 'Uscita auto (cambio cantiere)',
+  admin_manual_correction:       'Corretto manualmente',
+  auto_exit_on_site_change:      'Uscita auto (cambio cantiere)',
+  // F-146 (AUDIT.md): vedi services/workerHoursReport.js per il dettaglio.
+  ladia_action:                  'Uscita auto (turno lasciato aperto)',
+  auto_exit_stale_before_reopen: 'Uscita auto (turno anomalo, chiuso automaticamente)',
 };
 
 const HEADER_FILL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };

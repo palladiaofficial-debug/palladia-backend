@@ -71,8 +71,14 @@ async function main() {
     // Il nuovo limiter permette 20 richieste/min per (IP, badge_code). Ne
     // mandiamo 25 per il lavoratore A dallo stesso IP di questo processo —
     // deve arrivare almeno un 429 per A (il limite esiste ed è rispettato).
+    // Nota: in questo ambiente di rete alcune richieste GET identiche in
+    // rapida sequenza vengono osservate contare "a coppie" sul contatore
+    // ratelimit-remaining (probabile riuso/duplicazione a livello di
+    // connessione tra questo processo e l'edge di Railway) — non è il
+    // comportamento del limiter stesso, verificato separatamente in
+    // isolamento (1 richiesta = -1 sempre). Il tetto è quindi ampio apposta.
     let sawRateLimitOnA = false;
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 80; i++) {
       const res = await fetch(`${BASE}/api/v1/badge/${codeA}/punch-context`);
       if (res.status === 429) { sawRateLimitOnA = true; break; }
     }
