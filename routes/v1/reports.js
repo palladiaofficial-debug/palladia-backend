@@ -655,6 +655,13 @@ router.get('/reports/worker-hours-xlsx', verifySupabaseJwt, async (req, res) => 
 // poi registra la chiusura. In Mano riusa l'endpoint PDF già esistente
 // (stessi dati ricalcolati, nessuna generazione duplicata).
 router.post('/reports/presence/close', verifySupabaseJwt, async (req, res) => {
+  // F-147 (AUDIT.md): mancava — a differenza di presenceCorrections.js
+  // ('admin-correction'), chiunque con ruolo 'tech' poteva chiudere (e,
+  // sotto, riaprire) una giornata di presenze destinata al payroll.
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  }
+
   const { site_id, closure_date } = req.body || {};
   if (!site_id || !closure_date || !DATE_RE.test(closure_date)) {
     return res.status(400).json({ error: 'INVALID_PARAMS', message: 'site_id e closure_date (YYYY-MM-DD) obbligatori' });
@@ -730,11 +737,40 @@ router.post('/reports/presence/close', verifySupabaseJwt, async (req, res) => {
 // (cancella la riga di lock soft). Nessun vincolo hard su presence_logs da
 // rimuovere: "chiuso" è solo l'esistenza di questa riga.
 router.delete('/reports/presence/close/:closureId', verifySupabaseJwt, async (req, res) => {
+  // F-147 (AUDIT.md): stesso controllo di ruolo del close — riaprire una
+  // giornata bloccata per il payroll non è un'azione da ruolo 'tech'.
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  }
+
   const { data: closure } = await supabase
-    .from('presence_day_closures').select('id').eq('id', req.params.closureId).eq('company_id', req.companyId).maybeSingle();
+    .from('presence_day_closures').select('id, site_id, closure_date, closed_by, closed_at').eq('id', req.params.closureId).eq('company_id', req.companyId).maybeSingle();
   if (!closure) return res.status(404).json({ error: 'NOT_FOUND' });
   const { error } = await supabase.from('presence_day_closures').delete().eq('id', req.params.closureId);
   if (error) return sendDbError(res, error);
+
+  // Audit log (fire-and-forget): cancellare la riga di lock non lascia
+  // altrimenti alcuna traccia di chi ha riaperto una giornata già chiusa
+  // per il payroll, né di quando/da chi era stata chiusa in origine.
+  supabase.from('admin_audit_log').insert([{
+    company_id:  req.companyId,
+    user_id:     req.user.id,
+    user_role:   req.userRole,
+    action:      'presence.day_reopened',
+    target_type: 'presence_day_closure',
+    target_id:   req.params.closureId,
+    payload: {
+      site_id:            closure.site_id,
+      closure_date:       closure.closure_date,
+      originally_closed_by: closure.closed_by,
+      originally_closed_at: closure.closed_at,
+    },
+    ip:         (req.ip || '').slice(0, 45) || null,
+    user_agent: (req.headers['user-agent'] || '').slice(0, 500) || null,
+  }]).then(({ error: e }) => {
+    if (e) console.error('[presence/close reopen] audit log error:', e.message);
+  });
+
   res.json({ success: true });
 });
 
