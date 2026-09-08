@@ -26,10 +26,24 @@ const ALERT_LABELS = {
   heat:        'Ondata di calore',
   snow:        'Neve prevista',
   thunderstorm:'Temporale',
+  rain:        'Pioggia intensa',
+  wind:        'Vento forte',
 };
 
+// F-155 (AUDIT.md, 2026-09-08): questo cron è l'UNICO avviso *in anticipo*
+// del sistema meteo — l'altro (weatherLogCron.js) processa solo il meteo di
+// IERI, quindi un cantiere sa che doveva sospendere solo il giorno dopo,
+// troppo tardi per organizzare la giornata. Prima di questo fix, qui si
+// controllavano solo caldo/neve/temporale: una pioggia forte prevista (es.
+// "rovesci", sotto la soglia di temporale) non generava NESSUN avviso
+// anticipato, nonostante ogni cantiere abbia già una soglia pioggia/vento
+// configurabile (weather_rain_mm/weather_wind_kmh) usata dal log retrospettivo
+// — la stessa soglia semplicemente non veniva mai valutata sul forecast.
+// Fix: riusa evalThresholds() (identica funzione del log retrospettivo) sul
+// forecast di ogni giorno, con le soglie REALI del cantiere.
+
 // ── Rileva alert nei 3 giorni di forecast ─────────────────────────────────────
-function detectAlerts(forecast, { heatC, snowEnabled, thunderEnabled }) {
+function detectAlerts(forecast, { heatC, snowEnabled, thunderEnabled, rainMm, windKmh }) {
   const alerts = [];
   for (const day of forecast) {
     if (heatC > 0 && day.tempMax !== null && day.tempMax >= heatC) {
@@ -40,6 +54,17 @@ function detectAlerts(forecast, { heatC, snowEnabled, thunderEnabled }) {
     }
     if (thunderEnabled && day.weatherCode >= THUNDER_MIN) {
       alerts.push({ date: day.date, type: 'thunderstorm', tempMax: day.tempMax, description: day.description });
+    }
+    // Pioggia/vento: stessa soglia del cantiere usata dal log retrospettivo
+    // (weatherLogCron.js), valutata qui sul FORECAST invece che su ieri.
+    // Il temporale è già gestito sopra — evita un doppio alert lo stesso
+    // giorno se weather_code è già >=95 (evalThresholds lo classificherebbe
+    // comunque come 'temporale' per prima, ma qui controlliamo esplicitamente
+    // pioggia/vento come cause indipendenti, anche senza temporale).
+    if (day.precipitationMm >= rainMm) {
+      alerts.push({ date: day.date, type: 'rain', tempMax: day.tempMax, description: day.description, precipitationMm: day.precipitationMm });
+    } else if (day.windMaxKmh >= windKmh) {
+      alerts.push({ date: day.date, type: 'wind', tempMax: day.tempMax, description: day.description, windMaxKmh: day.windMaxKmh });
     }
   }
   return alerts;
@@ -87,7 +112,9 @@ async function createNotifications(companyId, siteId, siteName, alerts) {
     });
     const label = ALERT_LABELS[a.type] || a.type;
     const temp  = a.type === 'heat' && a.tempMax != null ? ` (max ${a.tempMax}°C)` : '';
-    return `${dateIt}: ${label}${temp}`;
+    const rain  = a.type === 'rain' && a.precipitationMm != null ? ` (${a.precipitationMm}mm previsti)` : '';
+    const wind  = a.type === 'wind' && a.windMaxKmh != null ? ` (${a.windMaxKmh}km/h previsti)` : '';
+    return `${dateIt}: ${label}${temp}${rain}${wind}`;
   });
 
   const uniqueTypes = [...new Set(alerts.map(a => a.type))];
@@ -115,9 +142,11 @@ async function processCompany(companyId, sites) {
     try {
       const forecast   = await getForecast(site.latitude, site.longitude);
       const candidates = detectAlerts(forecast, {
-        heatC:         site.weather_heat_c ?? 35,
-        snowEnabled:   true,
-        thunderEnabled:true,
+        heatC:          site.weather_heat_c ?? 35,
+        snowEnabled:    site.weather_snow         ?? true,
+        thunderEnabled: site.weather_thunderstorm ?? true,
+        rainMm:         site.weather_rain_mm      ?? 10,
+        windKmh:        site.weather_wind_kmh     ?? 50,
       });
 
       const newAlerts = await filterNew(site.id, candidates);
@@ -149,7 +178,7 @@ async function runWeatherAlerts() {
 
   const { data: rows } = await supabase
     .from('sites')
-    .select('id, company_id, name, address, latitude, longitude, weather_heat_c')
+    .select('id, company_id, name, address, latitude, longitude, weather_heat_c, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
     .in('status', ['attivo', 'sospeso'])
     .not('latitude', 'is', null)
     .not('longitude', 'is', null);
@@ -179,4 +208,4 @@ function startWeatherAlertCron() {
   console.log('[weatherAlert] Cron avviato —', CRON_SCHEDULE, TZ);
 }
 
-module.exports = { startWeatherAlertCron, runWeatherAlerts };
+module.exports = { startWeatherAlertCron, runWeatherAlerts, detectAlerts };

@@ -36,7 +36,7 @@ async function getForecast(lat, lon) {
   const url =
     `https://api.open-meteo.com/v1/forecast` +
     `?latitude=${lat}&longitude=${lon}` +
-    `&daily=precipitation_probability_max,weathercode,temperature_2m_max,temperature_2m_min` +
+    `&daily=precipitation_probability_max,precipitation_sum,wind_speed_10m_max,weathercode,temperature_2m_max,temperature_2m_min` +
     `&timezone=Europe%2FRome&forecast_days=3`;
 
   const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -48,6 +48,11 @@ async function getForecast(lat, lon) {
   return d.time.map((date, i) => ({
     date,
     precipProb:  d.precipitation_probability_max[i] ?? 0,
+    // F-155 (AUDIT.md): precipitation_sum/wind_speed_10m_max in mm/km-h —
+    // servono a valutare le soglie del cantiere (evalThresholds) SUL
+    // FORECAST, non solo sul meteo passato — vedi weatherAlertCron.js.
+    precipitationMm: d.precipitation_sum?.[i]  ?? 0,
+    windMaxKmh:      d.wind_speed_10m_max?.[i] ?? 0,
     weatherCode: d.weathercode[i] ?? 0,
     description: WMO[d.weathercode[i]] ?? 'variabile',
     isRainy:     isRainy(d.weathercode[i] ?? 0),

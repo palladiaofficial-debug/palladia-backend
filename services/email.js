@@ -2626,8 +2626,8 @@ async function sendWeatherExtremeAlert({ companyId, alerts }) {
   }
   if (!adminEmails.length) return;
 
-  const LABELS = { heat: 'Ondata di calore', snow: 'Neve prevista', thunderstorm: 'Temporale' };
-  const ICONS  = { heat: '&#x1F321;', snow: '&#x2744;', thunderstorm: '&#x26C8;' };
+  const LABELS = { heat: 'Ondata di calore', snow: 'Neve prevista', thunderstorm: 'Temporale', rain: 'Pioggia intensa', wind: 'Vento forte' };
+  const ICONS  = { heat: '&#x1F321;', snow: '&#x2744;', thunderstorm: '&#x26C8;', rain: '&#x1F327;', wind: '&#x1F32C;' };
 
   // Raggruppa alert per cantiere
   const bySite = new Map();
@@ -2645,9 +2645,11 @@ async function sendWeatherExtremeAlert({ companyId, alerts }) {
       const label  = LABELS[a.type]  || a.type;
       const icon   = ICONS[a.type]   || '&#x26A0;';
       const temp   = a.tempMax != null ? ` &mdash; max ${a.tempMax}&deg;C` : '';
+      const rain   = a.type === 'rain' && a.precipitationMm != null ? ` &mdash; ${a.precipitationMm}mm previsti` : '';
+      const wind   = a.type === 'wind' && a.windMaxKmh != null ? ` &mdash; ${a.windMaxKmh}km/h previsti` : '';
       return `<tr>
         <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${icon} ${esc(label)}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#6b7280;">${esc(dateIt)}${temp}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#6b7280;">${esc(dateIt)}${temp}${rain}${wind}</td>
         <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#6b7280;">${esc(a.description)}</td>
       </tr>`;
     }).join('');
