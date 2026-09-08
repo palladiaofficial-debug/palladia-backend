@@ -99,27 +99,53 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
 
   const siteIds = (assignments || []).map(a => a.site_id);
 
+  // Tutti i cantieri attivi (non chiusi/eliminati) della company del
+  // lavoratore — fallback usato sia quando non ci sono assegnazioni
+  // specifiche, sia quando le assegnazioni trovate risultano tutte stale
+  // (F-150, AUDIT.md: cantiere di un'altra company o già eliminato).
+  const loadCompanyActiveSites = async () => {
+    const { data, error } = await supabase
+      .from('sites')
+      .select('id, name, address, latitude, longitude, geofence_radius_m, status')
+      .eq('company_id', worker.company_id)
+      .not('status', 'in', '(chiuso,eliminato)');
+    return { data, error };
+  };
+
   let activeSites = [];
   if (siteIds.length > 0) {
+    // F-150 (AUDIT.md): filtrare SEMPRE per company_id del lavoratore — una
+    // riga worksite_workers residua verso il cantiere di un'altra company
+    // (es. dopo un cambio di company o una fixture di test mai ripulita)
+    // nascondeva altrimenti tutti i cantieri reali. Escludere anche i siti
+    // eliminati, non solo 'chiuso'.
     const { data: sitesRows, error: sitesErr } = await supabase
       .from('sites')
       .select('id, name, address, latitude, longitude, geofence_radius_m, status')
       .in('id', siteIds)
-      .neq('status', 'chiuso');
+      .eq('company_id', worker.company_id)
+      .not('status', 'in', '(chiuso,eliminato)');
 
     if (sitesErr) {
       console.error('[badge-punch-context] sites error:', sitesErr.message);
       return res.status(500).json({ error: 'DB_ERROR' });
     }
     activeSites = sitesRows || [];
+
+    // Nessun cantiere valido tra le assegnazioni (tutte stale/cross-company/
+    // eliminate) → fallback a tutti i cantieri attivi della company, stesso
+    // comportamento già usato per un lavoratore senza assegnazioni.
+    if (activeSites.length === 0) {
+      const { data: companySites, error: companySitesErr } = await loadCompanyActiveSites();
+      if (companySitesErr) {
+        console.error('[badge-punch-context] company sites fallback error:', companySitesErr.message);
+        return res.status(500).json({ error: 'DB_ERROR' });
+      }
+      activeSites = companySites || [];
+    }
   } else {
     // Nessuna assegnazione specifica → fallback a tutti i cantieri attivi dell'azienda
-    const { data: companySites, error: companySitesErr } = await supabase
-      .from('sites')
-      .select('id, name, address, latitude, longitude, geofence_radius_m, status')
-      .eq('company_id', worker.company_id)
-      .neq('status', 'chiuso');
-
+    const { data: companySites, error: companySitesErr } = await loadCompanyActiveSites();
     if (companySitesErr) {
       console.error('[badge-punch-context] company sites error:', companySitesErr.message);
       return res.status(500).json({ error: 'DB_ERROR' });
