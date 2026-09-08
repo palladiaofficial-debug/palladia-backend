@@ -47,9 +47,9 @@ function escT(str) {
  * CRITICO: non usare proprietà che fanno crescere il box in altezza (no wrap).
  */
 function buildHeaderTemplate(docTitle) {
-  return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #DDDDDD;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:9px;font-weight:bold;color:#2C2C2C;letter-spacing:0.5pt;line-height:1.1;white-space:nowrap;flex:0 0 auto;">PALLADIA</span>
-  <span style="font-size:9px;color:#AAAAAA;line-height:1.1;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding-left:8px;">${escT(docTitle)}</span>
+  return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #E7E2D8;background:#FFFEFC;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
+  <span style="font-size:9px;font-weight:700;color:#22384F;letter-spacing:0.5pt;line-height:1.1;white-space:nowrap;flex:0 0 auto;">PALLADIA</span>
+  <span style="font-size:9px;color:#9C948A;line-height:1.1;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding-left:8px;">${escT(docTitle)}</span>
 </div>`;
 }
 
@@ -63,10 +63,10 @@ function buildHeaderTemplate(docTitle) {
 function buildFooterTemplate(revision, footerLeft) {
   const rev = escT(String(revision || 1));
   const left = escT(footerLeft || 'D.Lgs 81/2008 e s.m.i.');
-  return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #DDDDDD;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;white-space:nowrap;">${left}</span>
-  <span style="font-size:8.5px;color:#444444;font-weight:bold;line-height:1.1;white-space:nowrap;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:8.5px;"></span>&#160;/&#160;<span class="totalPages" style="font-size:8.5px;"></span></span>
-  <span style="font-size:8.5px;color:#BBBBBB;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">Rev.&#160;${rev}</span>
+  return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #E7E2D8;background:#FFFEFC;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
+  <span style="font-size:8.5px;color:#9C948A;line-height:1.1;flex:1;white-space:nowrap;">${left}</span>
+  <span style="font-size:8.5px;color:#1A1714;font-weight:700;line-height:1.1;white-space:nowrap;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:8.5px;"></span>&#160;/&#160;<span class="totalPages" style="font-size:8.5px;"></span></span>
+  <span style="font-size:8.5px;color:#9C948A;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">Rev.&#160;${rev}</span>
 </div>`;
 }
 

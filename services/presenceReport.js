@@ -44,6 +44,13 @@ function shortMethodLabel(method) {
   return SHORT_METHOD_LABEL[method] || method;
 }
 
+// Detrazione pausa pranzo automatica è un'informazione di routine, non un
+// problema — badge blu invece dell'ambra/rosso riservato alle vere anomalie
+// (uscita mancante, GPS impreciso, ecc.) — F-154 (AUDIT.md, redesign PDF).
+function anomalyBadgeClass(label) {
+  return label.startsWith('Pausa pranzo automatica') ? 'badge-info' : 'badge-anom';
+}
+
 function esc(s) {
   if (s == null) return '';
   return String(s)
@@ -378,7 +385,7 @@ function generatePresenceReportHtml(data) {
       prevDateKey     = row.dateKey;
 
       const anomalyHtml = row.anomalies.length > 0
-        ? row.anomalies.map(a => `<span class="badge-anom">${esc(a)}</span>`).join(' ')
+        ? row.anomalies.map(a => `<span class="${anomalyBadgeClass(a)}">${esc(a)}</span>`).join(' ')
         : '<span class="td-ok">✓</span>';
 
       // Prima entrata — null se nessun ENTRY (solo EXIT orfani nel giorno)
@@ -455,13 +462,28 @@ function generatePresenceReportHtml(data) {
 <html lang="it">
 <head>
 <meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* ═══════════════════════════════════════════════════════════════════
    PALLADIA PDF — Registro Presenze Cantiere
-   Architettura IDENTICA al POS (Puppeteer displayHeaderFooter:true):
+   Redesign F-154 (AUDIT.md, 2026-09-08): stile/font/colori reali di
+   Palladia (Plus Jakarta Sans, palette dell'app) al posto del navy/Arial
+   generico usato finora — stessa direzione già approvata come mockup.
+   Architettura Puppeteer invariata (displayHeaderFooter:true):
      @page { margin: 26mm 0 24mm 0 } ↔ Puppeteer top:26mm / bottom:24mm
      .doc { padding: 0 16mm }        ↔ allineato ai template H/F
    ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  --primary: #22384F; --primary-tint: #EEF2F6;
+  --text: #1A1714; --muted: #7A736A; --muted-2: #9C948A;
+  --border: #E7E2D8; --border-strong: #D8D1C3;
+  --success: #4A7358; --success-bg: #EEF3EE;
+  --warning: #A8672A; --warning-bg: #FBF3E8;
+  --destructive: #A8453B; --destructive-bg: #FBF0EE;
+}
 
 /* ── RESET ──────────────────────────────────────────────────────────── */
 *, *::before, *::after {
@@ -473,85 +495,55 @@ html, body {
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 body {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 10pt; color: #1E1E1E; line-height: 1.6; background: #FFFFFF;
+  font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif;
+  font-size: 9.5pt; color: var(--text); line-height: 1.55; background: #FFFFFF;
 }
+/* color esplicito su table: non sempre ereditato dal genitore in ogni
+   motore di rendering (verificato in fase di mockup) — meglio non fare
+   affidamento sulla sola ereditarietà per un elemento così centrale. */
+table { color: var(--text); }
 .doc { width: 100%; max-width: 100%; box-sizing: border-box; padding: 0 16mm; }
 
-/* ── COVER ──────────────────────────────────────────────────────────── */
-/* height = 297mm - 26mm top - 24mm bottom = 247mm (identico al POS) */
-.cover {
-  break-after: page; page-break-after: always;
-  display: flex; width: 100%; max-width: 100%;
+/* ── INTESTAZIONE ───────────────────────────────────────────────────── */
+.doc-eyebrow {
+  display: inline-flex; align-items: center; gap: 6pt;
+  font-size: 7.5pt; font-weight: 700; letter-spacing: 0.9pt; text-transform: uppercase;
+  color: var(--primary); background: var(--primary-tint);
+  padding: 3pt 7pt 3pt 5pt; border-radius: 2.5pt; margin-bottom: 8pt;
 }
-.cover-sidebar {
-  width: 62mm; max-width: 62mm; flex-shrink: 0;
-  background: #1B3A5C; color: #FFFFFF;
-  padding: 12mm 9mm 10mm 10mm;
-  display: flex; flex-direction: column;
-}
-.cover-sidebar-brand {
-  font-size: 10pt; font-weight: bold; letter-spacing: 3.5pt; text-transform: uppercase;
-  color: #8DAFD4; margin-bottom: 10mm; padding-bottom: 6mm;
-  border-bottom: 0.5pt solid #2E5A7A;
-}
-.cv-item  { margin-bottom: 7mm; }
-.cv-label { font-size: 5.5pt; text-transform: uppercase; letter-spacing: 1.2pt; color: #8DAFD4; margin-bottom: 1.5mm; }
-.cv-val   { font-size: 9pt; font-weight: bold; color: #FFFFFF; line-height: 1.4; }
-.cv-val-lg { font-size: 16pt; font-weight: bold; color: #FFFFFF; line-height: 1; }
-.cv-anom  { color: #F59E0B; }
+.doc-title { font-size: 19pt; font-weight: 700; letter-spacing: -0.3pt; color: var(--text); line-height: 1.2; margin-bottom: 3pt; }
+.doc-title-rule { width: 22pt; height: 2.5pt; background: var(--primary); border-radius: 2pt; margin: 8pt 0 12pt; }
 
-.cover-main {
-  flex: 1; padding: 14mm 12mm 10mm 14mm;
-  display: flex; flex-direction: column;
+.meta-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8pt 10pt;
+  margin-bottom: 14pt; padding-bottom: 12pt; border-bottom: 0.75pt solid var(--border);
 }
-.cover-badge {
-  display: inline-block; font-size: 6pt; font-weight: bold; letter-spacing: 2pt;
-  text-transform: uppercase; color: #1B3A5C; background: #E0ECF8;
-  padding: 3pt 8pt; border-radius: 2pt; margin-bottom: 7mm; align-self: flex-start;
-}
-.cover-title {
-  font-size: 21pt; font-weight: bold; color: #1B3A5C; line-height: 1.15;
-  margin-bottom: 3mm;
-}
-.cover-subtitle {
-  font-size: 8.5pt; color: #666666; line-height: 1.55; margin-bottom: 10mm; max-width: 88mm;
-}
-.cover-divider { border: none; border-top: 0.5pt solid #D0DBE8; margin-bottom: 8mm; }
-.cover-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 5mm;
-}
-.cg-item   {}
-.cg-label  { font-size: 6.5pt; text-transform: uppercase; letter-spacing: 0.9pt; color: #888888; margin-bottom: 1mm; }
-.cg-value  { font-size: 9.5pt; font-weight: bold; color: #1E1E1E; line-height: 1.35; }
-.cg-span2  { grid-column: 1 / -1; }
-.cover-stamp {
-  margin-top: auto; padding-top: 7mm; border-top: 0.5pt solid #D0DBE8;
-  font-size: 6.5pt; color: #AAAAAA; line-height: 1.55; font-family: 'Courier New', monospace;
-}
+.meta-grid.two-col { grid-template-columns: 1fr 1fr; }
+.meta-k { font-size: 6.5pt; font-weight: 700; letter-spacing: 0.6pt; text-transform: uppercase; color: var(--muted-2); margin-bottom: 1.5pt; }
+.meta-v { font-size: 9.5pt; font-weight: 600; color: var(--text); line-height: 1.35; }
 
-/* ── SECTION TITLE (identico al POS) ───────────────────────────────── */
+/* ── SECTION LABEL (sostituisce il blocco pieno navy) ──────────────── */
 .section-title {
-  background: #1B3A5C; color: #FFFFFF;
-  padding: 5pt 8pt; font-size: 9.5pt; font-weight: bold;
-  letter-spacing: 0.8pt; text-transform: uppercase;
-  margin-top: 14pt; margin-bottom: 8pt;
+  display: flex; align-items: center; gap: 7pt;
+  font-size: 7.5pt; font-weight: 700; letter-spacing: 0.7pt; text-transform: uppercase;
+  color: var(--muted); margin-top: 16pt; margin-bottom: 8pt;
 }
-.section-title:first-of-type { margin-top: 8pt; }
+.section-title::after { content: ""; flex: 1; height: 0.75pt; background: var(--border); }
+.section-title:first-of-type { margin-top: 0; }
 
 /* ── CARDS RIEPILOGO ────────────────────────────────────────────────── */
 .summary-grid {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 5mm; margin-bottom: 10mm;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 6pt; margin-bottom: 14pt;
 }
 .summary-card {
-  border: 0.5pt solid #C8D8E8; border-radius: 3pt;
-  padding: 5mm 4mm; text-align: center;
+  border: 0.75pt solid var(--border); border-radius: 4pt;
+  padding: 8pt 9pt;
 }
-.sc-num   { font-size: 20pt; font-weight: bold; color: #1B3A5C; line-height: 1; margin-bottom: 2mm; }
-.sc-label { font-size: 6.5pt; color: #777777; text-transform: uppercase; letter-spacing: 0.7pt; }
-.sc-warn  { border-color: #FFC107; background: #FFFDF0; }
-.sc-warn .sc-num { color: #856404; }
-.sc-ok   .sc-num { color: #166534; }
+.sc-num   { font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 15pt; font-weight: 600; color: var(--text); line-height: 1; margin-bottom: 4pt; }
+.sc-label { font-size: 6.5pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5pt; font-weight: 600; }
+.sc-warn  { border-color: var(--warning); background: var(--warning-bg); }
+.sc-warn .sc-num { color: var(--warning); }
+.sc-ok   .sc-num { color: var(--success); }
 
 /* ── TABELLA PRESENZE ───────────────────────────────────────────────── */
 /*
@@ -568,22 +560,24 @@ body {
 */
 .presence-table {
   width: 100%; table-layout: fixed; border-collapse: collapse;
-  font-size: 8pt; margin-bottom: 12pt;
+  font-size: 7.8pt; margin-bottom: 14pt;
 }
 .presence-table thead th {
-  background: #1B3A5C; color: #FFFFFF;
-  padding: 4pt 3pt; font-size: 7.5pt; font-weight: bold;
-  text-align: left; letter-spacing: 0.2pt;
-  border: 0.5pt solid #1B3A5C;
+  padding: 0 4pt 6pt 0; font-size: 6.5pt; font-weight: 700;
+  letter-spacing: 0.4pt; text-transform: uppercase; color: var(--muted);
+  text-align: left; border-bottom: 1.5pt solid var(--text);
 }
+/* box-shadow invece di border-bottom sulle celle: sotto scaling frazionario
+   Chromium arrotonda un 1px border in modo diverso per ogni cella quando le
+   altezze di riga differiscono — risultato osservato in fase di mockup: una
+   riga corta e più scura solo sotto la cella più alta. Un box-shadow non
+   collassa mai in questo modo, indipendentemente dall'altezza delle celle. */
 .presence-table tbody td {
-  padding: 4pt 3pt; vertical-align: top;
-  border: 0.5pt solid #D8E4EE; line-height: 1.4;
+  padding: 5.5pt 4pt 5.5pt 0; vertical-align: top; line-height: 1.4;
+  box-shadow: inset 0 -0.75pt 0 var(--border);
 }
-.presence-table tbody tr:nth-child(even) td { background: #F4F7FB; }
-.tr-newdate td { border-top: 1.5pt solid #7FA8CC !important; }
-.tr-anom td    { background: #FFF8ED !important; }
-.tr-anom:nth-child(even) td { background: #FFF3E0 !important; }
+.tr-newdate td { box-shadow: inset 0 1.5pt 0 var(--border-strong), inset 0 -0.75pt 0 var(--border); }
+.tr-anom td    { background: var(--destructive-bg) !important; }
 
 /* Larghezze colonne (table-layout:fixed) */
 .col-date   { width: 12%; }
@@ -597,52 +591,53 @@ body {
 .col-metodo { width:  7%; }
 .col-anom   { width: 14%; }
 
-.td-date  { font-weight: 600; color: #1B3A5C; white-space: nowrap; }
+.td-date  { font-weight: 600; color: var(--text); white-space: nowrap; }
 .td-name  { font-weight: 500; }
-.td-cf    { font-family: 'Courier New', Courier, monospace; font-size: 7pt; letter-spacing: 0.1pt; }
-.td-time  { text-align: center; white-space: nowrap; }
+.td-cf    { font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 6.8pt; color: var(--muted); letter-spacing: -0.1pt; }
+.td-time  { text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .td-num   { text-align: center; }
 .td-anom-cell { }
 
-.miss       { color: #C2410C; font-weight: bold; }
-.td-ok      { color: #15803D; font-size: 9pt; }
-.badge-anom {
-  display: inline-block; font-size: 6pt; font-weight: bold;
-  background: #FEF3C7; color: #92400E;
-  border: 0.5pt solid #F59E0B; border-radius: 2pt;
-  padding: 1pt 3pt; margin: 1pt 1pt 1pt 0; white-space: nowrap;
+.miss       { color: var(--destructive); font-weight: 700; }
+.td-ok      { color: var(--success); font-size: 9pt; }
+.badge-anom, .badge-info {
+  display: inline-block; font-size: 5.8pt; font-weight: 600;
+  border-radius: 2.5pt; padding: 1.5pt 4pt; margin: 1pt 2pt 1pt 0; white-space: nowrap;
 }
+.badge-anom { background: var(--destructive-bg); color: var(--destructive); }
+.badge-info { background: var(--primary-tint);    color: var(--primary); }
 
 /* ── SEZIONE ANOMALIE ───────────────────────────────────────────────── */
 .anom-box {
-  background: #FFFBEB; border: 0.5pt solid #FCD34D; border-radius: 3pt;
-  padding: 8pt 10pt; margin-bottom: 12pt;
+  background: var(--warning-bg); border: 0.75pt solid var(--warning); border-radius: 4pt;
+  padding: 9pt 10pt; margin-bottom: 14pt;
 }
 .anom-list {
-  font-size: 7.5pt; color: #333333; padding-left: 14pt; line-height: 1.65;
+  font-size: 7.5pt; color: var(--text); padding-left: 13pt; line-height: 1.7;
 }
 .anom-list li { margin-bottom: 2pt; }
 
 /* ── DICHIARAZIONE FINALE ───────────────────────────────────────────── */
 .declaration {
-  margin-top: 14pt; border-top: 0.5pt solid #C8D8E8; padding-top: 10pt;
+  margin-top: 4pt;
 }
-.declaration p { font-size: 7.5pt; color: #555555; line-height: 1.65; margin-bottom: 6pt; }
+.declaration p { font-size: 7.3pt; color: var(--muted); line-height: 1.65; margin-bottom: 6pt; }
+.declaration p strong { color: var(--text); }
 .declaration .doc-meta {
-  font-size: 6.5pt; color: #AAAAAA; font-family: 'Courier New', monospace;
-  line-height: 1.65; margin-top: 8pt;
+  font-size: 6.3pt; color: var(--muted-2); font-family: 'JetBrains Mono', 'Courier New', monospace;
+  line-height: 1.7; margin-top: 8pt;
 }
 
 /* ── BLOCCO FIRME ───────────────────────────────────────────────────── */
-.sig-section { margin-top: 20pt; break-inside: avoid !important; page-break-inside: avoid !important; }
+.sig-section { margin-top: 18pt; break-inside: avoid !important; page-break-inside: avoid !important; }
 .sig-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 10mm; margin-top: 8pt;
 }
-.sig-col { font-size: 8pt; color: #333; }
-.sig-role { font-size: 7pt; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.8pt; color: #1B3A5C; margin-bottom: 12mm; }
-.sig-line { border-bottom: 0.5pt solid #333; margin-bottom: 4pt; }
-.sig-lbl  { font-size: 6.5pt; color: #888; }
+.sig-col { font-size: 8pt; color: var(--text); }
+.sig-role { font-size: 6.5pt; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5pt; color: var(--muted); margin-bottom: 12mm; }
+.sig-line { border-bottom: 0.75pt solid var(--border-strong); margin-bottom: 4pt; }
+.sig-lbl  { font-size: 6.5pt; color: var(--muted-2); }
 
 /* ── ANTI-TAGLIO ────────────────────────────────────────────────────── */
 h1, h2, h3 { break-after: avoid-page; page-break-after: avoid; }
@@ -650,7 +645,7 @@ tr    { break-inside: avoid; page-break-inside: avoid; }
 thead { display: table-header-group; }
 
 /* ══════════════════════════════════════════════════════════════════════
-   BLOCCO FINALE v13 — identico al POS — vince su tutto (cascata CSS)
+   BLOCCO FINALE — vince su tutto (cascata CSS)
    @page margin DEVE coincidere con Puppeteer margin in makePdfOpts()
    ══════════════════════════════════════════════════════════════════════ */
 @page { size: A4; margin: 26mm 0 24mm 0; }
@@ -659,7 +654,6 @@ html, body { margin: 0 !important; padding: 0 !important;
   -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .doc  { width: 100% !important; max-width: 100% !important;
   padding: 0 16mm !important; box-sizing: border-box !important; }
-.cover { height: 247mm !important; overflow: hidden !important; }
 table { width: 100% !important; max-width: 100% !important;
   table-layout: fixed !important; border-collapse: collapse !important; }
 th, td { max-width: 100% !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
@@ -672,79 +666,20 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
 <body>
 <div class="doc">
 
-  <!-- ══ COVER ══════════════════════════════════════════════════════════ -->
-  <div class="cover">
-    <div class="cover-sidebar">
-      <div class="cover-sidebar-brand" style="display:flex;align-items:center;gap:5pt">Palladia</div>
+  <!-- ══ INTESTAZIONE ═══════════════════════════════════════════════════ -->
+  <div class="doc-eyebrow">Registro ufficiale presenze</div>
+  <div class="doc-title">Registro Presenze Cantiere</div>
+  <div class="doc-title-rule"></div>
 
-      <div class="cv-item">
-        <div class="cv-label">Lavoratori</div>
-        <div class="cv-val-lg">${total_workers}</div>
-      </div>
-      <div class="cv-item">
-        <div class="cv-label">Timbrature totali</div>
-        <div class="cv-val">${total_punches}</div>
-      </div>
-      <div class="cv-item">
-        <div class="cv-label">Ore lavorate</div>
-        <div class="cv-val">${esc(totalHoursStr)}</div>
-      </div>
-      ${anomalies_count > 0 ? `
-      <div class="cv-item" style="margin-top:auto;">
-        <div class="cv-label">Anomalie</div>
-        <div class="cv-val cv-anom">${anomalies_count} sessioni</div>
-      </div>` : `
-      <div class="cv-item" style="margin-top:auto;">
-        <div class="cv-label">Anomalie</div>
-        <div class="cv-val" style="color:#4ADE80;">Nessuna</div>
-      </div>`}
-    </div>
-
-    <div class="cover-main">
-      <div class="cover-badge">Registro Ufficiale Presenze</div>
-      <div class="cover-title">Registro Presenze<br>Cantiere</div>
-      <div class="cover-subtitle">
-        Generato automaticamente tramite sistema digitale geolocalizzato Palladia.
-        Ogni timbratura è verificata server-side con geofence GPS e registrata
-        in database append-only (immutabile).
-      </div>
-
-      <hr class="cover-divider">
-
-      <div class="cover-grid">
-        <div class="cg-item">
-          <div class="cg-label">Impresa</div>
-          <div class="cg-value">${esc(company.name || '—')}</div>
-        </div>
-        <div class="cg-item">
-          <div class="cg-label">Cantiere</div>
-          <div class="cg-value">${esc(site.name)}</div>
-        </div>
-        <div class="cg-item">
-          <div class="cg-label">Periodo</div>
-          <div class="cg-value">${esc(periodStr)}</div>
-        </div>
-        <div class="cg-item">
-          <div class="cg-label">Generato il</div>
-          <div class="cg-value">${esc(genDateStr)}</div>
-        </div>
-        ${site.address ? `
-        <div class="cg-item cg-span2">
-          <div class="cg-label">Indirizzo cantiere</div>
-          <div class="cg-value">${esc(site.address)}</div>
-        </div>` : ''}
-      </div>
-
-      <div class="cover-stamp">
-        ID documento: ${doc_id}<br>
-        Timestamp generazione: ${generated_at}<br>
-        Cantiere ID: ${site.id}
-      </div>
-    </div>
+  <div class="meta-grid">
+    <div><div class="meta-k">Impresa</div><div class="meta-v">${esc(company.name || '—')}</div></div>
+    <div><div class="meta-k">Cantiere</div><div class="meta-v">${esc(site.name)}</div></div>
+    <div><div class="meta-k">Periodo</div><div class="meta-v">${esc(periodStr)}</div></div>
+    <div><div class="meta-k">Generato il</div><div class="meta-v">${esc(genDateStr)}</div></div>
+    ${site.address ? `<div style="grid-column:1/-1;"><div class="meta-k">Indirizzo cantiere</div><div class="meta-v">${esc(site.address)}</div></div>` : ''}
   </div>
 
   <!-- ══ RIEPILOGO ══════════════════════════════════════════════════════ -->
-  <div class="section-title">Riepilogo del periodo — ${esc(periodStr)}</div>
   <div class="summary-grid">
     <div class="summary-card">
       <div class="sc-num">${total_workers}</div>

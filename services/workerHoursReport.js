@@ -341,137 +341,135 @@ function generateWorkerHoursPdfHtml(data) {
 <html lang="it">
 <head>
 <meta charset="UTF-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  /* Redesign F-154 (AUDIT.md, 2026-09-08): stile/font/colori reali di
+     Palladia (Plus Jakarta Sans, palette dell'app) — mockup approvato. */
+  :root {
+    --primary: #22384F; --primary-tint: #EEF2F6;
+    --text: #1A1714; --muted: #7A736A; --muted-2: #9C948A;
+    --border: #E7E2D8; --border-strong: #D8D1C3;
+    --success: #4A7358; --success-bg: #EEF3EE;
+    --warning: #A8672A; --warning-bg: #FBF3E8;
+    --destructive: #A8453B; --destructive-bg: #FBF0EE;
+  }
   @page { size:A4; margin:26mm 0 24mm 0; }
   *     { box-sizing:border-box; margin:0; padding:0; }
-  body  { font-family:Arial,Helvetica,sans-serif; font-size:10pt; color:#1a1a1a; }
+  body  { font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif; font-size:9.5pt; color:var(--text); }
+  table { color: var(--text); } /* esplicito: non sempre ereditato dal genitore in ogni motore */
   .doc  { padding:0 16mm; }
 
-  /* ── Report header ── */
-  .rpt-header {
-    display:flex; justify-content:space-between; align-items:flex-start;
-    border-bottom:2px solid #1a1a1a; padding-bottom:10pt; margin-bottom:14pt;
+  /* ── Intestazione ── */
+  .doc-eyebrow {
+    display:inline-flex; align-items:center; gap:6pt;
+    font-size:7.5pt; font-weight:700; letter-spacing:0.9pt; text-transform:uppercase;
+    color:var(--primary); background:var(--primary-tint);
+    padding:3pt 7pt 3pt 5pt; border-radius:2.5pt; margin-bottom:8pt;
   }
-  .rpt-brand { font-size:18pt; font-weight:bold; letter-spacing:0.08em; }
-  .rpt-title { font-size:11pt; font-weight:600; color:#444; margin-top:3pt; }
-  .rpt-meta  { text-align:right; font-size:8.5pt; color:#666; line-height:1.6; }
-  .rpt-meta strong { color:#1a1a1a; }
+  .doc-title { font-size:19pt; font-weight:700; letter-spacing:-0.3pt; color:var(--text); line-height:1.2; margin-bottom:3pt; }
+  .doc-title-rule { width:22pt; height:2.5pt; background:var(--primary); border-radius:2pt; margin:8pt 0 12pt; }
 
-  /* ── Info box ── */
-  .info-box {
-    background:#f8f8f8; border:1px solid #e0e0e0; border-radius:4pt;
-    padding:8pt 12pt; margin-bottom:16pt;
-    display:grid; grid-template-columns:1fr 1fr; gap:4pt 20pt;
-    font-size:9pt;
+  .meta-grid {
+    display:grid; grid-template-columns:repeat(4,1fr); gap:8pt 10pt;
+    margin-bottom:14pt; padding-bottom:12pt; border-bottom:0.75pt solid var(--border);
   }
-  .info-row { display:flex; gap:6pt; }
-  .info-lbl { color:#888; min-width:70pt; }
-  .info-val { font-weight:600; }
+  .meta-k { font-size:6.5pt; font-weight:700; letter-spacing:0.6pt; text-transform:uppercase; color:var(--muted-2); margin-bottom:1.5pt; }
+  .meta-v { font-size:9.5pt; font-weight:600; color:var(--text); line-height:1.35; }
 
-  /* ── Section heading ── */
+  /* ── Section label ── */
   .section-hdr {
-    font-size:9pt; font-weight:700; text-transform:uppercase; letter-spacing:0.06em;
-    color:#888; border-bottom:1px solid #ddd; padding-bottom:4pt; margin-bottom:8pt;
+    display:flex; align-items:center; gap:7pt;
+    font-size:7.5pt; font-weight:700; letter-spacing:0.7pt; text-transform:uppercase;
+    color:var(--muted); margin-top:16pt; margin-bottom:8pt;
   }
+  .section-hdr::after { content:""; flex:1; height:0.75pt; background:var(--border); }
+  .section-hdr:first-of-type { margin-top:0; }
 
   /* ── Summary table ── */
-  .stbl { width:100%; border-collapse:collapse; margin-bottom:20pt; font-size:9.5pt; }
-  .stbl thead tr { background:#1a1a1a; color:#fff; }
-  .stbl thead th { padding:6pt 8pt; text-align:left; font-weight:600; }
-  .stbl tbody tr:nth-child(even) { background:#f5f5f5; }
-  .stbl tbody td { padding:5pt 8pt; border-bottom:1px solid #ebebeb; }
-  .stbl tfoot tr { background:#1a1a1a; color:#fff; font-weight:700; }
-  .stbl tfoot td { padding:6pt 8pt; }
+  .stbl { width:100%; border-collapse:collapse; margin-bottom:18pt; font-size:8.8pt; }
+  .stbl thead th { padding:0 6pt 6pt 0; text-align:left; font-size:6.5pt; font-weight:700;
+    letter-spacing:0.4pt; text-transform:uppercase; color:var(--muted); border-bottom:1.5pt solid var(--text); }
+  .stbl tbody td { padding:6pt 6pt 6pt 0; box-shadow: inset 0 -0.75pt 0 var(--border); }
+  .stbl tfoot td { padding:7pt 6pt 7pt 0; font-weight:700; background:var(--primary-tint);
+    box-shadow: inset 0 1.5pt 0 var(--text); }
+  .stbl tfoot tr td:first-child { border-radius:3pt 0 0 3pt; }
+  .stbl tfoot tr td:last-child  { border-radius:0 3pt 3pt 0; }
 
   /* ── Worker block ── */
-  .worker-block { margin-bottom:22pt; break-inside:avoid-page; }
+  .worker-block { margin-bottom:20pt; break-inside:avoid-page; }
   .worker-hdr {
-    display:flex; align-items:baseline; gap:12pt;
-    background:#1a1a1a; color:#fff; border-radius:4pt 4pt 0 0;
-    padding:7pt 10pt;
+    display:flex; align-items:baseline; justify-content:space-between; gap:12pt;
+    padding:9pt 0; border-bottom:1.5pt solid var(--text); margin-bottom:2pt;
   }
-  .wname { font-size:11pt; font-weight:700; flex:1; }
-  .wcf   { font-size:8.5pt; color:#ccc; font-family:monospace; }
+  .wname { font-size:11.5pt; font-weight:700; }
+  .wcf   { font-size:7.5pt; color:var(--muted); font-family:'JetBrains Mono','Courier New',monospace; }
 
   /* ── Detail table ── */
-  .dtbl { width:100%; border-collapse:collapse; font-size:9pt; }
-  .dtbl thead tr { background:#f0f0f0; }
-  .dtbl thead th { padding:5pt 8pt; text-align:left; font-weight:600; border-bottom:2px solid #ddd; }
-  .dtbl tbody tr:nth-child(even) { background:#fafafa; }
-  .dtbl tbody td { padding:4.5pt 8pt; border-bottom:1px solid #ebebeb; }
-  .dtbl tfoot .tot-row td { padding:6pt 8pt; background:#f0f0f0; border-top:2px solid #bbb; font-weight:600; }
-  .dtbl .anom td { background:#fff8e1; }
-  .dtbl .day-sub-total td { background:#f0f0f0; font-size:8.5pt; border-top:1px dashed #ccc; }
-  .anom-lbl { color:#c0392b; font-size:8pt; }
+  .dtbl { width:100%; border-collapse:collapse; font-size:8.5pt; }
+  .dtbl thead th { padding:0 6pt 6pt 0; text-align:left; font-size:6.5pt; font-weight:700;
+    letter-spacing:0.4pt; text-transform:uppercase; color:var(--muted); border-bottom:1.5pt solid var(--text); }
+  .dtbl tbody td { padding:7pt 6pt 7pt 0; vertical-align:top; box-shadow: inset 0 -0.75pt 0 var(--border); }
+  .dtbl tfoot .tot-row td { padding:7pt 6pt; background:var(--primary-tint); font-weight:700;
+    box-shadow: inset 0 1.5pt 0 var(--text); }
+  .dtbl tfoot .tot-row td:first-child { border-radius:3pt 0 0 3pt; }
+  .dtbl tfoot .tot-row td:last-child  { border-radius:0 3pt 3pt 0; }
+  .dtbl .anom td { background:var(--destructive-bg) !important; }
+  .dtbl .day-sub-total td { background:var(--primary-tint); font-size:7.8pt; font-style:italic; }
+  .anom-lbl { color:var(--destructive); font-size:7.5pt; font-weight:600; }
 
   /* ── Utils ── */
   .center { text-align:center; }
   .right  { text-align:right; }
   .bold   { font-weight:700; }
-  .small  { font-size:8.5pt; }
-  .mono   { font-family:monospace; font-size:8.5pt; letter-spacing:0.04em; }
+  .small  { font-size:7.8pt; }
+  .mono   { font-family:'JetBrains Mono','Courier New',monospace; font-size:7.5pt; }
 
-  /* ── Overtime highlight ── */
-  .ot-badge {
-    display:inline-block; background:#fef3c7; color:#92400e;
-    border:1px solid #f59e0b; border-radius:3pt;
-    font-size:7.5pt; font-weight:700; padding:0.5pt 4pt; margin-left:4pt;
+  /* ── Badge: straordinario (informativo) / pausa pranzo (informativo) ── */
+  .ot-badge, .lunch-badge {
+    display:inline-block; font-size:5.8pt; font-weight:600;
+    border-radius:2.5pt; padding:1.5pt 4pt; margin-left:3pt; white-space:nowrap;
   }
-  .ot-row td { background:#fffbeb !important; }
-
-  /* ── Pausa pranzo automatica (F-152) ── */
-  .lunch-badge {
-    display:inline-block; background:#eef2ff; color:#3730a3;
-    border:1px solid #c7d2fe; border-radius:3pt;
-    font-size:7pt; font-weight:600; padding:0.5pt 4pt; margin-left:4pt;
-  }
+  .ot-badge    { background:var(--primary-tint); color:var(--primary); }
+  .lunch-badge { background:var(--warning-bg);   color:var(--warning); }
+  .ot-row td   { background:var(--primary-tint) !important; }
 
   /* ── Signature block ── */
-  .sig-section { margin-top:24pt; break-inside:avoid; page-break-inside:avoid; }
-  .sig-grid { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:10pt; }
-  .sig-col  { font-size:8pt; color:#333; }
-  .sig-role { font-size:7pt; font-weight:700; text-transform:uppercase;
-    letter-spacing:0.7pt; color:#1a1a1a; margin-bottom:12mm; }
-  .sig-line { border-bottom:0.5pt solid #333; margin-bottom:4pt; }
-  .sig-lbl  { font-size:6.5pt; color:#888; }
+  .sig-section { margin-top:18pt; break-inside:avoid; page-break-inside:avoid; }
+  .sig-grid { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:8pt; }
+  .sig-col  { font-size:8pt; color:var(--text); }
+  .sig-role { font-size:6.5pt; font-weight:700; text-transform:uppercase;
+    letter-spacing:0.5pt; color:var(--muted); margin-bottom:12mm; }
+  .sig-line { border-bottom:0.75pt solid var(--border-strong); margin-bottom:4pt; }
+  .sig-lbl  { font-size:6.5pt; color:var(--muted-2); }
 
   /* ── Footer note ── */
   .footer-note {
-    margin-top:24pt; padding-top:8pt; border-top:1px solid #ddd;
-    font-size:8pt; color:#999; text-align:center;
+    margin-top:18pt; padding-top:8pt; border-top:0.75pt solid var(--border);
+    font-size:7.3pt; color:var(--muted-2); text-align:center;
   }
 </style>
 </head>
 <body>
 <div class="doc">
 
-  <!-- Header -->
-  <div class="rpt-header">
-    <div>
-      <div class="rpt-brand" style="display:flex;align-items:center;gap:6pt">PALLADIA</div>
-      <div class="rpt-title">Report Ore Lavorate — ${esc(site.name)}</div>
-    </div>
-    <div class="rpt-meta">
-      <div><strong>Periodo:</strong> ${esc(period.formatted)}</div>
-      <div><strong>Cantiere:</strong> ${esc(site.name)}</div>
-      ${company.name ? `<div><strong>Azienda:</strong> ${esc(company.name)}</div>` : ''}
-      <div>Generato il: ${genStr}</div>
-    </div>
-  </div>
+  <!-- Intestazione -->
+  <div class="doc-eyebrow">Report ore lavorate</div>
+  <div class="doc-title">Report Ore Lavorate</div>
+  <div class="doc-title-rule"></div>
 
-  <!-- Info box -->
-  <div class="info-box">
-    <div class="info-row"><span class="info-lbl">Cantiere</span><span class="info-val">${esc(site.name)}</span></div>
-    <div class="info-row"><span class="info-lbl">Periodo</span><span class="info-val">${esc(period.formatted)}</span></div>
-    ${site.address ? `<div class="info-row"><span class="info-lbl">Indirizzo</span><span class="info-val">${esc(site.address)}</span></div>` : ''}
-    <div class="info-row"><span class="info-lbl">Lavoratori</span><span class="info-val">${totals.workers_count}</span></div>
-    <div class="info-row"><span class="info-lbl">Ore totali</span><span class="info-val">${totals.grand_total_str}</span></div>
-    ${totals.grand_lunch_break_minutes > 0 ? `<div class="info-row"><span class="info-lbl">Pausa pranzo</span><span class="info-val">−${fmtDuration(totals.grand_lunch_break_minutes)} detratti automaticamente (vedi dettaglio)</span></div>` : ''}
-    ${company.name ? `<div class="info-row"><span class="info-lbl">Azienda</span><span class="info-val">${esc(company.name)}</span></div>` : ''}
+  <div class="meta-grid">
+    <div><div class="meta-k">Azienda</div><div class="meta-v">${esc(company.name || '—')}</div></div>
+    <div><div class="meta-k">Cantiere</div><div class="meta-v">${esc(site.name)}</div></div>
+    <div><div class="meta-k">Periodo</div><div class="meta-v">${esc(period.formatted)}</div></div>
+    <div><div class="meta-k">Generato il</div><div class="meta-v">${genStr}</div></div>
+    ${site.address ? `<div><div class="meta-k">Indirizzo</div><div class="meta-v">${esc(site.address)}</div></div>` : ''}
+    ${totals.grand_lunch_break_minutes > 0 ? `<div><div class="meta-k">Pausa pranzo</div><div class="meta-v">−${fmtDuration(totals.grand_lunch_break_minutes)} detratti automaticamente</div></div>` : ''}
   </div>
 
   <!-- Summary -->
-  <div class="section-hdr">Riepilogo per Lavoratore</div>
+  <div class="section-hdr">Riepilogo per lavoratore</div>
   <table class="stbl">
     <thead>
       <tr>
@@ -494,7 +492,7 @@ function generateWorkerHoursPdfHtml(data) {
   </table>
 
   <!-- Worker details -->
-  <div class="section-hdr">Dettaglio per Lavoratore</div>
+  <div class="section-hdr">Dettaglio per lavoratore</div>
   ${workerSections}
 
   <div class="footer-note">
@@ -503,7 +501,7 @@ function generateWorkerHoursPdfHtml(data) {
 
   <!-- Firme -->
   <div class="sig-section">
-    <div class="section-hdr" style="margin-top:20pt;">Attestazione e firme</div>
+    <div class="section-hdr">Attestazione e firme</div>
     <div class="sig-grid">
       <div class="sig-col">
         <div class="sig-role">Datore di Lavoro / Rappresentante Legale</div>
@@ -544,43 +542,53 @@ async function generateWorkerHoursXlsx(data) {
   wb.modified = new Date();
 
   // ── Style presets ─────────────────────────────────────────────────────────
-  const DARK   = '1a1a1a';
-  const WHITE  = 'FFFFFF';
-  const AMBER  = 'FEF3C7';  // overtime row bg
-  const RED_BG = 'FFF1F0';  // anomaly row bg
-  const GRAY   = 'F5F5F5';  // alternating row
-  const TOTAL_BG = 'EBEBEB';
+  // Redesign F-154 (AUDIT.md, 2026-09-08): stessa palette del PDF (mockup
+  // approvato) — ExcelJS non incorpora font, quindi Plus Jakarta Sans
+  // tornerebbe al font di sistema su un PC che non lo ha installato
+  // (praticamente ogni commercialista/ASL): Calibri, il default più diffuso.
+  const FONT           = 'Calibri';
+  const PRIMARY        = '22384F';  // blu Palladia — intestazioni, totali
+  const PRIMARY_TINT   = 'EEF2F6';  // straordinario (informativo), riga totale
+  const TEXT           = '1A1714';
+  const MUTED          = '7A736A';
+  const WHITE          = 'FFFFFF';
+  const WARNING        = 'A8672A';  // pausa pranzo (informativo)
+  const WARNING_BG     = 'FBF3E8';
+  const DESTRUCTIVE    = 'A8453B';  // vere anomalie
+  const DESTRUCTIVE_BG = 'FBF0EE';
+  const GRAY           = 'F7F5F1';  // alternating row
+  const TOTAL_BG       = PRIMARY_TINT;
 
   function headerCell(ws, row, col, value, width) {
     const cell = ws.getCell(row, col);
     cell.value = value;
-    cell.font  = { bold: true, color: { argb: WHITE }, name: 'Arial', size: 10 };
-    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
+    cell.font  = { bold: true, color: { argb: WHITE }, name: FONT, size: 10 };
+    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
     cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: false };
     cell.border = {
-      top: { style: 'thin', color: { argb: DARK } },
-      bottom: { style: 'thin', color: { argb: DARK } },
-      left: { style: 'thin', color: { argb: DARK } },
-      right: { style: 'thin', color: { argb: DARK } },
+      top: { style: 'thin', color: { argb: PRIMARY } },
+      bottom: { style: 'thin', color: { argb: PRIMARY } },
+      left: { style: 'thin', color: { argb: PRIMARY } },
+      right: { style: 'thin', color: { argb: PRIMARY } },
     };
     if (width) ws.getColumn(col).width = width;
   }
 
   function dataCell(cell, value, opts = {}) {
     cell.value = value;
-    cell.font  = { name: 'Arial', size: 9, bold: opts.bold || false, color: { argb: opts.color || '1a1a1a' } };
+    cell.font  = { name: FONT, size: 10, bold: opts.bold || false, color: { argb: opts.color || TEXT } };
     if (opts.bg) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: opts.bg } };
     cell.alignment = { vertical: 'middle', horizontal: opts.align || 'left', wrapText: false };
     if (opts.border) {
-      cell.border = { bottom: { style: 'thin', color: { argb: 'DDDDDD' } } };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'E7E2D8' } } };
     }
     if (opts.numFmt) cell.numFmt = opts.numFmt;
   }
 
   function metaRow(ws, label, value) {
     const r = ws.addRow([label, value]);
-    r.getCell(1).font = { name: 'Arial', size: 9, bold: true, color: { argb: '666666' } };
-    r.getCell(2).font = { name: 'Arial', size: 9, color: { argb: '1a1a1a' } };
+    r.getCell(1).font = { name: FONT, size: 10, bold: true, color: { argb: MUTED } };
+    r.getCell(2).font = { name: FONT, size: 10, color: { argb: TEXT } };
     r.height = 16;
   }
 
@@ -592,7 +600,7 @@ async function generateWorkerHoursXlsx(data) {
   ws1.mergeCells('A1:E1');
   const titleCell = ws1.getCell('A1');
   titleCell.value = 'PALLADIA — Report Ore Lavorate';
-  titleCell.font  = { name: 'Arial', size: 14, bold: true, color: { argb: DARK } };
+  titleCell.font  = { name: FONT, size: 16, bold: true, color: { argb: PRIMARY } };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
   ws1.getRow(1).height = 28;
 
@@ -627,9 +635,9 @@ async function generateWorkerHoursXlsx(data) {
     dataCell(r.getCell(4), w.total_hours_str, { bg, border: true, align: 'right', bold: true });
     dataCell(r.getCell(5), w.total_hours, { bg, border: true, align: 'right', numFmt: '0.00' });
     dataCell(r.getCell(6), w.overtime_str || '—', {
-      bg: w.overtime_minutes > 0 ? AMBER : bg,
+      bg: w.overtime_minutes > 0 ? PRIMARY_TINT : bg,
       border: true, align: 'center',
-      color: w.overtime_minutes > 0 ? '92400E' : '999999',
+      color: w.overtime_minutes > 0 ? PRIMARY : MUTED,
       bold: w.overtime_minutes > 0,
     });
     r.height = 18;
@@ -650,8 +658,8 @@ async function generateWorkerHoursXlsx(data) {
   totCells.forEach(([val, align], i) => {
     const cell = totRow.getCell(i + 1);
     cell.value = val;
-    cell.font  = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
-    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
+    cell.font  = { name: FONT, size: 10, bold: true, color: { argb: WHITE } };
+    cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
     cell.alignment = { vertical: 'middle', horizontal: align };
     if (i === 4 && typeof val === 'number') cell.numFmt = '0.00';
   });
@@ -677,7 +685,7 @@ async function generateWorkerHoursXlsx(data) {
     for (const d of w.days) {
       for (let ei = 0; ei < d.entries.length; ei++) {
         const e  = d.entries[ei];
-        const bg = e.anomaly ? RED_BG : (d.is_overtime ? AMBER : (altIdx % 2 === 1 ? GRAY : null));
+        const bg = e.anomaly ? DESTRUCTIVE_BG : (d.is_overtime ? PRIMARY_TINT : (altIdx % 2 === 1 ? GRAY : null));
         const r  = ws2.addRow([]);
         r.height = 17;
         dataCell(r.getCell(1), ei === 0 ? w.full_name : '', { bg, border: true });
@@ -688,14 +696,14 @@ async function generateWorkerHoursXlsx(data) {
         dataCell(r.getCell(6), e.entry_time || '—', { bg, border: true, align: 'center' });
         dataCell(r.getCell(7), e.exit_time  || '—', { bg, border: true, align: 'center' });
         dataCell(r.getCell(8), e.lunch_break_minutes > 0 ? `−${e.lunch_break_minutes}m` : '—', {
-          bg: e.lunch_break_minutes > 0 ? 'EEF2FF' : bg, border: true, align: 'center',
-          color: e.lunch_break_minutes > 0 ? '3730A3' : '999999',
+          bg: e.lunch_break_minutes > 0 ? WARNING_BG : bg, border: true, align: 'center',
+          color: e.lunch_break_minutes > 0 ? WARNING : MUTED,
         });
         dataCell(r.getCell(9), e.hours_str, { bg, border: true, align: 'right', bold: !e.anomaly });
         dataCell(r.getCell(10), toDecimalHours(e.minutes), { bg, border: true, align: 'right', numFmt: '0.00' });
         dataCell(r.getCell(11), e.anomaly || '', {
           bg, border: true,
-          color: e.anomaly ? 'C0392B' : '1a1a1a',
+          color: e.anomaly ? DESTRUCTIVE : TEXT,
           bold: !!e.anomaly,
         });
       }
@@ -705,7 +713,7 @@ async function generateWorkerHoursXlsx(data) {
         r.height = 16;
         for (let c = 1; c <= 11; c++) {
           r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } };
-          r.getCell(c).font = { name: 'Arial', size: 8.5, italic: true };
+          r.getCell(c).font = { name: FONT, size: 9, italic: true, color: { argb: TEXT } };
         }
         dataCell(r.getCell(4), d.date_formatted, { bg: TOTAL_BG, align: 'center' });
         dataCell(r.getCell(5), '→ tot.', { bg: TOTAL_BG, align: 'center' });
@@ -718,8 +726,8 @@ async function generateWorkerHoursXlsx(data) {
     const sr = ws2.addRow([]);
     sr.height = 20;
     for (let c = 1; c <= 11; c++) {
-      sr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
-      sr.getCell(c).font = { name: 'Arial', size: 9, bold: true, color: { argb: WHITE } };
+      sr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
+      sr.getCell(c).font = { name: FONT, size: 10, bold: true, color: { argb: WHITE } };
     }
     sr.getCell(1).value = `SUBTOTALE — ${w.full_name}`;
     sr.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
@@ -758,13 +766,13 @@ async function generateWorkerHoursXlsx(data) {
     anomalies.forEach(({ w, d, e }, idx) => {
       const r = ws3.addRow([]);
       r.height = 17;
-      const bg = idx % 2 === 1 ? 'FFF8F8' : RED_BG;
+      const bg = idx % 2 === 1 ? 'FDF7F6' : DESTRUCTIVE_BG;
       dataCell(r.getCell(1), w.full_name,    { bg, border: true });
       dataCell(r.getCell(2), w.fiscal_code,  { bg, border: true, align: 'center' });
       dataCell(r.getCell(3), d.date_formatted, { bg, border: true, align: 'center' });
       dataCell(r.getCell(4), e.entry_time || '—', { bg, border: true, align: 'center' });
       dataCell(r.getCell(5), e.exit_time  || '—', { bg, border: true, align: 'center' });
-      dataCell(r.getCell(6), e.anomaly,     { bg, border: true, bold: true, color: 'C0392B' });
+      dataCell(r.getCell(6), e.anomaly,     { bg, border: true, bold: true, color: DESTRUCTIVE });
     });
 
     ws3.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 6 } };
