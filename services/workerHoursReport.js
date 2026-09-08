@@ -15,7 +15,7 @@
  */
 
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, shiftDateStr } = require('../lib/presencePairing');
+const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak } = require('../lib/presencePairing');
 
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
@@ -76,19 +76,33 @@ function esc(s) {
 // ── Core data builder ─────────────────────────────────────────────────────────
 
 async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = null) {
-  // Site
-  const { data: site, error: siteErr } = await supabase
-    .from('sites')
-    .select('id, name, address, company_id')
-    .eq('id', siteId)
-    .eq('company_id', companyId)
-    .maybeSingle();
-  if (siteErr) { const e = new Error(siteErr.message); e.status = 500; throw e; }
-  if (!site)   { const e = new Error('Cantiere non trovato'); e.status = 404; throw e; }
+  const singleSite = !!siteId;
 
-  // Company
+  // Site(s) — un solo cantiere (richiesto) oppure tutti quelli dell'azienda
+  // (F-151, AUDIT.md: "tutti i cantieri" ora è un export valido, non solo un
+  // filtro bloccato). Servono anche per risolvere la config pausa pranzo per
+  // cantiere (override) — vedi resolveLunchBreakConfig.
+  const SITE_COLS = 'id, name, address, company_id, lunch_break_minutes, lunch_break_threshold_hours';
+  let sitesRows;
+  if (singleSite) {
+    const { data: site, error: siteErr } = await supabase
+      .from('sites').select(SITE_COLS).eq('id', siteId).eq('company_id', companyId).maybeSingle();
+    if (siteErr) { const e = new Error(siteErr.message); e.status = 500; throw e; }
+    if (!site)   { const e = new Error('Cantiere non trovato'); e.status = 404; throw e; }
+    sitesRows = [site];
+  } else {
+    const { data: sites, error: sitesErr } = await supabase
+      .from('sites').select(SITE_COLS).eq('company_id', companyId).limit(1000);
+    if (sitesErr) { const e = new Error(sitesErr.message); e.status = 500; throw e; }
+    sitesRows = sites || [];
+  }
+  const siteById = new Map(sitesRows.map(s => [s.id, s]));
+
+  // Company (nome + default pausa pranzo, ereditato dai cantieri senza override)
   const { data: company } = await supabase
-    .from('companies').select('name').eq('id', companyId).maybeSingle();
+    .from('companies')
+    .select('name, lunch_break_minutes, lunch_break_threshold_hours')
+    .eq('id', companyId).maybeSingle();
 
   // Presence logs
   // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
@@ -101,10 +115,9 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   let q = supabase
     .from('presence_logs')
     .select(`
-      id, worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, method,
+      id, worker_id, site_id, event_type, timestamp_server, distance_m, gps_accuracy_m, method,
       worker:workers (id, full_name, first_name, last_name, fiscal_code)
     `)
-    .eq('site_id', siteId)
     .eq('company_id', companyId)
     .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
     .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
@@ -112,31 +125,47 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     .order('timestamp_server', { ascending: true })
     .limit(200000);
 
-  if (workerId) q = q.eq('worker_id', workerId);
+  if (singleSite) q = q.eq('site_id', siteId);
+  if (workerId)   q = q.eq('worker_id', workerId);
 
   const { data: logs, error: logsErr } = await q;
   if (logsErr) { const e = new Error(logsErr.message); e.status = 500; throw e; }
 
-  // Group by worker (stream cronologico completo, non ancora per giorno)
-  const workerLogsMap = new Map();
+  // Group by (worker, cantiere) — stream cronologico completo, non ancora per
+  // giorno. Necessario in modalità "tutti i cantieri": il pairing va fatto
+  // separatamente per cantiere (un cambio cantiere chiude sempre l'ENTRY
+  // precedente con un EXIT auto, method auto_exit_on_site_change), e la
+  // config pausa pranzo può differire da un cantiere all'altro.
+  const groupMap = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const wId = log.worker_id;
-    if (!workerLogsMap.has(wId)) workerLogsMap.set(wId, { info: log.worker, logs: [] });
-    workerLogsMap.get(wId).logs.push(log);
+    const key = `${log.worker_id}__${log.site_id}`;
+    if (!groupMap.has(key)) groupMap.set(key, { workerId: log.worker_id, siteId: log.site_id, info: log.worker, logs: [] });
+    groupMap.get(key).logs.push(log);
   }
 
-  const workers = [];
+  const perWorker = new Map(); // worker_id → { info, days: [] }
 
-  for (const [wId, { info, logs: workerLogs }] of workerLogsMap) {
-    const dayMap = pairLogsByDay(workerLogs);   // ← accoppia PRIMA, sull'intero stream
-    const days = [];
-    let totalMinutes = 0;
+  for (const { workerId: wId, siteId: gSiteId, info, logs: groupLogs } of groupMap.values()) {
+    const site = siteById.get(gSiteId);
+    const siteName = site?.name || '—';
+    const lunchConfig = resolveLunchBreakConfig(company, site);
+
+    const dayMap = pairLogsByDay(groupLogs);   // ← accoppia PRIMA, sull'intero stream
+
+    if (!perWorker.has(wId)) perWorker.set(wId, { info, days: [] });
+    const workerAgg = perWorker.get(wId);
 
     for (const dk of [...dayMap.keys()].sort()) {
       if (dk < from || dk > to) continue;   // fuori dal periodo richiesto
       const { pairs, orphanEntries, orphanExits } = dayMap.get(dk);
       if (pairs.length === 0 && orphanEntries.length === 0 && orphanExits.length === 0) continue;
+
+      // Detrazione pausa pranzo (F-152, AUDIT.md) — solo se il giorno è
+      // un'unica coppia continua sopra soglia; se ci sono 2+ coppie il
+      // lavoratore ha già timbrato una pausa reale, già esclusa dalla somma.
+      const lunchResults  = applyLunchBreak(pairs, lunchConfig);
+      const minutesByEntryId = new Map(lunchResults.map(r => [r.entry.id, r]));
 
       // Ricompone l'ordine cronologico del giorno tra coppie e orfani
       const dayEvents = [
@@ -147,54 +176,66 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
 
       const entries = [];
       let dayMin = 0;
+      let dayLunchBreakMinutes = 0;
 
       for (const ev of dayEvents) {
         if (ev.pair) {
           const { entry, exit } = ev.pair;
-          const mins = Math.max(0, Math.round(
-            (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000
-          ));
+          const lr   = minutesByEntryId.get(entry.id);
+          const mins = lr.minutes;
           entries.push({
-            entry_time: fmtTimeRome(entry.timestamp_server),
-            exit_time:  fmtTimeRome(exit.timestamp_server),
-            minutes:    mins,
-            hours_str:  fmtDuration(mins),
-            anomaly:    METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+            entry_time:          fmtTimeRome(entry.timestamp_server),
+            exit_time:           fmtTimeRome(exit.timestamp_server),
+            minutes:             mins,
+            hours_str:           fmtDuration(mins),
+            anomaly:             METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+            lunch_break_minutes: lr.lunchBreakMinutes || 0,
+            site_name:           siteName,
           });
           dayMin += mins;
+          dayLunchBreakMinutes += lr.lunchBreakMinutes || 0;
         } else if (ev.orphanEntry) {
-          entries.push({ entry_time: fmtTimeRome(ev.orphanEntry.timestamp_server), exit_time: null, minutes: 0, hours_str: '—', anomaly: 'Uscita non registrata' });
+          entries.push({ entry_time: fmtTimeRome(ev.orphanEntry.timestamp_server), exit_time: null, minutes: 0, hours_str: '—', anomaly: 'Uscita non registrata', lunch_break_minutes: 0, site_name: siteName });
         } else {
-          entries.push({ entry_time: null, exit_time: fmtTimeRome(ev.orphanExit.timestamp_server), minutes: 0, hours_str: '—', anomaly: 'Entrata non registrata' });
+          entries.push({ entry_time: null, exit_time: fmtTimeRome(ev.orphanExit.timestamp_server), minutes: 0, hours_str: '—', anomaly: 'Entrata non registrata', lunch_break_minutes: 0, site_name: siteName });
         }
       }
 
-      totalMinutes += dayMin;
-      days.push({
-        date_key:          dk,
-        date_formatted:    fmtDateRome(dk),
-        weekday:           italianWeekday(dk),
+      workerAgg.days.push({
+        date_key:               dk,
+        date_formatted:         fmtDateRome(dk),
+        weekday:                italianWeekday(dk),
+        site_name:              siteName,
         entries,
-        day_total_minutes: dayMin,
-        day_total_str:     fmtDuration(dayMin),
-        has_anomaly:       entries.some(e => e.anomaly),
-        is_overtime:       dayMin > 480, // > 8h
-        overtime_minutes:  Math.max(0, dayMin - 480),
+        day_total_minutes:      dayMin,
+        day_total_str:          fmtDuration(dayMin),
+        has_anomaly:            entries.some(e => e.anomaly),
+        is_overtime:            dayMin > 480, // > 8h
+        overtime_minutes:       Math.max(0, dayMin - 480),
+        lunch_break_minutes:    dayLunchBreakMinutes,
+        has_lunch_break_deduction: dayLunchBreakMinutes > 0,
       });
     }
+  }
 
+  const workers = [];
+  for (const [wId, { info, days }] of perWorker) {
+    days.sort((a, b) => a.date_key.localeCompare(b.date_key));
+    const totalMinutes    = days.reduce((s, d) => s + d.day_total_minutes, 0);
     const overtimeMinutes = days.reduce((s, d) => s + d.overtime_minutes, 0);
+    const lunchBreakTotal = days.reduce((s, d) => s + d.lunch_break_minutes, 0);
     workers.push({
-      id:               wId,
-      full_name:        getWorkerName(info),
-      fiscal_code:      info.fiscal_code || '',
-      total_days:       days.length,
-      total_minutes:    totalMinutes,
-      total_hours:      toDecimalHours(totalMinutes),
-      total_hours_str:  fmtDuration(totalMinutes),
-      overtime_minutes: overtimeMinutes,
-      overtime_str:     overtimeMinutes > 0 ? fmtDuration(overtimeMinutes) : null,
-      overtime_days:    days.filter(d => d.is_overtime).length,
+      id:                    wId,
+      full_name:             getWorkerName(info),
+      fiscal_code:           info.fiscal_code || '',
+      total_days:            days.length,
+      total_minutes:         totalMinutes,
+      total_hours:           toDecimalHours(totalMinutes),
+      total_hours_str:       fmtDuration(totalMinutes),
+      overtime_minutes:      overtimeMinutes,
+      overtime_str:          overtimeMinutes > 0 ? fmtDuration(overtimeMinutes) : null,
+      overtime_days:         days.filter(d => d.is_overtime).length,
+      lunch_break_minutes:   lunchBreakTotal,
       days,
     });
   }
@@ -205,7 +246,10 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   const [ty, tm, td] = to.split('-');
 
   return {
-    site:      { id: site.id, name: site.name, address: site.address || '' },
+    site: singleSite
+      ? { id: sitesRows[0].id, name: sitesRows[0].name, address: sitesRows[0].address || '' }
+      : { id: null, name: 'Tutti i cantieri', address: '' },
+    single_site: singleSite,
     company:   { name: company?.name || '' },
     period:    { from, to, formatted: `${fd}/${fm}/${fy} — ${td}/${tm}/${ty}` },
     workers,
@@ -215,6 +259,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       grand_total_str:       fmtDuration(workers.reduce((s, w) => s + w.total_minutes, 0)),
       grand_overtime_minutes: workers.reduce((s, w) => s + w.overtime_minutes, 0),
       grand_overtime_str:    (() => { const m = workers.reduce((s, w) => s + w.overtime_minutes, 0); return m > 0 ? fmtDuration(m) : null; })(),
+      grand_lunch_break_minutes: workers.reduce((s, w) => s + w.lunch_break_minutes, 0),
     },
     generated_at: new Date().toISOString(),
   };
@@ -223,7 +268,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
 // ── HTML → PDF (Puppeteer) ────────────────────────────────────────────────────
 
 function generateWorkerHoursPdfHtml(data) {
-  const { site, company, period, workers, totals, generated_at } = data;
+  const { site, company, period, workers, totals, generated_at, single_site: singleSite } = data;
 
   const genStr = new Date(generated_at).toLocaleString('it-IT', {
     day: '2-digit', month: '2-digit', year: 'numeric',
@@ -248,11 +293,14 @@ function generateWorkerHoursPdfHtml(data) {
         const cls = e.anomaly ? 'anom' : (d.is_overtime && !e.anomaly ? 'ot-row' : '');
         const otBadge = d.is_overtime && idx === 0 && !e.anomaly
           ? `<span class="ot-badge">+${fmtDuration(d.overtime_minutes)} straord.</span>` : '';
+        const siteTag = singleSite ? '' : ` <span class="small" style="color:#888;">— ${esc(d.site_name)}</span>`;
+        const lunchTag = e.lunch_break_minutes > 0
+          ? `<span class="lunch-badge">−${e.lunch_break_minutes}m pausa pranzo</span>` : '';
         dayRows += `<tr class="${cls}">
-          <td>${idx === 0 ? `<strong>${d.weekday}</strong> ${d.date_formatted}${otBadge}` : ''}</td>
+          <td>${idx === 0 ? `<strong>${d.weekday}</strong> ${d.date_formatted}${siteTag}${otBadge}` : ''}</td>
           <td class="center">${e.entry_time || '—'}</td>
           <td class="center">${e.exit_time  || '—'}</td>
-          <td class="right">${e.anomaly ? `<span class="anom-lbl">⚠ ${esc(e.anomaly)}</span>` : e.hours_str}</td>
+          <td class="right">${e.anomaly ? `<span class="anom-lbl">⚠ ${esc(e.anomaly)}</span>` : `${e.hours_str}${lunchTag}`}</td>
         </tr>`;
       }
       if (d.entries.length > 1) {
@@ -371,6 +419,13 @@ function generateWorkerHoursPdfHtml(data) {
   }
   .ot-row td { background:#fffbeb !important; }
 
+  /* ── Pausa pranzo automatica (F-152) ── */
+  .lunch-badge {
+    display:inline-block; background:#eef2ff; color:#3730a3;
+    border:1px solid #c7d2fe; border-radius:3pt;
+    font-size:7pt; font-weight:600; padding:0.5pt 4pt; margin-left:4pt;
+  }
+
   /* ── Signature block ── */
   .sig-section { margin-top:24pt; break-inside:avoid; page-break-inside:avoid; }
   .sig-grid { display:grid; grid-template-columns:1fr 1fr; gap:12mm; margin-top:10pt; }
@@ -411,6 +466,7 @@ function generateWorkerHoursPdfHtml(data) {
     ${site.address ? `<div class="info-row"><span class="info-lbl">Indirizzo</span><span class="info-val">${esc(site.address)}</span></div>` : ''}
     <div class="info-row"><span class="info-lbl">Lavoratori</span><span class="info-val">${totals.workers_count}</span></div>
     <div class="info-row"><span class="info-lbl">Ore totali</span><span class="info-val">${totals.grand_total_str}</span></div>
+    ${totals.grand_lunch_break_minutes > 0 ? `<div class="info-row"><span class="info-lbl">Pausa pranzo</span><span class="info-val">−${fmtDuration(totals.grand_lunch_break_minutes)} detratti automaticamente (vedi dettaglio)</span></div>` : ''}
     ${company.name ? `<div class="info-row"><span class="info-lbl">Azienda</span><span class="info-val">${esc(company.name)}</span></div>` : ''}
   </div>
 
@@ -545,6 +601,9 @@ async function generateWorkerHoursXlsx(data) {
   if (site.address) metaRow(ws1, 'Indirizzo', site.address);
   metaRow(ws1, 'Periodo', period.formatted);
   if (company.name) metaRow(ws1, 'Azienda', company.name);
+  if (totals.grand_lunch_break_minutes > 0) {
+    metaRow(ws1, 'Pausa pranzo', `−${fmtDuration(totals.grand_lunch_break_minutes)} detratti automaticamente (vedi colonna "Pausa pranzo" nel foglio Dettaglio)`);
+  }
   metaRow(ws1, 'Generato il', genStr);
   ws1.addRow([]);
 
@@ -604,14 +663,14 @@ async function generateWorkerHoursXlsx(data) {
   ws2.properties.defaultRowHeight = 17;
 
   const det2Cols = [
-    ['Lavoratore', 28], ['Codice Fiscale', 18], ['Data', 12],
-    ['Giorno', 8], ['Entrata', 10], ['Uscita', 10],
+    ['Lavoratore', 28], ['Codice Fiscale', 18], ['Cantiere', 22], ['Data', 12],
+    ['Giorno', 8], ['Entrata', 10], ['Uscita', 10], ['Pausa pranzo', 14],
     ['Ore (h)', 12], ['Ore (dec.)', 12], ['Note / Anomalie', 32],
   ];
   det2Cols.forEach(([label, w], i) => headerCell(ws2, 1, i + 1, label, w));
   ws2.getRow(1).height = 22;
   ws2.views = [{ state: 'frozen', ySplit: 1 }];
-  ws2.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 9 } };
+  ws2.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: 11 } };
 
   let altIdx = 0;
   for (const w of workers) {
@@ -623,13 +682,18 @@ async function generateWorkerHoursXlsx(data) {
         r.height = 17;
         dataCell(r.getCell(1), ei === 0 ? w.full_name : '', { bg, border: true });
         dataCell(r.getCell(2), ei === 0 ? w.fiscal_code : '', { bg, border: true, align: 'center' });
-        dataCell(r.getCell(3), d.date_formatted, { bg, border: true, align: 'center' });
-        dataCell(r.getCell(4), d.weekday, { bg, border: true, align: 'center' });
-        dataCell(r.getCell(5), e.entry_time || '—', { bg, border: true, align: 'center' });
-        dataCell(r.getCell(6), e.exit_time  || '—', { bg, border: true, align: 'center' });
-        dataCell(r.getCell(7), e.hours_str, { bg, border: true, align: 'right', bold: !e.anomaly });
-        dataCell(r.getCell(8), toDecimalHours(e.minutes), { bg, border: true, align: 'right', numFmt: '0.00' });
-        dataCell(r.getCell(9), e.anomaly || '', {
+        dataCell(r.getCell(3), e.site_name || '—', { bg, border: true, align: 'center' });
+        dataCell(r.getCell(4), d.date_formatted, { bg, border: true, align: 'center' });
+        dataCell(r.getCell(5), d.weekday, { bg, border: true, align: 'center' });
+        dataCell(r.getCell(6), e.entry_time || '—', { bg, border: true, align: 'center' });
+        dataCell(r.getCell(7), e.exit_time  || '—', { bg, border: true, align: 'center' });
+        dataCell(r.getCell(8), e.lunch_break_minutes > 0 ? `−${e.lunch_break_minutes}m` : '—', {
+          bg: e.lunch_break_minutes > 0 ? 'EEF2FF' : bg, border: true, align: 'center',
+          color: e.lunch_break_minutes > 0 ? '3730A3' : '999999',
+        });
+        dataCell(r.getCell(9), e.hours_str, { bg, border: true, align: 'right', bold: !e.anomaly });
+        dataCell(r.getCell(10), toDecimalHours(e.minutes), { bg, border: true, align: 'right', numFmt: '0.00' });
+        dataCell(r.getCell(11), e.anomaly || '', {
           bg, border: true,
           color: e.anomaly ? 'C0392B' : '1a1a1a',
           bold: !!e.anomaly,
@@ -639,33 +703,33 @@ async function generateWorkerHoursXlsx(data) {
       if (d.entries.length > 1) {
         const r = ws2.addRow([]);
         r.height = 16;
-        for (let c = 1; c <= 9; c++) {
+        for (let c = 1; c <= 11; c++) {
           r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } };
           r.getCell(c).font = { name: 'Arial', size: 8.5, italic: true };
         }
-        dataCell(r.getCell(3), d.date_formatted, { bg: TOTAL_BG, align: 'center' });
-        dataCell(r.getCell(4), '→ tot.', { bg: TOTAL_BG, align: 'center' });
-        dataCell(r.getCell(7), d.day_total_str, { bg: TOTAL_BG, align: 'right', bold: true });
-        dataCell(r.getCell(8), toDecimalHours(d.day_total_minutes), { bg: TOTAL_BG, align: 'right', numFmt: '0.00' });
+        dataCell(r.getCell(4), d.date_formatted, { bg: TOTAL_BG, align: 'center' });
+        dataCell(r.getCell(5), '→ tot.', { bg: TOTAL_BG, align: 'center' });
+        dataCell(r.getCell(9), d.day_total_str, { bg: TOTAL_BG, align: 'right', bold: true });
+        dataCell(r.getCell(10), toDecimalHours(d.day_total_minutes), { bg: TOTAL_BG, align: 'right', numFmt: '0.00' });
       }
       altIdx++;
     }
     // Worker subtotal
     const sr = ws2.addRow([]);
     sr.height = 20;
-    for (let c = 1; c <= 9; c++) {
+    for (let c = 1; c <= 11; c++) {
       sr.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: DARK } };
       sr.getCell(c).font = { name: 'Arial', size: 9, bold: true, color: { argb: WHITE } };
     }
     sr.getCell(1).value = `SUBTOTALE — ${w.full_name}`;
     sr.getCell(1).alignment = { horizontal: 'left', vertical: 'middle' };
-    sr.getCell(7).value = w.total_hours_str;
-    sr.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
-    sr.getCell(8).value = w.total_hours;
-    sr.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' };
-    sr.getCell(8).numFmt = '0.00';
-    sr.getCell(9).value = `${w.total_days} giorni`;
-    sr.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+    sr.getCell(9).value = w.total_hours_str;
+    sr.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
+    sr.getCell(10).value = w.total_hours;
+    sr.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+    sr.getCell(10).numFmt = '0.00';
+    sr.getCell(11).value = `${w.total_days} giorni`;
+    sr.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
     ws2.addRow([]);
     altIdx = 0;
   }

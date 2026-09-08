@@ -39,6 +39,9 @@ function formatSite(s) {
     weatherWindKmh:            s.weather_wind_kmh     ?? 50,
     weatherSnow:               s.weather_snow         ?? true,
     weatherThunderstorm:       s.weather_thunderstorm ?? true,
+    // null = nessun override, eredita il default azienda (F-152, AUDIT.md)
+    lunchBreakMinutes:         s.lunch_break_minutes         ?? null,
+    lunchBreakThresholdHours:  s.lunch_break_threshold_hours ?? null,
   };
 }
 
@@ -50,7 +53,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, cache(20), async (req, res) => {
-  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm';
+  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours';
 
   const { data, error } = await supabase
     .from('sites')
@@ -142,6 +145,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     referente_tecnico_id,
     suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
     weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm,
+    lunch_break_minutes, lunch_break_threshold_hours,
   } = req.body || {};
 
   // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
@@ -230,6 +234,29 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
   }
   if (weather_snow         !== undefined) updates.weather_snow         = Boolean(weather_snow);
   if (weather_thunderstorm !== undefined) updates.weather_thunderstorm = Boolean(weather_thunderstorm);
+
+  // Pausa pranzo (F-152, AUDIT.md, migrations/195) — a differenza delle
+  // soglie meteo sopra, qui null/'' è un vero SQL NULL (colonna nullable per
+  // design): significa "nessun override, eredita il default azienda", non
+  // "torna a un valore fisso".
+  if (lunch_break_minutes !== undefined) {
+    if (lunch_break_minutes === null || lunch_break_minutes === '') {
+      updates.lunch_break_minutes = null;
+    } else {
+      const min = Number(lunch_break_minutes);
+      if (isNaN(min) || min < 0 || min > 240) return res.status(400).json({ error: 'INVALID_LUNCH_BREAK', message: 'lunch_break_minutes: 0-240 minuti' });
+      updates.lunch_break_minutes = min;
+    }
+  }
+  if (lunch_break_threshold_hours !== undefined) {
+    if (lunch_break_threshold_hours === null || lunch_break_threshold_hours === '') {
+      updates.lunch_break_threshold_hours = null;
+    } else {
+      const h = Number(lunch_break_threshold_hours);
+      if (isNaN(h) || h < 0.5 || h > 24) return res.status(400).json({ error: 'INVALID_LUNCH_BREAK', message: 'lunch_break_threshold_hours: 0.5-24 ore' });
+      updates.lunch_break_threshold_hours = h;
+    }
+  }
 
   if (start_date !== undefined) updates.start_date = start_date || null;
 

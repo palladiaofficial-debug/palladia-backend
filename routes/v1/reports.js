@@ -5,7 +5,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../../services/presenceReport');
 const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
-const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
+const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak } = require('../../lib/presencePairing');
 const { logDocumentExport } = require('../../services/valueMetrics');
 const { sendDbError } = require('../../lib/httpErrors');
 
@@ -125,8 +125,9 @@ router.get('/reports/presence', verifySupabaseJwt, async (req, res) => {
 // Formato: una riga per lavoratore per giorno con prima entrata / ultima uscita / ore totali.
 router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   const { siteId, from, to } = req.query;
-  if (!siteId || !from || !to) {
-    return res.status(400).json({ error: 'siteId, from e to obbligatori (YYYY-MM-DD)' });
+  const singleSite = !!siteId;
+  if (!from || !to) {
+    return res.status(400).json({ error: 'from e to obbligatori (YYYY-MM-DD)' });
   }
   if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
     return res.status(400).json({ error: 'from e to devono essere YYYY-MM-DD' });
@@ -134,6 +135,25 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   if (from > to) {
     return res.status(400).json({ error: 'from deve essere <= to' });
   }
+
+  // Cantieri (per nome + config pausa pranzo, override per cantiere) e azienda
+  // (default pausa pranzo, ereditato dai cantieri senza override) — F-152.
+  let sitesQuery = supabase
+    .from('sites')
+    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours')
+    .eq('company_id', req.companyId);
+  if (singleSite) sitesQuery = sitesQuery.eq('id', siteId);
+  const { data: sitesRows, error: sitesErr } = await sitesQuery.limit(1000);
+  if (sitesErr) return res.status(500).json({ error: sitesErr.message });
+  if (singleSite && (!sitesRows || sitesRows.length === 0)) {
+    return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+  }
+  const siteById = new Map((sitesRows || []).map(s => [s.id, s]));
+
+  const { data: company } = await supabase
+    .from('companies')
+    .select('lunch_break_minutes, lunch_break_threshold_hours')
+    .eq('id', req.companyId).maybeSingle();
 
   // Nessun limite di giorni: l'export annuale è il caso d'uso principale.
   // Limit righe raw: 50k. Finestra allargata di 1 giorno intero su ciascun
@@ -143,65 +163,75 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   // (lib/presencePairing.js), poi si scartano i giorni fuori [from,to].
   const fetchFrom = shiftDateStr(from, -1);
   const fetchTo   = shiftDateStr(to, 1);
-  const { data: logs, error: logsErr } = await supabase
+  let logsQuery = supabase
     .from('presence_logs')
     .select(`
       worker_id, event_type, timestamp_server, distance_m, gps_accuracy_m, site_id, method,
       worker:workers (id, full_name, fiscal_code)
     `)
-    .eq('site_id', siteId)
     .eq('company_id', req.companyId)
     .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
     .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
     .order('worker_id',         { ascending: true })
     .order('timestamp_server',  { ascending: true })
     .limit(50000);
+  if (singleSite) logsQuery = logsQuery.eq('site_id', siteId);
+  const { data: logs, error: logsErr } = await logsQuery;
 
   if (logsErr) return res.status(500).json({ error: logsErr.message });
 
   const limitReached = (logs || []).length === 50000;
 
-  // Raggruppa per worker (stream cronologico completo, cross-giorno)
-  const byWorker = new Map();
+  // Raggruppa per (worker, cantiere) — stream cronologico completo, cross-
+  // giorno. Necessario in modalità "tutti i cantieri" per accoppiare
+  // correttamente (un cambio cantiere chiude sempre l'ENTRY precedente con
+  // un EXIT auto) e per risolvere la config pausa pranzo per cantiere.
+  const byWorkerSite = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    if (!byWorker.has(log.worker_id)) byWorker.set(log.worker_id, { worker: log.worker, logs: [] });
-    byWorker.get(log.worker_id).logs.push(log);
+    const key = `${log.worker_id}__${log.site_id}`;
+    if (!byWorkerSite.has(key)) byWorkerSite.set(key, { worker: log.worker, siteId: log.site_id, logs: [] });
+    byWorkerSite.get(key).logs.push(log);
   }
 
-  const csvRows = [
-    'data,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie'
-  ];
+  const csvHeader = singleSite
+    ? 'data,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,pausa_pranzo_min,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie'
+    : 'data,cantiere,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,pausa_pranzo_min,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie';
+  const csvRows = [csvHeader];
   let grandHours = 0, grandIntervals = 0, grandAnomalies = 0;
 
   const fmtTime = ts => new Date(ts).toLocaleTimeString('it-IT', {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
   });
 
-  // Accoppia PRIMA sull'intero stream di ogni worker, poi filtra i giorni
-  // fuori [from,to] e appiattisce in righe {worker, dateKey, ...bucket}
+  // Accoppia PRIMA sull'intero stream di ogni (worker, cantiere), poi filtra
+  // i giorni fuori [from,to] e appiattisce in righe {worker, siteId, dateKey, ...bucket}
   const rows = [];
-  for (const { worker, logs: workerLogs } of byWorker.values()) {
-    const dayMap = pairLogsByDay(workerLogs);
+  for (const { worker, siteId: gSiteId, logs: groupLogs } of byWorkerSite.values()) {
+    const dayMap = pairLogsByDay(groupLogs);
     for (const [dateKey, dayBucket] of dayMap) {
       if (dateKey < from || dateKey > to) continue;
       if (dayBucket.pairs.length === 0 && dayBucket.orphanEntries.length === 0 && dayBucket.orphanExits.length === 0) continue;
-      rows.push({ worker, dateKey, ...dayBucket });
+      rows.push({ worker, siteId: gSiteId, dateKey, ...dayBucket });
     }
   }
 
   rows.sort((a, b) => a.dateKey.localeCompare(b.dateKey) || a.worker.full_name.localeCompare(b.worker.full_name));
 
-  for (const { worker, dateKey, pairs, orphanEntries, orphanExits } of rows) {
+  for (const { worker, siteId: gSiteId, dateKey, pairs, orphanEntries, orphanExits } of rows) {
     const dayLogs = [...pairs.flatMap(p => [p.entry, p.exit]), ...orphanEntries, ...orphanExits];
+    const site = siteById.get(gSiteId);
+    const lunchConfig  = resolveLunchBreakConfig(company, site);
+    const lunchResults = applyLunchBreak(pairs, lunchConfig);
 
     const anomalies = [];
-    let hoursTotal = 0;
+    let hoursTotal = 0, lunchBreakMin = 0;
     const intervals = pairs.length;
-    for (const { entry, exit } of pairs) {
-      hoursTotal += Math.max(0, (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 3_600_000);
-      const note = METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method];
-      if (note) anomalies.push({ ts: exit.timestamp_server, label: note });
+    for (const lr of lunchResults) {
+      hoursTotal += lr.minutes / 60;
+      lunchBreakMin += lr.lunchBreakMinutes || 0;
+      const note = METHOD_NOTE[lr.exit.method] || METHOD_NOTE[lr.entry.method];
+      if (note) anomalies.push({ ts: lr.exit.timestamp_server, label: note });
     }
     for (const l of orphanEntries) anomalies.push({ ts: l.timestamp_server, label: 'Uscita mancante' });
     for (const l of orphanExits)   anomalies.push({ ts: l.timestamp_server, label: 'Uscita senza entrata' });
@@ -221,28 +251,34 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     grandHours += hoursTotal; grandIntervals += intervals;
     if (anomalyLabels.length) grandAnomalies++;
 
-    csvRows.push([
+    const rowCells = [
       dateKey,
+      ...(singleSite ? [] : [`"${(site?.name || '—').replace(/"/g, '""')}"`]),
       `"${worker.full_name.replace(/"/g, '""')}"`,
       worker.fiscal_code,
       firstEntry,
       lastExit,
+      lunchBreakMin > 0 ? lunchBreakMin : '',
       hoursTotal > 0 ? hoursTotal.toFixed(2) : '',
       intervals,
       avgDist,
       avgAcc,
       `"${anomalyLabels.join('; ').replace(/"/g, '""')}"`
-    ].join(','));
+    ];
+    csvRows.push(rowCells.join(','));
   }
 
-  csvRows.push(['', '"TOTALE"', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : ''].join(','));
+  const totalRow = singleSite
+    ? ['', '"TOTALE"', '', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : '']
+    : ['', '', '"TOTALE"', '', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : ''];
+  csvRows.push(totalRow.join(','));
 
   // Header con metadati se il limite è stato raggiunto
   if (limitReached) {
     csvRows.unshift(`# ATTENZIONE: dati troncati a 50.000 righe raw — export parziale`);
   }
 
-  const filename = `presenze-range-${from}-${to}-${siteId}.csv`;
+  const filename = `presenze-range-${from}-${to}-${singleSite ? siteId : 'tutti-i-cantieri'}.csv`;
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   if (limitReached) res.setHeader('X-Palladia-Truncated', 'true');
@@ -546,13 +582,14 @@ router.get('/reports/presenze-referente', verifySupabaseJwt, async (req, res) =>
 });
 
 // ── Worker Hours Report endpoints ─────────────────────────────────────────────
-// Parametri comuni: siteId (uuid), from (YYYY-MM-DD), to (YYYY-MM-DD), workerId? (uuid)
+// Parametri comuni: siteId? (uuid, F-151 AUDIT.md: omesso = tutti i cantieri
+// dell'azienda), from (YYYY-MM-DD), to (YYYY-MM-DD), workerId? (uuid)
 // Max range: 366 giorni (export annuale)
 
 function validateHoursParams(req, res) {
   const { siteId, from, to } = req.query;
-  if (!siteId || !from || !to) {
-    res.status(400).json({ error: 'siteId, from e to obbligatori (YYYY-MM-DD)' });
+  if (!from || !to) {
+    res.status(400).json({ error: 'from e to obbligatori (YYYY-MM-DD)' });
     return null;
   }
   if (!DATE_RE.test(from) || !DATE_RE.test(to)) {
@@ -568,7 +605,7 @@ function validateHoursParams(req, res) {
     res.status(400).json({ error: 'Intervallo massimo 366 giorni' });
     return null;
   }
-  return { siteId, from, to, workerId: req.query.workerId || null };
+  return { siteId: siteId || null, from, to, workerId: req.query.workerId || null };
 }
 
 // GET /api/v1/reports/worker-hours → JSON dati strutturati
@@ -613,7 +650,7 @@ router.get('/reports/worker-hours-pdf', verifySupabaseJwt, async (req, res) => {
     return res.status(500).json({ error: 'PDF_RENDER_ERROR' });
   }
 
-  const filename = `ore-lavorate-${params.siteId}-${params.from}-${params.to}.pdf`;
+  const filename = `ore-lavorate-${params.siteId || 'tutti-i-cantieri'}-${params.from}-${params.to}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Length', pdfBuffer.length);
@@ -642,7 +679,7 @@ router.get('/reports/worker-hours-xlsx', verifySupabaseJwt, async (req, res) => 
     return res.status(500).json({ error: 'XLSX_ERROR' });
   }
 
-  const filename = `ore-lavorate-${params.siteId}-${params.from}-${params.to}.xlsx`;
+  const filename = `ore-lavorate-${params.siteId || 'tutti-i-cantieri'}-${params.from}-${params.to}.xlsx`;
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Length', xlsxBuffer.length);

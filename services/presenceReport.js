@@ -15,7 +15,7 @@
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, flattenDayLogs, shiftDateStr } = require('../lib/presencePairing');
+const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak } = require('../lib/presencePairing');
 
 // Soglia GPS (stessa del backend punch)
 const GPS_MAX_ACCURACY_M = (() => {
@@ -50,11 +50,6 @@ function formatTimeRome(ts) {
 function fmtDisplayDate(yyyymmdd) {
   const [y, m, d] = yyyymmdd.split('-');
   return `${d}/${m}/${y}`;
-}
-
-// Differenza in ore tra due ISO timestamp (non negativa)
-function hoursBetween(entry, exit) {
-  return Math.max(0, (new Date(exit) - new Date(entry)) / 3_600_000);
 }
 
 /**
@@ -114,17 +109,19 @@ function formatAnomalies(list) {
  *
  * @param {{pairs, orphanEntries, orphanExits}} dayBucket  Da pairLogsByDay()
  * @param {number|null} geofenceRadius  geofence_radius_m del cantiere
+ * @param {{minutes:number, thresholdMinutes:number}} [lunchConfig]  Da resolveLunchBreakConfig() — F-152
  * @returns {{
  *   firstEntry:      string|null,   // "HH:MM" — minimo tra gli ENTRY del giorno
  *   lastExit:        string|null,   // "HH:MM" — massimo tra gli EXIT del giorno
- *   hoursTotal:      number,        // somma ore coppie valide, 2 decimali
+ *   hoursTotal:      number,        // somma ore coppie valide (al netto pausa pranzo), 2 decimali
+ *   lunchBreakMinutes: number,      // minuti di pausa pranzo detratti automaticamente
  *   intervalsCount:  number,        // numero coppie valide (ENTRY+EXIT)
  *   avgDist:         number|null,   // media distance_m, arrotondata intero
  *   avgAcc:          number|null,   // media gps_accuracy_m, arrotondata intero
  *   anomalies:       string[]       // anomalie formattate con conteggio
  * }}
  */
-function summarizeDay(dayBucket, geofenceRadius) {
+function summarizeDay(dayBucket, geofenceRadius, lunchConfig) {
   const { pairs, orphanEntries, orphanExits } = dayBucket;
   const dayLogs = flattenDayLogs(dayBucket);
 
@@ -136,10 +133,12 @@ function summarizeDay(dayBucket, geofenceRadius) {
   ].sort((a, b) => a.log.timestamp_server.localeCompare(b.log.timestamp_server));
   const rawAnomalies = orphanEvents.map(oe => oe.label);
 
-  // Ore totali = somma coppie valide, arrotondata a 2 decimali
-  const sumH = pairs.reduce(
-    (s, p) => s + hoursBetween(p.entry.timestamp_server, p.exit.timestamp_server), 0
-  );
+  // Ore totali = somma coppie valide al netto della pausa pranzo automatica
+  // (F-152, AUDIT.md), arrotondata a 2 decimali.
+  const lunchResults = applyLunchBreak(pairs, lunchConfig);
+  const lunchBreakMinutes = lunchResults.reduce((s, r) => s + (r.lunchBreakMinutes || 0), 0);
+  if (lunchBreakMinutes > 0) rawAnomalies.push(`Pausa pranzo automatica: −${lunchBreakMinutes}m`);
+  const sumH = lunchResults.reduce((s, r) => s + r.minutes / 60, 0);
   const hoursTotal = Math.round(sumH * 100) / 100;
 
   // Prima entrata = min tra ENTRY delle coppie + ENTRY orfani del giorno
@@ -173,6 +172,7 @@ function summarizeDay(dayBucket, geofenceRadius) {
     firstEntry,
     lastExit,
     hoursTotal,
+    lunchBreakMinutes,
     intervalsCount: pairs.length,
     avgDist,
     avgAcc,
@@ -193,10 +193,10 @@ function summarizeDay(dayBucket, geofenceRadius) {
  * @returns {Promise<Object>} dati strutturati pronti per il template HTML
  */
 async function buildDailyPresenceSummary(siteId, companyId, from, to) {
-  // 1. Cantiere (verifica ownership + dati display)
+  // 1. Cantiere (verifica ownership + dati display + config pausa pranzo)
   const { data: site, error: siteErr } = await supabase
     .from('sites')
-    .select('id, name, address, geofence_radius_m, company_id')
+    .select('id, name, address, geofence_radius_m, company_id, lunch_break_minutes, lunch_break_threshold_hours')
     .eq('id', siteId)
     .eq('company_id', companyId)
     .maybeSingle();
@@ -204,14 +204,16 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   if (siteErr) throw new Error('DB_ERROR: ' + siteErr.message);
   if (!site)   { const e = new Error('SITE_NOT_FOUND'); e.status = 404; throw e; }
 
-  // 2. Azienda
+  // 2. Azienda (nome + default pausa pranzo, ereditato dal cantiere senza override)
   const { data: company, error: compErr } = await supabase
     .from('companies')
-    .select('id, name')
+    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours')
     .eq('id', companyId)
     .maybeSingle();
 
   if (compErr) throw new Error('DB_ERROR: ' + compErr.message);
+
+  const lunchConfig = resolveLunchBreakConfig(company, site);
 
   // 3. Log nel periodo (includi tutto il giorno finale in UTC)
   // Limite: 50k record (90gg × 500 lavoratori × 4 timbrature ≈ 180k max teorico;
@@ -263,7 +265,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     for (const [dateKey, dayBucket] of dayMap) {
       if (dateKey < from || dateKey > to) continue;   // fuori dal periodo richiesto
 
-      const result = summarizeDay(dayBucket, site.geofence_radius_m);
+      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig);
       const dayLogCount = dayBucket.pairs.length * 2
         + dayBucket.orphanEntries.length + dayBucket.orphanExits.length;
       if (dayLogCount === 0) continue;
