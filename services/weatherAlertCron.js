@@ -208,4 +208,4 @@ function startWeatherAlertCron() {
   console.log('[weatherAlert] Cron avviato —', CRON_SCHEDULE, TZ);
 }
 
-module.exports = { startWeatherAlertCron, runWeatherAlerts, detectAlerts };
+module.exports = { startWeatherAlertCron, runWeatherAlerts, detectAlerts, processCompany };
