@@ -25,6 +25,25 @@ const GPS_MAX_ACCURACY_M = (() => {
 
 // ── HTML escape ───────────────────────────────────────────────────────────────
 
+// Etichette brevi per la colonna "Metodo" — F-153 (AUDIT.md): il valore
+// grezzo (es. "worker_self_punch", "auto_exit_stale_before_reopen") in una
+// colonna di soli 9mm andava a capo carattere per carattere ("work/er_s/
+// elf_p/unch"), illeggibile in un documento ufficiale. Il dettaglio completo
+// resta comunque disponibile nella colonna Anomalie per i metodi non standard.
+const SHORT_METHOD_LABEL = {
+  worker_self_punch:             'Badge',
+  personal_phone:                'Badge',
+  capocantiere_action:           'Capocant.',
+  admin_manual_correction:       'Manuale',
+  auto_exit_on_site_change:      'Auto',
+  auto_exit_stale_before_reopen: 'Auto',
+  ladia_action:                  'Auto (IA)',
+  soft_delete:                   'Eliminato',
+};
+function shortMethodLabel(method) {
+  return SHORT_METHOD_LABEL[method] || method;
+}
+
 function esc(s) {
   if (s == null) return '';
   return String(s)
@@ -384,7 +403,9 @@ function generatePresenceReportHtml(data) {
 
       const distStr    = row.avg_distance_m != null ? `${row.avg_distance_m}m` : '—';
       const accStr     = row.avg_accuracy_m  != null ? `±${row.avg_accuracy_m}m` : '—';
-      const methodsStr = row.methods && row.methods.length > 0 ? esc(row.methods.join(', ')) : '—';
+      const methodsStr = row.methods && row.methods.length > 0
+        ? esc(row.methods.map(shortMethodLabel).join(', '))
+        : '—';
 
       const trClass = [
         row.anomalies.length > 0 ? 'tr-anom'   : '',
@@ -535,10 +556,15 @@ body {
 /* ── TABELLA PRESENZE ───────────────────────────────────────────────── */
 /*
   Larghezza contenuto A4 = 210mm − 2×16mm = 178mm
-  10 colonne — multi-intervallo:
-    Data 9% · Lavoratore 18% · C.Fiscale 14% · P.Entrata 7% ·
-    U.Uscita 7% · Ore 7% · N.Int 5% · Dist 6% · GPS 7% · Anomalie 20%
-    = 100%
+  11 colonne (F-153, AUDIT.md: Metodo era un 12° valore in mm fisso NON
+  incluso in questo budget — le percentuali sotto sommavano già a 100% da
+  sole, quindi il totale reale superava il 100% e in table-layout:fixed il
+  browser comprimeva le colonne in modo non uniforme: la colonna Data,
+  già stretta e con white-space:nowrap, finiva per traboccare visibilmente
+  dentro la colonna Lavoratore successiva):
+    Data 12% · Lavoratore 17% · C.Fiscale 15% · P.Entrata 7% ·
+    U.Uscita 7% · Ore 7% · N.Int 4% · Dist 5% · GPS 5% · Metodo 7% ·
+    Anomalie 14% = 100%
 */
 .presence-table {
   width: 100%; table-layout: fixed; border-collapse: collapse;
@@ -560,15 +586,16 @@ body {
 .tr-anom:nth-child(even) td { background: #FFF3E0 !important; }
 
 /* Larghezze colonne (table-layout:fixed) */
-.col-date  { width:  9%; }
-.col-name  { width: 18%; }
-.col-cf    { width: 14%; }
-.col-time  { width:  7%; }
-.col-ore   { width:  7%; }
-.col-nint  { width:  5%; }
-.col-dist  { width:  6%; }
-.col-gps   { width:  7%; }
-.col-anom  { width: 20%; }  /* +2% extra → Anomalie testo più respiro */
+.col-date   { width: 12%; }
+.col-name   { width: 17%; }
+.col-cf     { width: 15%; }
+.col-time   { width:  7%; }
+.col-ore    { width:  7%; }
+.col-nint   { width:  4%; }
+.col-dist   { width:  5%; }
+.col-gps    { width:  5%; }
+.col-metodo { width:  7%; }
+.col-anom   { width: 14%; }
 
 .td-date  { font-weight: 600; color: #1B3A5C; white-space: nowrap; }
 .td-name  { font-weight: 500; }
@@ -744,7 +771,7 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
       <col class="col-date"> <col class="col-name"> <col class="col-cf">
       <col class="col-time"> <col class="col-time"> <col class="col-ore">
       <col class="col-nint"> <col class="col-dist"> <col class="col-gps">
-      <col style="width:9mm;"> <col class="col-anom">
+      <col class="col-metodo"> <col class="col-anom">
     </colgroup>
     <thead>
       <tr>
