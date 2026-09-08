@@ -47,7 +47,7 @@ console.log('\nPalladia regression — detrazione pausa pranzo automatica (F-152
 }
 {
   const cfg = resolveLunchBreakConfig(undefined, undefined);
-  check('nessuna company/site (fallback estremo) → default 30min/6h', cfg.minutes === 30 && cfg.thresholdMinutes === 360, cfg);
+  check('nessuna company/site (fallback estremo) → default 60min/6h', cfg.minutes === 60 && cfg.thresholdMinutes === 360, cfg);
 }
 
 // ── applyLunchBreak — il caso del bug reale ────────────────────────────────
