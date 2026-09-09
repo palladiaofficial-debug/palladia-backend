@@ -236,6 +236,11 @@ router.patch('/company', verifySupabaseJwt, validate(patchCompanySchema), async 
 });
 
 // GET /api/v1/team-members — lista utenti della company con info auth
+// F-157 (AUDIT.md): una riga company_users può restare "orfana" (user_id
+// senza un utente Supabase Auth corrispondente, es. account cancellato senza
+// pulire la membership) — un membro così non è selezionabile da nessuna
+// parte dell'app (referente tecnico, assegnazioni, ecc.), quindi va escluso
+// qui alla fonte invece di comparire come "— (ruolo)" ambiguo nei dropdown.
 router.get('/team-members', verifySupabaseJwt, async (req, res) => {
   const { data: members, error } = await supabase
     .from('company_users')
@@ -244,18 +249,19 @@ router.get('/team-members', verifySupabaseJwt, async (req, res) => {
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
-  const result = await Promise.all(members.map(async (m) => {
+  const resolved = await Promise.all(members.map(async (m) => {
     const { data: authData } = await supabase.auth.admin.getUserById(m.user_id);
     const u = authData?.user;
+    if (!u) return null;
     return {
       user_id: m.user_id,
       role:    m.role,
-      email:   u?.email || '—',
-      name:    u?.user_metadata?.full_name || u?.email || '—',
+      email:   u.email || '—',
+      name:    u.user_metadata?.full_name || u.email || '—',
     };
   }));
 
-  res.json(result);
+  res.json(resolved.filter(Boolean));
 });
 
 // DELETE /api/v1/team-members/:userId — rimuove un membro dalla company

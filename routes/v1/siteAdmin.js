@@ -190,10 +190,15 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
         .eq('user_id', referente_tecnico_id)
         .maybeSingle();
       if (!member) return res.status(400).json({ error: 'INVALID_REFERENTE', message: 'referente_tecnico_id non appartiene al team.' });
-      // Nome derivato automaticamente dal profilo auth — non accettato dal client
+      // Nome derivato automaticamente dal profilo auth — non accettato dal client.
+      // F-157 (AUDIT.md): se l'utente auth non esiste più (riga company_users
+      // orfana), NON salvare il referente con nome null — prima succedeva
+      // silenziosamente (200) e il pannello mostrava per sempre "Nessun
+      // referente assegnato", indistinguibile da un salvataggio mai riuscito.
       const { data: authData } = await supabase.auth.admin.getUserById(referente_tecnico_id);
       const u = authData?.user;
-      updates.referente_tecnico_name = u?.user_metadata?.full_name || u?.email || null;
+      if (!u) return res.status(400).json({ error: 'INVALID_REFERENTE_ACCOUNT', message: 'Questo membro del team non ha più un account attivo. Rimuovilo dal team e reinvitalo.' });
+      updates.referente_tecnico_name = u.user_metadata?.full_name || u.email || null;
     } else {
       updates.referente_tecnico_name = null;
     }
@@ -464,6 +469,9 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
   const daysTypeVal  = days_type === 'lavorativi' ? 'lavorativi' : 'solari';
 
   // Valida referente e deriva il nome dal profilo auth
+  // F-157 (AUDIT.md): stessa guardia della PATCH — un referente il cui
+  // account auth non esiste più (company_users orfana) viene rifiutato
+  // invece di essere salvato silenziosamente con nome null.
   let referenteName = null;
   if (referente_tecnico_id) {
     const { data: member } = await supabase
@@ -475,7 +483,8 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
     if (!member) return res.status(400).json({ error: 'INVALID_REFERENTE', message: 'referente_tecnico_id non appartiene al team.' });
     const { data: authData } = await supabase.auth.admin.getUserById(referente_tecnico_id);
     const u = authData?.user;
-    referenteName = u?.user_metadata?.full_name || u?.email || null;
+    if (!u) return res.status(400).json({ error: 'INVALID_REFERENTE_ACCOUNT', message: 'Questo membro del team non ha più un account attivo. Rimuovilo dal team e reinvitalo.' });
+    referenteName = u.user_metadata?.full_name || u.email || null;
   }
 
   // Calcola end_date dai giorni contratto se non passata esplicitamente
