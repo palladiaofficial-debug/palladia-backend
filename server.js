@@ -41,6 +41,7 @@ const { startReminderCron }         = require('./services/reminderCron');
 const { startStudioDigestCron }     = require('./services/studioDigestCron');
 const { runFormazioneMigration }    = require('./services/formazioneMigration');
 const { startWeatherLogCron }       = require('./services/weatherLogCron');
+const { startWeatherReconcileCron } = require('./services/weatherReconcileCron');
 const { startWeatherAlertCron }     = require('./services/weatherAlertCron');
 const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCron');
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
@@ -2412,6 +2413,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startReminderCron();
     startStudioDigestCron();
     startWeatherLogCron();
+    startWeatherReconcileCron();
     startWeatherAlertCron();
     startDailyDigestCron();
     startWeeklyExpiryReportCron();

@@ -2,7 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, getWeatherRange, evalThresholds } = require('../../services/weatherService');
+const { getActualWeather, getWeatherRange, buildWeatherLogUpdate } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const ExcelJS                            = require('exceljs');
 const { validate } = require('../../middleware/validate');
@@ -50,7 +50,7 @@ router.get('/sites/:siteId/weather-log', verifySupabaseJwt, async (req, res) => 
 
   let q = supabase
     .from('site_weather_logs')
-    .select('id, log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_code, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, suspension_id, fetched_at')
+    .select('id, log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_code, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, suspension_id, fetched_at, data_source, era5_reconciled_at, era5_discrepancy, precipitation_mm_original, wind_max_kmh_original, weather_code_original')
     .eq('site_id', siteId)
     .order('log_date', { ascending: false })
     .limit(365);
@@ -84,25 +84,21 @@ router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, validate(fetc
   const results = [];
   for (const d of targetDates) {
     try {
-      const weather  = await getActualWeather(site.latitude, site.longitude, d);
-      const { exceeded, reason } = evalThresholds(weather, siteThresholds(site));
+      const weather = await getActualWeather(site.latitude, site.longitude, d);
+
+      // F-159 (AUDIT.md): se il giorno è già stato deciso da un umano
+      // (confermato/ignorato), non aggiornare il verdetto — vedi
+      // buildWeatherLogUpdate.
+      const { data: existing } = await supabase
+        .from('site_weather_logs')
+        .select('suspension_confirmed, suspension_dismissed, threshold_exceeded, precipitation_mm, wind_max_kmh, weather_code, data_source, era5_reconciled_at, precipitation_mm_original, wind_max_kmh_original, weather_code_original')
+        .eq('site_id', siteId).eq('log_date', d).maybeSingle();
+
+      const update = buildWeatherLogUpdate(existing, weather, siteThresholds(site));
 
       const { data: row } = await supabase
         .from('site_weather_logs')
-        .upsert({
-          company_id:         req.companyId,
-          site_id:            siteId,
-          log_date:           d,
-          precipitation_mm:   weather.precipitation_mm,
-          wind_max_kmh:       weather.wind_max_kmh,
-          temp_min_c:         weather.temp_min,
-          temp_max_c:         weather.temp_max,
-          weather_code:       weather.weather_code,
-          weather_desc:       weather.weather_desc,
-          threshold_exceeded: exceeded,
-          threshold_reason:   reason ?? null,
-          fetched_at:         new Date().toISOString(),
-        }, { onConflict: 'site_id,log_date' })
+        .upsert({ company_id: req.companyId, site_id: siteId, log_date: d, ...update }, { onConflict: 'site_id,log_date' })
         .select()
         .single();
 
@@ -145,33 +141,39 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
     if (!weatherData.length)
       return res.json({ inserted: 0, suspension_alerts: 0 });
 
-    const rows = weatherData.map(w => {
-      const { exceeded, reason } = evalThresholds(w, siteThresholds(site));
-      return {
-        company_id:         req.companyId,
-        site_id:            siteId,
-        log_date:           w.date,
-        precipitation_mm:   w.precipitation_mm,
-        wind_max_kmh:       w.wind_max_kmh,
-        temp_min_c:         w.temp_min,
-        temp_max_c:         w.temp_max,
-        weather_code:       w.weather_code,
-        weather_desc:       w.weather_desc,
-        threshold_exceeded: exceeded,
-        threshold_reason:   reason ?? null,
-        fetched_at:         new Date().toISOString(),
-      };
-    });
-
-    // Upsert bulk — non sovrascrive suspension_confirmed/dismissed già esistenti
-    const { error: upsertErr } = await supabase
+    // F-159 (AUDIT.md): un giorno già deciso da un umano (confermato/ignorato)
+    // non deve vedersi cambiare il verdetto da un ri-backfill — vedi
+    // buildWeatherLogUpdate.
+    const { data: existingRows } = await supabase
       .from('site_weather_logs')
-      .upsert(rows, {
-        onConflict:        'site_id,log_date',
-        ignoreDuplicates:  false,
-      });
+      .select('log_date, suspension_confirmed, suspension_dismissed, threshold_exceeded, precipitation_mm, wind_max_kmh, weather_code, data_source, era5_reconciled_at, precipitation_mm_original, wind_max_kmh_original, weather_code_original')
+      .eq('site_id', siteId)
+      .gte('log_date', site.start_date).lte('log_date', yesterday);
+    const existingByDate = new Map((existingRows || []).map(r => [r.log_date, r]));
 
-    if (upsertErr) return res.status(500).json({ error: 'DB_ERROR', message: upsertErr.message });
+    const thresholds = siteThresholds(site);
+    const rows = weatherData.map(w => ({
+      company_id: req.companyId,
+      site_id:    siteId,
+      log_date:   w.date,
+      ...buildWeatherLogUpdate(existingByDate.get(w.date), w, thresholds),
+    }));
+
+    // Upsert bulk — non sovrascrive suspension_confirmed/dismissed già esistenti.
+    // Split in due batch: le righe di un giorno già DECISO da un umano non
+    // portano threshold_exceeded/reason (buildWeatherLogUpdate le omette
+    // apposta) — un upsert misto in un'unica chiamata scriverebbe NULL su
+    // quelle colonne per queste righe (PostgREST usa l'unione delle colonne
+    // del batch), cancellando il verdetto già preso.
+    const decidedRows   = rows.filter(r => !('threshold_exceeded' in r));
+    const undecidedRows = rows.filter(r => 'threshold_exceeded' in r);
+    for (const batch of [undecidedRows, decidedRows]) {
+      if (!batch.length) continue;
+      const { error: upsertErr } = await supabase
+        .from('site_weather_logs')
+        .upsert(batch, { onConflict: 'site_id,log_date', ignoreDuplicates: false });
+      if (upsertErr) return res.status(500).json({ error: 'DB_ERROR', message: upsertErr.message });
+    }
 
     const suspDays = rows.filter(r => r.threshold_exceeded).length;
     res.json({ inserted: rows.length, suspension_alerts: suspDays });
@@ -370,7 +372,7 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
 
   let q = supabase
     .from('site_weather_logs')
-    .select('log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed')
+    .select('log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, data_source, era5_discrepancy, precipitation_mm_original, wind_max_kmh_original')
     .eq('site_id', siteId)
     .order('log_date', { ascending: true });
 
@@ -386,6 +388,10 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
   const confirmedDays    = rows.filter(r => r.suspension_confirmed).length;
   const totalMm          = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
   const maxWind          = rows.reduce((m, r) => Math.max(m, Number(r.wind_max_kmh || 0)), 0);
+  // F-159 (AUDIT.md): quanti giorni nell'export sono ancora una stima non
+  // riverificata con ERA5 — chi legge il documento deve saperlo, non solo
+  // dedurlo dall'età della data.
+  const preliminaryDays  = rows.filter(r => r.data_source !== 'era5_confirmed').length;
 
   const wb = new ExcelJS.Workbook();
   wb.creator  = 'Palladia';
@@ -397,14 +403,14 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
   });
 
   // Header azienda / cantiere
-  ws.mergeCells('A1:J1');
+  ws.mergeCells('A1:K1');
   ws.getCell('A1').value = `REGISTRO METEO CANTIERE — ${(site.name||'').toUpperCase()}`;
   ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FF1A1A2E' } };
   ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
   ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 28;
 
-  ws.mergeCells('A2:J2');
+  ws.mergeCells('A2:K2');
   const period = (from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi');
   ws.getCell('A2').value = `Indirizzo: ${site.address || '—'}  |  Committente: ${site.client || '—'}  |  Periodo: ${period}`;
   ws.getCell('A2').font = { size: 10, color: { argb: 'FF555555' } };
@@ -417,7 +423,7 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
   const HEADER = [
     'Data', 'Giorno', 'Condizioni', 'Precipitazioni (mm)',
     'Vento max (km/h)', 'T° min', 'T° max',
-    'Soglia superata', 'Sospensione confermata', 'Motivo'
+    'Soglia superata', 'Sospensione confermata', 'Motivo', 'Fonte dato'
   ];
   const hRow = ws.addRow(HEADER);
   hRow.height = 20;
@@ -436,6 +442,13 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
     const isWarn  = r.threshold_exceeded && !r.suspension_confirmed && !r.suspension_dismissed;
     const isConf  = r.suspension_confirmed;
 
+    // F-159 (AUDIT.md): la fonte va dichiarata riga per riga, non solo in
+    // un disclaimer generico a fondo pagina — chi legge deve sapere se
+    // QUESTO giorno è confermato ERA5 o ancora una stima non riverificata.
+    const isEra5 = r.data_source === 'era5_confirmed';
+    let fonteLabel = isEra5 ? 'ERA5 confermato' : 'Stima preliminare (Forecast)';
+    if (r.era5_discrepancy) fonteLabel += ' ⚠ vedi nota';
+
     const row = ws.addRow([
       r.log_date,
       dow,
@@ -447,6 +460,7 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
       r.threshold_exceeded ? 'Sì' : 'No',
       isConf ? 'CONFERMATA' : (r.suspension_dismissed ? 'Ignorata' : (r.threshold_exceeded ? 'In attesa' : '—')),
       r.threshold_reason || '—',
+      fonteLabel,
     ]);
 
     row.height = 16;
@@ -466,13 +480,19 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
         ws.getCell(`${col}${row.number}`).font = { size: 9, bold: true, color: { argb: 'FF990000' } };
       });
     }
+    if (!isEra5) {
+      ws.getCell(`K${row.number}`).font = { size: 9, italic: true, color: { argb: 'FF996600' } };
+    }
+    if (r.era5_discrepancy) {
+      ws.getCell(`K${row.number}`).font = { size: 9, bold: true, color: { argb: 'FFCC0000' } };
+    }
   });
 
   // Colonne larghezze
   ws.columns = [
     { width: 14 }, { width: 12 }, { width: 22 }, { width: 20 },
     { width: 20 }, { width: 10 }, { width: 10 },
-    { width: 16 }, { width: 22 }, { width: 14 },
+    { width: 16 }, { width: 22 }, { width: 14 }, { width: 26 },
   ];
 
   // ── Foglio 2: Sommario ──
@@ -495,7 +515,13 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
   addStat('Giorni sospensione confermati',         confirmedDays,  true);
   addStat('Precipitazioni totali periodo (mm)',    totalMm.toFixed(1));
   addStat('Vento massimo registrato (km/h)',        maxWind.toFixed(1));
+  addStat('Giorni ancora in stima preliminare (non riverificati ERA5)', preliminaryDays, preliminaryDays > 0);
   ws2.addRow([]);
+  if (rows.some(r => r.era5_discrepancy)) {
+    ws2.addRow(['⚠ ATTENZIONE — discrepanze su giorni già decisi']).getCell(1).font = { bold: true, color: { argb: 'FFCC0000' } };
+    ws2.addRow(['Il dato ERA5 confermato per uno o più giorni già decisi (confermati o ignorati) differisce da quanto stimato al momento della decisione, al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — vedi le righe segnate "⚠ vedi nota" nel foglio Registro Meteo e verifica manualmente prima di comunicazioni ufficiali.']).getCell(1).alignment = { wrapText: true };
+    ws2.addRow([]);
+  }
   if (site.contract_days) {
     addStat('Giorni contratto',     site.contract_days + ' (' + (site.days_type || 'solari') + ')');
     addStat('Data inizio lavori',   toItShort(site.start_date));
@@ -511,8 +537,8 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
   ws2.addRow([thr.thunderstorm ? 'Temporale/grandine: WMO codes ≥ 95 — ABILITATA' : 'Temporale/grandine: DISABILITATA per questo cantiere']);
   ws2.addRow([]);
   ws2.addRow(['Fonte dati']).getCell(1).font = { bold: true };
-  ws2.addRow(['Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF) per dati storici (> 10 giorni fa)']);
-  ws2.addRow(['Open-Meteo.com — Forecast API per dati recenti (ultimi 10 giorni, soggetti a revisione ERA5)']);
+  ws2.addRow(['Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF): ogni giorno viene registrato inizialmente come stima (Forecast API) e riconciliato automaticamente con il dato ERA5 confermato dopo ~10 giorni, quando diventa disponibile.']);
+  ws2.addRow(['La colonna "Fonte dato" nel foglio Registro Meteo indica per ciascun giorno se il valore è "ERA5 confermato" o ancora "Stima preliminare" in attesa di riconciliazione.']);
   ws2.addRow(['ERA5 è il dataset ufficiale del Centro Europeo per le Previsioni Meteorologiche a Medio Termine (ECMWF)']);
   ws2.addRow(['Dati verificabili pubblicamente su open-meteo.com e archive-api.open-meteo.com']);
   ws2.addRow([]);
@@ -537,7 +563,7 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
 
   let q = supabase
     .from('site_weather_logs')
-    .select('log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, weather_code, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed')
+    .select('log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, weather_code, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, data_source, era5_discrepancy')
     .eq('site_id', siteId)
     .order('log_date', { ascending: true });
 
@@ -547,8 +573,10 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
   const { data: logs } = await q;
   const rows = logs || [];
 
-  const confirmedDays = rows.filter(r => r.suspension_confirmed).length;
-  const totalMm       = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
+  const confirmedDays  = rows.filter(r => r.suspension_confirmed).length;
+  const totalMm        = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
+  const preliminaryDays = rows.filter(r => r.data_source !== 'era5_confirmed').length;
+  const hasDiscrepancy  = rows.some(r => r.era5_discrepancy);
 
   const DAYS_IT = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
 
@@ -560,6 +588,11 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
     const icon  = r.threshold_exceeded
       ? (r.threshold_reason === 'neve' ? '❄️' : r.threshold_reason === 'vento' ? '💨' : r.threshold_reason === 'temporale' ? '⛈️' : '🌧️')
       : (r.weather_code <= 3 ? '☀️' : '⛅');
+    // F-159 (AUDIT.md): fonte dichiarata riga per riga, non solo in un
+    // disclaimer generico — chi legge deve sapere se QUESTO giorno è
+    // confermato ERA5 o ancora una stima non riverificata.
+    const isEra5 = r.data_source === 'era5_confirmed';
+    const fonte  = (isEra5 ? 'ERA5' : 'stima') + (r.era5_discrepancy ? ' ⚠' : '');
 
     return `<tr style="background:${bg}">
       <td>${r.log_date}</td>
@@ -569,6 +602,7 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
       <td class="num">${r.wind_max_kmh > 0 ? r.wind_max_kmh + ' km/h' : '—'}</td>
       <td class="num">${r.temp_min_c != null ? r.temp_min_c + '°' : '—'} / ${r.temp_max_c != null ? r.temp_max_c + '°' : '—'}</td>
       <td class="center ${isConf ? 'susp-yes' : ''}">${isConf ? 'SOSPESO' : (r.suspension_dismissed ? 'ignorato' : (r.threshold_exceeded ? '⚠️ da confermare' : '—'))}</td>
+      <td class="center ${!isEra5 ? 'fonte-stima' : ''} ${r.era5_discrepancy ? 'fonte-warn' : ''}">${fonte}</td>
     </tr>`;
   }).join('');
 
@@ -601,7 +635,10 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
   tbody td.num { text-align: center; }
   tbody td.center { text-align: center; }
   tbody td.susp-yes { font-weight: 700; color: #cc0000; }
+  tbody td.fonte-stima { color: #996600; font-style: italic; }
+  tbody td.fonte-warn { color: #cc0000; font-weight: 700; }
   tbody tr:hover { background: #fafafa; }
+  .discrepancy-box { margin-bottom: 4mm; padding: 3mm 4mm; background: #fff0f0; border-left: 3px solid #cc0000; border-radius: 3px; font-size: 7.5pt; color: #660000; }
   .footer { margin-top: 8mm; border-top: 1px solid #ddd; padding-top: 3mm; display: flex; justify-content: space-between; font-size: 7pt; color: #777; }
 </style>
 </head><body><div class="page">
@@ -631,6 +668,10 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
       <div class="label">Precipitazioni totali</div>
       <div class="val">${totalMm.toFixed(1)} mm</div>
     </div>
+    <div class="meta-box${preliminaryDays > 0 ? ' red' : ''}">
+      <div class="label">In stima preliminare (non ERA5)</div>
+      <div class="val">${preliminaryDays} / ${rows.length}</div>
+    </div>
     ${site.contract_days ? `
     <div class="meta-box">
       <div class="label">Giorni contratto</div>
@@ -653,20 +694,25 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
     ${(site.weather_snow ?? true) ? '❄️ Neve (WMO 71-86) abilitata' : '❄️ Neve disabilitata'} &nbsp;·&nbsp;
     ${(site.weather_thunderstorm ?? true) ? '⛈️ Temporale (WMO ≥ 95) abilitato' : '⛈️ Temporale disabilitato'}
     &nbsp;&nbsp;|&nbsp;&nbsp;
-    <em>Dati ERA5 confermati per date &gt; 10 gg fa. Dati recenti da Forecast API, soggetti a revisione.</em>
+    <em>Ogni giorno viene riconciliato con Open-Meteo ERA5 (ECMWF) circa 10 giorni dopo — la colonna "Fonte" indica per ciascuna riga se è già confermato ERA5 o ancora una stima Forecast in attesa.</em>
   </div>
+
+  ${hasDiscrepancy ? `
+  <div class="discrepancy-box">
+    <strong>⚠ Attenzione — discrepanze su giorni già decisi:</strong> il dato ERA5 confermato per uno o più giorni già decisi (confermati o ignorati, marcati "⚠" nella colonna Fonte) differisce dalla stima originale al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — verifica manualmente prima di comunicazioni ufficiali.
+  </div>` : ''}
 
   <table>
     <thead><tr>
       <th>Data</th><th>G.</th><th>Condizioni</th>
       <th class="num">Pioggia</th><th class="num">Vento max</th><th class="num">T° min/max</th>
-      <th class="center">Sospensione</th>
+      <th class="center">Sospensione</th><th class="center">Fonte</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
 
   <div class="footer">
-    <span>Fonte: <strong>Open-Meteo / ERA5 (ECMWF)</strong> — storico confermato per date &gt; 10 giorni fa; Forecast API per dati recenti (soggetti a revisione ERA5). Dati verificabili su open-meteo.com</span>
+    <span>Fonte: <strong>Open-Meteo / ERA5 (ECMWF)</strong> — dato confermato per i giorni riconciliati (colonna Fonte = "ERA5"); stima Forecast API in attesa di riconciliazione per gli altri (colonna Fonte = "stima"). Dati verificabili su open-meteo.com</span>
     <span>Palladia · Prova documentale forza maggiore · D.Lgs. 36/2023 art. 107 · D.M. 49/2018 art. 10 · art. 1664 c.c.</span>
   </div>
 </div></body></html>`;

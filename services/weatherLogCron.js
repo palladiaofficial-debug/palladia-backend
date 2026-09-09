@@ -13,7 +13,7 @@
 
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
-const { getActualWeather, evalThresholds } = require('./weatherService');
+const { getActualWeather, buildWeatherLogUpdate } = require('./weatherService');
 
 const CRON_SCHEDULE = '30 6 * * *'; // 06:30 ogni giorno
 const TZ            = 'Europe/Rome';
@@ -84,24 +84,22 @@ async function processCompany(companyId, dateISO) {
         snow:          site.weather_snow,
         thunderstorm:  site.weather_thunderstorm,
       };
-      const { exceeded, reason } = evalThresholds(weather, siteThresholds);
 
-      // Upsert log meteo
+      // F-159 (AUDIT.md): un giorno già deciso da un umano (raro qui, ma
+      // possibile su un riavvio che ri-processa la stessa data) non deve
+      // vedersi cambiare il verdetto — vedi buildWeatherLogUpdate.
+      const { data: existing } = await supabase
+        .from('site_weather_logs')
+        .select('suspension_confirmed, suspension_dismissed, threshold_exceeded, precipitation_mm, wind_max_kmh, weather_code, data_source, era5_reconciled_at, precipitation_mm_original, wind_max_kmh_original, weather_code_original')
+        .eq('site_id', site.id).eq('log_date', dateISO).maybeSingle();
+
       await supabase
         .from('site_weather_logs')
         .upsert({
-          company_id:         companyId,
-          site_id:            site.id,
-          log_date:           dateISO,
-          precipitation_mm:   weather.precipitation_mm,
-          wind_max_kmh:       weather.wind_max_kmh,
-          temp_min_c:         weather.temp_min,
-          temp_max_c:         weather.temp_max,
-          weather_code:       weather.weather_code,
-          weather_desc:       weather.weather_desc,
-          threshold_exceeded: exceeded,
-          threshold_reason:   reason ?? null,
-          fetched_at:         new Date().toISOString(),
+          company_id: companyId,
+          site_id:    site.id,
+          log_date:   dateISO,
+          ...buildWeatherLogUpdate(existing, weather, siteThresholds),
         }, { onConflict: 'site_id,log_date' });
 
       // Aggiorna notifica: conta tutti i giorni pendenti del cantiere
@@ -153,4 +151,4 @@ function startWeatherLogCron() {
   console.log('[weatherLog] Cron avviato —', CRON_SCHEDULE, TZ);
 }
 
-module.exports = { startWeatherLogCron, runWeatherLog };
+module.exports = { startWeatherLogCron, runWeatherLog, upsertWeatherNotification };

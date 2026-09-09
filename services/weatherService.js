@@ -117,6 +117,10 @@ async function getActualWeather(lat, lon, dateISO) {
     temp_max:         d.temperature_2m_max?.[0] ?? null,
     weather_code:     code,
     weather_desc:     WMO[code] ?? 'variabile',
+    // F-159 (AUDIT.md): il chiamante deve sapere se questo è un dato ERA5
+    // confermato o una stima Forecast API in attesa di riconciliazione —
+    // prima non c'era modo di distinguerli dopo il salvataggio.
+    data_source:      base.includes('archive-api') ? 'era5_confirmed' : 'forecast_preliminary',
   };
 }
 
@@ -133,7 +137,10 @@ async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
   const archiveEnd  = endDateISO  < yest ? endDateISO  : yest;
   const archiveStart = startDateISO;
 
-  function parseRangeJson(json) {
+  // F-159 (AUDIT.md): ogni riga porta la propria fonte — il chiamante (in
+  // particolare weatherReconcileCron.js) deve sapere se un giorno è
+  // ERA5 confermato o solo una stima Forecast API in attesa di conferma.
+  function parseRangeJson(json, source) {
     const d = json.daily;
     if (!d?.time?.length) return [];
     return d.time.map((date, i) => {
@@ -146,6 +153,7 @@ async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
         temp_max:         d.temperature_2m_max?.[i] ?? null,
         weather_code:     code,
         weather_desc:     WMO[code] ?? 'variabile',
+        data_source:      source,
       };
     });
   }
@@ -160,7 +168,7 @@ async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
     const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
     if (!res.ok) throw new Error(`Open-Meteo Archive HTTP ${res.status}`);
     const json = await res.json();
-    for (const r of parseRangeJson(json)) byDate.set(r.date, r);
+    for (const r of parseRangeJson(json, 'era5_confirmed')) byDate.set(r.date, r);
   }
 
   // Chiamata forecast per gli ultimi giorni non coperti da archive (latenza ERA5 ~5gg)
@@ -172,7 +180,7 @@ async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
     const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
     if (res.ok) {
       const json = await res.json();
-      for (const r of parseRangeJson(json)) byDate.set(r.date, r); // forecast sovrascrive archive per date recenti
+      for (const r of parseRangeJson(json, 'forecast_preliminary')) byDate.set(r.date, r); // forecast sovrascrive archive per date recenti
     }
   }
 
@@ -199,4 +207,54 @@ function evalThresholds(data, thresholds = {}) {
   return { exceeded: false, reason: null };
 }
 
-module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, WMO };
+/**
+ * F-159 (AUDIT.md): costruisce il payload di upsert per site_weather_logs a
+ * partire da un dato meteo appena recuperato (fetch/backfill/riconciliazione)
+ * e dalla riga esistente (se presente). Punto unico che applica la regola
+ * decisa dall'utente: un giorno già deciso da un umano (suspension_confirmed
+ * o suspension_dismissed) non vede MAI cambiare threshold_exceeded/reason da
+ * un dato meteo più recente — ha conseguenze reali già comunicate (operai
+ * mandati a casa, proroghe, Cassa Edile). Il dato grezzo si aggiorna comunque
+ * per l'accuratezza storica/export; se il nuovo dato avrebbe cambiato il
+ * verdetto, era5_discrepancy segnala la discrepanza senza applicarla.
+ *
+ * @param {object|null} existingRow - riga site_weather_logs già in DB, o null/undefined se nuova
+ * @param {object} weather - risultato di getActualWeather/getWeatherRange (include data_source)
+ * @param {object} thresholds - soglie del cantiere (siteThresholds)
+ * @returns {object} campi da passare a .upsert()
+ */
+function buildWeatherLogUpdate(existingRow, weather, thresholds) {
+  const { exceeded, reason } = evalThresholds(weather, thresholds);
+  const isDecided = !!(existingRow?.suspension_confirmed || existingRow?.suspension_dismissed);
+  const isNewlyConfirmed = weather.data_source === 'era5_confirmed' && existingRow?.data_source !== 'era5_confirmed';
+
+  // Forma sempre uniforme (tranne threshold_exceeded/reason, omessi apposta
+  // per i giorni decisi — vedi i chiamanti): un upsert bulk con chiavi
+  // eterogenee tra le righe farebbe scrivere NULL/default sulle colonne
+  // mancanti per alcune righe del batch (PostgREST usa l'unione delle
+  // colonne). Meglio essere espliciti sempre, anche col valore di riposo.
+  const update = {
+    precipitation_mm: weather.precipitation_mm,
+    wind_max_kmh:     weather.wind_max_kmh,
+    temp_min_c:       weather.temp_min,
+    temp_max_c:       weather.temp_max,
+    weather_code:     weather.weather_code,
+    weather_desc:     weather.weather_desc,
+    data_source:      weather.data_source,
+    fetched_at:       new Date().toISOString(),
+    era5_discrepancy: isDecided && exceeded !== existingRow.threshold_exceeded,
+    era5_reconciled_at:        isNewlyConfirmed ? new Date().toISOString() : (existingRow?.era5_reconciled_at ?? null),
+    precipitation_mm_original: isNewlyConfirmed ? (existingRow?.precipitation_mm ?? null) : (existingRow?.precipitation_mm_original ?? null),
+    wind_max_kmh_original:     isNewlyConfirmed ? (existingRow?.wind_max_kmh ?? null)     : (existingRow?.wind_max_kmh_original ?? null),
+    weather_code_original:     isNewlyConfirmed ? (existingRow?.weather_code ?? null)     : (existingRow?.weather_code_original ?? null),
+  };
+
+  if (!isDecided) {
+    update.threshold_exceeded = exceeded;
+    update.threshold_reason   = reason ?? null;
+  }
+
+  return update;
+}
+
+module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, buildWeatherLogUpdate, WMO };
