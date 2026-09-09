@@ -9,6 +9,7 @@ const { auditLog }          = require('../../lib/audit');
 const { getSiteLimit }      = require('../../services/stripe');
 const { calcEndDate }       = require('../../lib/calcEndDate');
 const { sendDbError } = require('../../lib/httpErrors');
+const { reevaluateUndecidedWeatherLogs } = require('../../services/weatherThresholdChange');
 
 // Tutti gli endpoint richiedono JWT + membership verificata
 // req.companyId è già stato verificato da verifySupabaseJwt
@@ -35,7 +36,7 @@ function formatSite(s) {
     longitude:                 s.longitude,
     geofence_radius_m:         s.geofence_radius_m,
     has_geofence:              s.latitude != null && s.longitude != null,
-    weatherRainMm:             s.weather_rain_mm      ?? 10,
+    weatherRainMm:             s.weather_rain_mm      ?? 1,
     weatherWindKmh:            s.weather_wind_kmh     ?? 50,
     weatherSnow:               s.weather_snow         ?? true,
     weatherThunderstorm:       s.weather_thunderstorm ?? true,
@@ -212,16 +213,17 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
 
   // null/'' = reset esplicito al default di colonna (bug storico, commit
   // 0919727 — non solo "campo assente"): weather_rain_mm/wind_kmh sono
-  // NUMERIC NOT NULL DEFAULT 10/50 (migrations/090_site_weather_thresholds.sql,
-  // stessi valori del fallback ?? in GET /sites sopra) — un vero SQL null
-  // violerebbe il NOT NULL, quindi "reset" scrive il default, non null.
+  // NUMERIC NOT NULL DEFAULT 1/50 (migrations/090_site_weather_thresholds.sql,
+  // migrations/198_weather_rain_threshold_inps_default.sql — stessi valori
+  // del fallback ?? in GET /sites sopra) — un vero SQL null violerebbe il
+  // NOT NULL, quindi "reset" scrive il default, non null.
   // Prima di questo fix il campo veniva saltato del tutto: un body con solo
   // questo campo produceva falsamente NO_FIELDS invece di resettare la soglia
   // (F-030, AUDIT.md — regressione introdotta insieme al controllo di range
   // aggiunto dopo il fix originale).
   if (weather_rain_mm !== undefined) {
     if (weather_rain_mm === null || weather_rain_mm === '') {
-      updates.weather_rain_mm = 10;
+      updates.weather_rain_mm = 1;
     } else {
       const mm = Number(weather_rain_mm);
       if (isNaN(mm) || mm < 1 || mm > 200) return res.status(400).json({ error: 'INVALID_WEATHER_THRESHOLD', message: 'weather_rain_mm: 1-200 mm' });
@@ -360,6 +362,32 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
 
   invalidate(req.companyId, '/sites');
   res.json(formatSite(data));
+
+  // F-160 (AUDIT.md): un cambio soglia non aveva mai effetto retroattivo sui
+  // log già salvati — fuori dal path di risposta (non deve rallentare il
+  // PATCH), ma awaited dal processo così da non perdersi se il server si
+  // ferma tra un giro di richieste e l'altro non è un problema reale qui:
+  // è comunque idempotente, il prossimo salvataggio la rifà.
+  const weatherFieldsChanged = ['weather_rain_mm', 'weather_wind_kmh', 'weather_snow', 'weather_thunderstorm'].some(k => k in updates);
+  if (weatherFieldsChanged) {
+    (async () => {
+      try {
+        const { data: full } = await supabase
+          .from('sites')
+          .select('name, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
+          .eq('id', siteId).single();
+        if (!full) return;
+        const thresholds = {
+          rain_mm: full.weather_rain_mm, wind_kmh: full.weather_wind_kmh,
+          snow: full.weather_snow, thunderstorm: full.weather_thunderstorm,
+        };
+        const { changed } = await reevaluateUndecidedWeatherLogs(siteId, req.companyId, full.name, thresholds);
+        if (changed > 0) console.log(`[weatherThresholdChange] ${full.name}: ${changed} giorni storici ricalcolati dopo cambio soglia`);
+      } catch (err) {
+        console.error('[weatherThresholdChange]', siteId, err.message);
+      }
+    })();
+  }
 });
 
 // ── PATCH /api/v1/sites/:siteId/coords ───────────────────────────────────────

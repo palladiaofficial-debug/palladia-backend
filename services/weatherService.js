@@ -195,7 +195,10 @@ async function getWeatherRange(lat, lon, startDateISO, endDateISO) {
  */
 function evalThresholds(data, thresholds = {}) {
   const { precipitation_mm, wind_max_kmh, weather_code } = data;
-  const rainMm    = thresholds.rain_mm    != null ? Number(thresholds.rain_mm)    : 10;
+  // F-160 (AUDIT.md): default allineato ai criteri INPS reali (msg. 28336
+  // del 28/07/1998) per lavori esterni di intonacatura/verniciatura/
+  // pavimentazione/impermeabilizzazione — non un numero arbitrario.
+  const rainMm    = thresholds.rain_mm    != null ? Number(thresholds.rain_mm)    : 1;
   const windKmh   = thresholds.wind_kmh   != null ? Number(thresholds.wind_kmh)   : 50;
   const snowOn    = thresholds.snow       != null ? Boolean(thresholds.snow)       : true;
   const thunderOn = thresholds.thunderstorm != null ? Boolean(thresholds.thunderstorm) : true;

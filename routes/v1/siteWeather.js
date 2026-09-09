@@ -4,7 +4,8 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
 const { getActualWeather, getWeatherRange, buildWeatherLogUpdate } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
-const ExcelJS                            = require('exceljs');
+const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../../services/weatherReport');
+const { rendererPool }                   = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
 const { fetchWeatherSchema, confirmSuspensionSchema } = require('../../lib/schemas/siteWeather');
 
@@ -13,19 +14,13 @@ const { fetchWeatherSchema, confirmSuspensionSchema } = require('../../lib/schem
 /** Costruisce l'oggetto soglie dal record site (usa default se colonne null) */
 function siteThresholds(site) {
   return {
-    rain_mm:      site.weather_rain_mm      ?? 10,
+    rain_mm:      site.weather_rain_mm      ?? 1,
     wind_kmh:     site.weather_wind_kmh     ?? 50,
     snow:         site.weather_snow         ?? true,
     thunderstorm: site.weather_thunderstorm ?? true,
   };
 }
 
-function toItShort(iso) {
-  if (!iso) return '—';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('it-IT', {
-    day: '2-digit', month: '2-digit', year: 'numeric'
-  });
-}
 
 async function getSiteOrFail(siteId, companyId, res) {
   const { data } = await supabase
@@ -381,171 +376,7 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
 
   const { data: logs } = await q;
   const rows = logs || [];
-
-  // Calcola statistiche
-  const totalDays        = rows.length;
-  const rainDays         = rows.filter(r => r.threshold_exceeded).length;
-  const confirmedDays    = rows.filter(r => r.suspension_confirmed).length;
-  const totalMm          = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
-  const maxWind          = rows.reduce((m, r) => Math.max(m, Number(r.wind_max_kmh || 0)), 0);
-  // F-159 (AUDIT.md): quanti giorni nell'export sono ancora una stima non
-  // riverificata con ERA5 — chi legge il documento deve saperlo, non solo
-  // dedurlo dall'età della data.
-  const preliminaryDays  = rows.filter(r => r.data_source !== 'era5_confirmed').length;
-
-  const wb = new ExcelJS.Workbook();
-  wb.creator  = 'Palladia';
-  wb.created  = new Date();
-
-  // ── Foglio 1: Dati giornalieri ──
-  const ws = wb.addWorksheet('Registro Meteo', {
-    pageSetup: { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 }
-  });
-
-  // Header azienda / cantiere
-  ws.mergeCells('A1:K1');
-  ws.getCell('A1').value = `REGISTRO METEO CANTIERE — ${(site.name||'').toUpperCase()}`;
-  ws.getCell('A1').font = { size: 14, bold: true, color: { argb: 'FF1A1A2E' } };
-  ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF5F5F5' } };
-  ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
-  ws.getRow(1).height = 28;
-
-  ws.mergeCells('A2:K2');
-  const period = (from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi');
-  ws.getCell('A2').value = `Indirizzo: ${site.address || '—'}  |  Committente: ${site.client || '—'}  |  Periodo: ${period}`;
-  ws.getCell('A2').font = { size: 10, color: { argb: 'FF555555' } };
-  ws.getCell('A2').alignment = { horizontal: 'center' };
-  ws.getRow(2).height = 18;
-
-  ws.addRow([]); // riga vuota
-
-  // Intestazione colonne
-  const HEADER = [
-    'Data', 'Giorno', 'Condizioni', 'Precipitazioni (mm)',
-    'Vento max (km/h)', 'T° min', 'T° max',
-    'Soglia superata', 'Sospensione confermata', 'Motivo', 'Fonte dato'
-  ];
-  const hRow = ws.addRow(HEADER);
-  hRow.height = 20;
-  hRow.eachCell(cell => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1A1A2E' } };
-    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-    cell.border = { bottom: { style: 'thin', color: { argb: 'FF4A90D9' } } };
-  });
-
-  const DAYS_IT = ['Domenica','Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato'];
-
-  rows.forEach((r, i) => {
-    const dt      = new Date(r.log_date + 'T00:00:00');
-    const dow     = DAYS_IT[dt.getDay()];
-    const isWarn  = r.threshold_exceeded && !r.suspension_confirmed && !r.suspension_dismissed;
-    const isConf  = r.suspension_confirmed;
-
-    // F-159 (AUDIT.md): la fonte va dichiarata riga per riga, non solo in
-    // un disclaimer generico a fondo pagina — chi legge deve sapere se
-    // QUESTO giorno è confermato ERA5 o ancora una stima non riverificata.
-    const isEra5 = r.data_source === 'era5_confirmed';
-    let fonteLabel = isEra5 ? 'ERA5 confermato' : 'Stima preliminare (Forecast)';
-    if (r.era5_discrepancy) fonteLabel += ' ⚠ vedi nota';
-
-    const row = ws.addRow([
-      r.log_date,
-      dow,
-      r.weather_desc || '—',
-      Number(r.precipitation_mm) || 0,
-      Number(r.wind_max_kmh) || 0,
-      r.temp_min_c != null ? `${r.temp_min_c}°C` : '—',
-      r.temp_max_c != null ? `${r.temp_max_c}°C` : '—',
-      r.threshold_exceeded ? 'Sì' : 'No',
-      isConf ? 'CONFERMATA' : (r.suspension_dismissed ? 'Ignorata' : (r.threshold_exceeded ? 'In attesa' : '—')),
-      r.threshold_reason || '—',
-      fonteLabel,
-    ]);
-
-    row.height = 16;
-    const bg = isConf  ? 'FFFFD6D6' :
-               isWarn  ? 'FFFFF3CD' :
-               (i % 2 === 0) ? 'FFFFFFFF' : 'FFF9F9F9';
-
-    row.eachCell(cell => {
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
-      cell.font = { size: 9 };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.border = { bottom: { style: 'hair', color: { argb: 'FFE0E0E0' } } };
-    });
-
-    if (isConf) {
-      ['I','J'].forEach(col => {
-        ws.getCell(`${col}${row.number}`).font = { size: 9, bold: true, color: { argb: 'FF990000' } };
-      });
-    }
-    if (!isEra5) {
-      ws.getCell(`K${row.number}`).font = { size: 9, italic: true, color: { argb: 'FF996600' } };
-    }
-    if (r.era5_discrepancy) {
-      ws.getCell(`K${row.number}`).font = { size: 9, bold: true, color: { argb: 'FFCC0000' } };
-    }
-  });
-
-  // Colonne larghezze
-  ws.columns = [
-    { width: 14 }, { width: 12 }, { width: 22 }, { width: 20 },
-    { width: 20 }, { width: 10 }, { width: 10 },
-    { width: 16 }, { width: 22 }, { width: 14 }, { width: 26 },
-  ];
-
-  // ── Foglio 2: Sommario ──
-  const ws2 = wb.addWorksheet('Sommario');
-
-  const addStat = (label, value, bold = false) => {
-    const r = ws2.addRow([label, value]);
-    if (bold) r.getCell(1).font = { bold: true };
-    r.getCell(2).alignment = { horizontal: 'right' };
-  };
-
-  ws2.getColumn(1).width = 40;
-  ws2.getColumn(2).width = 20;
-
-  ws2.addRow(['SOMMARIO METEO CANTIERE']).getCell(1).font = { size: 13, bold: true };
-  ws2.addRow([site.name || '—']).getCell(1).font = { italic: true };
-  ws2.addRow([]);
-  addStat('Giorni monitorati',                     totalDays);
-  addStat('Giorni con condizioni avverse',         rainDays,       true);
-  addStat('Giorni sospensione confermati',         confirmedDays,  true);
-  addStat('Precipitazioni totali periodo (mm)',    totalMm.toFixed(1));
-  addStat('Vento massimo registrato (km/h)',        maxWind.toFixed(1));
-  addStat('Giorni ancora in stima preliminare (non riverificati ERA5)', preliminaryDays, preliminaryDays > 0);
-  ws2.addRow([]);
-  if (rows.some(r => r.era5_discrepancy)) {
-    ws2.addRow(['⚠ ATTENZIONE — discrepanze su giorni già decisi']).getCell(1).font = { bold: true, color: { argb: 'FFCC0000' } };
-    ws2.addRow(['Il dato ERA5 confermato per uno o più giorni già decisi (confermati o ignorati) differisce da quanto stimato al momento della decisione, al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — vedi le righe segnate "⚠ vedi nota" nel foglio Registro Meteo e verifica manualmente prima di comunicazioni ufficiali.']).getCell(1).alignment = { wrapText: true };
-    ws2.addRow([]);
-  }
-  if (site.contract_days) {
-    addStat('Giorni contratto',     site.contract_days + ' (' + (site.days_type || 'solari') + ')');
-    addStat('Data inizio lavori',   toItShort(site.start_date));
-    addStat('Data fine contratto originale', toItShort(site.end_date));
-    addStat('Giorni sospensione applicati', confirmedDays);
-  }
-  const thr = siteThresholds(site);
-  ws2.addRow([]);
-  ws2.addRow(['Soglie condizioni avverse applicate']).getCell(1).font = { bold: true };
-  ws2.addRow([`Pioggia: precipitazioni ≥ ${thr.rain_mm} mm/giorno (dati giornalieri cumulati)`]);
-  ws2.addRow([`Vento: raffica max ≥ ${thr.wind_kmh} km/h`]);
-  ws2.addRow([thr.snow ? 'Neve: WMO codes 71, 73, 75, 77, 85, 86 (qualsiasi intensità) — ABILITATA' : 'Neve: DISABILITATA per questo cantiere']);
-  ws2.addRow([thr.thunderstorm ? 'Temporale/grandine: WMO codes ≥ 95 — ABILITATA' : 'Temporale/grandine: DISABILITATA per questo cantiere']);
-  ws2.addRow([]);
-  ws2.addRow(['Fonte dati']).getCell(1).font = { bold: true };
-  ws2.addRow(['Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF): ogni giorno viene registrato inizialmente come stima (Forecast API) e riconciliato automaticamente con il dato ERA5 confermato dopo ~10 giorni, quando diventa disponibile.']);
-  ws2.addRow(['La colonna "Fonte dato" nel foglio Registro Meteo indica per ciascun giorno se il valore è "ERA5 confermato" o ancora "Stima preliminare" in attesa di riconciliazione.']);
-  ws2.addRow(['ERA5 è il dataset ufficiale del Centro Europeo per le Previsioni Meteorologiche a Medio Termine (ECMWF)']);
-  ws2.addRow(['Dati verificabili pubblicamente su open-meteo.com e archive-api.open-meteo.com']);
-  ws2.addRow([]);
-  ws2.addRow([`Generato da Palladia il ${new Date().toLocaleDateString('it-IT')} alle ${new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'})}`]);
-  ws2.addRow(['Documento valido come prova documentale per richieste di proroga per cause di forza maggiore']);
-  ws2.addRow(['Riferimenti normativi: D.Lgs. 36/2023 art. 107 (sospensione lavori) · D.M. 49/2018 art. 10 · art. 1664 c.c.'])
-    .getCell(1).font = { italic: true, color: { argb: 'FF555555' } };
+  const wb = generateWeatherReportXlsx({ site, rows, thresholds: siteThresholds(site), from, to });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="meteo_${siteId}_${Date.now()}.xlsx"`);
@@ -573,159 +404,16 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
   const { data: logs } = await q;
   const rows = logs || [];
 
-  const confirmedDays  = rows.filter(r => r.suspension_confirmed).length;
-  const totalMm        = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
-  const preliminaryDays = rows.filter(r => r.data_source !== 'era5_confirmed').length;
-  const hasDiscrepancy  = rows.some(r => r.era5_discrepancy);
-
-  const DAYS_IT = ['Dom','Lun','Mar','Mer','Gio','Ven','Sab'];
-
-  const tableRows = rows.map(r => {
-    const dt    = new Date(r.log_date + 'T00:00:00');
-    const isConf = r.suspension_confirmed;
-    const isWarn = r.threshold_exceeded && !r.suspension_confirmed && !r.suspension_dismissed;
-    const bg    = isConf ? '#ffd6d6' : isWarn ? '#fff3cd' : 'transparent';
-    const icon  = r.threshold_exceeded
-      ? (r.threshold_reason === 'neve' ? '❄️' : r.threshold_reason === 'vento' ? '💨' : r.threshold_reason === 'temporale' ? '⛈️' : '🌧️')
-      : (r.weather_code <= 3 ? '☀️' : '⛅');
-    // F-159 (AUDIT.md): fonte dichiarata riga per riga, non solo in un
-    // disclaimer generico — chi legge deve sapere se QUESTO giorno è
-    // confermato ERA5 o ancora una stima non riverificata.
-    const isEra5 = r.data_source === 'era5_confirmed';
-    const fonte  = (isEra5 ? 'ERA5' : 'stima') + (r.era5_discrepancy ? ' ⚠' : '');
-
-    return `<tr style="background:${bg}">
-      <td>${r.log_date}</td>
-      <td>${DAYS_IT[dt.getDay()]}</td>
-      <td>${icon} ${r.weather_desc || '—'}</td>
-      <td class="num">${r.precipitation_mm > 0 ? r.precipitation_mm + ' mm' : '—'}</td>
-      <td class="num">${r.wind_max_kmh > 0 ? r.wind_max_kmh + ' km/h' : '—'}</td>
-      <td class="num">${r.temp_min_c != null ? r.temp_min_c + '°' : '—'} / ${r.temp_max_c != null ? r.temp_max_c + '°' : '—'}</td>
-      <td class="center ${isConf ? 'susp-yes' : ''}">${isConf ? 'SOSPESO' : (r.suspension_dismissed ? 'ignorato' : (r.threshold_exceeded ? '⚠️ da confermare' : '—'))}</td>
-      <td class="center ${!isEra5 ? 'fonte-stima' : ''} ${r.era5_discrepancy ? 'fonte-warn' : ''}">${fonte}</td>
-    </tr>`;
-  }).join('');
-
-  const period = esc((from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi'));
-  const nowStr = new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
-
-  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
-
-  const html = `<!DOCTYPE html>
-<html lang="it"><head><meta charset="UTF-8">
-<style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 9pt; color: #111; }
-  .page { padding: 18mm 14mm; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8mm; border-bottom: 2px solid #1a1a2e; padding-bottom: 4mm; }
-  .header-left h1 { font-size: 13pt; font-weight: 800; color: #1a1a2e; }
-  .header-left p { font-size: 8pt; color: #555; margin-top: 2px; }
-  .header-right { text-align: right; font-size: 8pt; color: #555; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 7pt; font-weight: 700; }
-  .badge-palladia { background: #1a1a2e; color: #fff; margin-bottom: 4px; }
-  .meta-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; margin-bottom: 6mm; }
-  .meta-box { background: #f5f5f5; border-radius: 4px; padding: 3mm 4mm; }
-  .meta-box .label { font-size: 7pt; color: #777; text-transform: uppercase; letter-spacing: .5px; }
-  .meta-box .val { font-size: 10pt; font-weight: 700; color: #1a1a2e; margin-top: 1px; }
-  .meta-box.red .val { color: #cc0000; }
-  table { width: 100%; border-collapse: collapse; font-size: 8pt; }
-  thead th { background: #1a1a2e; color: #fff; padding: 4px 5px; text-align: left; font-weight: 700; font-size: 7.5pt; }
-  thead th.num, thead th.center { text-align: center; }
-  tbody td { padding: 3.5px 5px; border-bottom: 1px solid #e8e8e8; vertical-align: middle; }
-  tbody td.num { text-align: center; }
-  tbody td.center { text-align: center; }
-  tbody td.susp-yes { font-weight: 700; color: #cc0000; }
-  tbody td.fonte-stima { color: #996600; font-style: italic; }
-  tbody td.fonte-warn { color: #cc0000; font-weight: 700; }
-  tbody tr:hover { background: #fafafa; }
-  .discrepancy-box { margin-bottom: 4mm; padding: 3mm 4mm; background: #fff0f0; border-left: 3px solid #cc0000; border-radius: 3px; font-size: 7.5pt; color: #660000; }
-  .footer { margin-top: 8mm; border-top: 1px solid #ddd; padding-top: 3mm; display: flex; justify-content: space-between; font-size: 7pt; color: #777; }
-</style>
-</head><body><div class="page">
-  <div class="header">
-    <div class="header-left">
-      <div class="badge badge-palladia" style="display:inline-flex;align-items:center;gap:4px">PALLADIA</div>
-      <h1>Registro Meteo Cantiere</h1>
-      <p>${esc(site.name)} · ${esc(site.address)}</p>
-      <p>Committente: <strong>${esc(site.client) || '—'}</strong> · Periodo: <strong>${period}</strong></p>
-    </div>
-    <div class="header-right">
-      <p>Generato il</p>
-      <p><strong>${nowStr}</strong></p>
-    </div>
-  </div>
-
-  <div class="meta-grid">
-    <div class="meta-box">
-      <div class="label">Giorni monitorati</div>
-      <div class="val">${rows.length}</div>
-    </div>
-    <div class="meta-box red">
-      <div class="label">Giorni sospensione confermati</div>
-      <div class="val">${confirmedDays}</div>
-    </div>
-    <div class="meta-box">
-      <div class="label">Precipitazioni totali</div>
-      <div class="val">${totalMm.toFixed(1)} mm</div>
-    </div>
-    <div class="meta-box${preliminaryDays > 0 ? ' red' : ''}">
-      <div class="label">In stima preliminare (non ERA5)</div>
-      <div class="val">${preliminaryDays} / ${rows.length}</div>
-    </div>
-    ${site.contract_days ? `
-    <div class="meta-box">
-      <div class="label">Giorni contratto</div>
-      <div class="val">${site.contract_days} (${esc(site.days_type) || 'solari'})</div>
-    </div>
-    <div class="meta-box">
-      <div class="label">Inizio lavori</div>
-      <div class="val">${toItShort(site.start_date)}</div>
-    </div>
-    <div class="meta-box">
-      <div class="label">Fine lavori (aggiornata)</div>
-      <div class="val">${toItShort(site.end_date)}</div>
-    </div>` : ''}
-  </div>
-
-  <div style="margin-bottom:4mm;padding:3mm 4mm;background:#f0f4ff;border-left:3px solid #3b5bdb;border-radius:3px;font-size:7.5pt;color:#333">
-    <strong>Soglie condizioni avverse:</strong>
-    🌧️ Pioggia ≥ ${(site.weather_rain_mm ?? 10)} mm/giorno &nbsp;·&nbsp;
-    💨 Vento ≥ ${(site.weather_wind_kmh ?? 50)} km/h &nbsp;·&nbsp;
-    ${(site.weather_snow ?? true) ? '❄️ Neve (WMO 71-86) abilitata' : '❄️ Neve disabilitata'} &nbsp;·&nbsp;
-    ${(site.weather_thunderstorm ?? true) ? '⛈️ Temporale (WMO ≥ 95) abilitato' : '⛈️ Temporale disabilitato'}
-    &nbsp;&nbsp;|&nbsp;&nbsp;
-    <em>Ogni giorno viene riconciliato con Open-Meteo ERA5 (ECMWF) circa 10 giorni dopo — la colonna "Fonte" indica per ciascuna riga se è già confermato ERA5 o ancora una stima Forecast in attesa.</em>
-  </div>
-
-  ${hasDiscrepancy ? `
-  <div class="discrepancy-box">
-    <strong>⚠ Attenzione — discrepanze su giorni già decisi:</strong> il dato ERA5 confermato per uno o più giorni già decisi (confermati o ignorati, marcati "⚠" nella colonna Fonte) differisce dalla stima originale al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — verifica manualmente prima di comunicazioni ufficiali.
-  </div>` : ''}
-
-  <table>
-    <thead><tr>
-      <th>Data</th><th>G.</th><th>Condizioni</th>
-      <th class="num">Pioggia</th><th class="num">Vento max</th><th class="num">T° min/max</th>
-      <th class="center">Sospensione</th><th class="center">Fonte</th>
-    </tr></thead>
-    <tbody>${tableRows}</tbody>
-  </table>
-
-  <div class="footer">
-    <span>Fonte: <strong>Open-Meteo / ERA5 (ECMWF)</strong> — dato confermato per i giorni riconciliati (colonna Fonte = "ERA5"); stima Forecast API in attesa di riconciliazione per gli altri (colonna Fonte = "stima"). Dati verificabili su open-meteo.com</span>
-    <span>Palladia · Prova documentale forza maggiore · D.Lgs. 36/2023 art. 107 · D.M. 49/2018 art. 10 · art. 1664 c.c.</span>
-  </div>
-</div></body></html>`;
-
   try {
-    const { renderHtmlToPdf } = require('../../pdf-renderer');
-    const pdfBuf = await renderHtmlToPdf(html, {
-      noHeaderFooter: true,
-      landscape: true,
-      margin: { top: '12mm', bottom: '12mm', left: '0mm', right: '0mm' },
+    const html = generateWeatherReportHtml({ site, rows, thresholds: siteThresholds(site), from, to });
+    const pdfBuf = await rendererPool.render(html, {
+      docTitle:   `Registro Meteo — ${site.name}`,
+      rev:        1,
+      footerLeft: 'D.Lgs. 36/2023 art. 107 · art. 1664 c.c.',
     });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="meteo_${siteId}_${Date.now()}.pdf"`);
+    res.setHeader('Content-Length', pdfBuf.length);
     res.send(pdfBuf);
   } catch (err) {
     console.error('[weather-report.pdf]', err.message);
@@ -734,3 +422,4 @@ router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, r
 });
 
 module.exports = router;
+

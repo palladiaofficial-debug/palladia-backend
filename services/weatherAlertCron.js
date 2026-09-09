@@ -145,7 +145,7 @@ async function processCompany(companyId, sites) {
         heatC:          site.weather_heat_c ?? 35,
         snowEnabled:    site.weather_snow         ?? true,
         thunderEnabled: site.weather_thunderstorm ?? true,
-        rainMm:         site.weather_rain_mm      ?? 10,
+        rainMm:         site.weather_rain_mm      ?? 1,
         windKmh:        site.weather_wind_kmh     ?? 50,
       });
 
