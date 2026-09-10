@@ -122,7 +122,7 @@ router.get('/my-companies', async (req, res) => {
 router.get('/company', verifySupabaseJwt, async (req, res) => {
   const { data, error } = await supabase
     .from('companies')
-    .select('id, name, piva, address, phone, contact_email, safety_manager, durc_expiry, lunch_break_minutes, lunch_break_threshold_hours')
+    .select('id, name, piva, address, phone, contact_email, safety_manager, durc_expiry, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('id', req.companyId)
     .single();
 
@@ -210,7 +210,7 @@ router.patch('/company', verifySupabaseJwt, validate(patchCompanySchema), async 
     return res.status(403).json({ error: 'FORBIDDEN' });
   }
 
-  const allowed = ['name', 'piva', 'address', 'phone', 'contact_email', 'safety_manager', 'durc_expiry', 'lunch_break_minutes', 'lunch_break_threshold_hours'];
+  const allowed = ['name', 'piva', 'address', 'phone', 'contact_email', 'safety_manager', 'durc_expiry', 'lunch_break_minutes', 'lunch_break_threshold_hours', 'shift_start_time', 'late_entry_threshold_minutes', 'late_entry_deduction_minutes'];
   const updates = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) {

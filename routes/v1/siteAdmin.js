@@ -43,6 +43,10 @@ function formatSite(s) {
     // null = nessun override, eredita il default azienda (F-152, AUDIT.md)
     lunchBreakMinutes:         s.lunch_break_minutes         ?? null,
     lunchBreakThresholdHours:  s.lunch_break_threshold_hours ?? null,
+    // null = nessun override, eredita il default azienda (migrations/199)
+    shiftStartTime:              s.shift_start_time             ? String(s.shift_start_time).slice(0, 5) : null,
+    lateEntryThresholdMinutes:   s.late_entry_threshold_minutes ?? null,
+    lateEntryDeductionMinutes:   s.late_entry_deduction_minutes ?? null,
   };
 }
 
@@ -54,7 +58,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, cache(20), async (req, res) => {
-  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours';
+  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes';
 
   const { data, error } = await supabase
     .from('sites')
@@ -147,6 +151,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes,
     weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm,
     lunch_break_minutes, lunch_break_threshold_hours,
+    shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes,
   } = req.body || {};
 
   // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
@@ -265,6 +270,37 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     }
   }
 
+  // Ritardo ingresso (migrations/199) — stesso principio della pausa pranzo
+  // sopra: null/'' è un vero SQL NULL, "nessun override, eredita il default
+  // azienda" (che a sua volta può essere NULL = regola disattivata).
+  if (shift_start_time !== undefined) {
+    if (shift_start_time === null || shift_start_time === '') {
+      updates.shift_start_time = null;
+    } else if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(shift_start_time)) {
+      return res.status(400).json({ error: 'INVALID_SHIFT_START', message: 'shift_start_time: formato HH:MM' });
+    } else {
+      updates.shift_start_time = shift_start_time;
+    }
+  }
+  if (late_entry_threshold_minutes !== undefined) {
+    if (late_entry_threshold_minutes === null || late_entry_threshold_minutes === '') {
+      updates.late_entry_threshold_minutes = null;
+    } else {
+      const min = Number(late_entry_threshold_minutes);
+      if (isNaN(min) || min < 0 || min > 120) return res.status(400).json({ error: 'INVALID_LATE_ENTRY', message: 'late_entry_threshold_minutes: 0-120 minuti' });
+      updates.late_entry_threshold_minutes = min;
+    }
+  }
+  if (late_entry_deduction_minutes !== undefined) {
+    if (late_entry_deduction_minutes === null || late_entry_deduction_minutes === '') {
+      updates.late_entry_deduction_minutes = null;
+    } else {
+      const min = Number(late_entry_deduction_minutes);
+      if (isNaN(min) || min < 0 || min > 480) return res.status(400).json({ error: 'INVALID_LATE_ENTRY', message: 'late_entry_deduction_minutes: 0-480 minuti' });
+      updates.late_entry_deduction_minutes = min;
+    }
+  }
+
   if (start_date !== undefined) updates.start_date = start_date || null;
 
   // Calcola end_date dai giorni contratto con fallback ai valori già salvati nel DB
@@ -337,7 +373,15 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     return res.status(400).json({ error: 'NO_FIELDS', message: 'Nessun campo da aggiornare.' });
   }
 
-  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes';
+  // F-165 (AUDIT.md): mancavano weather_*/lunch_break_* — la risposta di ogni
+  // PATCH (anche uno che non toccava questi campi) restituiva sempre i
+  // fallback di formatSite() (weatherRainMm:1, lunchBreakMinutes:null, ecc.)
+  // invece del valore reale salvato. Non ancora osservabile lato utente (ogni
+  // chiamante scarta la risposta e richiama GET /sites via refreshSite()),
+  // ma diventava un bug reale nel momento in cui questo PATCH avesse iniziato
+  // a includere anche i nuovi campi ritardo ingresso sotto — corretto qui
+  // invece di riprodurlo una terza volta.
+  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes';
 
   const { data, error } = await supabase
     .from('sites')

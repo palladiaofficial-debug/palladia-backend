@@ -15,7 +15,7 @@
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak } = require('../lib/presencePairing');
+const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction } = require('../lib/presencePairing');
 
 // Soglia GPS (stessa del backend punch)
 const GPS_MAX_ACCURACY_M = (() => {
@@ -147,7 +147,7 @@ function formatAnomalies(list) {
  *   anomalies:       string[]       // anomalie formattate con conteggio
  * }}
  */
-function summarizeDay(dayBucket, geofenceRadius, lunchConfig) {
+function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig) {
   const { pairs, orphanEntries, orphanExits } = dayBucket;
   const dayLogs = flattenDayLogs(dayBucket);
 
@@ -160,11 +160,18 @@ function summarizeDay(dayBucket, geofenceRadius, lunchConfig) {
   const rawAnomalies = orphanEvents.map(oe => oe.label);
 
   // Ore totali = somma coppie valide al netto della pausa pranzo automatica
-  // (F-152, AUDIT.md), arrotondata a 2 decimali.
+  // (F-152, AUDIT.md) e del ritardo ingresso (migrations/199), arrotondata a
+  // 2 decimali. Il ritardo si applica DOPO la pausa pranzo — mai prima.
   const lunchResults = applyLunchBreak(pairs, lunchConfig);
   const lunchBreakMinutes = lunchResults.reduce((s, r) => s + (r.lunchBreakMinutes || 0), 0);
   if (lunchBreakMinutes > 0) rawAnomalies.push(`Pausa pranzo automatica: −${lunchBreakMinutes}m`);
-  const sumH = lunchResults.reduce((s, r) => s + r.minutes / 60, 0);
+  const lateResults = applyLateEntryDeduction(lunchResults, lateConfig || {});
+  const lateDeductionMinutes = lateResults.reduce((s, r) => s + (r.lateDeductionMinutes || 0), 0);
+  if (lateDeductionMinutes > 0) {
+    const lateMin = Math.max(...lateResults.map(r => r.lateMinutes || 0));
+    rawAnomalies.push(`Ritardo ingresso: −${lateDeductionMinutes}m (oltre ${lateConfig.thresholdMinutes}min di tolleranza, +${lateMin}min)`);
+  }
+  const sumH = lateResults.reduce((s, r) => s + r.minutes / 60, 0);
   const hoursTotal = Math.round(sumH * 100) / 100;
 
   // Prima entrata = min tra ENTRY delle coppie + ENTRY orfani del giorno
@@ -199,6 +206,7 @@ function summarizeDay(dayBucket, geofenceRadius, lunchConfig) {
     lastExit,
     hoursTotal,
     lunchBreakMinutes,
+    lateDeductionMinutes,
     intervalsCount: pairs.length,
     avgDist,
     avgAcc,
@@ -222,7 +230,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   // 1. Cantiere (verifica ownership + dati display + config pausa pranzo)
   const { data: site, error: siteErr } = await supabase
     .from('sites')
-    .select('id, name, address, geofence_radius_m, company_id, lunch_break_minutes, lunch_break_threshold_hours')
+    .select('id, name, address, geofence_radius_m, company_id, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('id', siteId)
     .eq('company_id', companyId)
     .maybeSingle();
@@ -233,13 +241,14 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   // 2. Azienda (nome + default pausa pranzo, ereditato dal cantiere senza override)
   const { data: company, error: compErr } = await supabase
     .from('companies')
-    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours')
+    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('id', companyId)
     .maybeSingle();
 
   if (compErr) throw new Error('DB_ERROR: ' + compErr.message);
 
   const lunchConfig = resolveLunchBreakConfig(company, site);
+  const lateConfig  = resolveLateEntryConfig(company, site);
 
   // 3. Log nel periodo (includi tutto il giorno finale in UTC)
   // Limite: 50k record (90gg × 500 lavoratori × 4 timbrature ≈ 180k max teorico;
@@ -291,7 +300,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     for (const [dateKey, dayBucket] of dayMap) {
       if (dateKey < from || dateKey > to) continue;   // fuori dal periodo richiesto
 
-      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig);
+      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig);
       const dayLogCount = dayBucket.pairs.length * 2
         + dayBucket.orphanEntries.length + dayBucket.orphanExits.length;
       if (dayLogCount === 0) continue;

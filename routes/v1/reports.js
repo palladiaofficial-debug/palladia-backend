@@ -5,7 +5,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../../services/presenceReport');
 const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
-const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak } = require('../../lib/presencePairing');
+const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction } = require('../../lib/presencePairing');
 const { logDocumentExport } = require('../../services/valueMetrics');
 const { sendDbError } = require('../../lib/httpErrors');
 
@@ -140,7 +140,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   // (default pausa pranzo, ereditato dai cantieri senza override) — F-152.
   let sitesQuery = supabase
     .from('sites')
-    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours')
+    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('company_id', req.companyId);
   if (singleSite) sitesQuery = sitesQuery.eq('id', siteId);
   const { data: sitesRows, error: sitesErr } = await sitesQuery.limit(1000);
@@ -152,7 +152,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
 
   const { data: company } = await supabase
     .from('companies')
-    .select('lunch_break_minutes, lunch_break_threshold_hours')
+    .select('lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('id', req.companyId).maybeSingle();
 
   // Nessun limite di giorni: l'export annuale è il caso d'uso principale.
@@ -195,8 +195,8 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   }
 
   const csvHeader = singleSite
-    ? 'data,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,pausa_pranzo_min,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie'
-    : 'data,cantiere,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,pausa_pranzo_min,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie';
+    ? 'data,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,pausa_pranzo_min,ritardo_min,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie'
+    : 'data,cantiere,lavoratore,codice_fiscale,prima_entrata,ultima_uscita,pausa_pranzo_min,ritardo_min,ore_totali,n_ingressi,distanza_media_m,gps_media_m,anomalie';
   const csvRows = [csvHeader];
   let grandHours = 0, grandIntervals = 0, grandAnomalies = 0;
 
@@ -223,13 +223,16 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     const site = siteById.get(gSiteId);
     const lunchConfig  = resolveLunchBreakConfig(company, site);
     const lunchResults = applyLunchBreak(pairs, lunchConfig);
+    const lateConfig  = resolveLateEntryConfig(company, site);
+    const lateResults = applyLateEntryDeduction(lunchResults, lateConfig);
 
     const anomalies = [];
-    let hoursTotal = 0, lunchBreakMin = 0;
+    let hoursTotal = 0, lunchBreakMin = 0, lateMin = 0;
     const intervals = pairs.length;
-    for (const lr of lunchResults) {
+    for (const lr of lateResults) {
       hoursTotal += lr.minutes / 60;
       lunchBreakMin += lr.lunchBreakMinutes || 0;
+      lateMin += lr.lateDeductionMinutes || 0;
       const note = METHOD_NOTE[lr.exit.method] || METHOD_NOTE[lr.entry.method];
       if (note) anomalies.push({ ts: lr.exit.timestamp_server, label: note });
     }
@@ -259,6 +262,7 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
       firstEntry,
       lastExit,
       lunchBreakMin > 0 ? lunchBreakMin : '',
+      lateMin > 0 ? lateMin : '',
       hoursTotal > 0 ? hoursTotal.toFixed(2) : '',
       intervals,
       avgDist,
@@ -269,8 +273,8 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
   }
 
   const totalRow = singleSite
-    ? ['', '"TOTALE"', '', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : '']
-    : ['', '', '"TOTALE"', '', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : ''];
+    ? ['', '"TOTALE"', '', '', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : '']
+    : ['', '', '"TOTALE"', '', '', '', '', '', grandHours > 0 ? grandHours.toFixed(2) : '0', grandIntervals, '', '', grandAnomalies > 0 ? `"${grandAnomalies} con anomalie"` : ''];
   csvRows.push(totalRow.join(','));
 
   // Header con metadati se il limite è stato raggiunto
@@ -605,7 +609,10 @@ function validateHoursParams(req, res) {
     res.status(400).json({ error: 'Intervallo massimo 366 giorni' });
     return null;
   }
-  return { siteId: siteId || null, from, to, workerId: req.query.workerId || null };
+  // F-164 (AUDIT.md): straordinari esclusi di default dall'export — l'utente
+  // deve attivarli esplicitamente per ogni singola esportazione.
+  const includeOvertime = req.query.includeOvertime === 'true' || req.query.includeOvertime === '1';
+  return { siteId: siteId || null, from, to, workerId: req.query.workerId || null, includeOvertime };
 }
 
 // GET /api/v1/reports/worker-hours → JSON dati strutturati
@@ -614,7 +621,7 @@ router.get('/reports/worker-hours', verifySupabaseJwt, async (req, res) => {
   if (!params) return;
 
   try {
-    const data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId);
+    const data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId, params.includeOvertime);
     res.json(data);
   } catch (err) {
     if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
@@ -630,7 +637,7 @@ router.get('/reports/worker-hours-pdf', verifySupabaseJwt, async (req, res) => {
 
   let data;
   try {
-    data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId);
+    data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId, params.includeOvertime);
   } catch (err) {
     if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
     console.error('[worker-hours-pdf] data error:', err.message);
@@ -664,7 +671,7 @@ router.get('/reports/worker-hours-xlsx', verifySupabaseJwt, async (req, res) => 
 
   let data;
   try {
-    data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId);
+    data = await buildWorkerHoursReport(params.siteId, req.companyId, params.from, params.to, params.workerId, params.includeOvertime);
   } catch (err) {
     if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
     console.error('[worker-hours-xlsx] data error:', err.message);
