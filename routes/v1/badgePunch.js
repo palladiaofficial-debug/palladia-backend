@@ -85,73 +85,29 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
   if (!worker) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
   if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
 
-  // Cantieri attivi assegnati al lavoratore (due query separate per evitare join PostgREST)
-  const { data: assignments, error: assignErr } = await supabase
-    .from('worksite_workers')
-    .select('site_id')
-    .eq('worker_id', worker.id)
-    .eq('status', 'active');
+  // Tutti i cantieri attivi (non chiusi/eliminati) della company del
+  // lavoratore — sempre, indipendentemente da eventuali righe in
+  // `worksite_workers`. F-16x (AUDIT.md, 2026-09-11): prima di questo fix la
+  // lista veniva filtrata alle sole assegnazioni quando il lavoratore ne
+  // aveva almeno una valida, col fallback alla lista intera solo a ZERO
+  // assegnazioni valide (introdotto da F-150 per il solo caso di riga stale
+  // cross-company/eliminata) — un lavoratore con 2 assegnazioni legittime ma
+  // che si sposta su un terzo cantiere restava bloccato, non vedendo mai il
+  // fallback. Richiesta esplicita e ripetuta dell'utente: ogni lavoratore
+  // deve vedere e poter timbrare su QUALSIASI cantiere attivo dell'azienda,
+  // ingresso e uscita anche su cantieri diversi nello stesso giorno —
+  // `worksite_workers` non deve mai restringere questa lista.
+  const { data: sitesRows, error: sitesErr } = await supabase
+    .from('sites')
+    .select('id, name, address, latitude, longitude, geofence_radius_m, status')
+    .eq('company_id', worker.company_id)
+    .not('status', 'in', '(chiuso,eliminato)');
 
-  if (assignErr) {
-    console.error('[badge-punch-context] assign error:', assignErr.message);
+  if (sitesErr) {
+    console.error('[badge-punch-context] sites error:', sitesErr.message);
     return res.status(500).json({ error: 'DB_ERROR' });
   }
-
-  const siteIds = (assignments || []).map(a => a.site_id);
-
-  // Tutti i cantieri attivi (non chiusi/eliminati) della company del
-  // lavoratore — fallback usato sia quando non ci sono assegnazioni
-  // specifiche, sia quando le assegnazioni trovate risultano tutte stale
-  // (F-150, AUDIT.md: cantiere di un'altra company o già eliminato).
-  const loadCompanyActiveSites = async () => {
-    const { data, error } = await supabase
-      .from('sites')
-      .select('id, name, address, latitude, longitude, geofence_radius_m, status')
-      .eq('company_id', worker.company_id)
-      .not('status', 'in', '(chiuso,eliminato)');
-    return { data, error };
-  };
-
-  let activeSites = [];
-  if (siteIds.length > 0) {
-    // F-150 (AUDIT.md): filtrare SEMPRE per company_id del lavoratore — una
-    // riga worksite_workers residua verso il cantiere di un'altra company
-    // (es. dopo un cambio di company o una fixture di test mai ripulita)
-    // nascondeva altrimenti tutti i cantieri reali. Escludere anche i siti
-    // eliminati, non solo 'chiuso'.
-    const { data: sitesRows, error: sitesErr } = await supabase
-      .from('sites')
-      .select('id, name, address, latitude, longitude, geofence_radius_m, status')
-      .in('id', siteIds)
-      .eq('company_id', worker.company_id)
-      .not('status', 'in', '(chiuso,eliminato)');
-
-    if (sitesErr) {
-      console.error('[badge-punch-context] sites error:', sitesErr.message);
-      return res.status(500).json({ error: 'DB_ERROR' });
-    }
-    activeSites = sitesRows || [];
-
-    // Nessun cantiere valido tra le assegnazioni (tutte stale/cross-company/
-    // eliminate) → fallback a tutti i cantieri attivi della company, stesso
-    // comportamento già usato per un lavoratore senza assegnazioni.
-    if (activeSites.length === 0) {
-      const { data: companySites, error: companySitesErr } = await loadCompanyActiveSites();
-      if (companySitesErr) {
-        console.error('[badge-punch-context] company sites fallback error:', companySitesErr.message);
-        return res.status(500).json({ error: 'DB_ERROR' });
-      }
-      activeSites = companySites || [];
-    }
-  } else {
-    // Nessuna assegnazione specifica → fallback a tutti i cantieri attivi dell'azienda
-    const { data: companySites, error: companySitesErr } = await loadCompanyActiveSites();
-    if (companySitesErr) {
-      console.error('[badge-punch-context] company sites error:', companySitesErr.message);
-      return res.status(500).json({ error: 'DB_ERROR' });
-    }
-    activeSites = companySites || [];
-  }
+  const activeSites = sitesRows || [];
 
   // Per ogni cantiere: distanza GPS + ultimo evento (query in parallelo)
   let siteData;
