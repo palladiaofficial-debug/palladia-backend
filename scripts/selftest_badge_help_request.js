@@ -99,9 +99,12 @@ async function main() {
     await new Promise(r => setTimeout(r, 800)); // insert fire-and-forget
 
     const { data: auditRows } = await admin.from('admin_audit_log')
-      .select('action, payload, target_id')
-      .eq('company_id', companyId).eq('action', 'punch.help_requested').eq('target_id', worker.id);
+      .select('action, payload, target_id, created_at')
+      .eq('company_id', companyId).eq('action', 'punch.help_requested').eq('target_id', worker.id)
+      .order('created_at', { ascending: true });
     check('almeno una riga in admin_audit_log con action punch.help_requested', (auditRows || []).length >= 1, auditRows);
+    // La prima riga corrisponde alla richiesta con reason=GPS_ACCURACY_TOO_LOW
+    // inviata sopra — la seconda (reason non riconosciuto) arriva dopo.
     check('il payload registra cantiere e motivo', auditRows?.[0]?.payload?.site_id === site.id && auditRows?.[0]?.payload?.reason === 'GPS_ACCURACY_TOO_LOW', auditRows?.[0]);
 
     const { data: notifRows } = await admin.from('notifications')
