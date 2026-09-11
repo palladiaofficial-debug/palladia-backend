@@ -155,6 +155,15 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     .select('lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('id', req.companyId).maybeSingle();
 
+  // Override "niente pausa oggi" (F-169, AUDIT.md, migrations/200)
+  const { data: lunchOverrides } = await supabase
+    .from('presence_lunch_overrides')
+    .select('worker_id, work_date')
+    .eq('company_id', req.companyId)
+    .gte('work_date', from)
+    .lte('work_date', to);
+  const noLunchSet = new Set((lunchOverrides || []).map(o => `${o.worker_id}__${o.work_date}`));
+
   // Nessun limite di giorni: l'export annuale è il caso d'uso principale.
   // Limit righe raw: 50k. Finestra allargata di 1 giorno intero su ciascun
   // lato (oltre al consueto +02:00/+01:00 invece di Z): permette di
@@ -222,7 +231,8 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     const dayLogs = [...pairs.flatMap(p => [p.entry, p.exit]), ...orphanEntries, ...orphanExits];
     const site = siteById.get(gSiteId);
     const lunchConfig  = resolveLunchBreakConfig(company, site);
-    const lunchResults = applyLunchBreak(pairs, lunchConfig);
+    const skipLunchDeduction = noLunchSet.has(`${worker.id}__${dateKey}`);
+    const lunchResults = applyLunchBreak(pairs, lunchConfig, skipLunchDeduction);
     const lateConfig  = resolveLateEntryConfig(company, site);
     const lateResults = applyLateEntryDeduction(lunchResults, lateConfig);
 
@@ -238,6 +248,9 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     }
     for (const l of orphanEntries) anomalies.push({ ts: l.timestamp_server, label: 'Uscita mancante' });
     for (const l of orphanExits)   anomalies.push({ ts: l.timestamp_server, label: 'Uscita senza entrata' });
+    // F-169 (AUDIT.md): "niente pausa oggi" dichiarato dall'admin, annotato
+    // per trasparenza anche se non cambia il totale ore.
+    if (skipLunchDeduction) anomalies.push({ ts: dateKey, label: 'Pausa pranzo: dichiarata saltata (nessuna detrazione)' });
     anomalies.sort((a, b) => a.ts.localeCompare(b.ts));
     const anomalyLabels = anomalies.map(a => a.label);
 
@@ -832,6 +845,62 @@ router.get('/reports/presence/closures', verifySupabaseJwt, async (req, res) => 
     .limit(90);
   if (error) return sendDbError(res, error);
   res.json({ closures: data || [] });
+});
+
+// ── Override "niente pausa oggi" (F-169, AUDIT.md, migrations/200) ────────
+// La detrazione automatica pausa pranzo (F-152) presume che un turno unico
+// continuo sopra soglia includa una pausa non timbrata — penalizza chi ha
+// davvero lavorato senza sosta invece di uscire prima. L'admin/titolare può
+// segnalare esplicitamente un giorno/lavoratore da Presenze & Report; da lì
+// in poi tutti e 3 i generatori di report (buildWorkerHoursReport,
+// buildDailyPresenceSummary, presence-range CSV) saltano la detrazione per
+// quel giorno, pagando la presenza reale.
+
+// POST /api/v1/reports/lunch-override — crea/aggiorna la segnalazione
+router.post('/reports/lunch-override', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  }
+  const { worker_id, work_date, note } = req.body || {};
+  if (!worker_id || !work_date || !DATE_RE.test(work_date)) {
+    return res.status(400).json({ error: 'INVALID_PARAMS', message: 'worker_id e work_date (YYYY-MM-DD) obbligatori' });
+  }
+
+  const { data: worker, error: workerErr } = await supabase
+    .from('workers').select('id').eq('id', worker_id).eq('company_id', req.companyId).maybeSingle();
+  if (workerErr) return sendDbError(res, workerErr);
+  if (!worker) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+
+  const { data, error } = await supabase
+    .from('presence_lunch_overrides')
+    .upsert({
+      company_id: req.companyId, worker_id, work_date,
+      note: note ? String(note).slice(0, 500) : null,
+      created_by: req.user.id,
+    }, { onConflict: 'worker_id,work_date' })
+    .select('id, worker_id, work_date, note')
+    .single();
+  if (error) return sendDbError(res, error);
+  res.json({ override: data });
+});
+
+// DELETE /api/v1/reports/lunch-override — rimuove la segnalazione (torna
+// alla detrazione automatica normale per quel giorno)
+router.delete('/reports/lunch-override', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  }
+  const { worker_id, work_date } = req.body || {};
+  if (!worker_id || !work_date || !DATE_RE.test(work_date)) {
+    return res.status(400).json({ error: 'INVALID_PARAMS', message: 'worker_id e work_date (YYYY-MM-DD) obbligatori' });
+  }
+
+  const { error } = await supabase
+    .from('presence_lunch_overrides')
+    .delete()
+    .eq('company_id', req.companyId).eq('worker_id', worker_id).eq('work_date', work_date);
+  if (error) return sendDbError(res, error);
+  res.json({ success: true });
 });
 
 module.exports = router;

@@ -111,5 +111,39 @@ const CFG_STANDARD = { minutes: 30, thresholdMinutes: 360 }; // 30m sopra 6h
   check('nessuna coppia → array vuoto, nessun errore', Array.isArray(result) && result.length === 0, result);
 }
 
+// ── F-169 (AUDIT.md, 2026-09-11): override "niente pausa oggi" ────────────
+// Un lavoratore che salta davvero la pausa (non solo non la timbra) e lavora
+// senza sosta veniva comunque penalizzato: la detrazione automatica presume
+// sempre una pausa non timbrata. L'admin può segnalare il giorno da Presenze
+// & Report (tabella presence_lunch_overrides) — applyLunchBreak deve saltare
+// del tutto la detrazione quando skipDeduction=true, indipendentemente da
+// soglia/minuti configurati.
+{
+  // Stesso scenario del bug originale (07:37->17:01, sopra soglia) ma con
+  // l'override attivo: nessuna detrazione, ore grezze intere.
+  const pairs = [{ entry: log('ENTRY', '07:37'), exit: log('EXIT', '17:01') }];
+  const result = applyLunchBreak(pairs, CFG_STANDARD, true);
+  check('F-169: override "niente pausa oggi" → nessuna detrazione anche sopra soglia',
+    result[0].minutes === 564 && result[0].lunchBreakMinutes === 0, result);
+}
+{
+  // Esempio concreto usato con l'utente: 8:00->16:00 (8h, skip pausa).
+  const pairs = [{ entry: log('ENTRY', '08:00'), exit: log('EXIT', '16:00') }];
+  const withoutOverride = applyLunchBreak(pairs, { minutes: 60, thresholdMinutes: 360 }, false);
+  const withOverride    = applyLunchBreak(pairs, { minutes: 60, thresholdMinutes: 360 }, true);
+  check('F-169: senza override la stessa giornata perde 60m (bug segnalato dall\'utente)',
+    withoutOverride[0].minutes === 420, withoutOverride);
+  check('F-169: con override la giornata paga le 8h intere',
+    withOverride[0].minutes === 480 && withOverride[0].lunchBreakMinutes === 0, withOverride);
+}
+{
+  // skipDeduction di default false — nessuna regressione sulle chiamate
+  // esistenti che non passano il terzo parametro.
+  const pairs = [{ entry: log('ENTRY', '07:37'), exit: log('EXIT', '17:01') }];
+  const result = applyLunchBreak(pairs, CFG_STANDARD);
+  check('F-169: terzo parametro omesso → comportamento invariato (detrazione applicata)',
+    result[0].lunchBreakMinutes === 30, result);
+}
+
 console.log(`\n${passed} passati, ${failed} falliti\n`);
 process.exitCode = failed > 0 ? 1 : 0;

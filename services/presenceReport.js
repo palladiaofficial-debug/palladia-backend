@@ -147,7 +147,7 @@ function formatAnomalies(list) {
  *   anomalies:       string[]       // anomalie formattate con conteggio
  * }}
  */
-function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig) {
+function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLunchDeduction = false) {
   const { pairs, orphanEntries, orphanExits } = dayBucket;
   const dayLogs = flattenDayLogs(dayBucket);
 
@@ -162,9 +162,13 @@ function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig) {
   // Ore totali = somma coppie valide al netto della pausa pranzo automatica
   // (F-152, AUDIT.md) e del ritardo ingresso (migrations/199), arrotondata a
   // 2 decimali. Il ritardo si applica DOPO la pausa pranzo — mai prima.
-  const lunchResults = applyLunchBreak(pairs, lunchConfig);
+  const lunchResults = applyLunchBreak(pairs, lunchConfig, skipLunchDeduction);
   const lunchBreakMinutes = lunchResults.reduce((s, r) => s + (r.lunchBreakMinutes || 0), 0);
   if (lunchBreakMinutes > 0) rawAnomalies.push(`Pausa pranzo automatica: −${lunchBreakMinutes}m`);
+  // F-169 (AUDIT.md): "niente pausa oggi" dichiarato dall'admin — annotato
+  // sempre, anche se non cambia hoursTotal rispetto a un giorno già senza
+  // deduzione, per trasparenza nel registro presenze.
+  if (skipLunchDeduction) rawAnomalies.push('Pausa pranzo: dichiarata saltata (nessuna detrazione)');
   const lateResults = applyLateEntryDeduction(lunchResults, lateConfig || {});
   const lateDeductionMinutes = lateResults.reduce((s, r) => s + (r.lateDeductionMinutes || 0), 0);
   if (lateDeductionMinutes > 0) {
@@ -250,6 +254,15 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   const lunchConfig = resolveLunchBreakConfig(company, site);
   const lateConfig  = resolveLateEntryConfig(company, site);
 
+  // Override "niente pausa oggi" (F-169, AUDIT.md, migrations/200)
+  const { data: lunchOverrides } = await supabase
+    .from('presence_lunch_overrides')
+    .select('worker_id, work_date')
+    .eq('company_id', companyId)
+    .gte('work_date', from)
+    .lte('work_date', to);
+  const noLunchSet = new Set((lunchOverrides || []).map(o => `${o.worker_id}__${o.work_date}`));
+
   // 3. Log nel periodo (includi tutto il giorno finale in UTC)
   // Limite: 50k record (90gg × 500 lavoratori × 4 timbrature ≈ 180k max teorico;
   // in pratica 50k copre la quasi totalità dei casi reali).
@@ -300,7 +313,8 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     for (const [dateKey, dayBucket] of dayMap) {
       if (dateKey < from || dateKey > to) continue;   // fuori dal periodo richiesto
 
-      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig);
+      const skipLunchDeduction = noLunchSet.has(`${wData.worker.id}__${dateKey}`);
+      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig, skipLunchDeduction);
       const dayLogCount = dayBucket.pairs.length * 2
         + dayBucket.orphanEntries.length + dayBucket.orphanExits.length;
       if (dayLogCount === 0) continue;

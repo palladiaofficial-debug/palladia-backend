@@ -106,6 +106,17 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     .select('name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
     .eq('id', companyId).maybeSingle();
 
+  // Override "niente pausa oggi" (F-169, AUDIT.md, migrations/200) — giorni
+  // segnalati dall'admin in cui la detrazione automatica pausa pranzo va
+  // saltata perché il lavoratore ha davvero lavorato senza sosta.
+  const { data: lunchOverrides } = await supabase
+    .from('presence_lunch_overrides')
+    .select('worker_id, work_date')
+    .eq('company_id', companyId)
+    .gte('work_date', from)
+    .lte('work_date', to);
+  const noLunchSet = new Set((lunchOverrides || []).map(o => `${o.worker_id}__${o.work_date}`));
+
   // Presence logs
   // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
   // +02:00/+01:00 invece di Z): permette di accoppiare correttamente anche un
@@ -167,7 +178,8 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       // Detrazione pausa pranzo (F-152, AUDIT.md) — solo se il giorno è
       // un'unica coppia continua sopra soglia; se ci sono 2+ coppie il
       // lavoratore ha già timbrato una pausa reale, già esclusa dalla somma.
-      const lunchResults = applyLunchBreak(pairs, lunchConfig);
+      const skipLunchDeduction = noLunchSet.has(`${wId}__${dk}`);
+      const lunchResults = applyLunchBreak(pairs, lunchConfig, skipLunchDeduction);
       // Detrazione ritardo ingresso (migrations/199) — sulla PRIMA coppia del
       // giorno, dopo la pausa pranzo (mai prima: la detrazione ritardo si
       // applica ai minuti già corretti, non a quelli grezzi). Nessun effetto
@@ -200,6 +212,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
             hours_str:             fmtDuration(mins),
             anomaly:               METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
             lunch_break_minutes:   lr.lunchBreakMinutes || 0,
+            no_lunch_override:     skipLunchDeduction,
             late_deduction_minutes: lr.lateDeductionMinutes || 0,
             late_minutes:           lr.lateMinutes || 0,
             site_name:             siteName,
@@ -228,6 +241,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
         overtime_minutes:       Math.max(0, dayMin - 480),
         lunch_break_minutes:    dayLunchBreakMinutes,
         has_lunch_break_deduction: dayLunchBreakMinutes > 0,
+        no_lunch_override:      skipLunchDeduction, // F-169: "niente pausa oggi" dichiarato dall'admin
         late_deduction_minutes:   dayLateDeductionMinutes,
         late_minutes:             dayLateMinutes,
         has_late_deduction:       dayLateDeductionMinutes > 0,
@@ -329,7 +343,8 @@ function generateWorkerHoursPdfHtml(data) {
           ? `<span class="ot-badge">+${fmtDuration(d.overtime_minutes)} straord.</span>` : '';
         const siteTag = singleSite ? '' : ` <span class="small" style="color:#888;">— ${esc(d.site_name)}</span>`;
         const lunchTag = e.lunch_break_minutes > 0
-          ? `<span class="lunch-badge">−${e.lunch_break_minutes}m pausa pranzo</span>` : '';
+          ? `<span class="lunch-badge">−${e.lunch_break_minutes}m pausa pranzo</span>`
+          : (e.no_lunch_override ? `<span class="lunch-badge">Pausa saltata (dichiarata)</span>` : '');
         // Ritardo ingresso: sempre visibile, non gated da includeOvertime —
         // è una detrazione reale sulle ore, non un'informazione facoltativa
         // come lo straordinario (l'utente ha chiesto esplicitamente che
@@ -752,7 +767,7 @@ async function generateWorkerHoursXlsx(data) {
         dataCell(r.getCell(5), d.weekday, { bg, border: true, align: 'center' });
         dataCell(r.getCell(6), e.entry_time || '—', { bg, border: true, align: 'center' });
         dataCell(r.getCell(7), e.exit_time  || '—', { bg, border: true, align: 'center' });
-        dataCell(r.getCell(8), e.lunch_break_minutes > 0 ? `−${e.lunch_break_minutes}m` : '—', {
+        dataCell(r.getCell(8), e.lunch_break_minutes > 0 ? `−${e.lunch_break_minutes}m` : (e.no_lunch_override ? 'Pausa saltata (dichiarata)' : '—'), {
           bg: e.lunch_break_minutes > 0 ? WARNING_BG : bg, border: true, align: 'center',
           color: e.lunch_break_minutes > 0 ? WARNING : MUTED,
         });
