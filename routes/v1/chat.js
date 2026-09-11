@@ -3512,9 +3512,15 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const { worker_name, worker_id } = toolInput;
         if (!worker_name && !worker_id) return { error: 'Specificare worker_name o worker_id' };
 
+        // F-173 (AUDIT.md, 2026-09-11): fiscal_code/birth_date NON vanno in
+        // select — questo tool_result rientra nella conversazione mandata
+        // all'API Anthropic ad ogni richiesta di dettaglio lavoratore, e
+        // nessun consumatore reale di get_worker_detail ha bisogno del
+        // codice fiscale (compliance/scadenze/documenti/cantieri, non dati
+        // anagrafici identificativi).
         let q = supabase
           .from('workers')
-          .select('id, full_name, role, qualification, is_active, safety_training_expiry, health_fitness_expiry, hire_date, fiscal_code, birth_date, employer_name')
+          .select('id, full_name, role, qualification, is_active, safety_training_expiry, health_fitness_expiry, hire_date, employer_name')
           .eq('company_id', companyId);
 
         if (worker_id) {
@@ -3559,7 +3565,6 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
             ruolo:        w.role,
             qualifica:    w.qualification,
             attivo:       w.is_active,
-            codice_fiscale: w.fiscal_code,
             datore:       w.employer_name,
             compliance: {
               stato_globale: overallStatus(w),
