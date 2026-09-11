@@ -56,12 +56,29 @@ async function setup() {
   }).select('id').single();
   if (wErr) throw new Error('crea worker: ' + wErr.message);
 
-  return { companyId: company.id, siteId: siteIds[0], site2Id: siteIds[1], site3Id: siteIds[2], siteIds, workerId: worker.id };
+  // F-172 (AUDIT.md): punch_atomic decide ENTRY/EXIT ora GLOBALMENTE per
+  // lavoratore, non più per singolo cantiere — un secondo worker isolato
+  // per TEST 2, altrimenti l'ultimo evento davvero più recente del worker
+  // di TEST 1 (creato pochi secondi prima, su un altro cantiere) farebbe
+  // scattare correttamente PUNCH_TOO_SOON, invalidando la premessa del test.
+  const { data: worker2, error: w2Err } = await supabase.from('workers').insert({
+    company_id: company.id, full_name: 'TEST-F043 Worker 2', is_active: true,
+    fiscal_code: `TSTF43B${Date.now()}`.slice(0, 16).toUpperCase(),
+    badge_code: `TSTF43B${Date.now()}`,
+  }).select('id').single();
+  if (w2Err) throw new Error('crea worker 2: ' + w2Err.message);
+
+  return {
+    companyId: company.id, siteId: siteIds[0], site2Id: siteIds[1], site3Id: siteIds[2], siteIds,
+    workerId: worker.id, workerId2: worker2.id, workerIds: [worker.id, worker2.id],
+  };
 }
 
-async function cleanup({ companyId, siteIds, workerId }) {
-  if (workerId) await supabase.from('presence_logs').delete().eq('worker_id', workerId);
-  if (workerId) await supabase.from('workers').delete().eq('id', workerId);
+async function cleanup({ companyId, siteIds, workerIds }) {
+  for (const workerId of (workerIds || [])) {
+    await supabase.from('presence_logs').delete().eq('worker_id', workerId);
+    await supabase.from('workers').delete().eq('id', workerId);
+  }
   for (const siteId of (siteIds || [])) {
     await supabase.from('sites').delete().eq('id', siteId);
   }
@@ -129,13 +146,15 @@ async function main() {
 
     // ── TEST 2: ENTRY vecchia di 2h (stesso turno) → deve chiudersi
     //    normalmente come EXIT, comportamento pre-esistente invariato.
-    //    Cantiere diverso da TEST 1 per non incappare nel rate limit 60s. ──
+    //    Worker isolato (workerId2, F-172): la decisione è ora globale per
+    //    lavoratore, quindi non basta un cantiere diverso da TEST 1 — serve
+    //    un worker che non abbia appena avuto un evento più recente altrove. ──
     const freshEntryTs = new Date(Date.now() - 2 * 3600_000).toISOString();
     await supabase.from('presence_logs').insert({
-      company_id: ctx.companyId, site_id: ctx.site2Id, worker_id: ctx.workerId,
+      company_id: ctx.companyId, site_id: ctx.site2Id, worker_id: ctx.workerId2,
       event_type: 'ENTRY', timestamp_server: freshEntryTs, method: 'worker_self_punch',
     });
-    const { data: r2, error: e2 } = await punch({ ...ctx, siteId: ctx.site2Id });
+    const { data: r2, error: e2 } = await punch({ ...ctx, siteId: ctx.site2Id, workerId: ctx.workerId2 });
     if (e2) fail('punch dopo ENTRY di 2h fa non va in errore RPC', e2.message);
     else if (r2?.ok && r2.event_type === 'EXIT' && r2.auto_closed_stale === false) {
       ok('ENTRY di 2h fa (stesso turno) si chiude normalmente come EXIT — comportamento invariato');

@@ -685,6 +685,18 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   const eventType = punchResult.event_type;
   const tsServer  = punchResult.timestamp_server;
 
+  // F-172 (AUDIT.md): la decisione ENTRY/EXIT è ora globale per lavoratore
+  // (migrations/201) — un'uscita qui può chiudere un'apertura scansionata su
+  // un QR di un ALTRO cantiere. Risolvi il nome corretto per la notifica.
+  let effectiveSiteId   = worksite_id;
+  let effectiveSiteName = site.name;
+  if (punchResult.closed_site_id && punchResult.closed_site_id !== worksite_id) {
+    const { data: closedSite } = await supabase
+      .from('sites').select('name').eq('id', punchResult.closed_site_id).maybeSingle();
+    effectiveSiteId   = punchResult.closed_site_id;
+    effectiveSiteName = closedSite?.name || effectiveSiteName;
+  }
+
   supabase
     .from('worker_device_sessions')
     .update({ last_seen_at: tsServer })
@@ -697,15 +709,17 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     distance_m:         distanceM,
     geofence_active:    geofenceActive,
     gps_accuracy_m:     accuracyM != null ? Math.round(accuracyM) : null,
-    gps_accuracy_m_raw: accuracyM
+    gps_accuracy_m_raw: accuracyM,
+    site_name:          effectiveSiteName,
+    closed_elsewhere:   effectiveSiteId !== worksite_id,
   });
 
   // ── Telegram punch notification (fire-and-forget) ─────────────────────────
   const workerName = session.worker?.full_name || session.worker_id;
   notifyPunch(
     site.company_id,
-    worksite_id,
-    site.name,
+    effectiveSiteId,
+    effectiveSiteName,
     workerName,
     eventType,
     tsServer
@@ -856,9 +870,29 @@ router.get('/scan/punch-status', scanLimiter, async (req, res) => {
 
   if (logErr) return res.status(500).json({ error: 'DB_ERROR' });
 
+  // F-172 (AUDIT.md): stesso principio di GET /badge/:code/punch-context — il
+  // pulsante "entrata/uscita" deve riflettere se il lavoratore è aperto da
+  // qualche parte GLOBALMENTE (migrations/201, punch_atomic decide così), non
+  // solo se ha una storia su QUESTO cantiere. `last_event_type`/`last_timestamp`
+  // restano per-cantiere (informativi); `next_action` è nuovo e globale.
+  const { data: globalLastLog, error: globalErr } = await supabase
+    .from('presence_logs')
+    .select('event_type, timestamp_server, site_id')
+    .eq('worker_id', session.worker_id)
+    .order('timestamp_server', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (globalErr) return res.status(500).json({ error: 'DB_ERROR' });
+
+  const isOpenGlobally = globalLastLog?.event_type === 'ENTRY';
+
   res.json({
     last_event_type: lastLog?.event_type  || null,
-    last_timestamp:  lastLog?.timestamp_server || null
+    last_timestamp:  lastLog?.timestamp_server || null,
+    next_action:     isOpenGlobally ? 'EXIT' : 'ENTRY',
+    open_site_id:    isOpenGlobally ? globalLastLog.site_id : null,
+    open_since:      isOpenGlobally ? globalLastLog.timestamp_server : null,
   });
 });
 

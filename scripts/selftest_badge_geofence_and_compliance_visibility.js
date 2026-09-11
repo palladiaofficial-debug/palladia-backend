@@ -84,6 +84,7 @@ async function main() {
     if (rGeo.status === 403 && rGeo.data.error === 'OUTSIDE_GEOFENCE') ok('fuori geofence → 403 OUTSIDE_GEOFENCE (invariato)');
     else fail('fuori geofence → 403 OUTSIDE_GEOFENCE', rGeo);
 
+    await new Promise(r => setTimeout(r, 800)); // insert audit log fire-and-forget, non atteso dalla risposta HTTP
     const { data: auditGeo } = await supabase.from('admin_audit_log')
       .select('*').eq('company_id', companyId).eq('action', 'punch.rejected_geofence').eq('target_id', workers.inRegola.id);
     if (auditGeo && auditGeo.length === 1 && auditGeo[0].payload?.distance_m === 599) {
@@ -103,6 +104,7 @@ async function main() {
       ok('F-139: risposta API include compliance_warning.expired=["safety_training"] (visibile all\'operaio)');
     } else fail('F-139: compliance_warning nella risposta', rExpired.data);
 
+    await new Promise(r => setTimeout(r, 800)); // insert audit log fire-and-forget, non atteso dalla risposta HTTP
     const { data: auditExp } = await supabase.from('admin_audit_log')
       .select('*').eq('company_id', companyId).eq('action', 'punch.expired_compliance').eq('target_id', workers.scaduto.id);
     if (auditExp && auditExp.length === 1 && auditExp[0].payload?.expired?.includes('safety_training')) {

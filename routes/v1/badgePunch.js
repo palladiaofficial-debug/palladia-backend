@@ -110,7 +110,27 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
   }
   const activeSites = sitesRows || [];
 
-  // Per ogni cantiere: distanza GPS + ultimo evento (query in parallelo)
+  // F-172 (AUDIT.md): stesso worker, stesso stato "aperto/chiuso" GLOBALE
+  // (migrations/201, punch_atomic) — next_action non è più deciso guardando
+  // l'ultimo evento per-singolo-cantiere (portava a mostrare "ENTRATA" su un
+  // cantiere mai toccato anche quando il lavoratore era già aperto altrove,
+  // es. entrato al cantiere e in uscita dal magazzino). Un solo evento
+  // globale decide il next_action per TUTTI i cantieri della lista.
+  const { data: globalLastLog } = await supabase
+    .from('presence_logs')
+    .select('event_type, timestamp_server, site_id')
+    .eq('worker_id', worker.id)
+    .eq('company_id', worker.company_id)
+    .order('timestamp_server', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const isOpenGlobally = globalLastLog?.event_type === 'ENTRY';
+  const openSiteId     = isOpenGlobally ? globalLastLog.site_id : null;
+  const nextActionGlobal = isOpenGlobally ? 'EXIT' : 'ENTRY';
+
+  // Per ogni cantiere: distanza GPS + ultimo evento SU QUEL cantiere (solo
+  // informativo, per lo storico — non decide più next_action)
   let siteData;
   try {
   siteData = await Promise.all(activeSites.map(async (site) => {
@@ -126,7 +146,6 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
       inGeofence = true;
     }
 
-    // Ultimo punch su questo cantiere
     const { data: lastLog } = await supabase
       .from('presence_logs')
       .select('event_type, timestamp_server')
@@ -135,8 +154,6 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
       .order('timestamp_server', { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    const nextAction = lastLog?.event_type === 'ENTRY' ? 'EXIT' : 'ENTRY';
 
     return {
       site_id:           site.id,
@@ -148,7 +165,8 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
       geofence_radius_m: site.geofence_radius_m,
       last_event_type:   lastLog?.event_type || null,
       last_timestamp:    lastLog?.timestamp_server || null,
-      next_action:       nextAction,
+      next_action:       nextActionGlobal,
+      is_open_here:      isOpenGlobally && site.id === openSiteId,
     };
   }));
   } catch (e) {
@@ -187,6 +205,8 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     sites:                 siteData,
     auto_selected_site_id: autoSelectedSiteId,
     max_gps_accuracy_m:    GPS_MAX_ACCURACY_M,
+    open_site_id:          openSiteId,
+    open_since:            isOpenGlobally ? globalLastLog.timestamp_server : null,
   });
 
   } catch (err) {
@@ -352,6 +372,21 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   const eventType = punchResult.event_type;
   const tsServer  = punchResult.timestamp_server;
 
+  // F-172 (AUDIT.md): con la decisione ENTRY/EXIT ora globale per lavoratore
+  // (non più per singolo cantiere), un'uscita può chiudere un'apertura su un
+  // cantiere DIVERSO da quello toccato (es. entrato al cantiere, esce dal
+  // magazzino) — punch_atomic (migrations/201) restituisce esplicitamente
+  // closed_site_id in quel caso: mai far credere che la timbratura sia
+  // avvenuta sul cantiere toccato quando in realtà ha chiuso quello originale.
+  let effectiveSiteId   = site_id;
+  let effectiveSiteName = site.name;
+  if (punchResult.closed_site_id && punchResult.closed_site_id !== site_id) {
+    const { data: closedSite } = await supabase
+      .from('sites').select('name').eq('id', punchResult.closed_site_id).maybeSingle();
+    effectiveSiteId   = punchResult.closed_site_id;
+    effectiveSiteName = closedSite?.name || effectiveSiteName;
+  }
+
   // F-139 (AUDIT.md): la timbratura non viene bloccata da un documento scaduto
   // (policy scelta) — ma su un'ENTRY lo segnaliamo all'operaio nella risposta
   // stessa e all'amministratore via notifica, invece di lasciarlo passare in
@@ -389,15 +424,17 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     geofence_active:    geofenceActive,
     gps_accuracy_m:     accuracyM ? Math.round(accuracyM) : null,
     worker_name:        worker.full_name,
-    site_name:          site.name,
+    site_name:          effectiveSiteName,
+    closed_elsewhere:   effectiveSiteId !== site_id,
     compliance_warning: complianceWarning,
   });
 
-  // Telegram punch notification (fire-and-forget)
+  // Telegram punch notification (fire-and-forget) — riferita al cantiere
+  // effettivo (quello chiuso), non a quello toccato se sono diversi.
   notifyPunch(
     worker.company_id,
-    site_id,
-    site.name,
+    effectiveSiteId,
+    effectiveSiteName,
     worker.full_name,
     eventType,
     tsServer
@@ -671,11 +708,22 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
   const eventType = punchResult.event_type;
   const tsServer  = punchResult.timestamp_server;
 
+  // F-172 (AUDIT.md): vedi commento analogo su POST /badge/:code/punch — la
+  // decisione ENTRY/EXIT è globale per lavoratore, l'uscita può chiudere
+  // un'apertura su un cantiere diverso da quello selezionato dal capocantiere.
+  let effectiveSiteName = site.name;
+  if (punchResult.closed_site_id && punchResult.closed_site_id !== site_id) {
+    const { data: closedSite } = await supabase
+      .from('sites').select('name').eq('id', punchResult.closed_site_id).maybeSingle();
+    effectiveSiteName = closedSite?.name || effectiveSiteName;
+  }
+
   res.json({
     event_type:       eventType,
     timestamp_server: tsServer,
     worker_name:      worker.full_name,
-    site_name:        site.name,
+    site_name:        effectiveSiteName,
+    closed_elsewhere: effectiveSiteName !== site.name,
     method:           'capocantiere_action',
     registered_by:    req.user?.email || 'admin',
   });

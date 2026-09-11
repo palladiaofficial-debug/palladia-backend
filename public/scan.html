@@ -593,7 +593,12 @@
         `/api/v1/scan/punch-status?worksite_id=${encodeURIComponent(WSITE_ID)}&session_token=${encodeURIComponent(sessionToken)}`
       );
       if (status === 200) {
-        if (body.last_event_type === 'ENTRY') {
+        // F-172 (AUDIT.md): next_action è globale per lavoratore (non più
+        // solo la storia su QUESTO cantiere) — un lavoratore aperto altrove
+        // deve vedere "Registra uscita" anche scansionando un cantiere mai
+        // toccato prima, altrimenti il tocco apriva una nuova entrata
+        // fantasma qui invece di chiudere quella reale.
+        if (body.next_action === 'EXIT') {
           punchState  = 'exit';
           lastEntryTs = body.last_timestamp || null;
         } else {
