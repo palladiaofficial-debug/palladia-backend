@@ -623,6 +623,10 @@
       gpsNotPrecise: 'GPS non abbastanza preciso',
       gpsRetryHint: "Spostati all'aperto, aspetta qualche secondo e riprova.",
       retry: 'Riprova',
+      askHelpLink: 'Non riesci a timbrare? Avvisa il responsabile',
+      askHelpButton: 'Avvisa il responsabile',
+      askingHelp: 'Invio…',
+      helpSent: '✓ Responsabile avvisato',
       registrazione: 'Registrazione…',
       gpsUnavailableDevice: 'GPS non disponibile su questo dispositivo',
       gpsPositionDetected: function (a) { return 'Posizione rilevata (±' + a + 'm)'; },
@@ -731,6 +735,10 @@
       gpsNotPrecise: 'GPS insuficient de precis',
       gpsRetryHint: 'Ieși afară, așteaptă câteva secunde și încearcă din nou.',
       retry: 'Încearcă din nou',
+      askHelpLink: 'Nu poți pontaja? Avertizează responsabilul',
+      askHelpButton: 'Avertizează responsabilul',
+      askingHelp: 'Se trimite…',
+      helpSent: '✓ Responsabil avertizat',
       registrazione: 'Se înregistrează…',
       gpsUnavailableDevice: 'GPS indisponibil pe acest dispozitiv',
       gpsPositionDetected: function (a) { return 'Poziție detectată (±' + a + 'm)'; },
@@ -839,6 +847,10 @@
       gpsNotPrecise: 'GPS jo mjaftueshëm i saktë',
       gpsRetryHint: 'Dil jashtë, prit disa sekonda dhe provo përsëri.',
       retry: 'Provo përsëri',
+      askHelpLink: 'Nuk mund të regjistrosh? Njofto përgjegjësin',
+      askHelpButton: 'Njofto përgjegjësin',
+      askingHelp: 'Duke dërguar…',
+      helpSent: '✓ Përgjegjësi u njoftua',
       registrazione: 'Duke regjistruar…',
       gpsUnavailableDevice: 'GPS jo i disponueshëm në këtë pajisje',
       gpsPositionDetected: function (a) { return 'Pozicioni u zbulua (±' + a + 'm)'; },
@@ -947,6 +959,10 @@
       gpsNotPrecise: 'دقة GPS غير كافية',
       gpsRetryHint: 'اخرج إلى الخارج، انتظر بضع ثوانٍ وحاول مرة أخرى.',
       retry: 'إعادة المحاولة',
+      askHelpLink: 'لا يمكنك تسجيل الحضور؟ أخبر المسؤول',
+      askHelpButton: 'أخبر المسؤول',
+      askingHelp: 'جارٍ الإرسال…',
+      helpSent: '✓ تم إخبار المسؤول',
       registrazione: 'جارٍ التسجيل…',
       gpsUnavailableDevice: 'نظام GPS غير متوفر على هذا الجهاز',
       gpsPositionDetected: function (a) { return 'تم تحديد الموقع (±' + a + ' متر)'; },
@@ -1314,17 +1330,28 @@
     }
   }
 
+  // Codici per cui "avvisa il responsabile" ha senso come azione immediata (il
+  // lavoratore è fisicamente presente ma il sistema non riesce a registrarlo) —
+  // F-171 (AUDIT.md). Richiede selectedSite già scelto: vero per tutti questi
+  // codici, che arrivano solo da doPunch() dopo la selezione del cantiere.
+  const HELP_BUTTON_CODES = ['OUTSIDE_GEOFENCE', 'GPS_REQUIRED', 'SERVER_ERROR'];
+
   // ── Render: errore ─────────────────────────────────────────────────────────────
   function renderError(code, extraSub) {
     _rerenderCurrent = function () { renderError(code, extraSub); };
     const cfg = t().errorCopy[code] || t().errorCopy.SERVER_ERROR;
     const sub = extraSub ? `${cfg.sub}<br>${extraSub}` : cfg.sub;
+    const showHelpButton = HELP_BUTTON_CODES.includes(code) && !!selectedSite;
     wrap.innerHTML = `
       <div class="card error-wrap fade-in">
         <span class="error-icon">${cfg.icon}</span>
         <div class="error-title">${cfg.title}</div>
         <div class="error-sub">${sub}</div>
         <button class="error-retry" onclick="location.reload()">${esc(t().retry)}</button>
+        ${showHelpButton ? `
+        <button id="error-help-btn" ${helpRequestSent ? 'disabled' : ''} onclick="sendHelpRequest('${code === 'OUTSIDE_GEOFENCE' ? 'OUTSIDE_GEOFENCE' : 'OTHER'}', this)" style="width:100%;padding:12px;background:transparent;color:inherit;border:1.5px solid currentColor;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:10px;opacity:0.85;">
+          ${esc(helpRequestSent ? t().helpSent : t().askHelpButton)}
+        </button>` : ''}
       </div>
       <div class="hint-help">${esc(t().ifProblems)}</div>`;
   }
@@ -1412,7 +1439,11 @@
       <div class="hint-text fade-in">
         ${esc(t().pressButtonHint)}
       </div>
-      <div class="hint-help">${esc(t().ifProblems)}</div>`;
+      <div class="hint-help" id="help-hint">
+        ${helpRequestSent
+          ? esc(t().helpSent)
+          : `<a href="#" id="help-link" onclick="sendHelpRequest('OTHER', this); return false;" style="color:inherit;text-decoration:underline;">${esc(t().askHelpLink)}</a>`}
+      </div>`;
 
     if (isRelang) {
       // Il watcher GPS è già attivo — ripristina solo lo stato già noto nel nuovo markup
@@ -1445,6 +1476,28 @@
       </div>`;
   }
 
+  // ── Chiedi aiuto (F-171, AUDIT.md) ─────────────────────────────────────────────
+  // Un tap avvisa subito l'amministratore (Telegram + notifica in-app) — non
+  // deve mai richiedere al lavoratore di risolvere un problema tecnico sul
+  // proprio telefono solo per segnalare che non riesce a timbrare.
+  let helpRequestSent = false;
+
+  async function sendHelpRequest(reason, el) {
+    if (!selectedSite || helpRequestSent) return;
+    const idleText = el && el.tagName === 'A' ? t().askHelpLink : t().askHelpButton;
+    if (el) { el.setAttribute('disabled', 'true'); el.textContent = t().askingHelp; }
+    try {
+      await apiFetch('POST', `/api/v1/badge/${BADGE_CODE}/help-request`, {
+        site_id: selectedSite.site_id,
+        reason,
+      });
+      helpRequestSent = true;
+      if (el) { el.textContent = t().helpSent; }
+    } catch {
+      if (el) { el.removeAttribute('disabled'); el.textContent = idleText; }
+    }
+  }
+
   // ── GPS scarso: mostra avviso con retry ma non blocca definitivamente ─────────
   function showGpsRetry() {
     const resultCard = document.getElementById('result-card');
@@ -1460,6 +1513,9 @@
       </div>
       <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:#000;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;">
         ${esc(t().retry)}
+      </button>
+      <button id="gps-help-btn" ${helpRequestSent ? 'disabled' : ''} onclick="sendHelpRequest('GPS_ACCURACY_TOO_LOW', this)" style="width:100%;padding:12px;background:transparent;color:#d97706;border:1.5px solid #d97706;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;">
+        ${esc(helpRequestSent ? t().helpSent : t().askHelpButton)}
       </button>`;
     resultCard.classList.remove('hidden');
   }

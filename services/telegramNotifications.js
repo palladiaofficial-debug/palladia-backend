@@ -646,6 +646,47 @@ async function notifyRejectedGeofencePunch(companyId, siteId, siteName, workerNa
 }
 
 /**
+ * Alert "chiedi aiuto" dalla pagina badge (F-171, AUDIT.md): il lavoratore non
+ * riesce a timbrare (GPS non disponibile/impreciso, fuori zona, o qualunque
+ * altro motivo) e tocca un pulsante nella pagina pubblica invece di dover
+ * risolvere un problema tecnico sul proprio telefono — un tap, non impostazioni.
+ * L'amministratore riceve subito nome/cantiere/orario e può registrare lui la
+ * timbratura da Presenze & Report → Correzione manuale.
+ */
+async function notifyPunchHelpRequest(companyId, siteId, siteName, workerName, reason) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+
+  let users;
+  try {
+    users = await getCompanyTelegramUsers(companyId);
+  } catch (e) {
+    console.error('[notifyPunchHelpRequest] getCompanyTelegramUsers error:', e.message);
+    return;
+  }
+  if (!users.length) return;
+
+  const reasonText = reason === 'GPS_ACCURACY_TOO_LOW'
+    ? 'GPS non riesce a ottenere una posizione precisa'
+    : reason === 'OUTSIDE_GEOFENCE'
+      ? 'risulta troppo lontano dal cantiere'
+      : 'non riesce a timbrare';
+
+  const text =
+    `🆘 <b>${esc(workerName)}</b> ha bisogno di aiuto per timbrare\n` +
+    `📍 Cantiere: <b>${esc(siteName)}</b>\n` +
+    `⚠️ Motivo: ${esc(reasonText)}\n` +
+    `<i>Registra tu la sua timbratura da Presenze &amp; Report → Correzione manuale.</i>`;
+
+  const sends = users.map(u => {
+    if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) return null;
+    if ((u.notificationLevel || 'balanced') === 'quiet') return null;
+    return tg.sendMessage(u.chatId, text).catch(e => console.error('[notifyPunchHelpRequest] error:', e.message));
+  }).filter(Boolean);
+
+  if (sends.length) await Promise.allSettled(sends);
+}
+
+/**
  * Alert formazione/idoneità scaduta rilevata al momento della timbratura (F-139, AUDIT.md).
  * Il punch è comunque riuscito (policy scelta: permetti + avvisa) — questo
  * notifica l'amministratore, il lavoratore vede l'avviso lato frontend.
@@ -689,6 +730,7 @@ module.exports = {
   notifyPunch,
   notifyAnomalousPunch,
   notifyRejectedGeofencePunch,
+  notifyPunchHelpRequest,
   notifyExpiredComplianceAtPunch,
   notifySiteTeam,
   sendCustomNotification,

@@ -8,6 +8,7 @@
 // Endpoint PUBBLICI (autenticati via badge_code):
 //   GET  /api/v1/badge/:code/punch-context     → lavoratore + cantieri disponibili + GPS match
 //   POST /api/v1/badge/:code/punch             → registra ENTRY/EXIT (worker_self_punch)
+//   POST /api/v1/badge/:code/help-request      → avvisa l'amministratore, un tap (F-171)
 //
 // Endpoint PRIVATI (JWT):
 //   POST /api/v1/badge/:code/revoke            → disattiva lavoratore (badge inutilizzabile)
@@ -19,7 +20,7 @@ const crypto    = require('crypto');
 const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
-const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch } = require('../../services/telegramNotifications');
+const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch, notifyPunchHelpRequest } = require('../../services/telegramNotifications');
 const { badgePunchLimiter }  = require('../../middleware/rateLimit');
 const { complianceStatus }   = require('../../lib/compliance');
 
@@ -404,6 +405,85 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
 
   } catch (err) {
     console.error('[badge-punch] unexpected error:', err.message, err.stack);
+    if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── POST /api/v1/badge/:code/help-request — PUBBLICO ─────────────────────────
+// F-171 (AUDIT.md): il lavoratore non riesce a timbrare (GPS impreciso/non
+// disponibile, fuori zona, o altro) e non deve dover risolvere un problema
+// tecnico sul proprio telefono (es. permesso "posizione precisa") per poter
+// segnalarlo — un tap qui avvisa subito l'amministratore, che registra lui la
+// timbratura da Correzione manuale. Nessuna scrittura in presence_logs.
+const HELP_REQUEST_REASONS = ['GPS_ACCURACY_TOO_LOW', 'OUTSIDE_GEOFENCE', 'OTHER'];
+
+router.post('/badge/:code/help-request', badgePunchLimiter, async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { site_id, reason } = req.body || {};
+
+    if (!isValidBadgeCode(code)) {
+      return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
+    }
+    if (!site_id) {
+      return res.status(400).json({ error: 'MISSING_FIELDS', required: ['site_id'] });
+    }
+    const safeReason = HELP_REQUEST_REASONS.includes(reason) ? reason : 'OTHER';
+
+    const { data: worker, error: workerErr } = await supabase
+      .from('workers')
+      .select('id, full_name, company_id, is_active')
+      .eq('badge_code', code.toUpperCase())
+      .maybeSingle();
+
+    if (workerErr) return res.status(500).json({ error: 'DB_ERROR' });
+    if (!worker) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
+    if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
+
+    const { data: site, error: siteErr } = await supabase
+      .from('sites')
+      .select('id, name, company_id')
+      .eq('id', site_id)
+      .maybeSingle();
+
+    if (siteErr) return res.status(500).json({ error: 'DB_ERROR' });
+    if (!site) return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
+    if (site.company_id !== worker.company_id) {
+      return res.status(403).json({ error: 'COMPANY_MISMATCH' });
+    }
+
+    supabase.from('admin_audit_log').insert([{
+      company_id:  worker.company_id,
+      user_id:     null,
+      user_role:   'worker_badge',
+      action:      'punch.help_requested',
+      target_type: 'worker',
+      target_id:   worker.id,
+      payload:     { site_id, site_name: site.name, reason: safeReason },
+      ip:          (req.ip || '').slice(0, 45) || null,
+      user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null,
+    }]).then(({ error }) => { if (error) console.error('[badge-help-request] audit log error:', error.message); });
+
+    // entity_id univoco per richiesta (non worker.id): la tabella `notifications`
+    // ha un UNIQUE su (company_id, entity_type, entity_id, type) — con
+    // entity_id=worker.id una seconda richiesta dello stesso lavoratore in un
+    // altro giorno andrebbe in conflitto e non genererebbe una nuova notifica.
+    supabase.from('notifications').insert({
+      company_id:  worker.company_id,
+      type:        'punch_help_request',
+      severity:    'warning',
+      title:       `${worker.full_name} ha bisogno di aiuto per timbrare`,
+      body:        `Cantiere: ${site.name}. Registra tu la sua timbratura da Presenze & Report → Correzione manuale.`,
+      entity_type: 'punch_help_request',
+      entity_id:   crypto.randomUUID(),
+    }).then(({ error }) => { if (error) console.error('[badge-help-request] notification insert error:', error.message); });
+
+    notifyPunchHelpRequest(worker.company_id, site_id, site.name, worker.full_name, safeReason)
+      .catch(e => console.error('[badge-help-request] notifyPunchHelpRequest error:', e.message));
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[badge-help-request] unexpected error:', err.message, err.stack);
     if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
   }
 });
