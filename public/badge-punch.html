@@ -316,6 +316,15 @@
       color: #fff; background: var(--text); border: none; border-radius: 12px;
       cursor: pointer;
     }
+    /* F-171 (AUDIT.md): variante secondaria — usata per "Riprova" quando
+       "Avvisa il responsabile" (error-retry, piena) diventa l'azione primaria
+       su OUTSIDE_GEOFENCE/GPS_REQUIRED, dove ricaricare quasi mai risolve. */
+    .error-retry-secondary {
+      display: block; width: 100%; margin-top: 24px;
+      padding: 14px; font-size: 15px; font-weight: 700; font-family: inherit;
+      color: inherit; background: transparent; border: 1.5px solid currentColor;
+      opacity: 0.7; border-radius: 12px; cursor: pointer;
+    }
 
     /* ── Loading ── */
     .spinner {
@@ -1336,22 +1345,39 @@
   // codici, che arrivano solo da doPunch() dopo la selezione del cantiere.
   const HELP_BUTTON_CODES = ['OUTSIDE_GEOFENCE', 'GPS_REQUIRED', 'SERVER_ERROR'];
 
+  // Su OUTSIDE_GEOFENCE/GPS_REQUIRED "Riprova" (reload) quasi mai risolve — il
+  // lavoratore è dov'è, ricaricare la pagina non lo sposta. In quei due casi
+  // "Avvisa il responsabile" diventa l'azione PRIMARIA (pieno, in evidenza),
+  // non un link secondario facile da non notare da chi è già frustrato — è
+  // l'unica cosa che lo sblocca davvero finché non arriva la tolleranza GPS
+  // pianificata (F-170, AUDIT.md).
+  const HELP_PRIMARY_CODES = ['OUTSIDE_GEOFENCE', 'GPS_REQUIRED'];
+
   // ── Render: errore ─────────────────────────────────────────────────────────────
   function renderError(code, extraSub) {
     _rerenderCurrent = function () { renderError(code, extraSub); };
     const cfg = t().errorCopy[code] || t().errorCopy.SERVER_ERROR;
     const sub = extraSub ? `${cfg.sub}<br>${extraSub}` : cfg.sub;
     const showHelpButton = HELP_BUTTON_CODES.includes(code) && !!selectedSite;
+    const helpIsPrimary  = showHelpButton && HELP_PRIMARY_CODES.includes(code);
+    const helpReason     = code === 'OUTSIDE_GEOFENCE' ? 'OUTSIDE_GEOFENCE' : 'OTHER';
+
+    const retryBtnHtml = `<button class="${helpIsPrimary ? 'error-retry-secondary' : 'error-retry'}" onclick="location.reload()">${esc(t().retry)}</button>`;
+    const helpBtnHtml = showHelpButton ? `
+      <button id="error-help-btn" ${helpRequestSent ? 'disabled' : ''} onclick="sendHelpRequest('${helpReason}', this)"
+        class="${helpIsPrimary ? 'error-retry' : ''}"
+        style="${helpIsPrimary
+          ? 'margin-top:10px;'
+          : 'width:100%;padding:12px;background:transparent;color:inherit;border:1.5px solid currentColor;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:10px;opacity:0.85;'}">
+        ${esc(helpRequestSent ? t().helpSent : t().askHelpButton)}
+      </button>` : '';
+
     wrap.innerHTML = `
       <div class="card error-wrap fade-in">
         <span class="error-icon">${cfg.icon}</span>
         <div class="error-title">${cfg.title}</div>
         <div class="error-sub">${sub}</div>
-        <button class="error-retry" onclick="location.reload()">${esc(t().retry)}</button>
-        ${showHelpButton ? `
-        <button id="error-help-btn" ${helpRequestSent ? 'disabled' : ''} onclick="sendHelpRequest('${code === 'OUTSIDE_GEOFENCE' ? 'OUTSIDE_GEOFENCE' : 'OTHER'}', this)" style="width:100%;padding:12px;background:transparent;color:inherit;border:1.5px solid currentColor;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:10px;opacity:0.85;">
-          ${esc(helpRequestSent ? t().helpSent : t().askHelpButton)}
-        </button>` : ''}
+        ${helpIsPrimary ? helpBtnHtml + retryBtnHtml : retryBtnHtml + helpBtnHtml}
       </div>
       <div class="hint-help">${esc(t().ifProblems)}</div>`;
   }
