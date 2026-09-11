@@ -135,6 +135,15 @@ async function main() {
       dayAfter?.day_total_minutes === 480 && dayAfter?.lunch_break_minutes === 0, dayAfter);
     check('F-169: il giorno è marcato no_lunch_override per la UI', dayAfter?.no_lunch_override === true, dayAfter);
 
+    // ── GET elenca la segnalazione, per la UI ──
+    const listRes = await fetch(`${BASE}/api/v1/reports/lunch-override?from=${DAY}&to=${DAY}`, {
+      headers: { Authorization: `Bearer ${ownerJwt}`, 'X-Company-Id': companyId },
+    });
+    const listBody = await listRes.json().catch(() => null);
+    check('GET /reports/lunch-override elenca la segnalazione creata',
+      listRes.status === 200 && (listBody?.overrides || []).some(o => o.worker_id === worker.id && o.work_date === DAY),
+      listBody);
+
     // ── Stesso effetto su buildDailyPresenceSummary (Registro Presenze) ──
     const summary = await buildDailyPresenceSummary(site.id, companyId, DAY, DAY);
     const summaryRow = summary.rows?.find(r => r.dateKey === DAY);

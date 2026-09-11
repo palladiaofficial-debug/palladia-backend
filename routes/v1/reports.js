@@ -856,6 +856,24 @@ router.get('/reports/presence/closures', verifySupabaseJwt, async (req, res) => 
 // buildDailyPresenceSummary, presence-range CSV) saltano la detrazione per
 // quel giorno, pagando la presenza reale.
 
+// GET /api/v1/reports/lunch-override?from=&to= — elenco delle segnalazioni
+// nel periodo, per la UI (TimbraturaStorico.tsx) che deve sapere quali
+// giorni/lavoratori sono già segnalati senza dover indovinare dal solo esito.
+router.get('/reports/lunch-override', verifySupabaseJwt, async (req, res) => {
+  const { from, to } = req.query;
+  if (!from || !to || !DATE_RE.test(from) || !DATE_RE.test(to)) {
+    return res.status(400).json({ error: 'INVALID_PARAMS', message: 'from e to obbligatori (YYYY-MM-DD)' });
+  }
+  const { data, error } = await supabase
+    .from('presence_lunch_overrides')
+    .select('worker_id, work_date, note')
+    .eq('company_id', req.companyId)
+    .gte('work_date', from)
+    .lte('work_date', to);
+  if (error) return sendDbError(res, error);
+  res.json({ overrides: data || [] });
+});
+
 // POST /api/v1/reports/lunch-override — crea/aggiorna la segnalazione
 router.post('/reports/lunch-override', verifySupabaseJwt, async (req, res) => {
   if (!['owner', 'admin'].includes(req.userRole)) {
