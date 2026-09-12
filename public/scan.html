@@ -368,6 +368,7 @@
         Il conferimento dei dati è necessario per l'accesso al cantiere.
       </p>
       <button class="btn btn-primary" id="btn-accept-privacy">Ho letto, prosegui</button>
+      <p id="privacy-consent-error" class="hidden" style="color:#dc2626;font-size:13px;margin-top:10px;text-align:center;"></p>
     </div>
   </div>
 
@@ -420,7 +421,6 @@
   const HAS_QR   = !!(QR_TOKEN && QR_EXP);
   const LS_KEY_TOK     = `badge_tok_${WSITE_ID}`;
   const LS_KEY_NAM     = `badge_nam_${WSITE_ID}`;
-  const LS_KEY_PRIVACY = 'badge_privacy_ok'; // globale, non per-cantiere
 
   let sessionToken    = localStorage.getItem(LS_KEY_TOK) || null;
   let workerName      = localStorage.getItem(LS_KEY_NAM) || '';
@@ -430,6 +430,7 @@
   let maxAccuracyM    = 80;
   let punchInProgress = false;
   let pendingPosAck   = null; // { pos_id, worker_name, session_token }
+  let pendingPrivacyConsent = null; // { worker_name, session_token } — F-178 (AUDIT.md)
   let lastEntryTs     = null; // timestamp ISO dell'ultimo ENTRY aperto (per mostrare "in cantiere da X")
 
   // Stato punch: 'loading' | 'entry' | 'exit' | 'done'
@@ -840,13 +841,43 @@
     pendingPosAck = null;
   });
 
+  // ── Consenso privacy (F-178, AUDIT.md) ───────────────────────────────────────
+  // Bloccante e verificato server-side — sostituisce il vecchio flag
+  // localStorage cosmetico (mai controllato dal backend).
+  function showPrivacyConsent(name, token) {
+    pendingPrivacyConsent = { worker_name: name, session_token: token };
+    $('privacy-consent-error').classList.add('hidden');
+    showState('privacy');
+  }
+
+  $('btn-accept-privacy').addEventListener('click', async () => {
+    if (!pendingPrivacyConsent) return;
+    const btn = $('btn-accept-privacy');
+    btn.disabled  = true;
+    btn.innerHTML = '<span class="spin"></span>Salvataggio…';
+
+    try {
+      const { status } = await apiFetch('POST', '/api/v1/scan/consent', {
+        session_token: pendingPrivacyConsent.session_token,
+      });
+      if (status !== 200) throw new Error('status ' + status);
+      pendingPrivacyConsent = null;
+      // Il lavoratore esiste già lato server: richiamare doIdentify() con lo
+      // stesso CF prosegue naturalmente al POS-ack (se presente) o attiva la
+      // sessione. Serve lo stato 'identify' visibile, altrimenti un eventuale
+      // errore di doIdentify() (showFieldError) scriverebbe in un DOM nascosto.
+      showState('identify');
+      await doIdentify();
+    } catch (e) {
+      btn.disabled  = false;
+      btn.innerHTML = 'Ho letto, prosegui';
+      $('privacy-consent-error').textContent = 'Connessione assente — controlla internet e riprova.';
+      $('privacy-consent-error').classList.remove('hidden');
+    }
+  });
+
   // ── Identify ──────────────────────────────────────────────────────────────
   let nameRequired = false;
-
-  $('btn-accept-privacy').addEventListener('click', () => {
-    localStorage.setItem(LS_KEY_PRIVACY, '1');
-    showState('identify');
-  });
 
   $('btn-identify').addEventListener('click', doIdentify);
   ['input-cf','input-name'].forEach(id => {
@@ -871,6 +902,13 @@
       const { status, body } = await apiFetch('POST', '/api/v1/scan/identify', payload);
 
       if (status === 200) {
+        // F-178 (AUDIT.md): consenso privacy/GPS bloccante, controllato PRIMA
+        // del POS-ack (che invece resta non bloccante) — nessuna sessione va
+        // salvata finché il lavoratore non ha accettato personalmente.
+        if (body.requires_privacy_consent) {
+          showPrivacyConsent(body.worker_name, body.session_token);
+          return;
+        }
         if (body.requires_pos_ack && body.pos_summary) {
           // Non salvare ancora il token in localStorage — attendi la firma del POS
           showPosAck(body.pos_summary, body.worker_name, body.session_token);
@@ -941,7 +979,6 @@
     const ok = await loadSite();
     if (!ok) return;
     if (sessionToken) { activateSession(workerName || 'Lavoratore'); }
-    else if (!localStorage.getItem(LS_KEY_PRIVACY)) { showState('privacy'); }
     else              { showState('identify'); }
   })().catch(function (err) {
     console.error('[scan] boot failed:', err);

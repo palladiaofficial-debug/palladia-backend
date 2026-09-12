@@ -657,6 +657,17 @@
       understoodTry: 'Ho capito — ci provo!',
       installNow: 'Installa ora',
       notNowLater: 'Adesso no, faccio dopo',
+      privacyConsent: {
+        title: 'Informativa Privacy',
+        intro: 'Prima di timbrare per la prima volta, leggi come vengono trattati i tuoi dati.',
+        bullets: [
+          'Nome e identificativo del badge — per riconoscerti',
+          "Posizione GPS — solo nell'istante della timbratura, per verificare che tu sia in cantiere. Nessun tracciamento continuo durante il turno.",
+          'Orario di ingresso/uscita — registro presenze ai fini di legge (D.Lgs. 81/2008)',
+        ],
+        footer: "Titolare del trattamento: l'impresa. Base giuridica: esecuzione del contratto di lavoro e obblighi di sicurezza sul lavoro. Trattamento ai sensi del Regolamento UE 2016/679 (GDPR).",
+        acceptButton: 'Ho letto e accetto',
+      },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Badge non valido',          sub: 'Avvisa il responsabile.' },
         BADGE_REVOKED:                 { icon: '🔒', title: 'Badge disattivato',         sub: 'Avvisa il responsabile.' },
@@ -769,6 +780,17 @@
       understoodTry: 'Am înțeles — încerc!',
       installNow: 'Instalează acum',
       notNowLater: 'Nu acum, mai târziu',
+      privacyConsent: {
+        title: 'Informare privind confidențialitatea',
+        intro: 'Înainte de a ponta pentru prima dată, citește cum sunt prelucrate datele tale.',
+        bullets: [
+          'Nume și identificator ecuson — pentru a te recunoaște',
+          'Poziție GPS — doar în momentul pontajului, pentru a verifica prezența pe șantier. Fără urmărire continuă în timpul turei.',
+          'Ora de intrare/ieșire — registru de prezență conform legii',
+        ],
+        footer: 'Operator de date: compania. Temei juridic: executarea contractului de muncă și obligații de securitate. Prelucrare conform Regulamentului UE 2016/679 (GDPR).',
+        acceptButton: 'Am citit și accept',
+      },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Ecuson invalid',            sub: 'Anunță responsabilul.' },
         BADGE_REVOKED:                 { icon: '🔒', title: 'Ecuson dezactivat',         sub: 'Anunță responsabilul.' },
@@ -881,6 +903,17 @@
       understoodTry: 'E kuptova — po provoj!',
       installNow: 'Instalo tani',
       notNowLater: 'Jo tani, më vonë',
+      privacyConsent: {
+        title: 'Njoftim mbi privatësinë',
+        intro: 'Përpara se të regjistrosh praninë për herë të parë, lexo si trajtohen të dhënat e tua.',
+        bullets: [
+          'Emri dhe identifikuesi i kartës — për të të njohur',
+          'Pozicioni GPS — vetëm në momentin e regjistrimit, për të verifikuar praninë në kantier. Pa gjurmim të vazhdueshëm gjatë turnit.',
+          'Ora e hyrjes/daljes — regjistër prezence sipas ligjit',
+        ],
+        footer: 'Titullari i trajtimit: kompania. Baza ligjore: ekzekutimi i kontratës së punës dhe detyrimet e sigurisë në punë. Trajtim sipas Rregullores së BE 2016/679 (GDPR).',
+        acceptButton: 'Lexova dhe pranoj',
+      },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Kartë e pavlefshme',        sub: 'Njofto përgjegjësin.' },
         BADGE_REVOKED:                 { icon: '🔒', title: 'Karta u çaktivizua',        sub: 'Njofto përgjegjësin.' },
@@ -993,6 +1026,17 @@
       understoodTry: 'فهمت — سأجرب!',
       installNow: 'التثبيت الآن',
       notNowLater: 'ليس الآن، لاحقًا',
+      privacyConsent: {
+        title: 'إشعار الخصوصية',
+        intro: 'قبل تسجيل الحضور لأول مرة، اقرأ كيفية معالجة بياناتك.',
+        bullets: [
+          'الاسم ومعرف البطاقة — للتعرف عليك',
+          'موقع GPS — فقط لحظة تسجيل الحضور، للتحقق من وجودك في الموقع. لا تتبع مستمر أثناء الدوام.',
+          'وقت الدخول/الخروج — سجل حضور بموجب القانون',
+        ],
+        footer: 'المسؤول عن المعالجة: الشركة. الأساس القانوني: تنفيذ عقد العمل والتزامات السلامة المهنية. المعالجة وفقًا للائحة الاتحاد الأوروبي 2016/679 (GDPR).',
+        acceptButton: 'قرأت وأوافق',
+      },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'بطاقة غير صالحة',            sub: 'أبلغ المسؤول.' },
         BADGE_REVOKED:                 { icon: '🔒', title: 'البطاقة معطّلة',              sub: 'أبلغ المسؤول.' },
@@ -1380,6 +1424,44 @@
         ${helpIsPrimary ? helpBtnHtml + retryBtnHtml : retryBtnHtml + helpBtnHtml}
       </div>
       <div class="hint-help">${esc(t().ifProblems)}</div>`;
+  }
+
+  // ── Render: consenso privacy (F-178, AUDIT.md) ───────────────────────────────
+  // Schermo bloccante mostrato quando punch-context riporta
+  // requires_privacy_consent:true — nessuna timbratura è possibile finché
+  // POST /badge/:code/consent non ha registrato l'accettazione lato server.
+  function renderPrivacyConsent() {
+    _rerenderCurrent = renderPrivacyConsent;
+    const c = t().privacyConsent;
+
+    wrap.innerHTML = `
+      <div class="card fade-in">
+        <p style="font-size:19px;font-weight:700;color:var(--text);margin-bottom:10px;">${esc(c.title)}</p>
+        <p style="font-size:14px;color:var(--muted);margin-bottom:14px;line-height:1.6;">${esc(c.intro)}</p>
+        <ul style="font-size:14px;color:var(--muted);margin-bottom:14px;padding-left:18px;line-height:1.9;">
+          ${c.bullets.map(b => `<li>${esc(b)}</li>`).join('')}
+        </ul>
+        <p style="font-size:12px;color:var(--subtle);margin-bottom:20px;line-height:1.6;border-top:1px solid var(--border);padding-top:14px;">${esc(c.footer)}</p>
+        <button class="error-retry" id="btn-accept-privacy-consent">${esc(c.acceptButton)}</button>
+        <p id="privacy-consent-error" class="hidden" style="color:#dc2626;font-size:13px;margin-top:10px;"></p>
+      </div>`;
+
+    document.getElementById('btn-accept-privacy-consent').addEventListener('click', async function () {
+      const btn = this;
+      btn.disabled = true;
+      const errEl = document.getElementById('privacy-consent-error');
+      errEl.classList.add('hidden');
+      try {
+        const { status } = await apiFetch('POST', `/api/v1/badge/${BADGE_CODE}/consent`);
+        if (status !== 200) throw new Error('status ' + status);
+        // Riparte da capo: rilegge punch-context, che ora non richiederà più il consenso.
+        await main();
+      } catch (e) {
+        btn.disabled = false;
+        errEl.textContent = t().errorCopy.NETWORK_ERROR.sub;
+        errEl.classList.remove('hidden');
+      }
+    });
   }
 
   // ── Render: selezione cantiere ─────────────────────────────────────────────────
@@ -1790,6 +1872,13 @@
 
     workerData    = body;
     maxAccuracyM  = body.max_gps_accuracy_m || 500;
+
+    // F-178 (AUDIT.md): nessuna timbratura finché il consenso non è
+    // registrato lato server — controllato prima di qualunque altro stato.
+    if (body.requires_privacy_consent) {
+      renderPrivacyConsent();
+      return;
+    }
 
     if (!body.sites || body.sites.length === 0) {
       renderError('NO_SITES');

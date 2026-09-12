@@ -4,6 +4,7 @@ const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter, publicScanLimiter } = require('../../middleware/rateLimit');
 const { notifyPunch, notifyAnomalousPunch } = require('../../services/telegramNotifications');
+const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     // Cerca worker per CF nella company del cantiere
     const { data: worker, error: wErr } = await supabase
       .from('workers')
-      .select('id, full_name, is_active')
+      .select('id, full_name, is_active, privacy_consent_accepted_at, privacy_consent_version')
       .eq('company_id', companyId)
       .eq('fiscal_code', fc)
       .maybeSingle();
@@ -293,6 +294,10 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     }
 
     let workerId, workerName;
+    // F-178 (AUDIT.md): un lavoratore appena creato non ha mai un consenso
+    // valido, per costruzione — default true, azzerato solo se il worker
+    // esistente risulta già consenziente.
+    let workerNeedsConsent = true;
 
     if (!worker) {
       // Worker sconosciuto — prima registrazione: richiede nome completo
@@ -327,14 +332,15 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
           // Race condition: worker creato da un'altra richiesta concorrente — ricarica
           const { data: raceWorker, error: raceErr } = await supabase
             .from('workers')
-            .select('id, full_name, is_active')
+            .select('id, full_name, is_active, privacy_consent_accepted_at, privacy_consent_version')
             .eq('company_id', companyId)
             .eq('fiscal_code', fc)
             .maybeSingle();
           if (raceErr || !raceWorker) return res.status(409).json({ error: 'WORKER_ALREADY_EXISTS' });
           if (!raceWorker.is_active)  return res.status(403).json({ error: 'WORKER_INACTIVE' });
-          workerId   = raceWorker.id;
-          workerName = workerDisplayName(raceWorker);
+          workerId        = raceWorker.id;
+          workerName      = workerDisplayName(raceWorker);
+          workerNeedsConsent = !hasValidConsent(raceWorker);
         } else {
           return res.status(500).json({ error: 'WORKER_CREATE_ERROR' });
         }
@@ -349,6 +355,7 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       }
       workerId   = worker.id;
       workerName = workerDisplayName(worker);
+      workerNeedsConsent = !hasValidConsent(worker);
     }
 
     // Verifica o crea associazione worker ↔ cantiere (automatica, senza PIN)
@@ -415,6 +422,21 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     if (sessErr) {
       console.error('[identify] session insert error:', sessErr.code, sessErr.message);
       return res.status(500).json({ error: 'SESSION_CREATE_ERROR' });
+    }
+
+    // F-178 (AUDIT.md): consenso privacy/GPS bloccante, prima di qualunque
+    // altro controllo (incluso il POS-ack, che invece resta non bloccante).
+    // La sessione è comunque già creata — stesso schema di "non salvare
+    // ancora in localStorage" già usato più sotto per requires_pos_ack: il
+    // client la userà per chiamare /scan/consent, poi richiamerà /identify.
+    if (workerNeedsConsent) {
+      return res.json({
+        requires_privacy_consent: true,
+        session_token: sessionToken,
+        worker_name:   workerName,
+        worker_id:     workerId,
+        session_id:    session.id,
+      });
     }
 
     // Controlla se c'è un POS attivo per questo cantiere non ancora firmato dal lavoratore
@@ -526,6 +548,42 @@ router.post('/scan/acknowledge-pos', scanLimiter, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── POST /api/v1/scan/consent — PUBBLICO ──────────────────────────────────────
+// F-178 (AUDIT.md): registra l'accettazione dell'informativa privacy/GPS.
+// Stesso schema di autenticazione via session_token di /scan/acknowledge-pos.
+router.post('/scan/consent', scanLimiter, async (req, res) => {
+  const { session_token } = req.body || {};
+
+  if (!session_token || typeof session_token !== 'string' || session_token.length !== 64) {
+    return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
+  }
+
+  const tokenHash = hashToken(session_token);
+  const now       = new Date().toISOString();
+
+  const { data: sess } = await supabase
+    .from('worker_device_sessions')
+    .select('id, worker_id, company_id')
+    .eq('token_hash', tokenHash)
+    .is('revoked_at', null)
+    .gt('expires_at', now)
+    .maybeSingle();
+
+  if (!sess) return res.status(401).json({ error: 'SESSION_EXPIRED' });
+
+  try {
+    await recordConsent(supabase, {
+      workerId: sess.worker_id, companyId: sess.company_id,
+      ip: req.ip, userAgent: req.get('user-agent'), source: 'scan',
+    });
+  } catch (e) {
+    console.error('[scan-consent] recordConsent error:', e.message);
+    return res.status(500).json({ error: 'ACK_ERROR' });
+  }
+
+  res.json({ ok: true });
+});
+
 // ── POST /api/v1/scan/punch — PUBBLICO ────────────────────────────────────────
 router.post('/scan/punch', scanLimiter, async (req, res) => {
   const { worksite_id, session_token, latitude, longitude, gps_accuracy_m } = req.body;
@@ -590,7 +648,7 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
 
   const { data: session, error: sessErr } = await supabase
     .from('worker_device_sessions')
-    .select('id, worker_id, company_id, expires_at, revoked_at, worker:workers(full_name, is_active)')
+    .select('id, worker_id, company_id, expires_at, revoked_at, worker:workers(full_name, is_active, privacy_consent_accepted_at, privacy_consent_version)')
     .eq('token_hash', tokenHash)
     .maybeSingle();
 
@@ -599,6 +657,8 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   if (session.revoked_at)                  return res.status(401).json({ error: 'SESSION_REVOKED' });
   if (new Date(session.expires_at) < now)  return res.status(401).json({ error: 'SESSION_EXPIRED' });
   if (!session.worker?.is_active)          return res.status(403).json({ error: 'WORKER_DEACTIVATED' });
+  // F-178 (AUDIT.md): nessuna timbratura senza consenso verificato server-side.
+  if (!hasValidConsent(session.worker))    return res.status(403).json({ error: 'PRIVACY_CONSENT_REQUIRED' });
 
   const { data: site, error: siteErr } = await supabase
     .from('sites')

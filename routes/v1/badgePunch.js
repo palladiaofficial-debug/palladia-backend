@@ -23,6 +23,7 @@ const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
 const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch, notifyPunchHelpRequest } = require('../../services/telegramNotifications');
 const { badgePunchLimiter }  = require('../../middleware/rateLimit');
 const { complianceStatus }   = require('../../lib/compliance');
+const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
 
 // F-145 (AUDIT.md): limiter dedicato, chiave IP+badge_code (non solo IP come
 // il publicScanLimiter che riusava prima) — vedi middleware/rateLimit.js.
@@ -75,7 +76,7 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
   // Risolvi badge → lavoratore
   const { data: worker, error: workerErr } = await supabase
     .from('workers')
-    .select('id, full_name, is_active, company_id, photo_url')
+    .select('id, full_name, is_active, company_id, photo_url, privacy_consent_accepted_at, privacy_consent_version')
     .eq('badge_code', code.toUpperCase())
     .maybeSingle();
 
@@ -207,10 +208,44 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     max_gps_accuracy_m:    GPS_MAX_ACCURACY_M,
     open_site_id:          openSiteId,
     open_since:            isOpenGlobally ? globalLastLog.timestamp_server : null,
+    // F-178 (AUDIT.md): il frontend mostra uno schermo bloccante di
+    // accettazione informativa prima di consentire qualunque timbratura.
+    requires_privacy_consent: !hasValidConsent(worker),
   });
 
   } catch (err) {
     console.error('[badge-punch-context] unexpected error:', err.message, err.stack);
+    if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── POST /api/v1/badge/:code/consent — PUBBLICO ──────────────────────────────
+// F-178 (AUDIT.md): registra l'accettazione dell'informativa privacy/GPS.
+// Stesso stile di autenticazione via badge_code di /punch — nessun session
+// token, il badge_code è la prova di identità.
+router.post('/badge/:code/consent', badgePunchLimiter, async (req, res) => {
+  try {
+    const { code } = req.params;
+    if (!isValidBadgeCode(code)) return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
+
+    const { data: worker, error: workerErr } = await supabase
+      .from('workers')
+      .select('id, is_active, company_id')
+      .eq('badge_code', code.toUpperCase())
+      .maybeSingle();
+
+    if (workerErr) return res.status(500).json({ error: 'DB_ERROR' });
+    if (!worker) return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
+    if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
+
+    await recordConsent(supabase, {
+      workerId: worker.id, companyId: worker.company_id,
+      ip: req.ip, userAgent: req.headers['user-agent'], source: 'badge',
+    });
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[badge-consent] unexpected error:', err.message, err.stack);
     if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
   }
 });
@@ -259,13 +294,15 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   // Risolvi badge → lavoratore
   const { data: worker, error: workerErr } = await supabase
     .from('workers')
-    .select('id, full_name, is_active, company_id, safety_training_expiry, health_fitness_expiry')
+    .select('id, full_name, is_active, company_id, safety_training_expiry, health_fitness_expiry, privacy_consent_accepted_at, privacy_consent_version')
     .eq('badge_code', code.toUpperCase())
     .maybeSingle();
 
   if (workerErr) return res.status(500).json({ error: 'DB_ERROR' });
   if (!worker)          return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
   if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
+  // F-178 (AUDIT.md): nessuna timbratura senza consenso verificato server-side.
+  if (!hasValidConsent(worker)) return res.status(403).json({ error: 'PRIVACY_CONSENT_REQUIRED' });
 
   // Carica cantiere + verifica stessa company
   const { data: site, error: siteErr } = await supabase
@@ -618,7 +655,7 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
   // Risolvi badge → lavoratore (deve essere nella stessa company)
   const { data: worker, error: workerErr } = await supabase
     .from('workers')
-    .select('id, full_name, is_active, company_id')
+    .select('id, full_name, is_active, company_id, privacy_consent_accepted_at, privacy_consent_version')
     .eq('badge_code', badge_code.toUpperCase())
     .eq('company_id', req.companyId)
     .maybeSingle();
@@ -626,6 +663,15 @@ router.post('/badge/capocantiere-punch', verifySupabaseJwt, async (req, res) => 
   if (workerErr) return res.status(500).json({ error: 'DB_ERROR' });
   if (!worker)          return res.status(404).json({ error: 'BADGE_NOT_FOUND' });
   if (!worker.is_active) return res.status(403).json({ error: 'BADGE_REVOKED' });
+  // F-178 (AUDIT.md): un consenso non può essere dato da altri al posto del
+  // lavoratore — il caposquadra non può timbrare per chi non ha ancora
+  // accettato personalmente l'informativa dal proprio dispositivo.
+  if (!hasValidConsent(worker)) {
+    return res.status(403).json({
+      error:   'WORKER_PRIVACY_CONSENT_PENDING',
+      message: `${worker.full_name} deve prima accettare personalmente l'informativa privacy dal proprio telefono (badge personale o QR cantiere) — non puoi farlo per conto suo.`,
+    });
+  }
 
   // Carica cantiere (deve essere nella stessa company)
   const { data: site, error: siteErr } = await supabase
