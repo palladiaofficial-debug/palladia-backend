@@ -30,6 +30,10 @@ const { extractSuccessfulWriteSummaries } = require('../../lib/ladiaFallbackSumm
 const ladiaGenericTools = require('../../lib/ladiaGenericTools');
 const { logAction } = require('../../lib/ladiaActionLog');
 const { executeWrite, checkOrProposeGate, collectBlockCandidates } = require('../../lib/ladiaWriteExecutor');
+const {
+  getPseudonymMap, resolvePseudonymInInput, pseudonymizeOutgoing,
+  depseudonymizeText, createStreamingDepseudonymizer, logPseudonymization,
+} = require('../../lib/ladiaWorkerPseudonymizer');
 const { buildResultCard } = require('../../lib/resultCardBuilder');
 const { resolveInterceptedExpiry } = require('../../lib/renewalResolution');
 const { buildRisksPrompt } = require('../../services/posRisksGenerator');
@@ -3008,11 +3012,27 @@ async function recomputeTotaleContratto(computoId) {
 }
 
 // ── Tool execution ────────────────────────────────────────────────────────────
-async function executeTool(toolName, toolInput, companyId, userId, req = null, convId = null) {
+async function executeTool(toolName, toolInput, companyId, userId, req = null, convId = null, pseudonymMap = null) {
   const todayRome = new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
   const fromUtc   = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString();
 
   try {
+    // F-176 (AUDIT.md): il modello vede solo il codice pseudonimo di un
+    // lavoratore (mai full_name/id reali, vedi pseudonimizzazione dei
+    // tool_result più sotto) — quindi quando riusa nello stesso turno
+    // l'identificativo che ha appena letto, passa il CODICE come
+    // worker_id/worker_name. Va risolto nel valore reale PRIMA di qualunque
+    // validazione/query, altrimenti il controllo UUID di F-117 appena sotto
+    // lo respingerebbe. Mappa passata dal chiamante quando già disponibile
+    // (loop principale, una sola query per round di tool); altrimenti
+    // recuperata qui solo se un valore ha davvero la forma di un codice —
+    // percorso di conferma di un'azione proposta (chat/confirm-action).
+    const looksLikePseudonym = (v) => typeof v === 'string' && /^LAV-[0-9A-F]{6}$/i.test(v.trim());
+    if (!pseudonymMap && (looksLikePseudonym(toolInput?.worker_id) || looksLikePseudonym(toolInput?.worker_name))) {
+      pseudonymMap = await getPseudonymMap(supabase, companyId);
+    }
+    if (pseudonymMap) toolInput = resolvePseudonymInInput(toolInput, pseudonymMap);
+
     // F-117 (AUDIT.md, LADIA_EVALS 2026-09-02): il modello a volte chiama un
     // tool con site_id/worker_id="placeholder" (o simili, es. "get_from_sites")
     // invece del vero UUID risolto da get_sites/get_workers nello stesso
@@ -5855,7 +5875,13 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
 
 // ── Agentic loop con company_id (chat principale) ────────────────────────────
 // systemPrompt: system prompt arricchito con company brain (o SYSTEM_PROMPT base)
-async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null, convId = null) {
+async function runChatLoop(client, messages, companyId, model, systemPrompt = SYSTEM_PROMPT, userId = null, convId = null, pseudonymMapArg = null) {
+  // F-176 (AUDIT.md): una sola query per l'intero turno (o riusata da quella
+  // già fatta dal chiamante per pseudonimizzare lo storico), per
+  // pseudonimizzare ogni tool_result generato nei round successivi.
+  const pseudonymMap = pseudonymMapArg || await getPseudonymMap(supabase, companyId).catch(() => null);
+  const involvedCodes = new Set();
+
   let response = await client.messages.create({
     model,
     max_tokens: model === MODEL_SONNET ? 4096 : 2048,
@@ -5873,11 +5899,14 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
     const toolBlocks = response.content.filter(b => b.type === 'tool_use');
 
     const toolResults = await Promise.all(
-      toolBlocks.map(async (block) => ({
-        type:        'tool_result',
-        tool_use_id: block.id,
-        content:     JSON.stringify(await executeTool(block.name, block.input, companyId, userId))
-      }))
+      toolBlocks.map(async (block) => {
+        const rawResult = await executeTool(block.name, block.input, companyId, userId, null, convId, pseudonymMap);
+        return {
+          type:        'tool_result',
+          tool_use_id: block.id,
+          content:     JSON.stringify(pseudonymizeOutgoing(rawResult, pseudonymMap, involvedCodes)),
+        };
+      })
     );
 
     extra.push(
@@ -5895,8 +5924,12 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
     logUsage({ companyId, userId, conversationId: convId, model, callSite: 'chat_legacy', usage: response.usage });
   }
 
+  logPseudonymization(supabase, { companyId, conversationId: convId, model, workersInvolved: involvedCodes.size });
+
   const finalText = response.content.find(b => b.type === 'text')?.text;
-  if (finalText) return finalText;
+  // F-176: il testo del modello usa solo i codici visti nei tool_result —
+  // va riportato al nome reale prima di mostrarlo/salvarlo.
+  if (finalText) return depseudonymizeText(finalText, pseudonymMap);
 
   // F-080: se il tetto di 6 round di tool-use si esaurisce prima che il
   // modello produca un blocco di testo finale, `response.content` contiene
@@ -5908,7 +5941,8 @@ async function runChatLoop(client, messages, companyId, model, systemPrompt = SY
   const toolResultContents = extra
     .filter(turn => turn.role === 'user' && Array.isArray(turn.content))
     .flatMap(turn => turn.content.filter(b => b.type === 'tool_result').map(b => b.content));
-  const successfulWrites = extractSuccessfulWriteSummaries(toolResultContents);
+  const successfulWrites = extractSuccessfulWriteSummaries(toolResultContents)
+    .map(s => depseudonymizeText(s, pseudonymMap)); // F-176: i tool_result sopra sono pseudonimizzati
   if (successfulWrites.length > 0) {
     return `Ho eseguito questa operazione, ma la conversazione è diventata troppo lunga per generare anche un riepilogo — controlla di persona:\n${successfulWrites.map(s => `• ${s}`).join('\n')}`;
   }
@@ -6571,7 +6605,15 @@ router.post('/chat', verifySupabaseJwt, userChatLimiter, validate(chatMessageSch
         .map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
     }
 
-    const messages = [...dbHistory, { role: 'user', content: message.trim() }];
+    // F-176 (AUDIT.md): lo storico salvato è testo "umano" (nomi reali, vedi
+    // depseudonymizeText su finalText) — va ri-pseudonimizzato prima di
+    // rimandarlo a Claude. Solo i turni assistant, mai quelli scritti
+    // dall'utente (ambito deciso esplicitamente: il testo umano non si tocca).
+    const pseudonymMap = await getPseudonymMap(supabase, req.companyId).catch(() => null);
+    const pseudonymizedHistory = dbHistory.map(m =>
+      m.role === 'assistant' ? { ...m, content: pseudonymizeOutgoing(m.content, pseudonymMap) } : m
+    );
+    const messages = [...pseudonymizedHistory, { role: 'user', content: message.trim() }];
 
     // Arricchisci il system prompt con lo snapshot aziendale (company brain)
     let systemPrompt = SYSTEM_PROMPT;
@@ -6580,7 +6622,7 @@ router.post('/chat', verifySupabaseJwt, userChatLimiter, validate(chatMessageSch
       if (brain?.text) systemPrompt = SYSTEM_PROMPT + brain.text;
     } catch (e) { console.error('[chat] getCompanyBrain fallita per company', req.companyId, ':', e.message); }
 
-    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id, convId);
+    const reply = await runChatLoop(client, messages, req.companyId, classifyQuery(message), systemPrompt, req.user.id, convId, pseudonymMap);
 
     // Salva prima di rispondere — garantisce che il messaggio sia nel DB
     // overhead ~20ms su una risposta già da 1-3s
@@ -7066,6 +7108,15 @@ router.post('/chat/stream', verifySupabaseJwt, chatLimiter, userChatLimiter, asy
     while (dbHistory.length > 0 && dbHistory[0].role !== 'user') dbHistory.shift();
   }
 
+  // F-176 (AUDIT.md): storico salvato in chiaro (nomi reali) — va
+  // ri-pseudonimizzato prima di rimandarlo a Claude. Solo i turni assistant
+  // (machine-generated), mai il testo scritto dall'utente.
+  const pseudonymMap = await getPseudonymMap(supabase, req.companyId).catch(() => null);
+  dbHistory = dbHistory.map(m =>
+    m.role === 'assistant' ? { ...m, content: pseudonymizeOutgoing(m.content, pseudonymMap) } : m
+  );
+  const pseudonymInvolvedCodes = new Set();
+
   const userText = message.trim() || (uploadIds.length > 0 ? `Allego ${uploadIds.length} documento${uploadIds.length > 1 ? 'i' : ''}.` : '');
   const userContent = images.length > 0
     ? [
@@ -7298,6 +7349,13 @@ conteggio) — mai l'elenco riga per riga.`;
     const blockedUndoTargets = [];
     req._blockedUndoTargets = blockedUndoTargets;
 
+    // F-176 (AUDIT.md): Claude vede solo codici pseudonimo, quindi il testo
+    // che genera li userà — vanno riportati al nome reale prima di mandarli
+    // all'utente via SSE. Un'unica istanza per l'intero turno (creata una
+    // volta, non per round) col buffer che evita di spezzare un codice tra
+    // due chunk consecutivi.
+    const streamDepseudonymizer = createStreamingDepseudonymizer(pseudonymMap);
+
     // Loop agentico con streaming — max 4 iterazioni
     for (let iter = 0; iter < 6 && !aborted; iter++) {
       const collectedContent = [];
@@ -7325,9 +7383,14 @@ conteggio) — mai l'elenco riga per riga.`;
           if (event.delta.type === 'text_delta') {
             let delta = event.delta.text;
             if (pendingSeparator) { delta = '\n\n' + delta; pendingSeparator = false; }
+            // Testo grezzo (coi codici) accumulato per il round successivo
+            // verso Anthropic — NON depseudonimizzato, deve restare coerente
+            // con ciò che il modello ha effettivamente visto/generato.
             block.text = (block.text || '') + delta;
-            fullAssistantReply += delta;
-            send({ type: 'text', delta });
+            // F-176: verso l'utente invece va il nome reale.
+            const safeDelta = streamDepseudonymizer.push(delta);
+            fullAssistantReply += safeDelta;
+            if (safeDelta) send({ type: 'text', delta: safeDelta });
           } else if (event.delta.type === 'input_json_delta') {
             block._inputRaw += event.delta.partial_json;
           }
@@ -7336,6 +7399,12 @@ conteggio) — mai l'elenco riga per riga.`;
           stopReason = event.delta.stop_reason;
         }
       }
+
+      // F-176: ogni round apre uno stream indipendente — un codice non può
+      // "continuare" nel round successivo (è un blocco di testo a sé), quindi
+      // si scarica qui l'eventuale coda trattenuta dal buffer.
+      const tailSafe = streamDepseudonymizer.flush();
+      if (tailSafe) { fullAssistantReply += tailSafe; send({ type: 'text', delta: tailSafe }); }
 
       if (aborted) { try { stream.abort(); } catch { /* stream già chiuso */ } break; }
 
@@ -7365,7 +7434,7 @@ conteggio) — mai l'elenco riga per riga.`;
       // Esegui tool in parallelo
       const toolResults = await Promise.all(
         toolBlocks.map(async (block) => {
-          const result = await executeTool(block.name, block.input, req.companyId, req.user.id, req, convId);
+          const result = await executeTool(block.name, block.input, req.companyId, req.user.id, req, convId, pseudonymMap);
           // Calcolato qui (non più solo prima di tool_step più sotto) perché
           // serve anche al ramo record_action_failed appena sotto.
           const failed = !!(result && (result.error || result.errore || result.success === false));
@@ -7566,10 +7635,13 @@ conteggio) — mai l'elenco riga per riga.`;
             message: failed ? (result.error || result.errore || result.message || null) : undefined,
             fact,
           });
+          // F-176 (AUDIT.md): `result` resta reale per tutta la logica sopra
+          // (fact per il frontend, blockedUndoTargets, record ids) — solo la
+          // copia che finisce nel payload verso Anthropic viene pseudonimizzata.
           return {
             type:        'tool_result',
             tool_use_id: block.id,
-            content:     JSON.stringify(result),
+            content:     JSON.stringify(pseudonymizeOutgoing(result, pseudonymMap, pseudonymInvolvedCodes)),
           };
         })
       );
@@ -7581,6 +7653,10 @@ conteggio) — mai l'elenco riga per riga.`;
       ];
       if (fullAssistantReply) pendingSeparator = true;
     }
+
+    // F-177 (AUDIT.md): registro tecnico — prova che la pseudonimizzazione
+    // (F-176) è stata applicata davvero in questo turno, non solo "dovrebbe".
+    logPseudonymization(supabase, { companyId: req.companyId, conversationId: convId, model, workersInvolved: pseudonymInvolvedCodes.size });
 
     // F-080: il tetto di 6 round si è esaurito senza che il modello emettesse
     // testo (l'ultimo round era ancora tool_use, mai eseguito) — ma se una
