@@ -1,9 +1,16 @@
 'use strict';
 const router = require('express').Router();
 const { apiLimiter } = require('../../middleware/rateLimit');
+const supabase = require('../../lib/supabase');
+const { resolveWorkerPhotoUrlsMiddleware } = require('../../lib/workerPhotoUrl');
 
 // Rate limit globale su tutto /api/v1/
 router.use(apiLimiter);
+
+// F-179 (AUDIT.md): worker-photos è un bucket privato — ogni photo_url che
+// esce da qualunque route qui sotto viene firmato con scadenza al momento
+// della risposta, invece di essere un URL pubblico permanente salvato nel DB.
+router.use(resolveWorkerPhotoUrlsMiddleware(supabase));
 
 // Ricerca globale (JWT)
 router.use('/', require('./search'));
