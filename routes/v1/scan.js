@@ -3,7 +3,7 @@ const crypto      = require('crypto');
 const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter, publicScanLimiter } = require('../../middleware/rateLimit');
-const { notifyPunch, notifyAnomalousPunch } = require('../../services/telegramNotifications');
+const { notifyPunch, notifyAnomalousPunch, notifyRejectedGeofencePunch } = require('../../services/telegramNotifications');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -58,6 +58,17 @@ function isValidCoords(lat, lon) {
 const GPS_MAX_ACCURACY_M = (() => {
   const v = Number(process.env.GPS_MAX_ACCURACY_M);
   return Number.isFinite(v) && v > 0 ? v : 500;
+})();
+
+// F-170 (AUDIT.md): stesso principio di badgePunch.js — tolleranza sulla
+// precisione GPS, cap separato e più ampio del badge personale perché il
+// QR-cantiere richiede in più il possesso del codice affisso al cantiere
+// (secondo fattore indipendente): un tentativo fraudolento dovrebbe comunque
+// procurarsi il QR reale *e* trovarsi (o falsificare il GPS) entro un raggio
+// comunque limitato dal cap.
+const GEOFENCE_ACCURACY_TOLERANCE_CAP_QR_M = (() => {
+  const v = Number(process.env.GEOFENCE_ACCURACY_TOLERANCE_CAP_QR_M);
+  return Number.isFinite(v) && v > 0 ? v : 300;
 })();
 
 const GPS_ACCURACY_REQUIRE_MODE = process.env.GPS_ACCURACY_REQUIRE_MODE === 'compat'
@@ -701,11 +712,35 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   const geofenceActive = site.latitude != null && site.longitude != null;
   if (geofenceActive) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
-    if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m) {
+    // F-170: tolleranza sulla precisione GPS, cap più ampio del badge personale
+    // (vedi GEOFENCE_ACCURACY_TOLERANCE_CAP_QR_M sopra — secondo fattore QR).
+    const toleranceM = accuracyM != null ? Math.min(accuracyM, GEOFENCE_ACCURACY_TOLERANCE_CAP_QR_M) : 0;
+    if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m + toleranceM) {
+      // F-170 (AUDIT.md): gap trovato nello sweep — a differenza di
+      // badgePunch.js (F-138), questo rifiuto non scriveva mai in
+      // admin_audit_log né notificava nessuno: restava invisibile
+      // all'amministratore esattamente come lo era il flusso badge prima di F-138.
+      supabase.from('admin_audit_log').insert([{
+        company_id:  site.company_id,
+        user_id:     null,
+        user_role:   'worker_qr',
+        action:      'punch.rejected_geofence',
+        target_type: 'worker',
+        target_id:   session.worker_id,
+        payload:     { site_id: worksite_id, site_name: site.name, distance_m: distanceM, max_allowed_m: site.geofence_radius_m, gps_accuracy_m: accuracyM != null ? Math.round(accuracyM) : null, tolerance_m: toleranceM },
+        ip:          (req.ip || '').slice(0, 45) || null,
+        user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null,
+      }]).then(({ error }) => { if (error) console.error('[scan-punch] audit log rejected_geofence error:', error.message); });
+
+      notifyRejectedGeofencePunch(site.company_id, worksite_id, site.name, session.worker?.full_name || session.worker_id, distanceM, site.geofence_radius_m, accuracyM)
+        .catch(e => console.error('[scan-punch] notifyRejectedGeofencePunch error:', e.message));
+
       return res.status(403).json({
         error:         'OUTSIDE_GEOFENCE',
         distance_m:    distanceM,
-        max_allowed_m: site.geofence_radius_m
+        max_allowed_m: site.geofence_radius_m,
+        tolerance_m:   toleranceM,
+        gps_accuracy_m: accuracyM != null ? Math.round(accuracyM) : null,
       });
     }
   }

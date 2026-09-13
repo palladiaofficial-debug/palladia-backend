@@ -649,6 +649,9 @@
       canClose: 'Puoi chiudere questa pagina.',
       offlineBadge: function (n) { return n + ' timbratur' + (n > 1 ? 'e' : 'a') + ' in attesa di connessione…'; },
       minuteRetry: function (m) { return 'Riprova tra ' + m + ' minut' + (m === 1 ? 'o' : 'i') + '.'; },
+      // F-170 (AUDIT.md): prima un messaggio generico senza numeri — stesso
+      // principio di trasparenza di F-138 (AreaTimbra.tsx li mostra già).
+      geofenceDetail: function (d, maxM, accM) { return 'Sei a ' + d + 'm dal cantiere (max ' + maxM + 'm' + (accM != null ? ', precisione GPS ±' + accM + 'm' : '') + '). Avvicinati e riprova.'; },
       activatePosition: 'Attiva la posizione',
       gpsGuideSub: 'Per timbrare la presenza serve il GPS attivo.<br>Segui questi passaggi:',
       haveActivatedRetry: 'Ho attivato — Riprova',
@@ -772,6 +775,7 @@
       canClose: 'Poți închide această pagină.',
       offlineBadge: function (n) { return n + ' ' + (n > 1 ? 'pontaje' : 'pontaj') + ' în așteptarea conexiunii…'; },
       minuteRetry: function (m) { return 'Încearcă din nou peste ' + m + ' minut' + (m === 1 ? '' : 'e') + '.'; },
+      geofenceDetail: function (d, maxM, accM) { return 'Ești la ' + d + 'm de șantier (max ' + maxM + 'm' + (accM != null ? ', precizie GPS ±' + accM + 'm' : '') + '). Apropie-te și încearcă din nou.'; },
       activatePosition: 'Activează poziția',
       gpsGuideSub: 'Pentru a ponta prezența este nevoie de GPS activ.<br>Urmează acești pași:',
       haveActivatedRetry: 'Am activat — Încearcă din nou',
@@ -895,6 +899,7 @@
       canClose: 'Mund ta mbyllësh këtë faqe.',
       offlineBadge: function (n) { return n + ' ' + (n > 1 ? 'regjistrime' : 'regjistrim') + ' në pritje të lidhjes…'; },
       minuteRetry: function (m) { return 'Provo përsëri pas ' + m + ' minuta' + (m === 1 ? '' : 'sh') + '.'; },
+      geofenceDetail: function (d, maxM, accM) { return 'Je ' + d + 'm larg nga kantieri (maks ' + maxM + 'm' + (accM != null ? ', saktësia GPS ±' + accM + 'm' : '') + '). Afrohu dhe provo përsëri.'; },
       activatePosition: 'Aktivizo pozicionin',
       gpsGuideSub: 'Për të regjistruar praninë duhet GPS-ja aktive.<br>Ndiq këto hapa:',
       haveActivatedRetry: 'E aktivizova — Provo përsëri',
@@ -1018,6 +1023,7 @@
       canClose: 'يمكنك إغلاق هذه الصفحة.',
       offlineBadge: function (n) { return n + ' ' + (n > 1 ? 'تسجيلات' : 'تسجيل') + ' في انتظار الاتصال…'; },
       minuteRetry: function (m) { return 'حاول مرة أخرى بعد ' + m + ' دقيقة.'; },
+      geofenceDetail: function (d, maxM, accM) { return 'أنت على بعد ' + d + 'م من الورشة (الحد الأقصى ' + maxM + 'م' + (accM != null ? '، دقة GPS ±' + accM + 'م' : '') + '). اقترب وحاول مرة أخرى.'; },
       activatePosition: 'فعّل الموقع',
       gpsGuideSub: 'لتسجيل الحضور يلزم تفعيل GPS.<br>اتبع هذه الخطوات:',
       haveActivatedRetry: 'قمت بالتفعيل — إعادة المحاولة',
@@ -1698,7 +1704,12 @@
         return;
       }
       if (status === 403 && body.error === 'OUTSIDE_GEOFENCE') {
-        renderError('OUTSIDE_GEOFENCE');
+        // F-170 (AUDIT.md): numeri reali invece di un messaggio generico —
+        // max_allowed_m + tolerance_m è la soglia effettiva applicata, non
+        // solo il raggio grezzo del cantiere (ora esiste una tolleranza sulla
+        // precisione GPS).
+        const effectiveMax = body.max_allowed_m + (body.tolerance_m || 0);
+        renderError('OUTSIDE_GEOFENCE', t().geofenceDetail(body.distance_m, effectiveMax, body.gps_accuracy_m));
         return;
       }
       if (status === 422 && body.error === 'GPS_ACCURACY_TOO_LOW') {
@@ -1849,10 +1860,13 @@
       gpsCoords = initialGps;
     }
 
-    // Fetch punch-context, con GPS se disponibile
+    // Fetch punch-context, con GPS se disponibile — accuracy inclusa (F-170,
+    // AUDIT.md) così in_geofence riflette la stessa tolleranza del POST /punch,
+    // altrimenti la UI mostrerebbe "fuori raggio" per un cantiere che la
+    // timbratura accetterebbe comunque.
     let contextUrl = `/api/v1/badge/${BADGE_CODE}/punch-context`;
     if (gpsCoords) {
-      contextUrl += `?lat=${gpsCoords.latitude}&lon=${gpsCoords.longitude}`;
+      contextUrl += `?lat=${gpsCoords.latitude}&lon=${gpsCoords.longitude}&accuracy=${gpsCoords.accuracy}`;
     }
 
     let res;

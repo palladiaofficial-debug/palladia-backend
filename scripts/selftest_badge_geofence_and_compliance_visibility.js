@@ -29,6 +29,7 @@
 require('dotenv').config();
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
+const { PRIVACY_CONSENT_VERSION } = require('../lib/workerPrivacyConsent');
 
 const BASE = (process.env.TEST_BASE_URL || 'https://palladia-backend-production.up.railway.app').replace(/\/$/, '');
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
@@ -72,6 +73,14 @@ async function main() {
     const { data: w, error } = await supabase.from('workers').insert([{
       company_id: companyId, full_name: `TEST-F138F139-${key}`, fiscal_code: `TSTF13${key === 'scaduto' ? '9' : '8'}0A01H501Z`,
       qualification: 'Muratore', is_active: true, badge_code: badge, safety_training_expiry: expiry,
+      // F-178 (AUDIT.md, 2026-09-12): dopo l'introduzione del consenso
+      // privacy/GPS obbligatorio, un worker di fixture senza questi due campi
+      // riceve sempre 403 PRIVACY_CONSENT_REQUIRED prima ancora di arrivare al
+      // controllo geofence — questo test era rimasto rosso in silenzio da
+      // allora (mai più rilanciato dopo F-178). Non è colpa del fix F-170,
+      // verificato rieseguendo lo stesso test via git stash sul codice
+      // precedente: stesso identico fallimento.
+      privacy_consent_accepted_at: new Date().toISOString(), privacy_consent_version: PRIVACY_CONSENT_VERSION,
     }]).select('id').single();
     if (error) throw new Error(`crea worker ${key}: ${error.message}`);
     workers[key] = { id: w.id, badge };

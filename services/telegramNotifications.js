@@ -618,7 +618,7 @@ async function notifyAnomalousPunch(companyId, siteId, siteName, workerName, eve
  * punch non è mai stato scritto in presence_logs — è l'unico segnale che
  * l'amministratore riceve di questo tentativo.
  */
-async function notifyRejectedGeofencePunch(companyId, siteId, siteName, workerName, distanceM, maxAllowedM) {
+async function notifyRejectedGeofencePunch(companyId, siteId, siteName, workerName, distanceM, maxAllowedM, gpsAccuracyM = null) {
   if (!process.env.TELEGRAM_BOT_TOKEN) return;
 
   let users;
@@ -630,10 +630,16 @@ async function notifyRejectedGeofencePunch(companyId, siteId, siteName, workerNa
   }
   if (!users.length) return;
 
+  // F-170 (AUDIT.md): senza questa riga non c'era modo di distinguere, guardando
+  // solo la notifica, un rifiuto genuino (lavoratore davvero lontano) da uno
+  // causato da precisione GPS scarsa (già assorbita da una tolleranza — se
+  // compare qui, la tolleranza non è bastata).
+  const accuracyLine = gpsAccuracyM != null ? `\n📡 Precisione GPS: ±${Math.round(gpsAccuracyM)}m` : '';
+
   const text =
     `🚫 <b>Timbratura rifiutata — fuori zona</b>\n` +
     `👷 <b>${esc(workerName)}</b> ha provato a timbrare su <b>${esc(siteName)}</b>\n` +
-    `📍 Distanza: ${Math.round(distanceM)}m (massimo consentito ${maxAllowedM}m)\n` +
+    `📍 Distanza: ${Math.round(distanceM)}m (massimo consentito ${maxAllowedM}m)${accuracyLine}\n` +
     `<i>Il tentativo non è stato registrato — nessuna presenza scritta.</i>`;
 
   const sends = users.map(u => {

@@ -55,6 +55,22 @@ const GPS_MAX_ACCURACY_M = (() => {
   return Number.isFinite(v) && v > 0 ? v : 500;
 })();
 
+// F-170 (AUDIT.md): il controllo geofence confrontava distanceM col solo
+// raggio del cantiere, ignorando del tutto l'accuracy della lettura GPS —
+// su iOS (accuracy tipica 100-150m senza "posizione precisa" attiva) un
+// lavoratore fisicamente dentro il cantiere veniva rifiutato come "troppo
+// lontano". Tolleranza = min(accuracyM, questo cap) — il cap resta sotto
+// GPS_MAX_ACCURACY_M (che decide solo se una lettura è "abbastanza buona da
+// tentare", non se il geofence deve fidarsene): senza un cap più stretto qui,
+// un cantiere da 70m di raggio accetterebbe qualunque tentativo fino a 570m.
+// Badge personale: nessuna prova di presenza fisica oltre al GPS → tolleranza
+// più bassa del QR-cantiere (vedi scan.js), che ha un secondo fattore
+// (possesso del codice affisso al cantiere).
+const GEOFENCE_ACCURACY_TOLERANCE_CAP_M = (() => {
+  const v = Number(process.env.GEOFENCE_ACCURACY_TOLERANCE_CAP_M);
+  return Number.isFinite(v) && v > 0 ? v : 200;
+})();
+
 // ── GET /api/v1/badge/:code/punch-context — PUBBLICO ─────────────────────────
 // Risolve il badge_code → lavoratore + lista cantieri assegnati + match GPS.
 // Usato dal frontend badge-punch.html per capire quale cantiere mostrare.
@@ -72,6 +88,12 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
   const lat = req.query.lat ? Number(req.query.lat) : null;
   const lon = req.query.lon ? Number(req.query.lon) : null;
   const hasGps = lat !== null && lon !== null && isValidCoords(lat, lon);
+  // F-170: stessa tolleranza del POST /punch — senza questa, in_geofence (usato
+  // per l'auto-select e il badge "Vicino" in UI) mostrerebbe "fuori raggio" per
+  // un cantiere che il POST accetterebbe comunque.
+  const accuracyQuery = req.query.accuracy != null ? Number(req.query.accuracy) : null;
+  const hasAccuracy   = Number.isFinite(accuracyQuery) && accuracyQuery > 0;
+  const geofenceToleranceM = hasAccuracy ? Math.min(accuracyQuery, GEOFENCE_ACCURACY_TOLERANCE_CAP_M) : 0;
 
   // Risolvi badge → lavoratore
   const { data: worker, error: workerErr } = await supabase
@@ -141,7 +163,7 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     if (hasGps && site.latitude != null && site.longitude != null) {
       distanceM  = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
       // Se geofence_radius_m è null il cantiere non ha enforcement → sempre "in geofence"
-      inGeofence = site.geofence_radius_m == null || distanceM <= site.geofence_radius_m;
+      inGeofence = site.geofence_radius_m == null || distanceM <= site.geofence_radius_m + geofenceToleranceM;
     } else if (hasGps) {
       // Cantiere senza coordinate GPS → nessun check possibile → includi nell'auto-select
       inGeofence = true;
@@ -346,7 +368,12 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   const geofenceActive = site.latitude != null && site.longitude != null;
   if (geofenceActive) {
     distanceM = Math.round(haversineM(lat, lon, site.latitude, site.longitude));
-    if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m) {
+    // F-170: tolleranza sulla precisione GPS, cap a GEOFENCE_ACCURACY_TOLERANCE_CAP_M
+    // (badge personale) — una lettura pessima (es. 2000m, il caso Canameti/F-171,
+    // bloccato ancora prima da GPS_ACCURACY_TOO_LOW) non può comunque sbloccare
+    // la timbratura da lontano: il geofence deve restare un controllo reale.
+    const toleranceM = accuracyM != null ? Math.min(accuracyM, GEOFENCE_ACCURACY_TOLERANCE_CAP_M) : 0;
+    if (site.geofence_radius_m != null && distanceM > site.geofence_radius_m + toleranceM) {
       // F-138 (AUDIT.md): il tentativo viene rifiutato ma non deve restare
       // invisibile all'amministratore — audit trail + notifica, stesso canale
       // già usato per le timbrature riuscite.
@@ -357,18 +384,20 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
         action:      'punch.rejected_geofence',
         target_type: 'worker',
         target_id:   worker.id,
-        payload:     { site_id, site_name: site.name, distance_m: distanceM, max_allowed_m: site.geofence_radius_m },
+        payload:     { site_id, site_name: site.name, distance_m: distanceM, max_allowed_m: site.geofence_radius_m, gps_accuracy_m: accuracyM != null ? Math.round(accuracyM) : null, tolerance_m: toleranceM },
         ip:          (req.ip || '').slice(0, 45) || null,
         user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null,
       }]).then(({ error }) => { if (error) console.error('[badge-punch] audit log rejected_geofence error:', error.message); });
 
-      notifyRejectedGeofencePunch(worker.company_id, site_id, site.name, worker.full_name, distanceM, site.geofence_radius_m)
+      notifyRejectedGeofencePunch(worker.company_id, site_id, site.name, worker.full_name, distanceM, site.geofence_radius_m, accuracyM)
         .catch(e => console.error('[badge-punch] notifyRejectedGeofencePunch error:', e.message));
 
       return res.status(403).json({
         error:         'OUTSIDE_GEOFENCE',
         distance_m:    distanceM,
         max_allowed_m: site.geofence_radius_m,
+        tolerance_m:   toleranceM,
+        gps_accuracy_m: accuracyM != null ? Math.round(accuracyM) : null,
       });
     }
   }
