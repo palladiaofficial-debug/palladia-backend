@@ -50,7 +50,7 @@ const WORKER_SELECT =
   'id, full_name, fiscal_code, is_active, created_at, badge_code, ' +
   'photo_url, hire_date, birth_date, qualification, role, employer_name, ' +
   'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place, ' +
-  'tariffa_oraria';
+  'tariffa_oraria, area_pin_set_at';
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (req, res) => {
