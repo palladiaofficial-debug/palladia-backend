@@ -15,7 +15,7 @@ const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays,
   severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
+  upsertNotification, shouldSendTelegram, isSnoozeActive, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
@@ -94,7 +94,7 @@ async function runWorkerExpiryCheck() {
 
       for (const d of items) {
         const typeLabel = DOC_TYPE_LABELS[d.doc_type] || 'Documento';
-        const { isNew, escalated } = await upsertNotification({
+        const { isNew, escalated, snoozedUntil } = await upsertNotification({
           companyId,
           type:       'worker_doc_expiry',
           severity:   d.severity,
@@ -104,7 +104,11 @@ async function runWorkerExpiryCheck() {
           entityId:   d.id,
         });
         relevantIds.add(d.id);
-        if (shouldSendTelegram(d.severity, { isNew, escalated })) {
+        // Uno snooze attivo ("prenotato, in fase di rinnovo") non ferma MAI
+        // l'avviso una volta scaduto per davvero — isSnoozeActive lo ignora già
+        // per severity 'critical' su questo type, coerente con shouldSendTelegram.
+        const snoozed = isSnoozeActive({ snoozedUntil, type: 'worker_doc_expiry', severity: d.severity });
+        if (!snoozed && shouldSendTelegram(d.severity, { isNew, escalated })) {
           telegramDocs.push(d);
         }
       }

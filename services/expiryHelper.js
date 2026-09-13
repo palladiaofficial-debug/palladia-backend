@@ -84,7 +84,7 @@ const SEVERITY_RANK = { info: 0, warning: 1, critical: 2 };
 async function upsertNotification({ companyId, type, severity, title, body, entityType, entityId }) {
   const { data: existing } = await supabase
     .from('notifications')
-    .select('id, severity, read_by')
+    .select('id, severity, read_by, snoozed_until')
     .eq('company_id', companyId)
     .eq('entity_type', entityType)
     .eq('entity_id',   entityId)
@@ -124,7 +124,7 @@ async function upsertNotification({ companyId, type, severity, title, body, enti
     } catch { /* best-effort — non deve mai bloccare la notifica vera e propria */ }
   }
 
-  return { isNew, escalated };
+  return { isNew, escalated, snoozedUntil: existing?.snoozed_until ?? null };
 }
 
 /**
@@ -134,6 +134,22 @@ function shouldSendTelegram(severity, { isNew, escalated }) {
   if (severity === 'critical') return true;  // critici: ogni giorno
   if (isNew || escalated)      return true;  // primo avviso o peggioramento
   return false;
+}
+
+/**
+ * Uno snooze è attivo solo entro la data scelta dall'utente (mai indefinito)
+ * e MAI per un worker_doc_expiry già davvero scaduto (severity critical) — un
+ * rischio concretizzato non è silenziabile, coerente con shouldSendTelegram
+ * sopra che per lo stesso motivo invia sempre i critical. Per worker_doc_missing
+ * la severity è sempre 'critical' per costruzione (mai avuto il documento) ma
+ * QUI resta snoozabile: è esplicitamente il caso segnalato dall'utente
+ * ("idoneità mediche mancanti... non sono cose immediate").
+ */
+function isSnoozeActive({ snoozedUntil, type, severity }) {
+  if (!snoozedUntil) return false;
+  if (snoozedUntil < today()) return false;
+  if (type === 'worker_doc_expiry' && severity === 'critical') return false;
+  return true;
 }
 
 /**
@@ -210,6 +226,7 @@ module.exports = {
   getCompanyAdminEmails,
   upsertNotification,
   shouldSendTelegram,
+  isSnoozeActive,
   pruneNotifications,
   pruneOrphanedNotifications,
 };

@@ -17,7 +17,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
-  upsertNotification, pruneNotifications,
+  upsertNotification, pruneNotifications, isSnoozeActive,
 } = require('./expiryHelper');
 const {
   notifyExpiryAlert, notifyResolved, buildMissingDocsMessage,
@@ -90,10 +90,15 @@ async function runWorkerMissingDocsCheck() {
     const workersMissing = byCompany[companyId];
     try {
       const relevantIds = new Set();
+      // Chi ha uno snooze attivo ("prenotato, in fase di rinnovo") non entra
+      // nel messaggio Telegram di oggi — la notifica in-app resta comunque
+      // aggiornata per tutti, snoozati inclusi, così l'elenco visto in
+      // Notifiche.tsx è sempre completo e mai silenziosamente incompleto.
+      const telegramWorkers = [];
 
       // Notifica in-app (una per lavoratore, severity sempre critical)
       for (const w of workersMissing) {
-        await upsertNotification({
+        const { snoozedUntil } = await upsertNotification({
           companyId,
           type:       'worker_doc_missing',
           severity:   'critical',
@@ -103,6 +108,9 @@ async function runWorkerMissingDocsCheck() {
           entityId:   w.id,
         });
         relevantIds.add(w.id);
+        if (!isSnoozeActive({ snoozedUntil, type: 'worker_doc_missing', severity: 'critical' })) {
+          telegramWorkers.push(w);
+        }
       }
 
       // Cleanup notifiche risolte (lavoratore ha ora tutti i doc)
@@ -110,9 +118,11 @@ async function runWorkerMissingDocsCheck() {
         companyId, 'worker_doc_missing', 'worker', relevantIds
       );
 
-      // Telegram — invia sempre (critical: ogni giorno)
-      const msg = buildMissingDocsMessage(workersMissing);
-      await notifyExpiryAlert(companyId, msg).catch(() => {});
+      // Telegram — invia sempre (critical: ogni giorno), tranne chi è snoozato oggi
+      if (telegramWorkers.length) {
+        const msg = buildMissingDocsMessage(telegramWorkers);
+        await notifyExpiryAlert(companyId, msg).catch(() => {});
+      }
 
       if (resolved.length) {
         await notifyResolved(companyId, resolved, 'Documenti obbligatori caricati').catch(() => {});
