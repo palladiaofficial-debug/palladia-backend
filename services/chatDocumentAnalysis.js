@@ -107,8 +107,9 @@ async function analyzeChatUpload({ uploadId, companyId, userId, conversationId =
 
 /**
  * Archivia definitivamente un chat_upload già analizzato (site_id/worker_id
- * già risolti dal chiamante). Sposta il file nel path permanente, crea il
- * record nella tabella di destinazione, marca l'upload come archiviato.
+ * già risolti dal chiamante, oppure worker_name — vedi risoluzione sotto).
+ * Sposta il file nel path permanente, crea il record nella tabella di
+ * destinazione, marca l'upload come archiviato.
  */
 async function archiveChatUpload({
   uploadId, companyId, userId,
@@ -118,6 +119,7 @@ async function archiveChatUpload({
   contentHash = null,
   siteHint = null,
   equipmentHint = null,
+  workerName = null,
   req = null,
   conversationId = null,
 }) {
@@ -134,8 +136,38 @@ async function archiveChatUpload({
   if (!validDests.includes(destination)) return { error: 'destination non valida: ' + destination };
   if (destination === 'site_documents' && !siteId)
     return { error: 'site_id obbligatorio per site_documents.' };
-  if ((destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips') && !workerId)
-    return { error: 'worker_id obbligatorio per ' + destination + '.' };
+
+  // F-181 (AUDIT.md): prima di questo fix, senza worker_id il modello doveva
+  // sempre fare un giro get_workers/get_worker_detail PRIMA di poter tentare
+  // l'archiviazione — un tentativo senza worker_id falliva e basta. Stesso
+  // pattern già usato altrove in chat.js (propose_action, update_record) per
+  // "nome→id risolto lato server": qui mancava. Match esatto sul nome (mai
+  // fuzzy, a differenza di matchWorker/matchSite) perché un documento di
+  // compliance attribuito al lavoratore sbagliato è peggio di un giro in più
+  // — ambiguità e nessun match restano un errore esplicito, mai una scelta
+  // silenziosa.
+  const needsWorker = destination === 'worker_documents' || destination === 'worker_certificates' || destination === 'payslips';
+  if (needsWorker && !workerId && workerName) {
+    const { data: found, error: findErr } = await supabase
+      .from('workers')
+      .select('id, full_name')
+      .eq('company_id', companyId)
+      .ilike('full_name', `%${workerName}%`)
+      .limit(5);
+    if (findErr) return { error: findErr.message };
+    if (!found || found.length === 0) {
+      return { error: `Nessun lavoratore trovato per "${workerName}".` };
+    }
+    if (found.length > 1) {
+      return {
+        error: 'NOME_AMBIGUO',
+        message: `Più lavoratori corrispondono a "${workerName}": ${found.map(w => w.full_name).join(', ')}. Chiedi all'utente quale intende, oppure usa get_workers per l'id esatto.`,
+      };
+    }
+    workerId = found[0].id;
+  }
+  if (needsWorker && !workerId)
+    return { error: 'worker_id obbligatorio per ' + destination + ' (o worker_name se non hai ancora l\'id).' };
   if (destination === 'payslips' && (!periodYear || !periodMonth))
     return { error: 'period_year e period_month obbligatori per payslips.' };
 

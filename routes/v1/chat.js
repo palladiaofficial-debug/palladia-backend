@@ -600,8 +600,11 @@ Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
    regola di "MAI dichiarare un'azione riuscita prima del risultato del tool" in REGOLE SCRITTURA sopra,
    qui esplicitata perché il rischio di ripetere a memoria la tabella già mostrata invece di rieseguire
    il tool è concreto.
-- Per worker_certificates: destination="worker_certificates", obbligatorio worker_id
-- Per idoneità mediche, patenti, formazione: destination="worker_documents" o "worker_certificates"
+- Per worker_certificates: destination="worker_certificates", obbligatorio worker_id (o worker_name se non
+  lo conosci ancora — risolto lato server, non serve un giro get_workers/get_worker_detail apposta per questo)
+- Per idoneità mediche, patenti, formazione: destination="worker_documents" o "worker_certificates" — se
+  read_uploaded_document ha già estratto il nome del lavoratore dal documento, passa worker_name direttamente
+  invece di cercarlo prima con get_workers
 - Per DURC, ISO, SOA, assicurazione, visura: destination="company_documents"
 - Per POS, PSC, DVR, documenti legati a un cantiere: destination="site_documents"
 - Per libretto di circolazione, assicurazione o revisione di un mezzo/veicolo: destination="equipment_documents",
@@ -2616,7 +2619,8 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
         destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents'], description: 'Tabella di destinazione — "payslips" per una singola busta paga/cedolino stipendio di UN lavoratore (mai worker_documents per queste); "equipment_documents" per libretto/assicurazione/revisione di un mezzo, mai company_documents' },
         name:           { type: 'string', description: 'Nome visualizzato del documento (max 80 car)' },
         site_id:        { type: 'string', description: 'UUID cantiere (obbligatorio per site_documents)' },
-        worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents, worker_certificates e payslips)' },
+        worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents, worker_certificates e payslips, salvo worker_name)' },
+        worker_name:    { type: 'string', description: 'Nome (anche parziale) del lavoratore a cui appartiene il documento — alternativa a worker_id quando non lo conosci ancora, risolto lato server. Evita una chiamata get_workers/get_worker_detail separata prima di poter archiviare. Se il nome è ambiguo (più lavoratori corrispondono) l\'archiviazione fallisce e ti chiede di disambiguare — non sceglie da solo.' },
         cantiere_hint:  { type: 'string', description: 'Nome/indirizzo del cantiere citato nel documento (da read_uploaded_document), se il documento non è per site_documents ma riguarda comunque un cantiere specifico — es. un attestato del lavoratore che lavora lì. Palladia lo abbina automaticamente.' },
         equipment_id:   { type: 'string', description: 'UUID mezzo (per equipment_documents, se già noto da una chiamata precedente)' },
         equipment_hint: { type: 'string', description: 'Targa o marca/modello del mezzo citato nel documento (da read_uploaded_document, campo vehicle_plate/vehicle_hint) — obbligatorio per equipment_documents se equipment_id non è noto. Palladia lo abbina automaticamente.' },
@@ -5704,7 +5708,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'archive_document': {
         const {
           upload_id, destination, name,
-          site_id, worker_id, cantiere_hint,
+          site_id, worker_id, worker_name, cantiere_hint,
           equipment_id, equipment_hint,
           category, expiry_date, issue_date, issuing_body, course_type_id,
           period_year, period_month,
@@ -5719,6 +5723,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
         const archiveResult = await archiveChatUpload({
           uploadId: upload_id, companyId, userId,
           destination, name, siteId: site_id, workerId: worker_id,
+          workerName: worker_name,
           siteHint: cantiere_hint,
           equipmentId: equipment_id, equipmentHint: equipment_hint,
           category, expiryDate: expiry_date, issueDate: issue_date,
