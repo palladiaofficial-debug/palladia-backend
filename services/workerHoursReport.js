@@ -15,7 +15,7 @@
  */
 
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction } = require('../lib/presencePairing');
+const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction, isTestOrInactiveWorker } = require('../lib/presencePairing');
 
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
@@ -129,7 +129,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     .from('presence_logs')
     .select(`
       id, worker_id, site_id, event_type, timestamp_server, distance_m, gps_accuracy_m, method,
-      worker:workers (id, full_name, first_name, last_name, fiscal_code)
+      worker:workers (id, full_name, first_name, last_name, fiscal_code, is_active)
     `)
     .eq('company_id', companyId)
     .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
@@ -170,7 +170,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   // config pausa pranzo può differire da un cantiere all'altro.
   const groupMap = new Map();
   for (const log of (logs || [])) {
-    if (!log.worker) continue;
+    if (isTestOrInactiveWorker(log.worker, company?.name)) continue;
     const key = `${log.worker_id}__${log.site_id}`;
     if (!groupMap.has(key)) groupMap.set(key, { workerId: log.worker_id, siteId: log.site_id, info: log.worker, logs: [] });
     groupMap.get(key).logs.push(log);

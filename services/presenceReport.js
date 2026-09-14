@@ -15,7 +15,7 @@
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction } = require('../lib/presencePairing');
+const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction, isTestOrInactiveWorker } = require('../lib/presencePairing');
 
 // Soglia GPS (stessa del backend punch)
 const GPS_MAX_ACCURACY_M = (() => {
@@ -279,7 +279,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     .from('presence_logs')
     .select(`
       id, event_type, timestamp_server, distance_m, gps_accuracy_m, worker_id, method,
-      worker:workers (id, full_name, fiscal_code)
+      worker:workers (id, full_name, fiscal_code, is_active)
     `)
     .eq('site_id', siteId)
     .eq('company_id', companyId)
@@ -296,7 +296,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   //    filtro dei giorni al di fuori di [from,to]
   const byWorker = new Map();
   for (const log of (logs || [])) {
-    if (!log.worker) continue;
+    if (isTestOrInactiveWorker(log.worker, company?.name)) continue;
     const wid = log.worker_id;
     if (!byWorker.has(wid)) byWorker.set(wid, { worker: log.worker, logs: [] });
     byWorker.get(wid).logs.push(log);
@@ -385,9 +385,13 @@ function generatePresenceReportHtml(data) {
     ? fmtDisplayDate(period.from)
     : `${fmtDisplayDate(period.from)} — ${fmtDisplayDate(period.to)}`;
 
-  const genDateStr  = new Date(generated_at).toLocaleString('it-IT', {
-    timeZone: 'Europe/Rome', dateStyle: 'long', timeStyle: 'short'
-  });
+  // F-184 (AUDIT.md): "long" produceva "14 settembre 2026 alle ore 13:28" —
+  // troppo lungo per 1/4 di meta-grid, andava a capo mentre le altre 3
+  // colonne restavano su una riga sola (Impresa/Cantiere/Periodo), aspetto
+  // sbilanciato. Stesso formato gg/mm/aaaa di fmtDisplayDate() sopra, per
+  // coerenza visiva con "Periodo".
+  const genDateStr  = `${fmtDisplayDate(new Date(generated_at).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' }))}, ${
+    new Date(generated_at).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' })}`;
 
   const totalHoursStr = fmtTotalHours(total_hours);
 
@@ -576,10 +580,17 @@ table { color: var(--text); }
   sole, quindi il totale reale superava il 100% e in table-layout:fixed il
   browser comprimeva le colonne in modo non uniforme: la colonna Data,
   già stretta e con white-space:nowrap, finiva per traboccare visibilmente
-  dentro la colonna Lavoratore successiva):
-    Data 12% · Lavoratore 17% · C.Fiscale 15% · P.Entrata 7% ·
-    U.Uscita 7% · Ore 7% · N.Int 4% · Dist 5% · GPS 5% · Metodo 7% ·
-    Anomalie 14% = 100%
+  dentro la colonna Lavoratore successiva).
+  Ribilanciate F-184 (AUDIT.md, 2026-09-14): Anomalie conteneva frasi libere
+  (es. "Pausa pranzo: dichiarata saltata (nessuna detrazione)") dentro badge
+  con white-space:nowrap in una colonna troppo stretta — il testo usciva
+  visibilmente dal bordo del riquadro invece di andare a capo. Tolto nowrap
+  dai badge (vanno a capo dentro il proprio contenitore) e allargata la
+  colonna, togliendo margine alle colonne numeriche più generose del
+  necessario (C.Fiscale, N., Dist., GPS — valori corti, monospaziati):
+    Data 12% · Lavoratore 17% · C.Fiscale 13% · P.Entrata 7% ·
+    U.Uscita 7% · Ore 7% · N.Int 3% · Dist 4% · GPS 4% · Metodo 7% ·
+    Anomalie 19% = 100%
 */
 .presence-table {
   width: 100%; table-layout: fixed; border-collapse: collapse;
@@ -605,14 +616,14 @@ table { color: var(--text); }
 /* Larghezze colonne (table-layout:fixed) */
 .col-date   { width: 12%; }
 .col-name   { width: 17%; }
-.col-cf     { width: 15%; }
+.col-cf     { width: 13%; }
 .col-time   { width:  7%; }
 .col-ore    { width:  7%; }
-.col-nint   { width:  4%; }
-.col-dist   { width:  5%; }
-.col-gps    { width:  5%; }
+.col-nint   { width:  3%; }
+.col-dist   { width:  4%; }
+.col-gps    { width:  4%; }
 .col-metodo { width:  7%; }
-.col-anom   { width: 14%; }
+.col-anom   { width: 19%; }
 
 .td-date  { font-weight: 600; color: var(--text); white-space: nowrap; }
 .td-name  { font-weight: 500; }
@@ -623,9 +634,16 @@ table { color: var(--text); }
 
 .miss       { color: var(--destructive); font-weight: 700; }
 .td-ok      { color: var(--success); font-size: 9pt; }
+/* F-184 (AUDIT.md): NO white-space:nowrap — un'anomalia è testo libero
+   (es. "Pausa pranzo: dichiarata saltata (nessuna detrazione)"), deve poter
+   andare a capo dentro il proprio badge invece di uscire dal bordo del
+   riquadro che lo contiene. display:block invece di inline-block: un badge
+   su più righe si allinea meglio verticalmente sotto quello precedente
+   (più badge nella stessa cella, es. Uscita mancante + GPS impreciso). */
 .badge-anom, .badge-info {
-  display: inline-block; font-size: 5.8pt; font-weight: 600;
-  border-radius: 2.5pt; padding: 1.5pt 4pt; margin: 1pt 2pt 1pt 0; white-space: nowrap;
+  display: block; font-size: 6.3pt; font-weight: 600; line-height: 1.35;
+  border-radius: 2.5pt; padding: 2pt 4.5pt; margin-bottom: 2pt;
+  width: fit-content; max-width: 100%;
 }
 .badge-anom { background: var(--destructive-bg); color: var(--destructive); }
 .badge-info { background: var(--primary-tint);    color: var(--primary); }
