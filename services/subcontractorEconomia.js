@@ -341,4 +341,75 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
 </html>`;
 }
 
-module.exports = { buildSubcontractorEconomia, generateSubcontractorStatementHtml };
+// ── Riepilogo su TUTTI i subappaltatori (F-190, AUDIT.md) ─────────────────────
+// Richiesta esplicita dopo la schermata per-subappaltatore: un datore di
+// lavoro con più subappaltatori non deve entrare in ognuno per sapere "a chi
+// devo di più" — una lista unica, ordinata per saldo da erogare decrescente.
+// Query aggregate (non N chiamate a buildSubcontractorEconomia una per
+// subappaltatore) — un'azienda può averne decine.
+async function buildSubcontractorsEconomiaOverview(companyId) {
+  const { data: subs, error: subsErr } = await supabase
+    .from('subcontractors')
+    .select('id, company_name')
+    .eq('company_id', companyId)
+    .eq('is_active', true);
+  if (subsErr) throw new Error('DB_ERROR: ' + subsErr.message);
+  if (!subs?.length) return { subcontractors: [] };
+
+  const subIds = subs.map(s => s.id);
+
+  const { data: assignments, error: assignErr } = await supabase
+    .from('site_subcontractors')
+    .select('subcontractor_id, site_id, budget_totale, sal_percentuale, site:site_id(status)')
+    .in('subcontractor_id', subIds)
+    .eq('company_id', companyId);
+  if (assignErr) throw new Error('DB_ERROR: ' + assignErr.message);
+
+  const activeAssignments = (assignments || []).filter(a => a.site && a.site.status !== 'chiuso' && a.site.status !== 'eliminato');
+
+  const { data: costs, error: costsErr } = await supabase
+    .from('site_costs')
+    .select('subcontractor_id, tipo, importo')
+    .in('subcontractor_id', subIds)
+    .eq('company_id', companyId)
+    .not('subcontractor_id', 'is', null);
+  if (costsErr) throw new Error('DB_ERROR: ' + costsErr.message);
+
+  const bySub = {};
+  for (const s of subs) bySub[s.id] = { budget_totale: 0, hasAnyBudget: false, sites_attivi: 0, acconti: 0, fatturato: 0 };
+
+  for (const a of activeAssignments) {
+    const bucket = bySub[a.subcontractor_id];
+    if (!bucket) continue;
+    bucket.sites_attivi += 1;
+    if (a.budget_totale !== null) { bucket.budget_totale += Number(a.budget_totale) || 0; bucket.hasAnyBudget = true; }
+  }
+  for (const c of (costs || [])) {
+    const bucket = bySub[c.subcontractor_id];
+    if (!bucket) continue;
+    const importo = Number(c.importo) || 0;
+    if (c.tipo === 'acconto') bucket.acconti += importo;
+    else if (c.tipo === 'fattura') bucket.fatturato += importo;
+  }
+
+  const result = subs.map(s => {
+    const b = bySub[s.id];
+    const budgetTotale = b.hasAnyBudget ? Math.round(b.budget_totale * 100) / 100 : null;
+    return {
+      subcontractor_id: s.id,
+      company_name:     s.company_name,
+      cantieri_attivi:  b.sites_attivi,
+      totale_appalti:   budgetTotale,
+      totale_acconti:   Math.round(b.acconti * 100) / 100,
+      totale_fatturato: Math.round(b.fatturato * 100) / 100,
+      saldo_da_erogare: budgetTotale !== null ? Math.round((budgetTotale - b.acconti) * 100) / 100 : null,
+    };
+  })
+  // Chi ha un saldo positivo da dare prima, poi decrescente; chi non ha
+  // nessun appalto impostato in fondo (nulla da ordinare per importo).
+  .sort((a, b) => (b.saldo_da_erogare ?? -Infinity) - (a.saldo_da_erogare ?? -Infinity));
+
+  return { subcontractors: result };
+}
+
+module.exports = { buildSubcontractorEconomia, generateSubcontractorStatementHtml, buildSubcontractorsEconomiaOverview };

@@ -7,7 +7,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { sendDbError } = require('../../lib/httpErrors');
 const { rendererPool } = require('../../pdf-renderer');
-const { buildSubcontractorEconomia, generateSubcontractorStatementHtml } = require('../../services/subcontractorEconomia');
+const { buildSubcontractorEconomia, generateSubcontractorStatementHtml, buildSubcontractorsEconomiaOverview } = require('../../services/subcontractorEconomia');
 const {
   createSubcontractorSchema,
   patchSubcontractorSchema,
@@ -144,6 +144,23 @@ router.post('/subcontractors', verifySupabaseJwt, validate(createSubcontractorSc
 
   if (error) return sendDbError(res, error);
   res.status(201).json(format(data));
+});
+
+// ── GET /api/v1/subcontractors/economia-overview — F-190 (AUDIT.md) ───────────
+// DEVE stare prima di GET /subcontractors/:id (route statica prima del
+// parametro — vedi selftest_route_order_collisions.js), altrimenti Express la
+// tratterebbe come una richiesta per il subappaltatore con id "economia-overview".
+// Tutti i subappaltatori attivi con appalti/acconti/saldo aggregati, ordinati
+// per saldo da erogare decrescente — "a chi devo di più", senza entrare uno
+// alla volta in ognuno.
+router.get('/subcontractors/economia-overview', verifySupabaseJwt, async (req, res) => {
+  try {
+    const data = await buildSubcontractorsEconomiaOverview(req.companyId);
+    res.json(data);
+  } catch (err) {
+    console.error('[subcontractors/economia-overview] error:', err.message);
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
 });
 
 // ── GET /api/v1/subcontractors/:id ────────────────────────────────────────────
