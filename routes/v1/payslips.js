@@ -42,6 +42,41 @@ async function _signedUrl(filePath, expiresIn = 3600) {
   return data?.signedUrl ?? null;
 }
 
+// ── GET /api/v1/payslips/draft — controllo mirato prima della condivisione ────
+// F-187 (AUDIT.md): dopo l'Importazione Intelligente non esisteva un posto
+// unico per rivedere TUTTE le buste paga appena importate prima di
+// condividerle — solo la scheda di un lavoratore alla volta
+// (BustePagaTab.tsx), che per un'azienda con molti lavoratori significa
+// entrare in ognuna una per una. Questo endpoint alimenta una schermata
+// dedicata (BustePagaCondivisione.tsx): elenco di tutte le buste paga in
+// status 'draft' (mai condivise) dell'azienda, col nome del lavoratore già
+// risolto, così il controllo "è la persona giusta?" si fa qui invece che
+// spulciando Organico. La condivisione resta invariata: sempre un
+// PATCH /payslips/:id/share per riga, mai un'azione che scrive stato.
+router.get('/payslips/draft', verifySupabaseJwt, async (req, res) => {
+  const { data: rows, error } = await supabase
+    .from('payslips')
+    .select('id, worker_id, period_year, period_month, filename, file_size, note, created_at')
+    .eq('company_id', req.companyId)
+    .eq('status', 'draft')
+    .order('period_year',  { ascending: false })
+    .order('period_month', { ascending: false });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!rows?.length) return res.json([]);
+
+  const workerIds = [...new Set(rows.map(r => r.worker_id))];
+  const { data: workers } = await supabase
+    .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId);
+  const workerById = Object.fromEntries((workers || []).map(w => [w.id, w]));
+
+  res.json(rows.map(r => ({
+    ...r,
+    worker_name:   workerById[r.worker_id]?.full_name || null,
+    worker_active: workerById[r.worker_id]?.is_active ?? null,
+  })));
+});
+
 // ── GET /api/v1/workers/:workerId/payslips ────────────────────────────────────
 router.get('/workers/:workerId/payslips', verifySupabaseJwt, async (req, res) => {
   const { workerId } = req.params;
