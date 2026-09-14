@@ -51,13 +51,15 @@ function isAdminOrOwner(role) {
   return role === 'owner' || role === 'admin';
 }
 
-// F-106 (AUDIT.md, 2026-09-01): nuove attivazioni/riattivazioni e nuove deleghe
-// sospese — il wizard non avvisa che l'inoltro devia TUTTA la posta in arrivo,
-// non solo le fatture. Le aziende già connesse restano operative (status/test/
-// disconnect/allowed-senders/log invariati): questo blocca solo la creazione
-// di NUOVE configurazioni di inoltro sulla casella di un cliente.
+// F-106 (AUDIT.md, 2026-09-01) → RISOLTO 2026-09-14: il flag
+// email_ingest_manual_forward_setup è ON di default ora che il wizard
+// (lib/emailIngestProviders.js) istruisce solo un inoltro MANUALE per singola
+// email, mai una regola automatica su tutta la posta — vedi il commento lì.
+// Il controllo resta (isFeatureEnabled può ancora disattivarlo per una
+// singola company via company_feature_flags) per difesa in profondità, non
+// perché il canale sia ancora considerato pericoloso di default.
 const EMAIL_INGEST_DISABLED_MESSAGE =
-  'Il canale "Fatture via Email" è temporaneamente sospeso per nuove attivazioni mentre rivediamo le istruzioni di inoltro. Contattaci se ti serve con urgenza.';
+  'Il canale "Fatture via Email" è disattivato per la tua azienda. Contattaci se vuoi riattivarlo.';
 
 // ── POST /api/v1/expenses/email-ingest/webhook — PUBBLICO ─────────────────────
 // multer per il multipart/form-data che il Worker Cloudflare ripubblica (stessi nomi
