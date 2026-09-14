@@ -347,6 +347,7 @@ async function processOneItem(item, ctx) {
     let matchedWorkerId = null, matchedSiteId = null, workerScore = null, siteScore = null;
     let stagedWorkerId = null, stagedSiteId = null, extraSiteId = null;
     let matchedEquipmentId = null, equipmentScore = null;
+    let workerMatchedBy = null;
 
     if (destination === 'equipment_documents') {
       // F-096 (AUDIT.md): a differenza di lavoratore/cantiere, un mezzo senza
@@ -364,7 +365,7 @@ async function processOneItem(item, ctx) {
       const extractedName = fields.issued_to?.value;
       const extractedCf = fields.fiscal_code?.value;
       const m = matchWorker({ name: extractedName, fiscal_code: extractedCf }, ctx.workerCandidates);
-      if (m) { matchedWorkerId = m.id; workerScore = m.score; }
+      if (m) { matchedWorkerId = m.id; workerScore = m.score; workerMatchedBy = m.matchedBy; }
       else if (extractedName || extractedCf) {
         const matchKey = normKey(extractedCf) || normKey(extractedName);
         stagedWorkerId = await upsertStagedEntity(item.batch_id, 'worker', matchKey, {
@@ -397,7 +398,7 @@ async function processOneItem(item, ctx) {
       doc_type_detail: extraction?.docTypeDetected || null,
       extracted_fields: fields, overall_confidence: overallConfidence,
       matched_worker_id: matchedWorkerId, matched_site_id: matchedSiteId,
-      worker_match_score: workerScore, site_match_score: siteScore,
+      worker_match_score: workerScore, site_match_score: siteScore, worker_matched_by: workerMatchedBy,
       staged_worker_id: stagedWorkerId, staged_site_id: stagedSiteId,
       extra_site_id: extraSiteId,
       matched_equipment_id: matchedEquipmentId, equipment_match_score: equipmentScore,
@@ -605,19 +606,42 @@ const { sanitizeCategory } = require('../lib/documentCategory');
 
 const GREEN_THRESHOLD = 0.85;
 
+// F-186 (AUDIT.md, 2026-09-14): `overall_confidence` misura solo quanto è
+// leggibile il testo estratto (OCR/AI) — NON quanto è affidabile
+// l'abbinamento al lavoratore. Un documento può essere letto perfettamente
+// (confidence alta) ma abbinato per NOME in modo fuzzy (soglia 55/100 in
+// lib/entityMatch.js) a un lavoratore diverso da quello vero — due persone
+// con nome simile, o persino un nome scritto identico a un altro candidato
+// (fuzzy score 100, indistinguibile da un vero match CF senza tracciare
+// ESPLICITAMENTE come si è arrivati al match). Per un documento legato a un
+// lavoratore specifico (buste paga soprattutto — richiesta esplicita del
+// titolare prima di un carico reale, "non possiamo rischiare di caricare
+// file... di altri lavoratori" — ma lo stesso rischio esiste per idoneità/
+// certificati), "Conferma tutti i verdi" NON deve mai bypassare la
+// revisione umana quando l'identità del lavoratore non è certa: richiede
+// SEMPRE un match esatto sul codice fiscale (worker_matched_by === 'cf').
+// Un match per nome, anche a punteggio pieno, resta bloccato sulla
+// conferma singola con revisione visiva.
+const WORKER_SCOPED_DESTINATIONS = new Set(['worker_documents', 'worker_certificates', 'payslips']);
+
 async function confirmAllGreen(batchId, companyId, userId, req = null) {
   const { data: items } = await supabase
     .from('import_items')
-    .select('id, overall_confidence, import_batches!inner(company_id)')
+    .select('id, overall_confidence, destination, worker_matched_by, import_batches!inner(company_id)')
     .eq('batch_id', batchId).eq('status', 'pending_review').gte('overall_confidence', GREEN_THRESHOLD);
   const confirmed = [];
   const failed = [];
+  const skippedIdentityReview = [];
   for (const it of (items || [])) {
     if (it.import_batches.company_id !== companyId) continue;
+    if (WORKER_SCOPED_DESTINATIONS.has(it.destination) && it.worker_matched_by !== 'cf') {
+      skippedIdentityReview.push(it.id);
+      continue;
+    }
     try { await confirmItem(it.id, companyId, userId, req); confirmed.push(it.id); }
     catch (err) { failed.push({ id: it.id, error: err.message }); }
   }
-  return { confirmed, failed };
+  return { confirmed, failed, skippedIdentityReview };
 }
 
 // ── Chiusura del batch — momento wow ──────────────────────────────────────────

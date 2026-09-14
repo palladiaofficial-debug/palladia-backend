@@ -127,7 +127,25 @@ router.get('/smart-import/batches/:id', async (req, res) => {
   const { data: stagedEntities } = await supabase
     .from('import_staged_entities').select('*').eq('batch_id', batch.id).eq('status', 'proposed');
 
-  res.json({ batch, items: [...(items || []), ...(children || [])], staged_entities: stagedEntities || [] });
+  const allItems = [...(items || []), ...(children || [])];
+
+  // F-186 (AUDIT.md): la card di revisione deve mostrare A CHI un documento è
+  // stato abbinato, non solo un id — altrimenti l'unica "revisione umana"
+  // possibile è un salto di fiducia sul punteggio. Un solo lookup per tutti
+  // gli id distinti nel batch, non N+1.
+  const workerIds = [...new Set(allItems.map(i => i.matched_worker_id).filter(Boolean))];
+  let workerNameById = {};
+  if (workerIds.length) {
+    const { data: workers } = await supabase
+      .from('workers').select('id, full_name').in('id', workerIds).eq('company_id', req.companyId);
+    workerNameById = Object.fromEntries((workers || []).map(w => [w.id, w.full_name]));
+  }
+  const itemsWithNames = allItems.map(i => ({
+    ...i,
+    matched_worker_name: i.matched_worker_id ? (workerNameById[i.matched_worker_id] || null) : null,
+  }));
+
+  res.json({ batch, items: itemsWithNames, staged_entities: stagedEntities || [] });
 });
 
 // ── POST /api/v1/smart-import/items/:id/confirm ──────────────────────────────
