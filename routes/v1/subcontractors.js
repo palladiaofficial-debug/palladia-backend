@@ -6,6 +6,8 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { sendDbError } = require('../../lib/httpErrors');
+const { rendererPool } = require('../../pdf-renderer');
+const { buildSubcontractorEconomia, generateSubcontractorStatementHtml } = require('../../services/subcontractorEconomia');
 const {
   createSubcontractorSchema,
   patchSubcontractorSchema,
@@ -285,78 +287,45 @@ router.delete('/sites/:siteId/subcontractors/:assignId', verifySupabaseJwt, asyn
 
 // GET /api/v1/subcontractors/:id/economia — riepilogo su tutti i cantieri
 router.get('/subcontractors/:id/economia', verifySupabaseJwt, async (req, res) => {
-  const { id } = req.params;
-  const sub = await getOwnedSub(id, req.companyId);
-  if (!sub) return res.status(404).json({ error: 'NOT_FOUND' });
+  try {
+    const data = await buildSubcontractorEconomia(req.params.id, req.companyId);
+    res.json(data);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'NOT_FOUND' });
+    console.error('[subcontractors/economia] error:', err.message);
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
 
-  const { data: assignments, error: assignErr } = await supabase
-    .from('site_subcontractors')
-    .select('id, site_id, role, assigned_at, budget_totale, sal_percentuale, site:site_id(id, name, status)')
-    .eq('subcontractor_id', id)
-    .eq('company_id', req.companyId)
-    .order('assigned_at', { ascending: false });
-  if (assignErr) return sendDbError(res, assignErr);
-
-  const siteIds = (assignments || []).map(a => a.site_id);
-  let costsBySite = {};
-  if (siteIds.length) {
-    const { data: costs, error: costsErr } = await supabase
-      .from('site_costs')
-      .select('site_id, tipo, importo')
-      .eq('subcontractor_id', id)
-      .eq('company_id', req.companyId)
-      .in('site_id', siteIds);
-    if (costsErr) return sendDbError(res, costsErr);
-    for (const c of (costs || [])) {
-      const bucket = costsBySite[c.site_id] || (costsBySite[c.site_id] = { acconti: 0, fatturato: 0, altro: 0 });
-      const importo = Number(c.importo) || 0;
-      if (c.tipo === 'acconto') bucket.acconti += importo;
-      else if (c.tipo === 'fattura') bucket.fatturato += importo;
-      else bucket.altro += importo;
-    }
+// GET /api/v1/subcontractors/:id/economia/pdf — estratto conto (F-189, AUDIT.md)
+router.get('/subcontractors/:id/economia/pdf', verifySupabaseJwt, async (req, res) => {
+  let data;
+  try {
+    data = await buildSubcontractorEconomia(req.params.id, req.companyId);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'NOT_FOUND' });
+    console.error('[subcontractors/economia/pdf] data error:', err.message);
+    return res.status(500).json({ error: 'DATA_ERROR' });
   }
 
-  const sites = (assignments || [])
-    .filter(a => a.site && a.site.status !== 'chiuso' && a.site.status !== 'eliminato')
-    .map(a => {
-      const budgetTotale   = a.budget_totale !== null ? Number(a.budget_totale) : null;
-      const salPercentuale = Number(a.sal_percentuale) || 0;
-      const c = costsBySite[a.site_id] || { acconti: 0, fatturato: 0, altro: 0 };
-      return {
-        assignment_id:      a.id,
-        site_id:            a.site_id,
-        site_name:          a.site?.name || '—',
-        role:               a.role,
-        assigned_at:        a.assigned_at,
-        budget_totale:      budgetTotale,
-        sal_percentuale:    salPercentuale,
-        importo_maturato:   budgetTotale !== null ? Math.round(budgetTotale * salPercentuale / 100 * 100) / 100 : null,
-        acconti_dati:       Math.round(c.acconti * 100) / 100,
-        fatturato:          Math.round(c.fatturato * 100) / 100,
-        saldo_da_erogare:   budgetTotale !== null ? Math.round((budgetTotale - c.acconti) * 100) / 100 : null,
-      };
+  const html = generateSubcontractorStatementHtml(data);
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await rendererPool.render(html, {
+      docTitle: `Estratto Conto — ${data.subcontractor.company_name}`,
+      rev: 1,
     });
+  } catch (renderErr) {
+    console.error('[subcontractors/economia/pdf] render error:', renderErr.message);
+    return res.status(500).json({ error: 'PDF_RENDER_ERROR' });
+  }
 
-  const totals = sites.reduce((acc, s) => ({
-    totale_appalti:  acc.totale_appalti  + (s.budget_totale ?? 0),
-    totale_acconti:  acc.totale_acconti  + s.acconti_dati,
-    totale_fatturato: acc.totale_fatturato + s.fatturato,
-    totale_maturato: acc.totale_maturato + (s.importo_maturato ?? 0),
-    cantieri_con_appalto: acc.cantieri_con_appalto + (s.budget_totale !== null ? 1 : 0),
-  }), { totale_appalti: 0, totale_acconti: 0, totale_fatturato: 0, totale_maturato: 0, cantieri_con_appalto: 0 });
-
-  res.json({
-    subcontractor: { id: sub.id, company_name: sub.company_name },
-    sites,
-    totals: {
-      totale_appalti:       Math.round(totals.totale_appalti * 100) / 100,
-      totale_acconti:       Math.round(totals.totale_acconti * 100) / 100,
-      totale_fatturato:     Math.round(totals.totale_fatturato * 100) / 100,
-      totale_maturato:      Math.round(totals.totale_maturato * 100) / 100,
-      cantieri_attivi:      sites.length,
-      cantieri_con_appalto: totals.cantieri_con_appalto,
-    },
-  });
+  const safeSlug = data.subcontractor.company_name.replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 60);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="estratto-conto-${safeSlug}.pdf"`);
+  res.setHeader('Content-Length', pdfBuffer.length);
+  res.send(pdfBuffer);
 });
 
 // PATCH /api/v1/subcontractors/:id/sites/:siteId/economia — imposta appalto/% per QUEL cantiere
