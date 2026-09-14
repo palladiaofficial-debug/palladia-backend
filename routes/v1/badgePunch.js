@@ -50,6 +50,16 @@ function isValidBadgeCode(code) {
   return typeof code === 'string' && /^[A-Fa-f0-9]{18}$/.test(code);
 }
 
+// F-184 (AUDIT.md): id generato dal client per TENTATIVO di timbratura
+// (non per richiesta HTTP) — riusato identico se il client rimette in coda
+// e rispedisce lo stesso tentativo dopo un errore di rete ambiguo, per
+// permettere a punch_atomic di riconoscere un replay invece di un tocco
+// nuovo. Opzionale: un client non aggiornato che non lo manda si comporta
+// come oggi (nessuna deduplicazione, nessuna rottura).
+function isValidClientRequestId(id) {
+  return typeof id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+}
+
 const GPS_MAX_ACCURACY_M = (() => {
   const v = Number(process.env.GPS_MAX_ACCURACY_M);
   return Number.isFinite(v) && v > 0 ? v : 500;
@@ -278,7 +288,8 @@ router.post('/badge/:code/consent', badgePunchLimiter, async (req, res) => {
 router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   try {
   const { code }                                    = req.params;
-  const { site_id, latitude, longitude, gps_accuracy_m } = req.body;
+  const { site_id, latitude, longitude, gps_accuracy_m, client_request_id } = req.body;
+  const clientRequestId = isValidClientRequestId(client_request_id) ? client_request_id : null;
 
   if (!isValidBadgeCode(code)) {
     return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
@@ -405,7 +416,9 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   const ipAddress = (req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || '').slice(0, 45) || null;
   const userAgent = (req.headers['user-agent'] || '').slice(0, 500) || null;
 
-  // Punch atomico — method = worker_self_punch, session_id = null
+  // Punch atomico — method = worker_self_punch, session_id = null.
+  // p_client_request_id (F-184): se il client lo manda, punch_atomic
+  // deduplica un retry dello stesso tentativo invece di capovolgere lo stato.
   const { data: punchResult, error: punchErr } = await supabase.rpc('punch_atomic', {
     p_site_id:    site_id,
     p_worker_id:  worker.id,
@@ -418,6 +431,7 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     p_ip:         ipAddress,
     p_ua:         userAgent,
     p_method:     'worker_self_punch',
+    p_client_request_id: clientRequestId,
   });
 
   if (punchErr) {

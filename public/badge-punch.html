@@ -1664,6 +1664,23 @@
   }
 
   // ── Punch ─────────────────────────────────────────────────────────────────────
+  // F-184 (AUDIT.md): un id per TENTATIVO di timbratura, non per richiesta
+  // HTTP — permette al server di riconoscere un retry (dopo un errore di
+  // rete ambiguo: la richiesta potrebbe essere arrivata comunque) come lo
+  // stesso tentativo invece di un tocco nuovo, che su un endpoint a toggle
+  // capovolgerebbe entrata/uscita. crypto.randomUUID richiede iOS 15.4+ /
+  // contesto sicuro (sempre vero qui, HTTPS) — fallback per WebView datate.
+  function genClientRequestId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+      return window.crypto.randomUUID();
+    }
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+      var r = (Math.random() * 16) | 0;
+      var v = c === 'x' ? r : (r & 0x3) | 0x8;
+      return v.toString(16);
+    });
+  }
+
   async function doPunch() {
     if (punching) return;
     if (!gpsCoords) {
@@ -1673,6 +1690,10 @@
       updateGpsRow();
       return;
     }
+
+    // Stesso id per tutta la durata di questo tentativo, riusato identico
+    // se il tentativo finisce in coda offline e viene rispedito più tardi.
+    var clientRequestId = genClientRequestId();
 
     punching = true;
     const btn   = document.getElementById('punch-btn');
@@ -1685,10 +1706,11 @@
 
     try {
       const { status, body } = await apiFetch('POST', `/api/v1/badge/${BADGE_CODE}/punch`, {
-        site_id:        selectedSite.site_id,
-        latitude:       gpsCoords.latitude,
-        longitude:      gpsCoords.longitude,
-        gps_accuracy_m: gpsCoords.accuracy,
+        site_id:            selectedSite.site_id,
+        latitude:           gpsCoords.latitude,
+        longitude:          gpsCoords.longitude,
+        gps_accuracy_m:     gpsCoords.accuracy,
+        client_request_id:  clientRequestId,
       });
 
       if (status === 200) {
@@ -1737,12 +1759,16 @@
       renderError('SERVER_ERROR');
 
     } catch (e) {
-      // Offline: salva in coda locale per retry automatico
+      // Offline (o rete ambigua — vedi F-184, AUDIT.md): salva in coda locale
+      // per retry automatico, con LO STESSO client_request_id già usato sopra
+      // — se questo tentativo era in realtà già arrivato al server, il
+      // server riconosce il replay invece di capovolgere entrata/uscita.
       var punchPayload = {
-        site_id:        selectedSite.site_id,
-        latitude:       gpsCoords.latitude,
-        longitude:      gpsCoords.longitude,
-        gps_accuracy_m: gpsCoords.accuracy,
+        site_id:            selectedSite.site_id,
+        latitude:           gpsCoords.latitude,
+        longitude:          gpsCoords.longitude,
+        gps_accuracy_m:     gpsCoords.accuracy,
+        client_request_id:  clientRequestId,
       };
       queueOfflinePunch(punchPayload, selectedSite.site_name);
       renderOfflineSuccess(selectedSite.site_name);
