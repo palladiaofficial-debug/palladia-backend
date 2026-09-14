@@ -53,13 +53,19 @@ async function buildSubcontractorEconomia(subcontractorId, companyId) {
 
   const siteIds = (assignments || []).map(a => a.site_id);
   let costsBySite = {};
+  // F-191 (AUDIT.md): dettaglio pagamenti inline — non solo il totale
+  // "Acconti dati", anche QUALI pagamenti lo compongono (data, importo,
+  // descrizione), senza dover uscire su Economia cantiere per vederli.
+  let paymentsBySite = {};
   if (siteIds.length) {
     const { data: costs, error: costsErr } = await supabase
       .from('site_costs')
-      .select('site_id, tipo, importo')
+      .select('id, site_id, tipo, importo, data_documento, descrizione, numero_documento, created_at')
       .eq('subcontractor_id', subcontractorId)
       .eq('company_id', companyId)
-      .in('site_id', siteIds);
+      .in('site_id', siteIds)
+      .order('data_documento', { ascending: false, nullsFirst: false })
+      .order('created_at', { ascending: false });
     if (costsErr) throw new Error('DB_ERROR: ' + costsErr.message);
     for (const c of (costs || [])) {
       const bucket = costsBySite[c.site_id] || (costsBySite[c.site_id] = { acconti: 0, fatturato: 0, altro: 0 });
@@ -67,6 +73,11 @@ async function buildSubcontractorEconomia(subcontractorId, companyId) {
       if (c.tipo === 'acconto') bucket.acconti += importo;
       else if (c.tipo === 'fattura') bucket.fatturato += importo;
       else bucket.altro += importo;
+
+      (paymentsBySite[c.site_id] || (paymentsBySite[c.site_id] = [])).push({
+        id: c.id, tipo: c.tipo, importo, data_documento: c.data_documento,
+        descrizione: c.descrizione, numero_documento: c.numero_documento,
+      });
     }
   }
 
@@ -81,6 +92,7 @@ async function buildSubcontractorEconomia(subcontractorId, companyId) {
         site_id:            a.site_id,
         site_name:          a.site?.name || '—',
         role:               a.role,
+        payments:           paymentsBySite[a.site_id] || [],
         assigned_at:        a.assigned_at,
         budget_totale:      budgetTotale,
         sal_percentuale:    salPercentuale,

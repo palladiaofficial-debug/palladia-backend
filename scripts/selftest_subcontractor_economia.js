@@ -129,6 +129,18 @@ async function main() {
   check('Alfa: fatturato = 8000', bySite[siteAlfa.id]?.fatturato === 8000, bySite[siteAlfa.id]);
   check('Alfa: importo maturato = 50000*40% = 20000', bySite[siteAlfa.id]?.importo_maturato === 20000, bySite[siteAlfa.id]);
   check('Alfa: saldo da erogare = 50000-15000 = 35000', bySite[siteAlfa.id]?.saldo_da_erogare === 35000, bySite[siteAlfa.id]);
+
+  // ── F-191 (AUDIT.md): dettaglio pagamenti inline per cantiere ────────────
+  const alfaPayments = bySite[siteAlfa.id]?.payments || [];
+  check('Alfa: 3 pagamenti nel dettaglio (2 acconti + 1 fattura), MAI il costo dell\'altro sub',
+    alfaPayments.length === 3, alfaPayments);
+  check('Alfa: i due acconti singoli compaiono con l\'importo esatto (10000 e 5000)',
+    alfaPayments.filter(p => p.tipo === 'acconto').map(p => p.importo).sort((a, b) => a - b).join(',') === '5000,10000', alfaPayments);
+  check('Alfa: la fattura compare con l\'importo esatto (8000)',
+    alfaPayments.some(p => p.tipo === 'fattura' && p.importo === 8000), alfaPayments);
+  const betaPayments = bySite[siteBeta.id]?.payments || [];
+  check('Beta: 1 solo pagamento nel dettaglio, indipendente da Alfa',
+    betaPayments.length === 1 && betaPayments[0].importo === 3000, betaPayments);
   check('Beta: appalto totale 30000, acconti 3000, indipendente da Alfa', bySite[siteBeta.id]?.budget_totale === 30000 && bySite[siteBeta.id]?.acconti_dati === 3000, bySite[siteBeta.id]);
   check('totali: appalti 80000, acconti 18000, fatturato 8000', eco.body.totals.totale_appalti === 80000 && eco.body.totals.totale_acconti === 18000 && eco.body.totals.totale_fatturato === 8000, eco.body.totals);
 
