@@ -212,12 +212,31 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
     siteMap[s.id] = { id: s.id, name: s.name || '—' };
   }
 
+  // F-184 (AUDIT.md): stessa annotazione di GET /presence — un evento anomalo
+  // annotato da un admin (glitch tecnico, presence_logs resta append-only)
+  // arriva qui allegato, così lo storico/"Ore Lavorate" può ignorarlo nel
+  // pairing (vedi lib/presencePairing.js::stripAnnotatedGlitches) invece di
+  // mostrare la sessione spezzata in due. Filtra per company_id, non per
+  // target_id IN (...): logs può arrivare a HISTORY_MAX=10000 righe su un
+  // range di mesi, un IN così grande rischia il limite di lunghezza URL di
+  // PostgREST — le annotazioni sono un'azione admin rara, la tabella filtrata
+  // per company resta comunque piccola.
+  const { data: notes } = await supabase
+    .from('admin_audit_log')
+    .select('target_id, payload, created_at')
+    .eq('company_id', req.companyId)
+    .eq('action', 'presence.log_annotation')
+    .limit(1000);
+  const noteByLogId = {};
+  for (const n of (notes || [])) noteByLogId[n.target_id] = { text: n.payload?.note || '', annotated_at: n.created_at };
+
   const result = logs.map(l => ({
     id:               l.id,
     event_type:       l.event_type,
     timestamp_server: l.timestamp_server,
     worker:           workerMap[l.worker_id] || { id: l.worker_id, full_name: '—' },
     site:             siteMap[l.site_id]     || { id: l.site_id,   name: '—'       },
+    annotation:       noteByLogId[l.id] || null,
   }));
 
   res.json(result);

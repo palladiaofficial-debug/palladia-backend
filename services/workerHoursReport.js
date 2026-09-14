@@ -144,6 +144,25 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   const { data: logs, error: logsErr } = await q;
   if (logsErr) { const e = new Error(logsErr.message); e.status = 500; throw e; }
 
+  // F-184 (AUDIT.md): un EXIT annotato da un admin (glitch tecnico, es. un
+  // retry di rete che ha capovolto entrata/uscita — presence_logs resta
+  // append-only, la riga non si tocca) non deve spezzare la sessione nel
+  // report ore — pairLogsByDay (lib/presencePairing.js) lo ignora insieme
+  // all'ENTRY di autocorrezione quando gli arriva `log.annotation`.
+  const { data: annotationNotes } = await supabase
+    .from('admin_audit_log')
+    .select('target_id, payload, created_at')
+    .eq('company_id', companyId)
+    .eq('action', 'presence.log_annotation')
+    .limit(1000);
+  if (annotationNotes?.length) {
+    const noteByLogId = new Map(annotationNotes.map(n => [n.target_id, { text: n.payload?.note || '', annotated_at: n.created_at }]));
+    for (const log of (logs || [])) {
+      const note = noteByLogId.get(log.id);
+      if (note) log.annotation = note;
+    }
+  }
+
   // Group by (worker, cantiere) — stream cronologico completo, non ancora per
   // giorno. Necessario in modalità "tutti i cantieri": il pairing va fatto
   // separatamente per cantiere (un cambio cantiere chiude sempre l'ENTRY
