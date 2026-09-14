@@ -48,7 +48,71 @@ router.get('/presence', verifySupabaseJwt, async (req, res) => {
     return d === date;
   });
 
+  // F-184 (AUDIT.md): presence_logs è append-only per design (migrations/003,
+  // blocca UPDATE/DELETE per qualunque ruolo) — un evento anomalo (es. un
+  // retry di rete che ha capovolto entrata/uscita) resta nello storico per
+  // sempre, come deve essere per un registro presenze. Un admin può però
+  // annotarlo (senza alterare la riga originale) con POST
+  // /presence/:logId/annotate — l'annotazione arriva qui allegata alla riga.
+  const logIds = data.map(l => l.id);
+  if (logIds.length > 0) {
+    const { data: notes } = await supabase
+      .from('admin_audit_log')
+      .select('target_id, payload, created_at')
+      .eq('company_id', req.companyId)
+      .eq('action', 'presence.log_annotation')
+      .in('target_id', logIds);
+    const noteByLogId = {};
+    for (const n of (notes || [])) noteByLogId[n.target_id] = { text: n.payload?.note || '', annotated_at: n.created_at };
+    for (const log of data) log.annotation = noteByLogId[log.id] || null;
+  }
+
   res.json(data);
+});
+
+// POST /api/v1/presence/:logId/annotate — annota un evento anomalo (PRIVATO — owner/admin)
+//
+// presence_logs è append-only: questa API NON tocca la riga originale, aggiunge
+// solo una nota consultabile (admin_audit_log) — usata per spiegare eventi
+// tecnici (es. un retry di rete che ha generato un'uscita mentre il lavoratore
+// non si è mai mosso) senza alterare lo storico ufficiale.
+router.post('/presence/:logId/annotate', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  }
+
+  const { logId } = req.params;
+  const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
+  if (!note) return res.status(400).json({ error: 'NOTE_EMPTY' });
+
+  const { data: log, error: logErr } = await supabase
+    .from('presence_logs')
+    .select('id, worker_id, event_type, timestamp_server')
+    .eq('id', logId)
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+
+  if (logErr) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!log)   return res.status(404).json({ error: 'PRESENCE_LOG_NOT_FOUND' });
+
+  const { error: insertErr } = await supabase.from('admin_audit_log').insert([{
+    company_id:  req.companyId,
+    user_id:     req.user.id,
+    user_role:   req.userRole,
+    action:      'presence.log_annotation',
+    target_type: 'presence_log',
+    target_id:   log.id,
+    payload:     { note, worker_id: log.worker_id, event_type: log.event_type, timestamp_server: log.timestamp_server },
+    ip:          (req.ip || '').slice(0, 45) || null,
+    user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null,
+  }]);
+
+  if (insertErr) {
+    console.error('[presence/annotate] insert error:', insertErr.message);
+    return res.status(500).json({ error: 'INSERT_ERROR' });
+  }
+
+  res.json({ ok: true, log_id: log.id, note });
 });
 
 // GET /api/v1/presence/notes?siteId=&date= — note di lavorazione per cantiere e data
