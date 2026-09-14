@@ -11,6 +11,7 @@ const {
   patchSubcontractorSchema,
   assignSubcontractorSchema,
   linkSubcontractorSchema,
+  subcontractorSiteEconomiaSchema,
 } = require('../../lib/schemas/subcontractors');
 
 // ── Upload configurazione documenti subappaltatori ────────────────────────────
@@ -272,6 +273,112 @@ router.delete('/sites/:siteId/subcontractors/:assignId', verifySupabaseJwt, asyn
     .eq('id', assignId).eq('site_id', siteId).eq('company_id', req.companyId);
   if (error) return sendDbError(res, error);
   res.json({ ok: true });
+});
+
+// ── Economia per subappaltatore (F-188, AUDIT.md) ─────────────────────────────
+// Richiesta esplicita del titolare: appalto totale, acconti dati e % di
+// avanzamento per ogni subappaltatore, su TUTTI i suoi cantieri attivi —
+// prima esisteva solo la conformità documentale, zero euro collegati.
+// budget_totale/sal_percentuale vivono sulla COPPIA (site, subcontractor)
+// — un subappaltatore ha spesso un contratto SEPARATO per ogni cantiere,
+// stesso subappaltatore, importi diversi — non sul subappaltatore da solo.
+
+// GET /api/v1/subcontractors/:id/economia — riepilogo su tutti i cantieri
+router.get('/subcontractors/:id/economia', verifySupabaseJwt, async (req, res) => {
+  const { id } = req.params;
+  const sub = await getOwnedSub(id, req.companyId);
+  if (!sub) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const { data: assignments, error: assignErr } = await supabase
+    .from('site_subcontractors')
+    .select('id, site_id, role, assigned_at, budget_totale, sal_percentuale, site:site_id(id, name, status)')
+    .eq('subcontractor_id', id)
+    .eq('company_id', req.companyId)
+    .order('assigned_at', { ascending: false });
+  if (assignErr) return sendDbError(res, assignErr);
+
+  const siteIds = (assignments || []).map(a => a.site_id);
+  let costsBySite = {};
+  if (siteIds.length) {
+    const { data: costs, error: costsErr } = await supabase
+      .from('site_costs')
+      .select('site_id, tipo, importo')
+      .eq('subcontractor_id', id)
+      .eq('company_id', req.companyId)
+      .in('site_id', siteIds);
+    if (costsErr) return sendDbError(res, costsErr);
+    for (const c of (costs || [])) {
+      const bucket = costsBySite[c.site_id] || (costsBySite[c.site_id] = { acconti: 0, fatturato: 0, altro: 0 });
+      const importo = Number(c.importo) || 0;
+      if (c.tipo === 'acconto') bucket.acconti += importo;
+      else if (c.tipo === 'fattura') bucket.fatturato += importo;
+      else bucket.altro += importo;
+    }
+  }
+
+  const sites = (assignments || [])
+    .filter(a => a.site && a.site.status !== 'chiuso' && a.site.status !== 'eliminato')
+    .map(a => {
+      const budgetTotale   = a.budget_totale !== null ? Number(a.budget_totale) : null;
+      const salPercentuale = Number(a.sal_percentuale) || 0;
+      const c = costsBySite[a.site_id] || { acconti: 0, fatturato: 0, altro: 0 };
+      return {
+        assignment_id:      a.id,
+        site_id:            a.site_id,
+        site_name:          a.site?.name || '—',
+        role:               a.role,
+        assigned_at:        a.assigned_at,
+        budget_totale:      budgetTotale,
+        sal_percentuale:    salPercentuale,
+        importo_maturato:   budgetTotale !== null ? Math.round(budgetTotale * salPercentuale / 100 * 100) / 100 : null,
+        acconti_dati:       Math.round(c.acconti * 100) / 100,
+        fatturato:          Math.round(c.fatturato * 100) / 100,
+        saldo_da_erogare:   budgetTotale !== null ? Math.round((budgetTotale - c.acconti) * 100) / 100 : null,
+      };
+    });
+
+  const totals = sites.reduce((acc, s) => ({
+    totale_appalti:  acc.totale_appalti  + (s.budget_totale ?? 0),
+    totale_acconti:  acc.totale_acconti  + s.acconti_dati,
+    totale_fatturato: acc.totale_fatturato + s.fatturato,
+    totale_maturato: acc.totale_maturato + (s.importo_maturato ?? 0),
+    cantieri_con_appalto: acc.cantieri_con_appalto + (s.budget_totale !== null ? 1 : 0),
+  }), { totale_appalti: 0, totale_acconti: 0, totale_fatturato: 0, totale_maturato: 0, cantieri_con_appalto: 0 });
+
+  res.json({
+    subcontractor: { id: sub.id, company_name: sub.company_name },
+    sites,
+    totals: {
+      totale_appalti:       Math.round(totals.totale_appalti * 100) / 100,
+      totale_acconti:       Math.round(totals.totale_acconti * 100) / 100,
+      totale_fatturato:     Math.round(totals.totale_fatturato * 100) / 100,
+      totale_maturato:      Math.round(totals.totale_maturato * 100) / 100,
+      cantieri_attivi:      sites.length,
+      cantieri_con_appalto: totals.cantieri_con_appalto,
+    },
+  });
+});
+
+// PATCH /api/v1/subcontractors/:id/sites/:siteId/economia — imposta appalto/% per QUEL cantiere
+router.patch('/subcontractors/:id/sites/:siteId/economia', verifySupabaseJwt, validate(subcontractorSiteEconomiaSchema), async (req, res) => {
+  const { id, siteId } = req.params;
+  const sub = await getOwnedSub(id, req.companyId);
+  if (!sub) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  const patch = {};
+  if ('budget_totale' in req.body)   patch.budget_totale   = req.body.budget_totale;
+  if ('sal_percentuale' in req.body) patch.sal_percentuale = req.body.sal_percentuale;
+
+  const { data, error } = await supabase
+    .from('site_subcontractors')
+    .update(patch)
+    .eq('subcontractor_id', id).eq('site_id', siteId).eq('company_id', req.companyId)
+    .select('id, budget_totale, sal_percentuale')
+    .maybeSingle();
+
+  if (error) return sendDbError(res, error);
+  if (!data) return res.status(404).json({ error: 'ASSIGNMENT_NOT_FOUND', message: 'Il subappaltatore non è assegnato a questo cantiere.' });
+  res.json(data);
 });
 
 // ── ENTERPRISE: Documenti per subappaltatore ──────────────────────────────────

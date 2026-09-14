@@ -48,7 +48,7 @@ router.get('/sites/:siteId/costs', verifySupabaseJwt, async (req, res) => {
 
   const [costsRes, phasesRes] = await Promise.all([
     supabase.from('site_costs')
-      .select('*')
+      .select('*, subcontractor:subcontractor_id(id, company_name)')
       .eq('site_id', siteId)
       .order('data_documento', { ascending: false })
       .order('created_at', { ascending: false })
@@ -122,11 +122,28 @@ router.post('/sites/:siteId/costs',
       if (!uploadErr) file_url = name;
     }
 
+    // F-188 (AUDIT.md): subcontractor_id opzionale — collega il costo a un
+    // subappaltatore REALE (non solo al testo libero `fornitore`) per poterlo
+    // sommare in modo affidabile nella sua vista economia. Validato: deve
+    // essere un subappaltatore della stessa company assegnato a QUESTO
+    // cantiere — mai un id preso a caso da un'altra scheda.
+    let subcontractorId = null;
+    if (isUuid(body.subcontractor_id)) {
+      const { data: assigned } = await supabase
+        .from('site_subcontractors')
+        .select('subcontractor_id')
+        .eq('site_id', siteId).eq('company_id', req.companyId).eq('subcontractor_id', body.subcontractor_id)
+        .maybeSingle();
+      if (!assigned) return res.status(400).json({ error: 'SUBCONTRACTOR_NOT_ASSIGNED', message: 'Il subappaltatore indicato non è assegnato a questo cantiere.' });
+      subcontractorId = body.subcontractor_id;
+    }
+
     const { data, error } = await supabase.from('site_costs').insert({
       company_id:         req.companyId,
       site_id:            siteId,
       phase_id:           isUuid(body.phase_id) ? body.phase_id : null,
       capitolato_voce_id: isUuid(body.capitolato_voce_id) ? body.capitolato_voce_id : null,
+      subcontractor_id:   subcontractorId,
       descrizione:        body.descrizione.trim(),
       fornitore:          body.fornitore?.trim() || null,
       quantita:           body.quantita   ? parseFloat(body.quantita)   : null,
