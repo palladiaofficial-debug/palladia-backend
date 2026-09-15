@@ -261,11 +261,19 @@ router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, valid
 
   if (suspErr) return res.status(500).json({ error: 'DB_ERROR', message: suspErr.message });
 
-  // Aggiorna il log con il link alla sospensione
-  await supabase
+  // F-202 (AUDIT.md): come F-201 (dismiss) — questo update non veniva mai
+  // controllato. Qui la conseguenza è peggiore che su dismiss: il giorno
+  // finirebbe con un record legale in site_suspension_days (già creato
+  // sopra) ma il log ancora "da confermare" — continuerebbe a comparire
+  // come pendente e a generare notifiche nonostante la sospensione esista
+  // già davvero.
+  const { data: logUpdated, error: logUpdateErr } = await supabase
     .from('site_weather_logs')
     .update({ suspension_confirmed: true, suspension_id: suspension.id })
-    .eq('id', log.id);
+    .eq('id', log.id)
+    .select('id');
+  if (logUpdateErr) return res.status(500).json({ error: 'DB_ERROR', message: logUpdateErr.message });
+  if (!logUpdated?.length) return res.status(500).json({ error: 'DB_ERROR', message: 'Sospensione creata ma il log meteo non è stato aggiornato: il giorno risulterebbe ancora "da confermare".' });
 
   // Ricalcola end_date del cantiere
   const { data: suspRows } = await supabase
@@ -352,29 +360,26 @@ router.post('/sites/:siteId/weather-log/:date/undo', verifySupabaseJwt, async (r
   if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
   if (!log.suspension_confirmed) return res.status(409).json({ error: 'NOT_CONFIRMED' });
 
+  // F-202 (AUDIT.md): stesso sweep di F-201/F-202 sopra — né la delete né
+  // il reset dei flag sul log venivano mai controllati per errore.
   // Elimina il record da site_suspension_days
-  if (log.suspension_id) {
-    await supabase
-      .from('site_suspension_days')
-      .delete()
-      .eq('id',         log.suspension_id)
-      .eq('site_id',    siteId)
-      .eq('company_id', req.companyId);
-  } else {
+  const suspensionDelete = log.suspension_id
+    ? supabase.from('site_suspension_days').delete()
+        .eq('id', log.suspension_id).eq('site_id', siteId).eq('company_id', req.companyId)
     // Fallback: elimina per site_id + day nel caso suspension_id non sia stato salvato
-    await supabase
-      .from('site_suspension_days')
-      .delete()
-      .eq('site_id',    siteId)
-      .eq('day',        date)
-      .eq('company_id', req.companyId);
-  }
+    : supabase.from('site_suspension_days').delete()
+        .eq('site_id', siteId).eq('day', date).eq('company_id', req.companyId);
+  const { error: suspDeleteErr } = await suspensionDelete;
+  if (suspDeleteErr) return res.status(500).json({ error: 'DB_ERROR', message: suspDeleteErr.message });
 
   // Azzera i flag sul log meteo — il giorno torna nello stato "pendente"
-  await supabase
+  const { data: logReset, error: logResetErr } = await supabase
     .from('site_weather_logs')
     .update({ suspension_confirmed: false, suspension_dismissed: false, suspension_id: null })
-    .eq('id', log.id);
+    .eq('id', log.id)
+    .select('id');
+  if (logResetErr) return res.status(500).json({ error: 'DB_ERROR', message: logResetErr.message });
+  if (!logReset?.length) return res.status(500).json({ error: 'DB_ERROR', message: 'Sospensione rimossa ma il log meteo non è stato azzerato.' });
 
   // Ricalcola end_date del cantiere
   const { data: suspRows } = await supabase
