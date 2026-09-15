@@ -279,7 +279,10 @@ router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, valid
   const { data: suspRows } = await supabase
     .from('site_suspension_days').select('day').eq('site_id', siteId);
   const newEnd = calcEndDate(site.start_date, site.contract_days, site.days_type, (suspRows||[]).map(r=>r.day), site.comune ?? null);
-  if (newEnd) await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
+  if (newEnd) {
+    const { error: endDateErr } = await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
+    if (endDateErr) console.error(`[weatherConfirm] ${siteId}: end_date non aggiornata:`, endDateErr.message);
+  }
 
   // Aggiorna notifica (rimuovi questo giorno dal conteggio pendenti)
   const { data: pending } = await supabase
@@ -388,7 +391,10 @@ router.post('/sites/:siteId/weather-log/:date/undo', verifySupabaseJwt, async (r
     site.start_date, site.contract_days, site.days_type,
     (suspRows || []).map(r => r.day), site.comune ?? null,
   );
-  if (newEnd) await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
+  if (newEnd) {
+    const { error: endDateErr } = await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
+    if (endDateErr) console.error(`[weatherUndo] ${siteId}: end_date non aggiornata:`, endDateErr.message);
+  }
 
   // Aggiorna notifiche: questo giorno è di nuovo pendente se threshold_exceeded
   if (log.threshold_exceeded) {
