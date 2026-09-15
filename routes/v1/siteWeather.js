@@ -1,26 +1,13 @@
 ﻿'use strict';
 const router   = require('express').Router();
-const multer   = require('multer');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, getWeatherRange, buildWeatherLogUpdate, parseArpalCsv, buildArpalWeatherLogUpdate } = require('../../services/weatherService');
+const { getActualWeather, getWeatherRange, buildWeatherLogUpdate } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../../services/weatherReport');
 const { rendererPool }                   = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
 const { fetchWeatherSchema, confirmSuspensionSchema } = require('../../lib/schemas/siteWeather');
-const { upsertWeatherNotification } = require('../../services/weatherLogCron');
-
-// F-199 (AUDIT.md): upload CSV ufficiale ARPAL — stesso limite/pattern di
-// certificateOcr.js, ma solo testo (csv/txt), niente immagini.
-const arpalUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB, un CSV giornaliero di un anno è ~50KB
-  fileFilter: (req, file, cb) => {
-    const allowed = ['text/csv', 'text/plain', 'application/vnd.ms-excel', 'application/octet-stream'];
-    cb(null, allowed.includes(file.mimetype) || /\.csv$/i.test(file.originalname || ''));
-  },
-});
 
 // ── Utility ────────────────────────────────────────────────────────────────────
 
@@ -193,99 +180,6 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
     console.error('[weatherBackfill]', err.message);
     res.status(502).json({ error: 'WEATHER_API_ERROR', message: err.message });
   }
-});
-
-// ── POST /api/v1/sites/:siteId/weather-log/import-arpal ──────────────────────
-// F-199 (AUDIT.md): importa il CSV ufficiale scaricato dal portale ARPAL
-// (precipitazione, stazione a terra — lo standard riconosciuto da INPS per
-// le richieste CIGO, circolare n. 139 del 01/08/2016) e lo salva come fonte
-// certificata (data_source='arpal_certified'), con precedenza permanente su
-// ERA5/stima per quei giorni. Un giorno già deciso da un umano (confermato o
-// ignorato) non vede mai cambiare il verdetto — stessa regola di
-// buildWeatherLogUpdate/F-159.
-router.post('/sites/:siteId/weather-log/import-arpal', verifySupabaseJwt, arpalUpload.single('file'), async (req, res) => {
-  const { siteId } = req.params;
-
-  const site = await getSiteOrFail(siteId, req.companyId, res);
-  if (!site) return;
-
-  if (!req.file) return res.status(400).json({ error: 'NO_FILE', message: 'Carica il file CSV scaricato da ARPAL.' });
-
-  let parsed;
-  try {
-    parsed = parseArpalCsv(req.file.buffer);
-  } catch (err) {
-    return res.status(400).json({ error: 'ARPAL_CSV_PARSE_ERROR', message: err.message });
-  }
-
-  const dates = parsed.rows.map(r => r.date);
-  const { data: existingRows, error: existingErr } = await supabase
-    .from('site_weather_logs')
-    .select('log_date, suspension_confirmed, suspension_dismissed, threshold_exceeded, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_code, weather_desc, data_source, era5_reconciled_at, precipitation_mm_original, wind_max_kmh_original, weather_code_original')
-    .eq('site_id', siteId)
-    .in('log_date', dates);
-  if (existingErr) return res.status(500).json({ error: 'DB_ERROR', message: existingErr.message });
-  const existingByDate = new Map((existingRows || []).map(r => [r.log_date, r]));
-
-  const thresholds = siteThresholds(site);
-  const rows = [];
-  let skippedInvalid = 0;
-
-  for (const r of parsed.rows) {
-    // Righe marcate "Valido"=No o senza un valore numerico dal servizio ARPAL
-    // stesso: non si scrive un numero inventato sopra un dato legalmente
-    // rilevante — quel giorno resta con la stima ERA5 esistente.
-    if (!r.valid || r.precipitation_mm === null) { skippedInvalid++; continue; }
-    rows.push({
-      company_id: req.companyId,
-      site_id:    siteId,
-      log_date:   r.date,
-      ...buildArpalWeatherLogUpdate(existingByDate.get(r.date), r, parsed.stationName, thresholds),
-    });
-  }
-
-  if (!rows.length) {
-    return res.status(400).json({ error: 'NO_VALID_ROWS', message: `Nessuna riga valida nel CSV (${skippedInvalid} scartate come non valide).` });
-  }
-
-  // Stesso pattern del backfill: due batch separati, righe di un giorno già
-  // deciso (senza threshold_exceeded/reason) mai unite a un batch con quelle
-  // chiavi — un upsert misto scriverebbe NULL sulle colonne mancanti.
-  const decidedRows   = rows.filter(r => !('threshold_exceeded' in r));
-  const undecidedRows = rows.filter(r => 'threshold_exceeded' in r);
-  for (const batch of [undecidedRows, decidedRows]) {
-    if (!batch.length) continue;
-    const { error: upsertErr } = await supabase
-      .from('site_weather_logs')
-      .upsert(batch, { onConflict: 'site_id,log_date', ignoreDuplicates: false });
-    if (upsertErr) return res.status(500).json({ error: 'DB_ERROR', message: upsertErr.message });
-  }
-
-  // Giorni non ancora decisi diventati "da confermare" grazie al dato ARPAL
-  // reale (stesso pattern di weatherReconcileCron) — aggiorna la notifica.
-  const newlyPendingDays = rows
-    .filter(r => 'threshold_exceeded' in r && r.threshold_exceeded)
-    .filter(r => !existingByDate.get(r.log_date)?.threshold_exceeded)
-    .map(r => r.log_date);
-  if (newlyPendingDays.length) {
-    const { data: pending } = await supabase
-      .from('site_weather_logs')
-      .select('log_date')
-      .eq('site_id', siteId)
-      .eq('threshold_exceeded', true)
-      .eq('suspension_confirmed', false)
-      .eq('suspension_dismissed', false);
-    await upsertWeatherNotification(req.companyId, siteId, site.name || 'Cantiere', (pending || []).map(p => p.log_date));
-  }
-
-  const discrepancies = rows.filter(r => r.era5_discrepancy).length;
-  res.json({
-    imported:        rows.length,
-    skipped_invalid: skippedInvalid,
-    station_name:    parsed.stationName,
-    suspension_alerts: newlyPendingDays.length,
-    discrepancies_on_decided_days: discrepancies,
-  });
 });
 
 // ── POST /api/v1/sites/:siteId/weather-log/:date/confirm ─────────────────────

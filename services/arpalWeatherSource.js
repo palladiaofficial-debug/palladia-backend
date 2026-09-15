@@ -6,9 +6,10 @@
  * (stazione a terra — lo standard riconosciuto da INPS per le richieste CIGO,
  * circolare n. 139 del 01/08/2016) — decisione esplicita del titolare dopo
  * aver visto in produzione il flusso di upload manuale: "non devo caricare
- * io i dati Arpal, devono essere presi in automatico". L'upload manuale
- * (routes/v1/siteWeather.js, POST .../import-arpal) resta disponibile come
- * fallback/override, ma non è più il percorso primario.
+ * io i dati Arpal, devono essere presi in automatico". L'endpoint di upload
+ * manuale (POST .../import-arpal) e il relativo bottone in
+ * SiteWeatherSection.tsx sono stati rimossi subito dopo — il fetch
+ * automatico (weatherArpalCron.js) è l'unico percorso.
  *
  * Il portale ARPAL (https://ambientepub.regione.liguria.it/SiraQualMeteo/...)
  * è un form ASP.NET del 2005 senza API REST pubblica — nessun JSON, sessione
