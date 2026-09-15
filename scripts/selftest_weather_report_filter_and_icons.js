@@ -63,7 +63,6 @@ function block1Pure() {
   const html = generateWeatherReportHtml({ site, rows, thresholds });
   check('nessuna emoji residua nel documento (sole/pioggia/temporale/neve/vento/avviso)', !EMOJI_RE.test(html), html.match(EMOJI_RE));
   check('icona SVG Sun (bold, Phosphor) presente per il giorno sereno', html.includes('M116,36V20a12,12,0,0,1,24,0V36'), null);
-  check('icona SVG CloudLightning presente per il giorno di temporale', html.includes('M156,12A80.22,80.22,0,0,0,82.39,60.36'), null);
   check('icona SVG Snowflake presente per il giorno di neve', html.includes('M227.65,149.14a12,12,0,0,1-8.79,14.51'), null);
   check('icona SVG Wind presente per il giorno ventoso', html.includes('M24,104a12,12,0,0,1,0-24h96'), null);
   check('icona SVG WarningCircle presente per la discrepanza (non più ⚠ testuale)', html.includes('M128,20A108,108,0,1,0,236,128'), null);
@@ -74,6 +73,27 @@ function block1Pure() {
 
   const htmlFiltered = generateWeatherReportHtml({ site, rows: rows.filter(r => r.threshold_exceeded), thresholds, filter: 'critical' });
   check('etichetta periodo riflette il filtro "solo soglie superate" quando passato', htmlFiltered.includes('solo giorni con soglia superata'), null);
+
+  // F-200 (AUDIT.md): trovato generando davvero il PDF e guardandolo — a 13pt
+  // (la dimensione reale in tabella) l'icona "temporale" (nuvola+zigzag) era
+  // indistinguibile a colpo d'occhio da "pioggia" (nuvola+due tratti), pur
+  // essendo due path SVG diversi: entrambe condividevano lo stesso ingombro
+  // "nuvola + segno sottile sotto" che a quella dimensione si perde. Sostituita
+  // con "Lightning" (il fulmine pieno, senza nuvola — stesso path di Zap in
+  // src/lib/icons.tsx, frontend), sagoma del tutto diversa da una nuvola.
+  // Riga isolata (nessuna riga "pioggia" nello stesso HTML) per non far
+  // passare il test per un falso positivo sul prefisso nuvola condiviso.
+  const htmlLightningOnly = generateWeatherReportHtml({
+    site, thresholds,
+    rows: [{ log_date: '2026-08-05', precipitation_mm: 0, wind_max_kmh: 10, temp_min_c: 15, temp_max_c: 30, weather_desc: 'temporale', weather_code: 95, threshold_exceeded: true, threshold_reason: 'temporale', suspension_confirmed: false, suspension_dismissed: false, data_source: 'arpal_certified' }],
+  });
+  check('icona "temporale" è il fulmine pieno (Lightning), non più nuvola+zigzag', htmlLightningOnly.includes('M219.71,117.38a12,12,0,0,0-7.25-8.52'), null);
+  // Nota: il riquadro soglie (thresholds-box) mostra SEMPRE la pillola
+  // "Pioggia" con l'icona rain (nuvola) — il vecchio prefisso condiviso
+  // "M156,12A80.22..." compare quindi comunque nel documento tramite quella
+  // pillola, a prescindere dalla riga temporale; non è un buon segnale su
+  // cui testare "nessuna condivisione col prefisso nuvola" a livello di
+  // intero HTML — la pin positiva sopra basta a proteggere la regressione.
 }
 
 async function block2LiveExportFilter() {
