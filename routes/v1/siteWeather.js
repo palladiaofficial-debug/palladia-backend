@@ -2,7 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, getWeatherRange, buildWeatherLogUpdate } = require('../../services/weatherService');
+const { getActualWeather, getWeatherRange, buildWeatherLogUpdate, groupRowsByShape } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../../services/weatherReport');
 const { rendererPool }                   = require('../../pdf-renderer');
@@ -158,15 +158,15 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
     }));
 
     // Upsert bulk — non sovrascrive suspension_confirmed/dismissed già esistenti.
-    // Split in due batch: le righe di un giorno già DECISO da un umano non
-    // portano threshold_exceeded/reason (buildWeatherLogUpdate le omette
-    // apposta) — un upsert misto in un'unica chiamata scriverebbe NULL su
-    // quelle colonne per queste righe (PostgREST usa l'unione delle colonne
-    // del batch), cancellando il verdetto già preso.
-    const decidedRows   = rows.filter(r => !('threshold_exceeded' in r));
-    const undecidedRows = rows.filter(r => 'threshold_exceeded' in r);
-    for (const batch of [undecidedRows, decidedRows]) {
-      if (!batch.length) continue;
+    // F-200 (AUDIT.md): le righe non hanno tutte le stesse chiavi — un giorno
+    // già DECISO da un umano omette threshold_exceeded/reason, e un giorno la
+    // cui fonte in DB è più autorevole di quella appena ricevuta (es. ARPAL
+    // già presente, backfill Open-Meteo più vecchio) viene ridotto dal
+    // guard di precedenza in buildWeatherLogUpdate a solo fetched_at — un
+    // upsert misto in un'unica chiamata scriverebbe NULL sulle colonne
+    // mancanti per le righe che non le hanno (PostgREST usa l'unione delle
+    // colonne del batch), cancellando dati già decisi/certificati.
+    for (const batch of groupRowsByShape(rows)) {
       const { error: upsertErr } = await supabase
         .from('site_weather_logs')
         .upsert(batch, { onConflict: 'site_id,log_date', ignoreDuplicates: false });

@@ -210,6 +210,13 @@ function evalThresholds(data, thresholds = {}) {
   return { exceeded: false, reason: null };
 }
 
+// F-200 (AUDIT.md): precedenza tra fonti — una previsione preliminare non
+// deve mai poter sovrascrivere un dato già confermato/certificato, e ERA5
+// non deve mai poter sovrascrivere un dato già certificato ARPAL. Usata da
+// buildWeatherLogUpdate per bloccare un downgrade silenzioso.
+const DATA_SOURCE_RANK = { forecast_preliminary: 0, era5_confirmed: 1, arpal_certified: 2 };
+function dataSourceRank(source) { return DATA_SOURCE_RANK[source] ?? -1; }
+
 /**
  * F-159 (AUDIT.md): costruisce il payload di upsert per site_weather_logs a
  * partire da un dato meteo appena recuperato (fetch/backfill/riconciliazione)
@@ -221,12 +228,27 @@ function evalThresholds(data, thresholds = {}) {
  * per l'accuratezza storica/export; se il nuovo dato avrebbe cambiato il
  * verdetto, era5_discrepancy segnala la discrepanza senza applicarla.
  *
+ * F-200 (AUDIT.md): stessa idea applicata alla FONTE del dato grezzo, non
+ * solo al verdetto — trovato mentre si verificava che "Aggiorna ieri"/"Carica
+ * storico" (routes/v1/siteWeather.js) non potessero corrompere un giorno già
+ * certificato ARPAL con una stima Open-Meteo più vecchia/meno autorevole.
+ * Prima di questo fix, buildWeatherLogUpdate sovrascriveva SEMPRE
+ * precipitation_mm/data_source/ecc. col dato appena ricevuto, qualunque fosse
+ * la fonte già in DB — le due crontab sono strutturalmente protette (filtrano
+ * a monte per data_source), i due pulsanti manuali no. Se il nuovo dato ha
+ * una fonte meno autorevole di quella già salvata, non si tocca nulla tranne
+ * fetched_at (registra il tentativo, utile per debug, innocuo).
+ *
  * @param {object|null} existingRow - riga site_weather_logs già in DB, o null/undefined se nuova
  * @param {object} weather - risultato di getActualWeather/getWeatherRange (include data_source)
  * @param {object} thresholds - soglie del cantiere (siteThresholds)
  * @returns {object} campi da passare a .upsert()
  */
 function buildWeatherLogUpdate(existingRow, weather, thresholds) {
+  if (existingRow && dataSourceRank(existingRow.data_source) > dataSourceRank(weather.data_source)) {
+    return { fetched_at: new Date().toISOString() };
+  }
+
   const { exceeded, reason } = evalThresholds(weather, thresholds);
   const isDecided = !!(existingRow?.suspension_confirmed || existingRow?.suspension_dismissed);
   // F-199 (AUDIT.md): generalizzato da 'era5_confirmed' per includere anche
@@ -370,4 +392,25 @@ function buildArpalWeatherLogUpdate(existingRow, arpalRow, stationName, threshol
   return update;
 }
 
-module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, buildWeatherLogUpdate, parseArpalCsv, buildArpalWeatherLogUpdate, WMO };
+/**
+ * F-200 (AUDIT.md): raggruppa righe destinate a un upsert bulk per "forma"
+ * (l'insieme esatto delle chiavi presenti) prima di inviarle a PostgREST —
+ * un batch con righe eterogenee (alcune senza threshold_exceeded/reason
+ * perché già decise, altre bloccate da dataSourceRank e ridotte a solo
+ * fetched_at) scriverebbe NULL sulle colonne mancanti per le righe che non
+ * le hanno, perché PostgREST usa l'unione delle colonne di tutto il batch in
+ * una singola chiamata. Vedi routes/v1/siteWeather.js backfill.
+ * @param {object[]} rows
+ * @returns {object[][]} gruppi di righe, ciascuno con la stessa forma
+ */
+function groupRowsByShape(rows) {
+  const groups = new Map();
+  for (const row of rows) {
+    const key = Object.keys(row).sort().join('|');
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  return [...groups.values()];
+}
+
+module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, buildWeatherLogUpdate, parseArpalCsv, buildArpalWeatherLogUpdate, groupRowsByShape, dataSourceRank, WMO };
