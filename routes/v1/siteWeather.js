@@ -371,25 +371,31 @@ router.post('/sites/:siteId/weather-log/:date/undo', verifySupabaseJwt, async (r
 });
 
 // ── GET /api/v1/sites/:siteId/weather-report.xlsx ────────────────────────────
+// F-199 (AUDIT.md): "se metto nei filtri 'soglie superate'... e poi vado ad
+// esportare il PDF, io voglio vedere solo quei dati" — filter opzionale
+// (critical|confirmed) applicato oltre a from/to, stessa semantica dei
+// pulsanti filtro nella scheda Meteo (SiteWeatherSection.tsx).
 router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
-  const { from, to } = req.query;
+  const { from, to, filter } = req.query;
 
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 
   let q = supabase
     .from('site_weather_logs')
-    .select('log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, data_source, era5_discrepancy, precipitation_mm_original, wind_max_kmh_original')
+    .select('log_date, precipitation_mm, precipitation_mm_full_day, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, data_source, era5_discrepancy, precipitation_mm_original, wind_max_kmh_original')
     .eq('site_id', siteId)
     .order('log_date', { ascending: true });
 
   if (from) q = q.gte('log_date', from);
   if (to)   q = q.lte('log_date', to);
+  if (filter === 'critical')  q = q.eq('threshold_exceeded', true);
+  if (filter === 'confirmed') q = q.eq('suspension_confirmed', true);
 
   const { data: logs } = await q;
   const rows = logs || [];
-  const wb = generateWeatherReportXlsx({ site, rows, thresholds: siteThresholds(site), from, to });
+  const wb = generateWeatherReportXlsx({ site, rows, thresholds: siteThresholds(site), from, to, filter });
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="meteo_${siteId}_${Date.now()}.xlsx"`);
@@ -398,27 +404,30 @@ router.get('/sites/:siteId/weather-report.xlsx', verifySupabaseJwt, async (req, 
 });
 
 // ── GET /api/v1/sites/:siteId/weather-report.pdf ─────────────────────────────
+// F-199 (AUDIT.md): stesso filtro category dell'export xlsx sopra.
 router.get('/sites/:siteId/weather-report.pdf', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
-  const { from, to } = req.query;
+  const { from, to, filter } = req.query;
 
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 
   let q = supabase
     .from('site_weather_logs')
-    .select('log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, weather_code, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, data_source, era5_discrepancy')
+    .select('log_date, precipitation_mm, precipitation_mm_full_day, wind_max_kmh, temp_min_c, temp_max_c, weather_desc, weather_code, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, data_source, era5_discrepancy')
     .eq('site_id', siteId)
     .order('log_date', { ascending: true });
 
   if (from) q = q.gte('log_date', from);
   if (to)   q = q.lte('log_date', to);
+  if (filter === 'critical')  q = q.eq('threshold_exceeded', true);
+  if (filter === 'confirmed') q = q.eq('suspension_confirmed', true);
 
   const { data: logs } = await q;
   const rows = logs || [];
 
   try {
-    const html = generateWeatherReportHtml({ site, rows, thresholds: siteThresholds(site), from, to });
+    const html = generateWeatherReportHtml({ site, rows, thresholds: siteThresholds(site), from, to, filter });
     const pdfBuf = await rendererPool.render(html, {
       docTitle:   `Registro Meteo — ${site.name}`,
       rev:        1,

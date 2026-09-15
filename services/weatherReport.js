@@ -28,6 +28,53 @@ function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&
 const DAYS_IT_LONG  = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
 const DAYS_IT_SHORT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 
+// F-199 (AUDIT.md): "le icone mi sembrano troppo banali e IA" — sostituite
+// le emoji (☀️🌧️⛈️❄️💨) con le stesse icone Phosphor (peso "bold") usate in
+// tutta l'app (vedi src/lib/icons.ts, frontend) — "sempre Phosphor Icons,
+// mai emoji" è una regola di stile già stabilita per il prodotto, questo
+// export ne era rimasto l'unica eccezione. Path presi direttamente da
+// @phosphor-icons/react (viewBox 0 0 256 256, peso bold), non ridisegnati
+// a mano — stessa sorgente esatta dell'icona che l'utente vede nell'app.
+const WEATHER_ICON_PATHS = {
+  sun:       'M116,36V20a12,12,0,0,1,24,0V36a12,12,0,0,1-24,0Zm80,92a68,68,0,1,1-68-68A68.07,68.07,0,0,1,196,128Zm-24,0a44,44,0,1,0-44,44A44.05,44.05,0,0,0,172,128ZM51.51,68.49a12,12,0,1,0,17-17l-12-12a12,12,0,0,0-17,17Zm0,119-12,12a12,12,0,0,0,17,17l12-12a12,12,0,1,0-17-17ZM196,72a12,12,0,0,0,8.49-3.51l12-12a12,12,0,0,0-17-17l-12,12A12,12,0,0,0,196,72Zm8.49,115.51a12,12,0,0,0-17,17l12,12a12,12,0,0,0,17-17ZM48,128a12,12,0,0,0-12-12H20a12,12,0,0,0,0,24H36A12,12,0,0,0,48,128Zm80,80a12,12,0,0,0-12,12v16a12,12,0,0,0,24,0V220A12,12,0,0,0,128,208Zm108-92H220a12,12,0,0,0,0,24h16a12,12,0,0,0,0-24Z',
+  cloud:     'M160,36A92.09,92.09,0,0,0,79,84.36,68,68,0,1,0,72,220h88a92,92,0,0,0,0-184Zm0,160H72a44,44,0,0,1-1.82-88A91.86,91.86,0,0,0,68,128a12,12,0,0,0,24,0,68,68,0,1,1,68,68Z',
+  rain:      'M156,12A80.22,80.22,0,0,0,82.39,60.36,56.76,56.76,0,0,0,76,60a56,56,0,0,0,0,112h29.58L86,201.34a12,12,0,1,0,20,13.32L134.42,172H156a80,80,0,0,0,0-160Zm0,136H76a32,32,0,0,1,0-64h.28c-.11,1.1-.2,2.2-.26,3.3a12,12,0,1,0,24,1.39A56.06,56.06,0,1,1,156,148Zm.65,58.66-26.67,40a12,12,0,1,1-20-13.32l26.66-40a12,12,0,1,1,20,13.32Z',
+  lightning: 'M156,12A80.22,80.22,0,0,0,82.39,60.36,56.76,56.76,0,0,0,76,60a56,56,0,0,0,0,112h30.81l-13.1,21.82A12,12,0,0,0,104,212h18.81l-13.1,21.82a12,12,0,1,0,20.58,12.35l24-40A12,12,0,0,0,144,188H125.19l9.6-16H156a80,80,0,0,0,0-160Zm0,136H76a32,32,0,0,1,0-64h.28c-.11,1.1-.2,2.2-.26,3.3a12,12,0,1,0,24,1.39A56.06,56.06,0,1,1,156,148Z',
+  snowflake: 'M227.65,149.14a12,12,0,0,1-8.79,14.51l-20.67,5.08,5.4,20.16a12,12,0,0,1-23.18,6.22l-7.29-27.2L140,148.78V187l20.48,20.48a12,12,0,0,1-17,17L128,209l-15.51,15.52a12,12,0,0,1-17-17L116,187V148.78L82.88,167.91l-7.29,27.2a12,12,0,0,1-23.18-6.22l5.4-20.16-20.67-5.08a12,12,0,1,1,5.72-23.3l27.89,6.85L104,128,70.75,108.8l-27.89,6.85A11.8,11.8,0,0,1,40,116a12,12,0,0,1-2.85-23.65l20.67-5.08-5.4-20.16a12,12,0,0,1,23.18-6.22l7.29,27.2L116,107.21V69L95.52,48.48a12,12,0,0,1,17-17L128,47l15.51-15.52a12,12,0,1,1,17,17L140,69v38.24l33.12-19.12,7.29-27.2a12,12,0,0,1,23.18,6.22l-5.4,20.16,20.67,5.08A12,12,0,0,1,216,116a11.8,11.8,0,0,1-2.87-.35l-27.89-6.85L152,128l33.25,19.2,27.89-6.85A12,12,0,0,1,227.65,149.14Z',
+  wind:      'M24,104a12,12,0,0,1,0-24h96a12,12,0,0,0,0-24,15.07,15.07,0,0,0-10.26,4.45,12,12,0,0,1-17-16.9A39.34,39.34,0,0,1,120,32a36,36,0,0,1,0,72ZM208,68a39.34,39.34,0,0,0-27.3,11.55,12,12,0,0,0,17,16.9A15.07,15.07,0,0,1,208,92a12,12,0,0,1,0,24H32a12,12,0,0,0,0,24H208a36,36,0,0,0,0-72Zm-56,84H40a12,12,0,0,0,0,24H152a12,12,0,0,1,0,24,15.11,15.11,0,0,1-10.27-4.45,12,12,0,1,0-17,16.9A39.34,39.34,0,0,0,152,224a36,36,0,0,0,0-72Z',
+  cloudSun:  'M164,68a80.39,80.39,0,0,0-18.46,2.15,59.87,59.87,0,0,0-6-7.42l7.57-10.82a12,12,0,0,0-19.66-13.77L119.87,49A59.85,59.85,0,0,0,97.61,44l-2.3-13a12,12,0,0,0-23.63,4.17l2.3,13A60,60,0,0,0,54.77,60.47L43.91,52.86A12,12,0,0,0,30.14,72.52L41,80.11A59.45,59.45,0,0,0,36,102.36l-13,2.3a12,12,0,0,0,2.07,23.82,12.59,12.59,0,0,0,2.1-.18l13-2.3a59.29,59.29,0,0,0,3.44,7.25A56,56,0,0,0,84,228h80a80,80,0,0,0,0-160ZM96,68a36,36,0,0,1,26.45,11.61,80.37,80.37,0,0,0-32.06,36.75A56.5,56.5,0,0,0,84,116a55.84,55.84,0,0,0-20.33,3.83A36,36,0,0,1,96,68Zm68,136H84a32,32,0,0,1,0-64h.28c-.11,1.1-.2,2.2-.26,3.3a12,12,0,0,0,24,1.4,55.78,55.78,0,0,1,1.74-11l.15-.55A56.06,56.06,0,1,1,164,204Z',
+};
+
+// F-199 (AUDIT.md): "parzialmente nuvoloso" (WMO 2) mostrava lo stesso sole
+// pieno di "sereno" (WMO 0) — innocuo con un'emoji minuscola, molto più
+// evidente ora che è un'icona vettoriale grande quanto il testo. Allineato
+// alla semantica WMO reale: 0-1 sereno/prevalentemente sereno, 2 parzialmente
+// nuvoloso, 3+ coperto.
+/** Icona condizione (colonna Condizioni): stesso criterio della emoji che sostituisce. */
+function weatherIconKey(threshold_exceeded, threshold_reason, weather_code) {
+  if (threshold_exceeded) {
+    if (threshold_reason === 'neve')      return 'snowflake';
+    if (threshold_reason === 'vento')     return 'wind';
+    if (threshold_reason === 'temporale') return 'lightning';
+    return 'rain';
+  }
+  if (weather_code <= 1) return 'sun';
+  if (weather_code === 2) return 'cloudSun';
+  return 'cloud';
+}
+
+/** SVG inline 13x13, colore neutro (--muted) — il colore di stato resta sulla colonna Sospensione, un'icona non deve duplicare il segnale. */
+function weatherIconSvg(key) {
+  const d = WEATHER_ICON_PATHS[key] || WEATHER_ICON_PATHS.cloud;
+  return `<svg viewBox="0 0 256 256" width="13" height="13" style="vertical-align:-2.5px;margin-right:4pt;flex-shrink:0"><path d="${d}" fill="var(--muted)"/></svg>`;
+}
+
+const WARNING_CIRCLE_PATH = 'M128,20A108,108,0,1,0,236,128,108.12,108.12,0,0,0,128,20Zm0,192a84,84,0,1,1,84-84A84.09,84.09,0,0,1,128,212Zm-12-80V80a12,12,0,0,1,24,0v52a12,12,0,0,1-24,0Zm28,40a16,16,0,1,1-16-16A16,16,0,0,1,144,172Z';
+/** Sostituisce ⚠ (emoji) nel PDF — stessa icona Phosphor "WarningCircle" bold usata nell'app per gli avvisi. */
+function warningIconSvg(color = 'currentColor', size = 12) {
+  return `<svg viewBox="0 0 256 256" width="${size}" height="${size}" style="vertical-align:-2px;margin-right:3pt"><path d="${WARNING_CIRCLE_PATH}" fill="${color}"/></svg>`;
+}
+
 /**
  * @param {object} data
  * @param {object} data.site - { name, address, client, contract_days, days_type, start_date, end_date, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm }
@@ -37,7 +84,7 @@ const DAYS_IT_SHORT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
  * @param {string} [data.to]
  * @returns {string} HTML pronto per rendererPool.render()
  */
-function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
+function generateWeatherReportHtml({ site, rows, thresholds, from, to, filter }) {
   const confirmedDays   = rows.filter(r => r.suspension_confirmed).length;
   const totalMm         = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
   // F-199 (AUDIT.md): "preliminare" è solo forecast_preliminary — un giorno
@@ -51,9 +98,7 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
     const isConf    = r.suspension_confirmed;
     const isPending = r.threshold_exceeded && !r.suspension_confirmed && !r.suspension_dismissed;
     const rowClass  = isConf ? 'tr-conf' : isPending ? 'tr-pending' : '';
-    const icon      = r.threshold_exceeded
-      ? (r.threshold_reason === 'neve' ? '❄️' : r.threshold_reason === 'vento' ? '💨' : r.threshold_reason === 'temporale' ? '⛈️' : '🌧️')
-      : (r.weather_code <= 3 ? '☀️' : '⛅');
+    const icon      = weatherIconSvg(weatherIconKey(r.threshold_exceeded, r.threshold_reason, r.weather_code));
     let sospensioneHtml = '—';
     if (isConf) sospensioneHtml = '<span class="badge-anom">SOSPESO</span>';
     else if (r.suspension_dismissed) sospensioneHtml = 'Ignorato';
@@ -65,7 +110,7 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
     // questa stessa distinzione nell'interfaccia ("dovrebbe esserci scritto
     // solo ARPAL, è così che guadagniamo la fiducia di tutti").
     let fonteHtml = r.data_source === 'arpal_certified' ? 'ARPAL' : r.data_source === 'era5_confirmed' ? 'ERA5' : '<span class="badge-warn">stima</span>';
-    if (r.era5_discrepancy) fonteHtml = '<span class="badge-anom">⚠ verifica</span>';
+    if (r.era5_discrepancy) fonteHtml = `<span class="badge-anom">${warningIconSvg('var(--destructive)')}verifica</span>`;
 
     // F-199 (AUDIT.md): con la fascia oraria attiva, precipitation_mm è già
     // filtrato sul turno — mostra anche il totale 24h intero per audit,
@@ -76,7 +121,7 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
     return `<tr class="${rowClass}">
       <td class="td-date">${r.log_date}</td>
       <td>${DAYS_IT_SHORT[dt.getDay()]}</td>
-      <td>${icon} ${esc(r.weather_desc) || '—'}</td>
+      <td style="display:flex;align-items:center;white-space:nowrap">${icon}${esc(r.weather_desc) || '—'}</td>
       <td class="td-center">${pioggiaCell}</td>
       <td class="td-center">${r.wind_max_kmh > 0 ? r.wind_max_kmh + ' km/h' : '—'}</td>
       <td class="td-center">${r.temp_min_c != null ? r.temp_min_c + '°' : '—'} / ${r.temp_max_c != null ? r.temp_max_c + '°' : '—'}</td>
@@ -87,7 +132,9 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
 
   const shiftRows = rows.filter(r => r.precipitation_mm_full_day != null && Number(r.precipitation_mm_full_day) !== Number(r.precipitation_mm));
 
-  const period = esc((from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi'));
+  const FILTER_LABELS = { critical: 'solo giorni con soglia superata', confirmed: 'solo giorni con sospensione confermata' };
+  const period = esc((from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi'))
+    + (FILTER_LABELS[filter] ? ` <span style="color:var(--warning);font-weight:700">(${FILTER_LABELS[filter]})</span>` : '');
   const nowStr = new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
 
   return `<!DOCTYPE html>
@@ -203,16 +250,16 @@ table { color: var(--text); }
   </div>` : ''}
 
   <div class="thresholds-box">
-    <span>🌧️ Pioggia ≥ <strong>${thresholds.rain_mm} mm</strong>/giorno</span>
-    <span>💨 Vento ≥ <strong>${thresholds.wind_kmh} km/h</strong></span>
-    <span>❄️ Neve ${thresholds.snow ? '<strong>abilitata</strong>' : 'disabilitata'}</span>
-    <span>⛈️ Temporale ${thresholds.thunderstorm ? '<strong>abilitato</strong>' : 'disabilitato'}</span>
+    <span>${weatherIconSvg('rain')}Pioggia ≥ <strong>${thresholds.rain_mm} mm</strong>/giorno</span>
+    <span>${weatherIconSvg('wind')}Vento ≥ <strong>${thresholds.wind_kmh} km/h</strong></span>
+    <span>${weatherIconSvg('snowflake')}Neve ${thresholds.snow ? '<strong>abilitata</strong>' : 'disabilitata'}</span>
+    <span>${weatherIconSvg('lightning')}Temporale ${thresholds.thunderstorm ? '<strong>abilitato</strong>' : 'disabilitato'}</span>
   </div>
   <p class="source-note">Fonte: precipitazione certificata dalla stazione ARPAL più vicina al cantiere — dato osservato da stazione a terra, lo standard riconosciuto da INPS per le richieste di Cassa Integrazione da maltempo (circolare n. 139 del 01/08/2016). Ogni giorno viene registrato inizialmente come stima (Open-Meteo) e certificato automaticamente da ARPAL entro circa 24 ore — la colonna "Fonte" nella tabella indica lo stato per ciascun giorno. Dati verificabili sul portale ufficiale ARPAL Liguria.${shiftRows.length ? ` * Cantiere con fascia oraria attiva: la pioggia mostrata conta solo le ore di turno, non le 24h intere — dato disponibile su richiesta per ${shiftRows.length} giorn${shiftRows.length === 1 ? 'o' : 'i'} in questo periodo.` : ''}</p>
 
   ${hasDiscrepancy ? `
   <div class="discrepancy-box">
-    <p><strong>⚠ Discrepanze su giorni già decisi.</strong> Il dato certificato (ARPAL o ERA5) per uno o più giorni già decisi (confermati o ignorati, marcati "⚠ verifica" nella colonna Fonte) differisce dalla stima originale al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — verifica manualmente prima di comunicazioni ufficiali.</p>
+    <p>${warningIconSvg('var(--destructive)', 13)}<strong>Discrepanze su giorni già decisi.</strong> Il dato certificato (ARPAL o ERA5) per uno o più giorni già decisi (confermati o ignorati, marcati "verifica" nella colonna Fonte) differisce dalla stima originale al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — verifica manualmente prima di comunicazioni ufficiali.</p>
   </div>` : ''}
 
   <div class="section-title">Dettaglio giornaliero</div>
@@ -242,7 +289,7 @@ table { color: var(--text); }
  * @param {object} data - stessa forma di generateWeatherReportHtml
  * @returns {ExcelJS.Workbook}
  */
-function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
+function generateWeatherReportXlsx({ site, rows, thresholds, from, to, filter }) {
   const totalDays        = rows.length;
   const rainDays         = rows.filter(r => r.threshold_exceeded).length;
   const confirmedDays    = rows.filter(r => r.suspension_confirmed).length;
@@ -295,7 +342,9 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
     return r;
   }
 
-  const period = (from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi');
+  const XLSX_FILTER_LABELS = { critical: 'solo giorni con soglia superata', confirmed: 'solo giorni con sospensione confermata' };
+  const period = (from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi')
+    + (XLSX_FILTER_LABELS[filter] ? ` (${XLSX_FILTER_LABELS[filter]})` : '');
   const genStr = `${new Date().toLocaleDateString('it-IT')} alle ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
 
   // ── Foglio 1: Riepilogo ──────────────────────────────────────────────────

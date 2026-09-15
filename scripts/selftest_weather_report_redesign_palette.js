@@ -51,7 +51,9 @@ const rows = [
   check('giorno da confermare mostra il badge "Da confermare"', /badge-warn">Da confermare/.test(html), null);
   check('giorno confermato mostra il badge "SOSPESO"', /badge-anom">SOSPESO/.test(html), null);
   check('giorno in stima preliminare mostra il badge "stima"', /badge-warn">stima/.test(html), null);
-  check('giorno con discrepanza mostra il badge "⚠ verifica"', html.includes('⚠ verifica'), null);
+  // F-199 (AUDIT.md): "⚠ verifica" testuale sostituito dall'icona Phosphor
+  // WarningCircle (SVG) + "verifica" — mai più un'emoji nel PDF.
+  check('giorno con discrepanza mostra il badge "verifica" con icona Phosphor (non più ⚠ emoji)', /badge-anom">.*verifica/.test(html) && !html.includes('⚠'), null);
   check('riquadro di avviso discrepanze presente quando serve', html.includes('Discrepanze su giorni già decisi'), null);
   check('conteggio "in stima preliminare" nel sommario (1/5)', html.includes('1/5'), null);
   check('citazione normativa reale presente (D.Lgs. 36/2023 art. 107)', html.includes('D.Lgs. 36/2023 art. 107'), null);
