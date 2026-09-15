@@ -2115,6 +2115,13 @@
     // (niente caricamento, niente errore, niente guida GPS aperta) prima di
     // mostrarsi, ritentando invece di sparare alla cieca. Se resta bloccata
     // (es. badge disattivato per sempre) smette di ritentare dopo 30s.
+    //
+    // F-197 (AUDIT.md): mancava il check sull'Informativa Privacy (F-178) —
+    // la guida si montava sopra anche lì, e "Adesso no, faccio dopo" non
+    // salva alcun flag (vedi pwaGuideSkip sopra), quindi ricompariva sopra
+    // il consenso a OGNI apertura: un lavoratore che rifiutava
+    // l'installazione restava bloccato in un loop, senza poter mai
+    // raggiungere "Ho letto e accetto".
     var attempts = 0;
     (function maybeShow() {
       attempts++;
@@ -2122,7 +2129,8 @@
       var gpsOpen  = gpsGuide && !gpsGuide.classList.contains('hidden');
       var loading  = !!wrap.querySelector('.loading-wrap');
       var errorScreen = !!wrap.querySelector('.error-wrap');
-      if (gpsOpen || loading || errorScreen) {
+      var privacyOpen = !!(workerData && workerData.requires_privacy_consent);
+      if (gpsOpen || loading || errorScreen || privacyOpen) {
         if (attempts < 20) setTimeout(maybeShow, 1500);
         return;
       }
