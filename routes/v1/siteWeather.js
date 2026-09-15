@@ -45,7 +45,7 @@ router.get('/sites/:siteId/weather-log', verifySupabaseJwt, async (req, res) => 
 
   let q = supabase
     .from('site_weather_logs')
-    .select('id, log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_code, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, suspension_id, fetched_at, data_source, era5_reconciled_at, era5_discrepancy, precipitation_mm_original, wind_max_kmh_original, weather_code_original, arpal_station_name, arpal_imported_at')
+    .select('id, log_date, precipitation_mm, wind_max_kmh, temp_min_c, temp_max_c, weather_code, weather_desc, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, suspension_id, fetched_at, data_source, era5_reconciled_at, era5_discrepancy, precipitation_mm_original, wind_max_kmh_original, weather_code_original, arpal_station_name, arpal_imported_at, precipitation_mm_full_day')
     .eq('site_id', siteId)
     .order('log_date', { ascending: false })
     // F-199 (AUDIT.md): 365 nascondeva cantieri più vecchi di un anno oltre

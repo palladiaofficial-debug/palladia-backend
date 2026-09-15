@@ -32,6 +32,7 @@ const supabase = require('../lib/supabase');
 const { resolveArpalPrecipitation } = require('./arpalWeatherSource');
 const { buildArpalWeatherLogUpdate } = require('./weatherService');
 const { upsertWeatherNotification }  = require('./weatherLogCron');
+const { sumShiftPrecipitation }      = require('../lib/weatherShift');
 
 const CRON_SCHEDULE = '15 5 * * *'; // 05:15 ogni giorno — tra weatherReconcile (05:00) e weatherLog (06:30)
 const TZ = 'Europe/Rome';
@@ -61,8 +62,27 @@ async function arpalizeSite(site, stationCache) {
   const maxDate = yesterdayISO();
   if (minDate > maxDate) return { imported: 0, discrepancies: 0, newlyPendingDays: [], station: null };
 
-  const { stationName, stationCode, distance_m, rows: arpalRows } =
-    await resolveArpalPrecipitation(site.latitude, site.longitude, minDate, maxDate, stationCache);
+  // F-199 (AUDIT.md): "se lavoro di giorno non mi interessa se piove la
+  // sera" — un cantiere con weather_shift_enabled fetcha i dati ORARI e
+  // somma solo le ore dentro la fascia di turno configurata (fuso Europe/
+  // Rome, gestito da lib/weatherShift.js), non il totale delle 24h.
+  const useShift = !!site.weather_shift_enabled && !!site.weather_shift_start && !!site.weather_shift_end;
+  const { stationName, stationCode, distance_m, rows: rawRows } =
+    await resolveArpalPrecipitation(site.latitude, site.longitude, minDate, maxDate, stationCache, useShift ? 'HH' : 'GG');
+
+  // Stazione risolta con successo: aggiorna sempre il riferimento sul
+  // cantiere, anche se poi non ci sono righe da certificare in questo giro
+  // — serve al popup "come funziona" per mostrare la fonte SUBITO, non solo
+  // dopo il primo giorno certificato.
+  await supabase.from('sites').update({
+    arpal_station_code: stationCode, arpal_station_name: stationName,
+    arpal_station_distance_m: distance_m, arpal_last_checked_at: new Date().toISOString(),
+  }).eq('id', site.id);
+
+  const arpalRows = useShift
+    ? [...sumShiftPrecipitation(rawRows, site.weather_shift_start, site.weather_shift_end)]
+        .map(([date, b]) => ({ date, precipitation_mm: b.shiftMm, precipitation_mm_full_day: b.fullDayMm, valid: !b.hasInvalid }))
+    : rawRows;
 
   const existingByDate = new Map(pending.map(r => [r.log_date, r]));
   const thresholds = {
@@ -75,10 +95,9 @@ async function arpalizeSite(site, stationCache) {
     if (!r.valid || r.precipitation_mm === null) continue;
     const existing = existingByDate.get(r.date);
     if (!existing) continue; // fuori dal range di righe non ancora certificate per questo sito
-    updates.push({
-      company_id: site.company_id, site_id: site.id, log_date: r.date,
-      ...buildArpalWeatherLogUpdate(existing, r, stationName, thresholds),
-    });
+    const update = buildArpalWeatherLogUpdate(existing, r, stationName, thresholds);
+    if (useShift) update.precipitation_mm_full_day = r.precipitation_mm_full_day;
+    updates.push({ company_id: site.company_id, site_id: site.id, log_date: r.date, ...update });
   }
   if (!updates.length) return { imported: 0, discrepancies: 0, newlyPendingDays: [], station: { name: stationName, distance_m } };
 
@@ -108,7 +127,7 @@ async function runWeatherArpalCron() {
 
   const { data: sites, error } = await supabase
     .from('sites')
-    .select('id, company_id, name, latitude, longitude, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
+    .select('id, company_id, name, latitude, longitude, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, weather_shift_enabled, weather_shift_start, weather_shift_end')
     .not('latitude', 'is', null)
     .not('longitude', 'is', null);
 

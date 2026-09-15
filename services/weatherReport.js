@@ -67,17 +67,25 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
     let fonteHtml = r.data_source === 'arpal_certified' ? 'ARPAL' : r.data_source === 'era5_confirmed' ? 'ERA5' : '<span class="badge-warn">stima</span>';
     if (r.era5_discrepancy) fonteHtml = '<span class="badge-anom">⚠ verifica</span>';
 
+    // F-199 (AUDIT.md): con la fascia oraria attiva, precipitation_mm è già
+    // filtrato sul turno — mostra anche il totale 24h intero per audit,
+    // mai lasciarlo implicito in un documento pensato per un tribunale.
+    const hasShiftNote = r.precipitation_mm_full_day != null && Number(r.precipitation_mm_full_day) !== Number(r.precipitation_mm);
+    const pioggiaCell = (r.precipitation_mm > 0 ? r.precipitation_mm + ' mm' : '—') + (hasShiftNote ? ' *' : '');
+
     return `<tr class="${rowClass}">
       <td class="td-date">${r.log_date}</td>
       <td>${DAYS_IT_SHORT[dt.getDay()]}</td>
       <td>${icon} ${esc(r.weather_desc) || '—'}</td>
-      <td class="td-center">${r.precipitation_mm > 0 ? r.precipitation_mm + ' mm' : '—'}</td>
+      <td class="td-center">${pioggiaCell}</td>
       <td class="td-center">${r.wind_max_kmh > 0 ? r.wind_max_kmh + ' km/h' : '—'}</td>
       <td class="td-center">${r.temp_min_c != null ? r.temp_min_c + '°' : '—'} / ${r.temp_max_c != null ? r.temp_max_c + '°' : '—'}</td>
       <td class="td-center">${sospensioneHtml}</td>
       <td class="td-center">${fonteHtml}</td>
     </tr>`;
   }).join('');
+
+  const shiftRows = rows.filter(r => r.precipitation_mm_full_day != null && Number(r.precipitation_mm_full_day) !== Number(r.precipitation_mm));
 
   const period = esc((from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi'));
   const nowStr = new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
@@ -200,7 +208,7 @@ table { color: var(--text); }
     <span>❄️ Neve ${thresholds.snow ? '<strong>abilitata</strong>' : 'disabilitata'}</span>
     <span>⛈️ Temporale ${thresholds.thunderstorm ? '<strong>abilitato</strong>' : 'disabilitato'}</span>
   </div>
-  <p class="source-note">Fonte: precipitazione certificata dalla stazione ARPAL più vicina al cantiere — dato osservato da stazione a terra, lo standard riconosciuto da INPS per le richieste di Cassa Integrazione da maltempo (circolare n. 139 del 01/08/2016). Ogni giorno viene registrato inizialmente come stima (Open-Meteo) e certificato automaticamente da ARPAL entro circa 24 ore — la colonna "Fonte" nella tabella indica lo stato per ciascun giorno. Dati verificabili sul portale ufficiale ARPAL Liguria.</p>
+  <p class="source-note">Fonte: precipitazione certificata dalla stazione ARPAL più vicina al cantiere — dato osservato da stazione a terra, lo standard riconosciuto da INPS per le richieste di Cassa Integrazione da maltempo (circolare n. 139 del 01/08/2016). Ogni giorno viene registrato inizialmente come stima (Open-Meteo) e certificato automaticamente da ARPAL entro circa 24 ore — la colonna "Fonte" nella tabella indica lo stato per ciascun giorno. Dati verificabili sul portale ufficiale ARPAL Liguria.${shiftRows.length ? ` * Cantiere con fascia oraria attiva: la pioggia mostrata conta solo le ore di turno, non le 24h intere — dato disponibile su richiesta per ${shiftRows.length} giorn${shiftRows.length === 1 ? 'o' : 'i'} in questo periodo.` : ''}</p>
 
   ${hasDiscrepancy ? `
   <div class="discrepancy-box">

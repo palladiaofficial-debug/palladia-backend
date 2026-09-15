@@ -47,6 +47,16 @@ function formatSite(s) {
     shiftStartTime:              s.shift_start_time             ? String(s.shift_start_time).slice(0, 5) : null,
     lateEntryThresholdMinutes:   s.late_entry_threshold_minutes ?? null,
     lateEntryDeductionMinutes:   s.late_entry_deduction_minutes ?? null,
+    // F-199 (AUDIT.md): fascia oraria per la precipitazione ("se lavoro di
+    // giorno non mi interessa se piove la sera") — sola lettura per
+    // arpalStation*, scritti solo da weatherArpalCron.js.
+    weatherShiftEnabled:       s.weather_shift_enabled ?? false,
+    weatherShiftStart:         s.weather_shift_start ? String(s.weather_shift_start).slice(0, 5) : null,
+    weatherShiftEnd:           s.weather_shift_end   ? String(s.weather_shift_end).slice(0, 5)   : null,
+    arpalStationCode:          s.arpal_station_code ?? null,
+    arpalStationName:          s.arpal_station_name ?? null,
+    arpalStationDistanceM:     s.arpal_station_distance_m ?? null,
+    arpalLastCheckedAt:        s.arpal_last_checked_at ?? null,
   };
 }
 
@@ -58,7 +68,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, cache(20), async (req, res) => {
-  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes';
+  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, weather_shift_enabled, weather_shift_start, weather_shift_end, arpal_station_code, arpal_station_name, arpal_station_distance_m, arpal_last_checked_at';
 
   const { data, error } = await supabase
     .from('sites')
@@ -152,6 +162,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm,
     lunch_break_minutes, lunch_break_threshold_hours,
     shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes,
+    weather_shift_enabled, weather_shift_start, weather_shift_end,
   } = req.body || {};
 
   // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
@@ -301,6 +312,16 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     }
   }
 
+  // Fascia oraria pioggia (F-199, AUDIT.md) — "se lavoro di giorno non mi
+  // interessa se piove la sera". null/'' su start/end = nessun filtro.
+  if (weather_shift_enabled !== undefined) updates.weather_shift_enabled = Boolean(weather_shift_enabled);
+  if (weather_shift_start !== undefined) {
+    updates.weather_shift_start = (weather_shift_start === null || weather_shift_start === '') ? null : weather_shift_start;
+  }
+  if (weather_shift_end !== undefined) {
+    updates.weather_shift_end = (weather_shift_end === null || weather_shift_end === '') ? null : weather_shift_end;
+  }
+
   if (start_date !== undefined) updates.start_date = start_date || null;
 
   // Calcola end_date dai giorni contratto con fallback ai valori già salvati nel DB
@@ -381,7 +402,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
   // ma diventava un bug reale nel momento in cui questo PATCH avesse iniziato
   // a includere anche i nuovi campi ritardo ingresso sotto — corretto qui
   // invece di riprodurlo una terza volta.
-  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes';
+  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, weather_shift_enabled, weather_shift_start, weather_shift_end, arpal_station_code, arpal_station_name, arpal_station_distance_m, arpal_last_checked_at';
 
   const { data, error } = await supabase
     .from('sites')
@@ -429,6 +450,37 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
         if (changed > 0) console.log(`[weatherThresholdChange] ${full.name}: ${changed} giorni storici ricalcolati dopo cambio soglia`);
       } catch (err) {
         console.error('[weatherThresholdChange]', siteId, err.message);
+      }
+    })();
+  }
+
+  // F-199 (AUDIT.md): attivare/disattivare/spostare la fascia oraria cambia
+  // il SIGNIFICATO di precipitation_mm (24h intere vs solo le ore di
+  // turno) — a differenza di un cambio soglia, riapplicare evalThresholds
+  // ai numeri già salvati non basta: quei numeri stessi vanno ricalcolati
+  // da zero con la nuova fascia. Un giorno MAI deciso da un umano viene
+  // marcato "da ricertificare" (torna a forecast_preliminary, lo stesso
+  // stato di un giorno nuovo) — il prossimo giro di weatherArpalCron.js lo
+  // ri-processa con la fascia aggiornata. Un giorno già deciso (confermato
+  // o ignorato) NON viene mai toccato, stessa regola di F-159: la decisione
+  // presa da un umano resta ancorata al dato che aveva davanti in quel
+  // momento, non viene riscritta retroattivamente.
+  const shiftFieldsChanged = ['weather_shift_enabled', 'weather_shift_start', 'weather_shift_end'].some(k => k in updates);
+  if (shiftFieldsChanged) {
+    (async () => {
+      try {
+        const { data: resetRows, error: resetErr } = await supabase
+          .from('site_weather_logs')
+          .update({ data_source: 'forecast_preliminary' })
+          .eq('site_id', siteId)
+          .eq('suspension_confirmed', false)
+          .eq('suspension_dismissed', false)
+          .neq('data_source', 'forecast_preliminary')
+          .select('log_date');
+        if (resetErr) { console.error('[weatherShiftChange]', siteId, resetErr.message); return; }
+        if (resetRows?.length) console.log(`[weatherShiftChange] ${siteId}: ${resetRows.length} giorni mai decisi marcati da ricertificare con la nuova fascia oraria`);
+      } catch (err) {
+        console.error('[weatherShiftChange]', siteId, err.message);
       }
     })();
   }

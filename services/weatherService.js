@@ -314,15 +314,20 @@ function parseArpalCsv(buffer) {
       const cols = line.split('","').map(c => c.replace(/^"|"$/g, ''));
       if (cols.length < 5) continue;
       const [inizio, , valore, , valido] = cols;
-      const m = inizio.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      // F-199 (AUDIT.md): estrazione oraria (Frequenza=HH) ha un orario dopo
+      // la data ("20/08/2026 07:00") — quella giornaliera no. Stesso
+      // parser per entrambe: `hour` resta undefined per le righe giornaliere.
+      const m = inizio.match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):\d{2})?$/);
       if (!m) continue;
       const date = `${m[3]}-${m[2]}-${m[1]}`;
       const num  = Number(valore);
-      rows.push({
+      const row = {
         date,
         precipitation_mm: Number.isFinite(num) ? num : null,
         valid: /^s/i.test(valido || ''), // "Sì" / "Si" / eventuale mojibake sull'accento
-      });
+      };
+      if (m[4] !== undefined) row.hour = `${m[4]}:00`;
+      rows.push(row);
     }
   }
 

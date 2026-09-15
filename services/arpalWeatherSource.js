@@ -45,9 +45,11 @@ function extractSetCookie(res) {
  * @param {string} stationCode - es. "ME00205" (data/arpal_stations.json)
  * @param {string} startDateISO - "YYYY-MM-DD"
  * @param {string} endDateISO - "YYYY-MM-DD"
- * @returns {Promise<{stationName: string, rows: Array<{date, precipitation_mm, valid}>}>}
+ * @param {'GG'|'HH'} [frequenza] - 'GG' cumulata giornaliera (default), 'HH' oraria
+ *   (F-199: serve per la fascia oraria di turno — vedi lib/weatherShift.js)
+ * @returns {Promise<{stationName: string, rows: Array<{date, hour?, precipitation_mm, valid}>}>}
  */
-async function fetchArpalStationRange(stationCode, startDateISO, endDateISO) {
+async function fetchArpalStationRange(stationCode, startDateISO, endDateISO, frequenza = 'GG') {
   const commonHeaders = { 'User-Agent': UA };
 
   // Passo 1: seleziona "Tipologia località = Stazione" → genera IdRichiesta
@@ -71,7 +73,7 @@ async function fetchArpalStationRange(stationCode, startDateISO, endDateISO) {
   const pickRes = await fetch(`${BASE}/PubAccessoDatiMeteo12.asp`, {
     method: 'POST',
     headers: withCookie({ 'Content-Type': 'application/x-www-form-urlencoded' }),
-    body: `Azione=INSERISCI_TEMA&CodTema=STAZIONE&CodUbic=${encodeURIComponent(stationCode)}&IdRichiesta=${idRichiesta}&IdRichiestaCarto=&Frequenza=GG`,
+    body: `Azione=INSERISCI_TEMA&CodTema=STAZIONE&CodUbic=${encodeURIComponent(stationCode)}&IdRichiesta=${idRichiesta}&IdRichiestaCarto=&Frequenza=${frequenza}`,
     signal: AbortSignal.timeout(15000),
   });
   if (!pickRes.ok) throw new Error(`ARPAL step2 HTTP ${pickRes.status}`);
@@ -82,7 +84,7 @@ async function fetchArpalStationRange(stationCode, startDateISO, endDateISO) {
     CodParam: PRECIPITAZIONE_PARAM,
     CodTema: 'STAZIONE',
     IdEstraz: 'DE',
-    Frequenza: 'GG',
+    Frequenza: frequenza,
     TipoOutput: 'XLS',
     Separatore: ';',
     IdRichiesta: idRichiesta,
@@ -128,7 +130,7 @@ async function fetchArpalStationRange(stationCode, startDateISO, endDateISO) {
  * all'intero cantiere se ce n'è un'altra vicina che funziona.
  * @returns {Promise<{stationName: string, stationCode: string, distance_m: number, rows: Array}>}
  */
-async function resolveArpalPrecipitation(lat, lon, startDateISO, endDateISO, stationCache = new Map()) {
+async function resolveArpalPrecipitation(lat, lon, startDateISO, endDateISO, stationCache = new Map(), frequenza = 'GG') {
   const candidates = findNearestArpalStations(lat, lon, 5);
   if (!candidates.length) {
     const err = new Error('Nessuna stazione ARPAL entro raggio utile da questa posizione');
@@ -139,10 +141,12 @@ async function resolveArpalPrecipitation(lat, lon, startDateISO, endDateISO, sta
   const errors = [];
   for (const candidate of candidates) {
     // Una stazione già segnata "senza dati" in questo giro di cron non va
-    // ritentata per ogni cantiere che la condivide come più vicina.
+    // ritentata per ogni cantiere che la condivide come più vicina — vale
+    // per entrambe le frequenze: una stazione senza pluviometro non ne ha
+    // uno né per l'estrazione giornaliera né per quella oraria.
     if (stationCache.get(candidate.code) === 'NO_DATA') { errors.push(`${candidate.name}: nessun dato (cache)`); continue; }
     try {
-      const result = await fetchArpalStationRange(candidate.code, startDateISO, endDateISO);
+      const result = await fetchArpalStationRange(candidate.code, startDateISO, endDateISO, frequenza);
       stationCache.set(candidate.code, 'OK');
       return { stationName: result.stationName, stationCode: candidate.code, distance_m: candidate.distance_m, rows: result.rows };
     } catch (err) {
