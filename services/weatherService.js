@@ -229,7 +229,11 @@ function evalThresholds(data, thresholds = {}) {
 function buildWeatherLogUpdate(existingRow, weather, thresholds) {
   const { exceeded, reason } = evalThresholds(weather, thresholds);
   const isDecided = !!(existingRow?.suspension_confirmed || existingRow?.suspension_dismissed);
-  const isNewlyConfirmed = weather.data_source === 'era5_confirmed' && existingRow?.data_source !== 'era5_confirmed';
+  // F-199 (AUDIT.md): generalizzato da 'era5_confirmed' per includere anche
+  // 'arpal_certified' — qualunque passaggio a una fonte non più preliminare
+  // (ERA5 o ARPAL) conserva il dato precedente come "original" per audit,
+  // non solo la prima riconciliazione ERA5.
+  const isNewlyConfirmed = weather.data_source !== 'forecast_preliminary' && existingRow?.data_source !== weather.data_source;
 
   // Forma sempre uniforme (tranne threshold_exceeded/reason, omessi apposta
   // per i giorni decisi — vedi i chiamanti): un upsert bulk con chiavi
@@ -260,4 +264,105 @@ function buildWeatherLogUpdate(existingRow, weather, thresholds) {
   return update;
 }
 
-module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, buildWeatherLogUpdate, WMO };
+/**
+ * F-199 (AUDIT.md): parsa il CSV ufficiale scaricato dal portale ARPAL
+ * (https://ambientepub.regione.liguria.it/SiraQualMeteo/...), lo stesso file
+ * che il PDF ufficiale "CIGO – come ottenere i dati meteo osservati" indica
+ * come fonte per le richieste di Cassa Integrazione da maltempo (circolare
+ * INPS n. 139 del 01/08/2016). Formato verificato scaricando un'estrazione
+ * reale (stazione GENOVA - CENTRO FUNZIONALE): encoding ISO-8859-1, CRLF,
+ * date "dd/mm/yyyy", decimale ".", struttura a blocchi:
+ *   "Stazione",<nome>
+ *   "Parametro",PRECIPITAZIONE - PRECIPITAZIONE CUMULATA (mm)
+ *   (riga vuota)
+ *   "Inizio rilevazione","Fine rilevazione","Valore","Dataset","Valido"
+ *   "27/01/2026","27/01/2026","56","Tutti i dati","Sì"
+ *   ...
+ *   (riga vuota)
+ *   "Dati letti",N
+ *
+ * @param {Buffer} buffer - contenuto grezzo del file caricato
+ * @returns {{ stationName: string, rows: Array<{date: string, precipitation_mm: number|null, valid: boolean}> }}
+ */
+function parseArpalCsv(buffer) {
+  const text  = buffer.toString('latin1');
+  const lines = text.split(/\r\n|\n/);
+
+  let stationName = null;
+  let parametro   = null;
+  const rows = [];
+  let inTable = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) { if (inTable) break; continue; }
+
+    if (line.startsWith('"Stazione"')) {
+      const idx = line.indexOf(',');
+      stationName = idx >= 0 ? line.slice(idx + 1).replace(/^"|"$/g, '').trim() : null;
+      continue;
+    }
+    if (line.startsWith('"Parametro"')) {
+      const idx = line.indexOf(',');
+      parametro = idx >= 0 ? line.slice(idx + 1).replace(/^"|"$/g, '').trim() : null;
+      continue;
+    }
+    if (line.startsWith('"Inizio rilevazione"')) { inTable = true; continue; }
+    if (line.startsWith('"Dati letti"') || line.startsWith('"Dati validi"')) { inTable = false; continue; }
+
+    if (inTable) {
+      const cols = line.split('","').map(c => c.replace(/^"|"$/g, ''));
+      if (cols.length < 5) continue;
+      const [inizio, , valore, , valido] = cols;
+      const m = inizio.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+      if (!m) continue;
+      const date = `${m[3]}-${m[2]}-${m[1]}`;
+      const num  = Number(valore);
+      rows.push({
+        date,
+        precipitation_mm: Number.isFinite(num) ? num : null,
+        valid: /^s/i.test(valido || ''), // "Sì" / "Si" / eventuale mojibake sull'accento
+      });
+    }
+  }
+
+  if (!stationName) throw new Error('CSV ARPAL non riconosciuto: manca la riga "Stazione" — verifica di aver scaricato il file dal portale ufficiale ARPAL.');
+  if (!parametro || !/PRECIPITAZ/i.test(parametro)) {
+    throw new Error(`Il CSV non contiene dati di precipitazione (parametro trovato: "${parametro || 'nessuno'}") — nel portale ARPAL scegli "PRECIPITAZIONE - Precipitazione Cumulata".`);
+  }
+  if (!rows.length) throw new Error('Nessuna riga di dati trovata nel CSV.');
+
+  return { stationName, rows };
+}
+
+/**
+ * F-199 (AUDIT.md): costruisce l'update per una riga site_weather_logs a
+ * partire da un valore di precipitazione ARPAL certificato. A differenza di
+ * buildWeatherLogUpdate (che riceve un dato meteo completo da Open-Meteo),
+ * ARPAL fornisce SOLO la precipitazione — vento/temperatura/codice meteo
+ * restano quelli già salvati (ERA5/stima), la soglia viene rivalutata sulla
+ * combinazione. Stessa regola di non-sovrascrittura di un giorno già deciso
+ * da un umano (vedi buildWeatherLogUpdate/[[f159_weather_era5_reconciliation_2026_09_09]]).
+ *
+ * @param {object|null} existingRow - riga site_weather_logs esistente, o null
+ * @param {{precipitation_mm: number}} arpalRow - riga parsata da parseArpalCsv
+ * @param {string} stationName
+ * @param {object} thresholds - soglie del cantiere
+ */
+function buildArpalWeatherLogUpdate(existingRow, arpalRow, stationName, thresholds) {
+  const weather = {
+    precipitation_mm: arpalRow.precipitation_mm,
+    wind_max_kmh:     existingRow?.wind_max_kmh ?? 0,
+    temp_min:         existingRow?.temp_min_c ?? null,
+    temp_max:         existingRow?.temp_max_c ?? null,
+    weather_code:     existingRow?.weather_code ?? 0,
+    weather_desc:     existingRow?.weather_desc ?? null,
+    data_source:      'arpal_certified',
+  };
+  const update = buildWeatherLogUpdate(existingRow, weather, thresholds);
+  update.arpal_station_name = stationName;
+  update.arpal_imported_at  = new Date().toISOString();
+  return update;
+}
+
+module.exports = { getForecast, getWeatherSummary, isRainy, getActualWeather, getWeatherRange, evalThresholds, buildWeatherLogUpdate, parseArpalCsv, buildArpalWeatherLogUpdate, WMO };
