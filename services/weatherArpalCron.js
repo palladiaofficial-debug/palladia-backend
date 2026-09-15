@@ -67,8 +67,22 @@ async function arpalizeSite(site, stationCache) {
   // somma solo le ore dentro la fascia di turno configurata (fuso Europe/
   // Rome, gestito da lib/weatherShift.js), non il totale delle 24h.
   const useShift = !!site.weather_shift_enabled && !!site.weather_shift_start && !!site.weather_shift_end;
-  const { stationName, stationCode, distance_m, rows: rawRows } =
-    await resolveArpalPrecipitation(site.latitude, site.longitude, minDate, maxDate, stationCache, useShift ? 'HH' : 'GG');
+
+  let resolved;
+  try {
+    resolved = await resolveArpalPrecipitation(site.latitude, site.longitude, minDate, maxDate, stationCache, useShift ? 'HH' : 'GG');
+  } catch (err) {
+    // F-199 (AUDIT.md): senza questo, un cantiere davvero fuori copertura
+    // (nessuna stazione ARPAL entro 30km) non aggiornava MAI
+    // arpal_last_checked_at — il popup "Come funziona" nel frontend avrebbe
+    // mostrato per sempre "verrà determinata al prossimo giro automatico",
+    // un messaggio onesto solo per i primi giorni, ingannevole a tempo
+    // indeterminato. Registra il tentativo (fallito) comunque, poi rilancia
+    // l'errore — resta il fallimento visto dal chiamante per il conteggio.
+    await supabase.from('sites').update({ arpal_last_checked_at: new Date().toISOString() }).eq('id', site.id);
+    throw err;
+  }
+  const { stationName, stationCode, distance_m, rows: rawRows } = resolved;
 
   // Stazione risolta con successo: aggiorna sempre il riferimento sul
   // cantiere, anche se poi non ci sono righe da certificare in questo giro

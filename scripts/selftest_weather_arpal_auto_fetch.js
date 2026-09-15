@@ -160,12 +160,60 @@ function block4ReportLabels() {
   check('Excel: "Fonte dati" nel Riepilogo cita ARPAL, non più solo Open-Meteo/ERA5', /ARPAL/.test(String(fonteDatiRow?.getCell(2).value)), fonteDatiRow?.getCell(2).value);
 }
 
+async function block5NoStationCoverage() {
+  console.log('\nBlocco 5 — cantiere fuori copertura ARPAL: il popup non resta "in attesa" per sempre (live, Supabase reale)\n');
+
+  if (!SUPABASE_URL || !SERVICE_KEY) { skip('cantiere fuori copertura', 'fixture Supabase non configurate'); return; }
+
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+  const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const user = users?.users?.find(u => u.email === 'ci-test@palladia.internal');
+  if (!user) { skip('cantiere fuori copertura', 'utente ci-test non trovato'); return; }
+  const { data: memberships } = await admin.from('company_users').select('company_id').eq('user_id', user.id);
+  const { data: companies } = await admin.from('companies').select('id, name').in('id', (memberships||[]).map(m=>m.company_id));
+  const companyId = (companies || []).find(c => c.name === 'MSCedilizia')?.id;
+
+  // F-199 (AUDIT.md): prima di questo fix, resolveArpalPrecipitation() che
+  // lancia un errore (nessuna stazione entro 30km) faceva uscire
+  // arpalizeSite() PRIMA di scrivere arpal_last_checked_at sul cantiere —
+  // il popup "Come funziona" avrebbe mostrato per sempre "verrà determinata
+  // al prossimo giro", vero solo nei primi giorni. Coordinata in mare
+  // aperto (Mar Ligure, nessuna stazione ARPAL a terra vicina) — già
+  // verificata restituire lista vuota in selftest_weather_shift_hours.js.
+  const siteName = `TEST-E2E-ArpalNoCoverage-${crypto.randomUUID().slice(0,8)}`;
+  const { data: site } = await admin.from('sites').insert({
+    company_id: companyId, name: siteName, address: 'Mare aperto', status: 'attivo',
+    latitude: 43.0, longitude: 9.5, weather_rain_mm: 1, weather_wind_kmh: 50, weather_snow: true, weather_thunderstorm: true,
+  }).select('id').single();
+  const siteId = site.id;
+
+  await admin.from('site_weather_logs').insert({
+    company_id: companyId, site_id: siteId, log_date: '2026-09-10', precipitation_mm: 0, wind_max_kmh: 5, weather_code: 0, weather_desc: 'sereno',
+    threshold_exceeded: false, suspension_confirmed: false, suspension_dismissed: false, data_source: 'era5_confirmed', fetched_at: new Date().toISOString(),
+  });
+
+  try {
+    await runWeatherArpalCron();
+
+    const { data: siteAfter } = await admin.from('sites')
+      .select('arpal_station_name, arpal_last_checked_at')
+      .eq('id', siteId).single();
+
+    check('arpal_last_checked_at valorizzato ANCHE se nessuna stazione trovata (non solo sui successi)', !!siteAfter?.arpal_last_checked_at, siteAfter);
+    check('arpal_station_name resta null (nessuna stazione trovata davvero)', siteAfter?.arpal_station_name == null, siteAfter);
+  } finally {
+    await admin.from('site_weather_logs').delete().eq('site_id', siteId);
+    await admin.from('sites').delete().eq('id', siteId);
+  }
+}
+
 async function main() {
   console.log('\nPalladia regression — fetch automatico ARPAL, nessun upload manuale (F-199)');
   block1Pure();
   await block2LiveFallback();
   await block3LiveCron();
   block4ReportLabels();
+  await block5NoStationCoverage();
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;
 }
