@@ -136,8 +136,8 @@ async function block2LiveExportFilter() {
 
     const dates = [];
     for (let i = 2; i <= wsFiltered.rowCount; i++) dates.push(wsFiltered.getRow(i).getCell(1).value);
-    check('i 2 giorni esportati sono davvero quelli con soglia superata (06/06/2026 e non 01/06 o 03/06)',
-      dates.every(d => String(d).includes('02/06/2026') || String(d).includes('04/06/2026')), dates);
+    check('i 2 giorni esportati sono davvero quelli con soglia superata (2026-06-02 e 2026-06-04, non 06-01 o 06-03)',
+      dates.every(d => String(d).includes('2026-06-02') || String(d).includes('2026-06-04')), dates);
   } finally {
     await admin.from('site_weather_logs').delete().eq('site_id', siteId);
     await admin.from('sites').delete().eq('id', siteId);
