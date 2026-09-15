@@ -304,10 +304,19 @@ router.post('/sites/:siteId/weather-log/:date/dismiss', verifySupabaseJwt, async
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 
-  await supabase
+  // F-201 (AUDIT.md): a differenza di confirm/undo, questa route rispondeva
+  // sempre 200 {ok:true} anche quando l'update non toccava nessuna riga
+  // (data inesistente, cantiere sbagliato) — un "falso successo" lato server,
+  // la stessa classe di bug già vista su annulla/crea (F-020/F-021). Un
+  // update senza corrispondenze non è un errore per Supabase (data:[],
+  // error:null), va controllato esplicitamente col numero di righe toccate.
+  const { data: updated, error: updateErr } = await supabase
     .from('site_weather_logs')
     .update({ suspension_dismissed: true })
-    .eq('site_id', siteId).eq('log_date', date);
+    .eq('site_id', siteId).eq('log_date', date)
+    .select('id');
+  if (updateErr) return res.status(500).json({ error: 'DB_ERROR', message: updateErr.message });
+  if (!updated?.length) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
 
   const { data: pending } = await supabase
     .from('site_weather_logs').select('log_date')
