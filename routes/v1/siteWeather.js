@@ -2,7 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, getWeatherRange, buildWeatherLogUpdate, groupRowsByShape } = require('../../services/weatherService');
+const { getActualWeather, getWeatherRange, buildWeatherLogUpdate, groupRowsByShape, dataSourceRank } = require('../../services/weatherService');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../../services/weatherReport');
 const { rendererPool }                   = require('../../pdf-renderer');
@@ -93,6 +93,13 @@ router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, validate(fetc
         .eq('site_id', siteId).eq('log_date', d).maybeSingle();
 
       const update = buildWeatherLogUpdate(existing, weather, siteThresholds(site));
+      // F-200 (AUDIT.md): il guard di precedenza in buildWeatherLogUpdate può
+      // ridurre l'update a solo fetched_at (fonte più autorevole già in DB) —
+      // il chiamante deve poterlo distinguere da un aggiornamento vero, senza
+      // dover ripetere la logica di precedenza: il frontend usa "blocked" per
+      // non mostrare "Dati meteo aggiornati" quando in realtà non è cambiato
+      // nulla (F-199: "è così che guadagniamo la fiducia di tutti").
+      const blocked = !!existing && dataSourceRank(existing.data_source) > dataSourceRank(weather.data_source);
 
       const { data: row } = await supabase
         .from('site_weather_logs')
@@ -100,7 +107,7 @@ router.post('/sites/:siteId/weather-log/fetch', verifySupabaseJwt, validate(fetc
         .select()
         .single();
 
-      results.push({ date: d, ok: true, data: row });
+      results.push({ date: d, ok: true, data: row, blocked });
     } catch (err) {
       results.push({ date: d, ok: false, error: err.message });
     }
@@ -150,12 +157,25 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
     const existingByDate = new Map((existingRows || []).map(r => [r.log_date, r]));
 
     const thresholds = siteThresholds(site);
-    const rows = weatherData.map(w => ({
-      company_id: req.companyId,
-      site_id:    siteId,
-      log_date:   w.date,
-      ...buildWeatherLogUpdate(existingByDate.get(w.date), w, thresholds),
-    }));
+    const rows = weatherData.map(w => {
+      const existing = existingByDate.get(w.date);
+      return {
+        company_id: req.companyId,
+        site_id:    siteId,
+        log_date:   w.date,
+        // F-200 (AUDIT.md): marker interno, non una colonna — rimosso prima
+        // dell'upsert (vedi groupRowsByShape) — distingue una riga già
+        // certificata da una fonte più autorevole (nessun aggiornamento
+        // reale) da una riga davvero scritta, per un conteggio onesto nella
+        // risposta invece di "N giorni caricati" quando N sono per lo più
+        // giorni già ARPAL invariati.
+        _blocked: !!existing && dataSourceRank(existing.data_source) > dataSourceRank(w.data_source),
+        ...buildWeatherLogUpdate(existing, w, thresholds),
+      };
+    });
+
+    const blockedCount = rows.filter(r => r._blocked).length;
+    const dbRows = rows.map(({ _blocked, ...r }) => r);
 
     // Upsert bulk — non sovrascrive suspension_confirmed/dismissed già esistenti.
     // F-200 (AUDIT.md): le righe non hanno tutte le stesse chiavi — un giorno
@@ -166,7 +186,7 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
     // upsert misto in un'unica chiamata scriverebbe NULL sulle colonne
     // mancanti per le righe che non le hanno (PostgREST usa l'unione delle
     // colonne del batch), cancellando dati già decisi/certificati.
-    for (const batch of groupRowsByShape(rows)) {
+    for (const batch of groupRowsByShape(dbRows)) {
       const { error: upsertErr } = await supabase
         .from('site_weather_logs')
         .upsert(batch, { onConflict: 'site_id,log_date', ignoreDuplicates: false });
@@ -174,7 +194,12 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
     }
 
     const suspDays = rows.filter(r => r.threshold_exceeded).length;
-    res.json({ inserted: rows.length, suspension_alerts: suspDays });
+    // F-200 (AUDIT.md): "inserted" resta il totale (retro-compatibile), ma
+    // "updated" separa quanti giorni sono stati davvero scritti da quanti
+    // erano già certificati da una fonte migliore (nessun cambiamento reale)
+    // — il frontend usa updated per non dire "Storico caricato: N giorni"
+    // quando N sono quasi tutti invariati.
+    res.json({ inserted: rows.length, updated: rows.length - blockedCount, unchanged: blockedCount, suspension_alerts: suspDays });
 
   } catch (err) {
     console.error('[weatherBackfill]', err.message);

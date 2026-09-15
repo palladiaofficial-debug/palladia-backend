@@ -21,7 +21,16 @@
  * Blocco 2 (live HTTP, Supabase + backend reali): crea un log arpal_certified
  * di test, chiama POST /weather-log/fetch con lo stesso JWT/company-id
  * dell'app sulla stessa data, verifica nel DB che il dato resti ARPAL
- * invariato dopo la chiamata (non un ragionamento sul diff).
+ * invariato dopo la chiamata (non un ragionamento sul diff). Verifica anche
+ * che la risposta porti blocked:true — il frontend lo usa per non mostrare
+ * "Dati meteo aggiornati" quando non è cambiato nulla davvero (vedi
+ * src/test/weather-fetch-blocked-toast.test.ts nel repo frontend).
+ * Blocco 3 (live HTTP): stessa idea su POST /weather-log/backfill — un
+ * cantiere con un solo giorno già arpal_certified nel range verifica che la
+ * risposta distingua "updated" (giorni scritti davvero) da "unchanged"
+ * (giorni già certificati, non toccati) invece del solo "inserted" totale,
+ * che prima del fix il frontend leggeva come "N giorni caricati" anche
+ * quando la maggior parte erano invariati.
  */
 'use strict';
 require('dotenv').config();
@@ -158,6 +167,13 @@ async function block2LiveHttpFetchDoesNotDowngrade() {
       body: JSON.stringify({ dates: [dateISO] }),
     });
     check('POST /weather-log/fetch -> 200', res.status === 200, res.status);
+    const body = await res.json();
+    // F-200 (AUDIT.md): il frontend usa "blocked" per non mostrare "Dati
+    // meteo aggiornati" quando il backend non ha in realtà toccato nulla —
+    // src/test/weather-fetch-blocked-toast.test.ts (frontend) copre la
+    // logica del toast, questo verifica che il backend valorizzi il campo
+    // che quella logica legge.
+    check('risposta include blocked:true per il giorno già certificato ARPAL', body?.results?.[0]?.blocked === true, body);
 
     const { data: row } = await admin.from('site_weather_logs')
       .select('data_source, precipitation_mm, threshold_exceeded, arpal_station_name')
@@ -173,10 +189,69 @@ async function block2LiveHttpFetchDoesNotDowngrade() {
   }
 }
 
+async function block3LiveHttpBackfillReportsHonestCounts() {
+  console.log('\nBlocco 3 — POST /weather-log/backfill separa giorni davvero scritti da giorni già certificati (live HTTP)\n');
+
+  if (!SUPABASE_URL || !SERVICE_KEY || !ANON_KEY) { skip('backfill conteggio onesto', 'fixture Supabase non configurate'); return; }
+
+  const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+  const anon  = createClient(SUPABASE_URL, ANON_KEY, { auth: { autoRefreshToken: false, persistSession: false } });
+  const { data: users } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const user = users?.users?.find(u => u.email === 'ci-test@palladia.internal');
+  if (!user) { skip('backfill conteggio onesto', 'utente ci-test non trovato'); return; }
+  const { data: memberships } = await admin.from('company_users').select('company_id').eq('user_id', user.id);
+  const { data: companies } = await admin.from('companies').select('id, name').in('id', (memberships || []).map(m => m.company_id));
+  const companyId = (companies || []).find(c => c.name === 'MSCedilizia')?.id;
+  if (!companyId) { skip('backfill conteggio onesto', 'company MSCedilizia non trovata'); return; }
+
+  const tempPassword = 'CiTest' + Math.random().toString(36).slice(2, 10) + '!2';
+  await admin.auth.admin.updateUserById(user.id, { password: tempPassword });
+  const { data: session } = await anon.auth.signInWithPassword({ email: 'ci-test@palladia.internal', password: tempPassword });
+  const jwt = session?.session?.access_token;
+
+  const siteName = `TEST-E2E-F200-BackfillCounts-${crypto.randomUUID().slice(0, 8)}`;
+  const startDate = '2026-09-01';
+  const { data: site } = await admin.from('sites').insert({
+    company_id: companyId, name: siteName, address: 'Via Test F-200 Backfill', status: 'attivo', start_date: startDate,
+    latitude: 41.9028, longitude: 12.4964, weather_rain_mm: 1, weather_wind_kmh: 50, weather_snow: true, weather_thunderstorm: true,
+  }).select('id').single();
+  const siteId = site.id;
+
+  // Un solo giorno del range già arpal_certified — il resto va scritto ex novo.
+  await admin.from('site_weather_logs').insert({
+    company_id: companyId, site_id: siteId, log_date: startDate,
+    precipitation_mm: 5, wind_max_kmh: 5, weather_code: 61, weather_desc: 'pioggia',
+    threshold_exceeded: true, threshold_reason: 'pioggia', suspension_confirmed: false, suspension_dismissed: false,
+    data_source: 'arpal_certified', arpal_station_name: 'TEST-F200', fetched_at: new Date().toISOString(),
+  });
+
+  try {
+    const res = await fetch(`${BASE}/api/v1/sites/${siteId}/weather-log/backfill`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${jwt}`, 'X-Company-Id': companyId },
+    });
+    check('POST /weather-log/backfill -> 200', res.status === 200, res.status);
+    const body = await res.json();
+
+    check('risposta include "updated" distinto da "inserted"', typeof body.updated === 'number' && typeof body.inserted === 'number', body);
+    check('"unchanged" conta almeno il giorno già arpal_certified seminato', (body.unchanged ?? 0) >= 1, body);
+    check('inserted === updated + unchanged (nessun giorno perso nel conteggio)', body.inserted === body.updated + body.unchanged, body);
+
+    const { data: seedRow } = await admin.from('site_weather_logs')
+      .select('data_source, precipitation_mm')
+      .eq('site_id', siteId).eq('log_date', startDate).single();
+    check('il giorno seminato arpal_certified resta invariato dopo il backfill', seedRow?.data_source === 'arpal_certified' && Number(seedRow?.precipitation_mm) === 5, seedRow);
+  } finally {
+    await admin.from('site_weather_logs').delete().eq('site_id', siteId);
+    await admin.from('sites').delete().eq('id', siteId);
+  }
+}
+
 async function main() {
   console.log('\nPalladia regression — precedenza fonte dato meteo (F-200)');
   block1Pure();
   await block2LiveHttpFetchDoesNotDowngrade();
+  await block3LiveHttpBackfillReportsHonestCounts();
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;
 }
