@@ -1,0 +1,1906 @@
+[
+  {
+    "code": "ME00015",
+    "name": "ALPE GORRETO",
+    "province": "Genova",
+    "lat": 44.6047,
+    "lon": 9.2363
+  },
+  {
+    "code": "ME00062",
+    "name": "ALPE VOBBIA",
+    "province": "Genova",
+    "lat": 44.57032,
+    "lon": 9.07492
+  },
+  {
+    "code": "ME00332",
+    "name": "AMBORZASCO",
+    "province": "Genova",
+    "lat": 44.51447,
+    "lon": 9.45496
+  },
+  {
+    "code": "ME00173",
+    "name": "ARENZANO",
+    "province": "Genova",
+    "lat": 44.40416,
+    "lon": 8.67859
+  },
+  {
+    "code": "ME00310",
+    "name": "ARENZANO-PORTO",
+    "province": "Genova",
+    "lat": 44.3981,
+    "lon": 8.68775
+  },
+  {
+    "code": "ME00218",
+    "name": "BARBAGELATA",
+    "province": "Genova",
+    "lat": 44.48218,
+    "lon": 9.24202
+  },
+  {
+    "code": "ME00040",
+    "name": "BARGAGLI",
+    "province": "Genova",
+    "lat": 44.43845,
+    "lon": 9.10735
+  },
+  {
+    "code": "ME00292",
+    "name": "BARGONE",
+    "province": "Genova",
+    "lat": 44.29506,
+    "lon": 9.48136
+  },
+  {
+    "code": "ME00085",
+    "name": "BAVARI",
+    "province": "Genova",
+    "lat": 44.43209,
+    "lon": 9.01832
+  },
+  {
+    "code": "ME00233",
+    "name": "BORZONE",
+    "province": "Genova",
+    "lat": 44.42429,
+    "lon": 9.41013
+  },
+  {
+    "code": "ME00014",
+    "name": "BRUGNETO DIGA",
+    "province": "Genova",
+    "lat": 44.53635,
+    "lon": 9.20544
+  },
+  {
+    "code": "ME00016",
+    "name": "BUSALLA",
+    "province": "Genova",
+    "lat": 44.57129,
+    "lon": 8.94892
+  },
+  {
+    "code": "ME00219",
+    "name": "CABANNE",
+    "province": "Genova",
+    "lat": 44.4952,
+    "lon": 9.34647
+  },
+  {
+    "code": "ME00156",
+    "name": "CAMINATA",
+    "province": "Genova",
+    "lat": 44.33999,
+    "lon": 9.40959
+  },
+  {
+    "code": "ME00313",
+    "name": "CAMINATA",
+    "province": "Genova",
+    "lat": 44.34004,
+    "lon": 9.41004
+  },
+  {
+    "code": "ME00158",
+    "name": "CAMOGLI",
+    "province": "Genova",
+    "lat": 44.34704,
+    "lon": 9.15897
+  },
+  {
+    "code": "ME00307",
+    "name": "CAMOGLI",
+    "province": "Genova",
+    "lat": 44.34704,
+    "lon": 9.15931
+  },
+  {
+    "code": "ME00261",
+    "name": "CAMPO LIGURE",
+    "province": "Genova",
+    "lat": 44.54256,
+    "lon": 8.6939
+  },
+  {
+    "code": "ME00020",
+    "name": "CARASCO",
+    "province": "Genova",
+    "lat": 44.34615,
+    "lon": 9.34825
+  },
+  {
+    "code": "ME00114",
+    "name": "CASSAGNA",
+    "province": "Genova",
+    "lat": 44.33996,
+    "lon": 9.47037
+  },
+  {
+    "code": "ME00069",
+    "name": "CAVI DI LAVAGNA",
+    "province": "Genova",
+    "lat": 44.29669,
+    "lon": 9.3735
+  },
+  {
+    "code": "ME00308",
+    "name": "CHIAVARI",
+    "province": "Genova",
+    "lat": 44.31885,
+    "lon": 9.32978
+  },
+  {
+    "code": "ME00226",
+    "name": "CICHERO",
+    "province": "Genova",
+    "lat": 44.42107,
+    "lon": 9.32194
+  },
+  {
+    "code": "ME00068",
+    "name": "COLONIA ARNALDI",
+    "province": "Genova",
+    "lat": 44.4084,
+    "lon": 9.18148
+  },
+  {
+    "code": "ME00060",
+    "name": "CRETO",
+    "province": "Genova",
+    "lat": 44.47507,
+    "lon": 9.00714
+  },
+  {
+    "code": "ME00286",
+    "name": "CROCE ORERO",
+    "province": "Genova",
+    "lat": 44.42422,
+    "lon": 9.28492
+  },
+  {
+    "code": "ME00328",
+    "name": "CROCEFIESCHI - SANTUARIO",
+    "province": "Genova",
+    "lat": 44.58458,
+    "lon": 9.01824
+  },
+  {
+    "code": "ME00003",
+    "name": "CROCETTA DI ORERO",
+    "province": "Genova",
+    "lat": 44.52014,
+    "lon": 8.98586
+  },
+  {
+    "code": "ME00196",
+    "name": "DAVAGNA",
+    "province": "Genova",
+    "lat": 44.46781,
+    "lon": 9.09539
+  },
+  {
+    "code": "ME00155",
+    "name": "DIGA VAL NOCI",
+    "province": "Genova",
+    "lat": 44.49291,
+    "lon": 9.03475
+  },
+  {
+    "code": "ME00326",
+    "name": "FALLAROSA",
+    "province": "Genova",
+    "lat": 44.51715,
+    "lon": 9.10336
+  },
+  {
+    "code": "ME00034",
+    "name": "FIORINO",
+    "province": "Genova",
+    "lat": 44.46494,
+    "lon": 8.70493
+  },
+  {
+    "code": "ME00011",
+    "name": "FONTANA FRESCA",
+    "province": "Genova",
+    "lat": 44.4029,
+    "lon": 9.09318
+  },
+  {
+    "code": "ME00046",
+    "name": "GENOVA - BOLZANETO",
+    "province": "Genova",
+    "lat": 44.4553,
+    "lon": 8.89561
+  },
+  {
+    "code": "ME00031",
+    "name": "GENOVA - BORGO INCROCIATI",
+    "province": "Genova",
+    "lat": 44.40702,
+    "lon": 8.94957
+  },
+  {
+    "code": "ME00041",
+    "name": "GENOVA - CASTELLACCIO",
+    "province": "Genova",
+    "lat": 44.42797,
+    "lon": 8.93433
+  },
+  {
+    "code": "ME00205",
+    "name": "GENOVA - CENTRO FUNZIONALE",
+    "province": "Genova",
+    "lat": 44.40035,
+    "lon": 8.94591
+  },
+  {
+    "code": "ME00331",
+    "name": "GENOVA - CERTOSA",
+    "province": "Genova",
+    "lat": 44.42439,
+    "lon": 8.88997
+  },
+  {
+    "code": "ME00021",
+    "name": "GENOVA - DIPARTIMENTO DI FISICA",
+    "province": "Genova",
+    "lat": 44.40302,
+    "lon": 8.9718
+  },
+  {
+    "code": "ME00303",
+    "name": "GENOVA - FEREGGIANO",
+    "province": "Genova",
+    "lat": 44.42032,
+    "lon": 8.97019
+  },
+  {
+    "code": "ME00013",
+    "name": "GENOVA - FIRPO",
+    "province": "Genova",
+    "lat": 44.41094,
+    "lon": 8.95395
+  },
+  {
+    "code": "ME00327",
+    "name": "GENOVA - FIUMARA",
+    "province": "Genova",
+    "lat": 44.41141,
+    "lon": 8.88407
+  },
+  {
+    "code": "ME00087",
+    "name": "GENOVA - GAVETTE",
+    "province": "Genova",
+    "lat": 44.43439,
+    "lon": 8.96109
+  },
+  {
+    "code": "ME00302",
+    "name": "GENOVA - GEIRATO",
+    "province": "Genova",
+    "lat": 44.45966,
+    "lon": 8.97959
+  },
+  {
+    "code": "ME00192",
+    "name": "GENOVA - GRANARA",
+    "province": "Genova",
+    "lat": 44.43671,
+    "lon": 8.82023
+  },
+  {
+    "code": "ME00301",
+    "name": "GENOVA - MOLASSANA",
+    "province": "Genova",
+    "lat": 44.45433,
+    "lon": 8.98654
+  },
+  {
+    "code": "ME00047",
+    "name": "GENOVA - PEGLI",
+    "province": "Genova",
+    "lat": 44.43227,
+    "lon": 8.8246
+  },
+  {
+    "code": "ME00039",
+    "name": "GENOVA - PONTEDECIMO",
+    "province": "Genova",
+    "lat": 44.48852,
+    "lon": 8.9001
+  },
+  {
+    "code": "ME00309",
+    "name": "GENOVA - PORTO ANTICO",
+    "province": "Genova",
+    "lat": 44.40816,
+    "lon": 8.92317
+  },
+  {
+    "code": "ME00042",
+    "name": "GENOVA - PRATO",
+    "province": "Genova",
+    "lat": 44.44908,
+    "lon": 9.01292
+  },
+  {
+    "code": "ME00269",
+    "name": "GENOVA - PUNTA VAGNO",
+    "province": "Genova",
+    "lat": 44.39278,
+    "lon": 8.95222
+  },
+  {
+    "code": "ME00304",
+    "name": "GENOVA - QUEZZI",
+    "province": "Genova",
+    "lat": 44.42367,
+    "lon": 8.9726
+  },
+  {
+    "code": "ME00294",
+    "name": "GENOVA - RIVAROLO",
+    "province": "Genova",
+    "lat": 44.43788,
+    "lon": 8.88952
+  },
+  {
+    "code": "ME00216",
+    "name": "GENOVA - ROSATA",
+    "province": "Genova",
+    "lat": 44.44876,
+    "lon": 9.01531
+  },
+  {
+    "code": "ME00225",
+    "name": "GENOVA - S.ILARIO",
+    "province": "Genova",
+    "lat": 44.384,
+    "lon": 9.06066
+  },
+  {
+    "code": "ME00312",
+    "name": "GENOVA - STURLA",
+    "province": "Genova",
+    "lat": 44.39625,
+    "lon": 8.98468
+  },
+  {
+    "code": "ME00160",
+    "name": "GENOVA - UNIVERSITA'",
+    "province": "Genova",
+    "lat": 44.41561,
+    "lon": 8.92708
+  },
+  {
+    "code": "ME00212",
+    "name": "GIACOPIANE - DIGA",
+    "province": "Genova",
+    "lat": 44.46268,
+    "lon": 9.39525
+  },
+  {
+    "code": "ME00070",
+    "name": "GIACOPIANE - LAGO",
+    "province": "Genova",
+    "lat": 44.46112,
+    "lon": 9.38773
+  },
+  {
+    "code": "ME00036",
+    "name": "ISOVERDE",
+    "province": "Genova",
+    "lat": 44.53014,
+    "lon": 8.85823
+  },
+  {
+    "code": "ME00316",
+    "name": "ISOVERDE",
+    "province": "Genova",
+    "lat": 44.53013,
+    "lon": 8.85822
+  },
+  {
+    "code": "ME00048",
+    "name": "LA PRESA",
+    "province": "Genova",
+    "lat": 44.44076,
+    "lon": 9.04717
+  },
+  {
+    "code": "ME00344",
+    "name": "LAVAGNA - PORTO",
+    "province": "Genova",
+    "lat": 44.30691,
+    "lon": 9.34056
+  },
+  {
+    "code": "ME00137",
+    "name": "LAVEZZE - LAGO",
+    "province": "Genova",
+    "lat": 44.54953,
+    "lon": 8.82328
+  },
+  {
+    "code": "ME00035",
+    "name": "LERCA",
+    "province": "Genova",
+    "lat": 44.4035,
+    "lon": 8.64766
+  },
+  {
+    "code": "ME00064",
+    "name": "LOCO CARCHELLI",
+    "province": "Genova",
+    "lat": 44.55421,
+    "lon": 9.28421
+  },
+  {
+    "code": "ME00049",
+    "name": "MADONNA DELLE GRAZIE",
+    "province": "Genova",
+    "lat": 44.43344,
+    "lon": 8.74299
+  },
+  {
+    "code": "ME00052",
+    "name": "MELE",
+    "province": "Genova",
+    "lat": 44.47419,
+    "lon": 8.73312
+  },
+  {
+    "code": "ME00050",
+    "name": "MIGNANEGO",
+    "province": "Genova",
+    "lat": 44.54028,
+    "lon": 8.93816
+  },
+  {
+    "code": "ME00089",
+    "name": "MOLINETTO",
+    "province": "Genova",
+    "lat": 44.43946,
+    "lon": 8.74603
+  },
+  {
+    "code": "ME00109",
+    "name": "MONTE CAPPELLINO",
+    "province": "Genova",
+    "lat": 44.55062,
+    "lon": 8.95687
+  },
+  {
+    "code": "ME00268",
+    "name": "MONTE CAPPELLINO",
+    "province": "Genova",
+    "lat": 44.54856,
+    "lon": 8.95422
+  },
+  {
+    "code": "ME00333",
+    "name": "MONTE DI MEZZO",
+    "province": "Genova",
+    "lat": 44.5598,
+    "lon": 9.43978
+  },
+  {
+    "code": "ME00305",
+    "name": "MONTE PENNELLO",
+    "province": "Genova",
+    "lat": 44.48017,
+    "lon": 8.79867
+  },
+  {
+    "code": "ME00256",
+    "name": "MONTE PORTOFINO",
+    "province": "Genova",
+    "lat": 44.32709,
+    "lon": 9.16912
+  },
+  {
+    "code": "ME00329",
+    "name": "MONTOGGIO",
+    "province": "Genova",
+    "lat": 44.51561,
+    "lon": 9.04769
+  },
+  {
+    "code": "ME00159",
+    "name": "NEIRONE",
+    "province": "Genova",
+    "lat": 44.44588,
+    "lon": 9.18689
+  },
+  {
+    "code": "ME00285",
+    "name": "OGNIO",
+    "province": "Genova",
+    "lat": 44.44372,
+    "lon": 9.16994
+  },
+  {
+    "code": "ME00211",
+    "name": "PANESI",
+    "province": "Genova",
+    "lat": 44.34209,
+    "lon": 9.35624
+  },
+  {
+    "code": "ME00199",
+    "name": "PASSO DEL TURCHINO",
+    "province": "Genova",
+    "lat": 44.48613,
+    "lon": 8.73602
+  },
+  {
+    "code": "ME00278",
+    "name": "PIAN DEI RATTI",
+    "province": "Genova",
+    "lat": 44.39365,
+    "lon": 9.27102
+  },
+  {
+    "code": "ME00253",
+    "name": "PIANA DI SOGLIO",
+    "province": "Genova",
+    "lat": 44.39573,
+    "lon": 9.25968
+  },
+  {
+    "code": "ME00202",
+    "name": "POLANESI",
+    "province": "Genova",
+    "lat": 44.36616,
+    "lon": 9.12602
+  },
+  {
+    "code": "ME00283",
+    "name": "PRAI",
+    "province": "Genova",
+    "lat": 44.51775,
+    "lon": 8.67306
+  },
+  {
+    "code": "ME00320",
+    "name": "PRATOMOLLO",
+    "province": "Genova",
+    "lat": 44.47287,
+    "lon": 9.45876
+  },
+  {
+    "code": "ME00204",
+    "name": "PREMANICO",
+    "province": "Genova",
+    "lat": 44.41681,
+    "lon": 9.00911
+  },
+  {
+    "code": "ME00287",
+    "name": "RAPALLO",
+    "province": "Genova",
+    "lat": 44.35453,
+    "lon": 9.20928
+  },
+  {
+    "code": "ME00206",
+    "name": "REPPIA",
+    "province": "Genova",
+    "lat": 44.37488,
+    "lon": 9.45774
+  },
+  {
+    "code": "ME00074",
+    "name": "ROSSIGLIONE",
+    "province": "Genova",
+    "lat": 44.57232,
+    "lon": 8.65776
+  },
+  {
+    "code": "ME00220",
+    "name": "ROVEGNO",
+    "province": "Genova",
+    "lat": 44.57722,
+    "lon": 9.28306
+  },
+  {
+    "code": "ME00318",
+    "name": "ROVEGNO - PONTE",
+    "province": "Genova",
+    "lat": 44.56529,
+    "lon": 9.28156
+  },
+  {
+    "code": "ME00168",
+    "name": "S. ALBERTO",
+    "province": "Genova",
+    "lat": 44.45,
+    "lon": 8.83
+  },
+  {
+    "code": "ME00290",
+    "name": "S. MARGHERITA LIGURE",
+    "province": "Genova",
+    "lat": 44.3362,
+    "lon": 9.21045
+  },
+  {
+    "code": "ME00330",
+    "name": "S. MARTINO",
+    "province": "Genova",
+    "lat": 44.35945,
+    "lon": 9.34391
+  },
+  {
+    "code": "ME00207",
+    "name": "S. MICHELE",
+    "province": "Genova",
+    "lat": 44.42362,
+    "lon": 9.39401
+  },
+  {
+    "code": "ME00221",
+    "name": "S. STEFANO D'AVETO",
+    "province": "Genova",
+    "lat": 44.54886,
+    "lon": 9.45118
+  },
+  {
+    "code": "ME00201",
+    "name": "SANTUARIO MONTE GAZZO",
+    "province": "Genova",
+    "lat": 44.44247,
+    "lon": 8.84485
+  },
+  {
+    "code": "ME00177",
+    "name": "SCIARBORASCA",
+    "province": "Genova",
+    "lat": 44.40117,
+    "lon": 8.61465
+  },
+  {
+    "code": "ME00271",
+    "name": "SCIARBORASCA",
+    "province": "Genova",
+    "lat": 44.40645,
+    "lon": 8.62464
+  },
+  {
+    "code": "ME00091",
+    "name": "SCOFFERA",
+    "province": "Genova",
+    "lat": 44.47901,
+    "lon": 9.1185
+  },
+  {
+    "code": "ME00284",
+    "name": "SELLA GIASSINA",
+    "province": "Genova",
+    "lat": 44.48758,
+    "lon": 9.18206
+  },
+  {
+    "code": "ME00018",
+    "name": "SESTRI LEVANTE",
+    "province": "Genova",
+    "lat": 44.27377,
+    "lon": 9.40992
+  },
+  {
+    "code": "ME00343",
+    "name": "SESTRI LEVANTE - PONTESS1",
+    "province": "Genova",
+    "lat": 44.26672,
+    "lon": 9.4259
+  },
+  {
+    "code": "ME00019",
+    "name": "SESTRI LEVANTE - SARA",
+    "province": "Genova",
+    "lat": 44.27,
+    "lon": 9.42966
+  },
+  {
+    "code": "ME00148",
+    "name": "STATALE",
+    "province": "Genova",
+    "lat": 44.34761,
+    "lon": 9.48235
+  },
+  {
+    "code": "ME00272",
+    "name": "STATALE",
+    "province": "Genova",
+    "lat": 44.35048,
+    "lon": 9.48082
+  },
+  {
+    "code": "ME00336",
+    "name": "TANADORSO",
+    "province": "Genova",
+    "lat": 44.61948,
+    "lon": 8.91803
+  },
+  {
+    "code": "ME00339",
+    "name": "TASSANI",
+    "province": "Genova",
+    "lat": 44.29552,
+    "lon": 9.44927
+  },
+  {
+    "code": "ME00017",
+    "name": "TIGLIETO",
+    "province": "Genova",
+    "lat": 44.52561,
+    "lon": 8.60839
+  },
+  {
+    "code": "ME00138",
+    "name": "TIGLIOLO",
+    "province": "Genova",
+    "lat": 44.44327,
+    "lon": 9.36156
+  },
+  {
+    "code": "ME00110",
+    "name": "TORRIGLIA",
+    "province": "Genova",
+    "lat": 44.51685,
+    "lon": 9.15962
+  },
+  {
+    "code": "ME00335",
+    "name": "TORRIGLIA - GARAVENTA",
+    "province": "Genova",
+    "lat": 44.52931,
+    "lon": 9.17495
+  },
+  {
+    "code": "ME00337",
+    "name": "VALBREVENNA - GORRA",
+    "province": "Genova",
+    "lat": 44.53176,
+    "lon": 9.02329
+  },
+  {
+    "code": "ME00038",
+    "name": "VALLEREGIA",
+    "province": "Genova",
+    "lat": 44.52038,
+    "lon": 8.94744
+  },
+  {
+    "code": "ME00044",
+    "name": "VICOMORASSO",
+    "province": "Genova",
+    "lat": 44.48555,
+    "lon": 8.97849
+  },
+  {
+    "code": "ME00088",
+    "name": "VIGANEGO",
+    "province": "Genova",
+    "lat": 44.42846,
+    "lon": 9.06348
+  },
+  {
+    "code": "ME00293",
+    "name": "VIGNOLO",
+    "province": "Genova",
+    "lat": 44.38149,
+    "lon": 9.3738
+  },
+  {
+    "code": "ME00063",
+    "name": "VOBBIETTA",
+    "province": "Genova",
+    "lat": 44.63599,
+    "lon": 8.98149
+  },
+  {
+    "code": "ME00134",
+    "name": "AIROLE",
+    "province": "Imperia",
+    "lat": 43.87309,
+    "lon": 7.54478
+  },
+  {
+    "code": "ME00299",
+    "name": "AIROLE",
+    "province": "Imperia",
+    "lat": 43.87296,
+    "lon": 7.54484
+  },
+  {
+    "code": "ME00057",
+    "name": "BARCHEO",
+    "province": "Imperia",
+    "lat": 44.04755,
+    "lon": 7.96764
+  },
+  {
+    "code": "ME00022",
+    "name": "BESTAGNO",
+    "province": "Imperia",
+    "lat": 43.9333,
+    "lon": 8.0007
+  },
+  {
+    "code": "ME00231",
+    "name": "BORGOMARO",
+    "province": "Imperia",
+    "lat": 43.97713,
+    "lon": 7.95315
+  },
+  {
+    "code": "ME00053",
+    "name": "BORGONUOVO",
+    "province": "Imperia",
+    "lat": 43.84601,
+    "lon": 7.62104
+  },
+  {
+    "code": "ME00193",
+    "name": "BUGGIO",
+    "province": "Imperia",
+    "lat": 43.96126,
+    "lon": 7.68502
+  },
+  {
+    "code": "ME00215",
+    "name": "CERIANA",
+    "province": "Imperia",
+    "lat": 43.87968,
+    "lon": 7.77388
+  },
+  {
+    "code": "ME00281",
+    "name": "CIPRESSA",
+    "province": "Imperia",
+    "lat": 43.85263,
+    "lon": 7.92859
+  },
+  {
+    "code": "ME00296",
+    "name": "COLLA ROSSA",
+    "province": "Imperia",
+    "lat": 43.83103,
+    "lon": 7.54322
+  },
+  {
+    "code": "ME00195",
+    "name": "COLLE BELENDA",
+    "province": "Imperia",
+    "lat": 43.98152,
+    "lon": 7.69983
+  },
+  {
+    "code": "ME00291",
+    "name": "COLLE D'OGGIA",
+    "province": "Imperia",
+    "lat": 43.98131,
+    "lon": 7.86667
+  },
+  {
+    "code": "ME00025",
+    "name": "COLLE DI NAVA",
+    "province": "Imperia",
+    "lat": 44.08325,
+    "lon": 7.87331
+  },
+  {
+    "code": "ME00072",
+    "name": "DIANO CASTELLO",
+    "province": "Imperia",
+    "lat": 43.92741,
+    "lon": 8.06093
+  },
+  {
+    "code": "ME00257",
+    "name": "DIANO CASTELLO - VARCAVELLO",
+    "province": "Imperia",
+    "lat": 43.91987,
+    "lon": 8.06768
+  },
+  {
+    "code": "ME00340",
+    "name": "DOLCEACQUA - MOLINETTI",
+    "province": "Imperia",
+    "lat": 43.86053,
+    "lon": 7.62411
+  },
+  {
+    "code": "ME00187",
+    "name": "DOLCEDO",
+    "province": "Imperia",
+    "lat": 43.90674,
+    "lon": 7.95115
+  },
+  {
+    "code": "ME00254",
+    "name": "DOLCEDO",
+    "province": "Imperia",
+    "lat": 43.9059,
+    "lon": 7.9515
+  },
+  {
+    "code": "ME00054",
+    "name": "IMPERIA - OSS. METEOSISMICO",
+    "province": "Imperia",
+    "lat": 43.87957,
+    "lon": 8.01652
+  },
+  {
+    "code": "ME00185",
+    "name": "ISOLABONA",
+    "province": "Imperia",
+    "lat": 43.87758,
+    "lon": 7.63767
+  },
+  {
+    "code": "ME00315",
+    "name": "ISOLABONA",
+    "province": "Imperia",
+    "lat": 43.87765,
+    "lon": 7.63767
+  },
+  {
+    "code": "ME00232",
+    "name": "MERELLI",
+    "province": "Imperia",
+    "lat": 43.88137,
+    "lon": 7.84759
+  },
+  {
+    "code": "ME00066",
+    "name": "MONTALTO LIGURE",
+    "province": "Imperia",
+    "lat": 43.93074,
+    "lon": 7.84202
+  },
+  {
+    "code": "ME00007",
+    "name": "MONTE MAURE",
+    "province": "Imperia",
+    "lat": 43.7933,
+    "lon": 7.61888
+  },
+  {
+    "code": "ME00008",
+    "name": "PACIALLA",
+    "province": "Imperia",
+    "lat": 43.88348,
+    "lon": 8.01723
+  },
+  {
+    "code": "ME00029",
+    "name": "PASSO GHIMBEGNA",
+    "province": "Imperia",
+    "lat": 43.90463,
+    "lon": 7.73328
+  },
+  {
+    "code": "ME00342",
+    "name": "PIEVE DI TECO",
+    "province": "IDRO",
+    "lat": 44.04149,
+    "lon": 7.9206
+  },
+  {
+    "code": "ME00090",
+    "name": "PIEVE DI TECO",
+    "province": "Imperia",
+    "lat": 44.04952,
+    "lon": 7.91473
+  },
+  {
+    "code": "ME00241",
+    "name": "PIGNA",
+    "province": "Imperia",
+    "lat": 43.93297,
+    "lon": 7.66162
+  },
+  {
+    "code": "ME00341",
+    "name": "PIGNA",
+    "province": "Imperia",
+    "lat": 43.93209,
+    "lon": 7.65607
+  },
+  {
+    "code": "ME00282",
+    "name": "PIZZEGLIO",
+    "province": "Imperia",
+    "lat": 43.91862,
+    "lon": 7.69454
+  },
+  {
+    "code": "ME00224",
+    "name": "POGGIO FEARZA",
+    "province": "Imperia",
+    "lat": 44.04202,
+    "lon": 7.79343
+  },
+  {
+    "code": "ME00027",
+    "name": "PORNASSIO",
+    "province": "Imperia",
+    "lat": 44.06393,
+    "lon": 7.86644
+  },
+  {
+    "code": "ME00026",
+    "name": "RANZO",
+    "province": "Imperia",
+    "lat": 44.06542,
+    "lon": 8.00433
+  },
+  {
+    "code": "ME00024",
+    "name": "ROCCHETTA NERVINA",
+    "province": "Imperia",
+    "lat": 43.88859,
+    "lon": 7.60177
+  },
+  {
+    "code": "ME00030",
+    "name": "RUGGE DI PONTEDASSIO",
+    "province": "Imperia",
+    "lat": 43.94153,
+    "lon": 8.00619
+  },
+  {
+    "code": "ME00006",
+    "name": "SANREMO",
+    "province": "Imperia",
+    "lat": 43.82265,
+    "lon": 7.78625
+  },
+  {
+    "code": "ME00279",
+    "name": "SEBORGA",
+    "province": "Imperia",
+    "lat": 43.82756,
+    "lon": 7.6985
+  },
+  {
+    "code": "ME00228",
+    "name": "SELLA DI GOUTA",
+    "province": "Imperia",
+    "lat": 43.9396,
+    "lon": 7.60808
+  },
+  {
+    "code": "ME00314",
+    "name": "TORRI",
+    "province": "Imperia",
+    "lat": 43.83782,
+    "lon": 7.55404
+  },
+  {
+    "code": "ME00191",
+    "name": "TRIORA",
+    "province": "Imperia",
+    "lat": 43.99451,
+    "lon": 7.76242
+  },
+  {
+    "code": "ME00028",
+    "name": "VALLE ARMEA - PONTE",
+    "province": "Imperia",
+    "lat": 43.83551,
+    "lon": 7.81883
+  },
+  {
+    "code": "ME00124",
+    "name": "VALLE TANE",
+    "province": "Imperia",
+    "lat": 43.98987,
+    "lon": 7.67756
+  },
+  {
+    "code": "ME00190",
+    "name": "VENTIMIGLIA",
+    "province": "Imperia",
+    "lat": 43.78777,
+    "lon": 7.61211
+  },
+  {
+    "code": "ME00298",
+    "name": "VERDEGGIA",
+    "province": "Imperia",
+    "lat": 44.04425,
+    "lon": 7.72108
+  },
+  {
+    "code": "ME00262",
+    "name": "AMEGLIA FOCE MAGRA",
+    "province": "La Spezia",
+    "lat": 44.07884,
+    "lon": 9.9722
+  },
+  {
+    "code": "ME00096",
+    "name": "BRUGNATO",
+    "province": "La Spezia",
+    "lat": 44.23132,
+    "lon": 9.71552
+  },
+  {
+    "code": "ME00115",
+    "name": "CALICE AL C. - MOLUNGHI",
+    "province": "La Spezia",
+    "lat": 44.24894,
+    "lon": 9.83869
+  },
+  {
+    "code": "ME00213",
+    "name": "CALICE AL CORNOVIGLIO",
+    "province": "La Spezia",
+    "lat": 44.24392,
+    "lon": 9.83881
+  },
+  {
+    "code": "ME00274",
+    "name": "CARRO",
+    "province": "La Spezia",
+    "lat": 44.27525,
+    "lon": 9.59772
+  },
+  {
+    "code": "ME00276",
+    "name": "CASALE DI PIGNONE",
+    "province": "La Spezia",
+    "lat": 44.18992,
+    "lon": 9.71496
+  },
+  {
+    "code": "ME00210",
+    "name": "CASONI DI SUVERO",
+    "province": "La Spezia",
+    "lat": 44.30542,
+    "lon": 9.76581
+  },
+  {
+    "code": "ME00264",
+    "name": "CASTELNUOVO MAGRA",
+    "province": "La Spezia",
+    "lat": 44.10379,
+    "lon": 10.00705
+  },
+  {
+    "code": "ME00345",
+    "name": "CASTELNUOVO MAGRA - MONTECCHIO",
+    "province": "La Spezia",
+    "lat": 44.10752,
+    "lon": 10.01077
+  },
+  {
+    "code": "ME00102",
+    "name": "CEMBRANO",
+    "province": "La Spezia",
+    "lat": 44.35237,
+    "lon": 9.58414
+  },
+  {
+    "code": "ME00032",
+    "name": "CHIUSOLA",
+    "province": "La Spezia",
+    "lat": 44.33775,
+    "lon": 9.70429
+  },
+  {
+    "code": "ME00230",
+    "name": "CORNIOLO",
+    "province": "La Spezia",
+    "lat": 44.10632,
+    "lon": 9.73483
+  },
+  {
+    "code": "ME00227",
+    "name": "CUCCARELLO",
+    "province": "La Spezia",
+    "lat": 44.34967,
+    "lon": 9.69908
+  },
+  {
+    "code": "ME00107",
+    "name": "FORNOLA",
+    "province": "La Spezia",
+    "lat": 44.13805,
+    "lon": 9.90619
+  },
+  {
+    "code": "ME00275",
+    "name": "FRAMURA",
+    "province": "La Spezia",
+    "lat": 44.21359,
+    "lon": 9.54033
+  },
+  {
+    "code": "ME00103",
+    "name": "LA FOCE",
+    "province": "La Spezia",
+    "lat": 44.12485,
+    "lon": 9.78808
+  },
+  {
+    "code": "ME00266",
+    "name": "LA FOCE - MTE VISEGGI",
+    "province": "La Spezia",
+    "lat": 44.13254,
+    "lon": 9.7903
+  },
+  {
+    "code": "ME00071",
+    "name": "LA MACCHIA",
+    "province": "La Spezia",
+    "lat": 44.32323,
+    "lon": 9.61484
+  },
+  {
+    "code": "ME00094",
+    "name": "LA SPEZIA",
+    "province": "La Spezia",
+    "lat": 44.10703,
+    "lon": 9.82819
+  },
+  {
+    "code": "ME00209",
+    "name": "LA SPEZIA - FABIANO",
+    "province": "La Spezia",
+    "lat": 44.09449,
+    "lon": 9.8097
+  },
+  {
+    "code": "ME00223",
+    "name": "LEVANTO",
+    "province": "La Spezia",
+    "lat": 44.17143,
+    "lon": 9.60677
+  },
+  {
+    "code": "ME00095",
+    "name": "LEVANTO - SAN GOTTARDO",
+    "province": "La Spezia",
+    "lat": 44.17888,
+    "lon": 9.6187
+  },
+  {
+    "code": "ME00265",
+    "name": "LUNI - PROVASCO",
+    "province": "La Spezia",
+    "lat": 44.07491,
+    "lon": 10.00899
+  },
+  {
+    "code": "ME00217",
+    "name": "MARINELLA DI SARZANA",
+    "province": "La Spezia",
+    "lat": 44.05021,
+    "lon": 10.01409
+  },
+  {
+    "code": "ME00104",
+    "name": "MATTARANA",
+    "province": "La Spezia",
+    "lat": 44.24501,
+    "lon": 9.6151
+  },
+  {
+    "code": "ME00258",
+    "name": "MATTARANA - DATI DAL 2010.03.30",
+    "province": "La Spezia",
+    "lat": 44.24499,
+    "lon": 9.61474
+  },
+  {
+    "code": "ME00322",
+    "name": "MONTALBANO",
+    "province": "La Spezia",
+    "lat": 44.14029,
+    "lon": 9.83082
+  },
+  {
+    "code": "ME00306",
+    "name": "MONTE BEVERONE",
+    "province": "La Spezia",
+    "lat": 44.12951,
+    "lon": 9.86892
+  },
+  {
+    "code": "ME00002",
+    "name": "MONTE ROCCHETTA",
+    "province": "La Spezia",
+    "lat": 44.07129,
+    "lon": 9.93842
+  },
+  {
+    "code": "ME00083",
+    "name": "MONTEROSSO",
+    "province": "La Spezia",
+    "lat": 44.1483,
+    "lon": 9.6402
+  },
+  {
+    "code": "ME00012",
+    "name": "NASCETO",
+    "province": "La Spezia",
+    "lat": 44.27808,
+    "lon": 9.65595
+  },
+  {
+    "code": "ME00234",
+    "name": "PADIVARMA",
+    "province": "La Spezia",
+    "lat": 44.19514,
+    "lon": 9.77099
+  },
+  {
+    "code": "ME00097",
+    "name": "PIANA BATTOLLA - PONTE",
+    "province": "La Spezia",
+    "lat": 44.19801,
+    "lon": 9.84904
+  },
+  {
+    "code": "ME00321",
+    "name": "PITELLI",
+    "province": "La Spezia",
+    "lat": 44.09562,
+    "lon": 9.88761
+  },
+  {
+    "code": "ME00098",
+    "name": "PONTE COLOMBIERA",
+    "province": "La Spezia",
+    "lat": 44.06393,
+    "lon": 9.9723
+  },
+  {
+    "code": "ME00208",
+    "name": "PORTOVENERE - COMUNE",
+    "province": "La Spezia",
+    "lat": 44.052,
+    "lon": 9.83594
+  },
+  {
+    "code": "ME00277",
+    "name": "RICCO' DEL GOLFO",
+    "province": "La Spezia",
+    "lat": 44.15319,
+    "lon": 9.76373
+  },
+  {
+    "code": "ME00093",
+    "name": "ROMITO MAGRA",
+    "province": "La Spezia",
+    "lat": 44.1033,
+    "lon": 9.93045
+  },
+  {
+    "code": "ME00092",
+    "name": "S. MARGHERITA VARA",
+    "province": "La Spezia",
+    "lat": 44.2747,
+    "lon": 9.65964
+  },
+  {
+    "code": "ME00005",
+    "name": "SARZANA",
+    "province": "La Spezia",
+    "lat": 44.11227,
+    "lon": 9.96546
+  },
+  {
+    "code": "ME00273",
+    "name": "SCURTABO'",
+    "province": "La Spezia",
+    "lat": 44.40681,
+    "lon": 9.53384
+  },
+  {
+    "code": "ME00004",
+    "name": "SERO' DI ZIGNAGO",
+    "province": "La Spezia",
+    "lat": 44.26434,
+    "lon": 9.73698
+  },
+  {
+    "code": "ME00100",
+    "name": "SESTA GODANO",
+    "province": "La Spezia",
+    "lat": 44.29848,
+    "lon": 9.67751
+  },
+  {
+    "code": "ME00099",
+    "name": "TAGLIETO",
+    "province": "La Spezia",
+    "lat": 44.4053,
+    "lon": 9.6205
+  },
+  {
+    "code": "ME00105",
+    "name": "TAVARONE",
+    "province": "La Spezia",
+    "lat": 44.31274,
+    "lon": 9.54859
+  },
+  {
+    "code": "ME00229",
+    "name": "VARESE LIGURE",
+    "province": "La Spezia",
+    "lat": 44.38313,
+    "lon": 9.5842
+  },
+  {
+    "code": "ME00101",
+    "name": "VERNAZZA",
+    "province": "La Spezia",
+    "lat": 44.13732,
+    "lon": 9.68419
+  },
+  {
+    "code": "ME00347",
+    "name": "VEZZANO LIGURE - IDRO",
+    "province": "La Spezia",
+    "lat": 44.14003,
+    "lon": 9.90286
+  },
+  {
+    "code": "ME00346",
+    "name": "VEZZANO LIGURE - SALICETI",
+    "province": "La Spezia",
+    "lat": 44.14516,
+    "lon": 9.90434
+  },
+  {
+    "code": "ME00197",
+    "name": "ALASSIO",
+    "province": "Savona",
+    "lat": 44.00624,
+    "lon": 8.1693
+  },
+  {
+    "code": "ME00009",
+    "name": "ALBENGA - ISOLABELLA",
+    "province": "Savona",
+    "lat": 44.06875,
+    "lon": 8.17956
+  },
+  {
+    "code": "ME00056",
+    "name": "ALBENGA - MOLINO BRANCA",
+    "province": "Savona",
+    "lat": 44.04882,
+    "lon": 8.21077
+  },
+  {
+    "code": "ME00203",
+    "name": "ALBISOLA",
+    "province": "Savona",
+    "lat": 44.32931,
+    "lon": 8.50887
+  },
+  {
+    "code": "ME00065",
+    "name": "ALPICELLA",
+    "province": "Savona",
+    "lat": 44.40667,
+    "lon": 8.52604
+  },
+  {
+    "code": "ME00108",
+    "name": "ALTARE",
+    "province": "Savona",
+    "lat": 44.33428,
+    "lon": 8.34782
+  },
+  {
+    "code": "ME00061",
+    "name": "BOLSINE",
+    "province": "Savona",
+    "lat": 44.37236,
+    "lon": 8.57324
+  },
+  {
+    "code": "ME00255",
+    "name": "BOLSINE",
+    "province": "Savona",
+    "lat": 44.37235,
+    "lon": 8.57323
+  },
+  {
+    "code": "ME00317",
+    "name": "BOLSINE",
+    "province": "Savona",
+    "lat": 44.37234,
+    "lon": 8.57322
+  },
+  {
+    "code": "ME00077",
+    "name": "CAIRO MONTENOTTE",
+    "province": "Savona",
+    "lat": 44.40234,
+    "lon": 8.27224
+  },
+  {
+    "code": "ME00010",
+    "name": "CALICE LIGURE",
+    "province": "Savona",
+    "lat": 44.2031,
+    "lon": 8.29344
+  },
+  {
+    "code": "ME00311",
+    "name": "CALICE LIGURE - CA ROSSE",
+    "province": "Savona",
+    "lat": 44.19573,
+    "lon": 8.30205
+  },
+  {
+    "code": "ME00076",
+    "name": "CALIZZANO",
+    "province": "Savona",
+    "lat": 44.23413,
+    "lon": 8.11822
+  },
+  {
+    "code": "ME00067",
+    "name": "CAPO VADO",
+    "province": "Savona",
+    "lat": 44.25803,
+    "lon": 8.44944
+  },
+  {
+    "code": "ME00323",
+    "name": "CARCARE",
+    "province": "Savona",
+    "lat": 44.35662,
+    "lon": 8.28944
+  },
+  {
+    "code": "ME00295",
+    "name": "CARPE",
+    "province": "Savona",
+    "lat": 44.14819,
+    "lon": 8.16447
+  },
+  {
+    "code": "ME00319",
+    "name": "CARPE - CASE GARONI",
+    "province": "Savona",
+    "lat": 44.14441,
+    "lon": 8.1634
+  },
+  {
+    "code": "ME00055",
+    "name": "CASTELLARI",
+    "province": "Savona",
+    "lat": 44.14665,
+    "lon": 8.26235
+  },
+  {
+    "code": "ME00194",
+    "name": "CASTELVECCHIO DI R. B.",
+    "province": "Savona",
+    "lat": 44.13202,
+    "lon": 8.11888
+  },
+  {
+    "code": "ME00058",
+    "name": "CENESI",
+    "province": "Savona",
+    "lat": 44.07678,
+    "lon": 8.13421
+  },
+  {
+    "code": "ME00324",
+    "name": "CENGIO",
+    "province": "Savona",
+    "lat": 44.38987,
+    "lon": 8.20417
+  },
+  {
+    "code": "ME00263",
+    "name": "CISANO SUL NEVA",
+    "province": "METEO",
+    "lat": 44.08053,
+    "lon": 8.15823
+  },
+  {
+    "code": "ME00198",
+    "name": "CISANO SUL NEVA",
+    "province": "Savona",
+    "lat": 44.08552,
+    "lon": 8.14573
+  },
+  {
+    "code": "ME00106",
+    "name": "COLLE DEL MELOGNO",
+    "province": "Savona",
+    "lat": 44.23234,
+    "lon": 8.20245
+  },
+  {
+    "code": "ME00200",
+    "name": "COLLE DI CADIBONA",
+    "province": "Savona",
+    "lat": 44.33297,
+    "lon": 8.38289
+  },
+  {
+    "code": "ME00222",
+    "name": "CONNA",
+    "province": "Savona",
+    "lat": 43.97923,
+    "lon": 8.10363
+  },
+  {
+    "code": "ME00338",
+    "name": "DEGO - GIRINI",
+    "province": "Savona",
+    "lat": 44.45176,
+    "lon": 8.33939
+  },
+  {
+    "code": "ME00086",
+    "name": "ELLERA - FOGLIETTO",
+    "province": "Savona",
+    "lat": 44.36638,
+    "lon": 8.4667
+  },
+  {
+    "code": "ME00118",
+    "name": "FEGLINO",
+    "province": "Savona",
+    "lat": 44.2204,
+    "lon": 8.32505
+  },
+  {
+    "code": "ME00325",
+    "name": "FERRANIA",
+    "province": "Savona",
+    "lat": 44.36694,
+    "lon": 8.32248
+  },
+  {
+    "code": "ME00043",
+    "name": "IL PERO",
+    "province": "Savona",
+    "lat": 44.38241,
+    "lon": 8.55555
+  },
+  {
+    "code": "ME00037",
+    "name": "LAVAGNOLA",
+    "province": "Savona",
+    "lat": 44.33492,
+    "lon": 8.47521
+  },
+  {
+    "code": "ME00078",
+    "name": "MALLARE",
+    "province": "Savona",
+    "lat": 44.29318,
+    "lon": 8.29792
+  },
+  {
+    "code": "ME00140",
+    "name": "MANIE",
+    "province": "Savona",
+    "lat": 44.19866,
+    "lon": 8.37656
+  },
+  {
+    "code": "ME00289",
+    "name": "MANIE",
+    "province": "Savona",
+    "lat": 44.19325,
+    "lon": 8.37883
+  },
+  {
+    "code": "ME00270",
+    "name": "MARINA LOANO",
+    "province": "Savona",
+    "lat": 44.13386,
+    "lon": 8.26713
+  },
+  {
+    "code": "ME00280",
+    "name": "MONTAGNA",
+    "province": "Savona",
+    "lat": 44.28425,
+    "lon": 8.37136
+  },
+  {
+    "code": "ME00214",
+    "name": "MONTE SETTEPANI",
+    "province": "Savona",
+    "lat": 44.24398,
+    "lon": 8.19581
+  },
+  {
+    "code": "ME00075",
+    "name": "MONTENOTTE INFERIORE",
+    "province": "Savona",
+    "lat": 44.41259,
+    "lon": 8.41176
+  },
+  {
+    "code": "ME00073",
+    "name": "MURIALDO",
+    "province": "Savona",
+    "lat": 44.31321,
+    "lon": 8.15981
+  },
+  {
+    "code": "ME00267",
+    "name": "ONZO - PONTEROTTO",
+    "province": "Savona",
+    "lat": 44.05719,
+    "lon": 8.04134
+  },
+  {
+    "code": "ME00082",
+    "name": "OSIGLIA",
+    "province": "Savona",
+    "lat": 44.28647,
+    "lon": 8.20254
+  },
+  {
+    "code": "ME00079",
+    "name": "PIAMPALUDO",
+    "province": "Savona",
+    "lat": 44.4623,
+    "lon": 8.58092
+  },
+  {
+    "code": "ME00080",
+    "name": "PIANA CRIXIA",
+    "province": "Savona",
+    "lat": 44.48618,
+    "lon": 8.30735
+  },
+  {
+    "code": "ME00023",
+    "name": "POGLI D'ORTOVERO",
+    "province": "Savona",
+    "lat": 44.05394,
+    "lon": 8.05562
+  },
+  {
+    "code": "ME00033",
+    "name": "POGLI D'ORTOVERO",
+    "province": "Savona",
+    "lat": 44.05445,
+    "lon": 8.06393
+  },
+  {
+    "code": "ME00178",
+    "name": "PONTE POGGI",
+    "province": "Savona",
+    "lat": 44.36676,
+    "lon": 8.46609
+  },
+  {
+    "code": "ME00051",
+    "name": "SANDA",
+    "province": "Savona",
+    "lat": 44.36189,
+    "lon": 8.5273
+  },
+  {
+    "code": "ME00001",
+    "name": "SANTUARIO DI SAVONA",
+    "province": "Savona",
+    "lat": 44.34555,
+    "lon": 8.43753
+  },
+  {
+    "code": "ME00081",
+    "name": "SASSELLO",
+    "province": "Savona",
+    "lat": 44.48233,
+    "lon": 8.48572
+  },
+  {
+    "code": "ME00045",
+    "name": "SAVONA - ISTITUTO NAUTICO",
+    "province": "Savona",
+    "lat": 44.3062,
+    "lon": 8.48305
+  },
+  {
+    "code": "ME00334",
+    "name": "STELLA - BURDONE",
+    "province": "Savona",
+    "lat": 44.4061,
+    "lon": 8.50244
+  },
+  {
+    "code": "ME00059",
+    "name": "STELLA S. GIUSTINA",
+    "province": "Savona",
+    "lat": 44.41582,
+    "lon": 8.48252
+  },
+  {
+    "code": "ME00188",
+    "name": "STELLANELLO",
+    "province": "Savona",
+    "lat": 44.00021,
+    "lon": 8.05527
+  },
+  {
+    "code": "ME00189",
+    "name": "TESTICO",
+    "province": "Savona",
+    "lat": 44.00653,
+    "lon": 8.03517
+  },
+  {
+    "code": "ME00300",
+    "name": "URBE - VARA SUP.",
+    "province": "Savona",
+    "lat": 44.46953,
+    "lon": 8.62739
+  },
+  {
+    "code": "ME00288",
+    "name": "VALZEMOLA",
+    "province": "Savona",
+    "lat": 44.36959,
+    "lon": 8.19105
+  },
+  {
+    "code": "ME00240",
+    "name": "VERZI LOANO",
+    "province": "Savona",
+    "lat": 44.15611,
+    "lon": 8.23647
+  },
+  {
+    "code": "ME00297",
+    "name": "VERZI LOANO",
+    "province": "Savona",
+    "lat": 44.16397,
+    "lon": 8.22002
+  },
+  {
+    "code": "ME00248",
+    "name": "VILLA PONZA",
+    "province": "Savona",
+    "lat": 44.19476,
+    "lon": 8.32738
+  }
+]
