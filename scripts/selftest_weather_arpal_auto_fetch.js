@@ -21,6 +21,14 @@
  * Blocco 3 (live, Supabase + portale ARPAL reali): semina un cantiere di
  * test con un log NON ancora certificato, esegue runWeatherArpalCron() per
  * davvero, verifica lo stato nel DB dopo (non solo che non lanci eccezioni).
+ * Blocco 4 (puro): il titolare ha visto in produzione, sulla scheda Meteo di
+ * Corso Ugo Bassi 28 (tutte le righe già arpal_certified), la vecchia
+ * etichetta statica "Open-Meteo / ERA5 (ECMWF)" — "dovrebbe esserci scritto
+ * solo ARPAL, è così che guadagniamo la fiducia di tutti". La stessa
+ * etichetta generica ("ERA5"/"stima", mai "ARPAL") era scritta anche nel
+ * PDF/Excel esportato (services/weatherReport.js) e nella nota automatica
+ * scritta su site_suspension_days.notes al momento della conferma
+ * (routes/v1/siteWeather.js POST .../confirm) — un documento legale.
  */
 'use strict';
 require('dotenv').config();
@@ -28,6 +36,7 @@ const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 const { findNearestArpalStation, findNearestArpalStations } = require('../lib/arpalStations');
 const { resolveArpalPrecipitation } = require('../services/arpalWeatherSource');
+const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../services/weatherReport');
 const { runWeatherArpalCron } = require('../services/weatherArpalCron');
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -127,11 +136,36 @@ async function block3LiveCron() {
   }
 }
 
+function block4ReportLabels() {
+  console.log('\nBlocco 4 — PDF/Excel/nota conferma dicono "ARPAL", non più "Open-Meteo / ERA5" genericamente (puro, nessuna rete)\n');
+
+  const site = { name: 'TEST-Cantiere', start_date: '2026-08-01', end_date: '2026-10-30' };
+  const thresholds = { rain_mm: 1, wind_kmh: 50, snow: true, thunderstorm: true };
+  const rows = [
+    { log_date: '2026-08-01', precipitation_mm: 14.6, wind_max_kmh: 10, temp_min_c: 18, temp_max_c: 24, weather_desc: 'pioggia intensa', weather_code: 65, threshold_exceeded: true, threshold_reason: 'pioggia', suspension_confirmed: false, suspension_dismissed: false, data_source: 'arpal_certified', arpal_station_name: 'GENOVA - CENTRO FUNZIONALE', era5_discrepancy: false },
+    { log_date: '2026-08-02', precipitation_mm: 0.5, wind_max_kmh: 8, temp_min_c: 20, temp_max_c: 27, weather_desc: 'pioggerella', weather_code: 51, threshold_exceeded: false, threshold_reason: null, suspension_confirmed: false, suspension_dismissed: false, data_source: 'forecast_preliminary', era5_discrepancy: false },
+  ];
+
+  const html = generateWeatherReportHtml({ site, rows, thresholds });
+  check('PDF: la riga certificata ARPAL mostra "ARPAL" in colonna Fonte', /<td class="td-center">ARPAL<\/td>/.test(html), html.match(/<td class="td-center">ARPAL<\/td>/));
+  check('PDF: nessun riferimento generico a "Open-Meteo / ERA5 (ECMWF)" come unica fonte', !html.includes('Open-Meteo / ERA5 (ECMWF)'), true);
+  check('PDF: la nota fonte cita ARPAL come standard CIGO/INPS', /ARPAL/.test(html) && /circolare n\. 139/.test(html), true);
+
+  const wb = generateWeatherReportXlsx({ site, rows, thresholds });
+  const ws2 = wb.getWorksheet('Dettaglio');
+  const arpalRow = ws2.getRow(2); // riga 1 = header, riga 2 = prima riga dati (2026-08-01, arpal_certified)
+  check('Excel: riga certificata ARPAL mostra "ARPAL certificato" in colonna Fonte', String(arpalRow.getCell(10).value).startsWith('ARPAL certificato'), arpalRow.getCell(10).value);
+  const ws1 = wb.getWorksheet('Riepilogo');
+  const fonteDatiRow = ws1.getRows(1, ws1.rowCount)?.find(r => r.getCell(1).value === 'Fonte dati');
+  check('Excel: "Fonte dati" nel Riepilogo cita ARPAL, non più solo Open-Meteo/ERA5', /ARPAL/.test(String(fonteDatiRow?.getCell(2).value)), fonteDatiRow?.getCell(2).value);
+}
+
 async function main() {
   console.log('\nPalladia regression — fetch automatico ARPAL, nessun upload manuale (F-199)');
   block1Pure();
   await block2LiveFallback();
   await block3LiveCron();
+  block4ReportLabels();
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;
 }

@@ -40,7 +40,10 @@ const DAYS_IT_SHORT = ['Dom', 'Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab'];
 function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
   const confirmedDays   = rows.filter(r => r.suspension_confirmed).length;
   const totalMm         = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
-  const preliminaryDays = rows.filter(r => r.data_source !== 'era5_confirmed').length;
+  // F-199 (AUDIT.md): "preliminare" è solo forecast_preliminary — un giorno
+  // arpal_certified NON è una stima, prima veniva contato come tale (tutto
+  // ciò che non era esattamente 'era5_confirmed').
+  const preliminaryDays = rows.filter(r => r.data_source === 'forecast_preliminary').length;
   const hasDiscrepancy  = rows.some(r => r.era5_discrepancy);
 
   const tableRows = rows.map(r => {
@@ -51,16 +54,18 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to }) {
     const icon      = r.threshold_exceeded
       ? (r.threshold_reason === 'neve' ? '❄️' : r.threshold_reason === 'vento' ? '💨' : r.threshold_reason === 'temporale' ? '⛈️' : '🌧️')
       : (r.weather_code <= 3 ? '☀️' : '⛅');
-    const isEra5 = r.data_source === 'era5_confirmed';
-
     let sospensioneHtml = '—';
     if (isConf) sospensioneHtml = '<span class="badge-anom">SOSPESO</span>';
     else if (r.suspension_dismissed) sospensioneHtml = 'Ignorato';
     else if (r.threshold_exceeded) sospensioneHtml = '<span class="badge-warn">Da confermare</span>';
 
-    let fonteHtml = 'ERA5';
+    // F-199 (AUDIT.md): "ERA5" per qualunque riga non ancora certificata
+    // ARPAL nascondeva che la maggior parte dei giorni sono oggi certificati
+    // dalla stazione a terra — il titolare l'ha segnalato esplicitamente su
+    // questa stessa distinzione nell'interfaccia ("dovrebbe esserci scritto
+    // solo ARPAL, è così che guadagniamo la fiducia di tutti").
+    let fonteHtml = r.data_source === 'arpal_certified' ? 'ARPAL' : r.data_source === 'era5_confirmed' ? 'ERA5' : '<span class="badge-warn">stima</span>';
     if (r.era5_discrepancy) fonteHtml = '<span class="badge-anom">⚠ verifica</span>';
-    else if (!isEra5) fonteHtml = '<span class="badge-warn">stima</span>';
 
     return `<tr class="${rowClass}">
       <td class="td-date">${r.log_date}</td>
@@ -195,11 +200,11 @@ table { color: var(--text); }
     <span>❄️ Neve ${thresholds.snow ? '<strong>abilitata</strong>' : 'disabilitata'}</span>
     <span>⛈️ Temporale ${thresholds.thunderstorm ? '<strong>abilitato</strong>' : 'disabilitato'}</span>
   </div>
-  <p class="source-note">Fonte: Open-Meteo / ERA5 (ECMWF). Ogni giorno viene registrato inizialmente come stima (Forecast API) e riconciliato automaticamente con il dato ERA5 confermato dopo circa 10 giorni — la colonna "Fonte" nella tabella indica lo stato per ciascun giorno. Dati verificabili su open-meteo.com e archive-api.open-meteo.com.</p>
+  <p class="source-note">Fonte: precipitazione certificata dalla stazione ARPAL più vicina al cantiere — dato osservato da stazione a terra, lo standard riconosciuto da INPS per le richieste di Cassa Integrazione da maltempo (circolare n. 139 del 01/08/2016). Ogni giorno viene registrato inizialmente come stima (Open-Meteo) e certificato automaticamente da ARPAL entro circa 24 ore — la colonna "Fonte" nella tabella indica lo stato per ciascun giorno. Dati verificabili sul portale ufficiale ARPAL Liguria.</p>
 
   ${hasDiscrepancy ? `
   <div class="discrepancy-box">
-    <p><strong>⚠ Discrepanze su giorni già decisi.</strong> Il dato ERA5 confermato per uno o più giorni già decisi (confermati o ignorati, marcati "⚠ verifica" nella colonna Fonte) differisce dalla stima originale al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — verifica manualmente prima di comunicazioni ufficiali.</p>
+    <p><strong>⚠ Discrepanze su giorni già decisi.</strong> Il dato certificato (ARPAL o ERA5) per uno o più giorni già decisi (confermati o ignorati, marcati "⚠ verifica" nella colonna Fonte) differisce dalla stima originale al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente — verifica manualmente prima di comunicazioni ufficiali.</p>
   </div>` : ''}
 
   <div class="section-title">Dettaglio giornaliero</div>
@@ -235,7 +240,9 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
   const confirmedDays    = rows.filter(r => r.suspension_confirmed).length;
   const totalMm          = rows.reduce((s, r) => s + Number(r.precipitation_mm || 0), 0);
   const maxWind          = rows.reduce((m, r) => Math.max(m, Number(r.wind_max_kmh || 0)), 0);
-  const preliminaryDays  = rows.filter(r => r.data_source !== 'era5_confirmed').length;
+  // F-199 (AUDIT.md): come nell'HTML — solo forecast_preliminary è davvero
+  // "in stima", arpal_certified/era5_confirmed sono entrambi confermati.
+  const preliminaryDays  = rows.filter(r => r.data_source === 'forecast_preliminary').length;
 
   const FONT           = 'Calibri';
   const PRIMARY        = '22384F';
@@ -308,7 +315,7 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
   metaRow(ws1, 'Giorni sospensione confermati', confirmedDays);
   metaRow(ws1, 'Precipitazioni totali periodo (mm)', totalMm.toFixed(1));
   metaRow(ws1, 'Vento massimo registrato (km/h)', maxWind.toFixed(1));
-  const preliminaryRow = metaRow(ws1, 'Giorni ancora in stima preliminare (non riverificati ERA5)', `${preliminaryDays} / ${totalDays}`);
+  const preliminaryRow = metaRow(ws1, 'Giorni ancora in stima preliminare (non ancora certificati ARPAL)', `${preliminaryDays} / ${totalDays}`);
   if (preliminaryDays > 0) { preliminaryRow.getCell(1).font.color = { argb: WARNING }; preliminaryRow.getCell(2).font = { name: FONT, size: 10, bold: true, color: { argb: WARNING } }; }
   ws1.addRow([]);
 
@@ -316,7 +323,7 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
     const wRow = ws1.addRow(['⚠ Discrepanze su giorni già decisi']);
     wRow.getCell(1).font = { name: FONT, size: 11, bold: true, color: { argb: DESTRUCTIVE } };
     ws1.mergeCells(`A${ws1.lastRow.number}:B${ws1.lastRow.number}`);
-    const noteRow = ws1.addRow(['Il dato ERA5 confermato per uno o più giorni già decisi (confermati o ignorati, marcati "⚠" nel foglio Dettaglio) differisce dalla stima usata al momento della decisione, al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente: verifica manualmente prima di comunicazioni ufficiali.']);
+    const noteRow = ws1.addRow(['Il dato certificato (ARPAL o ERA5) per uno o più giorni già decisi (confermati o ignorati, marcati "⚠" nel foglio Dettaglio) differisce dalla stima usata al momento della decisione, al punto da cambiare il verdetto. Il verdetto NON è stato modificato automaticamente: verifica manualmente prima di comunicazioni ufficiali.']);
     noteRow.getCell(1).font = { name: FONT, size: 9, color: { argb: DESTRUCTIVE } };
     noteRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
     ws1.mergeCells(`A${ws1.lastRow.number}:B${ws1.lastRow.number}`);
@@ -337,8 +344,8 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
   metaRow(ws1, 'Temporale/grandine', thresholds.thunderstorm ? 'Codici WMO ≥ 95 — abilitato' : 'Disabilitato per questo cantiere');
   ws1.addRow([]);
 
-  metaRow(ws1, 'Fonte dati', 'Open-Meteo.com — ERA5 Climate Reanalysis (ECMWF)');
-  const sourceNote = ws1.addRow(['', 'Ogni giorno viene registrato come stima (Forecast API) e riconciliato automaticamente col dato ERA5 confermato dopo ~10 giorni. La colonna "Fonte" nel foglio Dettaglio indica lo stato per ciascun giorno.']);
+  metaRow(ws1, 'Fonte dati', 'ARPAL Liguria — stazione a terra (standard CIGO/INPS, circolare n. 139 del 01/08/2016)');
+  const sourceNote = ws1.addRow(['', 'Ogni giorno viene registrato come stima (Open-Meteo) e certificato automaticamente da ARPAL entro circa 24 ore. La colonna "Fonte" nel foglio Dettaglio indica lo stato per ciascun giorno.']);
   sourceNote.getCell(2).font = { name: FONT, size: 9, italic: true, color: { argb: MUTED } };
   sourceNote.getCell(2).alignment = { wrapText: true, vertical: 'top' };
   ws1.getRow(ws1.lastRow.number).height = 32;
@@ -362,7 +369,7 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
     const dt     = new Date(r.log_date + 'T00:00:00');
     const isConf = r.suspension_confirmed;
     const isPend = r.threshold_exceeded && !r.suspension_confirmed && !r.suspension_dismissed;
-    const isEra5 = r.data_source === 'era5_confirmed';
+    const isPreliminary = r.data_source === 'forecast_preliminary';
     const rowBg  = isConf ? DESTRUCTIVE_BG : isPend ? WARNING_BG : (i % 2 === 1 ? GRAY : null);
 
     const row = ws2.addRow([]);
@@ -377,8 +384,13 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to }) {
     dataCell(row.getCell(8), isConf ? 'SOSPESO' : (r.suspension_dismissed ? 'Ignorato' : (r.threshold_exceeded ? 'Da confermare' : '—')),
       { bg: rowBg, align: 'center', bold: isConf || isPend, color: isConf ? DESTRUCTIVE : (isPend ? WARNING : TEXT) });
     dataCell(row.getCell(9), r.threshold_reason || '—', { bg: rowBg, align: 'center' });
-    dataCell(row.getCell(10), (isEra5 ? 'ERA5 confermato' : 'Stima preliminare') + (r.era5_discrepancy ? ' ⚠' : ''),
-      { bg: rowBg, align: 'center', italic: !isEra5, bold: r.era5_discrepancy, color: r.era5_discrepancy ? DESTRUCTIVE : (isEra5 ? MUTED : WARNING) });
+    // F-199 (AUDIT.md): "ERA5 confermato"/"Stima preliminare" come uniche due
+    // opzioni nascondeva che la maggior parte dei giorni sono oggi
+    // certificati ARPAL (stazione a terra, non ERA5) — vedi lo stesso fix
+    // nell'interfaccia (SiteWeatherSection.tsx).
+    const fonteLabel = r.data_source === 'arpal_certified' ? 'ARPAL certificato' : r.data_source === 'era5_confirmed' ? 'ERA5 confermato' : 'Stima preliminare';
+    dataCell(row.getCell(10), fonteLabel + (r.era5_discrepancy ? ' ⚠' : ''),
+      { bg: rowBg, align: 'center', italic: isPreliminary, bold: r.era5_discrepancy, color: r.era5_discrepancy ? DESTRUCTIVE : (isPreliminary ? WARNING : MUTED) });
   });
 
   return wb;

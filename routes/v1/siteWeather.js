@@ -194,12 +194,22 @@ router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, valid
   // Recupera il log meteo
   const { data: log } = await supabase
     .from('site_weather_logs')
-    .select('id, threshold_reason, precipitation_mm, wind_max_kmh, weather_desc')
+    .select('id, threshold_reason, precipitation_mm, wind_max_kmh, weather_desc, data_source, arpal_station_name')
     .eq('site_id', siteId)
     .eq('log_date', date)
     .maybeSingle();
 
   if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
+
+  // F-199 (AUDIT.md): "Fonte: Open-Meteo / ERA5" era scritto anche quando
+  // il dato era già certificato ARPAL — il titolare l'ha segnalato
+  // esplicitamente sulla stessa distinzione nell'interfaccia ("dovrebbe
+  // esserci scritto solo ARPAL, è così che guadagniamo la fiducia di
+  // tutti"). Questa nota finisce in site_suspension_days.notes, un
+  // documento legale — deve riflettere la fonte reale del giorno.
+  const fonteLabel = log.data_source === 'arpal_certified'
+    ? `ARPAL${log.arpal_station_name ? ` (stazione ${log.arpal_station_name})` : ''}`
+    : log.data_source === 'era5_confirmed' ? 'ERA5 (Open-Meteo)' : 'stima Open-Meteo, in attesa di certificazione ARPAL';
 
   // Costruisce note automatiche con i dati meteo
   const autoNotes = [
@@ -207,7 +217,7 @@ router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, valid
     log.precipitation_mm > 0 ? `${log.precipitation_mm}mm pioggia` : null,
     log.wind_max_kmh > 0    ? `vento ${log.wind_max_kmh}km/h max` : null,
     notes ? `— ${notes}` : null,
-    '| Fonte: Open-Meteo / ERA5',
+    `| Fonte: ${fonteLabel}`,
   ].filter(Boolean).join(' · ');
 
   // Crea il giorno di sospensione
