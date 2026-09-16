@@ -556,6 +556,28 @@ async function confirmItem(itemId, companyId, userId, req = null) {
   if (destination === 'worker_certificates' && !issueDate) destination = 'worker_documents';
   if (destination === 'payslips' && (!periodYear || !periodMonth)) destination = 'worker_documents';
 
+  // F-203 (AUDIT.md): un PDF di buste paga multi-dipendente può essere
+  // spacchettato dall'IA in PIÙ segmenti per lo STESSO lavoratore/periodo
+  // (un confine di pagina rilevato per errore in mezzo a una busta paga di
+  // più pagine — visto dal vivo su un caso reale, CF identico su entrambi i
+  // segmenti). archiveChatUpload scrive su payslips con upsert
+  // company_id+worker_id+period_year+period_month (necessario per il
+  // ricarico manuale legittimo da routes/v1/payslips.js): confermare il
+  // secondo segmento sovrascriveva silenziosamente il primo, sia il file in
+  // storage (stesso path deterministico) sia la riga DB — pagine perse senza
+  // errore né traccia. Bloccato qui, non nell'upsert condiviso: lì la
+  // sovrascrittura è un comportamento voluto per il ricarico manuale.
+  if (destination === 'payslips' && workerId && periodYear && periodMonth) {
+    const { data: existingPayslip } = await supabase
+      .from('payslips').select('id, filename')
+      .eq('company_id', companyId).eq('worker_id', workerId)
+      .eq('period_year', periodYear).eq('period_month', periodMonth)
+      .maybeSingle();
+    if (existingPayslip) {
+      throw new Error(`Esiste già una busta paga per questo lavoratore e periodo ("${existingPayslip.filename}") — probabile PDF diviso in più segmenti per errore. Unisci le pagine manualmente e ricarica dalla scheda del lavoratore invece di confermare questo frammento.`);
+    }
+  }
+
   // Risolve course_type_id dal tipo corso granulare estratto (formazione_sicurezza|
   // primo_soccorso|...) — senza, il certificato viene scritto ma non compare nella
   // pagina Documenti/Formazione, che raggruppa per corso.
