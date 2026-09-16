@@ -91,7 +91,17 @@ router.get('/payer/:code/payslips', areaLimiter, verifyPayerArea, async (req, re
     .from('workers').select('id, full_name').in('id', workerIds).eq('company_id', cid);
   const nameById = Object.fromEntries((workers || []).map(w => [w.id, w.full_name]));
 
-  res.json(rows.map(r => ({ ...r, worker_name: nameById[r.worker_id] || null })));
+  const withNames = rows.map(r => ({ ...r, worker_name: nameById[r.worker_id] || null }));
+  // Stesso motivo del lato azienda (routes/v1/payslips.js /payslips/shared):
+  // il nome si risolve dopo la query, l'ordinamento per periodo+lavoratore
+  // va rifatto qui per non lasciare i lavoratori in ordine arbitrario dentro
+  // lo stesso mese.
+  withNames.sort((a, b) =>
+    b.period_year - a.period_year ||
+    b.period_month - a.period_month ||
+    (a.worker_name || '').localeCompare(b.worker_name || '', 'it'));
+
+  res.json(withNames);
 });
 
 // ── GET /api/v1/payer/:code/payslips/:id/pdf ─────────────────────────────────

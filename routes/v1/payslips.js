@@ -73,11 +73,22 @@ router.get('/payslips/draft', verifySupabaseJwt, async (req, res) => {
     .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId);
   const workerById = Object.fromEntries((workers || []).map(w => [w.id, w]));
 
-  res.json(rows.map(r => ({
+  const withNames = rows.map(r => ({
     ...r,
     worker_name:   workerById[r.worker_id]?.full_name || null,
     worker_active: workerById[r.worker_id]?.is_active ?? null,
-  })));
+  }));
+  // Il nome del lavoratore si risolve solo dopo la query principale (non è
+  // una colonna su payslips) — l'ordinamento per periodo+lavoratore va
+  // quindi rifatto qui, non lasciato all'ordine di ritorno di Postgres
+  // (altrimenti dentro lo stesso mese i lavoratori escono in un ordine
+  // arbitrario, non alfabetico).
+  withNames.sort((a, b) =>
+    b.period_year - a.period_year ||
+    b.period_month - a.period_month ||
+    (a.worker_name || '').localeCompare(b.worker_name || '', 'it'));
+
+  res.json(withNames);
 });
 
 // ── GET /api/v1/workers/:workerId/payslips ────────────────────────────────────
@@ -247,11 +258,22 @@ router.get('/payslips/shared', verifySupabaseJwt, async (req, res) => {
     .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId);
   const workerById = Object.fromEntries((workers || []).map(w => [w.id, w]));
 
-  res.json(rows.map(r => ({
+  const withNames = rows.map(r => ({
     ...r,
     worker_name:   workerById[r.worker_id]?.full_name || null,
     worker_active: workerById[r.worker_id]?.is_active ?? null,
-  })));
+  }));
+  // Il nome del lavoratore si risolve solo dopo la query principale (non è
+  // una colonna su payslips) — l'ordinamento per periodo+lavoratore va
+  // quindi rifatto qui, non lasciato all'ordine di ritorno di Postgres
+  // (altrimenti dentro lo stesso mese i lavoratori escono in un ordine
+  // arbitrario, non alfabetico).
+  withNames.sort((a, b) =>
+    b.period_year - a.period_year ||
+    b.period_month - a.period_month ||
+    (a.worker_name || '').localeCompare(b.worker_name || '', 'it'));
+
+  res.json(withNames);
 });
 
 // ── PATCH /api/v1/payslips/:id/mark-paid — segna pagata (lato azienda) ───────
