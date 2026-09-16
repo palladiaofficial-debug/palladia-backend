@@ -10,9 +10,12 @@
 // ──────────────────────────────────────────────────────────────────────────────
 
 const multer = require('multer');
+const crypto = require('crypto');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { hashPin } = require('../../lib/pinHash');
+const { auditLog } = require('../../lib/audit');
 
 const BUCKET   = 'site-documents';  // usa il bucket già esistente con prefisso payslips/
 const MAX_SIZE = 20 * 1024 * 1024;  // 20 MB
@@ -221,6 +224,109 @@ router.get('/payslips/:id/download', verifySupabaseJwt, async (req, res) => {
   const url = await _signedUrl(row.file_path);
   if (!url) return res.status(500).json({ error: 'SIGNED_URL_ERROR' });
   res.json({ url });
+});
+
+// ── GET /api/v1/payslips/shared — tutte le buste condivise, con stato pagamento
+// Alimenta la schermata "Pagamenti" lato azienda (stessi dati visti da chi fa
+// i bonifici sul suo link, vedi routes/v1/payerArea.js) — solo shared/
+// acknowledged, mai draft (non ancora revisionate internamente).
+router.get('/payslips/shared', verifySupabaseJwt, async (req, res) => {
+  const { data: rows, error } = await supabase
+    .from('payslips')
+    .select('id, worker_id, period_year, period_month, filename, status, payment_status, paid_at, paid_by, shared_at')
+    .eq('company_id', req.companyId)
+    .in('status', ['shared', 'acknowledged'])
+    .order('period_year',  { ascending: false })
+    .order('period_month', { ascending: false });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!rows?.length) return res.json([]);
+
+  const workerIds = [...new Set(rows.map(r => r.worker_id))];
+  const { data: workers } = await supabase
+    .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId);
+  const workerById = Object.fromEntries((workers || []).map(w => [w.id, w]));
+
+  res.json(rows.map(r => ({
+    ...r,
+    worker_name:   workerById[r.worker_id]?.full_name || null,
+    worker_active: workerById[r.worker_id]?.is_active ?? null,
+  })));
+});
+
+// ── PATCH /api/v1/payslips/:id/mark-paid — segna pagata (lato azienda) ───────
+router.patch('/payslips/:id/mark-paid', verifySupabaseJwt, async (req, res) => {
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  const { data, error } = await supabase
+    .from('payslips')
+    .update({ payment_status: 'pagata', paid_at: new Date().toISOString(), paid_by: 'company' })
+    .eq('id', id).eq('company_id', req.companyId)
+    .select('id');
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data?.length) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json({ ok: true });
+});
+
+// ── PATCH /api/v1/payslips/:id/mark-unpaid — annulla (lato azienda) ──────────
+router.patch('/payslips/:id/mark-unpaid', verifySupabaseJwt, async (req, res) => {
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  const { data, error } = await supabase
+    .from('payslips')
+    .update({ payment_status: 'da_pagare', paid_at: null, paid_by: null })
+    .eq('id', id).eq('company_id', req.companyId)
+    .select('id');
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data?.length) return res.status(404).json({ error: 'NOT_FOUND' });
+  res.json({ ok: true });
+});
+
+// ── GET /api/v1/payslips/payer-access — stato dell'accesso per chi paga ──────
+// Non torna MAI il PIN (solo l'hash esiste lato server) — solo se un accesso
+// esiste già e quando è stato impostato il PIN, per decidere se la UI mostra
+// "genera" o "rigenera".
+router.get('/payslips/payer-access', verifySupabaseJwt, async (req, res) => {
+  const { data } = await supabase
+    .from('company_payer_access')
+    .select('access_code, pin_set_at')
+    .eq('company_id', req.companyId)
+    .maybeSingle();
+  res.json(data || null);
+});
+
+// ── POST /api/v1/payslips/payer-access — genera/rigenera l'accesso ───────────
+// Stesso principio del PIN lavoratore (F-102, AUDIT.md — vedi
+// POST /workers/:workerId/area-pin): il PIN in chiaro torna UNA SOLA VOLTA in
+// questa risposta, mai salvato né loggato altrove, solo il suo hash bcrypt.
+// Il link va comunicato al professionista fuori da questo sistema.
+router.post('/payslips/payer-access', verifySupabaseJwt, async (req, res) => {
+  const { data: existing } = await supabase
+    .from('company_payer_access').select('access_code').eq('company_id', req.companyId).maybeSingle();
+
+  const accessCode = existing?.access_code || crypto.randomBytes(9).toString('hex').toUpperCase();
+  const pin = String(Math.floor(100000 + Math.random() * 900000)); // 6 cifre
+  const pinHash = await hashPin(pin);
+
+  const { error } = await supabase
+    .from('company_payer_access')
+    .upsert({
+      company_id: req.companyId, access_code: accessCode,
+      pin_hash: pinHash, pin_set_at: new Date().toISOString(),
+    }, { onConflict: 'company_id' });
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  auditLog({
+    companyId: req.companyId, userId: req.user?.id, userRole: req.userRole,
+    action: 'payslips.payer_access_regenerated', targetType: 'company', targetId: req.companyId, req,
+  });
+
+  res.json({ access_code: accessCode, pin });
 });
 
 // ── DELETE /api/v1/payslips/:id ───────────────────────────────────────────────

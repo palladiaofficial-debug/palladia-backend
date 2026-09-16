@@ -85,6 +85,7 @@ router.use('/', require('./badgePunch'));
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./workerArea'));
+router.use('/', require('./payerArea'));
 
 // Consultazione fatture via Delega Unificata (sola lettura) — nessun webhook
 // pubblico, solo rotte azienda (JWT) — vedi services/sdiConsultation.js.
