@@ -326,11 +326,14 @@ router.get('/payslips/payer-access', verifySupabaseJwt, async (req, res) => {
 // POST /workers/:workerId/area-pin): il PIN in chiaro torna UNA SOLA VOLTA in
 // questa risposta, mai salvato né loggato altrove, solo il suo hash bcrypt.
 // Il link va comunicato al professionista fuori da questo sistema.
+//
+// "Rigenera" crea un access_code NUOVO (non solo un nuovo PIN sullo stesso
+// link): se il link fosse finito nel posto sbagliato (email inoltrata,
+// dispositivo condiviso), tenere lo stesso link e cambiare solo il PIN
+// lascerebbe comunque un bersaglio fisso da tentare nel tempo. Un
+// rigenera = link vecchio morto, non solo PIN vecchio morto.
 router.post('/payslips/payer-access', verifySupabaseJwt, async (req, res) => {
-  const { data: existing } = await supabase
-    .from('company_payer_access').select('access_code').eq('company_id', req.companyId).maybeSingle();
-
-  const accessCode = existing?.access_code || crypto.randomBytes(9).toString('hex').toUpperCase();
+  const accessCode = crypto.randomBytes(9).toString('hex').toUpperCase();
   const pin = String(Math.floor(100000 + Math.random() * 900000)); // 6 cifre
   const pinHash = await hashPin(pin);
 

@@ -143,15 +143,20 @@ async function main() {
     check('lo stato REALE in DB torna "da_pagare", paid_at/paid_by azzerati',
       rowAfterUnpaid?.payment_status === 'da_pagare' && !rowAfterUnpaid?.paid_at && !rowAfterUnpaid?.paid_by, rowAfterUnpaid);
 
-    // ── rigenerare l'accesso invalida il PIN precedente ──────────────────────
+    // ── rigenerare l'accesso crea un link NUOVO e invalida quello vecchio ────
+    // Non solo un nuovo PIN sullo stesso link: se il link fosse finito nel
+    // posto sbagliato, il vecchio codice deve smettere di funzionare anche
+    // con qualunque PIN — non restare un bersaglio fisso da tentare nel tempo.
     const regenRes = await fetch(`${API_BASE}/payslips/payer-access`, { method: 'POST', headers: authHeaders });
     const regenBody = await regenRes.json();
-    const oldPinRes = await fetch(`${API_BASE}/payer/${accessCode}/auth`, {
+    const oldLinkRes = await fetch(`${API_BASE}/payer/${accessCode}/auth`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
     });
-    check('rigenerare l\'accesso invalida subito il PIN precedente (stesso access_code)',
-      regenRes.status === 200 && regenBody.access_code === accessCode && oldPinRes.status === 401,
-      { regenStatus: regenRes.status, sameCode: regenBody.access_code === accessCode, oldPinStatus: oldPinRes.status });
+    const oldLinkBody = await oldLinkRes.json().catch(() => ({}));
+    check('rigenerare l\'accesso genera un access_code DIVERSO da quello vecchio',
+      regenRes.status === 200 && !!regenBody.access_code && regenBody.access_code !== accessCode, regenBody);
+    check('il vecchio link (vecchio access_code) smette di funzionare, con qualsiasi PIN',
+      oldLinkRes.status === 401 && oldLinkBody.error === 'AUTH_FAILED', { status: oldLinkRes.status, body: oldLinkBody });
   } finally {
     await supabase.from('payslips').delete().eq('id', payslip.id);
     await supabase.storage.from(BUCKET).remove([storagePath]).catch(() => {});

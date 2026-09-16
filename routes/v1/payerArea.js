@@ -18,6 +18,7 @@ const rateLimit = require('express-rate-limit');
 const supabase  = require('../../lib/supabase');
 const { signPayerToken, verifyPayerArea, TOKEN_TTL } = require('../../lib/payerAuth');
 const { verifyPin } = require('../../lib/pinHash');
+const { auditLog } = require('../../lib/audit');
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -61,6 +62,12 @@ router.post('/payer/:code/auth', authLimiter, async (req, res) => {
   }
 
   const token = signPayerToken({ companyId: access.company_id, accessCode: code.toUpperCase() });
+
+  auditLog({
+    companyId: access.company_id, userId: null, userRole: 'payer',
+    action: 'payer_area.login', targetType: 'company', targetId: access.company_id, req,
+  });
+
   res.json({ token, expires_in: TOKEN_TTL });
 });
 
@@ -139,6 +146,12 @@ router.post('/payer/:code/payslips/:id/mark-paid', areaLimiter, verifyPayerArea,
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!data) return res.status(404).json({ error: 'PAYSLIP_NOT_FOUND' });
+
+  auditLog({
+    companyId: cid, userId: null, userRole: 'payer',
+    action: 'payslip.mark_paid', targetType: 'payslips', targetId: req.params.id, req,
+  });
+
   res.json({ ok: true });
 });
 
@@ -155,6 +168,12 @@ router.post('/payer/:code/payslips/:id/mark-unpaid', areaLimiter, verifyPayerAre
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!data) return res.status(404).json({ error: 'PAYSLIP_NOT_FOUND' });
+
+  auditLog({
+    companyId: cid, userId: null, userRole: 'payer',
+    action: 'payslip.mark_unpaid', targetType: 'payslips', targetId: req.params.id, req,
+  });
+
   res.json({ ok: true });
 });
 
