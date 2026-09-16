@@ -102,7 +102,24 @@ async function main() {
     const wrongRes = await fetch(`${API_BASE}/payer/${accessCode}/auth`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: wrongPin }),
     });
+    const wrongBody = await wrongRes.json().catch(() => ({}));
     check('login con PIN sbagliato viene rifiutato (401)', wrongRes.status === 401, wrongRes.status);
+    check('PIN sbagliato su un link VALIDO dà "PIN non corretto" (AUTH_FAILED)',
+      wrongBody.error === 'AUTH_FAILED', wrongBody);
+
+    // ── F-204 (AUDIT.md): un link SCADUTO (access_code inesistente, es. dopo
+    // una rigenerazione) deve dare un errore DISTINTO da "PIN sbagliato" —
+    // trovato dal vivo: un titolare ha rigenerato l'accesso pensando di
+    // cambiare solo il PIN, il professionista con il link vecchio vedeva
+    // "PIN non corretto" qualunque cifra inserisse, indistinguibile da un
+    // vero errore di digitazione.
+    const deadLinkRes = await fetch(`${API_BASE}/payer/AAAAAAAAAAAAAAAAAA/auth`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin: '111111' }),
+    });
+    const deadLinkBody = await deadLinkRes.json().catch(() => ({}));
+    check('un link inesistente/scaduto dà LINK_INVALID, non lo stesso errore generico del PIN sbagliato',
+      deadLinkRes.status === 401 && deadLinkBody.error === 'LINK_INVALID' && deadLinkBody.error !== wrongBody.error,
+      { deadLinkBody, wrongBody });
 
     // ── login col PIN vero funziona ──────────────────────────────────────────
     const rightRes = await fetch(`${API_BASE}/payer/${accessCode}/auth`, {

@@ -52,7 +52,15 @@ router.post('/payer/:code/auth', authLimiter, async (req, res) => {
     .maybeSingle();
 
   if (!access) {
-    return res.status(401).json({ error: 'AUTH_FAILED', message: 'PIN non corretto.' });
+    // Distinto da PIN sbagliato (F-204, AUDIT.md): rigenerare l'accesso
+    // cambia anche il link (non solo il PIN, vedi la nota su
+    // POST /payslips/payer-access) — chi ha ancora il link vecchio vedeva
+    // "PIN non corretto" qualunque cifra inserisse, indistinguibile da un
+    // vero errore di digitazione. access_code è un token ad alta entropia
+    // (18 esadecimali) — dire che QUESTO specifico codice non esiste non
+    // apre a enumerazione, non è un identificativo indovinabile come uno
+    // username.
+    return res.status(401).json({ error: 'LINK_INVALID', message: 'Questo link non è più valido. Chiedi all\'azienda il link aggiornato.' });
   }
   if (!access.pin_hash) {
     return res.status(401).json({ error: 'PIN_NOT_SET', message: 'PIN non ancora impostato. Contatta l\'azienda per riceverlo.' });
