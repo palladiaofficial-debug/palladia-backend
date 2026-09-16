@@ -172,8 +172,8 @@ async function main() {
     const oldLinkBody = await oldLinkRes.json().catch(() => ({}));
     check('rigenerare l\'accesso genera un access_code DIVERSO da quello vecchio',
       regenRes.status === 200 && !!regenBody.access_code && regenBody.access_code !== accessCode, regenBody);
-    check('il vecchio link (vecchio access_code) smette di funzionare, con qualsiasi PIN',
-      oldLinkRes.status === 401 && oldLinkBody.error === 'AUTH_FAILED', { status: oldLinkRes.status, body: oldLinkBody });
+    check('il vecchio link (vecchio access_code) smette di funzionare, con qualsiasi PIN — e ora lo dice chiaro (F-204: LINK_INVALID, non il generico AUTH_FAILED)',
+      oldLinkRes.status === 401 && oldLinkBody.error === 'LINK_INVALID', { status: oldLinkRes.status, body: oldLinkBody });
   } finally {
     await supabase.from('payslips').delete().eq('id', payslip.id);
     await supabase.storage.from(BUCKET).remove([storagePath]).catch(() => {});
