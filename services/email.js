@@ -475,6 +475,57 @@ async function sendCoordinatorNoteAlert({ companyId, siteName, coordinatorName, 
   });
 }
 
+// ─── Email: Magic link accesso pagamenti buste paga ───────────────────────────
+// Sostituisce il link+PIN (migrazione 214→215, AUDIT.md): la consegna diretta
+// via email toglie il passaggio manuale (copia-incolla su WhatsApp) che ha
+// causato ore reali di confusione — chi apre l'email apre sempre l'ultimo
+// link valido, non un messaggio vecchio ripescato in una chat.
+
+/**
+ * @param {{ to: string, companyName: string, accessUrl: string }} opts
+ */
+async function sendPayerAccessEmail({ to, companyName, accessUrl }) {
+  function esc(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Buste paga da pagare</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      <strong style="color:#1a1a1a;">${esc(companyName)}</strong> ti ha dato accesso alla lista delle buste paga
+      da pagare su Palladia.
+    </p>
+
+    <table width="100%" cellpadding="0" cellspacing="0"
+      style="background:#f8f8f5;border-radius:10px;border:1px solid #e5e5e0;margin-bottom:24px;">
+      <tr>
+        <td style="padding:20px 24px;">
+          <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.6;">
+            Il link ti mostra la lista di tutti i lavoratori con le buste paga già condivise, ti fa aprire
+            il PDF vero di ognuna per l'importo, e ti lascia segnare quali hai già pagato — niente da
+            installare, niente password da ricordare.<br/><br/>
+            Nessun codice da digitare: basta aprire questo link.
+          </p>
+        </td>
+      </tr>
+    </table>
+
+    ${btn('Apri le buste paga da pagare →', accessUrl)}
+
+    <p style="margin:28px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Se non ti aspettavi questa email, ignorala — nessun accesso è stato concesso senza il tuo consenso.
+      Se in futuro perdi questo link, chiedi a ${esc(companyName)} di inviartene uno nuovo.
+    </p>
+  `;
+
+  return getResend().emails.send({
+    from: FROM,
+    to,
+    subject: `Buste paga da pagare — ${companyName}`,
+    html: layout('Buste paga da pagare', body),
+  });
+}
+
 // ─── Email: Magic link Portale Professionisti ─────────────────────────────────
 
 /**
@@ -2502,6 +2553,7 @@ module.exports = {
   sendCoordinatorNoteAlert,
   sendCoordinatorRecoveryEmail,
   sendProMagicLinkEmail,
+  sendPayerAccessEmail,
   sendMemberRemovedEmail,
   sendNonconformityAlert,
   sendNonconformityUpdate,

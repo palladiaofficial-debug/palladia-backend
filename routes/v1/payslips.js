@@ -11,11 +11,31 @@
 
 const multer = require('multer');
 const crypto = require('crypto');
+const { z } = require('zod');
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { hashPin } = require('../../lib/pinHash');
+const { validate } = require('../../middleware/validate');
 const { auditLog } = require('../../lib/audit');
+const { sendPayerAccessEmail } = require('../../services/email');
+
+const PAYER_SESSION_TTL_DAYS = 365; // stesso orizzonte del Portale Professionisti (coordinator_pro_sessions)
+
+function isAdminOrOwner(role) {
+  return role === 'owner' || role === 'admin';
+}
+
+function hashToken(t) {
+  return crypto.createHash('sha256').update(t).digest('hex');
+}
+
+function appUrl() {
+  return (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
+}
+
+const payerInviteSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(320),
+});
 
 const BUCKET   = 'site-documents';  // usa il bucket già esistente con prefisso payslips/
 const MAX_SIZE = 20 * 1024 * 1024;  // 20 MB
@@ -308,50 +328,87 @@ router.patch('/payslips/:id/mark-unpaid', verifySupabaseJwt, async (req, res) =>
   res.json({ ok: true });
 });
 
-// ── GET /api/v1/payslips/payer-access — stato dell'accesso per chi paga ──────
-// Non torna MAI il PIN (solo l'hash esiste lato server) — solo se un accesso
-// esiste già e quando è stato impostato il PIN, per decidere se la UI mostra
-// "genera" o "rigenera".
-router.get('/payslips/payer-access', verifySupabaseJwt, async (req, res) => {
-  const { data } = await supabase
-    .from('company_payer_access')
-    .select('access_code, pin_set_at')
+// ── GET /api/v1/payslips/payer-sessions — chi ha accesso per pagare ──────────
+// Sostituisce company_payer_access (migrazione 215, AUDIT.md F-204 e
+// seguenti): niente più link+PIN da rigenerare e ricopiare a mano — un
+// invito via email diretta, più inviti allo stesso indirizzo restano tutti
+// validi. Non torna mai il token (solo l'hash esiste lato server).
+router.get('/payslips/payer-sessions', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase
+    .from('payslip_payer_sessions')
+    .select('id, email, created_at, last_used_at, expires_at, revoked_at')
     .eq('company_id', req.companyId)
-    .maybeSingle();
-  res.json(data || null);
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json(data || []);
 });
 
-// ── POST /api/v1/payslips/payer-access — genera/rigenera l'accesso ───────────
-// Stesso principio del PIN lavoratore (F-102, AUDIT.md — vedi
-// POST /workers/:workerId/area-pin): il PIN in chiaro torna UNA SOLA VOLTA in
-// questa risposta, mai salvato né loggato altrove, solo il suo hash bcrypt.
-// Il link va comunicato al professionista fuori da questo sistema.
-//
-// "Rigenera" crea un access_code NUOVO (non solo un nuovo PIN sullo stesso
-// link): se il link fosse finito nel posto sbagliato (email inoltrata,
-// dispositivo condiviso), tenere lo stesso link e cambiare solo il PIN
-// lascerebbe comunque un bersaglio fisso da tentare nel tempo. Un
-// rigenera = link vecchio morto, non solo PIN vecchio morto.
-router.post('/payslips/payer-access', verifySupabaseJwt, async (req, res) => {
-  const accessCode = crypto.randomBytes(9).toString('hex').toUpperCase();
-  const pin = String(Math.floor(100000 + Math.random() * 900000)); // 6 cifre
-  const pinHash = await hashPin(pin);
+// ── POST /api/v1/payslips/payer-invite — invia l'accesso via email ───────────
+// Il token in chiaro non torna MAI nella risposta HTTP: va SOLO nell'email
+// inviata all'indirizzo indicato (services/email.js::sendPayerAccessEmail),
+// stesso principio del magic link del Portale Professionisti
+// (coordinator_pro_sessions, routes/v1/coordinatorPro.js) — a differenza del
+// vecchio PIN qui non c'è nessun valore da ricopiare a mano su un altro
+// canale: chi lo riceve clicca e basta, l'unico modo di procurarsi un link
+// valido è essere il destinatario reale di quella email.
+router.post('/payslips/payer-invite', verifySupabaseJwt, validate(payerInviteSchema), async (req, res) => {
+  if (!isAdminOrOwner(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo owner e admin possono invitare chi paga.' });
+  }
+  const { email } = req.body;
 
-  const { error } = await supabase
-    .from('company_payer_access')
-    .upsert({
-      company_id: req.companyId, access_code: accessCode,
-      pin_hash: pinHash, pin_set_at: new Date().toISOString(),
-    }, { onConflict: 'company_id' });
+  const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
 
+  const token = crypto.randomBytes(32).toString('hex');
+  const expiresAt = new Date(Date.now() + PAYER_SESSION_TTL_DAYS * 86400000).toISOString();
+
+  const { error } = await supabase.from('payslip_payer_sessions').insert({
+    company_id: req.companyId, email, token_hash: hashToken(token), expires_at: expiresAt,
+  });
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
+
+  try {
+    await sendPayerAccessEmail({
+      to: email, companyName: company?.name || 'La tua azienda',
+      accessUrl: `${appUrl()}/pagamenti/${token}`,
+    });
+  } catch (err) {
+    console.error('[payslips/payer-invite] invio email fallito:', err.message);
+    return res.status(502).json({ error: 'EMAIL_FAILED', message: 'Accesso creato ma l\'invio dell\'email è fallito. Riprova.' });
+  }
 
   auditLog({
     companyId: req.companyId, userId: req.user?.id, userRole: req.userRole,
-    action: 'payslips.payer_access_regenerated', targetType: 'company', targetId: req.companyId, req,
+    action: 'payslips.payer_invited', targetType: 'company', targetId: req.companyId,
+    payload: { email }, req,
   });
 
-  res.json({ access_code: accessCode, pin });
+  res.json({ ok: true, email });
+});
+
+// ── POST /api/v1/payslips/payer-sessions/:id/revoke — revoca un accesso ──────
+router.post('/payslips/payer-sessions/:id/revoke', verifySupabaseJwt, async (req, res) => {
+  if (!isAdminOrOwner(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN' });
+  }
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'INVALID_ID' });
+
+  const { data, error } = await supabase
+    .from('payslip_payer_sessions')
+    .update({ revoked_at: new Date().toISOString() })
+    .eq('id', id).eq('company_id', req.companyId)
+    .select('id, email');
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  if (!data?.length) return res.status(404).json({ error: 'NOT_FOUND' });
+
+  auditLog({
+    companyId: req.companyId, userId: req.user?.id, userRole: req.userRole,
+    action: 'payslips.payer_access_revoked', targetType: 'payslip_payer_sessions', targetId: id,
+    payload: { email: data[0].email }, req,
+  });
+
+  res.json({ ok: true });
 });
 
 // ── DELETE /api/v1/payslips/:id ───────────────────────────────────────────────

@@ -1,32 +1,31 @@
 'use strict';
-// ── Area Pagamenti (pubblica, PIN) ────────────────────────────────────────────
+// ── Area Pagamenti (pubblica, magic link via email) ──────────────────────────
 // Accesso per chi fa i bonifici (spesso uno studio/professionista esterno,
 // non un utente Palladia) alla lista buste paga condivise, per segnare cosa
-// è stato pagato — stesso schema di sicurezza dell'area lavoratore
-// (routes/v1/workerArea.js, F-102): un codice nell'URL + un PIN a 6 cifre
-// generato dall'amministratore (migrazione 214, AUDIT.md).
+// è stato pagato — stesso schema già collaudato in produzione per il
+// Portale Professionisti (coordinator_pro_sessions, routes/v1/coordinatorPro.js).
 //
-// POST /api/v1/payer/:code/auth                      — login con PIN
-// GET  /api/v1/payer/:code/payslips                   — buste paga condivise, tutte le aziende è sempre UNA sola (scope del codice)
-// GET  /api/v1/payer/:code/payslips/:id/pdf           — URL firmato PDF
-// POST /api/v1/payer/:code/payslips/:id/mark-paid     — segna pagata
-// POST /api/v1/payer/:code/payslips/:id/mark-unpaid   — annulla
+// Sostituisce il link+PIN della migrazione 214 (AUDIT.md, F-204 e seguenti):
+// il PIN era tecnicamente corretto ma nella pratica ha causato ore di
+// confusione reale — ogni rigenerazione creava un nuovo link, l'azienda
+// doveva ricopiarlo a mano su WhatsApp, il destinatario riapriva un
+// messaggio vecchio dalla stessa chat. Qui l'unico modo di ottenere un link
+// è riceverlo via email diretta (POST /payslips/payer-invite, lato azienda)
+// — nessun copia-incolla manuale in mezzo, e più inviti allo stesso
+// indirizzo restano TUTTI validi (non si invalidano a vicenda) finché non
+// scadono o vengono revocati esplicitamente.
+//
+// GET  /api/v1/payer/:token/payslips                   — buste paga condivise
+// GET  /api/v1/payer/:token/payslips/:id/pdf            — URL firmato PDF
+// POST /api/v1/payer/:token/payslips/:id/mark-paid      — segna pagata
+// POST /api/v1/payer/:token/payslips/:id/mark-unpaid    — annulla
 // ──────────────────────────────────────────────────────────────────────────────
 
+const crypto    = require('crypto');
 const router    = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const supabase  = require('../../lib/supabase');
-const { signPayerToken, verifyPayerArea, TOKEN_TTL } = require('../../lib/payerAuth');
-const { verifyPin } = require('../../lib/pinHash');
 const { auditLog } = require('../../lib/audit');
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max:      5,
-  standardHeaders: true,
-  legacyHeaders:   false,
-  message: { error: 'TOO_MANY_ATTEMPTS', message: 'Troppi tentativi. Riprova tra 15 minuti.' },
-});
 
 const areaLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -36,59 +35,45 @@ const areaLimiter = rateLimit({
   message: { error: 'RATE_LIMIT_EXCEEDED' },
 });
 
-// ── POST /api/v1/payer/:code/auth ─────────────────────────────────────────────
-router.post('/payer/:code/auth', authLimiter, async (req, res) => {
-  const { code } = req.params;
-  const { pin }  = req.body || {};
+function hashToken(t) {
+  return crypto.createHash('sha256').update(t).digest('hex');
+}
 
-  if (!pin || typeof pin !== 'string' || !/^\d{6}$/.test(pin.trim())) {
-    return res.status(400).json({ error: 'INVALID_PIN', message: 'Il PIN deve avere 6 cifre.' });
-  }
+function isValidToken(t) {
+  return typeof t === 'string' && t.length === 64 && /^[0-9a-f]+$/i.test(t);
+}
 
-  const { data: access } = await supabase
-    .from('company_payer_access')
-    .select('company_id, pin_hash')
-    .eq('access_code', code.toUpperCase())
+async function resolvePayerSession(token) {
+  if (!isValidToken(token)) return null;
+  const { data } = await supabase
+    .from('payslip_payer_sessions')
+    .select('id, company_id, email')
+    .eq('token_hash', hashToken(token))
+    .is('revoked_at', null)
+    .gt('expires_at', new Date().toISOString())
     .maybeSingle();
+  return data || null;
+}
 
-  if (!access) {
-    // Distinto da PIN sbagliato (F-204, AUDIT.md): rigenerare l'accesso
-    // cambia anche il link (non solo il PIN, vedi la nota su
-    // POST /payslips/payer-access) — chi ha ancora il link vecchio vedeva
-    // "PIN non corretto" qualunque cifra inserisse, indistinguibile da un
-    // vero errore di digitazione. access_code è un token ad alta entropia
-    // (18 esadecimali) — dire che QUESTO specifico codice non esiste non
-    // apre a enumerazione, non è un identificativo indovinabile come uno
-    // username.
-    return res.status(401).json({ error: 'LINK_INVALID', message: 'Questo link non è più valido. Chiedi all\'azienda il link aggiornato.' });
+async function verifyPayerToken(req, res, next) {
+  const session = await resolvePayerSession(req.params.token);
+  if (!session) {
+    return res.status(401).json({ error: 'LINK_INVALID', message: 'Questo link non è più valido. Chiedi all\'azienda di inviartene uno nuovo.' });
   }
-  if (!access.pin_hash) {
-    return res.status(401).json({ error: 'PIN_NOT_SET', message: 'PIN non ancora impostato. Contatta l\'azienda per riceverlo.' });
-  }
-  if (!(await verifyPin(pin.trim(), access.pin_hash))) {
-    return res.status(401).json({ error: 'AUTH_FAILED', message: 'PIN non corretto.' });
-  }
+  req.payerSession = session;
+  supabase.from('payslip_payer_sessions').update({ last_used_at: new Date().toISOString() }).eq('id', session.id)
+    .then(() => {}).catch(() => {});
+  next();
+}
 
-  const token = signPayerToken({ companyId: access.company_id, accessCode: code.toUpperCase() });
-
-  auditLog({
-    companyId: access.company_id, userId: null, userRole: 'payer',
-    action: 'payer_area.login', targetType: 'company', targetId: access.company_id, req,
-  });
-
-  res.json({ token, expires_in: TOKEN_TTL });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Tutti gli endpoint seguenti richiedono verifyPayerArea
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// ── GET /api/v1/payer/:code/payslips ─────────────────────────────────────────
+// ── GET /api/v1/payer/:token/payslips ─────────────────────────────────────────
 // Solo buste paga già condivise/firmate (mai 'draft' — non ancora
 // revisionate internamente, stesso confine di visibilità dell'area
-// lavoratore su workerArea.js).
-router.get('/payer/:code/payslips', areaLimiter, verifyPayerArea, async (req, res) => {
-  const { cid } = req.payerPayload;
+// lavoratore su workerArea.js). Anche l'unico controllo di validità del
+// link: aprirlo la prima volta E ogni volta dopo passano da qui, stesso
+// principio di ProMagicLink.tsx (repo frontend).
+router.get('/payer/:token/payslips', areaLimiter, verifyPayerToken, async (req, res) => {
+  const { company_id: cid } = req.payerSession;
 
   const { data: rows, error } = await supabase
     .from('payslips')
@@ -107,8 +92,7 @@ router.get('/payer/:code/payslips', areaLimiter, verifyPayerArea, async (req, re
   const nameById = Object.fromEntries((workers || []).map(w => [w.id, w.full_name]));
 
   const withNames = rows.map(r => ({ ...r, worker_name: nameById[r.worker_id] || null }));
-  // Stesso motivo del lato azienda (routes/v1/payslips.js /payslips/shared):
-  // il nome si risolve dopo la query, l'ordinamento per periodo+lavoratore
+  // Il nome si risolve dopo la query, l'ordinamento per periodo+lavoratore
   // va rifatto qui per non lasciare i lavoratori in ordine arbitrario dentro
   // lo stesso mese.
   withNames.sort((a, b) =>
@@ -119,9 +103,9 @@ router.get('/payer/:code/payslips', areaLimiter, verifyPayerArea, async (req, re
   res.json(withNames);
 });
 
-// ── GET /api/v1/payer/:code/payslips/:id/pdf ─────────────────────────────────
-router.get('/payer/:code/payslips/:id/pdf', areaLimiter, verifyPayerArea, async (req, res) => {
-  const { cid } = req.payerPayload;
+// ── GET /api/v1/payer/:token/payslips/:id/pdf ─────────────────────────────────
+router.get('/payer/:token/payslips/:id/pdf', areaLimiter, verifyPayerToken, async (req, res) => {
+  const { company_id: cid } = req.payerSession;
 
   const { data: row } = await supabase
     .from('payslips')
@@ -141,9 +125,9 @@ router.get('/payer/:code/payslips/:id/pdf', areaLimiter, verifyPayerArea, async 
   res.json({ url: signed.signedUrl });
 });
 
-// ── POST /api/v1/payer/:code/payslips/:id/mark-paid ──────────────────────────
-router.post('/payer/:code/payslips/:id/mark-paid', areaLimiter, verifyPayerArea, async (req, res) => {
-  const { cid } = req.payerPayload;
+// ── POST /api/v1/payer/:token/payslips/:id/mark-paid ──────────────────────────
+router.post('/payer/:token/payslips/:id/mark-paid', areaLimiter, verifyPayerToken, async (req, res) => {
+  const { company_id: cid, email } = req.payerSession;
 
   const { data, error } = await supabase
     .from('payslips')
@@ -157,15 +141,16 @@ router.post('/payer/:code/payslips/:id/mark-paid', areaLimiter, verifyPayerArea,
 
   auditLog({
     companyId: cid, userId: null, userRole: 'payer',
-    action: 'payslip.mark_paid', targetType: 'payslips', targetId: req.params.id, req,
+    action: 'payslip.mark_paid', targetType: 'payslips', targetId: req.params.id,
+    payload: { email }, req,
   });
 
   res.json({ ok: true });
 });
 
-// ── POST /api/v1/payer/:code/payslips/:id/mark-unpaid ────────────────────────
-router.post('/payer/:code/payslips/:id/mark-unpaid', areaLimiter, verifyPayerArea, async (req, res) => {
-  const { cid } = req.payerPayload;
+// ── POST /api/v1/payer/:token/payslips/:id/mark-unpaid ────────────────────────
+router.post('/payer/:token/payslips/:id/mark-unpaid', areaLimiter, verifyPayerToken, async (req, res) => {
+  const { company_id: cid, email } = req.payerSession;
 
   const { data, error } = await supabase
     .from('payslips')
@@ -179,7 +164,8 @@ router.post('/payer/:code/payslips/:id/mark-unpaid', areaLimiter, verifyPayerAre
 
   auditLog({
     companyId: cid, userId: null, userRole: 'payer',
-    action: 'payslip.mark_unpaid', targetType: 'payslips', targetId: req.params.id, req,
+    action: 'payslip.mark_unpaid', targetType: 'payslips', targetId: req.params.id,
+    payload: { email }, req,
   });
 
   res.json({ ok: true });
