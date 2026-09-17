@@ -14,6 +14,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { getActualWeather, buildWeatherLogUpdate } = require('./weatherService');
+const { backfillSiteWeatherHistory, hasWeatherHistoryGap } = require('./weatherBackfill');
 
 const CRON_SCHEDULE = '30 6 * * *'; // 06:30 ogni giorno
 const TZ            = 'Europe/Rome';
@@ -67,7 +68,7 @@ async function processCompany(companyId, dateISO) {
   // Cantieri attivi con GPS
   const { data: sites } = await supabase
     .from('sites')
-    .select('id, name, address, latitude, longitude, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
+    .select('id, name, address, start_date, latitude, longitude, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm')
     .eq('company_id', companyId)
     .in('status', ['attivo', 'sospeso'])
     .not('latitude', 'is', null)
@@ -77,6 +78,27 @@ async function processCompany(companyId, dateISO) {
 
   for (const site of sites) {
     try {
+      // F-207 (AUDIT.md): questo cron scrive "il meteo di ieri" ogni giorno
+      // per ogni cantiere con GPS, indipendentemente da chi apre l'app — per
+      // questo il vecchio backfill "solo al primo caricamento a zero righe"
+      // del frontend non scattava quasi mai (il cron aveva già scritto
+      // almeno una riga prima che un utente aprisse la scheda Meteo). Se il
+      // cantiere ha una data di inizio nel passato ma un buco fra quella
+      // data e la riga più vecchia salvata, lo chiude qui, una volta,
+      // PRIMA di procedere con "ieri" — idempotente, non ritenta ogni
+      // giorno un cantiere già coperto (hasWeatherHistoryGap torna false
+      // appena la riga più vecchia risale a start_date o prima).
+      if (await hasWeatherHistoryGap(site)) {
+        try {
+          const filled = await backfillSiteWeatherHistory({ ...site, company_id: companyId });
+          if (filled.inserted > 0) {
+            console.log(`[weatherLog] ${site.name}: colmato buco storico — ${filled.inserted} giorni da ${site.start_date} (ERA5)`);
+          }
+        } catch (backfillErr) {
+          console.error(`[weatherLog] ${site.name}: backfill storico fallito —`, backfillErr.message);
+        }
+      }
+
       const weather  = await getActualWeather(site.latitude, site.longitude, dateISO);
       const siteThresholds = {
         rain_mm:       site.weather_rain_mm,
@@ -151,4 +173,4 @@ function startWeatherLogCron() {
   console.log('[weatherLog] Cron avviato —', CRON_SCHEDULE, TZ);
 }
 
-module.exports = { startWeatherLogCron, runWeatherLog, upsertWeatherNotification };
+module.exports = { startWeatherLogCron, runWeatherLog, upsertWeatherNotification, processCompany };

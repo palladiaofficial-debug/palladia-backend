@@ -2,7 +2,8 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
-const { getActualWeather, getWeatherRange, buildWeatherLogUpdate, groupRowsByShape, dataSourceRank } = require('../../services/weatherService');
+const { getActualWeather, buildWeatherLogUpdate, dataSourceRank } = require('../../services/weatherService');
+const { backfillSiteWeatherHistory, yesterdayISO } = require('../../services/weatherBackfill');
 const { calcEndDate }                    = require('../../lib/calcEndDate');
 const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../../services/weatherReport');
 const { rendererPool }                   = require('../../pdf-renderer');
@@ -125,83 +126,18 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 
-  if (!site.latitude || !site.longitude)
-    return res.status(400).json({ error: 'NO_COORDS', message: 'Imposta le coordinate GPS del cantiere prima.' });
-  if (!site.start_date)
-    return res.status(400).json({ error: 'NO_START_DATE', message: 'Il cantiere non ha una data di inizio lavori.' });
-
-  const TZ = 'Europe/Rome';
-  const yesterday = (() => {
-    const d = new Date(new Date().toLocaleDateString('sv-SE', { timeZone: TZ }));
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().split('T')[0];
-  })();
-
-  if (site.start_date > yesterday)
+  // F-207 (AUDIT.md): logica condivisa con il cron — vedi
+  // services/weatherBackfill.js.
+  const yesterday = yesterdayISO();
+  if (site.start_date && site.start_date > yesterday)
     return res.json({ inserted: 0, suspension_alerts: 0, message: 'Cantiere non ancora iniziato — nessuno storico disponibile.' });
 
   try {
-    const weatherData = await getWeatherRange(site.latitude, site.longitude, site.start_date, yesterday);
-
-    if (!weatherData.length)
-      return res.json({ inserted: 0, suspension_alerts: 0 });
-
-    // F-159 (AUDIT.md): un giorno già deciso da un umano (confermato/ignorato)
-    // non deve vedersi cambiare il verdetto da un ri-backfill — vedi
-    // buildWeatherLogUpdate.
-    const { data: existingRows } = await supabase
-      .from('site_weather_logs')
-      .select('log_date, suspension_confirmed, suspension_dismissed, threshold_exceeded, precipitation_mm, wind_max_kmh, weather_code, data_source, era5_reconciled_at, precipitation_mm_original, wind_max_kmh_original, weather_code_original')
-      .eq('site_id', siteId)
-      .gte('log_date', site.start_date).lte('log_date', yesterday);
-    const existingByDate = new Map((existingRows || []).map(r => [r.log_date, r]));
-
-    const thresholds = siteThresholds(site);
-    const rows = weatherData.map(w => {
-      const existing = existingByDate.get(w.date);
-      return {
-        company_id: req.companyId,
-        site_id:    siteId,
-        log_date:   w.date,
-        // F-200 (AUDIT.md): marker interno, non una colonna — rimosso prima
-        // dell'upsert (vedi groupRowsByShape) — distingue una riga già
-        // certificata da una fonte più autorevole (nessun aggiornamento
-        // reale) da una riga davvero scritta, per un conteggio onesto nella
-        // risposta invece di "N giorni caricati" quando N sono per lo più
-        // giorni già ARPAL invariati.
-        _blocked: !!existing && dataSourceRank(existing.data_source) > dataSourceRank(w.data_source),
-        ...buildWeatherLogUpdate(existing, w, thresholds),
-      };
-    });
-
-    const blockedCount = rows.filter(r => r._blocked).length;
-    const dbRows = rows.map(({ _blocked, ...r }) => r);
-
-    // Upsert bulk — non sovrascrive suspension_confirmed/dismissed già esistenti.
-    // F-200 (AUDIT.md): le righe non hanno tutte le stesse chiavi — un giorno
-    // già DECISO da un umano omette threshold_exceeded/reason, e un giorno la
-    // cui fonte in DB è più autorevole di quella appena ricevuta (es. ARPAL
-    // già presente, backfill Open-Meteo più vecchio) viene ridotto dal
-    // guard di precedenza in buildWeatherLogUpdate a solo fetched_at — un
-    // upsert misto in un'unica chiamata scriverebbe NULL sulle colonne
-    // mancanti per le righe che non le hanno (PostgREST usa l'unione delle
-    // colonne del batch), cancellando dati già decisi/certificati.
-    for (const batch of groupRowsByShape(dbRows)) {
-      const { error: upsertErr } = await supabase
-        .from('site_weather_logs')
-        .upsert(batch, { onConflict: 'site_id,log_date', ignoreDuplicates: false });
-      if (upsertErr) return res.status(500).json({ error: 'DB_ERROR', message: upsertErr.message });
-    }
-
-    const suspDays = rows.filter(r => r.threshold_exceeded).length;
-    // F-200 (AUDIT.md): "inserted" resta il totale (retro-compatibile), ma
-    // "updated" separa quanti giorni sono stati davvero scritti da quanti
-    // erano già certificati da una fonte migliore (nessun cambiamento reale)
-    // — il frontend usa updated per non dire "Storico caricato: N giorni"
-    // quando N sono quasi tutti invariati.
-    res.json({ inserted: rows.length, updated: rows.length - blockedCount, unchanged: blockedCount, suspension_alerts: suspDays });
-
+    const result = await backfillSiteWeatherHistory({ ...site, company_id: req.companyId });
+    res.json({ inserted: result.inserted, updated: result.updated, unchanged: result.unchanged, suspension_alerts: result.suspension_alerts });
   } catch (err) {
+    if (err.code === 'NO_COORDS')     return res.status(400).json({ error: 'NO_COORDS', message: err.message });
+    if (err.code === 'NO_START_DATE') return res.status(400).json({ error: 'NO_START_DATE', message: err.message });
     console.error('[weatherBackfill]', err.message);
     res.status(502).json({ error: 'WEATHER_API_ERROR', message: err.message });
   }
