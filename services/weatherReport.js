@@ -19,10 +19,6 @@
 
 const ExcelJS = require('exceljs');
 
-function toItShort(iso) {
-  if (!iso) return '—';
-  return new Date(iso + 'T00:00:00').toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
 function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
 const DAYS_IT_LONG  = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
@@ -140,8 +136,19 @@ function generateWeatherReportHtml({ site, rows, thresholds, from, to, filter })
 
   const shiftRows = rows.filter(r => r.precipitation_mm_full_day != null && Number(r.precipitation_mm_full_day) !== Number(r.precipitation_mm));
 
+  // F-209 (AUDIT.md): il periodo mostrato deve essere SOLO quello per cui è
+  // stata davvero richiesta/verificata la pioggia — mai la durata
+  // contrattuale del cantiere (site.start_date/end_date), che non ha nulla
+  // a che fare con "quali giorni sono stati controllati" e può anche
+  // essere superata/obsoleta (un contratto prorogato la cui end_date non è
+  // stata aggiornata farebbe sembrare il documento sbagliato). Se from/to
+  // sono stati richiesti esplicitamente si usano quelli; altrimenti si usa
+  // lo span reale dei giorni presenti nell'export (rows, già ordinate per
+  // log_date asc dalla query chiamante) — mai i dati contrattuali del sito.
   const FILTER_LABELS = { critical: 'solo giorni con soglia superata', confirmed: 'solo giorni con sospensione confermata' };
-  const period = esc((from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi'))
+  const minRowDate = rows.length ? rows[0].log_date : null;
+  const maxRowDate = rows.length ? rows[rows.length - 1].log_date : null;
+  const period = esc((from || minRowDate || '—') + ' → ' + (to || maxRowDate || '—'))
     + (FILTER_LABELS[filter] ? ` <span style="color:var(--warning);font-weight:700">(${FILTER_LABELS[filter]})</span>` : '');
   const nowStr = new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' });
 
@@ -250,13 +257,6 @@ table { color: var(--text); }
     </div>
   </div>
 
-  ${site.contract_days ? `
-  <div class="meta-grid">
-    <div><div class="meta-k">Giorni contratto</div><div class="meta-v">${site.contract_days} (${esc(site.days_type) || 'solari'})</div></div>
-    <div><div class="meta-k">Inizio lavori</div><div class="meta-v">${toItShort(site.start_date)}</div></div>
-    <div><div class="meta-k">Fine lavori (aggiornata)</div><div class="meta-v">${toItShort(site.end_date)}</div></div>
-  </div>` : ''}
-
   <div class="thresholds-box">
     <span>${weatherIconSvg('rain')}Pioggia ≥ <strong>${thresholds.rain_mm} mm</strong>/giorno</span>
     <span>${weatherIconSvg('wind')}Vento ≥ <strong>${thresholds.wind_kmh} km/h</strong></span>
@@ -350,8 +350,13 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to, filter })
     return r;
   }
 
+  // F-209 (AUDIT.md): stesso principio della versione HTML — solo le date
+  // per cui è stata davvero verificata la pioggia (from/to richiesti, o lo
+  // span reale delle righe), mai la durata contrattuale del cantiere.
   const XLSX_FILTER_LABELS = { critical: 'solo giorni con soglia superata', confirmed: 'solo giorni con sospensione confermata' };
-  const period = (from || site.start_date || '—') + ' → ' + (to || site.end_date || 'oggi')
+  const minRowDate = rows.length ? rows[0].log_date : null;
+  const maxRowDate = rows.length ? rows[rows.length - 1].log_date : null;
+  const period = (from || minRowDate || '—') + ' → ' + (to || maxRowDate || '—')
     + (XLSX_FILTER_LABELS[filter] ? ` (${XLSX_FILTER_LABELS[filter]})` : '');
   const genStr = `${new Date().toLocaleDateString('it-IT')} alle ${new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}`;
 
@@ -393,13 +398,6 @@ function generateWeatherReportXlsx({ site, rows, thresholds, from, to, filter })
     noteRow.getCell(1).alignment = { wrapText: true, vertical: 'top' };
     ws1.mergeCells(`A${ws1.lastRow.number}:B${ws1.lastRow.number}`);
     ws1.getRow(ws1.lastRow.number).height = 45;
-    ws1.addRow([]);
-  }
-
-  if (site.contract_days) {
-    metaRow(ws1, 'Giorni contratto', `${site.contract_days} (${site.days_type || 'solari'})`);
-    metaRow(ws1, 'Data inizio lavori', toItShort(site.start_date));
-    metaRow(ws1, 'Data fine contratto originale', toItShort(site.end_date));
     ws1.addRow([]);
   }
 
