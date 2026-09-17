@@ -30,6 +30,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { resolveArpalPrecipitation } = require('./arpalWeatherSource');
+const { archiveArpalSource } = require('./weatherArpalArchive');
 const { buildArpalWeatherLogUpdate } = require('./weatherService');
 const { upsertWeatherNotification }  = require('./weatherLogCron');
 const { sumShiftPrecipitation }      = require('../lib/weatherShift');
@@ -82,7 +83,7 @@ async function arpalizeSite(site, stationCache) {
     await supabase.from('sites').update({ arpal_last_checked_at: new Date().toISOString() }).eq('id', site.id);
     throw err;
   }
-  const { stationName, stationCode, distance_m, rows: rawRows } = resolved;
+  const { stationName, stationCode, distance_m, rows: rawRows, rawCsv } = resolved;
 
   // Stazione risolta con successo: aggiorna sempre il riferimento sul
   // cantiere, anche se poi non ci sono righe da certificare in questo giro
@@ -92,6 +93,13 @@ async function arpalizeSite(site, stationCache) {
     arpal_station_code: stationCode, arpal_station_name: stationName,
     arpal_station_distance_m: distance_m, arpal_last_checked_at: new Date().toISOString(),
   }).eq('id', site.id);
+
+  // F-207 (AUDIT.md): archivia il CSV ufficiale ARPAL byte per byte — il
+  // documento originale usato per certificare questi giorni, non solo i
+  // valori estratti. Mai bloccante: un fallimento dell'upload (storage giù,
+  // quota) non deve impedire la certificazione stessa, che resta comunque
+  // vera e verificabile sul portale ARPAL — solo senza la copia archiviata.
+  const sourcePath = await archiveArpalSource(site, stationCode, minDate, maxDate, rawCsv);
 
   const arpalRows = useShift
     ? [...sumShiftPrecipitation(rawRows, site.weather_shift_start, site.weather_shift_end)]
@@ -109,7 +117,7 @@ async function arpalizeSite(site, stationCache) {
     if (!r.valid || r.precipitation_mm === null) continue;
     const existing = existingByDate.get(r.date);
     if (!existing) continue; // fuori dal range di righe non ancora certificate per questo sito
-    const update = buildArpalWeatherLogUpdate(existing, r, stationName, thresholds);
+    const update = buildArpalWeatherLogUpdate(existing, r, stationName, thresholds, sourcePath);
     if (useShift) update.precipitation_mm_full_day = r.precipitation_mm_full_day;
     updates.push({ company_id: site.company_id, site_id: site.id, log_date: r.date, ...update });
   }

@@ -2362,6 +2362,16 @@ const REQUIRED_STORAGE_BUCKETS = [
       allowedMimeTypes: ['application/xml', 'application/pkcs7-mime', 'application/zip', 'application/pdf'],
     },
   },
+  {
+    // F-207 (AUDIT.md), seguito: CSV ufficiale ARPAL archiviato byte per
+    // byte ad ogni certificazione — il documento originale, non solo il
+    // valore estratto (site_weather_logs.arpal_source_path). Nessun
+    // allowedMimeTypes: il portale ARPAL non garantisce un Content-Type
+    // coerente sull'export, meglio non rischiare un upload rifiutato per
+    // quello che è comunque un file di solo testo, mai eseguibile.
+    name: 'arpal-source-archive',
+    options: { public: false, fileSizeLimit: 5242880 }, // 5 MB — un export di anni di dati giornalieri resta poche centinaia di KB
+  },
 ];
 
 const supabaseAdmin = require('./lib/supabase');

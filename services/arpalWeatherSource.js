@@ -119,7 +119,11 @@ async function fetchArpalStationRange(stationCode, startDateISO, endDateISO, fre
   if (!csvRes.ok) throw new Error(`ARPAL step4 HTTP ${csvRes.status}`);
   const buffer = Buffer.from(await csvRes.arrayBuffer());
 
-  return parseArpalCsv(buffer);
+  // F-207 (AUDIT.md): il buffer grezzo torna insieme al parsing — il
+  // chiamante (weatherArpalCron.js) lo archivia byte per byte come prova,
+  // non solo i valori estratti. Additivo: rows/stationName restano
+  // identici a prima per chi non usa rawCsv.
+  return { ...parseArpalCsv(buffer), rawCsv: buffer };
 }
 
 /**
@@ -148,7 +152,7 @@ async function resolveArpalPrecipitation(lat, lon, startDateISO, endDateISO, sta
     try {
       const result = await fetchArpalStationRange(candidate.code, startDateISO, endDateISO, frequenza);
       stationCache.set(candidate.code, 'OK');
-      return { stationName: result.stationName, stationCode: candidate.code, distance_m: candidate.distance_m, rows: result.rows };
+      return { stationName: result.stationName, stationCode: candidate.code, distance_m: candidate.distance_m, rows: result.rows, rawCsv: result.rawCsv };
     } catch (err) {
       if (err.code === 'ARPAL_NO_DATA') stationCache.set(candidate.code, 'NO_DATA');
       errors.push(`${candidate.name}: ${err.message}`);

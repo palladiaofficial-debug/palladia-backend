@@ -375,8 +375,9 @@ function parseArpalCsv(buffer) {
  * @param {{precipitation_mm: number}} arpalRow - riga parsata da parseArpalCsv
  * @param {string} stationName
  * @param {object} thresholds - soglie del cantiere
+ * @param {string|null} [sourcePath] - percorso nel bucket arpal-source-archive del CSV originale (F-207)
  */
-function buildArpalWeatherLogUpdate(existingRow, arpalRow, stationName, thresholds) {
+function buildArpalWeatherLogUpdate(existingRow, arpalRow, stationName, thresholds, sourcePath = null) {
   const weather = {
     precipitation_mm: arpalRow.precipitation_mm,
     wind_max_kmh:     existingRow?.wind_max_kmh ?? 0,
@@ -389,6 +390,13 @@ function buildArpalWeatherLogUpdate(existingRow, arpalRow, stationName, threshol
   const update = buildWeatherLogUpdate(existingRow, weather, thresholds);
   update.arpal_station_name = stationName;
   update.arpal_imported_at  = new Date().toISOString();
+  // F-207 (AUDIT.md): percorso del CSV ufficiale ARPAL archiviato per
+  // questa certificazione — il documento originale, non solo il valore
+  // estratto. `arpal_certified` è sempre il rango massimo (vedi
+  // DATA_SOURCE_RANK), quindi buildWeatherLogUpdate non riduce mai questo
+  // update al solo `fetched_at`: sourcePath viene scritto sempre quando
+  // passato, mai perso silenziosamente.
+  update.arpal_source_path  = sourcePath;
   return update;
 }
 
