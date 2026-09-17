@@ -41,12 +41,19 @@ async function checkCompany(companyId, date) {
   const rangeStart = new Date(`${date}T00:00:00.000Z`);
   rangeStart.setUTCDate(rangeStart.getUTCDate() - (BACKFILL_DAYS - 1));
 
+  // F-206 (AUDIT.md): NIENTE embed `site:sites(...)` qui. La FK
+  // presence_logs.site_id -> sites(id) non esiste piu nel DB di produzione
+  // (872 site_id puntano a cantieri cancellati; ripristinarla romperebbe
+  // l'append-only di presence_logs), quindi PostgREST rifiutava l'intera
+  // query con "Could not find a relationship ... in the schema cache" e
+  // questa funzione restituiva [] -> "nessuna uscita mancante" per OGNI
+  // azienda, ogni giorno. Il nome del cantiere si risolve con una query
+  // separata su sites: nessuna dipendenza da una FK che puo sparire.
   const { data: logs, error } = await supabase
     .from('presence_logs')
     .select(`
       worker_id, event_type, timestamp_server, site_id,
-      worker:workers (id, full_name, fiscal_code),
-      site:sites (id, name, address)
+      worker:workers (id, full_name, fiscal_code)
     `)
     .eq('company_id', companyId)
     .gte('timestamp_server', rangeStart.toISOString())
@@ -54,29 +61,46 @@ async function checkCompany(companyId, date) {
     .order('timestamp_server', { ascending: true })
     .limit(10000);
 
-  if (error || !logs?.length) return [];
+  // Un errore di query NON deve piu degradare a "nessuna uscita mancante":
+  // e' esattamente cosi che il bug e' rimasto invisibile. Chi chiama lo
+  // registra come errore della singola company e prosegue con le altre.
+  if (error) throw new Error(`checkCompany(${companyId}): ${error.message}`);
+  if (!logs?.length) return [];
 
-  // Ultimo evento per coppia (worker, site) — se è ENTRY → uscita mancante
-  const lastByKey = new Map();
+  // Ultimo evento per LAVORATORE in tutta l'azienda, non per (lavoratore,
+  // cantiere): dalla migrazione 201 (F-172) punch_atomic garantisce una sola
+  // apertura per lavoratore in tutta la company, e l'uscita viene taggata sul
+  // cantiere dove l'entrata era aperta anche se il lavoratore tocca un altro
+  // cantiere. Con la vecchia chiave per-cantiere un'entrata gia chiusa
+  // altrove sarebbe risultata ancora aperta.
+  const lastByWorker = new Map();
   for (const log of logs) {
-    lastByKey.set(`${log.worker_id}::${log.site_id}`, log);
+    lastByWorker.set(log.worker_id, log);
   }
 
-  const missing = [];
-  for (const [, log] of lastByKey) {
-    if (log.event_type === 'ENTRY') {
-      missing.push({
-        worker_id:       log.worker?.id,
-        worker_name:     log.worker?.full_name,
-        fiscal_code:     log.worker?.fiscal_code,
-        site_id:         log.site_id,
-        site_name:       log.site?.name,
-        site_address:    log.site?.address,
-        last_entry_time: log.timestamp_server
-      });
-    }
+  const open = [];
+  for (const [, log] of lastByWorker) {
+    if (log.event_type === 'ENTRY') open.push(log);
   }
-  return missing;
+  if (!open.length) return [];
+
+  const siteIds = [...new Set(open.map(l => l.site_id))];
+  const { data: sites, error: sitesErr } = await supabase
+    .from('sites')
+    .select('id, name, address')
+    .in('id', siteIds);
+  if (sitesErr) throw new Error(`checkCompany(${companyId}) sites: ${sitesErr.message}`);
+  const siteById = new Map((sites || []).map(s => [s.id, s]));
+
+  return open.map(log => ({
+    worker_id:       log.worker?.id || log.worker_id,
+    worker_name:     log.worker?.full_name,
+    fiscal_code:     log.worker?.fiscal_code,
+    site_id:         log.site_id,
+    site_name:       siteById.get(log.site_id)?.name,
+    site_address:    siteById.get(log.site_id)?.address,
+    last_entry_time: log.timestamp_server,
+  }));
 }
 
 // ── Job principale ────────────────────────────────────────────────────────────
@@ -119,8 +143,11 @@ async function runMissingExitCheck() {
 
       totalAutoFixed += missing.length;
 
-      // Email admin (audit trail — manteniamo sempre)
-      await sendMissingExitAlert({ companyId, date, missingList: missing });
+      // Email admin (audit trail — manteniamo sempre). Isolata: e' un
+      // effetto secondario, un fallimento di Resend non deve impedire la
+      // registrazione automatica delle uscite qui sotto (F-206).
+      await sendMissingExitAlert({ companyId, date, missingList: missing })
+        .catch(e => console.error(`[cron] email uscite mancanti fallita (company ${companyId}):`, e.message));
       console.log(`[cron] company ${companyId}: ${missing.length} uscite mancanti — auto-fix avviato`);
 
       // Raggruppa per cantiere
@@ -199,4 +226,4 @@ function startMissingExitCron() {
   console.log('[cron] missing-exit scheduler attivo — esecuzione ogni giorno alle 20:00 (Europe/Rome)');
 }
 
-module.exports = { startMissingExitCron, runMissingExitCheck };
+module.exports = { startMissingExitCron, runMissingExitCheck, checkCompany };

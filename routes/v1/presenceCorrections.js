@@ -123,46 +123,54 @@ router.get('/presence/open-sessions', verifySupabaseJwt, async (req, res) => {
 
   const since = new Date(Date.now() - ageHours * 3_600_000).toISOString();
 
-  let query = supabase
+  // F-206 (AUDIT.md): nessun embed `site:sites(...)` — la FK
+  // presence_logs.site_id → sites(id) non esiste più in produzione e
+  // PostgREST rifiutava l'intera query, facendo rispondere 500 a questo
+  // endpoint per OGNI azienda. Il nome cantiere si risolve a parte.
+  // Nessun filtro per cantiere nella query: l'apertura è globale per
+  // lavoratore (migrazione 201 / F-172) — filtrare prima mostrerebbe come
+  // "ancora dentro" un'entrata già chiusa su un altro cantiere. Il filtro
+  // `siteId` si applica dopo, sull'apertura reale.
+  const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
     .select(`
       id, event_type, timestamp_server, site_id, worker_id,
-      worker:workers (id, full_name),
-      site:sites    (id, name)
+      worker:workers (id, full_name)
     `)
     .eq('company_id', req.companyId)
     .gte('timestamp_server', since)
-    .order('timestamp_server', { ascending: true });
-
-  if (siteId) query = query.eq('site_id', siteId);
-
-  const { data: logs, error: logsErr } = await query.limit(5000);
+    .order('timestamp_server', { ascending: true })
+    .limit(5000);
   if (logsErr) return res.status(500).json({ error: logsErr.message });
 
-  // Per ogni worker+site, prende l'ultimo evento
-  const lastByKey = new Map();
-  for (const log of (logs || [])) {
-    const key = `${log.worker_id}::${log.site_id}`;
-    lastByKey.set(key, log); // overwrite → ultimo (logs ordinati asc)
+  // Ultimo evento per lavoratore (logs ordinati asc → l'ultimo vince)
+  const lastByWorker = new Map();
+  for (const log of (logs || [])) lastByWorker.set(log.worker_id, log);
+
+  const open = [...lastByWorker.values()]
+    .filter(log => log.event_type === 'ENTRY')
+    .filter(log => !siteId || log.site_id === siteId);
+
+  const siteById = new Map();
+  if (open.length) {
+    const { data: sites } = await supabase
+      .from('sites').select('id, name')
+      .in('id', [...new Set(open.map(l => l.site_id))]);
+    for (const s of sites || []) siteById.set(s.id, s);
   }
 
-  // Filtra solo quelli con ultimo evento = ENTRY
-  const openSessions = [];
-  for (const log of lastByKey.values()) {
-    if (log.event_type === 'ENTRY') {
-      const sinceMs  = Date.now() - new Date(log.timestamp_server).getTime();
-      const sinceH   = Math.round(sinceMs / 3_600_000 * 10) / 10;
-      openSessions.push({
-        worker_id:        log.worker_id,
-        worker_name:      log.worker?.full_name || '—',
-        site_id:          log.site_id,
-        site_name:        log.site?.name || '—',
-        entry_at:         log.timestamp_server,
-        hours_elapsed:    sinceH,
-        is_anomalous:     sinceH > 24,
-      });
-    }
-  }
+  const openSessions = open.map(log => {
+    const sinceH = Math.round((Date.now() - new Date(log.timestamp_server).getTime()) / 3_600_000 * 10) / 10;
+    return {
+      worker_id:     log.worker_id,
+      worker_name:   log.worker?.full_name || '—',
+      site_id:       log.site_id,
+      site_name:     siteById.get(log.site_id)?.name || '—',
+      entry_at:      log.timestamp_server,
+      hours_elapsed: sinceH,
+      is_anomalous:  sinceH > 24,
+    };
+  });
 
   // Ordina: prima gli anomali (più ore), poi i recenti
   openSessions.sort((a, b) => b.hours_elapsed - a.hours_elapsed);

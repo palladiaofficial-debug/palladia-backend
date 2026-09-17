@@ -29,13 +29,67 @@ function resetIfNewDay() {
   }
 }
 
+/**
+ * Aperture (ENTRY senza EXIT) di UNA company piu vecchie di `ageHours`.
+ * Estratta da runIntraDayCheck per poter essere testata da sola.
+ */
+async function findStaleOpenEntries(companyId, date, ageHours) {
+  const cutoff = Date.now() - ageHours * 3_600_000;
+
+  // F-206 (AUDIT.md): nessun embed `site:sites(...)` — la FK
+  // presence_logs.site_id -> sites(id) non esiste piu in produzione e
+  // l'intera query veniva rifiutata da PostgREST, rendendo muti gli alert
+  // delle 12/14/16/18 senza lasciare traccia. Vedi checkCompany() in
+  // services/missingExitCron.js per la stessa correzione.
+  const { data: logs, error } = await supabase
+    .from('presence_logs')
+    .select(`
+      worker_id, event_type, timestamp_server, site_id,
+      worker:workers (id, full_name)
+    `)
+    .eq('company_id', companyId)
+    .gte('timestamp_server', `${date}T00:00:00+02:00`)
+    .lte('timestamp_server', `${date}T23:59:59+01:00`)
+    .order('timestamp_server', { ascending: true })
+    .limit(10000);
+
+  if (error) throw new Error(`findStaleOpenEntries(${companyId}): ${error.message}`);
+  if (!logs?.length) return [];
+
+  // Apertura globale per lavoratore, non per (lavoratore, cantiere) — vedi
+  // migrazione 201 / F-172 e il commento in checkCompany().
+  const lastByWorker = new Map();
+  for (const log of logs) lastByWorker.set(log.worker_id, log);
+
+  const open = [];
+  for (const [, log] of lastByWorker) {
+    if (log.event_type !== 'ENTRY') continue;
+    if (new Date(log.timestamp_server).getTime() > cutoff) continue;
+    open.push(log);
+  }
+  if (!open.length) return [];
+
+  const { data: sites, error: sitesErr } = await supabase
+    .from('sites')
+    .select('id, name')
+    .in('id', [...new Set(open.map(l => l.site_id))]);
+  if (sitesErr) throw new Error(`findStaleOpenEntries(${companyId}) sites: ${sitesErr.message}`);
+  const siteById = new Map((sites || []).map(s => [s.id, s]));
+
+  return open.map(log => ({
+    worker_id:       log.worker_id,
+    worker_name:     log.worker?.full_name || null,
+    site_id:         log.site_id,
+    site_name:       siteById.get(log.site_id)?.name || 'Cantiere',
+    last_entry_time: log.timestamp_server,
+  }));
+}
+
 async function runIntraDayCheck() {
   resetIfNewDay();
   const date = lastResetDate;
-  const now  = Date.now();
-  const cutoff = now - ENTRY_AGE_HOURS * 3_600_000;
 
-  console.log(`[cron-intraday] check uscite mancanti — ${date} (entry > ${ENTRY_AGE_HOURS}h fa)`);
+  console.log(`[cron-intraday] check uscite mancanti - ${date} (entry > ${ENTRY_AGE_HOURS}h fa)`);
 
   const { data: companies, error } = await supabase
     .from('presence_logs')
@@ -49,42 +103,16 @@ async function runIntraDayCheck() {
 
   for (const companyId of companyIds) {
     try {
-      const { data: logs } = await supabase
-        .from('presence_logs')
-        .select(`
-          worker_id, event_type, timestamp_server, site_id,
-          worker:workers (id, full_name),
-          site:sites (id, name)
-        `)
-        .eq('company_id', companyId)
-        .gte('timestamp_server', `${date}T00:00:00+02:00`)
-        .lte('timestamp_server', `${date}T23:59:59+01:00`)
-        .order('timestamp_server', { ascending: true })
-        .limit(10000);
-
-      if (!logs?.length) continue;
-
-      const lastByKey = new Map();
-      for (const log of logs) {
-        lastByKey.set(`${log.worker_id}::${log.site_id}`, log);
-      }
+      const stale = await findStaleOpenEntries(companyId, date, ENTRY_AGE_HOURS);
 
       const bySite = new Map();
-      for (const [, log] of lastByKey) {
-        if (log.event_type !== 'ENTRY') continue;
-
-        const entryTime = new Date(log.timestamp_server).getTime();
-        if (entryTime > cutoff) continue;
-
-        const dedupeKey = `${companyId}::${log.worker_id}::${log.site_id}`;
+      for (const entry of stale) {
+        const dedupeKey = `${companyId}::${entry.worker_id}::${entry.site_id}`;
         if (notifiedToday.has(dedupeKey)) continue;
-
         notifiedToday.add(dedupeKey);
 
-        const siteId   = log.site_id;
-        const siteName = log.site?.name || 'Cantiere';
-        if (!bySite.has(siteId)) bySite.set(siteId, { siteName, workerNames: [] });
-        if (log.worker?.full_name) bySite.get(siteId).workerNames.push(log.worker.full_name);
+        if (!bySite.has(entry.site_id)) bySite.set(entry.site_id, { siteName: entry.site_name, workerNames: [] });
+        if (entry.worker_name) bySite.get(entry.site_id).workerNames.push(entry.worker_name);
       }
 
       for (const [siteId, { siteName, workerNames }] of bySite) {
@@ -107,4 +135,4 @@ function startMissingExitIntraDayCron() {
   console.log('[cron] missing-exit INTRA-DAY attivo — 12/14/16/18 lun-sab (Europe/Rome)');
 }
 
-module.exports = { startMissingExitIntraDayCron };
+module.exports = { startMissingExitIntraDayCron, findStaleOpenEntries };

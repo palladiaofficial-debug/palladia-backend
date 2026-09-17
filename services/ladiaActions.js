@@ -126,11 +126,18 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
   const rangeStart = new Date(`${date}T00:00:00.000Z`);
   rangeStart.setUTCDate(rangeStart.getUTCDate() - (BACKFILL_DAYS - 1));
 
+  // Nessun filtro per cantiere nella query: lo stato aperto/chiuso di un
+  // lavoratore e' GLOBALE sull'azienda dalla migrazione 201 (F-172) — se
+  // entra al cantiere A e tocca il cantiere B, l'uscita viene registrata su
+  // A, e a B non resta alcuna riga. Filtrando per site_id si vedrebbe a B
+  // una vecchia ENTRY gia' chiusa altrove e le si fabbricherebbe sopra
+  // un'uscita falsa. Il filtro per cantiere si applica DOPO, sull'apertura
+  // reale (F-206, AUDIT.md — il difetto che la migrazione 201 segnalava come
+  // ancora presente qui).
   const { data: logs, error: logsErr } = await supabase
     .from('presence_logs')
-    .select('worker_id, event_type, timestamp_server')
+    .select('worker_id, event_type, timestamp_server, site_id')
     .eq('company_id', companyId)
-    .eq('site_id', siteId)
     .gte('timestamp_server', rangeStart.toISOString())
     .lte('timestamp_server', `${date}T23:59:59.999Z`)
     .order('timestamp_server', { ascending: true })
@@ -147,10 +154,13 @@ async function registerMissingExits(siteId, date, companyId, chatId) {
     lastByWorker.set(log.worker_id, log);
   }
 
-  // Solo quelli con ultimo evento = ENTRY
+  // Solo quelli con ultimo evento = ENTRY, e solo se quell'apertura e' su
+  // QUESTO cantiere (vedi commento sopra).
   const missingEntries = [];
   for (const [workerId, log] of lastByWorker) {
-    if (log.event_type === 'ENTRY') missingEntries.push({ workerId, entryTimestamp: log.timestamp_server });
+    if (log.event_type === 'ENTRY' && log.site_id === siteId) {
+      missingEntries.push({ workerId, entryTimestamp: log.timestamp_server });
+    }
   }
 
   if (!missingEntries.length) {
