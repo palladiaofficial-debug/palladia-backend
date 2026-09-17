@@ -647,6 +647,13 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
 
   if (error) return sendDbError(res, error);
 
+  // F-208 (AUDIT.md): l'intero record inserito, non solo name/address —
+  // prima, un cantiere creato con start_date/end_date/contract_days/client
+  // gia' valorizzati (come fa normalmente il form "Nuovo cantiere") non
+  // lasciava alcuna traccia di QUEI valori nell'audit trail: sembravano
+  // apparire dal nulla a chiunque riaprisse il cantiere mesi dopo. PATCH
+  // /sites/:siteId logga gia' correttamente l'intero oggetto `updates` —
+  // stessa logica qui.
   auditLog({
     companyId:  req.companyId,
     userId:     req.user?.id,
@@ -654,7 +661,7 @@ router.post('/sites', verifySupabaseJwt, validate(createSiteSchema), async (req,
     action:     'site.create',
     targetType: 'site',
     targetId:   data.id,
-    payload:    { name: data.name, address: data.address },
+    payload:    data,
     req
   });
 
@@ -736,6 +743,10 @@ router.post('/sites/:siteId/duplicate', verifySupabaseJwt, async (req, res) => {
 
   if (error) return sendDbError(res, error);
 
+  // F-208 (AUDIT.md): i campi contrattuali copiati dal cantiere sorgente
+  // (start_date/end_date/contract_days/...), non solo il nome — se il
+  // sorgente cambia in seguito, senza questo la copia diventa
+  // irricostruibile dall'audit trail (source_id da solo non basta).
   auditLog({
     companyId:  req.companyId,
     userId:     req.user?.id,
@@ -743,7 +754,7 @@ router.post('/sites/:siteId/duplicate', verifySupabaseJwt, async (req, res) => {
     action:     'site.duplicate',
     targetType: 'site',
     targetId:   data.id,
-    payload:    { source_id: siteId, name: data.name },
+    payload:    { source_id: siteId, ...data },
     req,
   });
 
