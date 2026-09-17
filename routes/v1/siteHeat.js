@@ -19,11 +19,12 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { calcEndDate }       = require('../../lib/calcEndDate');
 const { generateHeatReportHtml, generateHeatReportXlsx } = require('../../services/heatReport');
 const { rendererPool }      = require('../../pdf-renderer');
+const { heatizeSite }       = require('../../services/heatArpalCron');
 
 async function getSiteOrFail(siteId, companyId, res) {
   const { data } = await supabase
     .from('sites')
-    .select('id, name, address, client, start_date, end_date, contract_days, days_type, comune, latitude, longitude, heat_temp_threshold_c')
+    .select('id, company_id, name, address, client, start_date, end_date, contract_days, days_type, comune, latitude, longitude, heat_temp_threshold_c')
     .eq('id', siteId).eq('company_id', companyId).neq('status', 'eliminato').maybeSingle();
   if (!data) { res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' }); return null; }
   return data;
@@ -51,6 +52,42 @@ router.get('/sites/:siteId/heat-log', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
 
   res.json({ logs: data || [], threshold_c: await effectiveThreshold(site, req.companyId) });
+});
+
+// ── POST /api/v1/sites/:siteId/heat-log/backfill ──────────────────────────────
+// Certifica ORA (chiamata sincrona al portale ARPAL) invece di aspettare il
+// giro automatico delle 05:30 — stesso bisogno reale già visto per la
+// pioggia (F-207, AUDIT.md): un cantiere appena creato o appena attivato
+// non ha nulla da mostrare finché non passa il cron la notte successiva.
+// Stesso range di heatArpalCron.js (dal giorno più vecchio non ancora
+// certificato, o site.start_date se è la prima volta, a ieri) — nessun
+// parametro data: l'utente non deve scegliere un intervallo, il sistema
+// copre tutto quello che manca, come "Carica storico" per la pioggia.
+router.post('/sites/:siteId/heat-log/backfill', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const site = await getSiteOrFail(siteId, req.companyId, res);
+  if (!site) return;
+
+  if (!site.latitude || !site.longitude) {
+    return res.status(400).json({ error: 'NO_COORDS', message: 'Imposta le coordinate GPS del cantiere prima.' });
+  }
+  if (!site.start_date) {
+    return res.status(400).json({ error: 'NO_START_DATE', message: 'Il cantiere non ha una data di inizio lavori.' });
+  }
+
+  try {
+    const companyThresholdMap = new Map([[req.companyId, (await effectiveThreshold({ heat_temp_threshold_c: null }, req.companyId))]]);
+    const result = await heatizeSite(site, new Map(), companyThresholdMap);
+    res.json({
+      imported: result.imported,
+      newly_exceeded: result.newlyExceeded?.length || 0,
+      station: result.station?.name || null,
+    });
+  } catch (err) {
+    console.error('[heat-log/backfill]', err.message);
+    const status = err.code === 'ARPAL_NO_STATION_NEARBY' || err.code === 'ARPAL_ALL_CANDIDATES_FAILED' ? 502 : 500;
+    res.status(status).json({ error: err.code || 'BACKFILL_ERROR', message: err.message });
+  }
 });
 
 // ── POST /api/v1/sites/:siteId/heat-log/:date/confirm ─────────────────────────
