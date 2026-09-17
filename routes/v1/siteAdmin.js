@@ -57,10 +57,6 @@ function formatSite(s) {
     arpalStationName:          s.arpal_station_name ?? null,
     arpalStationDistanceM:     s.arpal_station_distance_m ?? null,
     arpalLastCheckedAt:        s.arpal_last_checked_at ?? null,
-    // Soglia caldo (D.L. 107/2026 art.6) — null = nessun override, eredita
-    // il default azienda, stesso principio di lunchBreak*/lateEntry* sopra.
-    heatTempThresholdC:        s.heat_temp_threshold_c ?? null,
-    heatAlertEnabled:          s.heat_alert_enabled ?? true,
   };
 }
 
@@ -72,7 +68,7 @@ const ALLOWED_STATUSES  = ['attivo', 'sospeso', 'ultimato', 'chiuso'];
 // ── GET /api/v1/sites — lista cantieri della company ─────────────────────────
 // Esclude sempre i cantieri con status 'eliminato' (soft-deleted)
 router.get('/sites', verifySupabaseJwt, cache(20), async (req, res) => {
-  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, weather_shift_enabled, weather_shift_start, weather_shift_end, arpal_station_code, arpal_station_name, arpal_station_distance_m, arpal_last_checked_at, heat_temp_threshold_c, heat_alert_enabled';
+  const SELECT_COLS = 'id, name, address, comune, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, weather_shift_enabled, weather_shift_start, weather_shift_end, arpal_station_code, arpal_station_name, arpal_station_distance_m, arpal_last_checked_at';
 
   const { data, error } = await supabase
     .from('sites')
@@ -167,7 +163,6 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
     lunch_break_minutes, lunch_break_threshold_hours,
     shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes,
     weather_shift_enabled, weather_shift_start, weather_shift_end,
-    heat_temp_threshold_c, heat_alert_enabled,
   } = req.body || {};
 
   // Verifica ownership + recupera valori esistenti come fallback per il calcolo end_date
@@ -263,20 +258,6 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
   if (weather_snow         !== undefined) updates.weather_snow         = Boolean(weather_snow);
   if (weather_thunderstorm !== undefined) updates.weather_thunderstorm = Boolean(weather_thunderstorm);
 
-  // Soglia caldo (D.L. 107/2026 art.6) — null/'' = nessun override, eredita
-  // il default azienda (colonna nullable per design, come lunch_break_*
-  // sotto — a differenza di weather_rain_mm/wind_kmh, "reset" qui significa
-  // davvero "nessuna soglia propria", non un valore fisso).
-  if (heat_temp_threshold_c !== undefined) {
-    if (heat_temp_threshold_c === null || heat_temp_threshold_c === '') {
-      updates.heat_temp_threshold_c = null;
-    } else {
-      const c = Number(heat_temp_threshold_c);
-      if (isNaN(c) || c < 20 || c > 50) return res.status(400).json({ error: 'INVALID_HEAT_THRESHOLD', message: 'heat_temp_threshold_c: 20-50 °C' });
-      updates.heat_temp_threshold_c = c;
-    }
-  }
-  if (heat_alert_enabled !== undefined) updates.heat_alert_enabled = Boolean(heat_alert_enabled);
 
   // Pausa pranzo (F-152, AUDIT.md, migrations/195) — a differenza delle
   // soglie meteo sopra, qui null/'' è un vero SQL NULL (colonna nullable per
@@ -422,7 +403,7 @@ router.patch('/sites/:siteId', verifySupabaseJwt, validate(patchSiteSchema), asy
   // ma diventava un bug reale nel momento in cui questo PATCH avesse iniziato
   // a includere anche i nuovi campi ritardo ingresso sotto — corretto qui
   // invece di riprodurlo una terza volta.
-  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, weather_shift_enabled, weather_shift_start, weather_shift_end, arpal_station_code, arpal_station_name, arpal_station_distance_m, arpal_last_checked_at, heat_temp_threshold_c, heat_alert_enabled';
+  const SELECT_COLS_PATCH = 'id, name, address, status, client, start_date, end_date, latitude, longitude, geofence_radius_m, contract_days, days_type, referente_tecnico_id, referente_tecnico_name, suolo_occupazione, suolo_occupazione_start, suolo_occupazione_end, suolo_occupazione_notes, weather_rain_mm, weather_wind_kmh, weather_snow, weather_thunderstorm, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, weather_shift_enabled, weather_shift_start, weather_shift_end, arpal_station_code, arpal_station_name, arpal_station_distance_m, arpal_last_checked_at';
 
   const { data, error } = await supabase
     .from('sites')

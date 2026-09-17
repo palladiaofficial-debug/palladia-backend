@@ -4,14 +4,22 @@
  *
  * Registro caldo cantiere — richiesta esplicita del titolare (2026-09-17),
  * base normativa D.L. 107/2026 art. 6 + messaggio INPS 2418/2026 (vedi
- * migrations/218 e services/heatArpalCron.js per i dettagli, incluso
- * perché NON è il "bollino rosso").
+ * migrations/218 per i dettagli, incluso perché NON è il "bollino rosso"
+ * del Ministero della Salute).
+ *
+ * F-210 (AUDIT.md, 2026-09-17): la prima versione calcolava un WBGT stimato
+ * da dati ARPAL. Il titolare ha corretto: Worklimate (INAIL-CNR) è la fonte
+ * che le ordinanze citano esplicitamente per il "bollino rosso" — più
+ * autorevole legalmente della nostra stima. Worklimate però non ha API
+ * pubblica: solo un archivio storico con login (archivio.worklimate.it),
+ * max 5 ricerche/mese, finestra max 4 mesi (verificato via web il
+ * 2026-09-17). Quindi qui non c'è più un cron automatico: un utente
+ * consulta l'archivio Worklimate e REGISTRA quei giorni esatti — mai un
+ * calcolo interno, mai un'invenzione. Vedi migrations/219.
  *
  * Stesso identico pattern di conferma/dismiss/undo di routes/v1/
  * siteWeather.js (site_suspension_days condiviso — un giorno di caldo
- * confermato estende sites.end_date esattamente come un giorno di pioggia),
- * per coerenza: un titolare che già conosce il flusso meteo trova lo
- * stesso comportamento qui, non un secondo sistema da imparare.
+ * confermato estende sites.end_date esattamente come un giorno di pioggia).
  */
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
@@ -19,75 +27,122 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { calcEndDate }       = require('../../lib/calcEndDate');
 const { generateHeatReportHtml, generateHeatReportXlsx } = require('../../services/heatReport');
 const { rendererPool }      = require('../../pdf-renderer');
-const { heatizeSite }       = require('../../services/heatArpalCron');
+
+const RISK_LEVELS = ['verde', 'giallo', 'arancione', 'rosso'];
 
 async function getSiteOrFail(siteId, companyId, res) {
   const { data } = await supabase
     .from('sites')
-    .select('id, company_id, name, address, client, start_date, end_date, contract_days, days_type, comune, latitude, longitude, heat_temp_threshold_c')
+    .select('id, company_id, name, address, client, start_date, end_date, contract_days, days_type, comune')
     .eq('id', siteId).eq('company_id', companyId).neq('status', 'eliminato').maybeSingle();
   if (!data) { res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' }); return null; }
   return data;
 }
 
-async function effectiveThreshold(site, companyId) {
-  if (site.heat_temp_threshold_c != null) return Number(site.heat_temp_threshold_c);
-  const { data: company } = await supabase.from('companies').select('heat_temp_threshold_c').eq('id', companyId).maybeSingle();
-  return Number(company?.heat_temp_threshold_c ?? 35);
+const LOG_COLS = 'id, log_date, risk_level, comune, source_note, entered_by, entered_at, suspension_confirmed, suspension_dismissed, suspension_id';
+
+// Aggiorna/rimuove la notifica "giorni da confermare" — stesso pattern di
+// upsertHeatNotification che viveva nel cron ora rimosso (services/
+// heatArpalCron.js), qui invocato dopo un inserimento manuale invece che
+// dopo un fetch automatico.
+async function syncPendingNotification(companyId, siteId, siteName) {
+  const { data: pending } = await supabase.from('site_heat_logs')
+    .select('log_date').eq('site_id', siteId)
+    .eq('risk_level', 'rosso').eq('suspension_confirmed', false).eq('suspension_dismissed', false);
+  const pendingDays = (pending || []).map(r => r.log_date);
+
+  if (pendingDays.length === 0) {
+    await supabase.from('notifications').delete()
+      .eq('company_id', companyId).eq('entity_type', 'site').eq('entity_id', siteId).eq('type', 'heat_suspension');
+    return;
+  }
+  const sorted = [...pendingDays].sort();
+  const listIt = sorted.map(d => new Date(d + 'T00:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }));
+  const title = `Caldo — ${pendingDays.length} ${pendingDays.length === 1 ? 'giornata bollino rosso da confermare' : 'giornate bollino rosso da confermare'}`;
+  const body  = `${siteName}\n${listIt.join(' · ')}\nVai al cantiere → Caldo per confermare o ignorare.`;
+  await supabase.from('notifications').upsert({
+    company_id: companyId, type: 'heat_suspension', severity: 'warning', title, body,
+    entity_type: 'site', entity_id: siteId, updated_at: new Date().toISOString(),
+  }, { onConflict: 'company_id,entity_type,entity_id,type' });
 }
 
-const LOG_COLS = 'id, log_date, temp_max_c, humidity_pct, solar_radiation_jcm2, wbgt_estimate_c, threshold_exceeded, threshold_reason, suspension_confirmed, suspension_dismissed, suspension_id, arpal_station_name, arpal_source_path, fetched_at';
-
-// ── GET /api/v1/sites/:siteId/heat-log?from=&to= ──────────────────────────────
+// ── GET /api/v1/sites/:siteId/heat-log ─────────────────────────────────────────
 router.get('/sites/:siteId/heat-log', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
-  const { from, to } = req.query;
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 
-  let q = supabase.from('site_heat_logs').select(LOG_COLS).eq('site_id', siteId).order('log_date', { ascending: false });
-  if (from) q = q.gte('log_date', from);
-  if (to)   q = q.lte('log_date', to);
-  const { data, error } = await q.limit(1100);
+  const { data, error } = await supabase.from('site_heat_logs').select(LOG_COLS)
+    .eq('site_id', siteId).order('log_date', { ascending: false }).limit(1100);
   if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
 
-  res.json({ logs: data || [], threshold_c: await effectiveThreshold(site, req.companyId) });
+  res.json({ logs: data || [] });
 });
 
-// ── POST /api/v1/sites/:siteId/heat-log/backfill ──────────────────────────────
-// Certifica ORA (chiamata sincrona al portale ARPAL) invece di aspettare il
-// giro automatico delle 05:30 — stesso bisogno reale già visto per la
-// pioggia (F-207, AUDIT.md): un cantiere appena creato o appena attivato
-// non ha nulla da mostrare finché non passa il cron la notte successiva.
-// Stesso range di heatArpalCron.js (dal giorno più vecchio non ancora
-// certificato, o site.start_date se è la prima volta, a ieri) — nessun
-// parametro data: l'utente non deve scegliere un intervallo, il sistema
-// copre tutto quello che manca, come "Carica storico" per la pioggia.
-router.post('/sites/:siteId/heat-log/backfill', verifySupabaseJwt, async (req, res) => {
+// ── POST /api/v1/sites/:siteId/heat-log/batch ─────────────────────────────────
+// Registra i giorni letti a mano dall'archivio Worklimate — mai un fetch
+// automatico. Un utente in genere trascrive qui il risultato di UNA ricerca
+// sul portale (max 5/mese), quindi accetta più giorni in una chiamata sola.
+router.post('/sites/:siteId/heat-log/batch', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
+  const { comune, source_note, entries } = req.body || {};
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
 
-  if (!site.latitude || !site.longitude) {
-    return res.status(400).json({ error: 'NO_COORDS', message: 'Imposta le coordinate GPS del cantiere prima.' });
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return res.status(400).json({ error: 'NO_ENTRIES', message: 'Nessun giorno da registrare.' });
   }
-  if (!site.start_date) {
-    return res.status(400).json({ error: 'NO_START_DATE', message: 'Il cantiere non ha una data di inizio lavori.' });
+  if (!comune || typeof comune !== 'string' || !comune.trim()) {
+    return res.status(400).json({ error: 'NO_COMUNE', message: 'Indica il comune usato per la ricerca su Worklimate.' });
+  }
+  for (const e of entries) {
+    if (!e || typeof e.log_date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(e.log_date)) {
+      return res.status(400).json({ error: 'INVALID_DATE', message: `Data non valida: ${e?.log_date}` });
+    }
+    if (!RISK_LEVELS.includes(e.risk_level)) {
+      return res.status(400).json({ error: 'INVALID_RISK_LEVEL', message: `Livello non valido per ${e.log_date}: ${e?.risk_level}` });
+    }
   }
 
-  try {
-    const companyThresholdMap = new Map([[req.companyId, (await effectiveThreshold({ heat_temp_threshold_c: null }, req.companyId))]]);
-    const result = await heatizeSite(site, new Map(), companyThresholdMap);
-    res.json({
-      imported: result.imported,
-      newly_exceeded: result.newlyExceeded?.length || 0,
-      station: result.station?.name || null,
-    });
-  } catch (err) {
-    console.error('[heat-log/backfill]', err.message);
-    const status = err.code === 'ARPAL_NO_STATION_NEARBY' || err.code === 'ARPAL_ALL_CANDIDATES_FAILED' ? 502 : 500;
-    res.status(status).json({ error: err.code || 'BACKFILL_ERROR', message: err.message });
-  }
+  const nowIso = new Date().toISOString();
+  const rows = entries.map(e => ({
+    company_id: req.companyId, site_id: siteId, log_date: e.log_date, risk_level: e.risk_level,
+    comune: comune.trim(), source_note: source_note || null,
+    entered_by: req.user?.id ?? null, entered_at: nowIso,
+  }));
+
+  const { data: upserted, error } = await supabase.from('site_heat_logs')
+    .upsert(rows, { onConflict: 'site_id,log_date' }).select('log_date, risk_level');
+  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+
+  await syncPendingNotification(req.companyId, siteId, site.name || 'Cantiere');
+
+  res.json({
+    imported: upserted?.length || 0,
+    red_flag_days: (upserted || []).filter(r => r.risk_level === 'rosso').length,
+  });
+});
+
+// ── DELETE /api/v1/sites/:siteId/heat-log/:date ───────────────────────────────
+// Correzione di un errore di trascrizione — inserimento manuale, capita.
+// Non tocca site_suspension_days: se il giorno era già confermato va prima
+// annullato (undo), questa route rifiuta la cancellazione altrimenti per
+// non lasciare una sospensione orfana senza il log che la giustifica.
+router.delete('/sites/:siteId/heat-log/:date', verifySupabaseJwt, async (req, res) => {
+  const { siteId, date } = req.params;
+  const site = await getSiteOrFail(siteId, req.companyId, res);
+  if (!site) return;
+
+  const { data: log } = await supabase.from('site_heat_logs')
+    .select('id, suspension_confirmed').eq('site_id', siteId).eq('log_date', date).maybeSingle();
+  if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
+  if (log.suspension_confirmed) return res.status(409).json({ error: 'CONFIRMED', message: 'Annulla prima la sospensione confermata.' });
+
+  const { error } = await supabase.from('site_heat_logs').delete().eq('id', log.id);
+  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+
+  await syncPendingNotification(req.companyId, siteId, site.name || 'Cantiere');
+  res.json({ ok: true });
 });
 
 // ── POST /api/v1/sites/:siteId/heat-log/:date/confirm ─────────────────────────
@@ -98,17 +153,15 @@ router.post('/sites/:siteId/heat-log/:date/confirm', verifySupabaseJwt, async (r
   if (!site) return;
 
   const { data: log } = await supabase.from('site_heat_logs')
-    .select('id, temp_max_c, humidity_pct, wbgt_estimate_c, arpal_station_name')
-    .eq('site_id', siteId).eq('log_date', date).maybeSingle();
+    .select('id, risk_level, comune, source_note').eq('site_id', siteId).eq('log_date', date).maybeSingle();
   if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
 
   const autoNotes = [
-    log.temp_max_c != null ? `${log.temp_max_c}°C max` : null,
-    log.humidity_pct != null ? `umidità ${log.humidity_pct}%` : null,
-    log.wbgt_estimate_c != null ? `WBGT stimato ${log.wbgt_estimate_c}°C` : null,
+    `Bollino rosso Worklimate${log.comune ? ` — ${log.comune}` : ''}`,
+    log.source_note ? `(${log.source_note})` : null,
     notes ? `— ${notes}` : null,
-    `| Fonte: ARPAL${log.arpal_station_name ? ` (stazione ${log.arpal_station_name})` : ''}`,
-  ].filter(Boolean).join(' · ');
+    '| Fonte: archivio.worklimate.it',
+  ].filter(Boolean).join(' ');
 
   const { data: suspension, error: suspErr } = await supabase.from('site_suspension_days')
     .upsert({ company_id: req.companyId, site_id: siteId, day: date, reason: 'caldo', notes: autoNotes, created_by: req.user?.id ?? null },
@@ -127,14 +180,7 @@ router.post('/sites/:siteId/heat-log/:date/confirm', verifySupabaseJwt, async (r
     if (endDateErr) console.error(`[heatConfirm] ${siteId}: end_date non aggiornata:`, endDateErr.message);
   }
 
-  const { data: pending } = await supabase.from('site_heat_logs').select('log_date')
-    .eq('site_id', siteId).eq('threshold_exceeded', true).eq('suspension_confirmed', false).eq('suspension_dismissed', false);
-  const pendingDays = (pending || []).map(r => r.log_date);
-  if (pendingDays.length === 0) {
-    await supabase.from('notifications').delete()
-      .eq('company_id', req.companyId).eq('entity_type', 'site').eq('entity_id', siteId).eq('type', 'heat_suspension');
-  }
-
+  await syncPendingNotification(req.companyId, siteId, site.name || 'Cantiere');
   res.json({ ok: true, suspension, newEndDate: newEnd ?? null });
 });
 
@@ -149,12 +195,7 @@ router.post('/sites/:siteId/heat-log/:date/dismiss', verifySupabaseJwt, async (r
   if (updateErr) return res.status(500).json({ error: 'DB_ERROR', message: updateErr.message });
   if (!updated?.length) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
 
-  const { data: pending } = await supabase.from('site_heat_logs').select('log_date')
-    .eq('site_id', siteId).eq('threshold_exceeded', true).eq('suspension_confirmed', false).eq('suspension_dismissed', false);
-  if (!pending?.length) {
-    await supabase.from('notifications').delete()
-      .eq('company_id', req.companyId).eq('entity_type', 'site').eq('entity_id', siteId).eq('type', 'heat_suspension');
-  }
+  await syncPendingNotification(req.companyId, siteId, site.name || 'Cantiere');
   res.json({ ok: true });
 });
 
@@ -165,7 +206,7 @@ router.post('/sites/:siteId/heat-log/:date/undo', verifySupabaseJwt, async (req,
   if (!site) return;
 
   const { data: log } = await supabase.from('site_heat_logs')
-    .select('id, suspension_id, suspension_confirmed, threshold_exceeded').eq('site_id', siteId).eq('log_date', date).maybeSingle();
+    .select('id, suspension_id, suspension_confirmed').eq('site_id', siteId).eq('log_date', date).maybeSingle();
   if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
   if (!log.suspension_confirmed) return res.status(409).json({ error: 'NOT_CONFIRMED' });
 
@@ -187,6 +228,7 @@ router.post('/sites/:siteId/heat-log/:date/undo', verifySupabaseJwt, async (req,
     if (endDateErr) console.error(`[heatUndo] ${siteId}: end_date non aggiornata:`, endDateErr.message);
   }
 
+  await syncPendingNotification(req.companyId, siteId, site.name || 'Cantiere');
   res.json({ ok: true, newEndDate: newEnd ?? null });
 });
 
@@ -200,12 +242,12 @@ router.get('/sites/:siteId/heat-report.pdf', verifySupabaseJwt, async (req, res)
   let q = supabase.from('site_heat_logs').select(LOG_COLS).eq('site_id', siteId).order('log_date', { ascending: true });
   if (from) q = q.gte('log_date', from);
   if (to)   q = q.lte('log_date', to);
-  if (filter === 'critical')  q = q.eq('threshold_exceeded', true);
+  if (filter === 'critical')  q = q.eq('risk_level', 'rosso');
   if (filter === 'confirmed') q = q.eq('suspension_confirmed', true);
   const { data: logs } = await q;
 
   try {
-    const html = generateHeatReportHtml({ site, rows: logs || [], thresholdC: await effectiveThreshold(site, req.companyId), from, to, filter });
+    const html = generateHeatReportHtml({ site, rows: logs || [], from, to, filter });
     const pdfBuf = await rendererPool.render(html, {
       docTitle: `Relazione Tecnica Caldo — ${site.name}`, rev: 1,
       footerLeft: 'D.L. 107/2026 art. 6 · msg. INPS 2418/2026',
@@ -230,11 +272,11 @@ router.get('/sites/:siteId/heat-report.xlsx', verifySupabaseJwt, async (req, res
   let q = supabase.from('site_heat_logs').select(LOG_COLS).eq('site_id', siteId).order('log_date', { ascending: true });
   if (from) q = q.gte('log_date', from);
   if (to)   q = q.lte('log_date', to);
-  if (filter === 'critical')  q = q.eq('threshold_exceeded', true);
+  if (filter === 'critical')  q = q.eq('risk_level', 'rosso');
   if (filter === 'confirmed') q = q.eq('suspension_confirmed', true);
   const { data: logs } = await q;
 
-  const wb = generateHeatReportXlsx({ site, rows: logs || [], thresholdC: await effectiveThreshold(site, req.companyId), from, to, filter });
+  const wb = generateHeatReportXlsx({ site, rows: logs || [], from, to, filter });
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="caldo_${siteId}_${Date.now()}.xlsx"`);
   await wb.xlsx.write(res);

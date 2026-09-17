@@ -4,19 +4,16 @@
  *
  * Data layer + template HTML/Excel per "Relazione Tecnica Caldo Cantiere" —
  * richiesta esplicita del titolare (2026-09-17), base normativa D.L.
- * 107/2026 art. 6 + messaggio INPS 2418/2026 (vedi migrations/218 e
- * services/heatArpalCron.js).
+ * 107/2026 art. 6 + messaggio INPS 2418/2026.
  *
- * A differenza del Registro Meteo (pioggia — un numero, una soglia, F-160),
- * la norma sul caldo richiede ESPLICITAMENTE una relazione tecnica
- * multi-fattore (temperatura + umidità + irraggiamento, non una soglia
- * singola) — questo documento mostra tutti e tre i fattori certificati
- * ARPAL riga per riga, non solo un verdetto sì/no. Il WBGT è etichettato
- * SEMPRE come stimato (lib/heatIndex.js) — mai come dato certificato.
- *
- * Stesso identico principio già corretto oggi nel Registro Meteo: il
- * campo "Periodo" usa SOLO le date richieste o lo span reale delle righe,
- * mai i dati contrattuali del cantiere (start_date/end_date).
+ * F-210 (AUDIT.md, 2026-09-17): la fonte dei dati non è più una stima
+ * interna (ARPAL/WBGT, migrations/218) ma il livello di rischio ufficiale
+ * pubblicato da Worklimate (INAIL-CNR), quello che le ordinanze citano per
+ * lo stop cantieri — trascritto MANUALMENTE da un utente dopo consultazione
+ * di archivio.worklimate.it (nessuna API pubblica). Questo documento lo
+ * dichiara esplicitamente: non è un dato certificato da un fetch
+ * automatico, è una trascrizione umana tracciata (chi, quando, quale
+ * ricerca) di un dato ufficiale.
  */
 const ExcelJS = require('exceljs');
 
@@ -27,11 +24,13 @@ function esc(s) {
 
 const PRIMARY = '22384F', TEXT = '1A1714', MUTED = '7A736A', WARNING = 'A8672A', DESTRUCTIVE = 'A8453B', BORDER = 'E7E2D8';
 
-function generateHeatReportHtml({ site, rows, thresholdC, from, to, filter }) {
-  const confirmedDays = rows.filter(r => r.suspension_confirmed).length;
-  const maxTemp = rows.reduce((m, r) => r.temp_max_c != null && r.temp_max_c > m ? r.temp_max_c : m, -Infinity);
+const LEVEL_LABEL = { verde: 'Verde — nullo', giallo: 'Giallo — basso', arancione: 'Arancione — moderato', rosso: 'Rosso — alto' };
 
-  const FILTER_LABELS = { critical: 'solo giorni sopra soglia interna', confirmed: 'solo giorni con sospensione confermata' };
+function generateHeatReportHtml({ site, rows, from, to, filter }) {
+  const confirmedDays = rows.filter(r => r.suspension_confirmed).length;
+  const redDays = rows.filter(r => r.risk_level === 'rosso').length;
+
+  const FILTER_LABELS = { critical: 'solo giorni bollino rosso', confirmed: 'solo giorni con sospensione confermata' };
   const minRowDate = rows.length ? rows[0].log_date : null;
   const maxRowDate = rows.length ? rows[rows.length - 1].log_date : null;
   const period = esc((from || minRowDate || '—') + ' → ' + (to || maxRowDate || '—'))
@@ -39,21 +38,19 @@ function generateHeatReportHtml({ site, rows, thresholdC, from, to, filter }) {
 
   const tableRows = rows.map(r => {
     const isConf = r.suspension_confirmed;
-    const isPending = r.threshold_exceeded && !r.suspension_confirmed && !r.suspension_dismissed;
+    const isPending = r.risk_level === 'rosso' && !r.suspension_confirmed && !r.suspension_dismissed;
     const rowClass = isConf ? 'tr-conf' : isPending ? 'tr-pending' : '';
     let sospensioneHtml = '—';
     if (isConf) sospensioneHtml = '<span class="badge-anom">SOSPESO</span>';
     else if (r.suspension_dismissed) sospensioneHtml = 'Ignorato';
-    else if (r.threshold_exceeded) sospensioneHtml = '<span class="badge-warn">Da confermare</span>';
+    else if (isPending) sospensioneHtml = '<span class="badge-warn">Da confermare</span>';
 
     return `<tr class="${rowClass}">
       <td class="td-date">${r.log_date}</td>
-      <td class="td-center">${r.temp_max_c != null ? r.temp_max_c + '°C' : '—'}</td>
-      <td class="td-center">${r.humidity_pct != null ? r.humidity_pct + '%' : '—'}</td>
-      <td class="td-center">${r.solar_radiation_jcm2 != null ? r.solar_radiation_jcm2 + ' J/cm²' : '—'}</td>
-      <td class="td-center">${r.wbgt_estimate_c != null ? r.wbgt_estimate_c + '°C*' : '—'}</td>
+      <td class="td-center">${esc(LEVEL_LABEL[r.risk_level] || r.risk_level)}</td>
+      <td class="td-center">${esc(r.comune) || '—'}</td>
       <td class="td-center">${sospensioneHtml}</td>
-      <td class="td-center">${r.arpal_station_name ? esc(r.arpal_station_name) : '—'}</td>
+      <td>${esc(r.source_note) || '—'}</td>
     </tr>`;
   }).join('');
 
@@ -82,7 +79,6 @@ body { margin: 0; font-family: 'Plus Jakarta Sans', sans-serif; font-size: 9.5pt
 .sc-num { font-family: 'JetBrains Mono', monospace; font-size: 15pt; font-weight: 700; }
 .sc-label { font-size: 7pt; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4pt; margin-top: 2pt; }
 .legal-box { background: var(--primary-tint); border-radius: 6pt; padding: 10pt 12pt; font-size: 8pt; color: var(--muted); line-height: 1.55; margin-bottom: 14pt; }
-.threshold-box { background: var(--warning-bg); border-radius: 6pt; padding: 8pt 12pt; font-size: 8.5pt; color: var(--text); margin-bottom: 14pt; }
 table { width: 100%; border-collapse: collapse; font-size: 8.5pt; }
 thead th { text-align: left; padding: 6pt 8pt; font-size: 7pt; font-weight: 700; letter-spacing: 0.4pt; text-transform: uppercase; color: var(--muted); border-bottom: 1pt solid var(--border-strong); }
 td { padding: 5pt 8pt; border-bottom: 0.5pt solid var(--border); }
@@ -108,25 +104,22 @@ tr.tr-pending { background: var(--warning-bg); }
   </div>
 
   <div class="summary-grid">
-    <div class="summary-card"><div class="sc-num">${rows.length}</div><div class="sc-label">Giorni monitorati</div></div>
+    <div class="summary-card"><div class="sc-num">${rows.length}</div><div class="sc-label">Giorni registrati</div></div>
+    <div class="summary-card ${redDays > 0 ? 'sc-warn' : ''}"><div class="sc-num">${redDays}</div><div class="sc-label">Giorni bollino rosso</div></div>
     <div class="summary-card ${confirmedDays > 0 ? 'sc-warn' : ''}"><div class="sc-num">${confirmedDays}</div><div class="sc-label">Sospensioni confermate</div></div>
-    <div class="summary-card"><div class="sc-num">${Number.isFinite(maxTemp) ? maxTemp.toFixed(1) : '—'}</div><div class="sc-label">Temp. max periodo (°C)</div></div>
-    <div class="summary-card"><div class="sc-num">${thresholdC}°C</div><div class="sc-label">Soglia interna cantiere</div></div>
+    <div class="summary-card"><div class="sc-num">Worklimate</div><div class="sc-label">Fonte ufficiale</div></div>
   </div>
-
-  <div class="threshold-box"><strong>Soglia interna: ≥ ${thresholdC}°C</strong> — riferimento operativo del cantiere, NON una soglia legale automatica. Il D.L. 107/2026 art. 6 non fissa un limite vincolante: ogni sospensione richiede una valutazione che consideri temperatura, umidità, irraggiamento, tipo di lavorazione, DPI e sforzo fisico.</div>
 
   <table>
     <thead><tr>
-      <th>Data</th><th class="td-center">Temp. max</th><th class="td-center">Umidità</th>
-      <th class="td-center">Radiazione</th><th class="td-center">WBGT stimato*</th>
-      <th class="td-center">Sospensione</th><th class="td-center">Stazione ARPAL</th>
+      <th>Data</th><th class="td-center">Livello Worklimate</th><th class="td-center">Comune</th>
+      <th class="td-center">Sospensione</th><th>Riferimento ricerca</th>
     </tr></thead>
     <tbody>${tableRows}</tbody>
   </table>
 
   <div class="legal-box">
-    Temperatura massima, umidità relativa e radiazione solare sono dati <strong>certificati dalla stazione ARPAL</strong> più vicina al cantiere — osservati da stazione a terra, non una stima. Il WBGT (contrassegnato *) è un <strong>indice stimato</strong> dalla formula pubblica del Bureau of Meteorology australiano a partire da temperatura e umidità certificate: utile come elemento di supporto alla valutazione, non un dato certificato ARPAL né il WBGT ufficiale ISO 7243 (che richiede un termometro a globo nero). Riferimenti normativi: D.L. 26/06/2026 n. 107 art. 6, messaggio INPS n. 2418 del 20/07/2026 — sospensioni tra il 1° luglio e il 31 dicembre 2026 per imprese edili, settore lapideo, escavazione.
+    Il livello di rischio riportato è quello <strong>pubblicato da Worklimate</strong> (progetto INAIL-CNR, indice WBGT ISO 7243), la fonte citata dalle ordinanze comunali/regionali per lo stop cantieri nei giorni di "bollino rosso" — verde (nullo), giallo (basso), arancione (moderato), rosso (alto). Worklimate non espone un'API pubblica: il dato è stato <strong>consultato manualmente</strong> sull'archivio storico ufficiale (archivio.worklimate.it) e trascritto in Palladia, con riferimento alla ricerca di provenienza dove indicato. Riferimenti normativi: D.L. 26/06/2026 n. 107 art. 6, messaggio INPS n. 2418 del 20/07/2026 — sospensioni tra il 1° luglio e il 31 dicembre 2026 per imprese edili, settore lapideo, escavazione.
   </div>
 
   <div class="footnote">Documento generato automaticamente da Palladia a supporto della relazione tecnica richiesta dalla normativa — non sostituisce la valutazione firmata dal datore di lavoro/RSPP, che resta responsabile della decisione finale di sospendere i lavori.</div>
@@ -134,7 +127,7 @@ tr.tr-pending { background: var(--warning-bg); }
 </body></html>`;
 }
 
-function generateHeatReportXlsx({ site, rows, thresholdC, from, to }) {
+function generateHeatReportXlsx({ site, rows, from, to }) {
   const wb = new ExcelJS.Workbook();
   const FONT = 'Calibri';
   function metaRow(ws, label, value) {
@@ -163,15 +156,16 @@ function generateHeatReportXlsx({ site, rows, thresholdC, from, to }) {
   if (site.address) metaRow(ws1, 'Indirizzo', site.address);
   if (site.client) metaRow(ws1, 'Committente', site.client);
   metaRow(ws1, 'Periodo', period);
-  metaRow(ws1, 'Soglia interna cantiere', `${thresholdC}°C (riferimento operativo, non soglia legale automatica)`);
+  metaRow(ws1, 'Fonte', 'Worklimate (archivio.worklimate.it) — inserimento manuale, nessuna API pubblica');
   ws1.addRow([]);
-  metaRow(ws1, 'Giorni monitorati', rows.length);
+  metaRow(ws1, 'Giorni registrati', rows.length);
+  metaRow(ws1, 'Giorni bollino rosso', rows.filter(r => r.risk_level === 'rosso').length);
   metaRow(ws1, 'Sospensioni confermate', rows.filter(r => r.suspension_confirmed).length);
   ws1.addRow([]);
 
   const legalRow = ws1.addRow(['Riferimenti normativi']);
   legalRow.getCell(1).font = { name: FONT, size: 11, bold: true, color: { argb: PRIMARY } };
-  const legalNote = ws1.addRow(['D.L. 26/06/2026 n. 107 art. 6, messaggio INPS n. 2418 del 20/07/2026. Temperatura/umidità/radiazione certificate ARPAL; WBGT è una stima (formula BOM), non un dato certificato né il WBGT ISO 7243 ufficiale.']);
+  const legalNote = ws1.addRow(['D.L. 26/06/2026 n. 107 art. 6, messaggio INPS n. 2418 del 20/07/2026. Livello di rischio: fonte ufficiale Worklimate (INAIL-CNR, WBGT ISO 7243), trascritto manualmente dall\'archivio storico — nessuna API pubblica disponibile.']);
   legalNote.getCell(1).font = { name: FONT, size: 9, color: { argb: MUTED } };
   legalNote.getCell(1).alignment = { wrapText: true, vertical: 'top' };
   ws1.mergeCells(`A${legalNote.number}:B${legalNote.number}`);
@@ -180,23 +174,21 @@ function generateHeatReportXlsx({ site, rows, thresholdC, from, to }) {
   const ws2 = wb.addWorksheet('Dettaglio');
   ws2.columns = [
     { header: 'Data', key: 'date', width: 14 },
-    { header: 'Temp. max (°C)', key: 'temp', width: 15 },
-    { header: 'Umidità (%)', key: 'hum', width: 13 },
-    { header: 'Radiazione (J/cm²)', key: 'rad', width: 18 },
-    { header: 'WBGT stimato (°C)', key: 'wbgt', width: 17 },
+    { header: 'Livello Worklimate', key: 'level', width: 20 },
+    { header: 'Comune', key: 'comune', width: 20 },
     { header: 'Sospensione', key: 'susp', width: 16 },
-    { header: 'Stazione ARPAL', key: 'station', width: 26 },
+    { header: 'Riferimento ricerca', key: 'note', width: 34 },
   ];
   ws2.getRow(1).eachCell(c => {
     c.font = { name: FONT, size: 10, bold: true, color: { argb: 'FFFFFF' } };
     c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PRIMARY } };
   });
   for (const r of rows) {
-    const susp = r.suspension_confirmed ? 'SOSPESO' : r.suspension_dismissed ? 'Ignorato' : r.threshold_exceeded ? 'Da confermare' : '—';
+    const isPending = r.risk_level === 'rosso' && !r.suspension_confirmed && !r.suspension_dismissed;
+    const susp = r.suspension_confirmed ? 'SOSPESO' : r.suspension_dismissed ? 'Ignorato' : isPending ? 'Da confermare' : '—';
     const row = ws2.addRow({
-      date: r.log_date, temp: r.temp_max_c ?? '—', hum: r.humidity_pct ?? '—',
-      rad: r.solar_radiation_jcm2 ?? '—', wbgt: r.wbgt_estimate_c ?? '—',
-      susp, station: r.arpal_station_name || '—',
+      date: r.log_date, level: LEVEL_LABEL[r.risk_level] || r.risk_level, comune: r.comune || '—',
+      susp, note: r.source_note || '—',
     });
     row.font = { name: FONT, size: 10 };
     if (r.suspension_confirmed) row.eachCell(c => { c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FBF0EE' } }; });

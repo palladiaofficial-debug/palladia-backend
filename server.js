@@ -43,7 +43,6 @@ const { runFormazioneMigration }    = require('./services/formazioneMigration');
 const { startWeatherLogCron }       = require('./services/weatherLogCron');
 const { startWeatherReconcileCron } = require('./services/weatherReconcileCron');
 const { startWeatherArpalCron }     = require('./services/weatherArpalCron');
-const { startHeatArpalCron }         = require('./services/heatArpalCron');
 const { startWeatherAlertCron }     = require('./services/weatherAlertCron');
 const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCron');
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
@@ -2427,7 +2426,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startWeatherLogCron();
     startWeatherReconcileCron();
     startWeatherArpalCron();
-    startHeatArpalCron();
+    // Il cron di certificazione automatica caldo (ARPAL/WBGT stimato) è stato
+    // rimosso il 2026-09-17 (F-210, AUDIT.md): il titolare ha corretto che
+    // Worklimate — non la nostra stima — è la fonte legale del "bollino
+    // rosso", e Worklimate non offre un'API automatizzabile (vedi
+    // migrations/219). Il registro caldo ora è inserimento manuale, vedi
+    // routes/v1/siteHeat.js.
     startWeatherAlertCron();
     startDailyDigestCron();
     startWeeklyExpiryReportCron();
