@@ -231,12 +231,14 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
           const { entry, exit } = ev.pair;
           const lr   = minutesByEntryId.get(entry.id);
           const mins = lr.minutes;
+          const reasonTag = reasonByLogId.get(exit.id);
+          const reasonText = reasonTag ? reasonTag.label + (reasonTag.note ? `: ${reasonTag.note}` : '') : null;
           entries.push({
             entry_time:            fmtTimeRome(entry.timestamp_server),
             exit_time:             fmtTimeRome(exit.timestamp_server),
             minutes:               mins,
             hours_str:             fmtDuration(mins),
-            anomaly:               (reasonByLogId.get(exit.id)?.label) || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+            anomaly:               reasonText || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
             lunch_break_minutes:   lr.lunchBreakMinutes || 0,
             no_lunch_override:     skipLunchDeduction,
             late_deduction_minutes: lr.lateDeductionMinutes || 0,
