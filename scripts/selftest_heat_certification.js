@@ -183,7 +183,12 @@ async function main() {
     const html = generateHeatReportHtml({ site: { ...site, start_date: decoyStartDate, client: 'TEST Committente' }, rows: liveLogs || [], from: undefined, to: undefined, filter: undefined });
     check('il report NON usa la data di inizio lavori del cantiere per il periodo (stesso principio F-209)', !html.includes(decoyStartDate), decoyStartDate);
     check('il report cita Worklimate come fonte ufficiale', html.includes('Worklimate'), null);
-    check('il report NON parla mai di ARPAL/WBGT stimato (fonte sostituita, non affiancata)', !/ARPAL|WBGT/i.test(html), null);
+    // WBGT è il nome legittimo dell'indice usato DA Worklimate (verificato via
+    // web) — citarlo qui è accurato. Quello che NON deve più comparire è la
+    // nostra vecchia stima interna: nessuna menzione di ARPAL, e "WBGT" mai
+    // accompagnato da "stimato" (linguaggio della versione superseduta).
+    check('il report NON cita mai ARPAL (fonte sostituita, non affiancata)', !/ARPAL/i.test(html), null);
+    check('il report non spaccia mai il WBGT per una nostra stima interna ("WBGT stimato")', !/WBGT\s+stimat/i.test(html), null);
     check('il report dichiara la trascrizione manuale (nessuna API pubblica)', html.includes('archivio.worklimate.it') && html.toLowerCase().includes('manual'), null);
 
   } finally {
