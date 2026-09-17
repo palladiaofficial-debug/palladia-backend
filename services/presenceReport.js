@@ -16,6 +16,7 @@
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
 const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction, isTestOrInactiveWorker } = require('../lib/presencePairing');
+const { latestReasonsByLogId } = require('../lib/presenceLogReasons');
 
 // Soglia GPS (stessa del backend punch)
 const GPS_MAX_ACCURACY_M = (() => {
@@ -48,7 +49,10 @@ function shortMethodLabel(method) {
 // problema — badge blu invece dell'ambra/rosso riservato alle vere anomalie
 // (uscita mancante, GPS impreciso, ecc.) — F-154 (AUDIT.md, redesign PDF).
 function anomalyBadgeClass(label) {
-  return label.startsWith('Pausa pranzo automatica') ? 'badge-info' : 'badge-anom';
+  // Motivo uscita (migrations/217): informativo/esplicativo, mai un problema
+  // — stesso trattamento della pausa pranzo automatica sopra.
+  return (label.startsWith('Pausa pranzo automatica') || label.startsWith('Uscita per '))
+    ? 'badge-info' : 'badge-anom';
 }
 
 function esc(s) {
@@ -147,7 +151,7 @@ function formatAnomalies(list) {
  *   anomalies:       string[]       // anomalie formattate con conteggio
  * }}
  */
-function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLunchDeduction = false) {
+function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLunchDeduction = false, reasonByLogId = new Map()) {
   const { pairs, orphanEntries, orphanExits } = dayBucket;
   const dayLogs = flattenDayLogs(dayBucket);
 
@@ -158,6 +162,15 @@ function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLu
     ...orphanExits.map(l => ({ log: l, label: 'Uscita senza entrata' })),
   ].sort((a, b) => a.log.timestamp_server.localeCompare(b.log.timestamp_server));
   const rawAnomalies = orphanEvents.map(oe => oe.label);
+
+  // Motivo uscita (maltempo/malattia/permesso, migrations/217) — puro testo
+  // aggiunto in coda, MAI usato per decidere coppie/ore: reasonByLogId è
+  // consultato solo qui, dopo che pairing e calcolo ore sono già completi.
+  const exitLogsForReason = [...pairs.map(p => p.exit), ...orphanExits];
+  for (const exitLog of exitLogsForReason) {
+    const tag = reasonByLogId.get(exitLog.id);
+    if (tag) rawAnomalies.push(tag.label + (tag.note ? `: ${tag.note}` : ''));
+  }
 
   // Ore totali = somma coppie valide al netto della pausa pranzo automatica
   // (F-152, AUDIT.md) e del ritardo ingresso (migrations/199), arrotondata a
@@ -292,6 +305,11 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   if (logsErr) throw new Error('DB_ERROR: ' + logsErr.message);
   const logsLimitReached = (logs || []).length === LOGS_LIMIT;
 
+  // Motivi uscita (migrations/217) — caricati una volta per l'intero
+  // periodo, passati per riferimento a summarizeDay: nessun impatto sul
+  // pairing/calcolo ore sopra, solo testo aggiuntivo nelle anomalie.
+  const reasonByLogId = await latestReasonsByLogId(companyId, (logs || []).map(l => l.id));
+
   // 4. Raggruppa per worker (stream cronologico, cross-giorno) → pairing →
   //    filtro dei giorni al di fuori di [from,to]
   const byWorker = new Map();
@@ -314,7 +332,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
       if (dateKey < from || dateKey > to) continue;   // fuori dal periodo richiesto
 
       const skipLunchDeduction = noLunchSet.has(`${wData.worker.id}__${dateKey}`);
-      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig, skipLunchDeduction);
+      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig, skipLunchDeduction, reasonByLogId);
       const dayLogCount = dayBucket.pairs.length * 2
         + dayBucket.orphanEntries.length + dayBucket.orphanExits.length;
       if (dayLogCount === 0) continue;

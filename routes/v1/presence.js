@@ -3,6 +3,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendDbError } = require('../../lib/httpErrors');
+const { tagPresenceLogReason, latestReasonsByLogId, VALID_REASONS } = require('../../lib/presenceLogReasons');
 
 // GET /api/v1/presence?siteId=&date= — registro presenze giornaliero (PRIVATO)
 // date format: YYYY-MM-DD
@@ -65,9 +66,43 @@ router.get('/presence', verifySupabaseJwt, async (req, res) => {
     const noteByLogId = {};
     for (const n of (notes || [])) noteByLogId[n.target_id] = { text: n.payload?.note || '', annotated_at: n.created_at };
     for (const log of data) log.annotation = noteByLogId[log.id] || null;
+
+    // Motivo uscita (maltempo/malattia/permesso, migrations/217) — campo
+    // SEPARATO da `annotation` sopra: quello alimenta lib/presencePairing.js
+    // per fondere un glitch tecnico, questo è solo un'etichetta informativa,
+    // mai letta dal calcolo ore.
+    const reasonByLogId = await latestReasonsByLogId(req.companyId, logIds);
+    for (const log of data) log.reason = reasonByLogId.get(log.id) || null;
   }
 
   res.json(data);
+});
+
+// POST /api/v1/presence/:logId/reason — motivo uscita (PRIVATO — owner/admin)
+//
+// presence_logs resta append-only: questa API non tocca la riga originale,
+// aggiunge solo un'etichetta consultabile (presence_log_reasons,
+// migrations/217) — MAI letta dal calcolo ore (lib/presencePairing.js),
+// a differenza di /annotate qui sopra che invece lo è (glitch tecnici).
+router.post('/presence/:logId/reason', verifySupabaseJwt, async (req, res) => {
+  if (!['owner', 'admin'].includes(req.userRole)) {
+    return res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  }
+
+  const { logId }       = req.params;
+  const { reason, note } = req.body || {};
+
+  if (!VALID_REASONS.includes(reason)) {
+    return res.status(400).json({ error: 'INVALID_REASON', allowed: VALID_REASONS });
+  }
+
+  const result = await tagPresenceLogReason({ companyId: req.companyId, logId, reason, note, userId: req.user?.id });
+  if (!result.ok) {
+    const status = result.code === 'PRESENCE_LOG_NOT_FOUND' ? 404 : result.code === 'NOT_AN_EXIT' ? 400 : 500;
+    return res.status(status).json({ error: result.code, message: result.error });
+  }
+
+  res.json({ ok: true });
 });
 
 // POST /api/v1/presence/:logId/annotate — annota un evento anomalo (PRIVATO — owner/admin)

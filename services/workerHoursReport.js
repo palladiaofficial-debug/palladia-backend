@@ -16,6 +16,7 @@
 
 const supabase = require('../lib/supabase');
 const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction, isTestOrInactiveWorker } = require('../lib/presencePairing');
+const { latestReasonsByLogId } = require('../lib/presenceLogReasons');
 
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
@@ -163,6 +164,12 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     }
   }
 
+  // Motivo uscita (maltempo/malattia/permesso, migrations/217) — campo
+  // SEPARATO da annotation sopra: quello alimenta il pairing (glitch
+  // tecnici), questo è solo testo mostrato in colonna Anomalie/Note, mai
+  // letto da pairLogsByDay/applyLunchBreak/applyLateEntryDeduction.
+  const reasonByLogId = await latestReasonsByLogId(companyId, (logs || []).map(l => l.id));
+
   // Group by (worker, cantiere) — stream cronologico completo, non ancora per
   // giorno. Necessario in modalità "tutti i cantieri": il pairing va fatto
   // separatamente per cantiere (un cambio cantiere chiude sempre l'ENTRY
@@ -229,7 +236,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
             exit_time:             fmtTimeRome(exit.timestamp_server),
             minutes:               mins,
             hours_str:             fmtDuration(mins),
-            anomaly:               METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+            anomaly:               (reasonByLogId.get(exit.id)?.label) || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
             lunch_break_minutes:   lr.lunchBreakMinutes || 0,
             no_lunch_override:     skipLunchDeduction,
             late_deduction_minutes: lr.lateDeductionMinutes || 0,
