@@ -43,6 +43,7 @@ const { runFormazioneMigration }    = require('./services/formazioneMigration');
 const { startWeatherLogCron }       = require('./services/weatherLogCron');
 const { startWeatherReconcileCron } = require('./services/weatherReconcileCron');
 const { startWeatherArpalCron }     = require('./services/weatherArpalCron');
+const { startHeatArpalCron }         = require('./services/heatArpalCron');
 const { startWeatherAlertCron }     = require('./services/weatherAlertCron');
 const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCron');
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
@@ -2426,6 +2427,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startWeatherLogCron();
     startWeatherReconcileCron();
     startWeatherArpalCron();
+    startHeatArpalCron();
     startWeatherAlertCron();
     startDailyDigestCron();
     startWeeklyExpiryReportCron();
