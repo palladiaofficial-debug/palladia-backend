@@ -109,11 +109,27 @@ router.post('/badge/:code/ddt/confirm', badgePunchLimiter, async (req, res) => {
   const site = await requireSiteInCompany(site_id, worker.company_id, res);
   if (!site) return;
 
-  // Il file deve essere quello davvero caricato da /scan per QUESTO
-  // lavoratore/cantiere — non un percorso arbitrario passato dal client.
+  // Il file deve essere ESATTAMENTE quello caricato da /scan per QUESTO
+  // lavoratore/cantiere — non solo un percorso che INIZIA col prefisso
+  // giusto. F-213 (AUDIT.md): un test di regressione ha trovato che
+  // startsWith() da solo passava un payload con "../../../" dopo il
+  // prefisso (stessa stringa iniziale, path diverso) — corretto validando
+  // ANCHE che il resto del percorso, dopo il prefisso, abbia esattamente la
+  // forma generata da /scan (regex fissa, nessuna interpolazione — evita
+  // anche il problema di costruire una RegExp da valori non letterali).
+  // Verifica in più che il file esista DAVVERO nello storage, non solo che
+  // il nome abbia la forma giusta.
+  const FILENAME_RE = /^\d+-[0-9a-f]{8}\.[a-zA-Z0-9]{1,10}$/;
   const expectedPrefix = `${worker.company_id}/${site.id}/ddt/`;
-  if (typeof file_url !== 'string' || !file_url.startsWith(expectedPrefix)) {
+  const remainder = typeof file_url === 'string' && file_url.startsWith(expectedPrefix)
+    ? file_url.slice(expectedPrefix.length) : null;
+  if (!remainder || !FILENAME_RE.test(remainder)) {
     return res.status(400).json({ error: 'INVALID_FILE_URL' });
+  }
+  const { data: existsCheck, error: existsErr } = await supabase.storage
+    .from(BUCKET).list(`${worker.company_id}/${site.id}/ddt`, { search: remainder });
+  if (existsErr || !existsCheck?.some(f => f.name === remainder)) {
+    return res.status(400).json({ error: 'INVALID_FILE_URL', message: 'Il file indicato non esiste.' });
   }
 
   const { data, error } = await supabase.from('site_costs').insert({
