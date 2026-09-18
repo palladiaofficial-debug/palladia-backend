@@ -1,0 +1,141 @@
+'use strict';
+/**
+ * routes/v1/badgeDdt.js
+ *
+ * F-213 (AUDIT.md, 2026-09-18): caricamento DDT per i trasportatori interni
+ * — richiesto dal titolare per avere "sotto controllo tutti i DDT" da
+ * confrontare poi con le fatture. Stessa identità badge già usata per la
+ * timbratura (routes/v1/badgePunch.js) — nessuna nuova autenticazione da
+ * far funzionare. Stessa lettura AI già in uso per fatture/ricevute cantiere
+ * (lib/siteCostOcr.js, condivisa con routes/v1/siteCosts.js) — nessuna nuova
+ * logica di estrazione. I record finiscono nella stessa tabella site_costs
+ * già usata per i costi cantiere, `tipo='ddt'`, `created_by='badge:<id>'`
+ * per distinguerli da un inserimento manuale via app.
+ *
+ * A differenza di una fattura, un DDT tipicamente non riporta un importo
+ * (le merci arrivano prima del prezzo) — `importo` resta NULL qui, mai un
+ * valore inventato per soddisfare un vincolo pensato per le fatture.
+ *
+ * POST /api/v1/badge/:code/ddt/scan     — carica la foto, la fa leggere dall'AI, ritorna i campi (non salva)
+ * POST /api/v1/badge/:code/ddt/confirm  — salva il DDT con i campi (eventualmente corretti dal trasportatore)
+ */
+
+const crypto   = require('crypto');
+const path     = require('path');
+const multer   = require('multer');
+const router   = require('express').Router();
+const supabase = require('../../lib/supabase');
+const { resolveWorkerByBadge } = require('../../lib/workerByBadge');
+const { badgePunchLimiter, aiLimiter } = require('../../middleware/rateLimit');
+const { extractSiteCostFromDocument, TIPI } = require('../../lib/siteCostOcr');
+
+const BUCKET   = 'site-media';
+const MAX_SIZE = 10 * 1024 * 1024;
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits:  { fileSize: MAX_SIZE },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Usa una foto o un PDF.'));
+  },
+});
+
+function isUuid(v) {
+  return typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+}
+
+async function resolveActiveWorker(code, res) {
+  const worker = await resolveWorkerByBadge(code);
+  if (!worker) { res.status(401).json({ error: 'BADGE_NOT_FOUND' }); return null; }
+  if (!worker.is_active) { res.status(403).json({ error: 'BADGE_REVOKED' }); return null; }
+  return worker;
+}
+
+// Stesso confine di sicurezza di requireSiteOwnership (siteCosts.js), qui
+// contro company_id del lavoratore invece che req.companyId da JWT — il
+// badge non porta una sessione, solo l'identità del lavoratore.
+async function requireSiteInCompany(siteId, companyId, res) {
+  if (!isUuid(siteId)) { res.status(400).json({ error: 'INVALID_SITE_ID' }); return null; }
+  const { data } = await supabase.from('sites').select('id, name')
+    .eq('id', siteId).eq('company_id', companyId).neq('status', 'eliminato').maybeSingle();
+  if (!data) { res.status(404).json({ error: 'SITE_NOT_FOUND' }); return null; }
+  return data;
+}
+
+// ── POST /api/v1/badge/:code/ddt/scan ─────────────────────────────────────────
+router.post('/badge/:code/ddt/scan', badgePunchLimiter, aiLimiter,
+  (req, res, next) => upload.single('file')(req, res, err => {
+    if (err instanceof multer.MulterError) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : err.message });
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  }),
+  async (req, res) => {
+    const worker = await resolveActiveWorker(req.params.code, res);
+    if (!worker) return;
+    const site = await requireSiteInCompany(req.body.site_id, worker.company_id, res);
+    if (!site) return;
+    if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
+
+    const ext = path.extname(req.file.originalname || '') || '.jpg';
+    const file_url = `${worker.company_id}/${site.id}/ddt/${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+    const { error: uploadErr } = await supabase.storage
+      .from(BUCKET).upload(file_url, req.file.buffer, { contentType: req.file.mimetype });
+    if (uploadErr) return res.status(500).json({ error: 'UPLOAD_FAILED', message: uploadErr.message });
+
+    // Mai bloccante: se l'AI fallisce (rete, formato illeggibile) il
+    // trasportatore conferma comunque a mano — la foto è già salvata, non
+    // deve restare bloccato sul posto per un errore di lettura.
+    let fields = {};
+    try {
+      fields = await extractSiteCostFromDocument(req.file.buffer, req.file.mimetype, {
+        companyId: worker.company_id, userId: null, callSite: 'badge_ddt_scan',
+      });
+    } catch (err) {
+      console.error('[badge-ddt/scan] AI error (non bloccante):', err.message);
+    }
+
+    res.json({ file_url, fields: { ...fields, tipo: TIPI.includes(fields.tipo) ? fields.tipo : 'ddt' } });
+  }
+);
+
+// ── POST /api/v1/badge/:code/ddt/confirm ──────────────────────────────────────
+router.post('/badge/:code/ddt/confirm', badgePunchLimiter, async (req, res) => {
+  const worker = await resolveActiveWorker(req.params.code, res);
+  if (!worker) return;
+
+  const { site_id, file_url, descrizione, fornitore, numero_documento, data_documento, tipo } = req.body || {};
+  const site = await requireSiteInCompany(site_id, worker.company_id, res);
+  if (!site) return;
+
+  // Il file deve essere quello davvero caricato da /scan per QUESTO
+  // lavoratore/cantiere — non un percorso arbitrario passato dal client.
+  const expectedPrefix = `${worker.company_id}/${site.id}/ddt/`;
+  if (typeof file_url !== 'string' || !file_url.startsWith(expectedPrefix)) {
+    return res.status(400).json({ error: 'INVALID_FILE_URL' });
+  }
+
+  const { data, error } = await supabase.from('site_costs').insert({
+    company_id:       worker.company_id,
+    site_id:          site.id,
+    descrizione:      (descrizione || '').trim() || 'DDT',
+    fornitore:        fornitore?.trim() || null,
+    numero_documento: numero_documento?.trim() || null,
+    data_documento:   data_documento || null,
+    tipo:             TIPI.includes(tipo) ? tipo : 'ddt',
+    importo:          null, // F-213: un DDT non ha quasi mai un importo — mai un valore inventato qui
+    file_url,
+    created_by:       `badge:${worker.id}`,
+  }).select().single();
+
+  if (error) return res.status(500).json({ error: 'DB_ERROR', message: error.message });
+
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+  const { count } = await supabase.from('site_costs').select('id', { count: 'exact', head: true })
+    .eq('created_by', `badge:${worker.id}`).eq('tipo', 'ddt').gte('created_at', todayStart.toISOString());
+
+  res.status(201).json({ ...data, today_count: count ?? 1 });
+});
+
+module.exports = router;

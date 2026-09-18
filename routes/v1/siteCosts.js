@@ -4,17 +4,10 @@ const multer    = require('multer');
 const router    = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const Anthropic = require('@anthropic-ai/sdk');
 const { validate } = require('../../middleware/validate');
 const { patchCostSchema } = require('../../lib/schemas/siteCosts');
-const { logUsage } = require('../../lib/ladiaUsageLog');
 const { sendDbError } = require('../../lib/httpErrors');
-
-let _ai = null;
-function getAI() {
-  if (!_ai) _ai = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-  return _ai;
-}
+const { extractSiteCostFromDocument } = require('../../lib/siteCostOcr');
 
 const BUCKET   = 'site-media';
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -240,49 +233,11 @@ router.post('/sites/:siteId/costs/ocr',
     if (!await requireSiteOwnership(siteId, req.companyId, res)) return;
     if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
 
-    const buf      = req.file.buffer;
-    const mime     = req.file.mimetype;
-    const b64      = buf.toString('base64');
-    const isPdf    = mime === 'application/pdf';
-
-    const contentBlock = isPdf
-      ? { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: b64 } }
-      : { type: 'image',    source: { type: 'base64', media_type: mime,               data: b64 } };
-
-    const prompt = `Sei un assistente per la gestione cantieri edili. Leggi questo documento (fattura, DDT o ricevuta) ed estrai le informazioni in JSON con questi campi:
-- descrizione: breve descrizione del bene/servizio (max 100 caratteri, in italiano)
-- importo: importo totale del documento come numero decimale (usa il punto come separatore, non la virgola). Se non trovi un importo totale chiaro, usa null.
-- fornitore: nome del fornitore/emittente. Null se non presente.
-- numero_documento: numero fattura/DDT (es. "2025/0042"). Null se non presente.
-- data_documento: data del documento in formato YYYY-MM-DD. Null se non presente.
-- tipo: uno tra "fattura", "ddt", "acconto", "ritenuta", "altro"
-- categoria: una tra "Materiali", "Subappalto", "Nolo", "Manodopera extra", "Trasporti", "Forniture", "Oneri sicurezza", "Altro"
-
-Rispondi SOLO con JSON valido, nessun testo aggiuntivo.`;
-
     try {
-      const ai  = getAI();
-      const msg = await ai.messages.create({
-        model:      'claude-haiku-4-5-20251001',
-        max_tokens: 512,
-        messages:   [{ role: 'user', content: [contentBlock, { type: 'text', text: prompt }] }],
+      const fields = await extractSiteCostFromDocument(req.file.buffer, req.file.mimetype, {
+        companyId: req.companyId, userId: req.user?.id, callSite: 'site_costs_ocr',
       });
-      logUsage({ companyId: req.companyId, userId: req.user?.id, model: 'claude-haiku-4-5-20251001', callSite: 'site_costs_ocr', usage: msg.usage });
-
-      const raw  = msg.content.find(b => b.type === 'text')?.text?.trim() || '{}';
-      const json = raw.startsWith('```') ? raw.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim() : raw;
-      const data = JSON.parse(json);
-
-      res.json({
-        descrizione:      typeof data.descrizione      === 'string'  ? data.descrizione.slice(0, 100)  : '',
-        importo:          typeof data.importo          === 'number'   ? String(data.importo)             : '',
-        fornitore:        typeof data.fornitore        === 'string'  ? data.fornitore.slice(0, 100)     : '',
-        numero_documento: typeof data.numero_documento === 'string'  ? data.numero_documento.slice(0,50): '',
-        data_documento:   typeof data.data_documento   === 'string'  ? data.data_documento               : '',
-        tipo:             ['fattura','ddt','acconto','ritenuta','altro'].includes(data.tipo) ? data.tipo : 'fattura',
-        categoria:        ['Materiali','Subappalto','Nolo','Manodopera extra','Trasporti','Forniture','Oneri sicurezza','Altro'].includes(data.categoria)
-                            ? data.categoria : 'Altro',
-      });
+      res.json(fields);
     } catch (err) {
       console.error('[siteCosts/ocr] AI error:', err?.message || err);
       res.status(500).json({ error: 'OCR_FAILED', message: 'Impossibile leggere il documento.' });

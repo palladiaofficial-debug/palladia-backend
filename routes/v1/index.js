@@ -82,6 +82,7 @@ router.use('/', require('./scan'));
 // Badge Punch: timbratura via badge personale lavoratore (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./badgePunch'));
+router.use('/', require('./badgeDdt'));
 
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale

@@ -213,6 +213,36 @@
     }
     .punch-icon { font-size: 28px; line-height: 1; }
 
+    /* F-213 (AUDIT.md): DDT trasportatori interni */
+    .ddt-btn {
+      display: block; width: 100%; margin-top: 10px; padding: 13px;
+      border: 1.5px solid var(--text); border-radius: var(--radius);
+      background: transparent; color: var(--text);
+      font-family: inherit; font-size: 15px; font-weight: 700;
+      cursor: pointer; -webkit-appearance: none;
+    }
+    .ddt-btn:active { transform: scale(0.98); opacity: 0.85; }
+    .cam-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+    .ddt-photo-frame {
+      width: 100%; aspect-ratio: 4/3; border-radius: var(--radius); overflow: hidden;
+      background: #111; margin-bottom: 14px; display: flex; align-items: center; justify-content: center;
+    }
+    .ddt-photo-frame img { width: 100%; height: 100%; object-fit: cover; }
+    .ddt-field { margin-bottom: 10px; }
+    .ddt-field label {
+      display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.04em;
+      text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
+    }
+    .ddt-field input {
+      width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px;
+      font-family: inherit; font-size: 15px; color: var(--text); background: #fff;
+    }
+    .ddt-cancel {
+      display: block; width: 100%; margin-top: 10px; padding: 10px; text-align: center;
+      background: none; border: none; color: var(--muted); font-family: inherit;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+
     /* ── GPS status ── */
     .gps-row {
       display: flex;
@@ -671,6 +701,29 @@
         footer: "Titolare del trattamento: l'impresa. Base giuridica: esecuzione del contratto di lavoro e obblighi di sicurezza sul lavoro. Trattamento ai sensi del Regolamento UE 2016/679 (GDPR).",
         acceptButton: 'Ho letto e accetto',
       },
+      // F-213 (AUDIT.md): caricamento DDT trasportatori interni.
+      ddt: {
+        buttonLabel: '📦 Carica DDT',
+        cameraTitle: 'Fotografa il DDT',
+        cameraHint: 'Inquadra il documento, tienilo dritto e leggibile.',
+        reading: 'Lettura in corso…',
+        confirmTitle: 'Controlla i dati',
+        confirmHint: 'Letti automaticamente — correggi se serve.',
+        fieldSupplier: 'Fornitore',
+        fieldDocNumber: 'Numero documento',
+        fieldDate: 'Data',
+        fieldDescription: 'Materiale / descrizione',
+        confirmButton: 'Conferma e salva',
+        savingButton: 'Salvataggio…',
+        savedTitle: 'DDT salvato',
+        savedSub: 'Collegato a',
+        todayCount: function (n) { return n + ' DDT caricat' + (n === 1 ? 'o' : 'i') + ' oggi'; },
+        backToHome: 'Torna alla timbratura',
+        uploadError: 'Impossibile caricare la foto. Riprova.',
+        saveError: 'Impossibile salvare. Riprova.',
+        fileTooLarge: 'Il file è troppo grande (max 10MB).',
+        cancel: 'Annulla',
+      },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Badge non valido',          sub: 'Avvisa il responsabile.' },
         BADGE_REVOKED:                 { icon: '🔒', title: 'Badge disattivato',         sub: 'Avvisa il responsabile.' },
@@ -794,6 +847,30 @@
         ],
         footer: 'Operator de date: compania. Temei juridic: executarea contractului de muncă și obligații de securitate. Prelucrare conform Regulamentului UE 2016/679 (GDPR).',
         acceptButton: 'Am citit și accept',
+      },
+      // F-213 (AUDIT.md): încărcare DDT pentru transportatorii interni —
+      // traducere proprie, nu verificată de un vorbitor nativ (ca și restul paginii).
+      ddt: {
+        buttonLabel: '📦 Încarcă DDT',
+        cameraTitle: 'Fotografiază DDT-ul',
+        cameraHint: 'Încadrează documentul, ține-l drept și lizibil.',
+        reading: 'Se citește…',
+        confirmTitle: 'Verifică datele',
+        confirmHint: 'Citite automat — corectează dacă e nevoie.',
+        fieldSupplier: 'Furnizor',
+        fieldDocNumber: 'Număr document',
+        fieldDate: 'Data',
+        fieldDescription: 'Material / descriere',
+        confirmButton: 'Confirmă și salvează',
+        savingButton: 'Se salvează…',
+        savedTitle: 'DDT salvat',
+        savedSub: 'Legat de',
+        todayCount: function (n) { return n + ' DDT încărcate azi'; },
+        backToHome: 'Înapoi la pontaj',
+        uploadError: 'Nu s-a putut încărca fotografia. Încearcă din nou.',
+        saveError: 'Nu s-a putut salva. Încearcă din nou.',
+        fileTooLarge: 'Fișierul este prea mare (max 10MB).',
+        cancel: 'Anulează',
       },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Ecuson invalid',            sub: 'Anunță responsabilul.' },
@@ -919,6 +996,30 @@
         footer: 'Titullari i trajtimit: kompania. Baza ligjore: ekzekutimi i kontratës së punës dhe detyrimet e sigurisë në punë. Trajtim sipas Rregullores së BE 2016/679 (GDPR).',
         acceptButton: 'Lexova dhe pranoj',
       },
+      // F-213 (AUDIT.md): ngarkimi i DDT-ve për transportuesit e brendshëm —
+      // përkthim jo i verifikuar nga një folës amtare (si pjesa tjetër e faqes).
+      ddt: {
+        buttonLabel: '📦 Ngarko DDT',
+        cameraTitle: 'Fotografo DDT-në',
+        cameraHint: 'Kornizo dokumentin, mbaje drejt dhe të lexueshëm.',
+        reading: 'Duke lexuar…',
+        confirmTitle: 'Kontrollo të dhënat',
+        confirmHint: 'Lexuar automatikisht — korrigjo nëse duhet.',
+        fieldSupplier: 'Furnitori',
+        fieldDocNumber: 'Numri i dokumentit',
+        fieldDate: 'Data',
+        fieldDescription: 'Materiali / përshkrimi',
+        confirmButton: 'Konfirmo dhe ruaj',
+        savingButton: 'Duke ruajtur…',
+        savedTitle: 'DDT u ruajt',
+        savedSub: 'Lidhur me',
+        todayCount: function (n) { return n + ' DDT të ngarkuara sot'; },
+        backToHome: 'Kthehu te regjistrimi',
+        uploadError: 'Nuk u ngarkua dot fotografia. Provo përsëri.',
+        saveError: 'Nuk u ruajt dot. Provo përsëri.',
+        fileTooLarge: 'Skedari është shumë i madh (maks 10MB).',
+        cancel: 'Anulo',
+      },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Kartë e pavlefshme',        sub: 'Njofto përgjegjësin.' },
         BADGE_REVOKED:                 { icon: '🔒', title: 'Karta u çaktivizua',        sub: 'Njofto përgjegjësin.' },
@@ -1042,6 +1143,30 @@
         ],
         footer: 'المسؤول عن المعالجة: الشركة. الأساس القانوني: تنفيذ عقد العمل والتزامات السلامة المهنية. المعالجة وفقًا للائحة الاتحاد الأوروبي 2016/679 (GDPR).',
         acceptButton: 'قرأت وأوافق',
+      },
+      // F-213 (AUDIT.md): تحميل مستندات التسليم للسائقين الداخليين — ترجمة
+      // خاصة غير مراجَعة من متحدث أصلي (مثل بقية الصفحة).
+      ddt: {
+        buttonLabel: '📦 تحميل مستند التسليم',
+        cameraTitle: 'صوّر مستند التسليم',
+        cameraHint: 'ضع المستند داخل الإطار بشكل واضح ومستقيم.',
+        reading: 'جارٍ القراءة…',
+        confirmTitle: 'تحقق من البيانات',
+        confirmHint: 'تمت القراءة تلقائيًا — صحّح إذا لزم الأمر.',
+        fieldSupplier: 'المورّد',
+        fieldDocNumber: 'رقم المستند',
+        fieldDate: 'التاريخ',
+        fieldDescription: 'المواد / الوصف',
+        confirmButton: 'تأكيد وحفظ',
+        savingButton: 'جارٍ الحفظ…',
+        savedTitle: 'تم حفظ المستند',
+        savedSub: 'مرتبط بـ',
+        todayCount: function (n) { return n + ' مستندات محمّلة اليوم'; },
+        backToHome: 'العودة إلى تسجيل الحضور',
+        uploadError: 'تعذّر تحميل الصورة. حاول مرة أخرى.',
+        saveError: 'تعذّر الحفظ. حاول مرة أخرى.',
+        fileTooLarge: 'الملف كبير جدًا (الحد الأقصى 10 ميجابايت).',
+        cancel: 'إلغاء',
       },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'بطاقة غير صالحة',            sub: 'أبلغ المسؤول.' },
@@ -1553,6 +1678,11 @@
       <div class="hint-text fade-in">
         ${esc(t().pressButtonHint)}
       </div>
+
+      <!-- F-213 (AUDIT.md): DDT trasportatori interni — stesso badge/cantiere
+           già selezionati per la timbratura, nessuna nuova identità. -->
+      <button class="ddt-btn fade-in" id="ddt-open-btn" onclick="openDdtCamera()">${esc(t().ddt.buttonLabel)}</button>
+
       <div class="hint-help" id="help-hint">
         ${helpRequestSent
           ? esc(t().helpSent)
@@ -1567,6 +1697,145 @@
       // Avvia GPS — i callback aggiorneranno bottone e riga GPS via updatePunchButton/updateGpsRow
       startGps();
     }
+  }
+
+  // ── DDT trasportatori interni (F-213, AUDIT.md) ──────────────────────────────
+  // Foto → lettura AI (routes/v1/badgeDdt.js, riusa lib/siteCostOcr.js già in
+  // uso per fatture/ricevute) → conferma → salvato. Stessa identità badge e
+  // stesso cantiere già selezionati per la timbratura, nessun nuovo login.
+  let ddtPreviewUrl = null;
+
+  function openDdtCamera() {
+    let input = document.getElementById('ddt-cam-input');
+    if (!input) {
+      input = document.createElement('input');
+      input.type = 'file';
+      input.id = 'ddt-cam-input';
+      input.className = 'cam-input';
+      input.accept = 'image/*';
+      input.setAttribute('capture', 'environment');
+      document.body.appendChild(input);
+      input.addEventListener('change', function () {
+        if (input.files && input.files[0]) handleDdtFileSelected(input.files[0]);
+        input.value = '';
+      });
+    }
+    input.click();
+  }
+
+  function renderDdtLoading(previewUrl, label) {
+    wrap.innerHTML = `
+      <div class="ddt-photo-frame fade-in">${previewUrl ? `<img src="${previewUrl}" alt="">` : ''}</div>
+      <div class="hint-text fade-in" style="text-align:center;">${esc(label)}</div>`;
+  }
+
+  function renderDdtError(message) {
+    wrap.innerHTML = `
+      <div class="card fade-in" style="text-align:center; padding:28px 20px;">
+        <div style="font-size:32px;margin-bottom:10px;">!</div>
+        <div style="font-size:15px;font-weight:700;margin-bottom:6px;">${esc(message)}</div>
+      </div>
+      <button class="punch-btn entry fade-in" onclick="openDdtCamera()"><span>${esc(t().retry)}</span></button>
+      <button class="ddt-cancel fade-in" onclick="cancelDdt()">${esc(t().ddt.cancel)}</button>`;
+  }
+
+  async function handleDdtFileSelected(file) {
+    if (file.size > 10 * 1024 * 1024) { renderDdtError(t().ddt.fileTooLarge); return; }
+    if (ddtPreviewUrl) URL.revokeObjectURL(ddtPreviewUrl);
+    ddtPreviewUrl = URL.createObjectURL(file);
+    renderDdtLoading(ddtPreviewUrl, t().ddt.reading);
+
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('site_id', selectedSite.site_id);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const r = await fetch(API + '/api/v1/badge/' + BADGE_CODE + '/ddt/scan', { method: 'POST', body: fd, signal: controller.signal });
+      clearTimeout(timeoutId);
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body.message || body.error || 'scan failed');
+      renderDdtConfirm(body.fields || {}, body.file_url);
+    } catch (err) {
+      renderDdtError(t().ddt.uploadError);
+    }
+  }
+
+  function renderDdtConfirm(fields, fileUrl) {
+    const T = t().ddt;
+    wrap.innerHTML = `
+      <div class="ddt-photo-frame fade-in">${ddtPreviewUrl ? `<img src="${ddtPreviewUrl}" alt="">` : ''}</div>
+      <div class="hint-text fade-in" style="margin-bottom:4px;">${esc(T.confirmHint)}</div>
+
+      <div class="card fade-in" style="padding:14px;">
+        <div class="ddt-field">
+          <label>${esc(T.fieldSupplier)}</label>
+          <input id="ddt-f-fornitore" value="${esc(fields.fornitore || '')}">
+        </div>
+        <div class="ddt-field">
+          <label>${esc(T.fieldDocNumber)}</label>
+          <input id="ddt-f-numero" value="${esc(fields.numero_documento || '')}">
+        </div>
+        <div class="ddt-field">
+          <label>${esc(T.fieldDate)}</label>
+          <input id="ddt-f-data" type="date" value="${esc(fields.data_documento || '')}">
+        </div>
+        <div class="ddt-field" style="margin-bottom:0;">
+          <label>${esc(T.fieldDescription)}</label>
+          <input id="ddt-f-descrizione" value="${esc(fields.descrizione || '')}">
+        </div>
+      </div>
+
+      <button class="punch-btn entry fade-in" id="ddt-confirm-btn" onclick="confirmDdtSave('${esc(fileUrl)}')" style="margin-top:12px;">
+        <span>${esc(T.confirmButton)}</span>
+      </button>
+      <div id="ddt-confirm-error" class="hint-text fade-in" style="text-align:center;color:#dc2626;display:none;"></div>
+      <button class="ddt-cancel fade-in" onclick="cancelDdt()">${esc(T.cancel)}</button>`;
+  }
+
+  async function confirmDdtSave(fileUrl) {
+    const T = t().ddt;
+    const btn = document.getElementById('ddt-confirm-btn');
+    const errEl = document.getElementById('ddt-confirm-error');
+    if (errEl) errEl.style.display = 'none';
+    if (btn) { btn.disabled = true; btn.querySelector('span').textContent = T.savingButton; }
+
+    const payload = {
+      site_id:          selectedSite.site_id,
+      file_url:         fileUrl,
+      fornitore:        document.getElementById('ddt-f-fornitore').value,
+      numero_documento: document.getElementById('ddt-f-numero').value,
+      data_documento:   document.getElementById('ddt-f-data').value,
+      descrizione:      document.getElementById('ddt-f-descrizione').value,
+      tipo:             'ddt',
+    };
+
+    try {
+      const { status, body } = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/ddt/confirm', payload);
+      if (status !== 201) throw new Error(body.message || body.error || 'save failed');
+      renderDdtSuccess(body.today_count || 1);
+    } catch (err) {
+      if (btn) { btn.disabled = false; btn.querySelector('span').textContent = T.confirmButton; }
+      if (errEl) { errEl.textContent = T.saveError; errEl.style.display = 'block'; }
+    }
+  }
+
+  function cancelDdt() {
+    if (ddtPreviewUrl) { URL.revokeObjectURL(ddtPreviewUrl); ddtPreviewUrl = null; }
+    renderPunchScreen();
+  }
+
+  function renderDdtSuccess(count) {
+    const T = t().ddt;
+    wrap.innerHTML = `
+      <div class="card fade-in" style="text-align:center; padding:32px 20px;">
+        <span class="success-icon">✓</span>
+        <div class="success-title">${esc(T.savedTitle)}</div>
+        <div class="success-sub">${esc(T.savedSub)} ${esc(selectedSite.site_name)}</div>
+        <div class="hint-help" style="margin-top:6px;">${esc(T.todayCount(count))}</div>
+      </div>`;
+    if (ddtPreviewUrl) { URL.revokeObjectURL(ddtPreviewUrl); ddtPreviewUrl = null; }
+    setTimeout(renderPunchScreen, 2200);
   }
 
   // ── Render: successo ───────────────────────────────────────────────────────────
