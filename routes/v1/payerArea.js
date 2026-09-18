@@ -19,6 +19,22 @@
 // GET  /api/v1/payer/:token/payslips/:id/pdf            — URL firmato PDF
 // POST /api/v1/payer/:token/payslips/:id/mark-paid      — segna pagata
 // POST /api/v1/payer/:token/payslips/:id/mark-unpaid    — annulla
+//
+// F-212 (AUDIT.md, 2026-09-17): il titolare ha segnalato che un singolo link
+// valeva 365 giorni e dava accesso a TUTTE le buste paga di TUTTI i
+// lavoratori con la sola email come barriera — un refuso o un inoltro
+// esponevano un anno intero di dati molto sensibili. Due mitigazioni senza
+// nuova infrastruttura (niente SMS/OTP, valutato ma costoso):
+//   1. Finestra SCORREVOLE di 30 giorni invece di una fissa a 365: ogni uso
+//      valido estende la scadenza di altri 30 giorni (verifyPayerToken sotto)
+//      — un link usato regolarmente non scade mai in pratica, uno inviato
+//      per errore e mai aperto muore da solo entro 30 giorni. Nessun bottone
+//      "rinnova" da premere, nessun nuovo link da rimandare via email —
+//      esattamente il problema del vecchio sistema PIN (migrazione 214) che
+//      non si vuole ripetere.
+//   2. Storico visibile ristretto agli ultimi VISIBLE_MONTHS mesi (lista, PDF
+//      e le due azioni di stato) invece dell'intera vita dell'azienda — un
+//      link compromesso espone una finestra limitata, non un archivio intero.
 // ──────────────────────────────────────────────────────────────────────────────
 
 const crypto    = require('crypto');
@@ -34,6 +50,9 @@ const areaLimiter = rateLimit({
   legacyHeaders:   false,
   message: { error: 'RATE_LIMIT_EXCEEDED' },
 });
+
+const SLIDING_WINDOW_DAYS = 30;
+const VISIBLE_MONTHS      = 6;
 
 function hashToken(t) {
   return crypto.createHash('sha256').update(t).digest('hex');
@@ -61,9 +80,24 @@ async function verifyPayerToken(req, res, next) {
     return res.status(401).json({ error: 'LINK_INVALID', message: 'Questo link non è più valido. Chiedi all\'azienda di inviartene uno nuovo.' });
   }
   req.payerSession = session;
-  supabase.from('payslip_payer_sessions').update({ last_used_at: new Date().toISOString() }).eq('id', session.id)
+  const newExpiry = new Date(Date.now() + SLIDING_WINDOW_DAYS * 86400000).toISOString();
+  supabase.from('payslip_payer_sessions').update({ last_used_at: new Date().toISOString(), expires_at: newExpiry }).eq('id', session.id)
     .then(() => {}).catch(() => {});
   next();
+}
+
+// Solo gli ultimi VISIBLE_MONTHS mesi — cutoff calcolato su anno/mese
+// (payslips non ha una colonna data singola), stesso principio per lista,
+// PDF e le due azioni di stato sotto: un ID già noto non deve bastare ad
+// aggirare la finestra.
+function visiblePeriodCutoff() {
+  const now = new Date();
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - VISIBLE_MONTHS, 1);
+  return { year: cutoff.getFullYear(), month: cutoff.getMonth() + 1 };
+}
+function applyVisibleWindow(query) {
+  const { year, month } = visiblePeriodCutoff();
+  return query.or(`period_year.gt.${year},and(period_year.eq.${year},period_month.gte.${month})`);
 }
 
 // ── GET /api/v1/payer/:token/payslips ─────────────────────────────────────────
@@ -75,11 +109,11 @@ async function verifyPayerToken(req, res, next) {
 router.get('/payer/:token/payslips', areaLimiter, verifyPayerToken, async (req, res) => {
   const { company_id: cid } = req.payerSession;
 
-  const { data: rows, error } = await supabase
+  const { data: rows, error } = await applyVisibleWindow(supabase
     .from('payslips')
     .select('id, worker_id, period_year, period_month, filename, status, payment_status, paid_at, paid_by')
     .eq('company_id', cid)
-    .in('status', ['shared', 'acknowledged'])
+    .in('status', ['shared', 'acknowledged']))
     .order('period_year',  { ascending: false })
     .order('period_month', { ascending: false });
 
@@ -107,12 +141,12 @@ router.get('/payer/:token/payslips', areaLimiter, verifyPayerToken, async (req, 
 router.get('/payer/:token/payslips/:id/pdf', areaLimiter, verifyPayerToken, async (req, res) => {
   const { company_id: cid } = req.payerSession;
 
-  const { data: row } = await supabase
+  const { data: row } = await applyVisibleWindow(supabase
     .from('payslips')
     .select('file_path')
     .eq('id', req.params.id)
     .eq('company_id', cid)
-    .in('status', ['shared', 'acknowledged'])
+    .in('status', ['shared', 'acknowledged']))
     .maybeSingle();
 
   if (!row) return res.status(404).json({ error: 'PAYSLIP_NOT_FOUND' });
@@ -129,11 +163,11 @@ router.get('/payer/:token/payslips/:id/pdf', areaLimiter, verifyPayerToken, asyn
 router.post('/payer/:token/payslips/:id/mark-paid', areaLimiter, verifyPayerToken, async (req, res) => {
   const { company_id: cid, email } = req.payerSession;
 
-  const { data, error } = await supabase
+  const { data, error } = await applyVisibleWindow(supabase
     .from('payslips')
     .update({ payment_status: 'pagata', paid_at: new Date().toISOString(), paid_by: 'payer' })
     .eq('id', req.params.id).eq('company_id', cid)
-    .in('status', ['shared', 'acknowledged'])
+    .in('status', ['shared', 'acknowledged']))
     .select('id').maybeSingle();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
@@ -152,11 +186,11 @@ router.post('/payer/:token/payslips/:id/mark-paid', areaLimiter, verifyPayerToke
 router.post('/payer/:token/payslips/:id/mark-unpaid', areaLimiter, verifyPayerToken, async (req, res) => {
   const { company_id: cid, email } = req.payerSession;
 
-  const { data, error } = await supabase
+  const { data, error } = await applyVisibleWindow(supabase
     .from('payslips')
     .update({ payment_status: 'da_pagare', paid_at: null, paid_by: null })
     .eq('id', req.params.id).eq('company_id', cid)
-    .in('status', ['shared', 'acknowledged'])
+    .in('status', ['shared', 'acknowledged']))
     .select('id').maybeSingle();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });

@@ -19,7 +19,12 @@ const { validate } = require('../../middleware/validate');
 const { auditLog } = require('../../lib/audit');
 const { sendPayerAccessEmail } = require('../../services/email');
 
-const PAYER_SESSION_TTL_DAYS = 365; // stesso orizzonte del Portale Professionisti (coordinator_pro_sessions)
+// F-212 (AUDIT.md, 2026-09-17): era 365gg fisso — un link mandato per errore
+// restava valido un anno intero su tutte le buste paga dell'azienda.
+// Scadenza iniziale allineata alla finestra scorrevole di
+// routes/v1/payerArea.js (SLIDING_WINDOW_DAYS): un link usato regolarmente
+// si rinnova da solo ad ogni apertura, uno mai aperto muore entro 30gg.
+const PAYER_SESSION_TTL_DAYS = 30;
 
 function isAdminOrOwner(role) {
   return role === 'owner' || role === 'admin';

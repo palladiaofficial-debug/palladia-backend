@@ -6,6 +6,7 @@
 // GET  /api/v1/area/:code/payslips       — buste paga condivise
 // GET  /api/v1/area/:code/payslips/:id/pdf      — URL firmato PDF
 // POST /api/v1/area/:code/payslips/:id/acknowledge — presa visione
+// POST /api/v1/area/:code/payslip-share-consent — F-212: consenso alla condivisione col pagatore esterno
 // GET  /api/v1/area/:code/documents/:docId       — URL firmato documento
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ const { resolveWorkerByBadge } = require('../../lib/workerByBadge');
 const { signWorkerToken, verifyWorkerArea, TOKEN_TTL } = require('../../lib/workerAuth');
 const { verifyPin } = require('../../lib/pinHash');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
+const { hasValidConsent, companyHasActivePayer, recordConsent } = require('../../lib/workerPayslipShareConsent');
 
 // ── Rate limit: 5 tentativi ogni 15 min per IP ──────────────────────────────
 const authLimiter = rateLimit({
@@ -177,9 +179,27 @@ router.get('/area/:code/presence', areaLimiter, verifyWorkerArea, async (req, re
   })));
 });
 
+// F-212 (AUDIT.md): il consenso alla condivisione con il pagatore esterno ha
+// senso chiederlo solo se l'azienda condivide DAVVERO le buste paga in
+// questo momento (almeno un accesso pagatore attivo) — altrimenti sarebbe
+// un'informativa su una pratica che non esiste. Ritorna null se il
+// lavoratore può procedere, altrimenti l'oggetto errore da rispondere.
+async function payslipShareConsentGate(wid, cid) {
+  if (!(await companyHasActivePayer(supabase, cid))) return null;
+  const { data: worker } = await supabase
+    .from('workers')
+    .select('payslip_share_consent_accepted_at, payslip_share_consent_version')
+    .eq('id', wid).eq('company_id', cid).maybeSingle();
+  if (hasValidConsent(worker)) return null;
+  return { status: 403, body: { error: 'PAYSLIP_SHARE_CONSENT_REQUIRED', message: 'Prima di vedere le buste paga devi accettare la condivisione con chi si occupa dei pagamenti.' } };
+}
+
 // ── GET /api/v1/area/:code/payslips ──────────────────────────────────────────
 router.get('/area/:code/payslips', areaLimiter, verifyWorkerArea, async (req, res) => {
   const { wid, cid } = req.workerPayload;
+
+  const gate = await payslipShareConsentGate(wid, cid);
+  if (gate) return res.status(gate.status).json(gate.body);
 
   const { data, error } = await supabase
     .from('payslips')
@@ -197,6 +217,11 @@ router.get('/area/:code/payslips', areaLimiter, verifyWorkerArea, async (req, re
 // ── GET /api/v1/area/:code/payslips/:id/pdf ──────────────────────────────────
 router.get('/area/:code/payslips/:id/pdf', areaLimiter, verifyWorkerArea, async (req, res) => {
   const { wid, cid } = req.workerPayload;
+
+  // Stessa guardia della lista — difesa in profondità: un ID già noto al
+  // client (cache, link salvato) non deve bastare ad aggirare il consenso.
+  const gate = await payslipShareConsentGate(wid, cid);
+  if (gate) return res.status(gate.status).json(gate.body);
 
   const { data: row } = await supabase
     .from('payslips')
@@ -249,6 +274,26 @@ router.post('/area/:code/payslips/:id/acknowledge', areaLimiter, verifyWorkerAre
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   res.json({ ok: true, acknowledged_at: new Date().toISOString() });
+});
+
+// ── POST /api/v1/area/:code/payslip-share-consent ────────────────────────────
+// F-212 (AUDIT.md): registra il consenso — chiamata dal lavoratore quando
+// accetta lo schermo mostrato al posto della lista buste paga finché
+// payslipShareConsentGate() sopra blocca. Idempotente: rifarla dopo aver già
+// accettato aggiorna solo la data (nessun errore, stesso principio di
+// scan.js::/consent).
+router.post('/area/:code/payslip-share-consent', areaLimiter, verifyWorkerArea, async (req, res) => {
+  const { wid, cid } = req.workerPayload;
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '';
+  const ua = req.headers['user-agent'] || '';
+
+  try {
+    await recordConsent(supabase, { workerId: wid, companyId: cid, ip, userAgent: ua, source: 'area_lavoratore' });
+  } catch (e) {
+    console.error('[payslip-share-consent] recordConsent error:', e.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
+  }
+  res.json({ ok: true });
 });
 
 // ── GET /api/v1/area/:code/documents/:docId ──────────────────────────────────
