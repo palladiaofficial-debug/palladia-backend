@@ -164,7 +164,7 @@ async function main() {
     // ── Verifiche ───────────────────────────────────────────────────────
     const siteOverview = await apiCall(jwt, companyId, 'GET', `/sites/${siteId}/economia-overview`);
     check('Overview cantiere -> 200', siteOverview.status === 200, siteOverview);
-    check('da_incassare = 15.000€ (il SAL pagato non conta)', siteOverview.body?.da_incassare?.totale === 15000, siteOverview.body?.da_incassare);
+    check('da_incassare = 42.000€ (sal1+sal3+sal4 non pagati; sal2 e sal5 pagati non contano)', siteOverview.body?.da_incassare?.totale === 42000, siteOverview.body?.da_incassare);
     check('da_pagare.fatture = 3.200€ (l\'acconto e il DDT non contano)', siteOverview.body?.da_pagare?.fatture === 3200, siteOverview.body?.da_pagare);
     check('da_pagare.subappalti = 9.000€ (11.000 − 2.000 già dati)', siteOverview.body?.da_pagare?.subappalti === 9000, siteOverview.body?.da_pagare);
     check('da_pagare.totale = 12.200€ (3.200 fatture + 9.000 subappalto)', siteOverview.body?.da_pagare?.totale === 12200, siteOverview.body?.da_pagare);
@@ -181,11 +181,11 @@ async function main() {
 
     const companyOverview = await apiCall(jwt, companyId, 'GET', '/economia-overview');
     check('Overview azienda -> 200', companyOverview.status === 200, companyOverview);
-    check('Overview azienda: da_incassare = 15.000€', companyOverview.body?.da_incassare?.totale === 15000, companyOverview.body?.da_incassare);
+    check('Overview azienda: da_incassare = 42.000€', companyOverview.body?.da_incassare?.totale === 42000, companyOverview.body?.da_incassare);
     check('Overview azienda: da_pagare = 12.650€ (12.200 cantiere + 450 spesa generale)', companyOverview.body?.da_pagare?.totale === 12650, companyOverview.body?.da_pagare);
     check('Overview azienda: spese generali isolate = 450€', companyOverview.body?.da_pagare?.spese_generali === 450, companyOverview.body?.da_pagare);
     const rigaCantiere = (companyOverview.body?.cantieri || []).find(c => c.site_id === siteId);
-    check('Overview azienda: il cantiere appare nella lista con gli stessi numeri (15.000 / 12.200)', !!rigaCantiere && rigaCantiere.da_incassare === 15000 && rigaCantiere.da_pagare === 12200, rigaCantiere);
+    check('Overview azienda: il cantiere appare nella lista con gli stessi numeri (42.000 / 12.200)', !!rigaCantiere && rigaCantiere.da_incassare === 42000 && rigaCantiere.da_pagare === 12200, rigaCantiere);
 
     // ── Previsione 30gg (solo dati certi) ──────────────────────────────────
     const prev = companyOverview.body?.previsione_30gg;
