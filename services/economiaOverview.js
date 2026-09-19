@@ -127,7 +127,11 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
   ].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
 
   return {
-    site: { id: siteRes.data.id, name: siteRes.data.name, status: siteRes.data.status, has_contratto: hasContratto },
+    site: {
+      id: siteRes.data.id, name: siteRes.data.name, status: siteRes.data.status, has_contratto: hasContratto,
+      budget_totale: siteRes.data.budget_totale !== null ? Number(siteRes.data.budget_totale) : null,
+      sal_percentuale: Number(siteRes.data.sal_percentuale) || 0,
+    },
     da_incassare: { totale: daIncassare, sal_aperti: salRows.filter(s => !s.pagato_il).length },
     da_pagare: {
       totale: daPagare,

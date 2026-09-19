@@ -133,6 +133,7 @@ async function main() {
     check('da_pagare.totale = 12.200€ (3.200 fatture + 9.000 subappalto)', siteOverview.body?.da_pagare?.totale === 12200, siteOverview.body?.da_pagare);
     check('subappaltatori elenca AYAT con saldo 9.000€', siteOverview.body?.da_pagare?.subappaltatori?.[0]?.saldo_da_erogare === 9000, siteOverview.body?.da_pagare?.subappaltatori);
     check('has_contratto = false (nessun budget impostato sul cantiere di test)', siteOverview.body?.site?.has_contratto === false, siteOverview.body?.site);
+    check('site.budget_totale = null (per precompilare il form senza inventare uno zero)', siteOverview.body?.site?.budget_totale === null, siteOverview.body?.site);
 
     const movimenti = siteOverview.body?.movimenti || [];
     check('movimenti include il DDT con importo null (mai "0")', movimenti.some(m => m.tipo === 'ddt' && m.importo === null), movimenti);
