@@ -19,6 +19,10 @@
  *    eventuali fatture (escluse a monte).
  * 4) una spesa generale (site_id NULL) non tocca il cantiere ma entra nel
  *    totale azienda.
+ * 5) previsione_30gg (azienda) conta solo dati certi: SAL con
+ *    data_pagamento_prevista entro 30gg e non ancora pagati, spese
+ *    ricorrenti attive con prossima occorrenza entro 30gg — mai una
+ *    scadenza stimata su fatture/spese che non ce l'hanno davvero.
  */
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
@@ -33,6 +37,8 @@ function ok(name)        { console.log(`  \x1b[32m✓\x1b[0m ${name}`); passed++
 function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (got !== undefined) console.error(`    got: ${JSON.stringify(got).slice(0, 500)}`); failed++; }
 function skip(name, why) { console.log(`  \x1b[33m–\x1b[0m ${name} (skip: ${why})`); skipped++; }
 function check(name, cond, got) { cond ? ok(name) : fail(name, got); }
+
+function isoOffset(days) { return new Date(Date.now() + days * 86400000).toISOString().slice(0, 10); }
 
 async function sessionFor(admin, anon, email) {
   const { data: link, error: linkErr } = await admin.auth.admin.generateLink({ type: 'magiclink', email });
@@ -66,7 +72,7 @@ async function main() {
 
   const email = `test-economia-unificata-${Date.now()}@palladia-test.internal`;
   let companyId, siteId, userId, subcontractorId;
-  const costIds = [], expenseIds = [], salIds = [];
+  const costIds = [], expenseIds = [], salIds = [], recurringIds = [];
 
   try {
     const { data: company } = await admin.from('companies').insert({ name: 'TEST-EconomiaUnificata' }).select().single();
@@ -118,6 +124,37 @@ async function main() {
     }).select().single();
     costIds.push(c4.id);
 
+    // ── Previsione di cassa 30gg — solo dati certi (scelta esplicita del
+    // titolare dopo il confronto con Pillar): un SAL con scadenza entro 30gg
+    // conta, uno oltre no, uno già pagato no anche se la scadenza è vicina;
+    // una spesa ricorrente attiva con prossima occorrenza entro 30gg conta,
+    // una disattivata no.
+    const { data: sal3 } = await admin.from('site_sal_history').insert({
+      company_id: companyId, site_id: siteId, sal_number: 3, importo_maturato: 7000, totale_costi: 0,
+      data_pagamento_prevista: isoOffset(10),
+    }).select().single();
+    salIds.push(sal3.id);
+    const { data: sal4 } = await admin.from('site_sal_history').insert({
+      company_id: companyId, site_id: siteId, sal_number: 4, importo_maturato: 20000, totale_costi: 0,
+      data_pagamento_prevista: isoOffset(60),
+    }).select().single();
+    salIds.push(sal4.id);
+    const { data: sal5 } = await admin.from('site_sal_history').insert({
+      company_id: companyId, site_id: siteId, sal_number: 5, importo_maturato: 3000, totale_costi: 0,
+      data_pagamento_prevista: isoOffset(5), pagato_il: isoOffset(-1),
+    }).select().single();
+    salIds.push(sal5.id);
+
+    const todayDay = new Date().getDate();
+    const { data: rec1 } = await admin.from('company_recurring_expenses').insert({
+      company_id: companyId, amount: 1200, description: 'TEST affitto', day_of_month: Math.min(28, todayDay),
+    }).select().single();
+    recurringIds.push(rec1.id);
+    const { data: rec2 } = await admin.from('company_recurring_expenses').insert({
+      company_id: companyId, amount: 999, description: 'TEST assicurazione disattivata', day_of_month: Math.min(28, todayDay), is_active: false,
+    }).select().single();
+    recurringIds.push(rec2.id);
+
     // Spesa generale (site_id NULL) — non deve toccare il cantiere, deve entrare nel totale azienda.
     const { data: e1 } = await admin.from('company_expenses').insert({
       company_id: companyId, site_id: null, amount: 450, description: 'TEST spesa generale', category: 'altro',
@@ -150,6 +187,13 @@ async function main() {
     const rigaCantiere = (companyOverview.body?.cantieri || []).find(c => c.site_id === siteId);
     check('Overview azienda: il cantiere appare nella lista con gli stessi numeri (15.000 / 12.200)', !!rigaCantiere && rigaCantiere.da_incassare === 15000 && rigaCantiere.da_pagare === 12200, rigaCantiere);
 
+    // ── Previsione 30gg (solo dati certi) ──────────────────────────────────
+    const prev = companyOverview.body?.previsione_30gg;
+    check('previsione_30gg.in_entrata = 7.000€ (solo il SAL entro 30gg, non pagato)', prev?.in_entrata === 7000, prev);
+    check('previsione_30gg.in_entrata esclude il SAL oltre 30gg (20.000€ a +60gg)', prev?.in_entrata !== 27000, prev);
+    check('previsione_30gg.in_entrata esclude il SAL già pagato anche se la scadenza è vicina (3.000€)', prev?.in_entrata !== 10000, prev);
+    check('previsione_30gg.in_uscita_certa = 1.200€ (solo la spesa ricorrente attiva)', prev?.in_uscita_certa === 1200, prev);
+
     // ── "Segna pagata" su una spesa generale (F-215: pagato_il ora accettato
     // da PUT /expenses/:id, mancava dallo schema di validazione) ──────────
     {
@@ -171,6 +215,7 @@ async function main() {
 
   } finally {
     if (salIds.length) await admin.from('site_sal_history').delete().in('id', salIds);
+    if (recurringIds.length) await admin.from('company_recurring_expenses').delete().in('id', recurringIds);
     if (costIds.length) await admin.from('site_costs').delete().in('id', costIds);
     if (expenseIds.length) await admin.from('company_expenses').delete().in('id', expenseIds);
     if (subcontractorId) {

@@ -35,6 +35,49 @@ const supabase = require('../lib/supabase');
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
+// ── Previsione di cassa a 30 giorni (solo dati certi) ───────────────────────
+// Deciso dopo un confronto con Pillar (competitor): NON stimiamo scadenze che
+// non abbiamo (site_costs/company_expenses non hanno una data di scadenza
+// reale, solo la data del documento) — un numero "quanto esce" che inventasse
+// un termine standard sarebbe esattamente il tipo di stima spacciata per
+// certezza che l'utente ha chiesto di evitare. Contiamo solo due fonti con
+// una data vera: i SAL con data_pagamento_prevista (migrazione 086) e le
+// spese ricorrenti con day_of_month (company_recurring_expenses, esisteva
+// già nel DB ma non era mai stata esposta in nessuna schermata).
+function nextRecurringOccurrence(dayOfMonth, from) {
+  const lastDayThisMonth = new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate();
+  const dayThisMonth = Math.min(dayOfMonth, lastDayThisMonth);
+  const thisMonth = new Date(from.getFullYear(), from.getMonth(), dayThisMonth);
+  if (thisMonth >= from) return thisMonth;
+  const lastDayNextMonth = new Date(from.getFullYear(), from.getMonth() + 2, 0).getDate();
+  return new Date(from.getFullYear(), from.getMonth() + 1, Math.min(dayOfMonth, lastDayNextMonth));
+}
+
+async function buildCashForecast30gg(companyId) {
+  const today = new Date();
+  const in30gg = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const todayISO = today.toISOString().slice(0, 10);
+  const in30ggISO = in30gg.toISOString().slice(0, 10);
+
+  const [salRes, recurringRes] = await Promise.all([
+    supabase.from('site_sal_history')
+      .select('importo_maturato, data_pagamento_prevista')
+      .eq('company_id', companyId).is('pagato_il', null)
+      .not('data_pagamento_prevista', 'is', null).lte('data_pagamento_prevista', in30ggISO),
+    supabase.from('company_recurring_expenses')
+      .select('amount, day_of_month').eq('company_id', companyId).eq('is_active', true),
+  ]);
+
+  const inEntrata30gg = round2((salRes.data || []).reduce((s, r) => s + Number(r.importo_maturato || 0), 0));
+
+  const inUscitaCerta30gg = round2((recurringRes.data || []).reduce((s, r) => {
+    const next = nextRecurringOccurrence(r.day_of_month, today);
+    return next.toISOString().slice(0, 10) <= in30ggISO ? s + Number(r.amount || 0) : s;
+  }, 0));
+
+  return { da: todayISO, a: in30ggISO, in_entrata: inEntrata30gg, in_uscita_certa: inUscitaCerta30gg };
+}
+
 // ── Un singolo cantiere ────────────────────────────────────────────────────
 async function buildSiteEconomiaOverview(siteId, companyId) {
   const [siteRes, computoRes, salRes, costsRes, subCostsRes, expensesRes, subAssignRes] = await Promise.all([
@@ -151,7 +194,10 @@ async function buildCompanyEconomiaOverview(companyId) {
     .eq('company_id', companyId).not('status', 'in', '(chiuso,eliminato)');
   if (sitesErr) throw new Error('DB_ERROR: ' + sitesErr.message);
 
-  const perSite = await Promise.all((sites || []).map(s => buildSiteEconomiaOverview(s.id, companyId)));
+  const [perSite, previsione30gg] = await Promise.all([
+    Promise.all((sites || []).map(s => buildSiteEconomiaOverview(s.id, companyId))),
+    buildCashForecast30gg(companyId),
+  ]);
 
   // Spese davvero generali — mai legate a un cantiere (affitto, assicurazione,
   // o un DDT su cantiere non ancora censito, F-214) — sommate una volta sola
@@ -182,6 +228,7 @@ async function buildCompanyEconomiaOverview(companyId) {
   return {
     da_incassare: { totale: daIncassare },
     da_pagare: { totale: daPagare, spese_generali: daPagareGenerali },
+    previsione_30gg: previsione30gg,
     cantieri: perSiteList,
   };
 }
