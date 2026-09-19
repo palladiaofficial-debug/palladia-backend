@@ -37,30 +37,35 @@ function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
 // ── Un singolo cantiere ────────────────────────────────────────────────────
 async function buildSiteEconomiaOverview(siteId, companyId) {
-  const [siteRes, salRes, costsRes, expensesRes, subAssignRes, subAccontiRes] = await Promise.all([
+  const [siteRes, computoRes, salRes, costsRes, subCostsRes, expensesRes, subAssignRes] = await Promise.all([
     supabase.from('sites').select('id, name, budget_totale, sal_percentuale, status')
       .eq('id', siteId).eq('company_id', companyId).maybeSingle(),
+    supabase.from('site_computo').select('id').eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'base').limit(1),
     supabase.from('site_sal_history').select('id, sal_number, importo_maturato, pagato_il, data_emissione')
       .eq('site_id', siteId).eq('company_id', companyId),
-    // subcontractor_id: escluso qui, il saldo verso i subappaltatori si calcola
-    // sotto con la stessa formula (budget − acconti) già in uso altrove — non
-    // sommare anche le loro fatture qui creerebbe un doppio conteggio.
-    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore')
+    // subcontractor_id: escluso qui dal calcolo di da_pagare, il saldo verso i
+    // subappaltatori si calcola sotto con la stessa formula (budget − acconti)
+    // già in uso altrove — sommare anche le loro fatture qui creerebbe un
+    // doppio conteggio. Incluse comunque nell'elenco movimenti (informative).
+    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore, created_at')
       .eq('site_id', siteId).eq('company_id', companyId).is('subcontractor_id', null),
-    supabase.from('company_expenses').select('id, amount, pagato_il, expense_date, description, source')
+    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore, created_at, subcontractor_id, subcontractor:subcontractor_id(company_name)')
+      .eq('site_id', siteId).eq('company_id', companyId).not('subcontractor_id', 'is', null),
+    supabase.from('company_expenses').select('id, amount, pagato_il, expense_date, description, source, created_at')
       .eq('site_id', siteId).eq('company_id', companyId),
     supabase.from('site_subcontractors').select('subcontractor_id, budget_totale, subcontractor:subcontractor_id(company_name)')
       .eq('site_id', siteId).eq('company_id', companyId),
-    supabase.from('site_costs').select('subcontractor_id, importo')
-      .eq('site_id', siteId).eq('company_id', companyId).eq('tipo', 'acconto').not('subcontractor_id', 'is', null),
   ]);
 
   if (siteRes.error) throw new Error('DB_ERROR: ' + siteRes.error.message);
   if (!siteRes.data) { const e = new Error('SITE_NOT_FOUND'); e.status = 404; throw e; }
 
-  const salRows   = salRes.data || [];
-  const costRows  = (costsRes.data || []).filter(c => c.importo !== null); // un DDT senza importo non è mai "da pagare"
-  const expRows   = expensesRes.data || [];
+  const salRows     = salRes.data || [];
+  const allCostRows = costsRes.data || [];
+  const costRows    = allCostRows.filter(c => c.importo !== null); // un DDT senza importo non è mai "da pagare"
+  const subCostRows = subCostsRes.data || [];
+  const expRows     = expensesRes.data || [];
+  const hasContratto = siteRes.data.budget_totale !== null || (computoRes.data || []).length > 0;
 
   const daIncassare = round2(salRows.filter(s => !s.pagato_il).reduce((s, r) => s + Number(r.importo_maturato || 0), 0));
 
@@ -72,7 +77,7 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
   );
 
   const acconti = {};
-  for (const a of (subAccontiRes.data || [])) {
+  for (const a of subCostRows.filter(c => c.tipo === 'acconto')) {
     acconti[a.subcontractor_id] = (acconti[a.subcontractor_id] || 0) + Number(a.importo || 0);
   }
   const subappaltatori = (subAssignRes.data || []).map(a => {
@@ -88,8 +93,41 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
 
   const daPagare = round2(daPagareDiretto + daPagareSubappalti);
 
+  // ── Elenco movimenti unico (fatture/DDT/acconti/subappalti/SAL) ────────────
+  // Un "acconto" è sempre mostrato come già pagato (per definizione lo è),
+  // un DDT senza importo è sempre mostrato con importo "—", mai un valore
+  // inventato. Ordinato dal più recente.
+  const movimenti = [
+    ...allCostRows.map(c => ({
+      id: c.id, fonte: 'site_costs', tipo: c.tipo,
+      descrizione: c.descrizione, controparte: c.fornitore,
+      importo: c.importo, data: c.data_documento || c.created_at?.slice(0, 10),
+      pagato: c.tipo === 'acconto' ? true : !!c.pagato_il,
+      pagato_il: c.pagato_il,
+    })),
+    ...subCostRows.map(c => ({
+      id: c.id, fonte: 'site_costs', tipo: c.tipo === 'acconto' ? 'acconto_subappalto' : c.tipo,
+      descrizione: c.descrizione, controparte: c.subcontractor?.company_name || 'Subappaltatore',
+      importo: c.importo, data: c.data_documento || c.created_at?.slice(0, 10),
+      pagato: c.tipo === 'acconto' ? true : !!c.pagato_il,
+      pagato_il: c.pagato_il,
+    })),
+    ...expRows.map(e => ({
+      id: e.id, fonte: 'company_expenses', tipo: 'spesa_generale',
+      descrizione: e.description, controparte: null,
+      importo: e.amount, data: e.expense_date || e.created_at?.slice(0, 10),
+      pagato: !!e.pagato_il, pagato_il: e.pagato_il,
+    })),
+    ...salRows.map(s => ({
+      id: s.id, fonte: 'site_sal_history', tipo: 'sal',
+      descrizione: `SAL n. ${s.sal_number}`, controparte: null,
+      importo: s.importo_maturato, data: s.data_emissione,
+      pagato: !!s.pagato_il, pagato_il: s.pagato_il,
+    })),
+  ].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+
   return {
-    site: { id: siteRes.data.id, name: siteRes.data.name, status: siteRes.data.status },
+    site: { id: siteRes.data.id, name: siteRes.data.name, status: siteRes.data.status, has_contratto: hasContratto },
     da_incassare: { totale: daIncassare, sal_aperti: salRows.filter(s => !s.pagato_il).length },
     da_pagare: {
       totale: daPagare,
@@ -98,6 +136,7 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
       subappalti: daPagareSubappalti,
       subappaltatori,
     },
+    movimenti,
   };
 }
 
@@ -123,11 +162,18 @@ async function buildCompanyEconomiaOverview(companyId) {
 
   const perSiteList = perSite
     .map(x => ({
-      site_id: x.site.id, site_name: x.site.name,
+      site_id: x.site.id, site_name: x.site.name, has_contratto: x.site.has_contratto,
       da_incassare: x.da_incassare.totale, da_pagare: x.da_pagare.totale,
       saldo: round2(x.da_incassare.totale - x.da_pagare.totale),
     }))
-    .sort((a, b) => a.saldo - b.saldo); // peggiore (più negativo) prima
+    // Un cantiere senza contratto non ha un saldo "peggiore o migliore" —
+    // va segnalato (in fondo, serve un'azione diversa: configurarlo, non
+    // pagare/incassare), non ordinato in mezzo agli altri per un numero
+    // a zero che sembrerebbe "tutto a posto".
+    .sort((a, b) => {
+      if (a.has_contratto !== b.has_contratto) return a.has_contratto ? -1 : 1;
+      return a.saldo - b.saldo; // peggiore (più negativo) prima
+    });
 
   return {
     da_incassare: { totale: daIncassare },

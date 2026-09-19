@@ -132,6 +132,14 @@ async function main() {
     check('da_pagare.subappalti = 9.000€ (11.000 − 2.000 già dati)', siteOverview.body?.da_pagare?.subappalti === 9000, siteOverview.body?.da_pagare);
     check('da_pagare.totale = 12.200€ (3.200 fatture + 9.000 subappalto)', siteOverview.body?.da_pagare?.totale === 12200, siteOverview.body?.da_pagare);
     check('subappaltatori elenca AYAT con saldo 9.000€', siteOverview.body?.da_pagare?.subappaltatori?.[0]?.saldo_da_erogare === 9000, siteOverview.body?.da_pagare?.subappaltatori);
+    check('has_contratto = false (nessun budget impostato sul cantiere di test)', siteOverview.body?.site?.has_contratto === false, siteOverview.body?.site);
+
+    const movimenti = siteOverview.body?.movimenti || [];
+    check('movimenti include il DDT con importo null (mai "0")', movimenti.some(m => m.tipo === 'ddt' && m.importo === null), movimenti);
+    check('movimenti include l\'acconto a fornitore già marcato pagato=true', movimenti.some(m => m.tipo === 'acconto' && m.controparte === null && m.pagato === true), movimenti);
+    check('movimenti include l\'acconto AYAT come acconto_subappalto, pagato=true', movimenti.some(m => m.tipo === 'acconto_subappalto' && m.controparte === 'TEST AYAT SRLS' && m.pagato === true), movimenti);
+    check('movimenti include il SAL aperto (n.1) con pagato=false', movimenti.some(m => m.tipo === 'sal' && m.descrizione === 'SAL n. 1' && m.pagato === false), movimenti);
+    check('movimenti include la fattura aperta con pagato=false', movimenti.some(m => m.tipo === 'fattura' && m.pagato === false && m.importo === 3200), movimenti);
 
     const companyOverview = await apiCall(jwt, companyId, 'GET', '/economia-overview');
     check('Overview azienda -> 200', companyOverview.status === 200, companyOverview);
@@ -140,6 +148,19 @@ async function main() {
     check('Overview azienda: spese generali isolate = 450€', companyOverview.body?.da_pagare?.spese_generali === 450, companyOverview.body?.da_pagare);
     const rigaCantiere = (companyOverview.body?.cantieri || []).find(c => c.site_id === siteId);
     check('Overview azienda: il cantiere appare nella lista con gli stessi numeri (15.000 / 12.200)', !!rigaCantiere && rigaCantiere.da_incassare === 15000 && rigaCantiere.da_pagare === 12200, rigaCantiere);
+
+    // ── "Segna pagata" su una spesa generale (F-215: pagato_il ora accettato
+    // da PUT /expenses/:id, mancava dallo schema di validazione) ──────────
+    {
+      const r = await fetch(`${API_BASE}/expenses/${e1.id}`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': companyId, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pagato_il: '2026-09-19' }),
+      });
+      const body = await r.json().catch(() => null);
+      check('PUT /expenses/:id accetta pagato_il -> 200', r.status === 200, { status: r.status, body });
+      check('pagato_il salvato davvero in DB', body?.pagato_il === '2026-09-19', body);
+    }
 
     // ── Guardiano cross-tenant ────────────────────────────────────────────
     const { data: otherCompany } = await admin.from('companies').insert({ name: 'TEST-EconomiaUnificata-Other' }).select().single();
