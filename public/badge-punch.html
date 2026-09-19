@@ -662,6 +662,7 @@
       gpsNotPrecise: 'GPS non abbastanza preciso',
       gpsRetryHint: "Spostati all'aperto, aspetta qualche secondo e riprova.",
       retry: 'Riprova',
+      continueLabel: 'Continua',
       askHelpLink: 'Non riesci a timbrare? Avvisa il responsabile',
       askHelpButton: 'Avvisa il responsabile',
       askingHelp: 'Invio…',
@@ -723,6 +724,10 @@
         saveError: 'Impossibile salvare. Riprova.',
         fileTooLarge: 'Il file è troppo grande (max 10MB).',
         cancel: 'Annulla',
+        unassignedLink: 'Il cantiere non è ancora su Palladia?',
+        unassignedTitle: 'Nome del cantiere',
+        unassignedHint: "Scrivi il nome o l'indirizzo — il titolare lo collegherà al cantiere vero appena lo crea in Palladia.",
+        unassignedPlaceholder: 'Es. Via Roma 12, Genova',
       },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Badge non valido',          sub: 'Avvisa il responsabile.' },
@@ -811,6 +816,7 @@
       gpsNotPrecise: 'GPS insuficient de precis',
       gpsRetryHint: 'Ieși afară, așteaptă câteva secunde și încearcă din nou.',
       retry: 'Încearcă din nou',
+      continueLabel: 'Continuă',
       askHelpLink: 'Nu poți pontaja? Avertizează responsabilul',
       askHelpButton: 'Avertizează responsabilul',
       askingHelp: 'Se trimite…',
@@ -871,6 +877,10 @@
         saveError: 'Nu s-a putut salva. Încearcă din nou.',
         fileTooLarge: 'Fișierul este prea mare (max 10MB).',
         cancel: 'Anulează',
+        unassignedLink: 'Șantierul nu este încă pe Palladia?',
+        unassignedTitle: 'Numele șantierului',
+        unassignedHint: 'Scrie numele sau adresa — titularul îl va lega de șantierul real imediat ce îl creează în Palladia.',
+        unassignedPlaceholder: 'Ex. Via Roma 12, Genova',
       },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Ecuson invalid',            sub: 'Anunță responsabilul.' },
@@ -959,6 +969,7 @@
       gpsNotPrecise: 'GPS jo mjaftueshëm i saktë',
       gpsRetryHint: 'Dil jashtë, prit disa sekonda dhe provo përsëri.',
       retry: 'Provo përsëri',
+      continueLabel: 'Vazhdo',
       askHelpLink: 'Nuk mund të regjistrosh? Njofto përgjegjësin',
       askHelpButton: 'Njofto përgjegjësin',
       askingHelp: 'Duke dërguar…',
@@ -1019,6 +1030,10 @@
         saveError: 'Nuk u ruajt dot. Provo përsëri.',
         fileTooLarge: 'Skedari është shumë i madh (maks 10MB).',
         cancel: 'Anulo',
+        unassignedLink: 'Kantieri nuk është ende në Palladia?',
+        unassignedTitle: 'Emri i kantierit',
+        unassignedHint: 'Shkruaj emrin ose adresën — titullari do ta lidhë me kantierin real sapo ta krijojë në Palladia.',
+        unassignedPlaceholder: 'P.sh. Via Roma 12, Genova',
       },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'Kartë e pavlefshme',        sub: 'Njofto përgjegjësin.' },
@@ -1107,6 +1122,7 @@
       gpsNotPrecise: 'دقة GPS غير كافية',
       gpsRetryHint: 'اخرج إلى الخارج، انتظر بضع ثوانٍ وحاول مرة أخرى.',
       retry: 'إعادة المحاولة',
+      continueLabel: 'متابعة',
       askHelpLink: 'لا يمكنك تسجيل الحضور؟ أخبر المسؤول',
       askHelpButton: 'أخبر المسؤول',
       askingHelp: 'جارٍ الإرسال…',
@@ -1167,6 +1183,10 @@
         saveError: 'تعذّر الحفظ. حاول مرة أخرى.',
         fileTooLarge: 'الملف كبير جدًا (الحد الأقصى 10 ميجابايت).',
         cancel: 'إلغاء',
+        unassignedLink: 'الورشة ليست بعد على Palladia؟',
+        unassignedTitle: 'اسم الورشة',
+        unassignedHint: 'اكتب الاسم أو العنوان — سيربطه المالك بالورشة الحقيقية بمجرد إنشائها في Palladia.',
+        unassignedPlaceholder: 'مثال: Via Roma 12, Genova',
       },
       errorCopy: {
         BADGE_NOT_FOUND:               { icon: '🚫', title: 'بطاقة غير صالحة',            sub: 'أبلغ المسؤول.' },
@@ -1294,6 +1314,7 @@
   // ── State ─────────────────────────────────────────────────────────────────────
   let workerData   = null;   // risposta punch-context
   let selectedSite = null;   // {site_id, site_name, address, next_action, …}
+  let unassignedCantiereName = null;   // F-214: DDT su cantiere non ancora censito — niente selectedSite
   let gpsCoords    = null;   // {latitude, longitude, accuracy} — migliore lettura finora
   let gpsStatus    = 'wait'; // 'wait' | 'ok' | 'warn' | 'error'
   let gpsText      = '';
@@ -1628,7 +1649,39 @@
         ${siteButtons}
       </div>
 
+      <button class="ddt-cancel fade-in" onclick="renderUnassignedCantiereForm()" style="margin-top:2px;">${esc(t().ddt.unassignedLink)}</button>
+
       <div class="hint-help">${esc(t().ifProblems)}</div>`;
+  }
+
+  // ── F-214: DDT su un cantiere non ancora censito in Palladia ──────────────────
+  // Nessun selectedSite qui — il trasportatore scrive il nome a mano, il DDT
+  // finisce come spesa "da assegnare" (vedi routes/v1/badgeDdt.js) e il
+  // titolare lo riassocia al cantiere vero dalla scheda Spese appena lo crea.
+  function renderUnassignedCantiereForm() {
+    _rerenderCurrent = renderUnassignedCantiereForm;
+    const T = t().ddt;
+    wrap.innerHTML = `
+      <div class="card fade-in" style="padding:20px;">
+        <div class="site-select-label">${esc(T.unassignedTitle)}</div>
+        <div class="site-select-sub" style="margin-bottom:12px;">${esc(T.unassignedHint)}</div>
+        <div class="ddt-field" style="margin-bottom:0;">
+          <input id="unassigned-cantiere-name" placeholder="${esc(T.unassignedPlaceholder)}" autofocus>
+        </div>
+      </div>
+      <button class="punch-btn entry fade-in" id="unassigned-continue-btn" onclick="confirmUnassignedCantiereName()">
+        <span>${esc(t().continueLabel)}</span>
+      </button>
+      <button class="ddt-cancel fade-in" onclick="renderSiteSelection()">${esc(T.cancel)}</button>`;
+    document.getElementById('unassigned-cantiere-name').focus();
+  }
+
+  function confirmUnassignedCantiereName() {
+    const input = document.getElementById('unassigned-cantiere-name');
+    const name  = (input.value || '').trim();
+    if (!name) { input.style.borderColor = '#dc2626'; input.focus(); return; }
+    unassignedCantiereName = name;
+    openDdtCamera();
   }
 
   // ── Render: schermata punch ────────────────────────────────────────────────────
@@ -1748,7 +1801,8 @@
     try {
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('site_id', selectedSite.site_id);
+      if (unassignedCantiereName) fd.append('cantiere_libero', unassignedCantiereName);
+      else fd.append('site_id', selectedSite.site_id);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       const r = await fetch(API + '/api/v1/badge/' + BADGE_CODE + '/ddt/scan', { method: 'POST', body: fd, signal: controller.signal });
@@ -1767,7 +1821,7 @@
       <div class="ddt-photo-frame fade-in">${ddtPreviewUrl ? `<img src="${ddtPreviewUrl}" alt="">` : ''}</div>
       <div class="hint-text fade-in" style="margin-bottom:4px;">${esc(T.confirmHint)}</div>
 
-      <div class="card fade-in" style="padding:14px;">
+      <div class="card" style="padding:14px;">
         <div class="ddt-field">
           <label>${esc(T.fieldSupplier)}</label>
           <input id="ddt-f-fornitore" value="${esc(fields.fornitore || '')}">
@@ -1801,8 +1855,8 @@
     if (btn) { btn.disabled = true; btn.querySelector('span').textContent = T.savingButton; }
 
     const payload = {
-      site_id:          selectedSite.site_id,
       file_url:         fileUrl,
+      ...(unassignedCantiereName ? { cantiere_libero: unassignedCantiereName } : { site_id: selectedSite.site_id }),
       fornitore:        document.getElementById('ddt-f-fornitore').value,
       numero_documento: document.getElementById('ddt-f-numero').value,
       data_documento:   document.getElementById('ddt-f-data').value,
@@ -1822,20 +1876,23 @@
 
   function cancelDdt() {
     if (ddtPreviewUrl) { URL.revokeObjectURL(ddtPreviewUrl); ddtPreviewUrl = null; }
-    renderPunchScreen();
+    if (unassignedCantiereName) { unassignedCantiereName = null; renderSiteSelection(); }
+    else renderPunchScreen();
   }
 
   function renderDdtSuccess(count) {
     const T = t().ddt;
+    const linkedTo = unassignedCantiereName || selectedSite.site_name;
     wrap.innerHTML = `
       <div class="card fade-in" style="text-align:center; padding:32px 20px;">
         <span class="success-icon">✓</span>
         <div class="success-title">${esc(T.savedTitle)}</div>
-        <div class="success-sub">${esc(T.savedSub)} ${esc(selectedSite.site_name)}</div>
+        <div class="success-sub">${esc(T.savedSub)} ${esc(linkedTo)}</div>
         <div class="hint-help" style="margin-top:6px;">${esc(T.todayCount(count))}</div>
       </div>`;
     if (ddtPreviewUrl) { URL.revokeObjectURL(ddtPreviewUrl); ddtPreviewUrl = null; }
-    setTimeout(renderPunchScreen, 2200);
+    if (unassignedCantiereName) { unassignedCantiereName = null; setTimeout(renderSiteSelection, 2200); }
+    else setTimeout(renderPunchScreen, 2200);
   }
 
   // ── Render: successo ───────────────────────────────────────────────────────────
