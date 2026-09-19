@@ -29,7 +29,7 @@ function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (go
 function skip(name, why) { console.log(`  \x1b[33m–\x1b[0m ${name} (skip: ${why})`); skipped++; }
 function check(name, cond, got) { cond ? ok(name) : fail(name, got); }
 
-function buildFatturaXml({ numero = '1', tipoDocumento = 'TD01', partitaIva = '01234567890', importo = '300.00' } = {}) {
+function buildFatturaXml({ numero = '1', tipoDocumento = 'TD01', partitaIva = '01234567890', importo = '300.00', dataScadenzaPagamento = '' } = {}) {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12">
   <FatturaElettronicaHeader>
@@ -53,7 +53,7 @@ function buildFatturaXml({ numero = '1', tipoDocumento = 'TD01', partitaIva = '0
       <DettaglioLinee><Descrizione>Materiali edili vari</Descrizione></DettaglioLinee>
     </DatiBeniServizi>
     <DatiPagamento>
-      <DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento></DettaglioPagamento>
+      <DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>${dataScadenzaPagamento ? `<DataScadenzaPagamento>${dataScadenzaPagamento}</DataScadenzaPagamento>` : ''}</DettaglioPagamento>
     </DatiPagamento>
   </FatturaElettronicaBody>
 </p:FatturaElettronica>`;
@@ -104,6 +104,12 @@ async function main() {
   check('XML puro: numero documento corretto', plainResult[0]?.parsed?.docNumber === '2026/1', plainResult[0]?.parsed);
   check('XML puro: non è nota di credito', plainResult[0]?.parsed?.isCreditNote === false, plainResult[0]?.parsed);
   check('XML puro: content_hash presente', typeof plainResult[0]?.contentHash === 'string' && plainResult[0].contentHash.length === 64, plainResult[0]);
+  check('XML puro: senza DataScadenzaPagamento nel documento, dueDate è null (mai una data inventata)', plainResult[0]?.parsed?.dueDate === null, plainResult[0]?.parsed);
+
+  // ── Caso 1b: con una vera scadenza di pagamento nel documento ──────────────
+  const withDueDateXml = buildFatturaXml({ numero: '2026/2', dataScadenzaPagamento: '2026-09-30' });
+  const withDueDateResult = extractInvoiceCandidates('fattura2.xml', Buffer.from(withDueDateXml, 'utf8'));
+  check('XML con DataScadenzaPagamento: dueDate estratta correttamente (2026-09-30)', withDueDateResult[0]?.parsed?.dueDate === '2026-09-30', withDueDateResult[0]?.parsed);
 
   // ── Caso 2: notifica di scarto SdI, mai una fattura ────────────────────────
   const scartoResult = extractInvoiceCandidates('IT01234567890_scarto.xml', Buffer.from(buildScartoXml(), 'utf8'));

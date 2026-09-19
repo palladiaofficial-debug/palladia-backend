@@ -179,6 +179,7 @@ function mapParsedInvoiceToExpense(companyId, parsed, invoiceId) {
     supplier:     parsed.supplierName,
     supplier_vat: parsed.supplierVat,
     expense_date: parsed.issueDate || new Date().toISOString().slice(0, 10),
+    data_scadenza: parsed.dueDate || null,
     invoice_number: parsed.docNumber,
     is_deductible: true,
     notes:        'Importata automaticamente dal Cassetto Fiscale (consultazione via delega)',

@@ -60,16 +60,24 @@ async function buildCashForecast30gg(companyId) {
   const in30ggISO = in30gg.toISOString().slice(0, 10);
   const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
-  const [salRes, recurringRes] = await Promise.all([
+  const [salRes, recurringRes, invoiceDueRes] = await Promise.all([
     supabase.from('site_sal_history')
       .select('importo_maturato, data_pagamento_prevista')
       .eq('company_id', companyId).is('pagato_il', null)
       .not('data_pagamento_prevista', 'is', null).lte('data_pagamento_prevista', in30ggISO),
     supabase.from('company_recurring_expenses')
       .select('id, amount, day_of_month').eq('company_id', companyId).eq('is_active', true),
+    // F-216 (AUDIT.md), seguito: fatture importate (A-Cube/email/importazione
+    // massiva) con una vera scadenza di pagamento dichiarata nell'XML FatturaPA
+    // (data_scadenza, migrazione 227) — mai stimata, solo quella che il
+    // documento dichiara esplicitamente.
+    supabase.from('company_expenses')
+      .select('amount').eq('company_id', companyId).is('pagato_il', null)
+      .not('data_scadenza', 'is', null).lte('data_scadenza', in30ggISO),
   ]);
 
   const inEntrata30gg = round2((salRes.data || []).reduce((s, r) => s + Number(r.importo_maturato || 0), 0));
+  const inUscitaFattureConScadenza30gg = (invoiceDueRes.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
 
   // Un template la cui occorrenza di questo mese è già stata materializzata
   // (services/recurringExpenseCron.js) e SEGNATA PAGATA non deve continuare
@@ -91,7 +99,7 @@ async function buildCashForecast30gg(companyId) {
     if (paidThisCycle.has(r.id)) return s;
     const next = nextRecurringOccurrence(r.day_of_month, today);
     return next.toISOString().slice(0, 10) <= in30ggISO ? s + Number(r.amount || 0) : s;
-  }, 0));
+  }, inUscitaFattureConScadenza30gg));
 
   return { da: todayISO, a: in30ggISO, in_entrata: inEntrata30gg, in_uscita_certa: inUscitaCerta30gg };
 }
