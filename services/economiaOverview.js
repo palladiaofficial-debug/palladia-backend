@@ -58,6 +58,7 @@ async function buildCashForecast30gg(companyId) {
   const in30gg = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
   const todayISO = today.toISOString().slice(0, 10);
   const in30ggISO = in30gg.toISOString().slice(0, 10);
+  const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
   const [salRes, recurringRes] = await Promise.all([
     supabase.from('site_sal_history')
@@ -65,12 +66,29 @@ async function buildCashForecast30gg(companyId) {
       .eq('company_id', companyId).is('pagato_il', null)
       .not('data_pagamento_prevista', 'is', null).lte('data_pagamento_prevista', in30ggISO),
     supabase.from('company_recurring_expenses')
-      .select('amount, day_of_month').eq('company_id', companyId).eq('is_active', true),
+      .select('id, amount, day_of_month').eq('company_id', companyId).eq('is_active', true),
   ]);
 
   const inEntrata30gg = round2((salRes.data || []).reduce((s, r) => s + Number(r.importo_maturato || 0), 0));
 
+  // Un template la cui occorrenza di questo mese è già stata materializzata
+  // (services/recurringExpenseCron.js) e SEGNATA PAGATA non deve continuare
+  // a proiettarsi nella previsione — è già uscita, non "sta per uscire".
+  // Se non è ancora pagata (materializzata o no) conta come prima: è ancora
+  // denaro che sta per uscire nei prossimi 30gg.
+  const recurringIds = (recurringRes.data || []).map(r => r.id);
+  let paidThisCycle = new Set();
+  if (recurringIds.length) {
+    const { data: paidRows } = await supabase.from('company_expenses')
+      .select('recurring_expense_id')
+      .in('recurring_expense_id', recurringIds)
+      .gte('expense_date', monthStart)
+      .not('pagato_il', 'is', null);
+    paidThisCycle = new Set((paidRows || []).map(r => r.recurring_expense_id));
+  }
+
   const inUscitaCerta30gg = round2((recurringRes.data || []).reduce((s, r) => {
+    if (paidThisCycle.has(r.id)) return s;
     const next = nextRecurringOccurrence(r.day_of_month, today);
     return next.toISOString().slice(0, 10) <= in30ggISO ? s + Number(r.amount || 0) : s;
   }, 0));
