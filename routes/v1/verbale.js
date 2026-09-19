@@ -144,8 +144,8 @@ async function buildVerbaleData(invite) {
  */
 function buildVerbaleHtml(invite, data) {
   const today     = new Date();
-  const dateStr   = today.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric' });
-  const timeStr   = today.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const dateStr   = today.toLocaleDateString('it-IT', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'Europe/Rome' });
+  const timeStr   = today.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
   const { site, company, workers, nc, notes } = data;
 
   const SEVERITY_LABEL = { bassa: 'Bassa', media: 'Media', alta: 'Alta', critica: 'Critica' };
@@ -676,3 +676,4 @@ router.get('/coordinator/pro/:token/site/:siteId/verbale', coordinatorLimiter, a
 });
 
 module.exports = router;
+module.exports.buildVerbaleHtml = buildVerbaleHtml;
