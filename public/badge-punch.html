@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#f5f3ee">
+  <meta name="theme-color" content="#F6F4F0">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Timbratura">
@@ -12,7 +12,7 @@
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   <title>Timbratura — Palladia</title>
   <script>
   (function () {
@@ -28,19 +28,24 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #f5f3ee;
+      /* F-214 (AUDIT.md): allineati ai token reali della piattaforma
+         (src/index.css) — stessa palette editoriale di tutta Palladia,
+         non più propria di questa pagina. Il verde/rosso restano un
+         segnale funzionale (entrata/uscita), non decorazione — vedi
+         .punch-btn.entry/.exit più sotto, invariato nel significato. */
+      --bg:       #F6F4F0;
       --surface:  #ffffff;
-      --border:   #e4e7ec;
-      --text:     #1a1a1a;
-      --muted:    #6b7280;
-      --subtle:   #9ca3af;
-      --green:    #16a34a;
-      --green-dk: #15803d;
-      --red:      #dc2626;
-      --red-dk:   #b91c1c;
-      --amber:    #d97706;
-      --accent:   #2563eb;
-      --radius:   12px;
+      --border:   #F4F1EC;
+      --text:     #1A1714;
+      --muted:    #6E6459;
+      --subtle:   #6E6459;
+      --green:    #4A7358;
+      --green-dk: #3A5C46;
+      --red:      #A8453B;
+      --red-dk:   #8F3A31;
+      --amber:    #A6570A;
+      --accent:   #22384F;
+      --radius:   16px;
     }
 
     html, body {
@@ -48,7 +53,7 @@
       min-height: 100dvh;
       background: var(--bg);
       color: var(--text);
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
       font-size: 17px;
       line-height: 1.4;
       -webkit-font-smoothing: antialiased;
@@ -82,30 +87,27 @@
 
     /* ── Selettore lingua ── */
     .lang-switch {
-      position: absolute;
-      right: 0;
-      top: calc(16px + env(safe-area-inset-top, 0px));
+      width: 100%;
+      max-width: 480px;
       display: flex;
-      gap: 2px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 999px;
-      padding: 3px;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 0 10px;
     }
     .lang-btn {
-      min-width: 26px;
-      height: 26px;
-      padding: 0 6px;
-      border: none;
-      border-radius: 999px;
-      background: none;
+      min-width: 40px;
+      height: 40px;
+      padding: 0 10px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
       font-family: inherit;
-      font-size: 11px;
+      font-size: 13px;
       font-weight: 700;
       color: var(--muted);
       cursor: pointer;
     }
-    .lang-btn.active { background: var(--text); color: #fff; }
+    .lang-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     /* ── Container ── */
     .wrap {
@@ -215,7 +217,8 @@
 
     /* F-213 (AUDIT.md): DDT trasportatori interni */
     .ddt-btn {
-      display: block; width: 100%; margin-top: 10px; padding: 13px;
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; margin-top: 10px; padding: 13px;
       border: 1.5px solid var(--text); border-radius: var(--radius);
       background: transparent; color: var(--text);
       font-family: inherit; font-size: 15px; font-weight: 700;
@@ -234,7 +237,7 @@
       text-transform: uppercase; color: var(--muted); margin-bottom: 4px;
     }
     .ddt-field input {
-      width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px;
+      width: 100%; padding: 11px 12px; border: 1px solid var(--border); border-radius: 12px;
       font-family: inherit; font-size: 15px; color: var(--text); background: #fff;
     }
     .ddt-cancel {
@@ -309,14 +312,14 @@
       padding: 18px 20px;
       background: var(--bg);
       border: 2px solid var(--border);
-      border-radius: 12px;
+      border-radius: 16px;
       font-family: inherit;
       cursor: pointer;
       transition: border-color 0.15s, background 0.15s;
       text-align: left;
       margin-bottom: 8px;
     }
-    .site-btn:hover  { border-color: var(--accent); background: rgba(37,99,235,.06); }
+    .site-btn:hover  { border-color: var(--accent); background: rgba(34,56,79,.06); }
     .site-btn:active { transform: scale(0.98); }
     .site-btn-name { font-size: 17px; font-weight: 700; color: var(--text); }
     .site-btn-addr { font-size: 13px; color: var(--muted); }
@@ -343,7 +346,7 @@
     .error-retry {
       display: block; width: 100%; margin-top: 24px;
       padding: 16px; font-size: 16px; font-weight: 800; font-family: inherit;
-      color: #fff; background: var(--text); border: none; border-radius: 12px;
+      color: #fff; background: var(--text); border: none; border-radius: 16px;
       cursor: pointer;
     }
     /* F-171 (AUDIT.md): variante secondaria — usata per "Riprova" quando
@@ -353,7 +356,7 @@
       display: block; width: 100%; margin-top: 24px;
       padding: 14px; font-size: 15px; font-weight: 700; font-family: inherit;
       color: inherit; background: transparent; border: 1.5px solid currentColor;
-      opacity: 0.7; border-radius: 12px; cursor: pointer;
+      opacity: 0.7; border-radius: 16px; cursor: pointer;
     }
 
     /* ── Loading ── */
@@ -533,7 +536,7 @@
       line-height: 1.5;
     }
     .pwa-step-text strong { color: #111827; }
-    .pwa-step-icon { font-size: 19px; flex-shrink: 0; margin-top: 2px; }
+    .pwa-step-icon { font-size: 19px; flex-shrink: 0; margin-top: 2px; display: flex; align-items: center; color: var(--accent); }
 
     .pwa-note {
       background: #fefce8;
@@ -580,8 +583,11 @@
 
   <div class="topbar">
     <div class="brand" style="display:flex;align-items:center;gap:6px">Palladia</div>
-    <div class="lang-switch" id="lang-switch"></div>
   </div>
+  <!-- F-214 (AUDIT.md): riga propria, non più un angolo assoluto — i pulsanti
+       erano 26px, sotto la soglia minima di tocco (44px) per un'app usata
+       spesso con i guanti. -->
+  <div class="lang-switch" id="lang-switch"></div>
 
   <!-- Guida attivazione GPS — si apre quando il permesso è negato -->
   <div id="gps-guide" class="hidden">
@@ -704,7 +710,7 @@
       },
       // F-213 (AUDIT.md): caricamento DDT trasportatori interni.
       ddt: {
-        buttonLabel: '📦 Carica DDT',
+        buttonLabel: 'Carica DDT',
         cameraTitle: 'Fotografa il DDT',
         cameraHint: 'Inquadra il documento, tienilo dritto e leggibile.',
         reading: 'Lettura in corso…',
@@ -783,12 +789,12 @@
         ],
         opera: [
           { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in basso (menu)' },
-          { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
           { n: '3', icon: '✓', text: 'Tocca <strong>Aggiungi</strong> per confermare' },
         ],
         chrome: [
           { n: '1', icon: '⋮', text: 'Tocca i <strong>tre puntini</strong> in alto a destra (menu del browser)' },
-          { n: '2', icon: '🏠', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'Tocca <strong>"Aggiungi a schermata Home"</strong>' },
           { n: '3', icon: '✓', text: "Tocca <strong>Aggiungi</strong> per confermare — l'icona apparirà sul tuo telefono" },
         ],
       },
@@ -857,7 +863,7 @@
       // F-213 (AUDIT.md): încărcare DDT pentru transportatorii interni —
       // traducere proprie, nu verificată de un vorbitor nativ (ca și restul paginii).
       ddt: {
-        buttonLabel: '📦 Încarcă DDT',
+        buttonLabel: 'Încarcă DDT',
         cameraTitle: 'Fotografiază DDT-ul',
         cameraHint: 'Încadrează documentul, ține-l drept și lizibil.',
         reading: 'Se citește…',
@@ -936,12 +942,12 @@
         ],
         opera: [
           { n: '1', icon: '⋮', text: 'Atinge <strong>cele trei puncte</strong> de jos (meniu)' },
-          { n: '2', icon: '🏠', text: 'Atinge <strong>"Adaugă pe ecranul principal"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'Atinge <strong>"Adaugă pe ecranul principal"</strong>' },
           { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> pentru a confirma' },
         ],
         chrome: [
           { n: '1', icon: '⋮', text: 'Atinge <strong>cele trei puncte</strong> din dreapta sus (meniul browserului)' },
-          { n: '2', icon: '🏠', text: 'Atinge <strong>"Adaugă pe ecranul principal"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'Atinge <strong>"Adaugă pe ecranul principal"</strong>' },
           { n: '3', icon: '✓', text: 'Atinge <strong>Adaugă</strong> pentru a confirma — pictograma va apărea pe telefon' },
         ],
       },
@@ -1010,7 +1016,7 @@
       // F-213 (AUDIT.md): ngarkimi i DDT-ve për transportuesit e brendshëm —
       // përkthim jo i verifikuar nga një folës amtare (si pjesa tjetër e faqes).
       ddt: {
-        buttonLabel: '📦 Ngarko DDT',
+        buttonLabel: 'Ngarko DDT',
         cameraTitle: 'Fotografo DDT-në',
         cameraHint: 'Kornizo dokumentin, mbaje drejt dhe të lexueshëm.',
         reading: 'Duke lexuar…',
@@ -1089,12 +1095,12 @@
         ],
         opera: [
           { n: '1', icon: '⋮', text: 'Prek <strong>tre pikat</strong> poshtë (menyja)' },
-          { n: '2', icon: '🏠', text: 'Prek <strong>"Shto në ekranin kryesor"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'Prek <strong>"Shto në ekranin kryesor"</strong>' },
           { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> për të konfirmuar' },
         ],
         chrome: [
           { n: '1', icon: '⋮', text: 'Prek <strong>tre pikat</strong> lart djathtas (menyja e shfletuesit)' },
-          { n: '2', icon: '🏠', text: 'Prek <strong>"Shto në ekranin kryesor"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'Prek <strong>"Shto në ekranin kryesor"</strong>' },
           { n: '3', icon: '✓', text: 'Prek <strong>Shto</strong> për të konfirmuar — ikona do të shfaqet në telefonin tënd' },
         ],
       },
@@ -1163,7 +1169,7 @@
       // F-213 (AUDIT.md): تحميل مستندات التسليم للسائقين الداخليين — ترجمة
       // خاصة غير مراجَعة من متحدث أصلي (مثل بقية الصفحة).
       ddt: {
-        buttonLabel: '📦 تحميل مستند التسليم',
+        buttonLabel: 'تحميل مستند التسليم',
         cameraTitle: 'صوّر مستند التسليم',
         cameraHint: 'ضع المستند داخل الإطار بشكل واضح ومستقيم.',
         reading: 'جارٍ القراءة…',
@@ -1242,12 +1248,12 @@
         ],
         opera: [
           { n: '1', icon: '⋮', text: 'اضغط على <strong>النقاط الثلاث</strong> أسفل (القائمة)' },
-          { n: '2', icon: '🏠', text: 'اضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'اضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
           { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> للتأكيد' },
         ],
         chrome: [
           { n: '1', icon: '⋮', text: 'اضغط على <strong>النقاط الثلاث</strong> أعلى اليمين (قائمة المتصفح)' },
-          { n: '2', icon: '🏠', text: 'اضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
+          { n: '2', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"/><path d="M5 9v11h5v-6h4v6h5V9"/></svg>', text: 'اضغط <strong>"إضافة إلى الشاشة الرئيسية"</strong>' },
           { n: '3', icon: '✓', text: 'اضغط <strong>إضافة</strong> للتأكيد — ستظهر الأيقونة على هاتفك' },
         ],
       },
@@ -1734,7 +1740,7 @@
 
       <!-- F-213 (AUDIT.md): DDT trasportatori interni — stesso badge/cantiere
            già selezionati per la timbratura, nessuna nuova identità. -->
-      <button class="ddt-btn fade-in" id="ddt-open-btn" onclick="openDdtCamera()">${esc(t().ddt.buttonLabel)}</button>
+      <button class="ddt-btn fade-in" id="ddt-open-btn" onclick="openDdtCamera()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:8px;"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>${esc(t().ddt.buttonLabel)}</button>
 
       <div class="hint-help" id="help-hint">
         ${helpRequestSent
@@ -1944,17 +1950,17 @@
     if (!resultCard) return;
 
     resultCard.className = '';
-    resultCard.style.cssText = 'background:#fffbeb;border:1.5px solid #d97706;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;';
+    resultCard.style.cssText = 'background:#FBF0E6;border:1.5px solid #A6570A;border-radius:16px;padding:20px;text-align:center;margin-bottom:12px;';
     resultCard.innerHTML = `
-      <div style="font-size:28px;margin-bottom:10px;">📡</div>
-      <div style="font-size:17px;font-weight:700;color:#d97706;margin-bottom:6px;">${esc(t().gpsNotPrecise)}</div>
-      <div style="font-size:14px;color:#6b7280;margin-bottom:16px;line-height:1.5;">
+      <div style="margin-bottom:10px;"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#A6570A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg></div>
+      <div style="font-size:17px;font-weight:700;color:#A6570A;margin-bottom:6px;">${esc(t().gpsNotPrecise)}</div>
+      <div style="font-size:14px;color:#6E6459;margin-bottom:16px;line-height:1.5;">
         ${esc(t().gpsRetryHint)}
       </div>
-      <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:#000;color:#fff;border:none;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer;">
+      <button onclick="retryAfterGps()" style="width:100%;padding:14px;background:var(--text);color:#fff;border:none;border-radius:16px;font-size:16px;font-weight:700;cursor:pointer;">
         ${esc(t().retry)}
       </button>
-      <button id="gps-help-btn" ${helpRequestSent ? 'disabled' : ''} onclick="sendHelpRequest('GPS_ACCURACY_TOO_LOW', this)" style="width:100%;padding:12px;background:transparent;color:#d97706;border:1.5px solid #d97706;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;">
+      <button id="gps-help-btn" ${helpRequestSent ? 'disabled' : ''} onclick="sendHelpRequest('GPS_ACCURACY_TOO_LOW', this)" style="width:100%;padding:12px;background:transparent;color:#A6570A;border:1.5px solid #A6570A;border-radius:16px;font-size:14px;font-weight:700;cursor:pointer;margin-top:8px;">
         ${esc(helpRequestSent ? t().helpSent : t().askHelpButton)}
       </button>`;
     resultCard.classList.remove('hidden');
