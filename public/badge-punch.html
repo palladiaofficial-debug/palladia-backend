@@ -213,7 +213,7 @@
       background: var(--red);
       color: #fff;
     }
-    .punch-icon { font-size: 28px; line-height: 1; }
+    .punch-icon { display: inline-flex; align-items: center; }
 
     /* F-213 (AUDIT.md): DDT trasportatori interni */
     .ddt-btn {
@@ -1331,6 +1331,14 @@
 
   const wrap = document.getElementById('wrap');
 
+  // F-214 (AUDIT.md), seguito: icone del pulsante grande — prima ▶/⏹/⏳ come
+  // testo semplice (mai emoji, ma nemmeno un'icona vera). Un'unica fonte
+  // riusata nei 4 punti che oggi impostano #btn-icon, così non può esistere
+  // un quinto punto dimenticato con un carattere diverso.
+  const ICON_ENTRY = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 5l12 7-12 7V5z"/></svg>';
+  const ICON_EXIT  = '<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  const ICON_WAIT  = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>';
+
   // ── Helpers ───────────────────────────────────────────────────────────────────
   function esc(s) {
     if (s == null) return '';
@@ -1536,7 +1544,7 @@
         const lbl = document.getElementById('btn-label');
         const ico = document.getElementById('btn-icon');
         if (lbl) lbl.textContent = s.next_action === 'EXIT' ? t().registraUscita : t().registraEntrata;
-        if (ico) ico.textContent = s.next_action === 'EXIT' ? '⏹' : '▶';
+        if (ico) ico.innerHTML = s.next_action === 'EXIT' ? ICON_EXIT : ICON_ENTRY;
       }
     }
   }
@@ -1698,7 +1706,6 @@
     const s           = selectedSite;
     const isExit      = s.next_action === 'EXIT';
     const btnClass    = isExit ? 'exit' : 'entry';
-    const btnIcon     = isExit ? '⏹' : '▶';
     const btnLabel    = isExit ? t().registraUscita : t().registraEntrata;
     const statusLabel = isExit ? t().inCantiereStatus : t().fuoriCantiereStatus;
 
@@ -1724,7 +1731,7 @@
 
       <div class="fade-in" style="display:flex;flex-direction:column;gap:8px;">
         <button class="punch-btn ${btnClass}" id="punch-btn" disabled onclick="doPunch()">
-          <span class="punch-icon" id="btn-icon">⏳</span>
+          <span class="punch-icon" id="btn-icon">${ICON_WAIT}</span>
           <span id="btn-label">${esc(t().waitingGps)}</span>
         </button>
 
@@ -1982,7 +1989,7 @@
       }
       const ico = document.getElementById('btn-icon');
       if (ico && selectedSite) {
-        ico.textContent = selectedSite.next_action === 'EXIT' ? '⏹' : '▶';
+        ico.innerHTML = selectedSite.next_action === 'EXIT' ? ICON_EXIT : ICON_ENTRY;
       }
     }
   }
@@ -2109,7 +2116,7 @@
       punching = false;
       var ico2 = document.getElementById('btn-icon');
       if (ico2 && ico2.querySelector('.btn-spinner')) {
-        ico2.textContent = selectedSite?.next_action === 'EXIT' ? '⏹' : '▶';
+        ico2.innerHTML = selectedSite?.next_action === 'EXIT' ? ICON_EXIT : ICON_ENTRY;
       }
       updatePunchButton();
     }
