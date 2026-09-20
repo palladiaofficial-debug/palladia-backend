@@ -103,7 +103,18 @@ router.post('/sites/:siteId/costs',
 
     const body = req.body;
     if (!body.descrizione?.trim()) return res.status(400).json({ error: 'MISSING_DESCRIZIONE' });
-    if (!body.importo || isNaN(parseFloat(body.importo)))
+
+    // F-220 (AUDIT.md): un DDT quasi mai ha un prezzo (le merci arrivano
+    // prima della fattura di riscontro) — stesso principio già stabilito per
+    // il flusso badge (routes/v1/badgeDdt.js, F-213) e per la colonna DB
+    // (site_costs.importo nullable dalla migrazione 221): qui, l'unico altro
+    // punto che crea righe manualmente, il vincolo imponeva comunque un
+    // valore inventato. Per ogni altro tipo l'importo resta obbligatorio.
+    const tipo = body.tipo || 'fattura';
+    const importoProvided = body.importo !== undefined && body.importo !== null && String(body.importo).trim() !== '';
+    if (importoProvided && isNaN(parseFloat(body.importo)))
+      return res.status(400).json({ error: 'MISSING_IMPORTO' });
+    if (tipo !== 'ddt' && !importoProvided)
       return res.status(400).json({ error: 'MISSING_IMPORTO' });
 
     let file_url = null;
@@ -142,9 +153,9 @@ router.post('/sites/:siteId/costs',
       quantita:           body.quantita   ? parseFloat(body.quantita)   : null,
       unita_misura:       body.unita_misura?.trim() || null,
       prezzo_unitario:    body.prezzo_unitario ? parseFloat(body.prezzo_unitario) : null,
-      importo:            parseFloat(body.importo),
+      importo:            importoProvided ? parseFloat(body.importo) : null,
       data_documento:     body.data_documento || null,
-      tipo:               body.tipo || 'fattura',
+      tipo,
       numero_documento:   body.numero_documento?.trim() || null,
       file_url,
       categoria:          body.categoria?.trim() || null,
