@@ -340,7 +340,7 @@
       text-align: center;
       padding: 36px 20px 28px;
     }
-    .error-icon  { font-size: 40px; display: block; margin-bottom: 14px; }
+    .error-icon  { display: flex; justify-content: center; margin-bottom: 14px; color: var(--red); }
     .error-title { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
     .error-sub   { font-size: 15px; color: var(--muted); line-height: 1.6; }
     .error-retry {
@@ -736,17 +736,17 @@
         unassignedPlaceholder: 'Es. Via Roma 12, Genova',
       },
       errorCopy: {
-        BADGE_NOT_FOUND:               { icon: '🚫', title: 'Badge non valido',          sub: 'Avvisa il responsabile.' },
-        BADGE_REVOKED:                 { icon: '🔒', title: 'Badge disattivato',         sub: 'Avvisa il responsabile.' },
-        INVALID_BADGE_CODE:            { icon: '🚫', title: 'Codice non valido',         sub: 'Il QR potrebbe essere danneggiato. Avvisa il responsabile.' },
-        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'Non autorizzato',           sub: 'Non risulti assegnato a questo cantiere. Avvisa il responsabile.' },
-        COMPANY_MISMATCH:              { icon: '⛔', title: 'Cantiere non valido',       sub: 'Avvisa il responsabile.' },
-        NO_SITES:                      { icon: '○', title: 'Nessun cantiere trovato',   sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
-        GPS_REQUIRED:                  { icon: '📡', title: 'Posizione richiesta',       sub: 'Attiva la geolocalizzazione per registrare la presenza.' },
-        OUTSIDE_GEOFENCE:              { icon: '!', title: 'Sei troppo lontano',        sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
-        PUNCH_TOO_SOON:                { icon: '⏳', title: 'Timbratura già registrata', sub: 'Hai già timbrato di recente. Riprova tra qualche minuto.' },
-        SERVER_ERROR:                  { icon: '!', title: 'Errore temporaneo',         sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
-        NETWORK_ERROR:                 { icon: '📶', title: 'Nessuna connessione',        sub: 'Controlla la connessione a internet e riprova.' },
+        BADGE_NOT_FOUND:               { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'Badge non valido',          sub: 'Avvisa il responsabile.' },
+        BADGE_REVOKED:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>', title: 'Badge disattivato',         sub: 'Avvisa il responsabile.' },
+        INVALID_BADGE_CODE:            { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'Codice non valido',         sub: 'Il QR potrebbe essere danneggiato. Avvisa il responsabile.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'Non autorizzato',           sub: 'Non risulti assegnato a questo cantiere. Avvisa il responsabile.' },
+        COMPANY_MISMATCH:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'Cantiere non valido',       sub: 'Avvisa il responsabile.' },
+        NO_SITES:                      { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><path d="M4 4l16 16"/></svg>', title: 'Nessun cantiere trovato',   sub: 'Non risulti assegnato a nessun cantiere attivo. Avvisa il responsabile.' },
+        GPS_REQUIRED:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>', title: 'Posizione richiesta',       sub: 'Attiva la geolocalizzazione per registrare la presenza.' },
+        OUTSIDE_GEOFENCE:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'Sei troppo lontano',        sub: 'Non risulti vicino al cantiere selezionato. Se sei sul posto, avvisa il responsabile.' },
+        PUNCH_TOO_SOON:                { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>', title: 'Timbratura già registrata', sub: 'Hai già timbrato di recente. Riprova tra qualche minuto.' },
+        SERVER_ERROR:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'Errore temporaneo',         sub: 'Riprova tra qualche minuto. Se il problema persiste, avvisa il responsabile.' },
+        NETWORK_ERROR:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a17 17 0 0 1 20 0"/><path d="M5 12a12 12 0 0 1 14 0"/><path d="M8.5 15.5a7 7 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg>', title: 'Nessuna connessione',        sub: 'Controlla la connessione a internet e riprova.' },
       },
       gpsGuideSteps: {
         ios: [
@@ -799,7 +799,7 @@
         ],
       },
       pwaNotes: {
-        ios: '📌 Su iPhone e iPad questo passaggio si fa solo da <strong>Safari</strong>. Se stai usando un altro browser, aprilo in Safari per poter salvare l\'app.',
+        ios: 'Su iPhone e iPad questo passaggio si fa solo da <strong>Safari</strong>. Se stai usando un altro browser, aprilo in Safari per poter salvare l\'app.',
         samsung: null, firefox: null, opera: null, chrome: null,
       },
     },
@@ -889,17 +889,17 @@
         unassignedPlaceholder: 'Ex. Via Roma 12, Genova',
       },
       errorCopy: {
-        BADGE_NOT_FOUND:               { icon: '🚫', title: 'Ecuson invalid',            sub: 'Anunță responsabilul.' },
-        BADGE_REVOKED:                 { icon: '🔒', title: 'Ecuson dezactivat',         sub: 'Anunță responsabilul.' },
-        INVALID_BADGE_CODE:            { icon: '🚫', title: 'Cod invalid',               sub: 'Codul QR ar putea fi deteriorat. Anunță responsabilul.' },
-        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'Neautorizat',                sub: 'Nu ești alocat acestui șantier. Anunță responsabilul.' },
-        COMPANY_MISMATCH:              { icon: '⛔', title: 'Șantier invalid',            sub: 'Anunță responsabilul.' },
-        NO_SITES:                      { icon: '○', title: 'Niciun șantier găsit',       sub: 'Nu ești alocat niciunui șantier activ. Anunță responsabilul.' },
-        GPS_REQUIRED:                  { icon: '📡', title: 'Poziție necesară',           sub: 'Activează geolocalizarea pentru a înregistra prezența.' },
-        OUTSIDE_GEOFENCE:              { icon: '!', title: 'Ești prea departe',          sub: 'Nu ești aproape de șantierul selectat. Dacă ești la fața locului, anunță responsabilul.' },
-        PUNCH_TOO_SOON:                { icon: '⏳', title: 'Pontaj deja înregistrat',    sub: 'Ai pontat deja recent. Încearcă din nou peste câteva minute.' },
-        SERVER_ERROR:                  { icon: '!', title: 'Eroare temporară',           sub: 'Încearcă din nou peste câteva minute. Dacă problema persistă, anunță responsabilul.' },
-        NETWORK_ERROR:                 { icon: '📶', title: 'Fără conexiune',              sub: 'Verifică conexiunea la internet și încearcă din nou.' },
+        BADGE_NOT_FOUND:               { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'Ecuson invalid',            sub: 'Anunță responsabilul.' },
+        BADGE_REVOKED:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>', title: 'Ecuson dezactivat',         sub: 'Anunță responsabilul.' },
+        INVALID_BADGE_CODE:            { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'Cod invalid',               sub: 'Codul QR ar putea fi deteriorat. Anunță responsabilul.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'Neautorizat',                sub: 'Nu ești alocat acestui șantier. Anunță responsabilul.' },
+        COMPANY_MISMATCH:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'Șantier invalid',            sub: 'Anunță responsabilul.' },
+        NO_SITES:                      { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><path d="M4 4l16 16"/></svg>', title: 'Niciun șantier găsit',       sub: 'Nu ești alocat niciunui șantier activ. Anunță responsabilul.' },
+        GPS_REQUIRED:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>', title: 'Poziție necesară',           sub: 'Activează geolocalizarea pentru a înregistra prezența.' },
+        OUTSIDE_GEOFENCE:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'Ești prea departe',          sub: 'Nu ești aproape de șantierul selectat. Dacă ești la fața locului, anunță responsabilul.' },
+        PUNCH_TOO_SOON:                { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>', title: 'Pontaj deja înregistrat',    sub: 'Ai pontat deja recent. Încearcă din nou peste câteva minute.' },
+        SERVER_ERROR:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'Eroare temporară',           sub: 'Încearcă din nou peste câteva minute. Dacă problema persistă, anunță responsabilul.' },
+        NETWORK_ERROR:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a17 17 0 0 1 20 0"/><path d="M5 12a12 12 0 0 1 14 0"/><path d="M8.5 15.5a7 7 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg>', title: 'Fără conexiune',              sub: 'Verifică conexiunea la internet și încearcă din nou.' },
       },
       gpsGuideSteps: {
         ios: [
@@ -952,7 +952,7 @@
         ],
       },
       pwaNotes: {
-        ios: '📌 Pe iPhone și iPad acest pas se face doar din <strong>Safari</strong>. Dacă folosești alt browser, deschide-l în Safari pentru a putea salva aplicația.',
+        ios: 'Pe iPhone și iPad acest pas se face doar din <strong>Safari</strong>. Dacă folosești alt browser, deschide-l în Safari pentru a putea salva aplicația.',
         samsung: null, firefox: null, opera: null, chrome: null,
       },
     },
@@ -1042,17 +1042,17 @@
         unassignedPlaceholder: 'P.sh. Via Roma 12, Genova',
       },
       errorCopy: {
-        BADGE_NOT_FOUND:               { icon: '🚫', title: 'Kartë e pavlefshme',        sub: 'Njofto përgjegjësin.' },
-        BADGE_REVOKED:                 { icon: '🔒', title: 'Karta u çaktivizua',        sub: 'Njofto përgjegjësin.' },
-        INVALID_BADGE_CODE:            { icon: '🚫', title: 'Kod i pavlefshëm',          sub: 'Kodi QR mund të jetë dëmtuar. Njofto përgjegjësin.' },
-        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'I paautorizuar',             sub: 'Nuk je i caktuar në këtë kantier. Njofto përgjegjësin.' },
-        COMPANY_MISMATCH:              { icon: '⛔', title: 'Kantier i pavlefshëm',       sub: 'Njofto përgjegjësin.' },
-        NO_SITES:                      { icon: '○', title: 'Nuk u gjet asnjë kantier',   sub: 'Nuk je i caktuar në asnjë kantier aktiv. Njofto përgjegjësin.' },
-        GPS_REQUIRED:                  { icon: '📡', title: 'Kërkohet pozicioni',         sub: 'Aktivizo gjeolokalizimin për të regjistruar praninë.' },
-        OUTSIDE_GEOFENCE:              { icon: '!', title: 'Je shumë larg',              sub: 'Nuk je pranë kantierit të zgjedhur. Nëse je në vend, njofto përgjegjësin.' },
-        PUNCH_TOO_SOON:                { icon: '⏳', title: 'Regjistrimi u bë tashmë',    sub: 'Ke regjistruar tashmë kohët e fundit. Provo përsëri pas disa minutash.' },
-        SERVER_ERROR:                  { icon: '!', title: 'Gabim i përkohshëm',         sub: 'Provo përsëri pas disa minutash. Nëse problemi vazhdon, njofto përgjegjësin.' },
-        NETWORK_ERROR:                 { icon: '📶', title: 'Nuk ka lidhje',               sub: 'Kontrollo lidhjen me internetin dhe provo përsëri.' },
+        BADGE_NOT_FOUND:               { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'Kartë e pavlefshme',        sub: 'Njofto përgjegjësin.' },
+        BADGE_REVOKED:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>', title: 'Karta u çaktivizua',        sub: 'Njofto përgjegjësin.' },
+        INVALID_BADGE_CODE:            { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'Kod i pavlefshëm',          sub: 'Kodi QR mund të jetë dëmtuar. Njofto përgjegjësin.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'I paautorizuar',             sub: 'Nuk je i caktuar në këtë kantier. Njofto përgjegjësin.' },
+        COMPANY_MISMATCH:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'Kantier i pavlefshëm',       sub: 'Njofto përgjegjësin.' },
+        NO_SITES:                      { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><path d="M4 4l16 16"/></svg>', title: 'Nuk u gjet asnjë kantier',   sub: 'Nuk je i caktuar në asnjë kantier aktiv. Njofto përgjegjësin.' },
+        GPS_REQUIRED:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>', title: 'Kërkohet pozicioni',         sub: 'Aktivizo gjeolokalizimin për të regjistruar praninë.' },
+        OUTSIDE_GEOFENCE:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'Je shumë larg',              sub: 'Nuk je pranë kantierit të zgjedhur. Nëse je në vend, njofto përgjegjësin.' },
+        PUNCH_TOO_SOON:                { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>', title: 'Regjistrimi u bë tashmë',    sub: 'Ke regjistruar tashmë kohët e fundit. Provo përsëri pas disa minutash.' },
+        SERVER_ERROR:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'Gabim i përkohshëm',         sub: 'Provo përsëri pas disa minutash. Nëse problemi vazhdon, njofto përgjegjësin.' },
+        NETWORK_ERROR:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a17 17 0 0 1 20 0"/><path d="M5 12a12 12 0 0 1 14 0"/><path d="M8.5 15.5a7 7 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg>', title: 'Nuk ka lidhje',               sub: 'Kontrollo lidhjen me internetin dhe provo përsëri.' },
       },
       gpsGuideSteps: {
         ios: [
@@ -1105,7 +1105,7 @@
         ],
       },
       pwaNotes: {
-        ios: '📌 Në iPhone dhe iPad ky hap bëhet vetëm nga <strong>Safari</strong>. Nëse po përdor një shfletues tjetër, hape në Safari për ta ruajtur aplikacionin.',
+        ios: 'Në iPhone dhe iPad ky hap bëhet vetëm nga <strong>Safari</strong>. Nëse po përdor një shfletues tjetër, hape në Safari për ta ruajtur aplikacionin.',
         samsung: null, firefox: null, opera: null, chrome: null,
       },
     },
@@ -1195,17 +1195,17 @@
         unassignedPlaceholder: 'مثال: Via Roma 12, Genova',
       },
       errorCopy: {
-        BADGE_NOT_FOUND:               { icon: '🚫', title: 'بطاقة غير صالحة',            sub: 'أبلغ المسؤول.' },
-        BADGE_REVOKED:                 { icon: '🔒', title: 'البطاقة معطّلة',              sub: 'أبلغ المسؤول.' },
-        INVALID_BADGE_CODE:            { icon: '🚫', title: 'رمز غير صالح',                sub: 'قد يكون رمز QR تالفًا. أبلغ المسؤول.' },
-        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '⛔', title: 'غير مصرح',                    sub: 'أنت غير مُعيَّن لهذه الورشة. أبلغ المسؤول.' },
-        COMPANY_MISMATCH:              { icon: '⛔', title: 'ورشة غير صالحة',              sub: 'أبلغ المسؤول.' },
-        NO_SITES:                      { icon: '○', title: 'لم يتم العثور على ورشة',      sub: 'أنت غير مُعيَّن لأي ورشة نشطة. أبلغ المسؤول.' },
-        GPS_REQUIRED:                  { icon: '📡', title: 'الموقع مطلوب',                sub: 'فعّل تحديد الموقع الجغرافي لتسجيل الحضور.' },
-        OUTSIDE_GEOFENCE:              { icon: '!', title: 'أنت بعيد جدًا',                sub: 'لست بالقرب من الورشة المختارة. إذا كنت في الموقع، أبلغ المسؤول.' },
-        PUNCH_TOO_SOON:                { icon: '⏳', title: 'تم التسجيل بالفعل',           sub: 'لقد سجلت مؤخرًا. حاول مرة أخرى بعد بضع دقائق.' },
-        SERVER_ERROR:                  { icon: '!', title: 'خطأ مؤقت',                     sub: 'حاول مرة أخرى بعد بضع دقائق. إذا استمرت المشكلة، أبلغ المسؤول.' },
-        NETWORK_ERROR:                 { icon: '📶', title: 'لا يوجد اتصال',                 sub: 'تحقق من اتصال الإنترنت وحاول مرة أخرى.' },
+        BADGE_NOT_FOUND:               { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'بطاقة غير صالحة',            sub: 'أبلغ المسؤول.' },
+        BADGE_REVOKED:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>', title: 'البطاقة معطّلة',              sub: 'أبلغ المسؤول.' },
+        INVALID_BADGE_CODE:            { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/></svg>', title: 'رمز غير صالح',                sub: 'قد يكون رمز QR تالفًا. أبلغ المسؤول.' },
+        WORKER_NOT_AUTHORIZED_ON_SITE: { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'غير مصرح',                    sub: 'أنت غير مُعيَّن لهذه الورشة. أبلغ المسؤول.' },
+        COMPANY_MISMATCH:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4v5c0 4.5-3 7.5-8 9-5-1.5-8-4.5-8-9V7l8-4z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg>', title: 'ورشة غير صالحة',              sub: 'أبلغ المسؤول.' },
+        NO_SITES:                      { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><path d="M4 4l16 16"/></svg>', title: 'لم يتم العثور على ورشة',      sub: 'أنت غير مُعيَّن لأي ورشة نشطة. أبلغ المسؤول.' },
+        GPS_REQUIRED:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-6.1-7-11a7 7 0 0 1 14 0c0 4.9-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>', title: 'الموقع مطلوب',                sub: 'فعّل تحديد الموقع الجغرافي لتسجيل الحضور.' },
+        OUTSIDE_GEOFENCE:              { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'أنت بعيد جدًا',                sub: 'لست بالقرب من الورشة المختارة. إذا كنت في الموقع، أبلغ المسؤول.' },
+        PUNCH_TOO_SOON:                { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></svg>', title: 'تم التسجيل بالفعل',           sub: 'لقد سجلت مؤخرًا. حاول مرة أخرى بعد بضع دقائق.' },
+        SERVER_ERROR:                  { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3L2 20h20L12 3z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.9" fill="currentColor" stroke="none"/></svg>', title: 'خطأ مؤقت',                     sub: 'حاول مرة أخرى بعد بضع دقائق. إذا استمرت المشكلة، أبلغ المسؤول.' },
+        NETWORK_ERROR:                 { icon: '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.5a17 17 0 0 1 20 0"/><path d="M5 12a12 12 0 0 1 14 0"/><path d="M8.5 15.5a7 7 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg>', title: 'لا يوجد اتصال',                 sub: 'تحقق من اتصال الإنترنت وحاول مرة أخرى.' },
       },
       gpsGuideSteps: {
         ios: [
@@ -1258,7 +1258,7 @@
         ],
       },
       pwaNotes: {
-        ios: '📌 على iPhone وiPad، هذه الخطوة تتم فقط من <strong>Safari</strong>. إذا كنت تستخدم متصفحًا آخر، افتح الصفحة في Safari لحفظ التطبيق.',
+        ios: 'على iPhone وiPad، هذه الخطوة تتم فقط من <strong>Safari</strong>. إذا كنت تستخدم متصفحًا آخر، افتح الصفحة في Safari لحفظ التطبيق.',
         samsung: null, firefox: null, opera: null, chrome: null,
       },
     },
@@ -2136,12 +2136,12 @@
     stopGps();
     wrap.innerHTML =
       '<div class="card fade-in" style="text-align:center;padding:32px 20px;">' +
-        '<span style="font-size:56px;display:block;margin-bottom:16px;">📡</span>' +
-        '<div style="font-size:22px;font-weight:800;color:#d97706;margin-bottom:6px;">' + esc(t().offlineSavedTitle) + '</div>' +
-        '<div style="font-size:15px;color:#6b7280;margin-bottom:20px;line-height:1.5;">' +
+        '<span style="display:block;margin-bottom:16px;color:#A6570A;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;"><path d="M2 8.5a17 17 0 0 1 20 0"/><path d="M5 12a12 12 0 0 1 14 0"/><path d="M8.5 15.5a7 7 0 0 1 7 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/><path d="M3 3l18 18"/></svg></span>' +
+        '<div style="font-size:22px;font-weight:800;color:#A6570A;margin-bottom:6px;">' + esc(t().offlineSavedTitle) + '</div>' +
+        '<div style="font-size:15px;color:#6E6459;margin-bottom:20px;line-height:1.5;">' +
           esc(siteName) + '<br>' + t().offlineSavedHint +
         '</div>' +
-        '<div style="font-size:13px;color:#9ca3af;">' + esc(t().canClose) + '</div>' +
+        '<div style="font-size:13px;color:#6E6459;">' + esc(t().canClose) + '</div>' +
       '</div>';
   }
 
