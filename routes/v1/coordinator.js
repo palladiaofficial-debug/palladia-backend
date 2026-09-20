@@ -43,6 +43,7 @@ const {
   getDocumentStatus,
 } = require('../../lib/coordinatorUtils');
 const { validate } = require('../../middleware/validate');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
 const {
   createCoordinatorInviteSchema,
   createCoordinatorNoteSchema,
@@ -61,7 +62,15 @@ function hashToken(token) {
 // complianceStatus e overallCompliance importati da lib/compliance.js
 
 // ── POST /api/v1/sites/:siteId/coordinator-invites ───────────────────────────
+// Feature in standby dal 2026-09-20 (lib/featureFlags.js, coordinator_cse,
+// congelata anche per la master company) — creare un nuovo invito è
+// disattivato; gli inviti esistenti restano risolvibili (nessuna revoca
+// implicita), così un accesso già in mano a qualcuno non smette di funzionare.
 router.post('/sites/:siteId/coordinator-invites', verifySupabaseJwt, validate(createCoordinatorInviteSchema), async (req, res) => {
+  if (!(await isFeatureEnabled(req.companyId, 'coordinator_cse'))) {
+    return res.status(403).json({ error: 'FEATURE_DISABLED' });
+  }
+
   const { siteId } = req.params;
   const { coordinator_name, coordinator_email, coordinator_company, ttl_days } = req.body;
 
