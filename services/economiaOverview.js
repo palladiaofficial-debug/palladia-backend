@@ -15,9 +15,14 @@
  * reali dell'azienda, che ha mostrato quanto la vecchia struttura (3 pagine,
  * fino a 4 sezioni impilate per cantiere) restasse in pratica inutilizzata:
  *
- *   da_incassare = SAL emessi (site_sal_history.importo_maturato) MAI pagati
- *                  dal cliente (pagato_il IS NULL) — non "maturato totale",
- *                  che confonderebbe fatturato con soldi arrivati davvero.
+ *   da_incassare = quanto resta scoperto sull'ultimo SAL emesso per il
+ *                  cantiere. `importo_maturato` è un CUMULATIVO (contratto ×
+ *                  SAL% al momento dell'emissione, routes/v1/economia.js::
+ *                  calcPnl) — mai un incremento. Sommare l'`importo_maturato`
+ *                  di più SAL non pagati dello stesso cantiere (F-219,
+ *                  AUDIT.md) conterebbe più volte lo stesso lavoro: il dovuto
+ *                  reale è il maturato dell'ULTIMO SAL emesso, meno quanto già
+ *                  incassato per davvero (i SAL precedenti segnati pagati).
  *   da_pagare    = fatture/altre spese aperte (site_costs + company_expenses,
  *                  pagato_il IS NULL) + saldo residuo verso i subappaltatori
  *                  (budget pattuito − acconti già dati, stesso identico
@@ -34,6 +39,24 @@
 const supabase = require('../lib/supabase');
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
+
+// F-219 (AUDIT.md): `site_sal_history.importo_maturato` è cumulativo (vedi
+// calcPnl) — quanto resta scoperto per UN cantiere è il maturato dell'ultimo
+// SAL emesso (per sal_number, l'unico ordine atomico/affidabile — le date di
+// emissione possono coincidere) meno quanto già incassato davvero (le righe
+// segnate pagate). Righe precedenti non pagate non si sommano: sono già
+// interamente contenute nel cumulativo dell'ultima.
+function netSalOwed(salRowsOneSite) {
+  if (!salRowsOneSite.length) return { amount: 0, latestUnpaid: null };
+  const sorted = [...salRowsOneSite].sort((a, b) => b.sal_number - a.sal_number);
+  const latest = sorted[0];
+  const giaIncassato = salRowsOneSite
+    .filter(s => s.pagato_il)
+    .reduce((s, r) => s + Number(r.importo_maturato || 0), 0);
+  const amount = round2(Math.max(0, Number(latest.importo_maturato || 0) - giaIncassato));
+  const latestUnpaid = sorted.find(s => !s.pagato_il) || null;
+  return { amount, latestUnpaid };
+}
 
 // ── Previsione di cassa a 30 giorni (solo dati certi) ───────────────────────
 // Deciso dopo un confronto con Pillar (competitor): NON stimiamo scadenze che
@@ -61,10 +84,13 @@ async function buildCashForecast30gg(companyId) {
   const monthStart = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
 
   const [salRes, recurringRes, invoiceDueRes] = await Promise.all([
+    // F-219 (AUDIT.md): tutte le righe SAL del cantiere (non solo quelle non
+    // pagate) servono per calcolare quanto resta scoperto per DAVVERO (vedi
+    // netSalOwed) — filtrare qui a monte per pagato_il/scadenza impedirebbe di
+    // vedere i SAL precedenti già incassati che vanno sottratti dal cumulativo.
     supabase.from('site_sal_history')
-      .select('importo_maturato, data_pagamento_prevista')
-      .eq('company_id', companyId).is('pagato_il', null)
-      .not('data_pagamento_prevista', 'is', null).lte('data_pagamento_prevista', in30ggISO),
+      .select('site_id, sal_number, importo_maturato, pagato_il, data_pagamento_prevista')
+      .eq('company_id', companyId),
     supabase.from('company_recurring_expenses')
       .select('id, amount, day_of_month').eq('company_id', companyId).eq('is_active', true),
     // F-216 (AUDIT.md), seguito: fatture importate (A-Cube/email/importazione
@@ -76,7 +102,19 @@ async function buildCashForecast30gg(companyId) {
       .not('data_scadenza', 'is', null).lte('data_scadenza', in30ggISO),
   ]);
 
-  const inEntrata30gg = round2((salRes.data || []).reduce((s, r) => s + Number(r.importo_maturato || 0), 0));
+  // Per ciascun cantiere: quanto resta scoperto per davvero (netSalOwed),
+  // contato nei 30gg solo se l'ULTIMO SAL non pagato ha una scadenza vera
+  // entro la finestra — un SAL precedente già incassato non ha più una
+  // scadenza propria da guardare, è superato dal cumulativo del successivo.
+  const salBySite = {};
+  for (const r of (salRes.data || [])) {
+    (salBySite[r.site_id] ||= []).push(r);
+  }
+  const inEntrata30gg = round2(Object.values(salBySite).reduce((sum, rows) => {
+    const { amount, latestUnpaid } = netSalOwed(rows);
+    if (amount <= 0 || !latestUnpaid?.data_pagamento_prevista) return sum;
+    return latestUnpaid.data_pagamento_prevista <= in30ggISO ? sum + amount : sum;
+  }, 0));
   const inUscitaFattureConScadenza30gg = (invoiceDueRes.data || []).reduce((s, r) => s + Number(r.amount || 0), 0);
 
   // Un template la cui occorrenza di questo mese è già stata materializzata
@@ -136,7 +174,7 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
   const expRows     = expensesRes.data || [];
   const hasContratto = siteRes.data.budget_totale !== null || (computoRes.data || []).length > 0;
 
-  const daIncassare = round2(salRows.filter(s => !s.pagato_il).reduce((s, r) => s + Number(r.importo_maturato || 0), 0));
+  const daIncassare = netSalOwed(salRows).amount;
 
   const fattureAperte = costRows.filter(c => c.tipo !== 'acconto' && !c.pagato_il);
   const speseAperte   = expRows.filter(e => !e.pagato_il);

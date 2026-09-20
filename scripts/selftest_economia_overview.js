@@ -10,8 +10,10 @@
  * selftest_economia_overview_api.js) — nessun rischio di toccare dati veri.
  *
  * Scenario costruito a mano con importi noti, per verificare che:
- * 1) da_incassare conta solo i SAL emessi NON ancora pagati dal cliente
- *    (pagato_il IS NULL) — non il maturato totale.
+ * 1) da_incassare è il maturato CUMULATIVO dell'ULTIMO SAL emesso meno quanto
+ *    già incassato davvero (F-219, AUDIT.md) — mai la somma piatta degli
+ *    `importo_maturato` di più SAL non pagati, che conterebbe più volte lo
+ *    stesso lavoro (ogni riga è un totale-a-oggi, non un incremento).
  * 2) da_pagare conta le fatture/spese aperte (pagato_il IS NULL) ma MAI un
  *    "acconto" (per definizione già dato) né un DDT senza importo.
  * 3) il saldo verso un subappaltatore (budget pattuito − acconti dati) si
@@ -19,10 +21,12 @@
  *    eventuali fatture (escluse a monte).
  * 4) una spesa generale (site_id NULL) non tocca il cantiere ma entra nel
  *    totale azienda.
- * 5) previsione_30gg (azienda) conta solo dati certi: SAL con
- *    data_pagamento_prevista entro 30gg e non ancora pagati, spese
- *    ricorrenti attive con prossima occorrenza entro 30gg — mai una
- *    scadenza stimata su fatture/spese che non ce l'hanno davvero.
+ * 5) previsione_30gg (azienda) conta solo dati certi: per ciascun cantiere,
+ *    solo se l'ULTIMO SAL non pagato ha una data_pagamento_prevista entro
+ *    30gg (F-219: un SAL precedente superato da uno più recente non ha più
+ *    una scadenza propria da guardare); spese ricorrenti attive con
+ *    prossima occorrenza entro 30gg — mai una scadenza stimata su
+ *    fatture/spese che non ce l'hanno davvero.
  * 6) previsione_30gg include anche le fatture con una vera data_scadenza
  *    (migrazione 227, estratta ora dall'XML FatturaPA — vedi
  *    lib/fatturaPaXmlParser.js) entro 30gg e non pagate; esclude quelle
@@ -94,15 +98,31 @@ async function main() {
     check('Sessione JWT ottenuta', !!jwt);
 
     // ── Scenario ────────────────────────────────────────────────────────
-    // SAL: 15.000€ emesso non pagato, 5.000€ emesso e già pagato (non deve contare).
+    // F-219 (AUDIT.md): `importo_maturato` è CUMULATIVO (contratto × SAL% al
+    // momento dell'emissione), non un incremento — 3 SAL progressivi sullo
+    // stesso cantiere, per verificare che non si sommino più cumulativi:
+    //   SAL n.1: 15.000€, già incassato (storico, non conta più).
+    //   SAL n.2: 22.000€ cumulativo, NON incassato, scadenza tra 10gg.
+    //   SAL n.3: 35.000€ cumulativo (l'ULTIMO emesso), NON incassato,
+    //            scadenza tra 45gg — supera n.2, che quindi non è più una
+    //            richiesta a sé: è già interamente contenuto nei 35.000€.
+    // Dovuto reale atteso: 35.000 (ultimo) − 15.000 (già incassato) = 20.000€.
+    // La somma piatta pre-fix (22.000 + 35.000 = 57.000, sal1 escluso perché
+    // pagato) sarebbe stata sbagliata per 37.000€.
     const { data: sal1 } = await admin.from('site_sal_history').insert({
-      company_id: companyId, site_id: siteId, sal_number: 1, importo_maturato: 15000, totale_costi: 0,
+      company_id: companyId, site_id: siteId, sal_number: 1, importo_maturato: 15000, totale_costi: 0, pagato_il: '2026-09-01',
     }).select().single();
     salIds.push(sal1.id);
     const { data: sal2 } = await admin.from('site_sal_history').insert({
-      company_id: companyId, site_id: siteId, sal_number: 2, importo_maturato: 5000, totale_costi: 0, pagato_il: '2026-09-01',
+      company_id: companyId, site_id: siteId, sal_number: 2, importo_maturato: 22000, totale_costi: 0,
+      data_pagamento_prevista: isoOffset(10),
     }).select().single();
     salIds.push(sal2.id);
+    const { data: sal3 } = await admin.from('site_sal_history').insert({
+      company_id: companyId, site_id: siteId, sal_number: 3, importo_maturato: 35000, totale_costi: 0,
+      data_pagamento_prevista: isoOffset(45),
+    }).select().single();
+    salIds.push(sal3.id);
 
     // Costi: una fattura aperta (3.200€), un DDT senza importo (non deve mai contare),
     // un acconto NON a un subappaltatore (mai "da pagare" per definizione).
@@ -129,26 +149,11 @@ async function main() {
     costIds.push(c4.id);
 
     // ── Previsione di cassa 30gg — solo dati certi (scelta esplicita del
-    // titolare dopo il confronto con Pillar): un SAL con scadenza entro 30gg
-    // conta, uno oltre no, uno già pagato no anche se la scadenza è vicina;
-    // una spesa ricorrente attiva con prossima occorrenza entro 30gg conta,
-    // una disattivata no.
-    const { data: sal3 } = await admin.from('site_sal_history').insert({
-      company_id: companyId, site_id: siteId, sal_number: 3, importo_maturato: 7000, totale_costi: 0,
-      data_pagamento_prevista: isoOffset(10),
-    }).select().single();
-    salIds.push(sal3.id);
-    const { data: sal4 } = await admin.from('site_sal_history').insert({
-      company_id: companyId, site_id: siteId, sal_number: 4, importo_maturato: 20000, totale_costi: 0,
-      data_pagamento_prevista: isoOffset(60),
-    }).select().single();
-    salIds.push(sal4.id);
-    const { data: sal5 } = await admin.from('site_sal_history').insert({
-      company_id: companyId, site_id: siteId, sal_number: 5, importo_maturato: 3000, totale_costi: 0,
-      data_pagamento_prevista: isoOffset(5), pagato_il: isoOffset(-1),
-    }).select().single();
-    salIds.push(sal5.id);
-
+    // titolare dopo il confronto con Pillar): riusa lo scenario SAL sopra —
+    // n.2 (scadenza entro 30gg) è superato da n.3 (l'ULTIMO, scadenza a 45gg,
+    // oltre la finestra) — la previsione deve guardare SOLO la scadenza
+    // dell'ultimo SAL non pagato, mai una riga superata. Una spesa ricorrente
+    // attiva con prossima occorrenza entro 30gg conta, una disattivata no.
     const todayDay = new Date().getDate();
     const { data: rec1 } = await admin.from('company_recurring_expenses').insert({
       company_id: companyId, amount: 1200, description: 'TEST affitto', day_of_month: Math.min(28, todayDay),
@@ -188,7 +193,7 @@ async function main() {
     // ── Verifiche ───────────────────────────────────────────────────────
     const siteOverview = await apiCall(jwt, companyId, 'GET', `/sites/${siteId}/economia-overview`);
     check('Overview cantiere -> 200', siteOverview.status === 200, siteOverview);
-    check('da_incassare = 42.000€ (sal1+sal3+sal4 non pagati; sal2 e sal5 pagati non contano)', siteOverview.body?.da_incassare?.totale === 42000, siteOverview.body?.da_incassare);
+    check('da_incassare = 20.000€ (F-219: ultimo SAL emesso 35.000 − 15.000 già incassato, MAI 22.000+35.000)', siteOverview.body?.da_incassare?.totale === 20000, siteOverview.body?.da_incassare);
     check('da_pagare.fatture = 3.200€ (l\'acconto e il DDT non contano)', siteOverview.body?.da_pagare?.fatture === 3200, siteOverview.body?.da_pagare);
     check('da_pagare.subappalti = 9.000€ (11.000 − 2.000 già dati)', siteOverview.body?.da_pagare?.subappalti === 9000, siteOverview.body?.da_pagare);
     check('da_pagare.totale = 12.200€ (3.200 fatture + 9.000 subappalto)', siteOverview.body?.da_pagare?.totale === 12200, siteOverview.body?.da_pagare);
@@ -200,12 +205,13 @@ async function main() {
     check('movimenti include il DDT con importo null (mai "0")', movimenti.some(m => m.tipo === 'ddt' && m.importo === null), movimenti);
     check('movimenti include l\'acconto a fornitore già marcato pagato=true', movimenti.some(m => m.tipo === 'acconto' && m.controparte === null && m.pagato === true), movimenti);
     check('movimenti include l\'acconto AYAT come acconto_subappalto, pagato=true', movimenti.some(m => m.tipo === 'acconto_subappalto' && m.controparte === 'TEST AYAT SRLS' && m.pagato === true), movimenti);
-    check('movimenti include il SAL aperto (n.1) con pagato=false', movimenti.some(m => m.tipo === 'sal' && m.descrizione === 'SAL n. 1' && m.pagato === false), movimenti);
+    check('movimenti include il SAL n.1 già incassato, pagato=true', movimenti.some(m => m.tipo === 'sal' && m.descrizione === 'SAL n. 1' && m.pagato === true), movimenti);
+    check('movimenti include il SAL n.3 (l\'ultimo emesso) con pagato=false', movimenti.some(m => m.tipo === 'sal' && m.descrizione === 'SAL n. 3' && m.pagato === false && m.importo === 35000), movimenti);
     check('movimenti include la fattura aperta con pagato=false', movimenti.some(m => m.tipo === 'fattura' && m.pagato === false && m.importo === 3200), movimenti);
 
     const companyOverview = await apiCall(jwt, companyId, 'GET', '/economia-overview');
     check('Overview azienda -> 200', companyOverview.status === 200, companyOverview);
-    check('Overview azienda: da_incassare = 42.000€', companyOverview.body?.da_incassare?.totale === 42000, companyOverview.body?.da_incassare);
+    check('Overview azienda: da_incassare = 20.000€ (stessa correzione F-219 del cantiere)', companyOverview.body?.da_incassare?.totale === 20000, companyOverview.body?.da_incassare);
     // 3.090€ spese generali = 450 (spesa generale) + 640 (fattura entro 30gg) +
     // 2.000 (fattura oltre 30gg, ma è comunque "da pagare" oggi — la finestra
     // dei 30gg vale solo per previsione_30gg, non per il totale aperto) — la
@@ -213,13 +219,16 @@ async function main() {
     check('Overview azienda: da_pagare = 15.290€ (12.200 cantiere + 3.090 spese generali)', companyOverview.body?.da_pagare?.totale === 15290, companyOverview.body?.da_pagare);
     check('Overview azienda: spese generali isolate = 3.090€', companyOverview.body?.da_pagare?.spese_generali === 3090, companyOverview.body?.da_pagare);
     const rigaCantiere = (companyOverview.body?.cantieri || []).find(c => c.site_id === siteId);
-    check('Overview azienda: il cantiere appare nella lista con gli stessi numeri (42.000 / 12.200)', !!rigaCantiere && rigaCantiere.da_incassare === 42000 && rigaCantiere.da_pagare === 12200, rigaCantiere);
+    check('Overview azienda: il cantiere appare nella lista con gli stessi numeri (20.000 / 12.200)', !!rigaCantiere && rigaCantiere.da_incassare === 20000 && rigaCantiere.da_pagare === 12200, rigaCantiere);
 
     // ── Previsione 30gg (solo dati certi) ──────────────────────────────────
+    // F-219: l'ULTIMO SAL (n.3, 35.000 cumulativo) ha scadenza a +45gg, FUORI
+    // dalla finestra — non deve contare nulla, anche se il SAL n.2 (superato)
+    // aveva una scadenza a +10gg che sembrerebbe "entro 30gg": quella riga non
+    // rappresenta più un incasso a sé, è già contenuta nel cumulativo di n.3.
     const prev = companyOverview.body?.previsione_30gg;
-    check('previsione_30gg.in_entrata = 7.000€ (solo il SAL entro 30gg, non pagato)', prev?.in_entrata === 7000, prev);
-    check('previsione_30gg.in_entrata esclude il SAL oltre 30gg (20.000€ a +60gg)', prev?.in_entrata !== 27000, prev);
-    check('previsione_30gg.in_entrata esclude il SAL già pagato anche se la scadenza è vicina (3.000€)', prev?.in_entrata !== 10000, prev);
+    check('previsione_30gg.in_entrata = 0€ (l\'ultimo SAL, l\'unico che conta, scade a +45gg)', prev?.in_entrata === 0, prev);
+    check('previsione_30gg.in_entrata NON conta il SAL n.2 superato solo perché la SUA scadenza (+10gg) è vicina', prev?.in_entrata !== 20000 && prev?.in_entrata !== 7000, prev);
     check('previsione_30gg.in_uscita_certa = 1.840€ (1.200 ricorrente + 640 fattura con scadenza entro 30gg)', prev?.in_uscita_certa === 1840, prev);
     check('previsione_30gg.in_uscita_certa esclude la fattura con scadenza oltre 30gg (2.640€ sarebbe sbagliato)', prev?.in_uscita_certa !== 3840, prev);
     check('previsione_30gg.in_uscita_certa esclude la fattura già pagata anche con scadenza vicina (300€)', prev?.in_uscita_certa !== 2140, prev);
