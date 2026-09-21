@@ -143,11 +143,16 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
   // Categorie aziendali presenti
   const companyDocCategories = new Set(companyDocs.map(d => d.category));
 
-  // Live presences: per ogni (site_id, worker_id) l'ultimo log di oggi
-  const latestByWorker = new Map(); // key: `${siteId}:${workerId}`
+  // Live presences: F-221 (AUDIT.md) — ultimo log di oggi per worker_id, GLOBALE
+  // (non per coppia site_id+worker_id). Un lavoratore entrato in un cantiere e
+  // uscito (o corretto in uscita) da un altro senza mai timbrare l'uscita al
+  // primo resterebbe "in corso" per sempre lì, anche se il suo ultimo evento
+  // della giornata è un'uscita altrove. Stesso principio di F-172, già
+  // applicato ovunque nella codebase tranne che qui (presenceCorrections.js
+  // ::open-sessions, dashboard.js, chat.js, alerts.js, i due cron missingExit*).
+  const latestByWorker = new Map(); // key: workerId
   for (const log of presenceLogs) {
-    const key = `${log.site_id}:${log.worker_id}`;
-    if (!latestByWorker.has(key)) latestByWorker.set(key, log); // già ordinati DESC
+    if (!latestByWorker.has(log.worker_id)) latestByWorker.set(log.worker_id, log); // già ordinati DESC
   }
 
   // 4. Assembla per ogni cantiere
