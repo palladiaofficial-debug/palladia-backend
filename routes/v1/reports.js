@@ -191,16 +191,25 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
 
   const limitReached = (logs || []).length === 50000;
 
-  // Raggruppa per (worker, cantiere) — stream cronologico completo, cross-
-  // giorno. Necessario in modalità "tutti i cantieri" per accoppiare
-  // correttamente (un cambio cantiere chiude sempre l'ENTRY precedente con
-  // un EXIT auto) e per risolvere la config pausa pranzo per cantiere.
-  const byWorkerSite = new Map();
+  // Raggruppa per worker SOLTANTO — stream cronologico completo, cross-
+  // cantiere. F-222 (AUDIT.md): raggruppare prima per (worker, cantiere)
+  // presumeva che un cambio cantiere chiuda SEMPRE l'ENTRY precedente con un
+  // EXIT auto (method auto_exit_on_site_change) — vero solo quando il cambio
+  // passa da punch_atomic. Una correzione manuale admin che registra l'uscita
+  // su un cantiere diverso da quello dell'entrata (caso reale: Festim,
+  // entrata a San Nazaro, uscita corretta a Riboli) non passa da
+  // punch_atomic — l'ENTRY restava orfana per sempre ("in corso") in un
+  // gruppo e l'EXIT orfana scollegata nell'altro, invece di un'unica
+  // giornata. pairLogsByDay accoppia già correttamente sull'intero stream
+  // del lavoratore indipendentemente dal cantiere; la config pausa
+  // pranzo/ritardo ingresso si risolve più sotto per singola giornata in
+  // base al cantiere della prima entrata.
+  const byWorker = new Map();
   for (const log of (logs || [])) {
     if (!log.worker) continue;
-    const key = `${log.worker_id}__${log.site_id}`;
-    if (!byWorkerSite.has(key)) byWorkerSite.set(key, { worker: log.worker, siteId: log.site_id, logs: [] });
-    byWorkerSite.get(key).logs.push(log);
+    const wid = log.worker_id;
+    if (!byWorker.has(wid)) byWorker.set(wid, { worker: log.worker, logs: [] });
+    byWorker.get(wid).logs.push(log);
   }
 
   const csvHeader = singleSite
@@ -213,14 +222,18 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
     hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome'
   });
 
-  // Accoppia PRIMA sull'intero stream di ogni (worker, cantiere), poi filtra
-  // i giorni fuori [from,to] e appiattisce in righe {worker, siteId, dateKey, ...bucket}
+  // Accoppia PRIMA sull'intero stream di ogni worker, poi filtra i giorni
+  // fuori [from,to] e appiattisce in righe {worker, siteId, dateKey, ...bucket}.
+  // siteId di riga = cantiere della prima entrata del giorno (quello che
+  // determina la config pausa/ritardo) — vedi commento sopra.
   const rows = [];
-  for (const { worker, siteId: gSiteId, logs: groupLogs } of byWorkerSite.values()) {
+  for (const { worker, logs: groupLogs } of byWorker.values()) {
     const dayMap = pairLogsByDay(groupLogs);
     for (const [dateKey, dayBucket] of dayMap) {
       if (dateKey < from || dateKey > to) continue;
-      if (dayBucket.pairs.length === 0 && dayBucket.orphanEntries.length === 0 && dayBucket.orphanExits.length === 0) continue;
+      const { pairs, orphanEntries, orphanExits } = dayBucket;
+      if (pairs.length === 0 && orphanEntries.length === 0 && orphanExits.length === 0) continue;
+      const gSiteId = pairs[0]?.entry.site_id ?? orphanEntries[0]?.site_id ?? orphanExits[0]?.site_id ?? null;
       rows.push({ worker, siteId: gSiteId, dateKey, ...dayBucket });
     }
   }
@@ -245,6 +258,14 @@ router.get('/reports/presence-range', verifySupabaseJwt, async (req, res) => {
       lateMin += lr.lateDeductionMinutes || 0;
       const note = METHOD_NOTE[lr.exit.method] || METHOD_NOTE[lr.entry.method];
       if (note) anomalies.push({ ts: lr.exit.timestamp_server, label: note });
+      // F-222 (AUDIT.md): entrata e uscita di una coppia possono ora
+      // appartenere a cantieri diversi (spostamento reale nello stesso
+      // turno, mai chiuso da un'uscita esplicita al primo cantiere).
+      if (lr.entry.site_id !== lr.exit.site_id) {
+        const fromName = siteById.get(lr.entry.site_id)?.name || '—';
+        const toName   = siteById.get(lr.exit.site_id)?.name  || '—';
+        anomalies.push({ ts: lr.exit.timestamp_server, label: `Cantiere cambiato senza uscita/entrata registrata (${fromName} → ${toName})` });
+      }
     }
     for (const l of orphanEntries) anomalies.push({ ts: l.timestamp_server, label: 'Uscita mancante' });
     for (const l of orphanExits)   anomalies.push({ ts: l.timestamp_server, label: 'Uscita senza entrata' });

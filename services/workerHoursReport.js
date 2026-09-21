@@ -170,27 +170,31 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   // letto da pairLogsByDay/applyLunchBreak/applyLateEntryDeduction.
   const reasonByLogId = await latestReasonsByLogId(companyId, (logs || []).map(l => l.id));
 
-  // Group by (worker, cantiere) — stream cronologico completo, non ancora per
-  // giorno. Necessario in modalità "tutti i cantieri": il pairing va fatto
-  // separatamente per cantiere (un cambio cantiere chiude sempre l'ENTRY
-  // precedente con un EXIT auto, method auto_exit_on_site_change), e la
-  // config pausa pranzo può differire da un cantiere all'altro.
+  // Group by worker SOLTANTO — stream cronologico completo, cross-cantiere.
+  // F-222 (AUDIT.md): raggruppare prima per (worker, cantiere) presumeva che
+  // un cambio cantiere chiuda SEMPRE l'ENTRY precedente con un EXIT auto
+  // (method auto_exit_on_site_change) — vero solo quando il cambio passa da
+  // punch_atomic (il lavoratore timbra lui stesso l'entrata al nuovo
+  // cantiere). Una correzione manuale admin che registra l'uscita su un
+  // cantiere diverso da quello dell'entrata (caso reale: Festim, entrata a
+  // San Nazaro, uscita corretta a Riboli) non passa da punch_atomic — niente
+  // EXIT auto, l'ENTRY a San Nazaro restava orfana per sempre ("in corso") e
+  // l'EXIT a Riboli un'uscita orfana scollegata, invece di un'unica giornata
+  // da 07:52 a 17:00. pairLogsByDay accoppia già correttamente sull'intero
+  // stream del lavoratore indipendentemente dal cantiere — la config pausa
+  // pranzo/ritardo ingresso, che può variare per cantiere, si risolve qui
+  // sotto per singola giornata in base al cantiere di inizio (prima entrata).
   const groupMap = new Map();
   for (const log of (logs || [])) {
     if (isTestOrInactiveWorker(log.worker, company?.name)) continue;
-    const key = `${log.worker_id}__${log.site_id}`;
-    if (!groupMap.has(key)) groupMap.set(key, { workerId: log.worker_id, siteId: log.site_id, info: log.worker, logs: [] });
-    groupMap.get(key).logs.push(log);
+    const wid = log.worker_id;
+    if (!groupMap.has(wid)) groupMap.set(wid, { workerId: wid, info: log.worker, logs: [] });
+    groupMap.get(wid).logs.push(log);
   }
 
   const perWorker = new Map(); // worker_id → { info, days: [] }
 
-  for (const { workerId: wId, siteId: gSiteId, info, logs: groupLogs } of groupMap.values()) {
-    const site = siteById.get(gSiteId);
-    const siteName = site?.name || '—';
-    const lunchConfig = resolveLunchBreakConfig(company, site);
-    const lateConfig  = resolveLateEntryConfig(company, site);
-
+  for (const { workerId: wId, info, logs: groupLogs } of groupMap.values()) {
     const dayMap = pairLogsByDay(groupLogs);   // ← accoppia PRIMA, sull'intero stream
 
     if (!perWorker.has(wId)) perWorker.set(wId, { info, days: [] });
@@ -200,6 +204,17 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       if (dk < from || dk > to) continue;   // fuori dal periodo richiesto
       const { pairs, orphanEntries, orphanExits } = dayMap.get(dk);
       if (pairs.length === 0 && orphanEntries.length === 0 && orphanExits.length === 0) continue;
+
+      // F-222 (AUDIT.md): config pausa/ritardo risolta per GIORNO, non più per
+      // gruppo (worker,cantiere) — un lavoratore può ora avere più cantieri
+      // nella stessa giornata (spostamento reale, o correzione manuale su un
+      // cantiere diverso dall'entrata). Usa il cantiere della prima entrata
+      // della giornata — quello che determina l'orario di inizio turno atteso.
+      const daySiteId = pairs[0]?.entry.site_id ?? orphanEntries[0]?.site_id ?? orphanExits[0]?.site_id ?? null;
+      const site       = siteById.get(daySiteId);
+      const siteName   = site?.name || '—';
+      const lunchConfig = resolveLunchBreakConfig(company, site);
+      const lateConfig  = resolveLateEntryConfig(company, site);
 
       // Detrazione pausa pranzo (F-152, AUDIT.md) — solo se il giorno è
       // un'unica coppia continua sopra soglia; se ci sono 2+ coppie il
@@ -233,26 +248,42 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
           const mins = lr.minutes;
           const reasonTag = reasonByLogId.get(exit.id);
           const reasonText = reasonTag ? reasonTag.label + (reasonTag.note ? `: ${reasonTag.note}` : '') : null;
+          // F-222 (AUDIT.md): entrata e uscita di una coppia possono ora
+          // appartenere a cantieri diversi (spostamento reale nello stesso
+          // turno, mai chiuso da un'uscita esplicita al primo cantiere) — il
+          // documento mostra entrambi invece di nasconderlo dietro il
+          // cantiere della sola entrata.
+          const entrySiteName = siteById.get(entry.site_id)?.name || '—';
+          const exitSiteName  = siteById.get(exit.site_id)?.name  || '—';
+          const siteChanged   = entry.site_id !== exit.site_id;
+          // Nota metodo/motivo e nota cambio-cantiere si compongono, non si
+          // escludono: un'uscita "corretta manualmente" su un cantiere
+          // diverso è esattamente il caso reale (Festim) — nascondere l'una
+          // per l'altra toglierebbe il segnale più utile delle due.
+          const anomalyParts = [
+            reasonText || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+            siteChanged ? `Cantiere cambiato senza uscita/entrata registrata (${entrySiteName} → ${exitSiteName})` : null,
+          ].filter(Boolean);
           entries.push({
             entry_time:            fmtTimeRome(entry.timestamp_server),
             exit_time:             fmtTimeRome(exit.timestamp_server),
             minutes:               mins,
             hours_str:             fmtDuration(mins),
-            anomaly:               reasonText || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null,
+            anomaly:               anomalyParts.length ? anomalyParts.join('; ') : null,
             lunch_break_minutes:   lr.lunchBreakMinutes || 0,
             no_lunch_override:     skipLunchDeduction,
             late_deduction_minutes: lr.lateDeductionMinutes || 0,
             late_minutes:           lr.lateMinutes || 0,
-            site_name:             siteName,
+            site_name:             siteChanged ? `${entrySiteName} → ${exitSiteName}` : entrySiteName,
           });
           dayMin += mins;
           dayLunchBreakMinutes += lr.lunchBreakMinutes || 0;
           dayLateDeductionMinutes += lr.lateDeductionMinutes || 0;
           dayLateMinutes = Math.max(dayLateMinutes, lr.lateMinutes || 0);
         } else if (ev.orphanEntry) {
-          entries.push({ entry_time: fmtTimeRome(ev.orphanEntry.timestamp_server), exit_time: null, minutes: 0, hours_str: '—', anomaly: 'Uscita non registrata', lunch_break_minutes: 0, late_deduction_minutes: 0, late_minutes: 0, site_name: siteName });
+          entries.push({ entry_time: fmtTimeRome(ev.orphanEntry.timestamp_server), exit_time: null, minutes: 0, hours_str: '—', anomaly: 'Uscita non registrata', lunch_break_minutes: 0, late_deduction_minutes: 0, late_minutes: 0, site_name: siteById.get(ev.orphanEntry.site_id)?.name || '—' });
         } else {
-          entries.push({ entry_time: null, exit_time: fmtTimeRome(ev.orphanExit.timestamp_server), minutes: 0, hours_str: '—', anomaly: 'Entrata non registrata', lunch_break_minutes: 0, late_deduction_minutes: 0, late_minutes: 0, site_name: siteName });
+          entries.push({ entry_time: null, exit_time: fmtTimeRome(ev.orphanExit.timestamp_server), minutes: 0, hours_str: '—', anomaly: 'Entrata non registrata', lunch_break_minutes: 0, late_deduction_minutes: 0, late_minutes: 0, site_name: siteById.get(ev.orphanExit.site_id)?.name || '—' });
         }
       }
 
