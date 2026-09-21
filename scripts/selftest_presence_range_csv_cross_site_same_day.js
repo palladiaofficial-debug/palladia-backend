@@ -63,9 +63,17 @@ async function main() {
   }).select('id').single();
   if (siteBErr) { fail('crea cantiere B di test', siteBErr.message); await cleanup(siteA.id, null, null); return report(); }
 
+  // presence_logs è append-only (nessuna DELETE possibile a livello DB): un
+  // nome fisso collide con i residui di run precedenti nella stessa company
+  // E2E permanente quando la query CSV non è filtrata per cantiere (modalità
+  // "tutti i cantieri", esattamente il caso di questo test). Nome univoco per
+  // run — il residuo resta (normale, vedi selftest_sites_overview_cross_site_
+  // presence.js), ma non si confonde mai con questa esecuzione.
+  const runTag = Date.now();
+  const workerName = `TEST-E2E F222 CrossSite ${runTag}`;
   const { data: worker, error: workerErr } = await supabase.from('workers').insert({
-    company_id: COMPANY_ID, full_name: 'TEST-E2E F222 CrossSite', fiscal_code: `TSTF222${Date.now()}`.slice(0, 16).toUpperCase(),
-    is_active: true, badge_code: `TSTF222${Date.now()}`,
+    company_id: COMPANY_ID, full_name: workerName, fiscal_code: `TSTF222${runTag}`.slice(0, 16).toUpperCase(),
+    is_active: true, badge_code: `TSTF222${runTag}`,
   }).select('id').single();
   if (workerErr) { fail('crea lavoratore di test', workerErr.message); await cleanup(siteA.id, siteB.id, null); return report(); }
 
@@ -80,7 +88,7 @@ async function main() {
     if (status !== 200) { fail('GET /reports/presence-range risponde 200', { status, text: text.slice(0, 200) }); return; }
 
     const lines = text.replace(/^﻿/, '').split('\r\n').filter(Boolean);
-    const workerLines = lines.filter(l => l.includes('TEST-E2E F222 CrossSite'));
+    const workerLines = lines.filter(l => l.includes(workerName));
 
     if (workerLines.length === 1) ok('UNA sola riga per il lavoratore (non due: entrata orfana + uscita orfana separate)');
     else fail('UNA sola riga per il lavoratore', workerLines);
@@ -105,6 +113,13 @@ async function main() {
   report();
 }
 
+// presence_logs è append-only a livello DB (trigger "DELETE not allowed") —
+// i tentativi qui sotto falliscono sempre silenziosamente, il worker resta
+// come residuo permanente (stesso comportamento accettato di ogni altro test
+// che tocca presence_logs, vedi selftest_sites_overview_cross_site_
+// presence.js). Il nome univoco per run (workerName sopra) evita che il
+// residuo si confonda con l'esecuzione successiva. Sites/companies non hanno
+// FK da presence_logs (F-206, AUDIT.md) e restano invece eliminabili.
 async function cleanup(siteAId, siteBId, workerId) {
   if (siteAId) {
     await supabase.from('presence_logs').delete().eq('site_id', siteAId);
