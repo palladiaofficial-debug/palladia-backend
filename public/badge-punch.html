@@ -958,7 +958,14 @@
     },
 
     sq: {
-      langNative: 'SQ',
+      // "AL" (Albania, codice paese) invece di "SQ" (codice ISO 639 della
+      // lingua, da "Shqip") — stesso fix di F-224 (src/lib/i18n/timbratura.ts,
+      // repo frontend): "SQ" accanto a "RO" veniva scambiato per un secondo
+      // rumeno o per assenza dell'albanese da chi non conosce i codici
+      // lingua. Dizionario separato da quello del sito React (questa pagina
+      // vive qui, statica, sul backend) — stesso identico problema, non
+      // risolto dal fix di ieri perché è un file diverso.
+      langNative: 'AL',
       loadingText: 'Duke lexuar kartën…',
       ifProblems: 'Nëse ke probleme, njofto përgjegjësin.',
       chooseSite: 'Zgjidh kantierin',
