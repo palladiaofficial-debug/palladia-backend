@@ -50,6 +50,12 @@ async function resolveActiveWorker(code, res) {
   const worker = await resolveWorkerByBadge(code);
   if (!worker) { res.status(401).json({ error: 'BADGE_NOT_FOUND' }); return null; }
   if (!worker.is_active) { res.status(403).json({ error: 'BADGE_REVOKED' }); return null; }
+  // 2026-09-23: il caricamento DDT non è più aperto a chiunque abbia un
+  // badge attivo — richiesto esplicitamente dal titolare ("fa confusione"
+  // vederlo su ogni lavoratore). Verifica lato server, non solo nascondere
+  // il bottone in UI — altrimenti un lavoratore che conoscesse l'URL
+  // dell'endpoint potrebbe comunque caricare un DDT senza essere abilitato.
+  if (!worker.ddt_upload_enabled) { res.status(403).json({ error: 'DDT_NOT_ENABLED' }); return null; }
   return worker;
 }
 

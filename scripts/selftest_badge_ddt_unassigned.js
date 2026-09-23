@@ -59,6 +59,7 @@ async function main() {
   const { data: worker, error: wErr } = await admin.from('workers').insert({
     company_id: companyId, full_name: 'TEST-E2E F214 BadgeDdtUnassigned', badge_code: badgeCode, is_active: true,
     area_pin_hash: await hashPin('123456'),
+    ddt_upload_enabled: true, // F-227: default false da migrazione 228, questo test verifica il flusso a valle del gate
   }).select('id').single();
   if (wErr) { console.error('Impossibile creare il worker di test:', wErr.message); process.exitCode = 1; return; }
 

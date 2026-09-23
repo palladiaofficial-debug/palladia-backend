@@ -108,7 +108,7 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
   // Risolvi badge → lavoratore
   const { data: worker, error: workerErr } = await supabase
     .from('workers')
-    .select('id, full_name, is_active, company_id, photo_url, privacy_consent_accepted_at, privacy_consent_version')
+    .select('id, full_name, is_active, company_id, photo_url, privacy_consent_accepted_at, privacy_consent_version, ddt_upload_enabled')
     .eq('badge_code', code.toUpperCase())
     .maybeSingle();
 
@@ -243,6 +243,9 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     // F-178 (AUDIT.md): il frontend mostra uno schermo bloccante di
     // accettazione informativa prima di consentire qualunque timbratura.
     requires_privacy_consent: !hasValidConsent(worker),
+    // 2026-09-23: bottone "DDT" visibile solo se abilitato per questo
+    // lavoratore (Organico → "Abilita DDT") — vedi routes/v1/badgeDdt.js.
+    ddt_upload_enabled:    worker.ddt_upload_enabled === true,
   });
 
   } catch (err) {

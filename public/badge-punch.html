@@ -66,6 +66,13 @@
       padding: 0 16px calc(48px + env(safe-area-inset-bottom, 0px));
       min-height: 100dvh;
     }
+    /* Riserva spazio reale per la barra DDT fissa quando visibile — senza
+       questo l'ultima riga di contenuto (es. "Avvisa il responsabile")
+       finirebbe nascosta sotto la barra, stesso identico bug già corretto
+       altrove per la tab bar mobile del sito React (F-223, AUDIT.md). */
+    body.has-ddt-bar {
+      padding-bottom: calc(48px + 64px + env(safe-area-inset-bottom, 0px));
+    }
 
     /* ── Brand header ── */
     .topbar {
@@ -215,16 +222,28 @@
     }
     .punch-icon { display: inline-flex; align-items: center; }
 
-    /* F-213 (AUDIT.md): DDT trasportatori interni */
-    .ddt-btn {
-      display: flex; align-items: center; justify-content: center;
-      width: 100%; margin-top: 10px; padding: 13px;
-      border: 1.5px solid var(--text); border-radius: var(--radius);
-      background: transparent; color: var(--text);
+    /* Barra DDT fissa (F-227) — separata dal flusso di timbratura per
+       costruzione: mai dentro #wrap, mai ridisegnata dai renderXxx() della
+       timbratura. z-index sotto la guida GPS (400) e sopra la guida PWA
+       (300): se compare durante il salvataggio Home resta comunque
+       raggiungibile, non la blocca né viene bloccata da essa. */
+    .ddt-bar {
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 350;
+      display: flex; justify-content: center;
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+    }
+    .ddt-bar.hidden { display: none !important; }
+    .ddt-bar-btn {
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; max-width: 480px; height: 48px;
+      border: none; border-radius: 999px;
+      background: var(--accent); color: #fff;
       font-family: inherit; font-size: 15px; font-weight: 700;
       cursor: pointer; -webkit-appearance: none;
     }
-    .ddt-btn:active { transform: scale(0.98); opacity: 0.85; }
+    .ddt-bar-btn:active { transform: scale(0.97); opacity: 0.92; }
     .cam-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
     .ddt-photo-frame {
       width: 100%; aspect-ratio: 4/3; border-radius: var(--radius); overflow: hidden;
@@ -625,6 +644,20 @@
     </div>
   </div>
 
+  <!-- Barra DDT fissa (F-227, AUDIT.md) — completamente separata dal flusso
+       di timbratura: elemento proprio fuori da #wrap, mai toccato dai
+       renderXxx() della timbratura. Nascosta di default (classe "hidden"),
+       mostrata solo se il lavoratore è abilitato (workerData.ddt_upload_enabled)
+       e solo sulle schermate dove ha senso (vedi showDdtBar()/hideDdtBar()
+       nello script sotto) — mai sopra il consenso privacy o dentro il
+       flusso DDT stesso. -->
+  <div id="ddt-bar" class="ddt-bar hidden">
+    <button class="ddt-bar-btn" id="ddt-bar-btn" onclick="openDdtSitePicker()">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
+      <span id="ddt-bar-label">DDT</span>
+    </button>
+  </div>
+
   <script>
   'use strict';
 
@@ -711,6 +744,9 @@
       // F-213 (AUDIT.md): caricamento DDT trasportatori interni.
       ddt: {
         buttonLabel: 'Carica DDT',
+        bottomLabel: 'DDT',
+        chooseSiteTitle: 'A quale cantiere?',
+        chooseSiteHint: 'Seleziona il cantiere per la consegna.',
         cameraTitle: 'Fotografa il DDT',
         cameraHint: 'Inquadra il documento, tienilo dritto e leggibile.',
         reading: 'Lettura in corso…',
@@ -864,6 +900,9 @@
       // traducere proprie, nu verificată de un vorbitor nativ (ca și restul paginii).
       ddt: {
         buttonLabel: 'Încarcă DDT',
+        bottomLabel: 'DDT',
+        chooseSiteTitle: 'La ce șantier?',
+        chooseSiteHint: 'Selectează șantierul pentru livrare.',
         cameraTitle: 'Fotografiază DDT-ul',
         cameraHint: 'Încadrează documentul, ține-l drept și lizibil.',
         reading: 'Se citește…',
@@ -1024,6 +1063,9 @@
       // përkthim jo i verifikuar nga një folës amtare (si pjesa tjetër e faqes).
       ddt: {
         buttonLabel: 'Ngarko DDT',
+        bottomLabel: 'DDT',
+        chooseSiteTitle: 'Në cilin kantier?',
+        chooseSiteHint: 'Zgjidh kantierin për dorëzimin.',
         cameraTitle: 'Fotografo DDT-në',
         cameraHint: 'Kornizo dokumentin, mbaje drejt dhe të lexueshëm.',
         reading: 'Duke lexuar…',
@@ -1177,6 +1219,9 @@
       // خاصة غير مراجَعة من متحدث أصلي (مثل بقية الصفحة).
       ddt: {
         buttonLabel: 'تحميل مستند التسليم',
+        bottomLabel: 'DDT',
+        chooseSiteTitle: 'إلى أي ورشة؟',
+        chooseSiteHint: 'اختر الورشة الخاصة بالتسليم.',
         cameraTitle: 'صوّر مستند التسليم',
         cameraHint: 'ضع المستند داخل الإطار بشكل واضح ومستقيم.',
         reading: 'جارٍ القراءة…',
@@ -1326,8 +1371,13 @@
 
   // ── State ─────────────────────────────────────────────────────────────────────
   let workerData   = null;   // risposta punch-context
-  let selectedSite = null;   // {site_id, site_name, address, next_action, …}
-  let unassignedCantiereName = null;   // F-214: DDT su cantiere non ancora censito — niente selectedSite
+  let selectedSite = null;   // {site_id, site_name, address, next_action, …} — SOLO timbratura
+  // F-227 (AUDIT.md): stato del DDT completamente separato da quello di
+  // timbratura — mai selectedSite, apposta. "Abilita DDT" dall'Organico +
+  // bottone dedicato in fondo, indipendenti dal cantiere/stato di timbratura.
+  let ddtSelectedSite         = null;   // {site_id, site_name, …} scelto SOLO per il DDT
+  let ddtUnassignedCantiereName = null; // F-214: DDT su cantiere non ancora censito — niente site_id
+  let ddtReturnTo             = null;   // funzione di redraw a cui tornare annullando/completando il DDT
   let gpsCoords    = null;   // {latitude, longitude, accuracy} — migliore lettura finora
   let gpsStatus    = 'wait'; // 'wait' | 'ok' | 'warn' | 'error'
   let gpsText      = '';
@@ -1670,17 +1720,18 @@
         ${siteButtons}
       </div>
 
-      <button class="ddt-cancel fade-in" onclick="renderUnassignedCantiereForm()" style="margin-top:2px;">${esc(t().ddt.unassignedLink)}</button>
-
       <div class="hint-help">${esc(t().ifProblems)}</div>`;
+    // F-227: il DDT non vive più qui — bottone dedicato in fondo (barra
+    // fissa), indipendente dalla scelta del cantiere di timbratura.
+    showDdtBar();
   }
 
-  // ── F-214: DDT su un cantiere non ancora censito in Palladia ──────────────────
-  // Nessun selectedSite qui — il trasportatore scrive il nome a mano, il DDT
-  // finisce come spesa "da assegnare" (vedi routes/v1/badgeDdt.js) e il
+  // ── F-214/F-227: DDT su un cantiere non ancora censito in Palladia ────────────
+  // Nessun ddtSelectedSite qui — il trasportatore scrive il nome a mano, il
+  // DDT finisce come spesa "da assegnare" (vedi routes/v1/badgeDdt.js) e il
   // titolare lo riassocia al cantiere vero dalla scheda Spese appena lo crea.
-  function renderUnassignedCantiereForm() {
-    _rerenderCurrent = renderUnassignedCantiereForm;
+  function renderDdtUnassignedForm() {
+    _rerenderCurrent = renderDdtUnassignedForm;
     const T = t().ddt;
     wrap.innerHTML = `
       <div class="card fade-in" style="padding:20px;">
@@ -1690,18 +1741,18 @@
           <input id="unassigned-cantiere-name" placeholder="${esc(T.unassignedPlaceholder)}" autofocus>
         </div>
       </div>
-      <button class="punch-btn entry fade-in" id="unassigned-continue-btn" onclick="confirmUnassignedCantiereName()">
+      <button class="punch-btn entry fade-in" id="unassigned-continue-btn" onclick="confirmDdtUnassignedCantiereName()">
         <span>${esc(t().continueLabel)}</span>
       </button>
-      <button class="ddt-cancel fade-in" onclick="renderSiteSelection()">${esc(T.cancel)}</button>`;
+      <button class="ddt-cancel fade-in" onclick="renderDdtSitePicker()">${esc(T.cancel)}</button>`;
     document.getElementById('unassigned-cantiere-name').focus();
   }
 
-  function confirmUnassignedCantiereName() {
+  function confirmDdtUnassignedCantiereName() {
     const input = document.getElementById('unassigned-cantiere-name');
     const name  = (input.value || '').trim();
     if (!name) { input.style.borderColor = '#dc2626'; input.focus(); return; }
-    unassignedCantiereName = name;
+    ddtUnassignedCantiereName = name;
     openDdtCamera();
   }
 
@@ -1752,10 +1803,6 @@
         ${esc(t().pressButtonHint)}
       </div>
 
-      <!-- F-213 (AUDIT.md): DDT trasportatori interni — stesso badge/cantiere
-           già selezionati per la timbratura, nessuna nuova identità. -->
-      <button class="ddt-btn fade-in" id="ddt-open-btn" onclick="openDdtCamera()"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:8px;"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>${esc(t().ddt.buttonLabel)}</button>
-
       <div class="hint-help" id="help-hint">
         ${helpRequestSent
           ? esc(t().helpSent)
@@ -1770,12 +1817,67 @@
       // Avvia GPS — i callback aggiorneranno bottone e riga GPS via updatePunchButton/updateGpsRow
       startGps();
     }
+    // F-227: bottone "DDT" non più qui dentro — barra fissa indipendente,
+    // mai ridisegnata da questa funzione (lasciamo stare del tutto il
+    // flusso di timbratura, come richiesto esplicitamente dal titolare).
+    showDdtBar();
   }
 
-  // ── DDT trasportatori interni (F-213, AUDIT.md) ──────────────────────────────
+  // ── DDT trasportatori interni (F-213/F-227, AUDIT.md) ──────────────────────────
   // Foto → lettura AI (routes/v1/badgeDdt.js, riusa lib/siteCostOcr.js già in
-  // uso per fatture/ricevute) → conferma → salvato. Stessa identità badge e
-  // stesso cantiere già selezionati per la timbratura, nessun nuovo login.
+  // uso per fatture/ricevute) → conferma → salvato. Stessa identità badge,
+  // nessun nuovo login — ma cantiere e ingresso SEPARATI dalla timbratura
+  // (F-227, 2026-09-23): bottone dedicato in una barra fissa, mai dentro
+  // renderPunchScreen()/renderSiteSelection(), visibile solo se il lavoratore
+  // è abilitato (Organico → "Abilita DDT", verificato anche lato server in
+  // routes/v1/badgeDdt.js — nascondere il bottone non basta).
+  function showDdtBar() {
+    if (!workerData || workerData.ddt_upload_enabled !== true) return;
+    document.getElementById('ddt-bar').classList.remove('hidden');
+    document.body.classList.add('has-ddt-bar');
+  }
+  function hideDdtBar() {
+    document.getElementById('ddt-bar').classList.add('hidden');
+    document.body.classList.remove('has-ddt-bar');
+  }
+
+  // Punto d'ingresso del bottone fisso "DDT" — sempre dalla scelta del
+  // cantiere, mai dal cantiere già selezionato per la timbratura (anche se
+  // coincidono spesso nella pratica, sono due stati indipendenti nel codice).
+  function openDdtSitePicker() {
+    ddtReturnTo = _rerenderCurrent;
+    hideDdtBar();
+    renderDdtSitePicker();
+  }
+
+  function renderDdtSitePicker() {
+    _rerenderCurrent = renderDdtSitePicker;
+    const T = t().ddt;
+    const sites = workerData.sites;
+
+    const siteButtons = sites.map(s => `
+      <button class="site-btn" onclick="selectDdtSite('${esc(s.site_id)}')">
+        <span class="site-btn-name">${esc(s.site_name)}</span>
+        ${s.address ? `<span class="site-btn-addr">${esc(s.address)}</span>` : ''}
+      </button>`).join('');
+
+    wrap.innerHTML = `
+      <div class="card fade-in" style="padding:20px;">
+        <div class="site-select-label">${esc(T.chooseSiteTitle)}</div>
+        <div class="site-select-sub">${esc(T.chooseSiteHint)}</div>
+        ${siteButtons}
+      </div>
+
+      <button class="ddt-cancel fade-in" onclick="renderDdtUnassignedForm()" style="margin-top:2px;">${esc(T.unassignedLink)}</button>
+      <button class="ddt-cancel fade-in" onclick="cancelDdt()">${esc(T.cancel)}</button>`;
+  }
+
+  function selectDdtSite(siteId) {
+    ddtSelectedSite = workerData.sites.find(s => s.site_id === siteId) || null;
+    if (!ddtSelectedSite) return;
+    openDdtCamera();
+  }
+
   let ddtPreviewUrl = null;
 
   function openDdtCamera() {
@@ -1821,8 +1923,8 @@
     try {
       const fd = new FormData();
       fd.append('file', file);
-      if (unassignedCantiereName) fd.append('cantiere_libero', unassignedCantiereName);
-      else fd.append('site_id', selectedSite.site_id);
+      if (ddtUnassignedCantiereName) fd.append('cantiere_libero', ddtUnassignedCantiereName);
+      else fd.append('site_id', ddtSelectedSite.site_id);
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000);
       const r = await fetch(API + '/api/v1/badge/' + BADGE_CODE + '/ddt/scan', { method: 'POST', body: fd, signal: controller.signal });
@@ -1876,7 +1978,7 @@
 
     const payload = {
       file_url:         fileUrl,
-      ...(unassignedCantiereName ? { cantiere_libero: unassignedCantiereName } : { site_id: selectedSite.site_id }),
+      ...(ddtUnassignedCantiereName ? { cantiere_libero: ddtUnassignedCantiereName } : { site_id: ddtSelectedSite.site_id }),
       fornitore:        document.getElementById('ddt-f-fornitore').value,
       numero_documento: document.getElementById('ddt-f-numero').value,
       data_documento:   document.getElementById('ddt-f-data').value,
@@ -1894,15 +1996,27 @@
     }
   }
 
+  // Torna alla schermata da cui si è entrati nel DDT (punch screen o scelta
+  // cantiere, qualunque fosse) — mai un cantiere hardcoded, F-227. ddtReturnTo
+  // è sempre valorizzato da openDdtSitePicker(); il fallback esiste solo per
+  // sicurezza (non dovrebbe mai servire).
+  function returnFromDdt() {
+    const back = ddtReturnTo || renderPunchScreen;
+    ddtReturnTo = null;
+    back();
+    showDdtBar();
+  }
+
   function cancelDdt() {
     if (ddtPreviewUrl) { URL.revokeObjectURL(ddtPreviewUrl); ddtPreviewUrl = null; }
-    if (unassignedCantiereName) { unassignedCantiereName = null; renderSiteSelection(); }
-    else renderPunchScreen();
+    ddtSelectedSite = null;
+    ddtUnassignedCantiereName = null;
+    returnFromDdt();
   }
 
   function renderDdtSuccess(count) {
     const T = t().ddt;
-    const linkedTo = unassignedCantiereName || selectedSite.site_name;
+    const linkedTo = ddtUnassignedCantiereName || ddtSelectedSite.site_name;
     wrap.innerHTML = `
       <div class="card fade-in" style="text-align:center; padding:32px 20px;">
         <span class="success-icon">✓</span>
@@ -1911,8 +2025,9 @@
         <div class="hint-help" style="margin-top:6px;">${esc(T.todayCount(count))}</div>
       </div>`;
     if (ddtPreviewUrl) { URL.revokeObjectURL(ddtPreviewUrl); ddtPreviewUrl = null; }
-    if (unassignedCantiereName) { unassignedCantiereName = null; setTimeout(renderSiteSelection, 2200); }
-    else setTimeout(renderPunchScreen, 2200);
+    ddtSelectedSite = null;
+    ddtUnassignedCantiereName = null;
+    setTimeout(returnFromDdt, 2200);
   }
 
   // ── Render: successo ───────────────────────────────────────────────────────────

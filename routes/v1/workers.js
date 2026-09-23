@@ -50,7 +50,7 @@ const WORKER_SELECT =
   'id, full_name, fiscal_code, is_active, created_at, badge_code, ' +
   'photo_url, hire_date, birth_date, qualification, role, employer_name, ' +
   'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place, ' +
-  'tariffa_oraria, area_pin_set_at';
+  'tariffa_oraria, area_pin_set_at, ddt_upload_enabled';
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (req, res) => {
@@ -555,7 +555,7 @@ router.patch('/workers/:workerId', verifySupabaseJwt, validate(patchWorkerSchema
   const { workerId } = req.params;
 
   const ALLOWED = [
-    'full_name', 'is_active', 'tariffa_oraria',
+    'full_name', 'is_active', 'tariffa_oraria', 'ddt_upload_enabled',
     ...BADGE_FIELDS,
   ];
 

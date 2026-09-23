@@ -154,11 +154,11 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
     // subappaltatori si calcola sotto con la stessa formula (budget − acconti)
     // già in uso altrove — sommare anche le loro fatture qui creerebbe un
     // doppio conteggio. Incluse comunque nell'elenco movimenti (informative).
-    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore, created_at')
+    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore, created_at, file_url')
       .eq('site_id', siteId).eq('company_id', companyId).is('subcontractor_id', null),
-    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore, created_at, subcontractor_id, subcontractor:subcontractor_id(company_name)')
+    supabase.from('site_costs').select('id, importo, tipo, pagato_il, data_documento, descrizione, fornitore, created_at, file_url, subcontractor_id, subcontractor:subcontractor_id(company_name)')
       .eq('site_id', siteId).eq('company_id', companyId).not('subcontractor_id', 'is', null),
-    supabase.from('company_expenses').select('id, amount, pagato_il, expense_date, description, source, created_at')
+    supabase.from('company_expenses').select('id, amount, pagato_il, expense_date, description, source, created_at, receipt_url')
       .eq('site_id', siteId).eq('company_id', companyId),
     supabase.from('site_subcontractors').select('subcontractor_id, budget_totale, subcontractor:subcontractor_id(company_name)')
       .eq('site_id', siteId).eq('company_id', companyId),
@@ -211,6 +211,7 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
       importo: c.importo, data: c.data_documento || c.created_at?.slice(0, 10),
       pagato: c.tipo === 'acconto' ? true : !!c.pagato_il,
       pagato_il: c.pagato_il,
+      file_path: c.file_url || null, file_bucket: 'site-media',
     })),
     ...subCostRows.map(c => ({
       id: c.id, fonte: 'site_costs', tipo: c.tipo === 'acconto' ? 'acconto_subappalto' : c.tipo,
@@ -218,20 +219,46 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
       importo: c.importo, data: c.data_documento || c.created_at?.slice(0, 10),
       pagato: c.tipo === 'acconto' ? true : !!c.pagato_il,
       pagato_il: c.pagato_il,
+      file_path: c.file_url || null, file_bucket: 'site-media',
     })),
     ...expRows.map(e => ({
       id: e.id, fonte: 'company_expenses', tipo: 'spesa_generale',
       descrizione: e.description, controparte: null,
       importo: e.amount, data: e.expense_date || e.created_at?.slice(0, 10),
       pagato: !!e.pagato_il, pagato_il: e.pagato_il,
+      // Il bucket di receipt_url dipende dalla fonte (routes/v1/expenses.js
+      // ne assume genericamente uno solo, 'site-documents', per ogni fonte —
+      // sbagliato per le spese caricate da badge DDT, che finiscono in
+      // 'site-media' come i DDT su site_costs, vedi routes/v1/badgeDdt.js).
+      // Genera un link solo per la fonte di cui conosciamo il bucket vero,
+      // per non firmare un percorso nel bucket sbagliato (fallirebbe
+      // silenziosamente, ma è comunque scorretto tentarlo).
+      file_path: e.source === 'badge_ddt' ? (e.receipt_url || null) : null,
+      file_bucket: 'site-media',
     })),
     ...salRows.map(s => ({
       id: s.id, fonte: 'site_sal_history', tipo: 'sal',
       descrizione: `SAL n. ${s.sal_number}`, controparte: null,
       importo: s.importo_maturato, data: s.data_emissione,
       pagato: !!s.pagato_il, pagato_il: s.pagato_il,
+      file_path: null, file_bucket: null,
     })),
   ].sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+
+  // Signed URL per i movimenti con una foto/documento allegato (DDT in
+  // primis, F-213/F-214/F-227) — mai il path grezzo dello storage al
+  // frontend, sempre un URL firmato a breve scadenza come fa già
+  // routes/v1/siteCosts.js per lo stesso bucket.
+  const movimentiConFoto = await Promise.all(movimenti.map(async (m) => {
+    if (!m.file_path) return m;
+    try {
+      const { data: signed } = await supabase.storage
+        .from(m.file_bucket).createSignedUrl(m.file_path, 3600);
+      return { ...m, foto_url: signed?.signedUrl || null };
+    } catch {
+      return { ...m, foto_url: null };
+    }
+  }));
 
   return {
     site: {
@@ -247,7 +274,9 @@ async function buildSiteEconomiaOverview(siteId, companyId) {
       subappalti: daPagareSubappalti,
       subappaltatori,
     },
-    movimenti,
+    // Il path grezzo dello storage (file_path/file_bucket) resta interno —
+    // il frontend riceve solo l'URL firmato, mai il percorso del bucket.
+    movimenti: movimentiConFoto.map(({ file_path, file_bucket, ...m }) => m),
   };
 }
 
