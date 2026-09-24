@@ -60,11 +60,7 @@ router.use('/', require('./pos'));
 // Checklist preparazione cantiere AI (JWT richiesto)
 router.use('/', require('./siteChecklist'));
 
-// DVR — Documento di Valutazione dei Rischi (JWT richiesto)
-router.use('/', require('./dvr'));
-
-// PIMUS — Piano di Montaggio Uso e Smontaggio Ponteggi (JWT richiesto)
-router.use('/', require('./pimus'));
+// DVR e PIMUS: rotte ELIMINATE (AUDIT.md F-229) insieme ai generatori in server.js.
 
 // Feature Flags — visibilità moduli per company (JWT richiesto)
 router.use('/', require('./featureFlags'));
@@ -143,10 +139,9 @@ router.use('/', require('./consultantConnect'));
 // Admin Formazione (super_admin only) — guard scoped a /admin, stesso motivo di sopra.
 router.use('/', require('./formazioneAdmin'));
 
-// Safety Copilot — risk score predittivo + scudo ispezione. Middleware per-route
-// (verifySupabaseJwt), ma montato qui per essere raggiunto prima che qualunque
-// router con guard non scoped possa intercettarlo per errore.
-router.use('/', require('./safetyCopilot'));
+// Safety Copilot: rotte ELIMINATE (AUDIT.md F-229) insieme al suo cron orario.
+// services/safetyCopilot.js resta solo perché chat.js (congelato) lo importa
+// ancora per gestori di tool ormai irraggiungibili — vedi lib/ladiaFrozenTools.js.
 
 // Preventivi corsi in cantiere (impresa + consulente, middleware per-route)
 router.use('/', require('./courseQuotes'));
@@ -221,10 +216,10 @@ router.use('/', require('./expenses'));
 // Computo Metrico: import PDF/Excel, parsing AI, SAL% per voce
 router.use('/', require('./computo'));
 
-// Ladia In Cantiere: attivazione, capitolato, fasi, costi
-router.use('/', require('./ladiaConfig'));
+// Capitolato e costi di cantiere (modulo Economia, congelato lato UI/Ladia).
+// ladiaConfig (attivazione "Ladia In Cantiere") e sitePhases (fasi) ELIMINATI
+// (AUDIT.md F-229): la loro UI non era collegata a nessuna pagina.
 router.use('/', require('./capitolato'));
-router.use('/', require('./sitePhases'));
 router.use('/', require('./siteCosts'));
 
 // Prezzario regionale + prezzi fornitori azienda

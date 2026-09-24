@@ -5,6 +5,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { logUsage } = require('../../lib/ladiaUsageLog');
 const { sendDbError } = require('../../lib/httpErrors');
+const { isModuleEnabledGlobally, isFeatureEnabled } = require('../../lib/featureFlags');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -63,6 +64,9 @@ Rispondi SOLO con il JSON array valido, nessun testo aggiuntivo. Max 15 voci tot
 // ── Funzione esportata per auto-trigger da server.js ─────────────────────────
 
 async function generateAndSave(siteId, companyId, posId, posData) {
+  // F-229 (AUDIT.md): checklist di apertura CONGELATA (flag `site_checklist`)
+  // — generata in automatico a ogni POS, mai spuntata. Niente chiamata AI.
+  if (!isModuleEnabledGlobally('site_checklist')) return null;
   // Se esiste già una checklist per questo cantiere, non sovrascrivere
   const { count } = await supabase
     .from('site_setup_checklist')
@@ -118,6 +122,9 @@ router.get('/sites/:siteId/setup-checklist', verifySupabaseJwt, async (req, res)
 router.post('/sites/:siteId/setup-checklist/generate', verifySupabaseJwt, async (req, res) => {
   const { siteId }  = req.params;
   const { posData, posId, force } = req.body || {};
+  if (!(await isFeatureEnabled(req.companyId, 'site_checklist'))) {
+    return res.status(403).json({ error: 'MODULO_NON_ATTIVO' });
+  }
 
   const { data: site } = await supabase
     .from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();

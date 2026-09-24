@@ -13,12 +13,10 @@ const { buildPosDocument } = require('./pos-template');
 const { buildRisksPrompt } = require('./services/posRisksGenerator');
 const { isBillingActive } = require('./lib/billing');
 const { logUsage } = require('./lib/ladiaUsageLog');
-const { isFeatureEnabled } = require('./lib/featureFlags');
+const { isModuleEnabledGlobally } = require('./lib/featureFlags');
 const { selectSigns } = require('./sign-selector');
 const { generatePosHtml } = require('./pos-html-generator');
 const { ESTIMATED_HOURS_SAVED } = require('./services/valueMetrics');
-const { generateDvrHtml }  = require('./dvr-html-generator');
-const { generatePimusHtml } = require('./pimus-html-generator');
 const { rendererPool } = require('./pdf-renderer');
 const { apiLimiter, aiLimiter } = require('./middleware/rateLimit');
 const v1Router = require('./routes/v1');
@@ -36,7 +34,6 @@ const { startSubcontractorExpiryCron }      = require('./services/subcontractorE
 const { startDailyDigestCron }       = require('./services/dailyDigestCron');
 const { startLadiaProactiveCron }   = require('./services/ladiaProactive');
 const { startWeeklyValueCron }      = require('./services/weeklyValueCron');
-const { startLadiaLiveCron }        = require('./services/ladiaLiveCron');
 const { startReminderCron }         = require('./services/reminderCron');
 const { startStudioDigestCron }     = require('./services/studioDigestCron');
 const { runFormazioneMigration }    = require('./services/formazioneMigration');
@@ -50,7 +47,6 @@ const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
 const { startDailyStatsCron }       = require('./services/dailyStatsCron');
 const { startMonthlyReportCron }    = require('./services/monthlyReportCron');
 const { startStudioMonthlyReportCron } = require('./services/studioMonthlyReportCron');
-const { startSafetyCopilotCron }    = require('./services/safetyCopilotCron');
 const { startSdiConsultationPollCron } = require('./services/sdiConsultationPollCron');
 const { startSmartImportRecoveryCron } = require('./services/smartImportRecoveryCron');
 const { startDocumentsSyncVerifyCron } = require('./services/documentsSyncVerifyCron');
@@ -81,8 +77,6 @@ app.use((req, res, next) => {
     req.path.includes('/pdf') ||
     req.path.includes('/verbale') ||
     req.path.includes('/asl') ||         // report PDF ASL può essere lungo
-    req.path.includes('/generate-dvr') ||  // DVR generation SSE
-    req.path.includes('/generate-pimus') ||  // PIMUS generation SSE
     req.path.includes('/report-vigilanza') ||  // PDF report vigilanza studio CDL
     req.path.includes('/lettera-scadenze') ||   // PDF lettera scadenze studio CDL
     req.path.includes('/report-conformita') ||   // PDF report conformità completo studio CDL
@@ -643,20 +637,6 @@ async function verifyJwtOnly(req, res, next) {
     console.error('[verifyJwtOnly]', e.message);
     res.status(401).json({ error: 'Autenticazione fallita' });
   }
-}
-
-// Verifica ownership generica per documenti con company_id diretto (DVR, PIMUS).
-async function checkDocOwnership(req, res, tableName, docId) {
-  const companyId = req.headers['x-company-id'];
-  if (!companyId) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
-  const { data: membership } = await supabase
-    .from('company_users').select('company_id')
-    .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
-  if (!membership) { res.status(403).json({ error: 'FORBIDDEN' }); return null; }
-  const { data: doc, error } = await supabase
-    .from(tableName).select('*').eq('id', docId).eq('company_id', companyId).single();
-  if (error || !doc) { res.status(404).json({ error: 'NOT_FOUND' }); return null; }
-  return doc;
 }
 
 // Verifica che un pos_document appartenga alla company dell'utente loggato.
@@ -1533,451 +1513,10 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
   }
 });
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// DVR GENERATION — Documento di Valutazione dei Rischi (D.Lgs 81/2008 Art. 28)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-// --- Helper: prossima revisione DVR ---
-async function getNextDvrRevision(siteId, companyId) {
-  let query = supabase.from('dvr_documents').select('revision').order('revision', { ascending: false }).limit(1);
-  if (siteId)    query = query.eq('site_id', siteId);
-  if (companyId) query = query.eq('company_id', companyId);
-  const { data } = await query;
-  return (data && data.length > 0) ? data[0].revision + 1 : 1;
-}
-
-// --- Helper: prompt AI Haiku per valutazione rischi per mansione ---
-function buildDvrRisksPrompt(dvrData) {
-  const d = dvrData || {};
-  const mansioni = Array.isArray(d.mansioni) && d.mansioni.length > 0
-    ? d.mansioni.map(m => `- ${m.nome}${m.numAddetti ? ` (${m.numAddetti} addetti)` : ''}${m.attivita ? ': ' + m.attivita : ''}`).join('\n')
-    : '- [Mansioni non specificate]';
-
-  const attrezzature = Array.isArray(d.attrezzature)
-    ? d.attrezzature.join(', ') : (d.attrezzature || 'Non specificate');
-  const agentiChimici = Array.isArray(d.agentiChimici)
-    ? d.agentiChimici.join(', ') : (d.agentiChimici || 'Nessuno');
-  const agentiFisici = Array.isArray(d.agentiFisici)
-    ? d.agentiFisici.join(', ') : (d.agentiFisici || 'Nessuno');
-
-  return `Sei un RSPP esperto. Genera la sezione "Valutazione dei Rischi per Mansione" di un DVR ai sensi del D.Lgs 81/2008.
-
-AZIENDA: ${d.ragioneSociale || 'N/A'}
-SETTORE: ${d.settore || 'Edilizia'}
-ATTIVITÀ: ${d.descrizioneAttivita || 'Costruzione e ristrutturazione edifici'}
-ATTREZZATURE: ${attrezzature}
-AGENTI CHIMICI: ${agentiChimici}
-AGENTI FISICI: ${agentiFisici}
-
-MANSIONI DA VALUTARE:
-${mansioni}
-
-Per OGNI mansione genera ESATTAMENTE questo formato:
-
-### [Nome Mansione] — [N] addetti
-
-**Rischi identificati (matrice P×D):**
-
-| Rischio | Fonte pericolo | P (1-4) | D (1-4) | R (P×D) | Livello | Misure preventive |
-|---------|----------------|---------|---------|---------|---------|------------------|
-(una riga per ogni rischio; includi almeno 5-8 rischi per mansione)
-
-Legenda: P=Probabilità (1=Improbabile, 2=Poco prob., 3=Probabile, 4=Molto prob.)
-         D=Danno (1=Lieve, 2=Medio, 3=Grave, 4=Gravissimo)
-         Livello: R≤3=Basso, 4-8=Medio, 9-12=Alto, ≥13=Molto Alto
-
-**Misure collettive di prevenzione:**
-- (elenco misure tecniche, organizzative e procedurali)
-
-**DPI obbligatori:**
-| DPI | Norma UNI EN | Categoria |
-|-----|-------------|-----------|
-(tabella DPI specifici con norme di riferimento)
-
-**Sorveglianza sanitaria:** [Sì/No] — Periodicità: [semestrale/annuale/biennale]
-
-**Formazione specifica obbligatoria:** [Titolo corso, ore minime per legge]
-
----
-
-Sii tecnico, preciso, conforme D.Lgs 81/2008. Livelli di rischio realistici per il settore. Rispondi SOLO con il contenuto delle mansioni, senza preamboli.`;
-}
-
-// --- DVR Generation SSE: standalone ---
-app.post('/api/generate-dvr-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
-  res.on('error', (e) => console.error('[dvr-stream] res error:', e.message));
-  if (req.socket) { req.socket.setNoDelay(true); req.socket.setTimeout(0); }
-
-  let headersFlushed = false;
-  let heartbeatTimer = null;
-
-  try {
-    const dvrData = req.body;
-    const siteId  = dvrData.siteId || null;
-    // Non fidarsi mai del companyId dal body — derivarlo sempre dal DB o dall'header verificato
-    let companyId = null;
-    if (siteId) {
-      const { data: siteRow } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
-      companyId = siteRow?.company_id || null;
-      // Verifica che l'utente sia membro della company del cantiere (no cross-company IDOR)
-      if (companyId) {
-        const { data: m } = await supabase.from('company_users').select('company_id')
-          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
-        if (!m) companyId = null;
-      }
-    }
-    if (!companyId) {
-      companyId = req.headers['x-company-id'] || null;
-      if (companyId) {
-        const { data: m } = await supabase.from('company_users').select('company_id')
-          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
-        if (!m) companyId = null;
-      }
-    }
-    if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
-    if (!await checkBillingActive(companyId, res)) return;
-    if (!await isFeatureEnabled(companyId, 'dvr')) {
-      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione DVR non disponibile al momento.' });
-    }
-
-    const revision = await getNextDvrRevision(siteId, companyId);
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-    headersFlushed = true;
-
-    sseWrite(res, `data: ${JSON.stringify({ type: 'meta', revision, mode: 'dvr' })}\n\n`);
-    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Valutazione rischi AI in corso...' })}\n\n`);
-
-    heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
-
-    let aiRisks = '';
-    try {
-      const risksPrompt = buildDvrRisksPrompt(dvrData);
-      aiRisks = await callAnthropicHaiku(risksPrompt, { companyId, userId: req.user.id, callSite: 'generate_dvr_risks' });
-    } catch (aiErr) {
-      console.error('[dvr-stream] Haiku error:', aiErr.message);
-      aiRisks = '[Valutazione rischi non disponibile — errore AI]';
-    }
-
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-
-    sseWrite(res, `data: ${JSON.stringify({ type: 'risks', text: aiRisks })}\n\n`);
-    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento DVR...' })}\n\n`);
-
-    const CHUNK_SIZE = 512;
-    for (let i = 0; i < aiRisks.length; i += CHUNK_SIZE) {
-      sseWrite(res, `data: ${JSON.stringify({ type: 'text', text: aiRisks.slice(i, i + CHUNK_SIZE) })}\n\n`);
-    }
-
-    // Salva in DB
-    let dvrId = null;
-    try {
-      const { data: saved, error: saveError } = await supabase
-        .from('dvr_documents')
-        .insert([{
-          company_id: companyId || null,
-          site_id:    siteId    || null,
-          revision,
-          content:    aiRisks,
-          dvr_data:   dvrData,
-          created_by: dvrData.createdBy || null,
-        }])
-        .select()
-        .single();
-      if (saveError) {
-        console.error('[dvr-stream] DB save error:', saveError.message);
-        Sentry.captureException(new Error('[dvr-stream] DB save error: ' + saveError.message));
-      } else dvrId = saved?.id || null;
-    } catch (dbErr) {
-      console.error('[dvr-stream] DB exception:', dbErr.message);
-      Sentry.captureException(dbErr);
-    }
-
-    sseWrite(res, `data: ${JSON.stringify({ type: 'done', dvrId, revision, mode: 'dvr' })}\n\n`);
-    sseWrite(res, 'data: [DONE]\n\n');
-    if (!res.writableEnded) res.end();
-
-  } catch (error) {
-    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    console.error('[dvr-stream] fatal error:', error.message);
-    Sentry.captureException(error);
-    try {
-      if (headersFlushed) {
-        sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
-        if (!res.writableEnded) res.end();
-      } else {
-        res.status(error.status || 500).json({ error: String(error.message) });
-      }
-    } catch (e) { console.error('[dvr-stream] error handler threw:', e.message); }
-  }
-});
-
-// --- DVR PDF download ---
-app.get('/api/dvr/:dvrId/pdf', verifyJwtOnly, async (req, res) => {
-  try {
-    const dvr = await checkDocOwnership(req, res, 'dvr_documents', req.params.dvrId);
-    if (!dvr) return;
-    if (!await isFeatureEnabled(dvr.company_id, 'dvr')) {
-      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione DVR non disponibile al momento.' });
-    }
-
-    const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
-
-    const ragSoc   = dvr.dvr_data?.ragioneSociale || 'Azienda';
-    const docTitle = `DVR – ${ragSoc} – Rev. ${dvr.revision}`;
-    const fileName = `DVR-Rev${dvr.revision}-${ragSoc.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 40)}.pdf`;
-
-    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: dvr.revision });
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.send(pdfBuffer);
-
-  } catch (error) {
-    console.error('[dvr-pdf] error:', error.message);
-    if (!res.headersSent) res.status(500).json({ error: error.message });
-  }
-});
-
-// --- DVR HTML preview ---
-app.get('/api/dvr/:dvrId/html', verifyJwtOnly, async (req, res) => {
-  try {
-    const dvr = await checkDocOwnership(req, res, 'dvr_documents', req.params.dvrId);
-    if (!dvr) return;
-    if (!await isFeatureEnabled(dvr.company_id, 'dvr')) {
-      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione DVR non disponibile al momento.' });
-    }
-
-    const html = generateDvrHtml(dvr.dvr_data || {}, dvr.revision, dvr.content || '');
-    res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(html);
-
-  } catch (error) {
-    console.error('[dvr-html] error:', error.message);
-    if (!res.headersSent) res.status(500).json({ error: error.message });
-  }
-});
-
-// ══════════════════════════════════════════════════════════════════════════════
-// PIMUS — Piano di Montaggio, Uso e Smontaggio dei Ponteggi
-// ══════════════════════════════════════════════════════════════════════════════
-
-async function getNextPimusRevision(siteId, companyId) {
-  let q = supabase.from('pimus_documents').select('revision').order('revision', { ascending: false }).limit(1);
-  if (siteId)    q = q.eq('site_id', siteId);
-  if (companyId) q = q.eq('company_id', companyId);
-  const { data } = await q;
-  return (data && data.length > 0) ? data[0].revision + 1 : 1;
-}
-
-function buildPimusPrompt(d) {
-  const tipo     = d.tipoPonteggio    || 'Ponteggio metallare fisso (PRP)';
-  const altezza  = d.altezzaMax       || 'N/D';
-  const lunghez  = d.lunghezzaTotale  || 'N/D';
-  const piani    = d.numPiani         || 'N/D';
-  const carico   = d.caricoPrevisto   || '200';
-  const dest     = d.destinazione     || 'Facciate edificio';
-  const marca    = d.marcaModello     || 'N/D';
-  const amMin    = d.autorizzazioneMin || 'N/D';
-  const addetti  = Array.isArray(d.addetti) && d.addetti.length > 0
-    ? d.addetti.map(a => `- ${a.nome || a.name || 'N/D'} (${a.qualifica || 'operaio'})`).join('\n')
-    : '- [Addetti da specificare]';
-
-  return `Sei un coordinatore della sicurezza (CSP/CSE) esperto in ponteggi. Redigi il PIMUS ai sensi del D.Lgs 81/2008 Art. 136 e Allegato XXII per il seguente ponteggio:
-
-TIPO: ${tipo}
-MARCA/MODELLO: ${marca}
-AUTORIZZAZIONE MINISTERIALE: ${amMin}
-ALTEZZA MASSIMA: ${altezza} m
-LUNGHEZZA TOTALE: ${lunghez} m
-N° PIANI DI LAVORO: ${piani}
-CARICO PREVISTO: ${carico} kg/m²
-DESTINAZIONE: ${dest}
-AZIENDA: ${d.ragioneSociale || 'N/D'}
-CANTIERE: ${d.nomeCantiere || d.indirizzoCantiere || 'N/D'}
-
-ADDETTI AL MONTAGGIO:
-${addetti}
-
-Genera ESATTAMENTE le sezioni seguenti (usa ### per i titoli di sezione):
-
-### Verifica di Resistenza e Stabilità
-Analisi sintetica del carico, verifica portata e stabilità per il tipo di ponteggio specificato. Includi verifica ancoraggio (ogni quanti m²), note su carichi nominali e coefficienti di sicurezza richiesti dalla norma.
-
-### Sequenza di Montaggio — Procedura Operativa
-Procedura passo-passo numerata per il montaggio del ponteggio. Almeno 10 passaggi dettagliati. Per ciascuno specifica: azione, rischio connesso, misura preventiva.
-
-| N° | Operazione | Rischio | Misura preventiva |
-|----|------------|---------|------------------|
-(almeno 10 righe)
-
-### Sequenza di Smontaggio — Procedura Operativa
-Come montaggio ma in senso inverso. Almeno 8 passaggi.
-
-| N° | Operazione | Rischio | Misura preventiva |
-|----|------------|---------|------------------|
-
-### Condizioni di Uso Sicuro
-Elenco puntato delle condizioni che devono essere garantite durante l'uso del ponteggio (ispezione giornaliera, condizioni meteo, carichi massimi, accesso autorizzato, ecc.)
-
-### DPI Obbligatori per Lavori su Ponteggio
-
-| DPI | Norma UNI EN | Quando |
-|-----|-------------|--------|
-(almeno 6 DPI specifici per lavori su ponteggio con altezza > 2m)
-
-### Verifiche Periodiche Obbligatorie
-
-| Frequenza | Tipo di verifica | Responsabile | Riferimento normativo |
-|-----------|-----------------|-------------|----------------------|
-(almeno 5 righe: giornaliera, settimanale, dopo eventi atmosferici, mensile, annuale)
-
-### Piano di Emergenza
-Procedura da seguire in caso di: caduta dall'alto, crollo parziale ponteggio, infortunio sul lavoro. Per ogni scenario: azioni immediate, numeri da chiamare, modalità di evacuazione dell'area.
-
----
-
-Sii preciso, conforme alla norma. Rispondi SOLO con il contenuto delle sezioni, senza preamboli.`;
-}
-
-// --- PIMUS Generation SSE ---
-app.post('/api/generate-pimus-stream', verifyJwtOnly, aiLimiter, async (req, res) => {
-  res.on('error', (e) => console.error('[pimus-stream] res error:', e.message));
-  if (req.socket) { req.socket.setNoDelay(true); req.socket.setTimeout(0); }
-
-  let headersFlushed = false;
-  let heartbeatTimer = null;
-
-  try {
-    const pimusData = req.body;
-    const siteId    = pimusData.siteId || null;
-    // Non fidarsi mai del companyId dal body — derivarlo sempre dal DB o dall'header verificato
-    let companyId = null;
-    if (siteId) {
-      const { data: sr } = await supabase.from('sites').select('company_id').eq('id', siteId).maybeSingle();
-      companyId = sr?.company_id || null;
-      // Verifica che l'utente sia membro della company del cantiere (no cross-company IDOR)
-      if (companyId) {
-        const { data: m } = await supabase.from('company_users').select('company_id')
-          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
-        if (!m) companyId = null;
-      }
-    }
-    if (!companyId) {
-      companyId = req.headers['x-company-id'] || null;
-      if (companyId) {
-        const { data: m } = await supabase.from('company_users').select('company_id')
-          .eq('user_id', req.user.id).eq('company_id', companyId).maybeSingle();
-        if (!m) companyId = null;
-      }
-    }
-    if (!companyId) return res.status(403).json({ error: 'FORBIDDEN' });
-    if (!await checkBillingActive(companyId, res)) return;
-    if (!await isFeatureEnabled(companyId, 'pimus')) {
-      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione PIMUS non disponibile al momento.' });
-    }
-
-    const revision = await getNextPimusRevision(siteId, companyId);
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
-    headersFlushed = true;
-
-    sseWrite(res, `data: ${JSON.stringify({ type: 'meta', revision, mode: 'pimus' })}\n\n`);
-    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Analisi ponteggio e procedure AI in corso...' })}\n\n`);
-
-    heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
-
-    let aiContent = '';
-    try {
-      aiContent = await callAnthropicHaiku(buildPimusPrompt(pimusData), { companyId, userId: req.user.id, callSite: 'generate_pimus' });
-    } catch (aiErr) {
-      console.error('[pimus-stream] AI error:', aiErr.message);
-      aiContent = '[Procedure non disponibili — errore AI]';
-    }
-
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
-
-    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Assemblaggio documento PIMUS...' })}\n\n`);
-
-    const CHUNK_SIZE = 512;
-    for (let i = 0; i < aiContent.length; i += CHUNK_SIZE) {
-      sseWrite(res, `data: ${JSON.stringify({ type: 'text', text: aiContent.slice(i, i + CHUNK_SIZE) })}\n\n`);
-    }
-
-    let pimusId = null;
-    try {
-      const { data: saved, error: saveError } = await supabase
-        .from('pimus_documents')
-        .insert([{
-          company_id: companyId || null,
-          site_id:    siteId    || null,
-          revision,
-          content:    aiContent,
-          pimus_data: pimusData,
-          created_by: pimusData.createdBy || null,
-        }])
-        .select()
-        .single();
-      if (saveError) {
-        console.error('[pimus-stream] DB error:', saveError.message);
-        Sentry.captureException(new Error('[pimus-stream] DB error: ' + saveError.message));
-      } else pimusId = saved?.id || null;
-    } catch (dbErr) {
-      console.error('[pimus-stream] DB exception:', dbErr.message);
-      Sentry.captureException(dbErr);
-    }
-
-    sseWrite(res, `data: ${JSON.stringify({ type: 'done', pimusId, revision, mode: 'pimus' })}\n\n`);
-    sseWrite(res, 'data: [DONE]\n\n');
-    if (!res.writableEnded) res.end();
-
-  } catch (error) {
-    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-    console.error('[pimus-stream] fatal:', error.message);
-    Sentry.captureException(error);
-    try {
-      if (headersFlushed) {
-        sseWrite(res, `data: ${JSON.stringify({ type: 'error', error: String(error.message) })}\n\n`);
-        if (!res.writableEnded) res.end();
-      } else {
-        res.status(error.status || 500).json({ error: String(error.message) });
-      }
-    } catch (e) { console.error('[pimus-stream] error handler threw:', e.message); }
-  }
-});
-
-// --- PIMUS PDF download ---
-app.get('/api/pimus/:pimusId/pdf', verifyJwtOnly, async (req, res) => {
-  try {
-    const pimus = await checkDocOwnership(req, res, 'pimus_documents', req.params.pimusId);
-    if (!pimus) return;
-    if (!await isFeatureEnabled(pimus.company_id, 'pimus')) {
-      return res.status(403).json({ error: 'FEATURE_DISABLED', message: 'Generazione PIMUS non disponibile al momento.' });
-    }
-
-    const html     = generatePimusHtml(pimus.pimus_data || {}, pimus.revision, pimus.content || '');
-    const ragSoc   = pimus.pimus_data?.ragioneSociale || 'Azienda';
-    const docTitle = `PIMUS – ${ragSoc} – Rev. ${pimus.revision}`;
-    const fileName = `PIMUS-Rev${pimus.revision}-${ragSoc.replace(/[^a-zA-Z0-9]/g,'_').slice(0,40)}.pdf`;
-
-    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pimus.revision });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-    res.send(pdfBuffer);
-
-  } catch (error) {
-    console.error('[pimus-pdf] error:', error.message);
-    if (!res.headersSent) res.status(500).json({ error: error.message });
-  }
-});
+// DVR e PIMUS ELIMINATI (AUDIT.md F-229, 2026-09-24): generatori, SSE, PDF/HTML
+// e lista rimossi su decisione del titolare (Inventario Palladia) — erano già
+// spenti dietro i flag dvr/pimus da luglio 2026, 0 documenti generati. Le
+// tabelle dvr_documents/pimus_documents restano (nessun dato cancellato).
 
 // ── PDF HTML v2: da body (content già pronto) ─────────────────────────────────
 // Equivalente di /api/generate-pdf ma usa il nuovo pipeline HTML+Puppeteer.
@@ -2410,20 +1949,26 @@ const server = app.listen(PORT, '0.0.0.0', () => {
 
   // Avvia cron — solo in produzione o se esplicitamente abilitato
   if (process.env.NODE_ENV !== 'test') {
+    // F-229 (AUDIT.md, 2026-09-24) — Inventario Palladia: i cron dei moduli
+    // CONGELATI partono solo se il loro modulo è riacceso globalmente
+    // (FEATURE_<NOME>_DEFAULT=true su Railway, vedi lib/featureFlags.js).
+    // ELIMINATI: ladiaLiveCron (briefing 07:30 di "Ladia In Cantiere", UI mai
+    // collegata a nessuna pagina) e safetyCopilotCron (11.710 punteggi di
+    // rischio calcolati ogni ora, mai letti da nessuno).
+    const frozen = (module, start) => { if (isModuleEnabledGlobally(module)) start(); else logger.info({ module }, '[cron] congelato, non avviato'); };
     startMissingExitCron();
     startMissingExitIntraDayCron();
-    startEveningSummaryCron();
+    frozen('daily_digests', startEveningSummaryCron);
     startExpiryAlertCron();
     startDailyDocCheckCron();
     startEquipmentExpiryCron();
     startCompanyDocExpiryCron();
     startSiteOccupazioneExpiryCron();
-    startSubcontractorExpiryCron();
-    startLadiaProactiveCron();
-    startWeeklyValueCron();
-    startLadiaLiveCron();
-    startReminderCron();
-    startStudioDigestCron();
+    frozen('subappaltatori', startSubcontractorExpiryCron);
+    frozen('ladia_proactive', startLadiaProactiveCron);
+    frozen('daily_digests', startWeeklyValueCron);
+    frozen('note_reminders', startReminderCron);
+    frozen('studio_cdl', startStudioDigestCron);
     startWeatherLogCron();
     startWeatherReconcileCron();
     startWeatherArpalCron();
@@ -2434,18 +1979,17 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     // migrations/219). Il registro caldo ora è inserimento manuale, vedi
     // routes/v1/siteHeat.js.
     startWeatherAlertCron();
-    startDailyDigestCron();
+    startDailyDigestCron(); // email riepilogo scadenze — gruppo "avvisi scadenza", da unire, non congelato
     startWeeklyExpiryReportCron();
     startCertificateExpiryCron();
-    startStudioDurcAlertCron();
-    startSafetyCopilotCron();
+    frozen('studio_cdl', startStudioDurcAlertCron);
     startDailyStatsCron();
-    startMonthlyReportCron();
-    startStudioMonthlyReportCron();
-    startSdiConsultationPollCron();
+    frozen('daily_digests', startMonthlyReportCron);
+    frozen('studio_cdl', startStudioMonthlyReportCron);
+    frozen('economia', startSdiConsultationPollCron);
     startSmartImportRecoveryCron();
     startDocumentsSyncVerifyCron();
-    startRecurringExpenseCron();
+    frozen('economia', startRecurringExpenseCron);
 
     // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti
     runFormazioneMigration().catch(e => console.error('[migration] formazione:', e.message));

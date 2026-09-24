@@ -153,15 +153,14 @@ router.get('/document-folders', async (req, res) => {
 
   const { data: sites }   = await supabase.from('sites').select('id').eq('company_id', companyId);
   const { data: workers } = await supabase.from('workers').select('id').eq('company_id', companyId).eq('is_active', true);
-  const { data: subs }    = await supabase.from('subcontractors').select('id').eq('company_id', companyId).eq('is_active', true);
-  // 'mezzi' è il primo Scaglione aggiunto dopo che /documenti era già in
-  // produzione per gli altri — a differenza di quelli, qui il flag va
-  // controllato anche lato backend: altrimenti la cartella comparirebbe subito
-  // per ogni azienda al deploy, non solo per chi l'ha verificata dal vivo.
-  const equipmentEnabled = await isFeatureEnabled(companyId, 'document_hub_entry_equipment');
-  const { data: equip }  = equipmentEnabled
-    ? await supabase.from('equipment').select('id').eq('company_id', companyId).eq('is_active', true)
+  // F-229 (AUDIT.md): la cartella Mezzi è sempre presente (flag
+  // document_hub_entry_equipment ritirato a rollout concluso); quella
+  // Subappaltatori segue il modulo congelato `subappaltatori`.
+  const subsEnabled = await isFeatureEnabled(companyId, 'subappaltatori');
+  const { data: subs }  = subsEnabled
+    ? await supabase.from('subcontractors').select('id').eq('company_id', companyId).eq('is_active', true)
     : { data: [] };
+  const { data: equip } = await supabase.from('equipment').select('id').eq('company_id', companyId).eq('is_active', true);
 
   const ora = today(), presto = futureDate(30);
   const scaduti = (docs || []).filter(d => {
@@ -172,13 +171,13 @@ router.get('/document-folders', async (req, res) => {
   const folders = [
     { type: 'cantieri',       count: (sites || []).length },
     { type: 'lavoratori',     count: (workers || []).length },
-    { type: 'subappaltatori', count: (subs || []).length },
+    ...(subsEnabled ? [{ type: 'subappaltatori', count: (subs || []).length }] : []),
     { type: 'azienda',        count: (docs || []).filter(d => d.owner_type === 'company').length },
     { type: 'buste-paga',     count: (docs || []).filter(d => d.category === 'busta_paga').length },
     { type: 'formazione',     count: (docs || []).filter(d => FORMAZIONE_CATEGORIES.includes(d.category)).length },
     { type: 'scaduti',        count: scaduti, smart: true },
+    { type: 'mezzi',          count: (equip || []).length },
   ];
-  if (equipmentEnabled) folders.push({ type: 'mezzi', count: (equip || []).length });
 
   res.json({ folders });
 });
@@ -196,7 +195,7 @@ router.get('/document-folders/:type', async (req, res) => {
   const { type } = req.params;
   const cfg = ENTITY_FOLDER_TYPES[type];
   if (!cfg) return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
-  if (type === 'mezzi' && !(await isFeatureEnabled(companyId, 'document_hub_entry_equipment'))) {
+  if (type === 'subappaltatori' && !(await isFeatureEnabled(companyId, 'subappaltatori'))) {
     return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
   }
 
@@ -247,7 +246,7 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
     return res.json({ type, key, documents: await attachHomes(scaduti) });
   }
 
-  if (type === 'mezzi' && !(await isFeatureEnabled(companyId, 'document_hub_entry_equipment'))) {
+  if (type === 'subappaltatori' && !(await isFeatureEnabled(companyId, 'subappaltatori'))) {
     return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
   }
 

@@ -44,6 +44,7 @@ const { isBillingActive } = require('../../lib/billing');
 const { analyzeChatUpload, archiveChatUpload } = require('../../services/chatDocumentAnalysis');
 const { startImportFromChatUpload, confirmHighConfidenceBatch } = require('../../lib/ladiaSmartImportBridge');
 const { logDocumentExport } = require('../../services/valueMetrics');
+const { filterFrozenTools, frozenModulesPromptNote, isPathFrozen } = require('../../lib/ladiaFrozenTools');
 const {
   chatMessageSchema,
   chatExportSchema,
@@ -1341,7 +1342,7 @@ REGOLE IMMAGINI:
 3. Prima di salvare mostra sempre il riepilogo strutturato e chiedi conferma
 4. Se l'utente dice "registra" o "sì" o "ok" dopo il riepilogo, salva direttamente
 5. Dopo la registrazione: "✓ [Tipo] da [fornitore] del [data] registrato in [cantiere]"
-6. Per le foto di cantiere: descrivi lo stato lavori, segnala problemi visibili, suggerisci azioni`;
+6. Per le foto di cantiere: descrivi lo stato lavori, segnala problemi visibili, suggerisci azioni` + frozenModulesPromptNote();
 
 
 // ── System prompt aggiuntivo per modalità vocale ─────────────────────────────
@@ -2737,9 +2738,12 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
 // punto fino a cui l'API può riusare il prefisso già processato (~90% risparmio
 // sui token cache-hit). Costruito una sola volta al boot: TOOLS non cambia mai
 // a runtime, quindi non c'è bisogno di ricrearlo per ogni richiesta.
-const TOOLS_CACHED = TOOLS.length > 0
-  ? [...TOOLS.slice(0, -1), { ...TOOLS[TOOLS.length - 1], cache_control: { type: 'ephemeral', ttl: '1h' } }]
-  : TOOLS;
+// F-229 (AUDIT.md): via i tool dei moduli eliminati/congelati — elenco e
+// motivo in lib/ladiaFrozenTools.js, non qui (chat.js è congelato).
+const ACTIVE_TOOLS = filterFrozenTools(TOOLS);
+const TOOLS_CACHED = ACTIVE_TOOLS.length > 0
+  ? [...ACTIVE_TOOLS.slice(0, -1), { ...ACTIVE_TOOLS[ACTIVE_TOOLS.length - 1], cache_control: { type: 'ephemeral', ttl: '1h' } }]
+  : ACTIVE_TOOLS;
 
 // systemPrompt è sempre SYSTEM_PROMPT + testo dinamico (company brain, memoria,
 // contesto cantiere) concatenato in coda — mai anteposto. Isoliamo la parte
@@ -3404,6 +3408,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       case 'navigate_to_page': {
         const { path, label } = toolInput;
         if (!path || !label) return { error: 'path e label obbligatori' };
+        if (isPathFrozen(path)) return { error: 'MODULO_NON_ATTIVO', message: 'Questa sezione non è attiva in Palladia oggi.' }; // F-229
         return { navigated: true, path, label };
       }
 
@@ -7269,6 +7274,7 @@ cantiere, rispondi normalmente senza forzare la creazione.`;
         else if (/economia aziendale|situazione economic/i.test(message))   { forcedPath = '/economia';                 forcedLabel = 'Economia aziendale'; }
         else if (/scadenz/i.test(message))                                  { forcedPath = '/scadenze';                 forcedLabel = 'Scadenzario'; }
       }
+      if (forcedPath && isPathFrozen(forcedPath)) { forcedPath = null; forcedLabel = null; } // F-229
       if (forcedPath) {
         // Verificato dal vivo su 3 tentativi in produzione dopo la sola direttiva
         // di prompt sotto: 1 riuscito (tool_use navigate_to_page vero), 1 fallito

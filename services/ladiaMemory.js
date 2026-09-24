@@ -13,12 +13,22 @@ const supabase  = require('../lib/supabase');
 const Anthropic = require('@anthropic-ai/sdk');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const { auditLog } = require('../lib/audit');
+const { isModuleEnabledGlobally } = require('../lib/featureFlags');
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 const MODEL     = 'claude-haiku-4-5-20251001';
 
+// F-229 (AUDIT.md, 2026-09-24): memoria e obiettivi CONGELATI (flag
+// `ladia_memory`) — l'estrazione dopo ogni conversazione era il 30% di tutte le
+// chiamate AI (132 su 447) per 6 memorie e 66 obiettivi senza un beneficio
+// visibile. Da spenta: nessuna estrazione e niente iniettato nel prompt (anche
+// i dati già salvati restano nel DB, non vengono cancellati).
+// analyzeDiaryNote qui sotto NON segue questo flag: serve al Diario, tenuto.
+const memoryEnabled = () => isModuleEnabledGlobally('ladia_memory');
+
 // ── Leggi memoria (lato system prompt) ───────────────────────────────────────
 async function getMemory(companyId, { siteId, userId } = {}) {
+  if (!memoryEnabled()) return '';
   const parts = [];
 
   if (siteId) {
@@ -53,6 +63,7 @@ async function getMemory(companyId, { siteId, userId } = {}) {
 
 // ── Obiettivi aperti — iniettati nel system prompt ───────────────────────────
 async function getOpenObjectives(companyId, siteId) {
+  if (!memoryEnabled()) return '';
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
 
@@ -112,6 +123,7 @@ async function getOpenObjectives(companyId, siteId) {
 
 // ── Aggiorna memoria + estrai obiettivi dopo conversazione ───────────────────
 async function updateMemoryAfterConversation(companyId, { siteId, userId }, messages) {
+  if (!memoryEnabled()) return;
   const recent = messages.slice(-12);
   const transcript = recent
     .map(m => {

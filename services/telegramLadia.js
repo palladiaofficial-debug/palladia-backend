@@ -6,13 +6,18 @@
  * Funzionamento:
  * - Carica il contesto completo del cantiere attivo (sito, lavoratori, note, economia, meteo)
  * - Mantiene lo storico conversazione in chat_conversations + chat_messages
- * - Risponde con Claude Sonnet con tool use (crea NC, aggiungi nota, meteo, stato, lista NC)
+ * - Risponde con Claude Sonnet con tool use (aggiungi nota, meteo, stato, template documenti;
+ *   i tool NC sono filtrati via — F-229, modulo eliminato)
  * - Non invadente: attivato solo su richiesta esplicita dell'utente
  */
 
 const supabase = require('../lib/supabase');
 const { getWeatherSummary } = require('./weatherService');
 const { LADIA_TOOL_DEFINITIONS, executeTool } = require('./ladiaTools');
+const { filterFrozenTools } = require('../lib/ladiaFrozenTools');
+
+// F-229 (AUDIT.md): via i tool delle non conformità (modulo eliminato).
+const ACTIVE_TOOL_DEFINITIONS = filterFrozenTools(LADIA_TOOL_DEFINITIONS);
 const { getTemplateIndex } = require('./ladiaDocumentProcessor');
 const { buildEnrichedContext } = require('./ladiaEngine');
 
@@ -46,9 +51,7 @@ Hai piena conoscenza di:
 
 Hai accesso a questi strumenti per AGIRE direttamente (non solo rispondere):
 - <b>meteo_cantiere</b>: previsioni 3gg per il cantiere
-- <b>lista_nc_aperte</b>: elenca NC aperte filtrate per urgenza
-- <b>stato_cantiere</b>: riepilogo live di presenze, NC, budget
-- <b>crea_non_conformita</b>: registra una NC nel sistema
+- <b>stato_cantiere</b>: riepilogo live delle presenze
 - <b>cerca_template_documento</b>: cerca tra i PDF caricati dall'impresa (contratti, capitolati, POS, ecc.) per usarli come modello
 
 REGOLA CRITICA SULLE NOTE:
@@ -73,10 +76,12 @@ ${siteContext}
 
 Comportamento:
 - Rispondi a domande tecniche, organizzative e gestionali
-- Quando il contesto mostra un rischio (budget, NC critiche, scadenze) segnalalo con tatto
+- Quando il contesto mostra un rischio (scadenze, meteo) segnalalo con tatto
 - Suggerisci il prossimo passo logico se è ovvio dal contesto
 - Tono da collega esperto, mai da chatbot generico
-- Se crei una NC o nota, conferma con un messaggio chiaro all'utente`;
+- Se crei una nota, conferma con un messaggio chiaro all'utente
+- Non conformità, budget e costi NON sono attivi in Palladia oggi: se l'utente
+  li chiede, dillo in una frase — non promettere di registrarli`;
 }
 
 // ── Caricamento contesto cantiere ─────────────────────────────
@@ -308,7 +313,7 @@ async function callClaudeWithTools(systemPrompt, messages, toolCtx) {
       max_tokens: MAX_TOKENS,
       system:     systemPrompt,
       messages:   currentMessages,
-      tools:      LADIA_TOOL_DEFINITIONS,
+      tools:      ACTIVE_TOOL_DEFINITIONS,
     };
 
     const res = await fetch('https://api.anthropic.com/v1/messages', {
