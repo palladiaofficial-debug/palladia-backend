@@ -147,11 +147,16 @@ async function main() {
       await supabase.from('subcontractor_documents').insert({ company_id: cid, subcontractor_id: sub.id, doc_type: 'durc', name: 'DURC sub', file_path: `test/${T}/sub.pdf`, expiry_date: d(-2) });
       const r2 = await buildDaFare(cid, userId);
       check('subappaltatori (modulo congelato): nessuna riga', !r2.items.some(i => /Sub|subappalt/i.test(i.title) || i.link.includes('/subappaltatori/')), r2.items.map(i => i.title));
+      // F-244: acceso per l'azienda → il DURC scaduto della scheda entra, verso la scheda del subappaltatore
+      await supabase.from('company_feature_flags').insert({ company_id: cid, feature: 'subappaltatori', enabled: true });
+      const r3 = await buildDaFare(cid, userId);
+      const subRow = r3.items.find(i => i.id === `sub:${sub.id}:durc`);
+      check('subappaltatori accesi: DURC scaduto della scheda in "Scaduto", link alla scheda', subRow?.bucket === 'scaduto' && subRow.link === `/subappaltatori/${sub.id}/scheda`, subRow);
     } else {
       fail('seminare un subappaltatore per il controllo del modulo congelato');
     }
   } finally {
-    for (const t of ['notifications', 'site_weather_logs', 'worker_documents', 'company_documents', 'subcontractor_documents', 'da_fare_prenotazioni']) {
+    for (const t of ['notifications', 'site_weather_logs', 'worker_documents', 'company_documents', 'subcontractor_documents', 'da_fare_prenotazioni', 'company_feature_flags']) {
       await supabase.from(t).delete().eq('company_id', cid);
     }
     await supabase.from('documents').delete().eq('company_id', cid);

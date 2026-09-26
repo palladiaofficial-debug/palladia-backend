@@ -26,7 +26,7 @@ router.get('/da-fare', verifySupabaseJwt, async (req, res) => {
 // resta scaduta per tutto il resto (timbratura compresa): è un promemoria.
 const { romeDate, addDays } = require('../../lib/daFare');
 const supabase = require('../../lib/supabase');
-const ITEM_RE = /^(doc|worker|equipment|company|site):[\w:-]{1,160}$/;
+const ITEM_RE = /^(doc|worker|equipment|company|site|sub):[\w:-]{1,160}$/;
 const ROLES = ['owner', 'admin', 'tech'];
 
 router.post('/da-fare/prenota', verifySupabaseJwt, async (req, res) => {
