@@ -68,9 +68,24 @@ async function setup() {
   }).select('id').single();
   if (w2Err) throw new Error('crea worker 2: ' + w2Err.message);
 
+  // F-230 (AUDIT.md): anche TEST 3 serve un worker isolato. Dal F-206
+  // registerMissingExits guarda l'ultimo evento del lavoratore su TUTTA
+  // l'azienda; il worker di TEST 1 ha appena aperto un turno su un altro
+  // cantiere, quindi la sua ENTRY di 3 giorni fa non e' piu' l'ultimo evento
+  // (sequenza impossibile nella realta': punch_atomic chiude sempre il turno
+  // vecchio prima di aprirne uno nuovo) e il test falliva senza un difetto
+  // nel prodotto.
+  const { data: worker3, error: w3Err } = await supabase.from('workers').insert({
+    company_id: company.id, full_name: 'TEST-F043 Worker 3', is_active: true,
+    fiscal_code: `TSTF43C${Date.now()}`.slice(0, 16).toUpperCase(),
+    badge_code: `TSTF43C${Date.now()}`,
+  }).select('id').single();
+  if (w3Err) throw new Error('crea worker 3: ' + w3Err.message);
+
   return {
     companyId: company.id, siteId: siteIds[0], site2Id: siteIds[1], site3Id: siteIds[2], siteIds,
-    workerId: worker.id, workerId2: worker2.id, workerIds: [worker.id, worker2.id],
+    workerId: worker.id, workerId2: worker2.id, workerId3: worker3.id,
+    workerIds: [worker.id, worker2.id, worker3.id],
   };
 }
 
@@ -168,7 +183,7 @@ async function main() {
     const threeDaysAgo = new Date(Date.now() - 3 * 24 * 3600_000);
     const entryDate = threeDaysAgo.toISOString().slice(0, 10);
     await supabase.from('presence_logs').insert({
-      company_id: ctx.companyId, site_id: ctx.site3Id, worker_id: ctx.workerId,
+      company_id: ctx.companyId, site_id: ctx.site3Id, worker_id: ctx.workerId3,
       event_type: 'ENTRY', timestamp_server: `${entryDate}T08:00:00.000Z`, method: 'worker_self_punch',
     });
 
@@ -183,7 +198,7 @@ async function main() {
 
     const { data: logsAfter3 } = await supabase
       .from('presence_logs').select('event_type, timestamp_server')
-      .eq('worker_id', ctx.workerId).eq('site_id', ctx.site3Id).eq('event_type', 'EXIT')
+      .eq('worker_id', ctx.workerId3).eq('site_id', ctx.site3Id).eq('event_type', 'EXIT')
       .order('timestamp_server', { ascending: false }).limit(1);
     const exitDate = logsAfter3?.[0]?.timestamp_server?.slice(0, 10);
     if (exitDate === entryDate) {

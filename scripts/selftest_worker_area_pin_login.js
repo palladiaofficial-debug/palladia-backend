@@ -25,6 +25,7 @@ require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const crypto = require('crypto');
 const supabase = require('../lib/supabase');
+const { verifyPin } = require('../lib/pinHash');
 
 const API_BASE = process.env.ISOLATION_API_BASE || 'https://palladia-backend-production.up.railway.app/api/v1';
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -114,10 +115,15 @@ async function main() {
       method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': E2E_COMPANY_ID, 'Content-Type': 'application/json' },
     });
     const regenBody = await regenRes.json();
-    const oldPinRes = await fetch(`${API_BASE}/area/${badgeCode}/auth`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pin }),
-    });
-    check('rigenerare il PIN invalida subito quello precedente', regenRes.status === 200 && oldPinRes.status === 401, { regenStatus: regenRes.status, oldPinStatus: oldPinRes.status, samePin: regenBody.pin === pin });
+    // F-234 (AUDIT.md): qui prima si rifaceva il login HTTP col vecchio PIN,
+    // ma era il 6° POST /auth dallo stesso IP in pochi secondi e l'authLimiter
+    // (5 ogni 15 min per IP, invariato da giugno) rispondeva 429, non 401: il
+    // test falliva senza difetti nel prodotto. Si verifica invece esattamente
+    // cio' che POST /auth controlla: il vecchio PIN contro l'hash salvato ora.
+    const { data: after } = await supabase.from('workers').select('area_pin_hash').eq('id', worker.id).single();
+    const oldStillValid = after?.area_pin_hash ? await verifyPin(pin, after.area_pin_hash) : null;
+    const newValid = after?.area_pin_hash && regenBody.pin ? await verifyPin(regenBody.pin, after.area_pin_hash) : null;
+    check('rigenerare il PIN invalida subito quello precedente', regenRes.status === 200 && oldStillValid === false && newValid === true, { regenStatus: regenRes.status, oldStillValid, newValid, samePin: regenBody.pin === pin });
   } finally {
     await supabase.from('workers').delete().eq('id', worker.id);
   }
