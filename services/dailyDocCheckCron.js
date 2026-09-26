@@ -14,8 +14,9 @@ const {
   upsertNotification, shouldSendTelegram, pruneNotifications,
 } = require('./expiryHelper');
 const {
-  notifyExpiryAlert, notifyResolved,
+  notifyExpiryAlert, notifyResolved, notifyCompany,
 } = require('./telegramNotifications');
+const { queueOrSend } = require('../lib/alertDigest');
 const { sendPushToCompany } = require('./pushNotifications');
 
 const REQUIRED_TYPES = ['idoneita_medica', 'formazione_sicurezza'];
@@ -243,7 +244,7 @@ async function runBirthdayCheck() {
     const names  = bWorkers.map(w => w.full_name).join(', ');
     const single = bWorkers.length === 1;
 
-    await sendPushToCompany(companyId, {
+    const push = {
       title: single
         ? `🎂 Compleanno di ${bWorkers[0].full_name}`
         : `🎂 ${bWorkers.length} compleanni oggi`,
@@ -251,8 +252,8 @@ async function runBirthdayCheck() {
         ? `Oggi è il compleanno di ${bWorkers[0].full_name} — un augurio fa sempre piacere!`
         : `Compleanni oggi: ${names}`,
       tag: 'birthday',
-      url: '/risorse',
-    }).catch(() => {});
+      url: '/persone',
+    };
 
     const tgMsg = [
       `🎂 <b>Compleanno${single ? '' : 'i'} di oggi</b>`,
@@ -262,7 +263,13 @@ async function runBirthdayCheck() {
       'Un augurio fa sempre piacere! 🎉',
     ].join('\n');
 
-    await notifyExpiryAlert(companyId, tgMsg).catch(() => {});
+    // F-240: col riepilogo delle 7:30 acceso il compleanno entra lì. Prima
+    // passava da notifyExpiryAlert, che aggiungeva per sbaglio anche una
+    // notifica "Documenti in scadenza": ora parte solo quella del compleanno.
+    await queueOrSend(companyId, { kind: 'birthday', telegramText: tgMsg, push }, () => Promise.all([
+      sendPushToCompany(companyId, push).catch(() => {}),
+      notifyCompany(companyId, tgMsg).catch(() => {}),
+    ])).catch(() => {});
 
     console.log(`[birthday] ${companyId}: ${names}`);
   }

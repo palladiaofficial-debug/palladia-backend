@@ -13,6 +13,7 @@
 const tg       = require('./telegram');
 const supabase = require('../lib/supabase');
 const { sendPushToCompany } = require('./pushNotifications');
+const { queueOrSend } = require('../lib/alertDigest');
 const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
 
 function esc(s) {
@@ -453,15 +454,18 @@ const FRONTEND_URL_TG = (process.env.FRONTEND_URL || process.env.APP_BASE_URL ||
 async function notifyExpiryAlert(companyId, text) {
   // Estrai la prima riga del testo (senza HTML) come body push
   const bodyPlain = text.replace(/<[^>]+>/g, '').split('\n').filter(Boolean).slice(1, 3).join(' · ');
-  await Promise.all([
+  const push = {
+    title: 'Documenti in scadenza',
+    body:  bodyPlain.slice(0, 120),
+    tag:   'palladia-docs',
+    url:   '/scadenze',
+  };
+  // F-240: con il riepilogo delle 7:30 acceso il messaggio va in coda (e
+  // torna com'è solo se il riepilogo fallisce); spento, parte subito.
+  await queueOrSend(companyId, { kind: 'expiry', telegramText: text, push }, () => Promise.all([
     notifyCompany(companyId, text),
-    sendPushToCompany(companyId, {
-      title: 'Documenti in scadenza',
-      body:  bodyPlain.slice(0, 120),
-      tag:   'palladia-docs',
-      url:   '/risorse',
-    }).catch(() => {}),
-  ]);
+    sendPushToCompany(companyId, push).catch(() => {}),
+  ]));
 }
 
 /**
@@ -476,15 +480,18 @@ async function notifyResolved(companyId, resolvedItems, sectionLabel) {
     `${sectionLabel}:\n${list}\n\n` +
     `Nessuna azione richiesta.`;
 
-  await Promise.all([
+  const push = {
+    title: 'Tutto a posto',
+    body:  `${sectionLabel}: ${resolvedItems.map(r => r.title).join(', ').slice(0, 100)}`,
+    tag:   'palladia-resolved',
+    url:   '/scadenze',
+  };
+  // F-240: col riepilogo acceso i "risolto" non scrivono più da soli — la riga
+  // sparisce da Da fare, che è già la risposta.
+  await queueOrSend(companyId, { kind: 'resolved', telegramText: text, push }, () => Promise.all([
     process.env.TELEGRAM_BOT_TOKEN ? notifyCompany(companyId, text) : Promise.resolve(),
-    sendPushToCompany(companyId, {
-      title: 'Tutto a posto',
-      body:  `${sectionLabel}: ${resolvedItems.map(r => r.title).join(', ').slice(0, 100)}`,
-      tag:   'palladia-resolved',
-      url:   '/risorse',
-    }).catch(() => {}),
-  ]);
+    sendPushToCompany(companyId, push).catch(() => {}),
+  ]));
 }
 
 /**

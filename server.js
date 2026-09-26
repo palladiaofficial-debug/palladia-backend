@@ -42,6 +42,7 @@ const { startWeatherReconcileCron } = require('./services/weatherReconcileCron')
 const { startWeatherArpalCron }     = require('./services/weatherArpalCron');
 const { startWeatherAlertCron }     = require('./services/weatherAlertCron');
 const { startWeeklyExpiryReportCron } = require('./services/weeklyExpiryReportCron');
+const { startAlertDigestCron }      = require('./services/alertDigestCron');
 const { startCertificateExpiryCron } = require('./services/certificateExpiryCron');
 const { startStudioDurcAlertCron }  = require('./services/studioDurcAlertCron');
 const { startDailyStatsCron }       = require('./services/dailyStatsCron');
@@ -1981,6 +1982,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startWeatherAlertCron();
     startDailyDigestCron(); // email riepilogo scadenze — gruppo "avvisi scadenza", da unire, non congelato
     startWeeklyExpiryReportCron();
+    startAlertDigestCron();
     startCertificateExpiryCron();
     frozen('studio_cdl', startStudioDurcAlertCron);
     startDailyStatsCron();
