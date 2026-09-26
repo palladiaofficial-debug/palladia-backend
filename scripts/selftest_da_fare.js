@@ -64,6 +64,8 @@ async function main() {
     await ins('notifications', { company_id: cid, type: 'punch_help_request', severity: 'warning', title: `${T} Bruno ha bisogno di aiuto per timbrare`, body: 'GPS', entity_type: 'punch_help_request', entity_id: crypto.randomUUID(), read_by: [] });
     await ins('notifications', { company_id: cid, type: 'company_doc_expiry', severity: 'critical', title: 'DURC coperto altrove', entity_type: 'company_document', entity_id: crypto.randomUUID(), read_by: [] });
     await ins('notifications', { company_id: cid, type: 'weather_alert', severity: 'warning', title: 'Allerta già letta', entity_type: 'site', entity_id: sOpen.id, read_by: [userId] });
+    await ins('notifications', { company_id: cid, type: 'weather_alert', severity: 'warning', title: 'Allerta vecchia di 10 giorni', entity_type: 'site', entity_id: crypto.randomUUID(), read_by: [], updated_at: new Date(Date.now() - 10 * 86400e3).toISOString() });
+    await ins('notifications', { company_id: cid, type: 'weather_alert', severity: 'warning', title: `${T} Allerta di oggi`, entity_type: 'site', entity_id: sClosed.id, read_by: [] });
 
     // Meteo: una giornata da confermare (dentro), una già scartata (fuori), una su cantiere chiuso (fuori)
     await ins('site_weather_logs', { company_id: cid, site_id: sOpen.id, log_date: d(-2), precipitation_mm: 11, threshold_exceeded: true, threshold_reason: 'pioggia' });
@@ -100,7 +102,7 @@ async function main() {
     check('lavoratore disattivato: nessuna sua riga', !r.items.some(i => /Disattivo/.test(i.title)), titles);
     check('cantiere aperto con fine lavori superata → riga in "Scaduto" verso il cantiere',
       has(/Fine lavori — .*aperto/)?.bucket === 'scaduto' && has(/Fine lavori — .*aperto/)?.link === `/cantieri/${sOpen.id}/cantiere`, titles);
-    check('cantiere chiuso: nessuna riga (né fine lavori né meteo)', !r.items.some(i => /chiuso/.test(i.title)), titles);
+    check('cantiere chiuso: nessuna riga di fine lavori né di pioggia da confermare', !r.items.some(i => /chiuso/.test(i.title) && i.kind !== 'avviso'), titles);
     check('pioggia da confermare: una sola riga (quella scartata non torna)',
       r.items.filter(i => i.kind === 'meteo').length === 1 && /11 mm di pioggia/.test(r.items.find(i => i.kind === 'meteo')?.subtitle || ''), r.items.filter(i => i.kind === 'meteo'));
     check('uscita automatica di ieri di Anna in lista, verso Persone → Presenze',
@@ -110,6 +112,8 @@ async function main() {
       r.items[0]?.type === 'punch_help_request' || (r.items.find(i => i.type === 'punch_help_request')?.urgent === true &&
         r.items.findIndex(i => i.type === 'punch_help_request') === r.items.findIndex(i => i.bucket === 'settimana')), titles);
     check('notifica di scadenza già coperta da un documento: non duplicata', !r.items.some(i => /coperto altrove/.test(i.title)), titles);
+    check('allerta meteo di oggi: dentro, verso il cantiere', r.items.find(i => /Allerta di oggi/.test(i.title))?.link === `/cantieri/${sClosed.id}/cantiere`, titles);
+    check('allerta meteo vecchia di 10 giorni (previsione passata): fuori', !r.items.some(i => /vecchia di 10 giorni/.test(i.title)), titles);
     check('avviso già letto da questo utente: fuori', !r.items.some(i => /già letta/.test(i.title)), titles);
     check('ordine: Scaduto prima di Questa settimana prima di In corso',
       r.items.map(i => ['scaduto', 'settimana', 'mese', 'in_corso'].indexOf(i.bucket)).every((v, i, a) => i === 0 || a[i - 1] <= v), titles);
