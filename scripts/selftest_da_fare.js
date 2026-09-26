@@ -119,6 +119,27 @@ async function main() {
       r.items.map(i => ['scaduto', 'settimana', 'mese', 'in_corso'].indexOf(i.bucket)).every((v, i, a) => i === 0 || a[i - 1] <= v), titles);
     check('contatore campanella = scaduto + questa settimana', r.attention === r.counts.scaduto + r.counts.settimana, r.counts);
 
+    // ── F-243 "Prenotata": la formazione scaduta di Anna esce dalle urgenze ──
+    const formItem = r.items.find(i => /Formazione sicurezza — .*Anna/.test(i.title));
+    check('ogni scadenza è prenotabile', formItem?.prenotabile === true, formItem);
+    await supabase.from('da_fare_prenotazioni').insert({ company_id: cid, item_id: formItem.id, torna_il: d(10) });
+    const rp = await buildDaFare(cid, userId);
+    const formP = rp.items.find(i => i.id === formItem.id);
+    check('prenotata: la riga passa in "In corso" con la data di ritorno, fuori dal numero della campanella',
+      formP?.bucket === 'in_corso' && formP.prenotataFino === d(10) && rp.attention === r.attention - 1, { formP, before: r.attention, after: rp.attention });
+    await supabase.from('da_fare_prenotazioni').update({ torna_il: d(-1) }).eq('company_id', cid).eq('item_id', formItem.id);
+    const rback = await buildDaFare(cid, userId);
+    check('prenotazione scaduta senza documento nuovo: la riga torna tra le urgenze', rback.items.find(i => i.id === formItem.id)?.bucket === 'scaduto', rback.items.find(i => i.id === formItem.id));
+
+    // ── F-242 card "Buonasera": stessa fonte di Da fare ──────────────────────
+    const { buildDailyBrief } = require('../lib/dailyBrief');
+    await supabase.from('da_fare_prenotazioni').update({ torna_il: d(10) }).eq('company_id', cid).eq('item_id', formItem.id);
+    const brief = await buildDailyBrief(cid);
+    check('card: la richiesta di aiuto dalla timbratura è la prima riga', /aiuto per timbrare/.test(brief.alerts[0]?.title || ''), brief.alerts.map(a => a.title));
+    check('card: la riga prenotata non compare', !brief.alerts.some(a => /Formazione sicurezza — .*Anna/.test(a.title)), brief.alerts.map(a => a.title));
+    check('card: ogni riga porta dove si sistema (link), il numero Da fare è quello della campanella',
+      brief.alerts.every(a => typeof a.link === 'string' && a.link.startsWith('/')) && brief.kpi.da_fare === rp.attention, { kpi: brief.kpi });
+
     // Subappaltatori: modulo congelato → anche un DURC subappaltatore scaduto non entra
     const { data: sub } = await supabase.from('subcontractors').insert({ company_id: cid, company_name: `${T} Sub`, durc_expiry: d(-2), is_active: true }).select().single();
     if (sub) {
@@ -130,7 +151,7 @@ async function main() {
       fail('seminare un subappaltatore per il controllo del modulo congelato');
     }
   } finally {
-    for (const t of ['notifications', 'site_weather_logs', 'worker_documents', 'company_documents', 'subcontractor_documents']) {
+    for (const t of ['notifications', 'site_weather_logs', 'worker_documents', 'company_documents', 'subcontractor_documents', 'da_fare_prenotazioni']) {
       await supabase.from(t).delete().eq('company_id', cid);
     }
     await supabase.from('documents').delete().eq('company_id', cid);

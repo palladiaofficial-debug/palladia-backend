@@ -15,6 +15,7 @@ const router    = require('express').Router();
 const Sentry    = require('../../lib/sentry');
 const Anthropic = require('@anthropic-ai/sdk');
 const supabase  = require('../../lib/supabase');
+const { buildDailyBrief } = require('../../lib/dailyBrief');
 const { verifySupabaseJwt }    = require('../../middleware/verifyJwt');
 const { chatLimiter, userChatLimiter, confirmActionLimiter } = require('../../middleware/rateLimit');
 const { renderHtmlToPdf }      = require('../../pdf-renderer');
@@ -7758,107 +7759,11 @@ conteggio) — mai l'elenco riga per riga.`;
 // GET /chat/brief/export (Fase 3.3 "Ciclo del Risultato") senza duplicare la
 // stessa logica di calcolo in due punti.
 // ─────────────────────────────────────────────────────────────────────────────
+// F-242: la card "Buonasera" legge Da fare (lib/dailyBrief.js) invece di una
+// lista propria — stessa fonte della porta Da fare e della campanella.
 async function computeDailyBrief(companyId) {
-  const now  = new Date();
-  const today = new Date(); today.setHours(0,0,0,0);
-  const horizon14 = new Date(today); horizon14.setDate(today.getDate() + 14);
-  const horizon7  = new Date(today); horizon7.setDate(today.getDate() + 7);
-
   try {
-    const [
-      workersRes,
-      sitesRes,
-      economiaRes,
-      subcontractorsRes,
-      ncRes,
-    ] = await Promise.all([
-      supabase.from('workers').select('id, full_name, role, safety_training_expiry, health_fitness_expiry').eq('company_id', companyId).eq('is_active', true).limit(500),
-      supabase.from('sites').select('id, name, status, budget_totale, sal_percentuale').eq('company_id', companyId).neq('status', 'chiuso'),
-      supabase.from('site_economia_voci').select('site_id, tipo, importo').eq('company_id', companyId),
-      supabase.from('subcontractors').select('id, company_name, durc_expiry').eq('company_id', companyId).eq('is_active', true).limit(200),
-      supabase.from('site_notes').select('id, site_id, content, urgency, created_at').eq('company_id', companyId).is('resolved_at', null).eq('category', 'non_conformita').order('created_at', { ascending: false }).limit(50),
-    ]);
-
-    const alerts = [];
-
-    // ── Scadenze lavoratori (7 giorni) ────────────────────────────────────────
-    const workers = workersRes.data || [];
-    for (const w of workers) {
-      if (w.safety_training_expiry) {
-        const d = Math.ceil((new Date(w.safety_training_expiry) - today) / 86400000);
-        if (d <= 7)  alerts.push({ severity: d < 0 ? 'critical' : 'warning', category: 'scadenza', icon: 'certificate', title: `Formazione sicurezza — ${w.full_name}`, detail: d < 0 ? `Scaduta da ${Math.abs(d)} giorni` : `Scade tra ${d} giorn${d === 1 ? 'o' : 'i'}`, days: d });
-        else if (d <= 14) alerts.push({ severity: 'info', category: 'scadenza', icon: 'certificate', title: `Formazione sicurezza — ${w.full_name}`, detail: `Scade tra ${d} giorni`, days: d });
-      }
-      if (w.health_fitness_expiry) {
-        const d = Math.ceil((new Date(w.health_fitness_expiry) - today) / 86400000);
-        if (d <= 7)  alerts.push({ severity: d < 0 ? 'critical' : 'warning', category: 'scadenza', icon: 'medical', title: `Idoneità medica — ${w.full_name}`, detail: d < 0 ? `Scaduta da ${Math.abs(d)} giorni` : `Scade tra ${d} giorn${d === 1 ? 'o' : 'i'}`, days: d });
-        else if (d <= 14) alerts.push({ severity: 'info', category: 'scadenza', icon: 'medical', title: `Idoneità medica — ${w.full_name}`, detail: `Scade tra ${d} giorni`, days: d });
-      }
-    }
-
-    // ── Scadenze DURC subappaltatori ─────────────────────────────────────────
-    for (const s of (subcontractorsRes.data || [])) {
-      if (s.durc_expiry) {
-        const d = Math.ceil((new Date(s.durc_expiry) - today) / 86400000);
-        if (d <= 14) alerts.push({ severity: d < 0 ? 'critical' : d <= 7 ? 'warning' : 'info', category: 'scadenza', icon: 'company', title: `DURC — ${s.company_name}`, detail: d < 0 ? `Scaduto da ${Math.abs(d)} giorni` : `Scade tra ${d} giorni`, days: d });
-      }
-    }
-
-    // ── Anomalie budget (consumato > 85% con SAL < 70%) ──────────────────────
-    const sites = sitesRes.data || [];
-    const economia = economiaRes.data || [];
-    const costiPerSite = {};
-    for (const e of economia) {
-      if (e.tipo === 'costo') costiPerSite[e.site_id] = (costiPerSite[e.site_id] || 0) + Number(e.importo || 0);
-    }
-    for (const site of sites) {
-      if (!site.budget_totale || site.budget_totale <= 0) continue;
-      const speso = costiPerSite[site.id] || 0;
-      const budgetPct = Math.round((speso / site.budget_totale) * 100);
-      const sal = site.sal_percentuale || 0;
-      if (budgetPct >= 85 && sal < 70) {
-        alerts.push({ severity: 'critical', category: 'budget', icon: 'chart', title: `Budget critico — ${site.name}`, detail: `Speso ${budgetPct}% del budget, SAL al ${sal}%`, site_id: site.id, site_name: site.name });
-      } else if (budgetPct >= 70 && sal < 50) {
-        alerts.push({ severity: 'warning', category: 'budget', icon: 'chart', title: `Attenzione budget — ${site.name}`, detail: `Speso ${budgetPct}% del budget, SAL al ${sal}%`, site_id: site.id, site_name: site.name });
-      }
-    }
-
-    // ── NC critiche aperte da più di 7 giorni ────────────────────────────────
-    const ncs = ncRes.data || [];
-    const siteNameMap = Object.fromEntries(sites.map(s => [s.id, s.name]));
-    for (const nc of ncs) {
-      const age = Math.ceil((now - new Date(nc.created_at)) / 86400000);
-      if ((nc.urgency === 'critica' || nc.urgency === 'alta') && age >= 7) {
-        alerts.push({ severity: nc.urgency === 'critica' ? 'critical' : 'warning', category: 'nc', icon: 'alert', title: `NC aperta da ${age} giorni — ${siteNameMap[nc.site_id] || 'Cantiere'}`, detail: nc.content, site_id: nc.site_id, site_name: siteNameMap[nc.site_id] });
-      }
-    }
-
-    // ── KPI snapshot ─────────────────────────────────────────────────────────
-    const todayStr = today.toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
-    const { data: presenceToday } = await supabase.from('presence_logs').select('worker_id', { count: 'exact', head: false }).eq('company_id', companyId).eq('event_type', 'ENTRY').gte('timestamp_server', `${todayStr}T00:00:00`).lte('timestamp_server', `${todayStr}T23:59:59`);
-    const presentIds = new Set((presenceToday || []).map(p => p.worker_id));
-
-    const kpi = {
-      sites_active:  sites.length,
-      workers_total: workers.length,
-      present_today: presentIds.size,
-      open_nc:       ncs.length,
-    };
-
-    // Ordina: critical prima, poi warning, poi info; dentro ogni gruppo per days ASC
-    alerts.sort((a, b) => {
-      const sev = { critical: 0, warning: 1, info: 2 };
-      if (sev[a.severity] !== sev[b.severity]) return sev[a.severity] - sev[b.severity];
-      if (a.days != null && b.days != null) return a.days - b.days;
-      return 0;
-    });
-
-    return {
-      generated_at: new Date().toISOString(),
-      kpi,
-      alerts: alerts.slice(0, 12), // max 12 alert nel brief
-      sites_count: sites.length,
-    };
+    return await buildDailyBrief(companyId);
   } catch (e) {
     console.error('[brief]', e.message);
     throw new Error('BRIEF_ERROR');
