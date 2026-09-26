@@ -243,6 +243,9 @@ router.use('/', require('./ocrExpiry'));
 // Scadenzario unificato: lavoratori, subappaltatori, azienda, cantieri
 router.use('/', require('./expiryCalendar'));
 
+// Da fare: lista unica di scadenze, meteo da confermare, uscite automatiche e avvisi (F-236)
+router.use('/', require('./daFare'));
+
 // Diario di cantiere: voce giornaliera, meteo auto, presenze, PDF
 router.use('/', require('./diary'));
 
