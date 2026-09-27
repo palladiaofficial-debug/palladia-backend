@@ -68,7 +68,23 @@ async function getJwt() {
 // raccoglie una traccia strutturata dagli eventi SSE reali — mai il testo
 // grezzo soltanto, così il giudice vede anche cosa Ladia ha scritto davvero
 // (record_action) e non solo cosa dichiara di aver fatto.
-async function runScenario(jwt, companyId, comando) {
+// F-247: uno scenario può allegare un file vero ("allegato": percorso relativo
+// a questa cartella) — caricato con la stessa POST /chat/upload dell'app e
+// passato a /chat/stream come upload_ids, come fa il composer.
+async function uploadAttachment(jwt, companyId, relPath) {
+  const buf = fs.readFileSync(path.join(__dirname, relPath));
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: 'application/pdf' }), path.basename(relPath));
+  const res = await fetch(`${BASE}/api/v1/chat/upload`, {
+    method: 'POST', headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': companyId }, body: form,
+  });
+  const json = await res.json().catch(() => ({}));
+  const id = json.upload_id || json.id || json.upload?.id;
+  if (!res.ok || !id) throw new Error(`upload allegato fallito: HTTP ${res.status} ${JSON.stringify(json).slice(0, 200)}`);
+  return id;
+}
+
+async function runScenario(jwt, companyId, comando, uploadIds = []) {
   const res = await fetch(`${BASE}/api/v1/chat/stream`, {
     method: 'POST',
     headers: {
@@ -76,7 +92,7 @@ async function runScenario(jwt, companyId, comando) {
       'Authorization': `Bearer ${jwt}`,
       'X-Company-Id': companyId,
     },
-    body: JSON.stringify({ message: comando, context_type: 'azienda' }),
+    body: JSON.stringify({ message: comando, context_type: 'azienda', ...(uploadIds.length ? { upload_ids: uploadIds } : {}) }),
   });
   if (!res.ok || !res.body) {
     return { error: `HTTP ${res.status}`, text: '', toolStarts: [], toolSteps: [], recordActions: [], pendingActions: [], readFailed: [], recordActionFailed: [] };
@@ -204,7 +220,29 @@ async function noRealCompanyExpenseWrite(trace, companyId) {
   return { ok: true };
 }
 
+// F-247 (AUDIT.md): DURC di un subappaltatore allegato con "ecco il durc
+// aggiornato". Il giudice vede solo la traccia: qui si controlla il DB — il
+// documento deve stare nella cartella del subappaltatore (non tra quelli
+// dell'azienda) e la scadenza sulla sua scheda deve essere quella del file.
+const F247_SUB = 'Elettrica Rossi';
+async function f247Reset(companyId) {
+  await supabase.from('subcontractors').update({ durc_expiry: '2026-07-30' }).eq('company_id', companyId).eq('company_name', F247_SUB);
+  await supabase.from('company_feature_flags').upsert({ company_id: companyId, feature: 'subappaltatori', enabled: true }, { onConflict: 'company_id,feature' });
+}
+async function f247DurcArchivedOnSubcontractor(trace, companyId) {
+  const { data: sub } = await supabase.from('subcontractors').select('id, durc_expiry').eq('company_id', companyId).eq('company_name', F247_SUB).single();
+  const { data: docs } = await supabase.from('subcontractor_documents').select('id, category, valid_until').eq('company_id', companyId).eq('subcontractor_id', sub.id);
+  const { data: companyDurc } = await supabase.from('company_documents').select('id').eq('company_id', companyId).eq('category', 'durc');
+  if ((companyDurc || []).length) return { ok: false, note: 'DB: il DURC del subappaltatore è finito tra i documenti DELL\'AZIENDA (company_documents)' };
+  if (!(docs || []).some(d => d.category === 'durc' && d.valid_until === '2026-11-28')) return { ok: false, note: `DB: nessun DURC 28/11/2026 nella cartella di ${F247_SUB} (${JSON.stringify(docs)})` };
+  if (sub.durc_expiry !== '2026-11-28') return { ok: false, note: `DB: scadenza DURC sulla scheda ancora ${sub.durc_expiry}` };
+  if (/Confermo\?/i.test(trace.text)) return { ok: false, note: 'ha scritto ma ha anche chiesto "Confermo?"' };
+  return { ok: true };
+}
+const PRE_SETUP = { F247: f247Reset };
+
 const EXTRA_VERIFY = {
+  F247: f247DurcArchivedOnSubcontractor,
   U04: (trace) => {
     const wroteUndo = (trace.recordActions || []).some(r => r.resource === 'site_sal_history' && r.action === 'undo');
     if (wroteUndo) {
@@ -250,7 +288,9 @@ async function runOneAttempt(anthropic, jwt, scenario) {
   let trace, verdictInfo;
   try {
     const fixtures = await resetFixtures(scenario.id);
-    trace = await runScenario(jwt, fixtures.companyId, scenario.comando);
+    await PRE_SETUP[scenario.id]?.(fixtures.companyId);
+    const uploadIds = scenario.allegato ? [await uploadAttachment(jwt, fixtures.companyId, scenario.allegato)] : [];
+    trace = await runScenario(jwt, fixtures.companyId, scenario.comando, uploadIds);
     verdictInfo = await judge(anthropic, scenario, trace);
     if (verdictInfo.usage) {
       await logUsage({

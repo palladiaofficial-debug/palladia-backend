@@ -18,6 +18,14 @@ const { matchSite, matchEquipment } = require('../lib/entityMatch');
 const { sanitizeCategory } = require('../lib/documentCategory');
 const { syncWorkerExpiry } = require('../lib/workerDocSync');
 const { syncToFormazione } = require('./documentAI');
+const { isFeatureEnabled } = require('../lib/featureFlags');
+
+// F-247 (AUDIT.md): documenti di un subappaltatore — stesse categorie del
+// caricamento manuale (routes/v1/subcontractors.js) e campo della scheda che
+// ognuna aggiorna.
+const SUB_DOC_CATS = ['durc', 'insurance', 'soa', 'visura', 'iso', 'f24', 'altro'];
+const SUB_CAT_ALIASES = { assicurazione: 'insurance', polizza: 'insurance', rc: 'insurance', visura_camerale: 'visura' };
+const SUB_EXPIRY_FIELD = { durc: 'durc_expiry', insurance: 'insurance_expiry', soa: 'soa_expiry' };
 
 const BUCKET = 'site-documents';
 const EQUIPMENT_BUCKET = 'equipment-docs';
@@ -120,6 +128,8 @@ async function archiveChatUpload({
   siteHint = null,
   equipmentHint = null,
   workerName = null,
+  subcontractorId = null,
+  subcontractorName = null,
   req = null,
   conversationId = null,
 }) {
@@ -132,7 +142,7 @@ async function archiveChatUpload({
   if (!upload)         return { error: 'File non trovato o accesso negato.' };
   if (upload.archived) return { error: 'Questo file è già stato archiviato.' };
 
-  const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents'];
+  const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents', 'subcontractor_documents'];
   if (!validDests.includes(destination)) return { error: 'destination non valida: ' + destination };
   if (destination === 'site_documents' && !siteId)
     return { error: 'site_id obbligatorio per site_documents.' };
@@ -187,6 +197,38 @@ async function archiveChatUpload({
     if (!resolvedEquipmentId) return { error: 'Mezzo non trovato — indica equipment_id o una targa/nome che corrisponda a un mezzo in Risorse.' };
   }
 
+  // subcontractor_documents (F-247): il subappaltatore è la destinazione
+  // primaria, come il mezzo sopra. Nome risolto con lo stesso criterio di
+  // worker_name (F-181): mai una scelta silenziosa tra più imprese.
+  let resolvedSubId = null;
+  let subCategory = null;
+  if (destination === 'subcontractor_documents') {
+    if (!await isFeatureEnabled(companyId, 'subappaltatori')) {
+      return { error: 'Il modulo Subappaltatori non è attivo per questa azienda: non posso archiviare documenti di subappaltatori.' };
+    }
+    if (subcontractorId) {
+      const { data: subRow } = await supabase.from('subcontractors').select('id').eq('id', subcontractorId).eq('company_id', companyId).maybeSingle();
+      resolvedSubId = subRow?.id || null;
+      if (!resolvedSubId) return { error: 'Subappaltatore non trovato in questa azienda.' };
+    } else if (subcontractorName) {
+      const { data: found, error: findErr } = await supabase.from('subcontractors')
+        .select('id, company_name').eq('company_id', companyId).ilike('company_name', `%${subcontractorName}%`).limit(5);
+      if (findErr) return { error: findErr.message };
+      if (!found?.length) return { error: `Nessun subappaltatore trovato per "${subcontractorName}".` };
+      if (found.length > 1) {
+        return {
+          error: 'NOME_AMBIGUO',
+          message: `Più subappaltatori corrispondono a "${subcontractorName}": ${found.map(x => x.company_name).join(', ')}. Chiedi all'utente quale intende.`,
+        };
+      }
+      resolvedSubId = found[0].id;
+    } else {
+      return { error: 'subcontractor_id o subcontractor_name obbligatorio per subcontractor_documents.' };
+    }
+    const raw = String(category || 'altro').toLowerCase();
+    subCategory = SUB_CAT_ALIASES[raw] || (SUB_DOC_CATS.includes(raw) ? raw : 'altro');
+  }
+
   // Cartelle Intelligenti (vedi AUDIT.md): oltre alla destinazione primaria,
   // un documento può avere un cantiere "extra" — un attestato di un lavoratore
   // che vive anche nel fascicolo del cantiere dove lavora, un DURC aziendale
@@ -215,6 +257,8 @@ async function archiveChatUpload({
     destination === 'worker_documents'  ? `${companyId}/${workerId}/${newId}-${safeFn}` :
     destination === 'worker_certificates' ? `${companyId}/${workerId}/certs/${newId}-${safeFn}` :
     destination === 'equipment_documents' ? `${companyId}/${resolvedEquipmentId}/${newId}-${safeFn}` :
+    // stesso percorso del caricamento manuale (routes/v1/subcontractors.js)
+    destination === 'subcontractor_documents' ? `${companyId}/subcontractors/${resolvedSubId}/${newId}-${safeFn}` :
     /* payslips — stesso percorso deterministico usato dall'upload manuale
        (routes/v1/payslips.js), necessario per l'upsert su company_id+worker_id+
        period_year+period_month: un secondo import per lo stesso periodo deve
@@ -342,6 +386,15 @@ async function archiveChatUpload({
       uploaded_by: userId,
     }).select('id').single();
     docId = d?.id; insertErr = e;
+
+  } else if (destination === 'subcontractor_documents') {
+    const { data: d, error: e } = await supabase.from('subcontractor_documents').insert({
+      company_id: companyId, subcontractor_id: resolvedSubId,
+      name: String(name).slice(0, 500), category: subCategory,
+      file_path: permanentPath, file_size: upload.size_bytes, mime_type: upload.mime_type,
+      valid_until: expiryDate || null, uploaded_by: userId || null,
+    }).select('id').single();
+    docId = d?.id; insertErr = e;
   }
 
   if (insertErr) {
@@ -389,6 +442,20 @@ async function archiveChatUpload({
     await syncWorkerExpiry(category || 'altro', workerId, companyId).catch(() => {});
   }
 
+  // F-247: la scadenza che conta per la conformità del subappaltatore (e per
+  // Da fare) è quella sulla scheda — portata avanti se il documento nuovo è
+  // più recente, mai abbassata da un documento più vecchio.
+  let subExpiryUpdated = null;
+  if (destination === 'subcontractor_documents' && expiryDate && SUB_EXPIRY_FIELD[subCategory]) {
+    const field = SUB_EXPIRY_FIELD[subCategory];
+    const { data: sub } = await supabase.from('subcontractors').select(`id, ${field}`).eq('id', resolvedSubId).eq('company_id', companyId).maybeSingle();
+    const prev = sub?.[field] ? String(sub[field]).slice(0, 10) : null;
+    if (sub && (!prev || prev < expiryDate)) {
+      const { error: uErr } = await supabase.from('subcontractors').update({ [field]: expiryDate }).eq('id', resolvedSubId).eq('company_id', companyId);
+      if (!uErr) subExpiryUpdated = { field, prima: prev, dopo: expiryDate };
+    }
+  }
+
   // Cartelle Intelligenti: worker_certificates ha già scritto site_id sopra —
   // per le altre destinazioni senza colonna site propria (worker_documents,
   // payslips, company_documents) il cantiere extra va in document_extra_homes,
@@ -419,14 +486,15 @@ async function archiveChatUpload({
     companyId, userId, req, conversationId,
     resourceName: destination, action: 'create',
     recordId: docId,
-    record: { name, category: category || 'altro', site_id: siteId || null, worker_id: workerId || null, equipment_id: resolvedEquipmentId || null, expiry_date: expiryDate || null },
+    record: { name, category: subCategory || category || 'altro', site_id: siteId || null, worker_id: workerId || null, equipment_id: resolvedEquipmentId || null, subcontractor_id: resolvedSubId, expiry_date: expiryDate || null },
     auditActionOverride: `record.create:${destination}`,
   });
 
   return {
     success: true, doc_id: docId, destination, name,
     expiry_date: expiryDate || null,
-    messaggio: `Documento "${name}" archiviato in ${destination}${expiryDate ? ` — scadenza ${expiryDate}` : ''}.`,
+    ...(subExpiryUpdated ? { scheda_subappaltatore_aggiornata: subExpiryUpdated } : {}),
+    messaggio: `Documento "${name}" archiviato in ${destination}${expiryDate ? ` — scadenza ${expiryDate}` : ''}${subExpiryUpdated ? ' — scadenza aggiornata anche sulla scheda del subappaltatore' : ''}.`,
     ...logResult,
   };
 }

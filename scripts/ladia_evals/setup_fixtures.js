@@ -58,6 +58,8 @@ async function wipeMutableStoryState(companyId) {
     'site_computo_voci', 'site_computo', 'site_sal_history',
     'site_subcontractors', 'site_suspension_days', 'payslips',
     'worker_certificates', 'company_documents',
+    // F-247: documenti archiviati da Ladia sui subappaltatori di prova
+    'subcontractor_documents',
     // Mancava (trovato costruendo il dbVerify di W12/AUDIT.md, seguito F-129):
     // una create_expense davvero eseguita da un run precedente (bug o corsa)
     // restava qui per sempre, rendendo un controllo "questa tabella deve

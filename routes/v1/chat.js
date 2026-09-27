@@ -597,7 +597,12 @@ Quando il contesto include [FILE ALLEGATI DALL'UTENTE]:
 - Per idoneità mediche, patenti, formazione: destination="worker_documents" o "worker_certificates" — se
   read_uploaded_document ha già estratto il nome del lavoratore dal documento, passa worker_name direttamente
   invece di cercarlo prima con get_workers
-- Per DURC, ISO, SOA, assicurazione, visura: destination="company_documents"
+- Per DURC, ISO, SOA, assicurazione, visura DELLA TUA AZIENDA: destination="company_documents"
+- Per DURC, assicurazione, SOA, visura, F24 di un SUBAPPALTATORE (intestati a un'impresa diversa dalla tua —
+  confronta ragione sociale/P.IVA/CF del documento con l'azienda): destination="subcontractor_documents" con
+  subcontractor_name (ragione sociale letta dal documento) o subcontractor_id, category tra durc/insurance/soa/
+  visura/iso/f24/altro. MAI company_documents per questi: farebbe passare il DURC dell'impresa esterna per il tuo.
+  Con expiry_date, la scadenza sulla scheda del subappaltatore si aggiorna da sola (solo se più recente).
 - Per POS, PSC, DVR, documenti legati a un cantiere: destination="site_documents"
 - Per libretto di circolazione, assicurazione o revisione di un mezzo/veicolo: destination="equipment_documents",
   con equipment_hint = targa (vehicle_plate) o marca/modello (vehicle_hint) da read_uploaded_document — MAI
@@ -1081,16 +1086,18 @@ CONTINUITÀ DI CONTESTO
   esiste per evitare (bug audit F-022, riaperto 2026-08-03 dopo verifica automatica).
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-AZIONI DI SCRITTURA — REGOLA FERREA
+AZIONI DI SCRITTURA — QUANDO CHIEDERE CONFERMA (regola unica: vale per tutto questo prompt)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Prima di chiamare QUALSIASI tool di scrittura (create_*, update_*, assign_*):
-1. Presenta un RIEPILOGO STRUTTURATO dei dati che stai per salvare:
-   **Azione**: [cosa stai per fare]
-   **Dati**: [elenco puntato dei campi con i valori]
-   **Cantiere**: [nome, se applicabile]
-2. Chiedi: "Confermo?"
-3. Solo dopo la conferma esplicita dell'utente, chiama il tool.
-ECCEZIONE: Se l'utente dice esplicitamente "registra", "segna", "fai" con tutti i dati già chiari e non ambigui, puoi procedere direttamente senza chiedere conferma.
+Di norma NON chiedi conferma: esegui e poi dici in breve cosa hai fatto (l'interfaccia mostra la card con "Annulla").
+Chiedi conferma SOLO se:
+1. un dato è ambiguo o manca (più lavoratori/cantieri/imprese con quel nome, data illeggibile, destinazione non deducibile);
+2. l'azione cancella qualcosa o non si può annullare;
+3. il dato è sensibile e passa da propose_action (lì la conferma è la card, bloccata lato server);
+4. l'utente ha allegato un file SENZA dire nulla su cosa farne (chiede solo cosa contiene).
+FILE ALLEGATO + intenzione di salvarlo o aggiornare = istruzione GIÀ DATA. Esempi: "ecco il DURC aggiornato",
+"questo è il nuovo attestato di Mario", "aggiorna", "archivia", "caricalo", oppure il file arriva in risposta a una
+tua domanda su un rinnovo. In questi casi chiama read_uploaded_document e poi archive_document nello STESSO turno,
+senza "Confermo?", e poi riferisci cosa hai archiviato, dove e con quale scadenza.
 
 REGOLA FERREA sull'ESITO — quando la risposta del tool include compliance_after (create_record/
 update_record/propose_action sulla tabella 'workers', o il risultato di confirm-action per la stessa):
@@ -1281,7 +1288,8 @@ VERBALE / ORDINE / LETTERA / CERTIFICATO / PLANIMETRIA / FOTO CANTIERE:
 REGOLE IMMAGINI:
 1. Analizza PRIMA, chiedi DOPO — non dire "non riesco a vedere" prima di guardare
 2. Estrai TUTTI i campi leggibili. Se un campo è illeggibile, scrivi "illeggibile"
-3. Prima di salvare mostra sempre il riepilogo strutturato e chiedi conferma
+3. Se l'utente ha già detto cosa farne ("registra", "archivia", "ecco il … aggiornato") salva subito; altrimenti
+   mostra il riepilogo e chiedi — stessa regola di "QUANDO CHIEDERE CONFERMA"
 4. Se l'utente dice "registra" o "sì" o "ok" dopo il riepilogo, salva direttamente
 5. Dopo la registrazione: "✓ [Tipo] da [fornitore] del [data] registrato in [cantiere]"
 6. Per le foto di cantiere: descrivi lo stato lavori, segnala problemi visibili, suggerisci azioni`) + frozenModulesPromptNote();
@@ -1914,7 +1922,7 @@ const TOOLS = [
 - table:'site_bookings' — prenotazione/consegna/appuntamento. payload: {site_id, title, booking_date (tutti obbligatori), booking_time, category (consegna|visita|collaudo|sopralluogo|fornitura|altro, default consegna), supplier, notes}.
 - table:'site_suspension_days' — giorno di sospensione lavori (crea o sovrascrive se la data esiste già). payload: {site_id, day (entrambi obbligatori), reason (pioggia|vento|neve|altro, default altro), notes}.
 - table:'pos_drafts' — bozza POS (Piano Operativo di Sicurezza) in costruzione per un cantiere, compilata sezione per sezione mentre parli con l'utente. Chiama SEMPRE get_pos_draft PRIMA: crea solo se non esiste già una bozza per quel cantiere (altrimenti usa update_record). payload: {site_id (obbligatorio), site_address, client_name, cf_committente, tipo_appalto, work_type, budget, start_date, end_date, company_name, company_vat, responsabile_lavori, csp, cse, cse_tel, cse_email, cse_cf, rspp, rspp_tel, rspp_email, rspp_cf, rls, rls_tel, medico, medico_tel, primo_soccorso, primo_soccorso_tel, antincendio, antincendio_tel, direttore_tecnico, preposto, ore_lavorative, inizio_turno, pausa_pranzo, turno_notturno, workers (array di {name, qualification, matricola}), subappaltatori (array di {ragioneSociale, partitaIva, rappresentanteLegale, email}), fasi (array di {titolo, durata, lavoratori, lavorazioni}), rischi_specifici / opere_provvisionali / impianti_cantiere / selected_works (array di stringhe), note_aggiuntive}. Passa SOLO i campi che conosci davvero, mai inventare. ECCEZIONE alla regola "conferma sempre" sotto: per pos_drafts NON chiedere conferma — è una bozza di lavoro sempre annullabile, scrivi SUBITO appena emerge un dato utile, non aspettare la fine della conversazione.
-IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente (eccetto pos_drafts, vedi sopra). Se la risorsa richiesta non è tra queste, il tool ritorna un errore con l'elenco dei tool bespoke da usare invece.`,
+Conferma prima solo nei casi della regola "QUANDO CHIEDERE CONFERMA" del prompt (dato ambiguo o mancante); altrimenti esegui subito. Se la risorsa richiesta non è tra queste, il tool ritorna un errore con l'elenco dei tool bespoke da usare invece.`,
     input_schema: {
       type: 'object',
       properties: {
@@ -1929,7 +1937,7 @@ IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione espl
     description: `Aggiorna un record esistente su una risorsa generica del dominio cantiere. Risorse disponibili:
 - table:'sites' — payload: {name, address, status (attivo|sospeso|ultimato|chiuso), start_date, end_date, budget_totale, sal_percentuale} — solo i campi da cambiare.
 - table:'pos_drafts' — aggiorna la bozza POS esistente per un cantiere (usa l'id restituito da get_pos_draft, non indovinarlo). payload: solo i campi nuovi/cambiati, stesso elenco descritto in create_record. Stessa eccezione: nessuna conferma richiesta, scrivi subito appena emerge un dato nuovo o corretto.
-IMPORTANTE: conferma SEMPRE i dati prima con un riepilogo, salvo istruzione esplicita dell'utente o dato che emerge chiaramente dalla conversazione (es. "il contratto finisce il 15 settembre") — eccetto pos_drafts, vedi sopra.`,
+Conferma prima solo nei casi della regola "QUANDO CHIEDERE CONFERMA" del prompt (dato ambiguo o mancante); altrimenti esegui subito — anche per un dato che emerge chiaramente dalla conversazione (es. "il contratto finisce il 15 settembre").`,
     input_schema: {
       type: 'object',
       properties: {
@@ -2261,7 +2269,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'create_subcontractor',
-    description: 'Aggiungi un nuovo subappaltatore. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiungi subappaltatore", "nuovo sub", "inserisci ditta in subappalto".',
+    description: 'Aggiungi un nuovo subappaltatore. Chiedi conferma solo se mancano dati o sono ambigui. Usa per: "aggiungi subappaltatore", "nuovo sub", "inserisci ditta in subappalto".',
     input_schema: {
       type: 'object',
       properties: {
@@ -2290,7 +2298,7 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
   },
   {
     name: 'create_equipment',
-    description: 'Aggiungi un mezzo/attrezzatura all\'inventario. IMPORTANTE: conferma SEMPRE prima. Usa per: "aggiungi escavatore", "nuovo mezzo", "inserisci gru".',
+    description: 'Aggiungi un mezzo/attrezzatura all\'inventario. Chiedi conferma solo se mancano dati o sono ambigui. Usa per: "aggiungi escavatore", "nuovo mezzo", "inserisci gru".',
     input_schema: {
       type: 'object',
       properties: {
@@ -2559,7 +2567,9 @@ CRITICO — non dichiarare MAI "fatto"/"annullato" prima di aver chiamato questo
       type: 'object',
       properties: {
         upload_id:      { type: 'string', description: 'UUID del file da archiviare' },
-        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents'], description: 'Tabella di destinazione — "payslips" per una singola busta paga/cedolino stipendio di UN lavoratore (mai worker_documents per queste); "equipment_documents" per libretto/assicurazione/revisione di un mezzo, mai company_documents' },
+        destination:    { type: 'string', enum: ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents', 'subcontractor_documents'], description: 'Tabella di destinazione — "payslips" per una singola busta paga/cedolino stipendio di UN lavoratore (mai worker_documents per queste); "equipment_documents" per libretto/assicurazione/revisione di un mezzo, mai company_documents; "subcontractor_documents" per DURC/assicurazione/SOA/visura di un\'impresa SUBAPPALTATRICE, mai company_documents' },
+        subcontractor_id:   { type: 'string', description: 'UUID subappaltatore (per subcontractor_documents, se già noto)' },
+        subcontractor_name: { type: 'string', description: 'Ragione sociale (anche parziale) del subappaltatore, letta dal documento — alternativa a subcontractor_id, risolta lato server; se ambigua l\'archiviazione fallisce e chiede di disambiguare' },
         name:           { type: 'string', description: 'Nome visualizzato del documento (max 80 car)' },
         site_id:        { type: 'string', description: 'UUID cantiere (obbligatorio per site_documents)' },
         worker_id:      { type: 'string', description: 'UUID lavoratore (obbligatorio per worker_documents, worker_certificates e payslips, salvo worker_name)' },
@@ -5657,6 +5667,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           upload_id, destination, name,
           site_id, worker_id, worker_name, cantiere_hint,
           equipment_id, equipment_hint,
+          subcontractor_id, subcontractor_name,
           category, expiry_date, issue_date, issuing_body, course_type_id,
           period_year, period_month,
         } = toolInput;
@@ -5673,6 +5684,7 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
           workerName: worker_name,
           siteHint: cantiere_hint,
           equipmentId: equipment_id, equipmentHint: equipment_hint,
+          subcontractorId: subcontractor_id, subcontractorName: subcontractor_name,
           category, expiryDate: expiry_date, issueDate: issue_date,
           issuingBody: issuing_body, courseTypeId: course_type_id,
           periodYear: period_year, periodMonth: period_month,
@@ -8166,3 +8178,4 @@ module.exports.buildContractHtml    = buildContractHtml;
 // passare dall'API Anthropic — utile sia per script di verifica sia per
 // eventuali test automatici futuri sul comportamento reale dei tool.
 module.exports.executeTool          = executeTool;
+module.exports.SYSTEM_PROMPT        = SYSTEM_PROMPT; // F-247: letto da selftest_prompt_confirmation_rules
