@@ -61,14 +61,23 @@ check('array vuoto → ritorna invariato', JSON.stringify(withCacheBreakpoint([]
   check('messaggi precedenti (non l\'ultimo) restano intoccati', out[0].content === 'primo turno' && !Array.isArray(out[1].content[0].cache_control), out);
 }
 
-// ttl esplicito richiesto dal beta header extended-cache-ttl (coerente con
-// buildCachedSystem/TOOLS_CACHED — un TTL diverso qui romperebbe il pattern
-// "stesso prefisso, stesso TTL" su cui si basa il riuso della cache.
+// Stesso TTL di system/tools (F-248: 5 minuti salvo LADIA_CACHE_TTL=1h) — un
+// TTL diverso qui romperebbe il pattern "stesso prefisso, stesso TTL" su cui
+// si basa il riuso della cache (e l'API vuole i TTL lunghi prima dei corti).
 {
+  const chat = require('../routes/v1/chat');
   const msgs = [{ role: 'user', content: 'x' }];
   const out = withCacheBreakpoint(msgs);
   const block = out[0].content[0];
-  check('usa ttl 1h come system/tools', block.cache_control?.ttl === '1h', block.cache_control);
+  const toolsCc = chat.TOOLS_CACHED.at(-1).cache_control;
+  const systemCc = chat.buildCachedSystem(chat.SYSTEM_PROMPT + ' x')[0].cache_control;
+  check('stesso TTL di system e tools', JSON.stringify(block.cache_control) === JSON.stringify(toolsCc) && JSON.stringify(toolsCc) === JSON.stringify(systemCc), { block: block.cache_control, toolsCc, systemCc });
+  const { LADIA_CACHE_TTL } = require('../lib/ladiaCache');
+  check(`TTL configurato (${LADIA_CACHE_TTL}) applicato`, LADIA_CACHE_TTL === '1h' ? toolsCc.ttl === '1h' : toolsCc.ttl === undefined, toolsCc);
+  const { estimateCostUsd } = require('../lib/ladiaUsageLog');
+  const c5 = estimateCostUsd('claude-sonnet-4-6', { cache_creation_input_tokens: 1_000_000, cache_creation: { ephemeral_5m_input_tokens: 1_000_000, ephemeral_1h_input_tokens: 0 } });
+  const c1 = estimateCostUsd('claude-sonnet-4-6', { cache_creation_input_tokens: 1_000_000, cache_creation: { ephemeral_5m_input_tokens: 0, ephemeral_1h_input_tokens: 1_000_000 } });
+  check('costo scrittura cache: 5m = 1,25x, 1h = 2x del prezzo base', Math.abs(c5 - 3.75) < 1e-9 && Math.abs(c1 - 6) < 1e-9, { c5, c1 });
 }
 
 console.log(`\n${passed} passati, ${failed} falliti\n`);

@@ -13,6 +13,9 @@
  */
 'use strict';
 require('dotenv').config();
+// Stessa configurazione di produzione (Railway): modulo subappaltatori acceso
+// da F-244. Va impostato prima di caricare chat.js, che legge i flag all'avvio.
+process.env.FEATURE_SUBAPPALTATORI_DEFAULT = 'true';
 const chat = require('../routes/v1/chat');
 
 let passed = 0, failed = 0;
@@ -28,7 +31,8 @@ check('niente "prima di QUALSIASI tool di scrittura … Confermo?"', !/Prima di 
 check('niente "prima di salvare mostra sempre il riepilogo e chiedi conferma"', !/Prima di salvare mostra sempre il riepilogo/.test(P));
 check('regola unica presente', /QUANDO CHIEDERE CONFERMA \(regola unica/.test(P));
 check('file allegato + "ecco il … aggiornato" = istruzione già data', /FILE ALLEGATO \+ intenzione di salvarlo o aggiornare = istruzione GIÀ DATA/.test(P) && /ecco il DURC aggiornato/.test(P));
-check('documenti di un subappaltatore → subcontractor_documents, mai company_documents', /destination="subcontractor_documents"/.test(P));
+check('documenti di un subappaltatore → subcontractor_documents', /subcontractor_documents: DURC, assicurazione, SOA/.test(P));
+check('documento di un\'altra impresa mai in company_documents (regola fuori dal blocco del modulo)', /Un documento intestato a un'altra impresa non va MAI qui/.test(P));
 
 const tools = chat.TOOLS_CACHED || [];
 check('schema dei tool letto', tools.length > 20, tools.length);

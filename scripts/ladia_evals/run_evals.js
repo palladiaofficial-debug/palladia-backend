@@ -48,20 +48,40 @@ const SKIP = {
   M04: 'richiede un upload_id di un file davvero caricato via /chat/upload — non simulato in questo harness v1',
   M07: 'richiede un documento davvero allegato in chat (upload) — non simulato in questo harness v1',
   F04: 'richiede un secondo utente di test con ruolo "tech" (non admin) — non ancora nell\'identità di questo harness',
+  W12: 'presuppone create_expense: modulo economia congelato dal 24/09 (F-229) — Ladia ora dice onestamente che non è attivo',
+  F242: 'vale solo con il modulo subappaltatori congelato: riacceso il 26/09 (F-244), ora la stessa richiesta è coperta da F247',
   F05: 'richiede un account Studio CDL di test distinto — non ancora nell\'identità di questo harness',
 };
+
+// Scenari scritti per moduli congelati dal titolare il 24/09 (F-229: economia,
+// SAL, varianti, prezzi, spese; contratto di subappalto): Ladia oggi risponde,
+// correttamente, che la funzione non è attiva, e il giudice li segna FAIL.
+// Verificato il 27/09 (F-248) leggendo ogni traccia: nessuno è un difetto di
+// Ladia. Tornano attivi togliendoli da qui quando il modulo si riaccende.
+const FROZEN_MODULE_SCENARIOS = ['W02', 'W05', 'W08', 'W11', 'A01', 'A05', 'A08', 'M01', 'M02', 'M09', 'D01', 'D04', 'D06', 'D09', 'D10',
+  // funzioni ELIMINATE da F-229: punteggio di rischio, costi di cantiere, fasi, SAL, non conformità
+  'R03', 'R06', 'W03', 'W04', 'W07'];
+for (const id of FROZEN_MODULE_SCENARIOS) {
+  SKIP[id] = SKIP[id] || 'presuppone una funzione eliminata o un modulo congelato dal 24/09 (F-229: economia/SAL/varianti/contratto di subappalto, rischio, fasi, non conformità): Ladia risponde correttamente che non è attiva';
+}
 
 function loadJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
 
 async function getJwt() {
-  const password = process.env.TEST_CI_PASSWORD;
-  if (!password) throw new Error('TEST_CI_PASSWORD mancante (su Railway: railway variables)');
+  const password = process.env.TEST_CI_PASSWORD || '';
   const anon = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY, {
     auth: { autoRefreshToken: false, persistSession: false },
   });
   const { data, error } = await anon.auth.signInWithPassword({ email: CI_EMAIL, password });
-  if (error) throw new Error('Login CI fallito: ' + error.message);
-  return data.session.access_token;
+  if (!error) return data.session.access_token;
+  // Password CI non più allineata (2026-09-27): sessione dello stesso utente via
+  // magic link generato lato admin + verifyOtp, come gli altri selftest.
+  const { data: link, error: linkErr } = await supabase.auth.admin.generateLink({ type: 'magiclink', email: CI_EMAIL });
+  if (linkErr) throw new Error('Login CI fallito: ' + error.message + ' / ' + linkErr.message);
+  const tokenHash = new URL(link.properties.action_link).searchParams.get('token');
+  const { data: v, error: vErr } = await anon.auth.verifyOtp({ token_hash: tokenHash, type: 'email' });
+  if (vErr) throw new Error('Login CI fallito: ' + vErr.message);
+  return v.session.access_token;
 }
 
 // Esegue un messaggio contro /chat/stream in una conversazione FRESCA e
@@ -225,15 +245,22 @@ async function noRealCompanyExpenseWrite(trace, companyId) {
 // documento deve stare nella cartella del subappaltatore (non tra quelli
 // dell'azienda) e la scadenza sulla sua scheda deve essere quella del file.
 const F247_SUB = 'Elettrica Rossi';
+// id dei DURC aziendali già presenti PRIMA del run (le fixture ne creano uno):
+// confronto per id, non per orario — l'orologio locale può essere indietro
+// rispetto al DB e far sembrare "nuovo" un documento delle fixture.
+let f247CompanyDurcBefore = new Set();
 async function f247Reset(companyId) {
+  const { data: pre } = await supabase.from('company_documents').select('id').eq('company_id', companyId).eq('category', 'durc');
+  f247CompanyDurcBefore = new Set((pre || []).map(r => r.id));
   await supabase.from('subcontractors').update({ durc_expiry: '2026-07-30' }).eq('company_id', companyId).eq('company_name', F247_SUB);
   await supabase.from('company_feature_flags').upsert({ company_id: companyId, feature: 'subappaltatori', enabled: true }, { onConflict: 'company_id,feature' });
 }
 async function f247DurcArchivedOnSubcontractor(trace, companyId) {
   const { data: sub } = await supabase.from('subcontractors').select('id, durc_expiry').eq('company_id', companyId).eq('company_name', F247_SUB).single();
   const { data: docs } = await supabase.from('subcontractor_documents').select('id, category, valid_until').eq('company_id', companyId).eq('subcontractor_id', sub.id);
-  const { data: companyDurc } = await supabase.from('company_documents').select('id').eq('company_id', companyId).eq('category', 'durc');
-  if ((companyDurc || []).length) return { ok: false, note: 'DB: il DURC del subappaltatore è finito tra i documenti DELL\'AZIENDA (company_documents)' };
+  const { data: allDurc } = await supabase.from('company_documents').select('id').eq('company_id', companyId).eq('category', 'durc');
+  const companyDurc = (allDurc || []).filter(r => !f247CompanyDurcBefore.has(r.id));
+  if (companyDurc.length) return { ok: false, note: 'DB: il DURC del subappaltatore è finito tra i documenti DELL\'AZIENDA (company_documents)' };
   if (!(docs || []).some(d => d.category === 'durc' && d.valid_until === '2026-11-28')) return { ok: false, note: `DB: nessun DURC 28/11/2026 nella cartella di ${F247_SUB} (${JSON.stringify(docs)})` };
   if (sub.durc_expiry !== '2026-11-28') return { ok: false, note: `DB: scadenza DURC sulla scheda ancora ${sub.durc_expiry}` };
   if (/Confermo\?/i.test(trace.text)) return { ok: false, note: 'ha scritto ma ha anche chiesto "Confermo?"' };
