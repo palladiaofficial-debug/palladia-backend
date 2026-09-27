@@ -122,19 +122,18 @@ async function main() {
   else fail('buildResultCard su company_documents riverifica lo stato reale (ok, scadenza 2099)', card);
   await supabase.from('company_documents').delete().eq('id', doc.id);
 
-  // 6. resolve_nonconformity — verifica che passi per executeWrite (gate low,
-  // esegue subito) e che il verdetto rischio_dopo/resultCard restino coerenti.
-  const { data: nc } = await supabase.from('site_notes').insert({
-    company_id: COMPANY_ID, site_id: siteId, author_id: USER_ID, author_name: 'Ladia AI', source: 'web',
-    content: 'TEST-E2E-write-executor NC', category: 'non_conformita', urgency: 'normale',
-  }).select('id').single();
-  const r6 = await executeTool('resolve_nonconformity', { nc_id: nc.id, resolution_notes: 'Risolta per test' }, COMPANY_ID, USER_ID, null, null);
-  if (r6.success && r6.rischio_dopo !== undefined && r6.resultCard?.fatto?.verdict?.kind === 'risk_score') {
-    ok('resolve_nonconformity esegue subito (low sensitivity) e produce un verdetto risk_score');
+  // 6. resolve_nonconformity — F-229 ha eliminato le non conformità e il
+  // punteggio di rischio: il tool non è più nello schema di Ladia (il modello
+  // non può chiamarlo). Prima questo caso chiamava il gestore direttamente e si
+  // aspettava un verdetto risk_score; fallito da F-229 ma mai visto, perché
+  // senza E2E_USER_ID l'intero selftest veniva saltato (F-245, AUDIT.md).
+  const { ELIMINATED_TOOLS, filterFrozenTools } = require('../lib/ladiaFrozenTools');
+  const stillOffered = filterFrozenTools([{ name: 'resolve_nonconformity' }]).length > 0;
+  if (ELIMINATED_TOOLS.has('resolve_nonconformity') && !stillOffered) {
+    ok('resolve_nonconformity è eliminato (F-229): non è nello schema dei tool di Ladia');
   } else {
-    fail('resolve_nonconformity esegue subito (low sensitivity) e produce un verdetto risk_score', r6);
+    fail('resolve_nonconformity è eliminato (F-229): non è nello schema dei tool di Ladia', { stillOffered });
   }
-  await supabase.from('site_notes').delete().eq('id', nc.id);
 
   // Cleanup
   if (r1.data?.id) await supabase.from('site_notes').delete().eq('id', r1.data.id);
