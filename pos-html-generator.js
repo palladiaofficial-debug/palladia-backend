@@ -1082,7 +1082,7 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
 del D.lgs 81/2008 e s.m.i., viene sottoscritto dalle figure responsabili dell'impresa esecutrice
 per attestazione di redazione, presa visione e accettazione delle disposizioni contenute.</p>
 <div class="signature-grid">
-  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', v(d.companyName))}
+  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', d.datoreLavoro ? esc(d.datoreLavoro) : v(d.companyName))}
   ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', v(d.rspp))}
   ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', v(d.rls))}
   ${buildSigBox('Medico Competente', v(d.medico))}
@@ -1108,6 +1108,7 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
     ${d.cfCommittente ? `<tr><td>Codice Fiscale Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
     <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
     <tr><td>Natura dei lavori</td><td>${v(d.workType)}</td></tr>
+    ${d.presentedBy === 'subappaltatore' ? `<tr><td>Posizione dell'impresa</td><td>Impresa subappaltatrice</td></tr><tr><td>Impresa affidataria</td><td>${v(d.affidatariaName)}</td></tr>` : ''}
     <tr><td>Revisione</td><td>${rev}</td></tr>
     <tr><td>Data di emissione</td><td>${oggi}</td></tr>
   </tbody>
@@ -1175,7 +1176,7 @@ ${(d.fasi && d.fasi.length > 0)
 <table class="no-break">
   <thead><tr><th style="width:50%">Ruolo</th><th>Nominativo</th></tr></thead>
   <tbody>
-    <tr><td>Datore di Lavoro</td><td>${v(d.companyName)}</td></tr>
+    <tr><td>Datore di Lavoro</td><td>${d.datoreLavoro ? `${esc(d.datoreLavoro)} (${esc(d.companyName || '')})` : v(d.companyName)}</td></tr>
     <tr><td>Responsabile Lavori</td><td>${v(d.responsabileLavori)}</td></tr>
     <tr><td>Coordinatore Sicurezza Progettazione (CSP)</td><td>${v(d.csp)}</td></tr>
     <tr><td>Coordinatore Sicurezza Esecuzione (CSE)</td><td>${v(d.cse)}</td></tr>
@@ -1275,12 +1276,17 @@ ${(d.opereProvvisionali && d.opereProvvisionali.length > 0)
   ? `<ul>${d.opereProvvisionali.map(o => `<li>${esc(o)}</li>`).join('')}</ul>`
   : '<p class="muted">Nessuna opera provvisionale indicata.</p>'
 }
+${d.lavoriInQuota ? `<p><strong>Lavori in quota:</strong> ${esc(d.lavoriInQuota)}</p>` : ''}
 <div class="sub-title">4.8 Impianti di cantiere</div>
 ${(d.impiantiCantiere && d.impiantiCantiere.length > 0)
   ? `<ul>${d.impiantiCantiere.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
   : '<p class="muted">Nessun impianto di cantiere indicato.</p>'
 }
-${d.noteAggiuntive ? `<div class="sub-title">4.9 Note e condizioni particolari</div><p>${esc(d.noteAggiuntive)}</p>` : ''}`;
+${d.noteAggiuntive ? `<div class="sub-title">4.9 Note e condizioni particolari</div><p>${esc(d.noteAggiuntive)}</p>` : ''}
+${d.rumore ? `<div class="sub-title">4.10 Esito della valutazione del rumore (art. 190 D.lgs 81/2008)</div><p>${esc(d.rumore)}</p>` : ''}
+${(Array.isArray(d.pscRichieste) && d.pscRichieste.length > 0) ? `<div class="sub-title">4.11 Misure integrative e procedure richieste dal PSC</div>
+${d.pscRef ? `<p class="muted">Riferimento: ${esc(d.pscRef)}</p>` : ''}
+<ul>${d.pscRichieste.map(r => `<li><strong>${esc(r.titolo || '')}</strong>${r.dettaglio ? ` — ${esc(r.dettaglio)}` : ''}${r.pagina ? ` <span class="muted">(PSC p. ${esc(String(r.pagina))})</span>` : ''}</li>`).join('')}</ul>` : ''}`;
 
   const s5 = `
 <div class="section-title">Sezione 5 — Lavorazioni, Rischi e Misure di Prevenzione</div>
@@ -1380,6 +1386,7 @@ hanno l'obbligo di utilizzarli correttamente e segnalare difetti. La consegna è
 
   const s9 = `
 <div class="section-title">Sezione 9 — Macchine, Attrezzature e Verifiche</div>
+${(Array.isArray(d.macchine) && d.macchine.length > 0) ? `<div class="sub-title">Macchine e attrezzature impiegate dall'impresa in questo cantiere</div><ul>${d.macchine.map(m => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}
 <div class="sub-title">9.1 Disposizioni generali</div>
 <p>Tutte le macchine e attrezzature devono essere conformi alla Direttiva Macchine 2006/42/CE, dotate di
 marcatura CE e dichiarazione di conformità. Devono essere usate secondo le istruzioni del fabbricante.</p>
@@ -1419,6 +1426,7 @@ marcatura CE e dichiarazione di conformità. Devono essere usate secondo le istr
 
   const s10 = `
 <div class="section-title">Sezione 10 — Sostanze e Preparati Pericolosi</div>
+${(Array.isArray(d.sostanze) && d.sostanze.length > 0) ? `<div class="sub-title">Sostanze impiegate dall'impresa in questo cantiere</div><ul>${d.sostanze.map(x => `<li>${esc(x)}</li>`).join('')}</ul><p class="muted">Le schede di sicurezza (SDS) sono conservate in cantiere e a disposizione dei lavoratori.</p>` : ''}
 <div class="sub-title">10.1 Obblighi — Regolamento REACH e Reg. CLP</div>
 <p>Per ogni sostanza pericolosa: SDS (Scheda Dati di Sicurezza) aggiornata in 16 sezioni, conservata accessibile
 a tutti i lavoratori, stoccaggio in area dedicata con bacino di contenimento.</p>
@@ -1520,7 +1528,7 @@ da assenza &gt;60 giorni per malattia.</p>
 e viene sottoscritto per accettazione e presa visione dalle seguenti figure responsabili.
 Le firme devono essere apposte con timbro aziendale a fianco della firma per piena validità.</p>
 <div class="signature-grid">
-  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', v(d.companyName))}
+  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', d.datoreLavoro ? esc(d.datoreLavoro) : v(d.companyName))}
   ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', v(d.rspp))}
   ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', v(d.rls))}
   ${buildSigBox('Medico Competente', v(d.medico))}

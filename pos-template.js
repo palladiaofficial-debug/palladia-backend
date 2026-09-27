@@ -107,6 +107,7 @@ Il POS contiene le informazioni relative alle specifiche attivita' lavorative de
 ${d.cfCommittente ? `| Codice Fiscale Committente | ${d.cfCommittente} |` : ''}
 | Tipo di appalto | ${d.tipoAppalto ? d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1) : '[DA COMPILARE]'} |
 | Natura dei lavori | ${v(d.workType)} |
+${d.presentedBy === 'subappaltatore' ? `| Posizione dell'impresa | Impresa subappaltatrice |\n| Impresa affidataria | ${v(d.affidatariaName)} |` : ''}
 | Revisione | ${rev} |
 | Data di emissione | ${oggi} |
 
@@ -161,7 +162,7 @@ ${d.fasi.map(f => `| ${f.titolo || ''} | ${f.durata || ''} | ${f.lavoratori || '
 
 | Ruolo | Nominativo |
 |-------|-----------|
-| Datore di Lavoro | ${v(d.companyName)} |
+| Datore di Lavoro | ${d.datoreLavoro ? `${d.datoreLavoro} (${d.companyName || ''})` : v(d.companyName)} |
 | Responsabile Lavori | ${v(d.responsabileLavori)} |
 | Coordinatore Sicurezza in fase di Progettazione (CSP) | ${v(d.csp)} |
 | Coordinatore Sicurezza in fase di Esecuzione (CSE) | ${v(d.cse)} |
@@ -263,6 +264,7 @@ ${(d.opereProvvisionali && d.opereProvvisionali.length > 0)
   ? d.opereProvvisionali.map(o => `- ${o}`).join('\n')
   : 'Nessuna opera provvisionale indicata.'
 }
+${d.lavoriInQuota ? `\n**Lavori in quota:** ${d.lavoriInQuota}\n` : ''}
 
 ### 4.9 Impianti di cantiere
 
@@ -271,6 +273,10 @@ ${(d.impiantiCantiere && d.impiantiCantiere.length > 0)
   : 'Nessun impianto di cantiere indicato.'
 }
 ${d.noteAggiuntive ? `\n### 4.10 Note e condizioni particolari\n\n${d.noteAggiuntive}\n` : ''}
+${d.rumore ? `\n### 4.11 Esito della valutazione del rumore (art. 190)\n\n${d.rumore}\n` : ''}
+${(Array.isArray(d.pscRichieste) && d.pscRichieste.length > 0) ? `\n### 4.12 Misure integrative e procedure richieste dal PSC\n\n${d.pscRef ? `Riferimento: ${d.pscRef}\n\n` : ''}${d.pscRichieste.map(r => `- **${r.titolo || ''}**${r.dettaglio ? ` — ${r.dettaglio}` : ''}${r.pagina ? ` (PSC p. ${r.pagina})` : ''}`).join('\n')}\n` : ''}
+${(Array.isArray(d.macchine) && d.macchine.length > 0) ? `\n### 4.13 Macchine e attrezzature impiegate\n\n${d.macchine.map(m => `- ${m}`).join('\n')}\n` : ''}
+${(Array.isArray(d.sostanze) && d.sostanze.length > 0) ? `\n### 4.14 Sostanze impiegate\n\n${d.sostanze.map(x => `- ${x}`).join('\n')}\n` : ''}
 ---
 
 ## SEZIONE 5 - LAVORAZIONI, RISCHI E MISURE DI PREVENZIONE

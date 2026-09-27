@@ -4,6 +4,58 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { getCompanyPosDefaults } = require('../../lib/posDefaults');
 const { sendDbError } = require('../../lib/httpErrors');
+const { computePosOverview } = require('../../lib/posOverview');
+const { buildPosPrefill } = require('../../lib/posPrefill');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
+const { extractPsc } = require('../../lib/pscExtract');
+const { aiLimiter } = require('../../middleware/rateLimit');
+const { isBillingActive } = require('../../lib/billing');
+
+/**
+ * POST /api/v1/pos/psc-extract { siteId, documentId, impresaName?, lavori? }
+ * F-259: legge il PSC già caricato nel cantiere (site_documents, categoria
+ * psc) e restituisce ciò che serve al POS di quell'impresa, con le pagine.
+ * Una chiamata AI (Haiku) per PSC: ~$0,02-0,08 secondo la lunghezza.
+ */
+router.post('/pos/psc-extract', verifySupabaseJwt, aiLimiter, async (req, res) => {
+  const { siteId, documentId, impresaName, lavori } = req.body || {};
+  if (!siteId || !documentId) return res.status(400).json({ error: 'siteId e documentId obbligatori' });
+  if (!(await isBillingActive(req.companyId))) return res.status(402).json({ error: 'BILLING_INACTIVE' });
+  try {
+    const out = await extractPsc(req.companyId, {
+      siteId, documentId,
+      impresaName: typeof impresaName === 'string' ? impresaName.slice(0, 200) : '',
+      lavori: typeof lavori === 'string' ? lavori.slice(0, 500) : '',
+      userId: req.user?.id,
+    });
+    res.json(out);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    console.error('[pos/psc-extract]', e.message);
+    return res.status(500).json({ error: 'Non sono riuscito a leggere il PSC' });
+  }
+});
+
+/**
+ * GET /api/v1/pos/prefill?siteId=X[&sub=Y]
+ * F-258: tutto ciò che il sistema sa già per il POS di un'impresa in un
+ * cantiere (l'impresa stessa o un suo subappaltatore). Vedi lib/posPrefill.js.
+ * DEVE stare prima di GET /pos/:id.
+ */
+router.get('/pos/prefill', verifySupabaseJwt, async (req, res) => {
+  const siteId = req.query.siteId;
+  const sub = req.query.sub || null;
+  if (!siteId) return res.status(400).json({ error: 'siteId obbligatorio' });
+  if (sub && !(await isFeatureEnabled(req.companyId, 'subappaltatori').catch(() => false))) {
+    return res.status(403).json({ error: 'FEATURE_DISABLED' });
+  }
+  try {
+    res.json(await buildPosPrefill(req.companyId, siteId, sub));
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    return sendDbError(res, e);
+  }
+});
 
 /**
  * GET /api/v1/pos
@@ -69,6 +121,20 @@ router.get('/pos/draft', verifySupabaseJwt, async (req, res) => {
 
   if (error) return sendDbError(res, error);
   res.json({ draft: data || null });
+});
+
+/**
+ * GET /api/v1/pos/overview
+ * F-257: per ogni cantiere aperto, le imprese che ci lavorano (impresa +
+ * subappaltatori assegnati) e lo stato del loro POS. Vedi lib/posOverview.js.
+ * DEVE stare prima di GET /pos/:id.
+ */
+router.get('/pos/overview', verifySupabaseJwt, async (req, res) => {
+  try {
+    res.json(await computePosOverview(req.companyId));
+  } catch (e) {
+    return sendDbError(res, e);
+  }
 });
 
 /**
