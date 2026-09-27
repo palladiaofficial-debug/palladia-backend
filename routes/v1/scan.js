@@ -5,6 +5,7 @@ const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter, publicScanLimiter } = require('../../middleware/rateLimit');
 const { notifyPunch, notifyAnomalousPunch, notifyRejectedGeofencePunch } = require('../../services/telegramNotifications');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
+const { latestPosForWorker } = require('../../lib/posForWorker');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -453,13 +454,10 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     // Controlla se c'è un POS attivo per questo cantiere non ancora firmato dal lavoratore
     let posAck = null;
     try {
-      const { data: latestPos } = await supabase
-        .from('pos_documents')
-        .select('id, pos_data')
-        .eq('site_id', worksite_id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // F-260: il POS della SUA impresa (impresa o subappaltatore) — con i
+      // dati precedenti ai POS dei subappaltatori è l'ultimo POS del cantiere,
+      // come prima. Vedi lib/posForWorker.js.
+      const latestPos = await latestPosForWorker(worksite_id, workerId);
 
       if (latestPos) {
         const { data: existingAck } = await supabase
