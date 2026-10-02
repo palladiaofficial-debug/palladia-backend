@@ -58,6 +58,11 @@ async function main() {
   check('renderer PDF: nessun "Nessuna lavorazione generata"', !html.includes('Nessuna lavorazione generata'));
   check('renderer PDF: livelli colorati (molto alto, alto, medio)',
     html.includes('badge badge-very-high') && html.includes('badge badge-high') && html.includes('badge badge-medium'));
+  // Il colore del numero R segue la legenda, come il badge del livello accanto
+  const rp = await generatePosHtml(posData, 1, composeSezione5(['ple', 'scavo-trincea']).markdown, []);
+  check('renderer PDF: R=8 colorato "alto" come il badge Alto', rp.includes('<span class="risk-num risk-high">8</span>'), (rp.match(/risk-num [a-z-]+">8</) || [])[0]);
+  check('renderer PDF: R=12 colorato "molto alto"', rp.includes('<span class="risk-num risk-very-high">12</span>'));
+  check('renderer PDF: R=4 colorato "medio"', rp.includes('<span class="risk-num risk-medium">4</span>'));
   const titoli = S.SCHEDE.filter(s => !html.includes(`<div class="lav-header">${s.nome.replace(/&/g, '&amp;').replace(/'/g, '&#39;')}</div>`)).map(s => s.id);
   check('renderer PDF: ogni scheda ha il suo titolo', titoli.length === 0, titoli);
 

@@ -40,12 +40,15 @@ function riskBadgeClass(level) {
   if (l.includes('basso') || l.includes('accettabile') || l.includes('trascurabile')) return 'badge-low';
   return '';
 }
+// Stesse soglie della legenda del POS (lib/posSezione5.js, lib/lavorazioniSchede.js
+// livello()): 1-3 basso, 4-7 medio, 8-11 alto, 12-16 molto alto. F-261: prima
+// R=8 usciva arancione accanto al badge "Alto" rosso, R=12 rosso accanto a "Molto alto".
 function riskNumClass(val) {
   const n = parseFloat(String(val || '').replace(',', '.'));
   if (isNaN(n)) return '';
   if (n <= 3)  return 'risk-low';
-  if (n <= 8)  return 'risk-medium';
-  if (n <= 12) return 'risk-high';
+  if (n < 8)   return 'risk-medium';
+  if (n < 12)  return 'risk-high';
   return 'risk-very-high';
 }
 // Format budget value with Italian thousand separators
