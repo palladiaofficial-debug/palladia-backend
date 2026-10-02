@@ -11,6 +11,7 @@ const { extractPsc } = require('../../lib/pscExtract');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { isBillingActive } = require('../../lib/billing');
 const { catalogoPerScelta } = require('../../lib/lavorazioniSchede');
+const { saveRegistry } = require('../../lib/posFigures');
 
 /**
  * POST /api/v1/pos/psc-extract { siteId, documentId, impresaName?, lavori? }
@@ -67,6 +68,22 @@ router.get('/pos/prefill', verifySupabaseJwt, async (req, res) => {
 router.get('/pos/lavorazioni', verifySupabaseJwt, (req, res) => {
   res.set('Cache-Control', 'private, max-age=600');
   res.json(catalogoPerScelta());
+});
+
+/**
+ * PUT /api/v1/pos/figure { figures }
+ * F-263: "Ricorda queste figure per i prossimi POS" — registro dell'azienda
+ * (company_safety_figures). Solo le figure dell'impresa, mai di un
+ * subappaltatore (il frontend non lo chiama per i POS dei subappaltatori).
+ */
+router.put('/pos/figure', verifySupabaseJwt, async (req, res) => {
+  const figures = req.body?.figures;
+  if (!figures || typeof figures !== 'object' || Array.isArray(figures)) return res.status(400).json({ error: 'figures obbligatorio' });
+  try {
+    res.json({ figures: await saveRegistry(req.companyId, req.user?.id, figures) });
+  } catch (e) {
+    return sendDbError(res, e);
+  }
 });
 
 /**

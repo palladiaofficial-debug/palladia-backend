@@ -134,8 +134,15 @@ check('schedaPerVoceVecchia(voce sconosciuta) → null', S.schedaPerVoceVecchia(
 
 // 7) pacchetto servito a /pos/crea (GET /api/v1/pos/lavorazioni)
 const cat = S.catalogoPerScelta();
-check('catalogo: una voce per scheda, solo i campi per la scelta',
-  cat.schede.length === S.SCHEDE.length && cat.schede.every(s => Object.keys(s).sort().join() === 'categoria,id,nome,pericolosita'));
+check('catalogo: una voce per scheda, i campi per scelta e controllo (niente testi lunghi)',
+  cat.schede.length === S.SCHEDE.length && cat.schede.every(s => Object.keys(s).sort().join() === 'categoria,dpi,formazione,id,misure,nome,pericolosita,rischioMax'));
+check('catalogo: rischio più alto della PLE = R 8 Alto', JSON.stringify(cat.schede.find(s => s.id === 'ple').rischioMax) === JSON.stringify({ rischio: 'Ribaltamento per terreno cedevole o stabilizzatori non estesi', livello: 'Alto', r: 8 }), cat.schede.find(s => s.id === 'ple').rischioMax);
+check('catalogo: nomi di DPI e formazioni per ogni chiave usata', cat.schede.every(s => s.dpi.every(d => cat.dpi[d]) && s.formazione.every(f => cat.formazione[f])));
+const corsiBad = Object.entries(cat.corsiPerFormazione).filter(([k, re]) => { try { new RegExp(re, 'i'); return !cat.formazione[k]; } catch { return true; } }).map(([k]) => k); // eslint-disable-line security/detect-non-literal-regexp
+check('catalogo: corsi per formazione validi e su formazioni esistenti', corsiBad.length === 0, corsiBad);
+const corso = (k, nome) => new RegExp(cat.corsiPerFormazione[k], 'i').test(nome); // eslint-disable-line security/detect-non-literal-regexp
+check('corsi reali riconosciuti: "Lavori in quota" → anticaduta, "Escavatori e macchine movimento terra" → mmt, "Carrelli elevatori" → sollevatore',
+  corso('anticaduta', 'Lavori in quota') && corso('mmt', 'Escavatori e macchine movimento terra') && corso('sollevatore', 'Carrelli elevatori') && corso('autogru', 'Gru per autocarro') && corso('primo_soccorso', 'Primo Soccorso - Gruppo B/C'));
 check('catalogo: ogni categoria servita ha schede', cat.categorie.every(c => cat.schede.some(s => s.categoria === c.id)));
 check('catalogo: voci vecchie → id, tutte le voci mappate', Object.keys(cat.vociVecchie).length === viste.size
   && Object.values(cat.vociVecchie).every(id => S.getScheda(id)));
