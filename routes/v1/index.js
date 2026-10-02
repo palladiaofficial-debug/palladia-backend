@@ -30,6 +30,7 @@ router.use('/', require('./qr'));
 router.use('/', require('./presence'));
 router.use('/', require('./presenceCorrections'));
 router.use('/', require('./reports'));
+router.use('/', require('./oreAssenze').router); // F-265 ore e assenze
 router.use('/', require('./alerts'));
 router.use('/', require('./asl'));
 router.use('/', require('./auditLog'));
