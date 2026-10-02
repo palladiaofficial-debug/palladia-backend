@@ -75,6 +75,8 @@ router.use('/', require('./badge'));
 // Route pubbliche scan badge (no JWT — session token o signed QR link)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./scan'));
+// F-265: "Perché esci?" dopo l'uscita (stessa autenticazione di /scan/note), file separato da scan.js
+router.use('/', require('./scanExitReason'));
 
 // Badge Punch: timbratura via badge personale lavoratore (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
