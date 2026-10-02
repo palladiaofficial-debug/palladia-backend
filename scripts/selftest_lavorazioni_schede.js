@@ -8,8 +8,9 @@
  *  2) riferimenti: ogni DPI e ogni formazione citati esistono;
  *  3) carosello: cartello valido, frasi brevi (leggibili da un operaio);
  *  4) copertura: le lavorazioni ad alto rischio non mancano;
- *  5) voci vecchie: ogni voce sostituita esiste nel vecchio catalogo ed è
- *     mappata una volta sola; nessuna voce "non lavorazione" è mappata;
+ *  5) voci vecchie: TUTTE le voci del vecchio catalogo (backend + quelle solo
+ *     nel frontend) finiscono in una scheda o tra le escluse con un motivo,
+ *     mai in entrambe, mai in due schede; locali e servizi non diventano schede;
  *  6) nessun duplicato di nome.
  * Nessun accesso al DB.
  */
@@ -26,7 +27,7 @@ function check(name, cond, got) {
 console.log('\n\x1b[1mF-261 — Schede lavorazione: complete, coerenti, senza buchi\x1b[0m');
 
 const ids = S.SCHEDE.map(s => s.id);
-check(`almeno 40 schede (${ids.length})`, ids.length >= 40, ids.length);
+check(`almeno 55 schede (${ids.length})`, ids.length >= 55, ids.length);
 check('id unici', new Set(ids).size === ids.length, ids.filter((x, i) => ids.indexOf(x) !== i));
 const nomi = S.SCHEDE.map(s => s.nome.toLowerCase());
 check('nomi unici', new Set(nomi).size === nomi.length, nomi.filter((x, i) => nomi.indexOf(x) !== i));
@@ -105,6 +106,7 @@ check('nessuna categoria vuota', perCat.length === 0, perCat);
 // 5) voci del vecchio catalogo
 const vecchie = new Set();
 for (const c of lavorazioniDatabase) for (const v of c.items) vecchie.add(v);
+for (const v of S.VOCI_SOLO_FRONTEND) vecchie.add(v);
 const inesistenti = [], doppie = [];
 const viste = new Map();
 for (const s of S.SCHEDE) for (const v of s.sostituisce) {
@@ -114,9 +116,18 @@ for (const s of S.SCHEDE) for (const v of s.sostituisce) {
 }
 check('ogni voce sostituita esiste nel vecchio catalogo', inesistenti.length === 0, inesistenti);
 check('ogni voce vecchia è mappata a una sola scheda', doppie.length === 0, doppie);
-const nonLavorazioni = ['Ufficio direzione lavori', 'Locale mensa', 'Infermeria di cantiere', 'Parcheggio mezzi', 'Pittura lavabile', 'Smalto murale'];
-const mappateMale = nonLavorazioni.filter(v => S.schedaPerVoceVecchia(v));
-check('le voci che non sono lavorazioni non diventano schede', mappateMale.length === 0, mappateMale);
+const orfane = [...vecchie].filter(v => !viste.has(v) && !S.VOCI_ESCLUSE[v]);
+check(`ogni voce vecchia (${vecchie.size}) è in una scheda o esclusa con motivo`, orfane.length === 0, orfane);
+const entrambe = Object.keys(S.VOCI_ESCLUSE).filter(v => viste.has(v));
+check('nessuna voce è sia in una scheda sia esclusa', entrambe.length === 0, entrambe);
+const esclInesistenti = Object.keys(S.VOCI_ESCLUSE).filter(v => !vecchie.has(v));
+check('ogni voce esclusa esiste nel vecchio catalogo', esclInesistenti.length === 0, esclInesistenti);
+check('ogni esclusione ha un motivo', Object.values(S.VOCI_ESCLUSE).every(m => typeof m === 'string' && m.length >= 20));
+const locali = ['Ufficio direzione lavori', 'Locale mensa', 'Infermeria di cantiere', 'Parcheggio mezzi', 'Spogliatoi e servizi igienici'];
+const mappateMale = locali.filter(v => S.schedaPerVoceVecchia(v) || !S.VOCI_ESCLUSE[v]);
+check('locali e aree del cantiere sono esclusi, non schede', mappateMale.length === 0, mappateMale);
+check('i materiali (Pittura lavabile) finiscono nella lavorazione (tinteggiature)', S.schedaPerVoceVecchia('Pittura lavabile') === 'tinteggiature');
+check('Pozzetti e caditoie non è uno spazio confinato', S.schedaPerVoceVecchia('Pozzetti e caditoie') === 'pavimentazioni-esterne');
 check('schedaPerVoceVecchia("Montaggio ponteggio") → ponteggio-montaggio', S.schedaPerVoceVecchia('Montaggio ponteggio') === 'ponteggio-montaggio');
 check('schedaPerVoceVecchia(voce sconosciuta) → null', S.schedaPerVoceVecchia('Voce che non esiste') === null);
 
