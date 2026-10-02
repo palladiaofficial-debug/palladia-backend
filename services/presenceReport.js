@@ -48,11 +48,14 @@ function shortMethodLabel(method) {
 // Detrazione pausa pranzo automatica è un'informazione di routine, non un
 // problema — badge blu invece dell'ambra/rosso riservato alle vere anomalie
 // (uscita mancante, GPS impreciso, ecc.) — F-154 (AUDIT.md, redesign PDF).
+// Motivo uscita (migrations/217): informativo/esplicativo, mai un problema
+// — stesso trattamento della pausa pranzo automatica sopra. F-264: usata
+// anche da "Chiudi giornata", che prima le contava come anomalie.
+function isInfoAnnotation(label) {
+  return String(label).startsWith('Pausa pranzo automatica') || String(label).startsWith('Uscita per ');
+}
 function anomalyBadgeClass(label) {
-  // Motivo uscita (migrations/217): informativo/esplicativo, mai un problema
-  // — stesso trattamento della pausa pranzo automatica sopra.
-  return (label.startsWith('Pausa pranzo automatica') || label.startsWith('Uscita per '))
-    ? 'badge-info' : 'badge-anom';
+  return isInfoAnnotation(label) ? 'badge-info' : 'badge-anom';
 }
 
 function esc(s) {
@@ -858,4 +861,4 @@ h1, h2, h3, .section-title { break-after: avoid-page !important; page-break-afte
 </html>`;
 }
 
-module.exports = { buildDailyPresenceSummary, generatePresenceReportHtml };
+module.exports = { buildDailyPresenceSummary, generatePresenceReportHtml, isInfoAnnotation };

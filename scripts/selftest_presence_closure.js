@@ -85,6 +85,20 @@ async function main() {
     if (r2.status === 409 && r2.body?.error === 'ALREADY_CLOSED') ok('richiudere la stessa giornata viene rifiutato (non sovrascritto)');
     else fail('richiudere la stessa giornata viene rifiutato (non sovrascritto)', r2);
 
+    // 2b. F-264: le note informative non bloccano la chiusura — un'uscita
+    // con motivo "maltempo" (presence_log_reasons) e la pausa pranzo
+    // automatica sono informazioni, non anomalie da correggere.
+    const reasonDate = '2026-01-14';
+    const { data: rLogs } = await supabase.from('presence_logs').insert([
+      { company_id: COMPANY_ID, site_id: site.id, worker_id: worker.id, event_type: 'ENTRY', timestamp_server: `${reasonDate}T08:00:00+01:00`, method: 'scan' },
+      { company_id: COMPANY_ID, site_id: site.id, worker_id: worker.id, event_type: 'EXIT',  timestamp_server: `${reasonDate}T11:00:00+01:00`, method: 'scan' },
+    ]).select('id, event_type');
+    const exitLog = (rLogs || []).find(l => l.event_type === 'EXIT');
+    if (exitLog) await supabase.from('presence_log_reasons').insert({ company_id: COMPANY_ID, presence_log_id: exitLog.id, reason: 'maltempo' });
+    const r2b = await closeDay(jwt, site.id, reasonDate);
+    if (r2b.status === 200) ok('F-264: uscita per maltempo (nota informativa) non blocca la chiusura');
+    else fail('F-264: uscita per maltempo (nota informativa) non blocca la chiusura', r2b);
+
     // 3. Giornata con anomalia (ENTRY senza EXIT)
     const anomalyDate = '2026-01-16';
     await supabase.from('presence_logs').insert([
@@ -103,6 +117,8 @@ async function main() {
 async function cleanup(siteId, workerId) {
   if (siteId) {
     await supabase.from('presence_day_closures').delete().eq('site_id', siteId);
+    const { data: logs } = await supabase.from('presence_logs').select('id').eq('site_id', siteId);
+    if (logs?.length) await supabase.from('presence_log_reasons').delete().in('presence_log_id', logs.map(l => l.id));
     await supabase.from('presence_logs').delete().eq('site_id', siteId);
     await supabase.from('sites').delete().eq('id', siteId);
   }

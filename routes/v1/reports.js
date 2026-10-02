@@ -3,7 +3,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
-const { buildDailyPresenceSummary, generatePresenceReportHtml } = require('../../services/presenceReport');
+const { buildDailyPresenceSummary, generatePresenceReportHtml, isInfoAnnotation } = require('../../services/presenceReport');
 const { buildWorkerHoursReport, generateWorkerHoursPdfHtml, generateWorkerHoursXlsx } = require('../../services/workerHoursReport');
 const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction } = require('../../lib/presencePairing');
 const { logDocumentExport } = require('../../services/valueMetrics');
@@ -769,12 +769,16 @@ router.post('/reports/presence/close', verifySupabaseJwt, async (req, res) => {
 
   // RIVERIFICA: rifiuta la chiusura se restano anomalie di pairing non
   // risolte — non lasciare che un "chiuso" nasconda un'uscita mancante o un
-  // turno anomalo mai corretto.
-  if (summary.anomalies_count > 0) {
+  // turno anomalo mai corretto. F-264: le note informative (pausa pranzo
+  // automatica, motivo dell'uscita) non sono anomalie e non bloccano.
+  const openAnomalies = summary.rows
+    .map(r => ({ worker_name: r.worker_name, anomalies: r.anomalies.filter(a => !isInfoAnnotation(a)) }))
+    .filter(r => r.anomalies.length > 0);
+  if (openAnomalies.length > 0) {
     return res.status(400).json({
       error: 'ANOMALIES_UNRESOLVED',
-      message: `${summary.anomalies_count} anomalia/e di timbratura da correggere prima di chiudere la giornata.`,
-      anomalies: summary.rows.filter(r => r.anomalies.length > 0).map(r => ({ worker_name: r.worker_name, anomalies: r.anomalies })),
+      message: `${openAnomalies.length} anomalia/e di timbratura da correggere prima di chiudere la giornata.`,
+      anomalies: openAnomalies,
     });
   }
 
