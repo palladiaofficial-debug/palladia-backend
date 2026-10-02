@@ -86,6 +86,8 @@ router.use('/', require('./badgeDdt'));
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./workerArea'));
+// F-265: richiesta ferie/permesso dall'Area lavoratore (stesso token PIN)
+router.use('/', require('./workerAreaAssenze'));
 router.use('/', require('./payerArea'));
 
 // Consultazione fatture via Delega Unificata (sola lettura) — nessun webhook
