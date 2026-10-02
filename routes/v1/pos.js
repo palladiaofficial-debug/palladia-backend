@@ -10,6 +10,7 @@ const { isFeatureEnabled } = require('../../lib/featureFlags');
 const { extractPsc } = require('../../lib/pscExtract');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { isBillingActive } = require('../../lib/billing');
+const { catalogoPerScelta } = require('../../lib/lavorazioniSchede');
 
 /**
  * POST /api/v1/pos/psc-extract { siteId, documentId, impresaName?, lavori? }
@@ -55,6 +56,17 @@ router.get('/pos/prefill', verifySupabaseJwt, async (req, res) => {
     if (e.status) return res.status(e.status).json({ error: e.message });
     return sendDbError(res, e);
   }
+});
+
+/**
+ * GET /api/v1/pos/lavorazioni
+ * F-261: le schede lavorazione da cui /pos/crea fa scegliere i lavori, dalla
+ * fonte unica lib/lavorazioniSchede.js (niente più copia a mano del catalogo
+ * nel frontend). Dati statici: nessuna query. DEVE stare prima di GET /pos/:id.
+ */
+router.get('/pos/lavorazioni', verifySupabaseJwt, (req, res) => {
+  res.set('Cache-Control', 'private, max-age=600');
+  res.json(catalogoPerScelta());
 });
 
 /**

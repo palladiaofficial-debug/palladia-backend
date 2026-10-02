@@ -15,6 +15,7 @@
  * Nessun accesso al DB.
  */
 'use strict';
+require('dotenv').config();
 const S = require('../lib/lavorazioniSchede');
 const { lavorazioniDatabase } = require('../lib/lavorazioniCatalog');
 
@@ -130,6 +131,31 @@ check('i materiali (Pittura lavabile) finiscono nella lavorazione (tinteggiature
 check('Pozzetti e caditoie non è uno spazio confinato', S.schedaPerVoceVecchia('Pozzetti e caditoie') === 'pavimentazioni-esterne');
 check('schedaPerVoceVecchia("Montaggio ponteggio") → ponteggio-montaggio', S.schedaPerVoceVecchia('Montaggio ponteggio') === 'ponteggio-montaggio');
 check('schedaPerVoceVecchia(voce sconosciuta) → null', S.schedaPerVoceVecchia('Voce che non esiste') === null);
+
+// 7) pacchetto servito a /pos/crea (GET /api/v1/pos/lavorazioni)
+const cat = S.catalogoPerScelta();
+check('catalogo: una voce per scheda, solo i campi per la scelta',
+  cat.schede.length === S.SCHEDE.length && cat.schede.every(s => Object.keys(s).sort().join() === 'categoria,id,nome,pericolosita'));
+check('catalogo: ogni categoria servita ha schede', cat.categorie.every(c => cat.schede.some(s => s.categoria === c.id)));
+check('catalogo: voci vecchie → id, tutte le voci mappate', Object.keys(cat.vociVecchie).length === viste.size
+  && Object.values(cat.vociVecchie).every(id => S.getScheda(id)));
+const pscBad = [];
+for (const p of cat.psc) {
+  try { new RegExp(p.parole, 'i'); } catch { pscBad.push(p.parole); } // eslint-disable-line security/detect-non-literal-regexp
+  for (const id of p.schede) if (!S.getScheda(id)) pscBad.push(`${p.parole} → ${id}`);
+}
+check('catalogo: parole del PSC valide e verso schede esistenti', pscBad.length === 0, pscBad);
+const pscHit = (titolo) => [...new Set(cat.psc.filter(p => new RegExp(p.parole, 'i').test(titolo)).flatMap(p => p.schede))]; // eslint-disable-line security/detect-non-literal-regexp
+check('PSC "Scavi di fondazione" → scavo e strutture di fondazione', ['scavo-sbancamento', 'casseforme-armature'].every(id => pscHit('Scavi di fondazione').includes(id)));
+check('PSC "Ripristino intonaci di facciata" → solo intonaci (il punto di "c.a." non è un jolly)',
+  JSON.stringify(pscHit('Ripristino intonaci esterni di facciata')) === '["intonaci"]', pscHit('Ripristino intonaci esterni di facciata'));
+check('PSC "Pilastri in c.a." → strutture in c.a.', pscHit('Pilastri in c.a.').includes('casseforme-armature'));
+check('PSC "Rifacimento del manto di copertura" → lavori su coperture', pscHit('Rifacimento del manto di copertura').includes('coperture-lavori'));
+
+const posRouter = require('../routes/v1/pos');
+const paths = posRouter.stack.filter(l => l.route && l.route.methods.get).map(l => l.route.path);
+check('GET /pos/lavorazioni registrata prima di GET /pos/:id',
+  paths.includes('/pos/lavorazioni') && paths.indexOf('/pos/lavorazioni') < paths.indexOf('/pos/:id'), paths);
 
 // Stato di revisione: niente scheda dichiarata "verificata" senza revisore
 const statoErr = S.SCHEDE.filter(s => s.revisione && s.revisione.stato === 'verificata' && !s.revisione.da).map(s => s.id);
