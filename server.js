@@ -11,6 +11,7 @@ const helmet     = require('helmet');
 const compression = require('compression');
 const { buildPosDocument } = require('./pos-template');
 const { buildRisksPrompt } = require('./services/posRisksGenerator');
+const { composeSezione5 } = require('./lib/posSezione5');
 const { isBillingActive } = require('./lib/billing');
 const { logUsage } = require('./lib/ladiaUsageLog');
 const { isModuleEnabledGlobally } = require('./lib/featureFlags');
@@ -1290,9 +1291,12 @@ app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res
       revision = await getNextRevision(siteId);
     }
 
-    // Step 1: riusa la sezione rischi già generata/rivista in chat con Ladia
-    // se le lavorazioni non sono cambiate, altrimenti genera da capo con Haiku.
-    let aiRisks = await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
+    // Step 1: F-261 — se il POS porta le schede lavorazione (/pos/crea), la
+    // Sezione 5 si compone da quelle, senza AI. Altrimenti riusa la sezione
+    // rischi già generata/rivista in chat con Ladia se le lavorazioni non sono
+    // cambiate, oppure genera da capo con Haiku.
+    const daSchede = composeSezione5(posData.selectedSchede);
+    let aiRisks = daSchede ? daSchede.markdown : await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
     if (!aiRisks) {
       const risksPrompt = buildRisksPrompt(posData);
       aiRisks = await callAnthropicHaiku(risksPrompt, { companyId, userId: req.user.id, callSite: 'generate_pos_template_risks' });
@@ -1390,13 +1394,17 @@ app.post('/api/generate-pos-template-stream', verifyJwtOnly, aiLimiter, async (r
     console.log('[template-stream] headers flushed');
 
     sseWrite(res, `data: ${JSON.stringify({ type: 'meta', revision, mode: 'template' })}\n\n`);
-    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: 'Generazione rischi specifici con AI...' })}\n\n`);
+    // F-261: Sezione 5 dalle schede lavorazione quando il POS le porta (/pos/crea)
+    const daSchede = composeSezione5(posData.selectedSchede);
+    sseWrite(res, `data: ${JSON.stringify({ type: 'status', message: daSchede ? 'Rischi e misure dalle schede lavorazione...' : 'Generazione rischi specifici con AI...' })}\n\n`);
 
     // Heartbeat every 10s to keep Railway proxy alive
     heartbeatTimer = setInterval(() => sseWrite(res, ': keepalive\n\n'), 10000);
 
-    let aiRisks = await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
-    if (aiRisks) {
+    let aiRisks = daSchede ? daSchede.markdown : await getReusablePosRisks(companyId, siteId, posData.selectedWorks);
+    if (daSchede) {
+      console.log('[template-stream] Sezione 5 dalle schede:', daSchede.schede.join(', '), daSchede.sconosciute.length ? `(ignote: ${daSchede.sconosciute.join(', ')})` : '');
+    } else if (aiRisks) {
       console.log('[template-stream] rischi riusati da pos_drafts (generati in chat con Ladia), length:', aiRisks.length);
     } else {
       console.log('[template-stream] calling Haiku...');
