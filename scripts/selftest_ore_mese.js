@@ -87,6 +87,9 @@ async function main() {
     check('10/1 sabato: weekend', c(A, '10').tipo === 'weekend');
     check('16/1 venerdì senza nulla: da giustificare', c(A, '16').tipo === 'giustificare');
     check('27/1 ferie rifiutate: resta da giustificare', c(A, '27').tipo === 'giustificare');
+    const oggi = await buildOreMese(company.id, '2026-01', { today: '2026-01-16' });
+    const Ao = oggi.lavoratori.find(l => l.id === wA.id);
+    check('oggi non è ancora da giustificare (la giornata non è finita), ieri sì', Ao.cells.find(x => x.date === '2026-01-16').tipo === null && Ao.cells.find(x => x.date === '2026-01-15').tipo === 'lavoro' && Ao.cells.find(x => x.date === '2026-01-02').tipo === 'giustificare', Ao.cells.slice(0, 16).map(x => x.tipo));
     check('totali Anna: 2 gg ferie, 4 h permesso, 4 h maltempo, 2 h straordinario',
       A.tot.ferieGiorni === 2 && A.tot.permessoMin === 240 && A.tot.maltempoMin === 240 && A.tot.straordMin === 120, A.tot);
     check('Bruno (solo malattia): 2 gg malattia, nessun giorno da giustificare', B && B.tot.malattiaGiorni === 2 && B.tot.daGiustificare === 0, B && B.tot);
