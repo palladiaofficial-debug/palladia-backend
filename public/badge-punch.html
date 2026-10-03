@@ -354,6 +354,14 @@
     .success-sub   { font-size: 15px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
     .success-close { font-size: 13px; color: var(--muted); }
 
+    /* ── Fascia di stato (dopo F-266, mockup approvato il 2026-10-03): cosa
+       farà il tasto, scritto in grande PRIMA di premerlo ── */
+    .state-band { display: flex; flex-direction: column; gap: 4px; padding: 18px 16px; border-radius: var(--radius); border: 2px solid; }
+    .state-band.in  { background: #E3F1E7; border-color: #2F7D4F; color: #1F5C38; }
+    .state-band.out { background: #E9ECF1; border-color: #4A5A70; color: #2B3A4F; }
+    .state-band-title { display: flex; align-items: center; gap: 10px; font-size: 26px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.15; }
+    .state-band-sub { font-size: 18px; font-weight: 600; }
+
     /* ── Domanda di conferma (F-266, AUDIT.md): uscita a pochi minuti
        dall'entrata, o nuova timbratura dopo un turno di pochi minuti ── */
     .confirm-wrap { text-align: center; padding: 28px 18px 22px; display: flex; flex-direction: column; gap: 12px; }
@@ -707,6 +715,9 @@
       cantiereLabel: 'Cantiere',
       waitingGps: 'In attesa del GPS…',
       registraUscita: 'REGISTRA USCITA', registraEntrata: 'REGISTRA ENTRATA',
+      bandIn: 'SEI AL LAVORO', bandOut: 'SEI FUORI',
+      bandSince: function (h) { return 'dalle ' + h; },
+      bandLastExit: function (d, h) { return 'ultima uscita: ' + (d === 0 ? 'oggi' : d === 1 ? 'ieri' : 'il ' + h.date) + ' alle ' + h.time; },
       confirmExitTitle: 'Vuoi davvero uscire?',
       confirmExitText: function (h, m) { return 'Sei entrato alle ' + h + ', ' + m + (m === 1 ? ' minuto' : ' minuti') + ' fa.'; },
       stayAtWork: 'No, resto al lavoro', yesExitNow: 'Sì, esco adesso',
@@ -872,6 +883,9 @@
       cantiereLabel: 'Șantier',
       waitingGps: 'Se așteaptă GPS…',
       registraUscita: 'ÎNREGISTREAZĂ IEȘIREA', registraEntrata: 'ÎNREGISTREAZĂ INTRAREA',
+      bandIn: 'EȘTI LA LUCRU', bandOut: 'EȘTI AFARĂ',
+      bandSince: function (h) { return 'de la ' + h; },
+      bandLastExit: function (d, h) { return 'ultima ieșire: ' + (d === 0 ? 'azi' : d === 1 ? 'ieri' : 'pe ' + h.date) + ' la ' + h.time; },
       confirmExitTitle: 'Chiar vrei să ieși?',
       confirmExitText: function (h, m) { return 'Ai intrat la ' + h + ', acum ' + m + (m === 1 ? ' minut' : ' minute') + '.'; },
       stayAtWork: 'Nu, rămân la lucru', yesExitNow: 'Da, ies acum',
@@ -1043,6 +1057,9 @@
       cantiereLabel: 'Kantieri',
       waitingGps: 'Në pritje të GPS…',
       registraUscita: 'REGJISTRO DALJEN', registraEntrata: 'REGJISTRO HYRJEN',
+      bandIn: 'JE NË PUNË', bandOut: 'JE JASHTË',
+      bandSince: function (h) { return 'që nga ' + h; },
+      bandLastExit: function (d, h) { return 'dalja e fundit: ' + (d === 0 ? 'sot' : d === 1 ? 'dje' : 'më ' + h.date) + ' në ' + h.time; },
       confirmExitTitle: 'Do të dalësh vërtet?',
       confirmExitText: function (h, m) { return 'Hyre në ' + h + ', para ' + m + (m === 1 ? ' minute' : ' minutash') + '.'; },
       stayAtWork: 'Jo, mbetem në punë', yesExitNow: 'Po, dal tani',
@@ -1207,6 +1224,9 @@
       cantiereLabel: 'الورشة',
       waitingGps: 'في انتظار GPS…',
       registraUscita: 'تسجيل الخروج', registraEntrata: 'تسجيل الدخول',
+      bandIn: 'أنت في العمل', bandOut: 'أنت خارج العمل',
+      bandSince: function (h) { return 'منذ ' + h; },
+      bandLastExit: function (d, h) { return 'آخر خروج: ' + (d === 0 ? 'اليوم' : d === 1 ? 'أمس' : h.date) + ' الساعة ' + h.time; },
       confirmExitTitle: 'هل تريد الخروج فعلاً؟',
       confirmExitText: function (h, m) { return 'دخلت الساعة ' + h + '، منذ ' + m + ' دقيقة.'; },
       stayAtWork: 'لا، سأبقى في العمل', yesExitNow: 'نعم، أخرج الآن',
@@ -1804,17 +1824,34 @@
   // ── Render: schermata punch ────────────────────────────────────────────────────
   // isRelang=true → ridisegno per cambio lingua: NON deve far ripartire il GPS
   // (watchPosition già attivo, riavviarlo duplicherebbe il watcher).
+  // Fascia "SEI AL LAVORO dalle 07:38" / "SEI FUORI · ultima uscita ieri alle
+  // 17:01": stessa informazione che decide il tasto (next_action globale).
+  function stateBandHtml(isExit) {
+    var since = isExit ? workerData.open_since : workerData.last_exit_at;
+    var sub = '';
+    if (since) {
+      var d = new Date(since);
+      var dayIdx = Math.round((new Date(new Date().toDateString()) - new Date(d.toDateString())) / 86400000);
+      var parts = { time: fmtTime(since), date: d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }) };
+      sub = isExit ? t().bandSince(parts.time) : t().bandLastExit(dayIdx, parts);
+    }
+    var icon = isExit
+      ? '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.6 2.6L16 9.6"/></svg>'
+      : '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg>';
+    return '<div class="state-band ' + (isExit ? 'in' : 'out') + ' fade-in" id="state-band">'
+      + '<div class="state-band-title">' + icon + esc(isExit ? t().bandIn : t().bandOut) + '</div>'
+      + (sub ? '<div class="state-band-sub">' + esc(sub) + '</div>' : '')
+      + '</div>';
+  }
+
   function renderPunchScreen(isRelang) {
     _rerenderCurrent = function () { renderPunchScreen(true); };
     const s           = selectedSite;
     const isExit      = s.next_action === 'EXIT';
     const btnClass    = isExit ? 'exit' : 'entry';
     const btnLabel    = isExit ? t().registraUscita : t().registraEntrata;
-    // F-266: da quando risulta dentro (open_since da punch-context) — l'operaio vede
-    // che la prossima timbratura chiude il turno iniziato a quell'ora
-    const statusLabel = isExit
-      ? t().inCantiereStatus + (workerData.open_since ? ' · ' + fmtTime(workerData.open_since) : '')
-      : t().fuoriCantiereStatus;
+    // Da quando risulta dentro: lo dice la fascia di stato (stateBandHtml)
+    const statusLabel = isExit ? t().inCantiereStatus : t().fuoriCantiereStatus;
 
     wrap.innerHTML = `
       <div class="card worker-card fade-in">
@@ -1826,6 +1863,8 @@
           <div class="worker-sub" id="status-sub">${esc(statusLabel)}</div>
         </div>
       </div>
+
+      ${stateBandHtml(isExit)}
 
       <div class="card site-card fade-in">
         <div class="site-label">${esc(t().cantiereLabel)}</div>

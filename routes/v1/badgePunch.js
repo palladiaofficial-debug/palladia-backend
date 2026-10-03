@@ -241,6 +241,9 @@ router.get('/badge/:code/punch-context', badgePunchLimiter, async (req, res) => 
     max_gps_accuracy_m:    GPS_MAX_ACCURACY_M,
     open_site_id:          openSiteId,
     open_since:            isOpenGlobally ? globalLastLog.timestamp_server : null,
+    // Fascia di stato del badge ("SEI FUORI · ultima uscita ieri alle 17:01"):
+    // sola lettura, stessa riga già letta sopra per decidere next_action.
+    last_exit_at:          !isOpenGlobally && globalLastLog?.event_type === 'EXIT' ? globalLastLog.timestamp_server : null,
     // F-178 (AUDIT.md): il frontend mostra uno schermo bloccante di
     // accettazione informativa prima di consentire qualunque timbratura.
     requires_privacy_consent: !hasValidConsent(worker),
