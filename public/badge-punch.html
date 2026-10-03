@@ -354,6 +354,19 @@
     .success-sub   { font-size: 15px; color: var(--muted); margin-bottom: 20px; line-height: 1.5; }
     .success-close { font-size: 13px; color: var(--muted); }
 
+    /* ── Domanda di conferma (F-266, AUDIT.md): uscita a pochi minuti
+       dall'entrata, o nuova timbratura dopo un turno di pochi minuti ── */
+    .confirm-wrap { text-align: center; padding: 28px 18px 22px; display: flex; flex-direction: column; gap: 12px; }
+    .confirm-title { font-size: 24px; font-weight: 800; line-height: 1.25; }
+    .confirm-text  { font-size: 18px; line-height: 1.5; margin-bottom: 6px; }
+    .confirm-alt {
+      display: block; width: 100%; min-height: 60px; padding: 14px;
+      font-size: 17px; font-weight: 800; font-family: inherit; text-transform: uppercase;
+      color: inherit; background: transparent; border: 2px solid currentColor;
+      border-radius: var(--radius); cursor: pointer;
+    }
+    .confirm-alt:disabled { opacity: 0.4; }
+
     /* ── Errore ── */
     .error-wrap {
       text-align: center;
@@ -694,6 +707,14 @@
       cantiereLabel: 'Cantiere',
       waitingGps: 'In attesa del GPS…',
       registraUscita: 'REGISTRA USCITA', registraEntrata: 'REGISTRA ENTRATA',
+      confirmExitTitle: 'Vuoi davvero uscire?',
+      confirmExitText: function (h, m) { return 'Sei entrato alle ' + h + ', ' + m + (m === 1 ? ' minuto' : ' minuti') + ' fa.'; },
+      stayAtWork: 'No, resto al lavoro', yesExitNow: 'Sì, esco adesso',
+      confirmEntryTitle: 'Stai iniziando a lavorare?',
+      confirmEntryText: function (h1, h2) { return 'Oggi sei entrato alle ' + h1 + ' e uscito alle ' + h2 + '.'; },
+      yesStartWork: 'Sì, inizio a lavorare', noGoingHome: 'No, sto andando via',
+      goingHomeTitle: 'Va bene',
+      goingHomeDone: "Abbiamo avvisato il responsabile: sistemerà lui l'orario di oggi. Non devi fare altro.",
       inCantiereStatus: 'In cantiere', fuoriCantiereStatus: 'Fuori cantiere',
       pressButtonHint: 'Premi il pulsante quando entri o esci dal cantiere.',
       entrataRegistrata: 'Entrata registrata', uscitaRegistrata: 'Uscita registrata',
@@ -851,6 +872,14 @@
       cantiereLabel: 'Șantier',
       waitingGps: 'Se așteaptă GPS…',
       registraUscita: 'ÎNREGISTREAZĂ IEȘIREA', registraEntrata: 'ÎNREGISTREAZĂ INTRAREA',
+      confirmExitTitle: 'Chiar vrei să ieși?',
+      confirmExitText: function (h, m) { return 'Ai intrat la ' + h + ', acum ' + m + (m === 1 ? ' minut' : ' minute') + '.'; },
+      stayAtWork: 'Nu, rămân la lucru', yesExitNow: 'Da, ies acum',
+      confirmEntryTitle: 'Începi lucrul?',
+      confirmEntryText: function (h1, h2) { return 'Azi ai intrat la ' + h1 + ' și ai ieșit la ' + h2 + '.'; },
+      yesStartWork: 'Da, încep lucrul', noGoingHome: 'Nu, plec acasă',
+      goingHomeTitle: 'În regulă',
+      goingHomeDone: 'Am anunțat responsabilul: va corecta el ora de azi. Nu trebuie să mai faci nimic.',
       inCantiereStatus: 'Pe șantier', fuoriCantiereStatus: 'În afara șantierului',
       pressButtonHint: 'Apasă butonul când intri sau ieși din șantier.',
       entrataRegistrata: 'Intrare înregistrată', uscitaRegistrata: 'Ieșire înregistrată',
@@ -1014,6 +1043,14 @@
       cantiereLabel: 'Kantieri',
       waitingGps: 'Në pritje të GPS…',
       registraUscita: 'REGJISTRO DALJEN', registraEntrata: 'REGJISTRO HYRJEN',
+      confirmExitTitle: 'Do të dalësh vërtet?',
+      confirmExitText: function (h, m) { return 'Hyre në ' + h + ', para ' + m + (m === 1 ? ' minute' : ' minutash') + '.'; },
+      stayAtWork: 'Jo, mbetem në punë', yesExitNow: 'Po, dal tani',
+      confirmEntryTitle: 'Po fillon punën?',
+      confirmEntryText: function (h1, h2) { return 'Sot hyre në ' + h1 + ' dhe dole në ' + h2 + '.'; },
+      yesStartWork: 'Po, filloj punën', noGoingHome: 'Jo, po iki',
+      goingHomeTitle: 'Në rregull',
+      goingHomeDone: 'Njoftuam përgjegjësin: do ta rregullojë ai orarin e sotëm. Nuk duhet të bësh asgjë tjetër.',
       inCantiereStatus: 'Në kantier', fuoriCantiereStatus: 'Jashtë kantierit',
       pressButtonHint: 'Shtyp butonin kur hyn ose del nga kantieri.',
       entrataRegistrata: 'Hyrja u regjistrua', uscitaRegistrata: 'Dalja u regjistrua',
@@ -1170,6 +1207,14 @@
       cantiereLabel: 'الورشة',
       waitingGps: 'في انتظار GPS…',
       registraUscita: 'تسجيل الخروج', registraEntrata: 'تسجيل الدخول',
+      confirmExitTitle: 'هل تريد الخروج فعلاً؟',
+      confirmExitText: function (h, m) { return 'دخلت الساعة ' + h + '، منذ ' + m + ' دقيقة.'; },
+      stayAtWork: 'لا، سأبقى في العمل', yesExitNow: 'نعم، أخرج الآن',
+      confirmEntryTitle: 'هل تبدأ العمل الآن؟',
+      confirmEntryText: function (h1, h2) { return 'اليوم دخلت الساعة ' + h1 + ' وخرجت الساعة ' + h2 + '.'; },
+      yesStartWork: 'نعم، أبدأ العمل', noGoingHome: 'لا، أنا مغادر',
+      goingHomeTitle: 'حسناً',
+      goingHomeDone: 'أبلغنا المسؤول: سيصحح هو وقت اليوم. لا تحتاج إلى فعل أي شيء آخر.',
       inCantiereStatus: 'في الورشة', fuoriCantiereStatus: 'خارج الورشة',
       pressButtonHint: 'اضغط الزر عند دخولك أو خروجك من الورشة.',
       entrataRegistrata: 'تم تسجيل الدخول', uscitaRegistrata: 'تم تسجيل الخروج',
@@ -1765,7 +1810,11 @@
     const isExit      = s.next_action === 'EXIT';
     const btnClass    = isExit ? 'exit' : 'entry';
     const btnLabel    = isExit ? t().registraUscita : t().registraEntrata;
-    const statusLabel = isExit ? t().inCantiereStatus : t().fuoriCantiereStatus;
+    // F-266: da quando risulta dentro (open_since da punch-context) — l'operaio vede
+    // che la prossima timbratura chiude il turno iniziato a quell'ora
+    const statusLabel = isExit
+      ? t().inCantiereStatus + (workerData.open_since ? ' · ' + fmtTime(workerData.open_since) : '')
+      : t().fuoriCantiereStatus;
 
     wrap.innerHTML = `
       <div class="card worker-card fade-in">
@@ -2051,6 +2100,59 @@
       </div>`;
   }
 
+  // ── Domanda di conferma (F-266, AUDIT.md) ───────────────────────────────────
+  // Caso reale: un operaio ha riaperto il badge 7 minuti dopo l'entrata e ha
+  // premuto il tasto grande ("REGISTRA USCITA"); alle 17 ha premuto "REGISTRA
+  // ENTRATA" credendo di uscire. Qui il tasto grande è sempre la risposta
+  // sicura; l'altra resta un tasto pieno, mai un link piccolo.
+  function renderConfirm(info) {
+    _rerenderCurrent = function () { renderConfirm(info); };
+    var isShortExit = info.reason === 'SHORT_EXIT';
+    var title = isShortExit ? t().confirmExitTitle : t().confirmEntryTitle;
+    var text  = isShortExit
+      ? t().confirmExitText(fmtTime(info.entry_at), info.minutes)
+      : t().confirmEntryText(fmtTime(info.entry_at), fmtTime(info.exit_at));
+    var mainBtn = isShortExit
+      ? '<button class="punch-btn entry" id="confirm-main" onclick="renderPunchScreen()">' + esc(t().stayAtWork) + '</button>'
+      : '<button class="punch-btn entry" id="confirm-main" onclick="confirmPunch(this)">' + esc(t().yesStartWork) + '</button>';
+    var altBtn = isShortExit
+      ? '<button class="confirm-alt" id="confirm-alt" onclick="confirmPunch(this)">' + esc(t().yesExitNow) + '</button>'
+      : '<button class="confirm-alt" id="confirm-alt" onclick="goingHome(this)">' + esc(t().noGoingHome) + '</button>';
+    wrap.innerHTML = `
+      <div class="card confirm-wrap fade-in" id="confirm-card" data-reason="${esc(info.reason)}">
+        <div class="confirm-title">${esc(title)}</div>
+        <div class="confirm-text">${esc(text)}</div>
+        ${mainBtn}
+        ${altBtn}
+      </div>`;
+  }
+
+  function confirmPunch(el) {
+    document.querySelectorAll('#confirm-card button').forEach(function (b) { b.disabled = true; });
+    if (el) el.textContent = t().registrazione;
+    doPunch(true);
+  }
+
+  // "No, sto andando via": niente timbratura — avvisa il titolare con gli orari
+  // di oggi (routes/v1/badgePunch.js, help-request ENTRY_NOT_EXIT).
+  async function goingHome() {
+    document.querySelectorAll('#confirm-card button').forEach(function (b) { b.disabled = true; });
+    pendingConfirmCrid = null;
+    if (!helpRequestSent) await sendHelpRequest('ENTRY_NOT_EXIT', null);
+    renderGoingHome();
+  }
+
+  function renderGoingHome() {
+    _rerenderCurrent = renderGoingHome;
+    stopGps();
+    wrap.innerHTML = `
+      <div class="card success-wrap fade-in" id="going-home">
+        <div class="success-title">${esc(t().goingHomeTitle)}</div>
+        <div class="success-sub">${esc(t().goingHomeDone)}</div>
+        <div class="success-close">${esc(t().canCloseAfterSuccess)}</div>
+      </div>`;
+  }
+
   // ── Chiedi aiuto (F-171, AUDIT.md) ─────────────────────────────────────────────
   // Un tap avvisa subito l'amministratore (Telegram + notifica in-app) — non
   // deve mai richiedere al lavoratore di risolvere un problema tecnico sul
@@ -2142,7 +2244,13 @@
     });
   }
 
-  async function doPunch() {
+  // F-266 (AUDIT.md): il server può rispondere 409 CONFIRM_REQUIRED (uscita a
+  // pochi minuti dall'entrata, o nuova timbratura dopo un turno di pochi
+  // minuti). Si mostra la domanda; se l'operaio conferma si rimanda LO STESSO
+  // tentativo (stesso client_request_id, F-184) con confirmed:true.
+  var pendingConfirmCrid = null;
+
+  async function doPunch(confirmed) {
     if (punching) return;
     if (!gpsCoords) {
       // GPS non disponibile — mostra il messaggio nella riga GPS, non un alert
@@ -2154,7 +2262,8 @@
 
     // Stesso id per tutta la durata di questo tentativo, riusato identico
     // se il tentativo finisce in coda offline e viene rispedito più tardi.
-    var clientRequestId = genClientRequestId();
+    var clientRequestId = (confirmed === true && pendingConfirmCrid) || genClientRequestId();
+    pendingConfirmCrid = null;
 
     punching = true;
     const btn   = document.getElementById('punch-btn');
@@ -2172,7 +2281,14 @@
         longitude:          gpsCoords.longitude,
         gps_accuracy_m:     gpsCoords.accuracy,
         client_request_id:  clientRequestId,
+        confirmed:          confirmed === true,
       });
+
+      if (status === 409 && body.error === 'CONFIRM_REQUIRED') {
+        pendingConfirmCrid = clientRequestId;
+        renderConfirm(body);
+        return;
+      }
 
       if (status === 200) {
         renderSuccess(body.event_type, body.timestamp_server, body.site_name || selectedSite.site_name);
@@ -2230,6 +2346,10 @@
         longitude:          gpsCoords.longitude,
         gps_accuracy_m:     gpsCoords.accuracy,
         client_request_id:  clientRequestId,
+        // Rispedita più tardi, senza l'operaio davanti: la domanda di F-266
+        // non si può fare — si registra come oggi (il titolare viene comunque
+        // avvisato se il turno risulta di pochi minuti).
+        confirmed:          true,
       };
       queueOfflinePunch(punchPayload, selectedSite.site_name);
       renderOfflineSuccess(selectedSite.site_name);
@@ -2284,7 +2404,7 @@
     var remaining = [];
     for (var i = 0; i < q.length; i++) {
       try {
-        var r = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/punch', q[i].payload);
+        var r = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/punch', Object.assign({}, q[i].payload, { confirmed: true }));
         if (r.status === 200) {
           console.log('[offline-sync] punch inviato:', q[i].siteName);
         } else if (r.status === 429) {

@@ -24,6 +24,7 @@ const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch
 const { badgePunchLimiter }  = require('../../middleware/rateLimit');
 const { complianceStatus }   = require('../../lib/compliance');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
+const { checkPunchGuard, alertShortShift, entryNotExitDetails } = require('../../lib/punchGuard');
 
 // F-145 (AUDIT.md): limiter dedicato, chiave IP+badge_code (non solo IP come
 // il publicScanLimiter che riusava prima) — vedi middleware/rateLimit.js.
@@ -419,6 +420,14 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   const ipAddress = (req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || '').slice(0, 45) || null;
   const userAgent = (req.headers['user-agent'] || '').slice(0, 500) || null;
 
+  // F-266 (AUDIT.md): uscita a pochi minuti dall'entrata, o nuova timbratura
+  // dopo un turno di pochi minuti → prima si chiede conferma all'operaio
+  // (lib/punchGuard.js, sola lettura). Il client rimanda con confirmed:true.
+  if (req.body.confirmed !== true) {
+    const guard = await checkPunchGuard({ workerId: worker.id, companyId: worker.company_id, clientRequestId });
+    if (guard) return res.status(409).json(guard);
+  }
+
   // Punch atomico — method = worker_self_punch, session_id = null.
   // p_client_request_id (F-184): se il client lo manda, punch_atomic
   // deduplica un retry dello stesso tentativo invece di capovolgere lo stato.
@@ -523,6 +532,11 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
     tsServer
   ).catch(e => console.error('[badge-punch] notifyPunch error:', e.message));
 
+  // F-266: turno sotto i 30 minuti appena chiuso → avviso al titolare in giornata
+  if (eventType === 'EXIT' && !punchResult.replayed) {
+    alertShortShift({ workerId: worker.id, companyId: worker.company_id, workerName: worker.full_name, siteId: effectiveSiteId, siteName: effectiveSiteName, exitAt: tsServer });
+  }
+
   } catch (err) {
     console.error('[badge-punch] unexpected error:', err.message, err.stack);
     if (!res.headersSent) res.status(500).json({ error: 'INTERNAL_ERROR' });
@@ -535,7 +549,9 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
 // tecnico sul proprio telefono (es. permesso "posizione precisa") per poter
 // segnalarlo — un tap qui avvisa subito l'amministratore, che registra lui la
 // timbratura da Correzione manuale. Nessuna scrittura in presence_logs.
-const HELP_REQUEST_REASONS = ['GPS_ACCURACY_TOO_LOW', 'OUTSIDE_GEOFENCE', 'OTHER'];
+// ENTRY_NOT_EXIT (F-266): alla domanda "stai iniziando a lavorare?" l'operaio
+// risponde "No, sto andando via" — non si scrive niente, il titolare corregge.
+const HELP_REQUEST_REASONS = ['GPS_ACCURACY_TOO_LOW', 'OUTSIDE_GEOFENCE', 'ENTRY_NOT_EXIT', 'OTHER'];
 
 router.post('/badge/:code/help-request', badgePunchLimiter, async (req, res) => {
   try {
@@ -588,12 +604,16 @@ router.post('/badge/:code/help-request', badgePunchLimiter, async (req, res) => 
     // ha un UNIQUE su (company_id, entity_type, entity_id, type) — con
     // entity_id=worker.id una seconda richiesta dello stesso lavoratore in un
     // altro giorno andrebbe in conflitto e non genererebbe una nuova notifica.
+    const entryNotExit = safeReason === 'ENTRY_NOT_EXIT'
+      ? await entryNotExitDetails({ workerId: worker.id, companyId: worker.company_id })
+      : null;
+
     supabase.from('notifications').insert({
       company_id:  worker.company_id,
       type:        'punch_help_request',
       severity:    'warning',
-      title:       `${worker.full_name} ha bisogno di aiuto per timbrare`,
-      body:        `Cantiere: ${site.name}. Registra tu la sua timbratura da Presenze & Report → Correzione manuale.`,
+      title:       entryNotExit ? `${worker.full_name} sta andando via: timbrature di oggi da correggere` : `${worker.full_name} ha bisogno di aiuto per timbrare`,
+      body:        entryNotExit ? `Cantiere: ${site.name}. ${entryNotExit}` : `Cantiere: ${site.name}. Registra tu la sua timbratura da Presenze & Report → Correzione manuale.`,
       entity_type: 'punch_help_request',
       entity_id:   crypto.randomUUID(),
     }).then(({ error }) => { if (error) console.error('[badge-help-request] notification insert error:', error.message); });

@@ -4,6 +4,7 @@ const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter, publicScanLimiter } = require('../../middleware/rateLimit');
 const { notifyPunch, notifyAnomalousPunch, notifyRejectedGeofencePunch } = require('../../services/telegramNotifications');
+const { checkPunchGuard, alertShortShift } = require('../../lib/punchGuard');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
 const { latestPosForWorker } = require('../../lib/posForWorker');
 
@@ -746,6 +747,14 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   const ipAddress = (req.ip || (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || '').slice(0, 45) || null;
   const userAgent = (req.headers['user-agent'] || '').slice(0, 500) || null;
 
+  // F-266 (AUDIT.md): stessa conferma del badge personale (lib/punchGuard.js,
+  // sola lettura) — uscita a pochi minuti dall'entrata o nuova timbratura dopo
+  // un turno di pochi minuti. Il client rimanda con confirmed:true.
+  if (req.body.confirmed !== true) {
+    const guard = await checkPunchGuard({ workerId: session.worker_id, companyId: site.company_id });
+    if (guard) return res.status(409).json(guard);
+  }
+
   const { data: punchResult, error: punchErr } = await supabase.rpc('punch_atomic', {
     p_site_id:    worksite_id,
     p_worker_id:  session.worker_id,
@@ -817,6 +826,11 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
     eventType,
     tsServer
   ).catch(e => console.error('[punch] notifyPunch error:', e.message));
+
+  // F-266: turno sotto i 30 minuti appena chiuso → avviso al titolare in giornata
+  if (eventType === 'EXIT') {
+    alertShortShift({ workerId: session.worker_id, companyId: site.company_id, workerName, siteId: effectiveSiteId, siteName: effectiveSiteName, exitAt: tsServer });
+  }
 
   // ── Alert timbratura anomala ──────────────────────────────────────────────
   // Orario: anomalo prima delle 05:00 o dopo le 22:00 (Europe/Rome)

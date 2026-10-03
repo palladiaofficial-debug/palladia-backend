@@ -603,6 +603,9 @@ async function notifyAnomalousPunch(companyId, siteId, siteName, workerName, eve
     reasonText = `orario insolito (${timeStr})`;
   } else if (anomaly.reason === 'far_from_site') {
     reasonText = `distanza dal cantiere: ${Math.round(anomaly.distance_m)}m`;
+  } else if (anomaly.reason === 'short_shift') {
+    // F-266 (AUDIT.md): uscita meno di 30 minuti dopo l'entrata, confermata dall'operaio
+    reasonText = `turno di soli ${anomaly.minutes} minuti (entrata ${anomaly.entry_hm}), confermato dall'operaio`;
   }
 
   const text =
@@ -682,7 +685,10 @@ async function notifyPunchHelpRequest(companyId, siteId, siteName, workerName, r
     ? 'GPS non riesce a ottenere una posizione precisa'
     : reason === 'OUTSIDE_GEOFENCE'
       ? 'risulta troppo lontano dal cantiere'
-      : 'non riesce a timbrare';
+      : reason === 'ENTRY_NOT_EXIT'
+        // F-266: risultava già uscito (turno di pochi minuti) ma dice che sta andando via ora
+        ? 'sta andando via ma risultava già uscito da stamattina: correggi l\'uscita di oggi'
+        : 'non riesce a timbrare';
 
   const text =
     `🆘 <b>${esc(workerName)}</b> ha bisogno di aiuto per timbrare\n` +

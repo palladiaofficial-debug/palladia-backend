@@ -12,6 +12,7 @@ const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { scanLimiter } = require('../../middleware/rateLimit');
 const { tagPresenceLogReason } = require('../../lib/presenceLogReasons');
+const { entryNotExitDetails } = require('../../lib/punchGuard');
 
 const REASONS = ['pausa', 'maltempo', 'permesso'];
 const WINDOW_MS = 30 * 60 * 1000; // solo l'uscita appena fatta
@@ -55,6 +56,36 @@ router.post('/scan/exit-reason', scanLimiter, async (req, res) => {
   const r = await tagPresenceLogReason({ companyId: session.company_id, logId: last.id, reason, note: null, userId: null });
   if (!r.ok) return res.status(r.code === 'DB_ERROR' ? 500 : 400).json({ error: r.code });
   res.json({ ok: true, presence_log_id: last.id, at: last.timestamp_server });
+});
+
+// ── F-266: "No, sto andando via" dalla pagina QR ─────────────────────────────
+// Alla domanda "Stai iniziando a lavorare?" (dopo un turno di pochi minuti
+// oggi) l'operaio risponde che sta andando via: non si scrive nessuna
+// timbratura, il titolare riceve un avviso con gli orari da correggere —
+// stesso esito di help-request ENTRY_NOT_EXIT del badge personale.
+router.post('/scan/help-entry-not-exit', scanLimiter, async (req, res) => {
+  const { worksite_id, session_token } = req.body || {};
+  if (!worksite_id || !session_token) return res.status(400).json({ error: 'MISSING_FIELDS' });
+  if (typeof session_token !== 'string' || session_token.length !== 64) return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
+
+  const { data: session } = await supabase.from('worker_device_sessions')
+    .select('worker_id, company_id, expires_at, revoked_at, worker:workers(full_name)')
+    .eq('token_hash', hashToken(session_token)).maybeSingle();
+  if (!session || session.revoked_at || new Date(session.expires_at) < new Date()) return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
+
+  const { data: site } = await supabase.from('sites').select('name, company_id').eq('id', worksite_id).maybeSingle();
+  if (!site || site.company_id !== session.company_id) return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
+
+  const details = await entryNotExitDetails({ workerId: session.worker_id, companyId: session.company_id });
+  const name = session.worker?.full_name || 'Un operaio';
+  const { error } = await supabase.from('notifications').insert({
+    company_id: session.company_id, type: 'punch_help_request', severity: 'warning',
+    title: `${name} sta andando via: timbrature di oggi da correggere`,
+    body: `Cantiere: ${site.name}. ${details}`,
+    entity_type: 'punch_help_request', entity_id: crypto.randomUUID(),
+  });
+  if (error) return res.status(500).json({ error: 'DB_ERROR' });
+  res.json({ ok: true });
 });
 
 module.exports = router;
