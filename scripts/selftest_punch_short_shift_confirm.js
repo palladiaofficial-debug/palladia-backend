@@ -130,6 +130,8 @@ async function main() {
     check('QR "No, sto andando via" senza sessione valida: 401', (await post('/scan/help-entry-not-exit', { worksite_id: site.id, session_token: 'b'.repeat(64) })).status === 401);
   } finally {
     server.close();
+    // Gli avvisi partono dopo la risposta (fire-and-forget): si aspetta che arrivino prima di pulire
+    await new Promise(r => setTimeout(r, 2000));
     await supabase.from('notifications').delete().eq('company_id', company.id);
     await supabase.from('presence_fix_requests').delete().eq('company_id', company.id);
     await supabase.from('worker_device_sessions').delete().eq('company_id', company.id);
