@@ -77,6 +77,8 @@ router.use('/', require('./badge'));
 router.use('/', require('./scan'));
 // F-265: "Perché esci?" dopo l'uscita (stessa autenticazione di /scan/note), file separato da scan.js
 router.use('/', require('./scanExitReason'));
+// F-267: iscrizione push dell'operaio dal badge (identità = badge_code, file separato)
+router.use('/', require('./workerPush'));
 
 // Badge Punch: timbratura via badge personale lavoratore (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale

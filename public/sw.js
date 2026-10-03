@@ -51,10 +51,14 @@ self.addEventListener('push', e => {
     const data = e.data.json();
     const options = {
       body:               data.body || '',
-      icon:               data.icon || '/icon-pwa-192.png',
-      badge:              '/icon-pwa-192.png',
+      // F-267: icone servite da QUESTO dominio (il badge è sul backend): /icon-192.png
+      // indicato dall'invio esiste solo sul frontend. Barra di stato Android = sola
+      // sagoma alpha → badge-monochrome.png (un'icona a colori diventa un quadrato bianco).
+      icon:               '/icon-pwa-192.png',
+      badge:              '/badge-monochrome.png',
       tag:                data.tag || 'palladia',
-      data:               { url: data.url || '/' },
+      // F-267: l'invio (services/pushNotifications.js) mette url e actionUrls in data.data
+      data:               { url: data.data?.url || data.url || '/', actionUrls: data.data?.actionUrls || {} },
       requireInteraction: data.requireInteraction || false,
       silent:             data.silent || false,
     };

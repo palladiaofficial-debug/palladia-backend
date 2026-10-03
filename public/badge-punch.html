@@ -2569,7 +2569,9 @@
       }).then(function (sub) {
         if (!sub) return;
         var json = sub.toJSON();
-        fetch('/api/v1/push/subscribe', {
+        // F-267 (AUDIT.md): rotta del badge — /api/v1/push/subscribe richiede il
+        // login dell'app e rispondeva 401: nessun operaio era mai stato iscritto
+        fetch('/api/v1/badge/' + BADGE_CODE + '/push-subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ endpoint: json.endpoint, keys: json.keys }),

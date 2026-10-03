@@ -56,7 +56,20 @@ async function sendPushToUser(userId, payload) {
   await _dispatch(subs || [], payload);
 }
 
-async function _dispatch(subs, payload) {
+/**
+ * F-267 (AUDIT.md): notifica ai telefoni di UN operaio (iscritti dal badge,
+ * tabella worker_push_subscriptions — separata dagli utenti dell'app).
+ */
+async function sendPushToWorker(workerId, payload) {
+  if (!ready) return;
+  const { data: subs } = await supabase
+    .from('worker_push_subscriptions')
+    .select('id, endpoint, p256dh, auth')
+    .eq('worker_id', workerId);
+  await _dispatch(subs || [], payload, 'worker_push_subscriptions');
+}
+
+async function _dispatch(subs, payload, table = 'push_subscriptions') {
   if (!subs.length) return;
 
   const actions     = payload.actions     ?? [{ action: 'open', title: 'Apri' }];
@@ -97,9 +110,11 @@ async function _dispatch(subs, payload) {
   }));
 
   if (stale.length) {
-    await supabase.from('push_subscriptions').delete().in('id', stale).catch(() => {});
+    // Thenable, non promise: .catch() diretto esploderebbe — si controlla error
+    const { error } = await supabase.from(table).delete().in('id', stale);
+    if (error) console.error('[push] cleanup error:', error.message);
     console.log(`[push] rimossi ${stale.length} subscription scadut${stale.length > 1 ? 'e' : 'a'}.`);
   }
 }
 
-module.exports = { sendPushToCompany, sendPushToUser };
+module.exports = { sendPushToCompany, sendPushToUser, sendPushToWorker };
