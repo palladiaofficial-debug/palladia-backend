@@ -5,8 +5,8 @@
  *
  * Contro il DB vero, azienda di prova:
  *  - orario abituale: mediana, uscite automatiche escluse, almeno 3 giorni;
- *  - domanda del pomeriggio (LATE_FIRST_ENTRY): solo al primo tocco dopo le 12
- *    di chi di solito entra la mattina; mai a un neoassunto o a chi lavora di pomeriggio;
+ *  - primo tocco nel pomeriggio: NESSUNA domanda all'operaio, caso late_entry per il titolare
+ *    solo per chi di solito entra la mattina; mai neoassunti, pomeridiani, rientri dopo pranzo;
  *  - "No, sto andando via" → caso con l'entrata proposta; conferma in un tocco
  *    → ENTRATA all'orario abituale + USCITA all'ora del tocco; mai due volte;
  *  - uscita mancante: conferma → USCITA proposta; se nel frattempo ha timbrato
@@ -24,7 +24,7 @@ const crypto = require('crypto');
 const express = require('express');
 const supabase = require('../lib/supabase');
 const { usualFromLogs, romeAt, romeDay, romeMinutes } = require('../lib/usualTimes');
-const { checkPunchGuard } = require('../lib/punchGuard');
+const { checkPunchGuard, noteLateFirstEntry } = require('../lib/punchGuard');
 const { fixRequestFromWorker, applyFixRequest, dismissFixRequest, createFixRequest } = require('../lib/presenceFix');
 const { buildWorkerHoursReport } = require('../services/workerHoursReport');
 const { buildDaFare } = require('../lib/daFare');
@@ -73,20 +73,51 @@ async function main() {
     const history = async (w, entry, exit, days = 4) => { for (let i = 1; i <= days; i++) { const d = dayMinus(today, i); await log(w, 'ENTRY', romeAt(d, entry)); await log(w, 'EXIT', romeAt(d, exit)); } };
     const at = (min) => new Date(romeAt(today, min));
 
-    // ── Domanda del pomeriggio ──
+    // ── Primo tocco nel pomeriggio: NESSUNA domanda all'operaio (regola del
+    //    titolare 2026-10-03), solo un caso per il titolare ──
     const mattina = await worker('Mattina');
     await history(mattina, 450, 1020);
-    const g1 = await checkPunchGuard({ workerId: mattina.id, companyId: company.id, now: at(16 * 60 + 58) });
-    check('primo tocco alle 16:58 di chi entra alle 07:30: domanda LATE_FIRST_ENTRY', g1?.reason === 'LATE_FIRST_ENTRY', g1);
-    check('…alle 10:00 nessuna domanda', await checkPunchGuard({ workerId: mattina.id, companyId: company.id, now: at(600) }) === null);
+    check('primo tocco alle 16:58 di chi entra alle 07:30: nessuna domanda all\'operaio', await checkPunchGuard({ workerId: mattina.id, companyId: company.id, now: at(16 * 60 + 58) }) === null);
+    const late = await log(mattina, 'ENTRY', at(16 * 60 + 58).toISOString());
+    check('…il titolare trova il caso "primo tocco alle 16:58"', await noteLateFirstEntry({ workerId: mattina.id, companyId: company.id, siteId: site.id, entryAt: late.timestamp_server }) === true);
+    const { data: lateFr } = await supabase.from('presence_fix_requests').select('kind, proposed_at, entry_log_id').eq('worker_id', mattina.id).single();
+    check('…con l\'orario abituale (07:30) e la timbratura collegata', lateFr?.kind === 'late_entry' && romeMinutes(lateFr.proposed_at) === 450 && lateFr.entry_log_id === late.id, lateFr);
+    const dfLate = await buildDaFare(company.id, null);
+    const lateItem = dfLate.items.find(i => i.type === 'late_entry');
+    check('Da fare: "primo tocco alle 16:58" con "È giusta" e nessuna correzione automatica', /primo tocco alle 16:58/.test(lateItem?.title || '') && lateItem.fixDismiss?.label === 'È giusta' && !lateItem.fixAction, lateItem);
+    const mattina2 = await worker('Mattina2');
+    await history(mattina2, 450, 1020);
+    const early = await log(mattina2, 'ENTRY', at(600).toISOString());
+    check('entrata alle 10:00: nessun caso', await noteLateFirstEntry({ workerId: mattina2.id, companyId: company.id, siteId: site.id, entryAt: early.timestamp_server }) === false);
     const pome = await worker('Pomeriggio');
     await history(pome, 14 * 60, 22 * 60);
-    check('chi lavora di pomeriggio (entra alle 14): nessuna domanda', await checkPunchGuard({ workerId: pome.id, companyId: company.id, now: at(14 * 60 + 5) }) === null);
+    const pe = await log(pome, 'ENTRY', at(14 * 60 + 5).toISOString());
+    check('chi lavora di pomeriggio (entra alle 14): nessun caso', await noteLateFirstEntry({ workerId: pome.id, companyId: company.id, siteId: site.id, entryAt: pe.timestamp_server }) === false);
+    const nuovo = await worker('Nuovo');
+    const ne = await log(nuovo, 'ENTRY', at(16 * 60).toISOString());
+    check('neoassunto senza storico: nessun caso', await noteLateFirstEntry({ workerId: nuovo.id, companyId: company.id, siteId: site.id, entryAt: ne.timestamp_server }) === false);
+    const rientro = await worker('Rientro');
+    await history(rientro, 450, 1020);
+    await log(rientro, 'ENTRY', at(450).toISOString());
+    await log(rientro, 'EXIT', at(720).toISOString());
+    const re = await log(rientro, 'ENTRY', at(780).toISOString());
+    check('rientro dopo pranzo (non è il primo tocco di oggi): nessun caso', await noteLateFirstEntry({ workerId: rientro.id, companyId: company.id, siteId: site.id, entryAt: re.timestamp_server }) === false);
+    // Integrazione sulla rotta vera del badge (solo dopo le 12, con l'orologio reale)
+    if (nowMin >= 12 * 60 + 5) {
+      const { PRIVACY_CONSENT_VERSION } = require('../lib/workerPrivacyConsent');
+      const live = await worker('Live');
+      await supabase.from('workers').update({ privacy_consent_accepted_at: new Date().toISOString(), privacy_consent_version: PRIVACY_CONSENT_VERSION }).eq('id', live.id);
+      await history(live, 450, 1020);
+      const r = await fetch(`${base}/badge/${live.badge_code}/punch`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site_id: site.id, latitude: 44.4, longitude: 8.95, gps_accuracy_m: 8 }) });
+      const body = await r.json();
+      check('rotta badge, primo tocco del pomeriggio: entrata normale, nessuna domanda', r.status === 200 && body.event_type === 'ENTRY', body);
+      let fr = null;
+      for (let i = 0; i < 25 && !fr; i++) { ({ data: fr } = await supabase.from('presence_fix_requests').select('kind').eq('worker_id', live.id).maybeSingle()); if (!fr) await new Promise(res => setTimeout(res, 200)); }
+      check('…e il caso per il titolare arriva subito dopo', fr?.kind === 'late_entry', fr);
+    }
     const giaEntrato = await worker('GiaEntrato');
     await log(giaEntrato, 'ENTRY', at(Math.max(0, nowMin - 30)).toISOString());
     check('"ho dimenticato l\'entrata" quando oggi ha già timbrato: nessun caso', (await fixRequestFromWorker({ worker: giaEntrato, siteId: site.id, reason: 'FORGOT_ENTRY' })) === false);
-    const nuovo = await worker('Nuovo');
-    check('neoassunto senza storico: nessuna domanda', await checkPunchGuard({ workerId: nuovo.id, companyId: company.id, now: at(16 * 60) }) === null);
 
     // ── "No, sto andando via" (entrata dimenticata) → caso + conferma in un tocco ──
     if (nowMin >= 120) {

@@ -6,7 +6,7 @@
  * Ogni 10 minuti, tra le 12 e le 22 (ora italiana):
  *   1. chi risulta ancora AL LAVORO 30 minuti dopo il SUO orario d'uscita
  *      abituale (lib/usualTimes.js) riceve una notifica sul telefono:
- *      "Hai finito? Tocca qui per timbrare l'uscita" (apre il suo badge);
+ *      "Ricordati di timbrare l'uscita" (un avviso, nessuna scelta; apre il badge);
  *   2. se dopo un'altra ora non ha ancora timbrato, il titolare trova il caso
  *      in Da fare → Timbrature da sistemare, con l'uscita già proposta.
  * Una volta sola per entrata (presence_reminders, migrazione 235). Nessuna
@@ -97,9 +97,10 @@ async function runExitReminders(now = new Date()) {
         const { sendPushToWorker } = require('./pushNotifications');
         const site = sites.get(t.siteId);
         const pushed = await sendPushToWorker(t.workerId, {
-          // Senza nome: in anagrafica l'ordine nome/cognome non è uniforme
-          title: 'Hai finito di lavorare?',
-          body: `Risulti ancora al lavoro dalle ${hhmm(romeMinutes(t.entryAt))}${site ? ` in ${site}` : ''}. Tocca qui per timbrare l'uscita.`,
+          // Un avviso, non una domanda: italiano semplice per chi non è madrelingua.
+          // Senza nome: in anagrafica l'ordine nome/cognome non è uniforme.
+          title: "Ricordati di timbrare l'uscita",
+          body: `Sei al lavoro dalle ${hhmm(romeMinutes(t.entryAt))}${site ? ` (${site})` : ''}. Tocca qui quando vai via.`,
           url: `/timbratura/${w.badge_code}`,
           tag: 'exit-reminder',
           requireInteraction: true,

@@ -10,11 +10,11 @@
  * Contro il DB vero (azienda di prova), router montati su un server locale:
  *  - badge: uscita 7 minuti dopo l'entrata → 409 CONFIRM_REQUIRED, niente scritto;
  *    con conferma → uscita scritta + avviso al titolare;
- *  - badge: nuova timbratura dopo un turno di pochi minuti oggi → conferma;
+ *  - badge: nuova timbratura dopo un turno di pochi minuti oggi → normale, senza domande;
  *  - turno normale (4 ore) → nessuna domanda, uscita come sempre;
  *  - F-184 resta valido: un reinvio con lo stesso client_request_id non chiede nulla;
  *  - sotto i 60 secondi resta PUNCH_TOO_SOON;
- *  - "No, sto andando via" → richiesta d'aiuto ENTRY_NOT_EXIT con gli orari, niente scritto;
+ *  - (2026-10-03: tolte le domande "stai iniziando a lavorare?" — regola del titolare);
  *  - QR (/scan/punch): stessa conferma.
  */
 'use strict';
@@ -79,19 +79,18 @@ async function main() {
     const notif = await waitRows(() => supabase.from('presence_fix_requests').select('kind, entry_at, exit_at, exit_log_id').eq('worker_id', a.id).eq('kind', 'short_shift'));
     check('avviso al titolare: turno di pochi minuti in Timbrature da sistemare', notif?.length === 1 && Math.round((new Date(notif[0].exit_at) - new Date(notif[0].entry_at)) / 60000) === 7 && !!notif[0].exit_log_id, notif);
 
-    // 2. Dopo un turno di pochi minuti oggi, la timbratura successiva chiede se sta entrando
+    // 2. Dopo un turno di pochi minuti oggi la timbratura successiva è quella di
+    //    sempre, SENZA domande (regola del titolare 2026-10-03: all'operaio al
+    //    massimo una domanda, il cui tasto grande non scrive niente). Il turno
+    //    breve lo trova il titolare in Da fare.
     const b = await worker('Sera');
     await log(b, 'ENTRY', ago(70));
     await log(b, 'EXIT', ago(63));
     const r3 = await punch(b);
-    check('nuova timbratura dopo un turno di 7 min oggi: 409 ENTRY_AFTER_SHORT', r3.status === 409 && r3.body.reason === 'ENTRY_AFTER_SHORT' && !!r3.body.exit_at, r3);
-    check('…niente scritto', await count(b) === 2);
-    const h = await post(`/badge/${b.badge_code}/help-request`, { site_id: site.id, reason: 'ENTRY_NOT_EXIT' });
-    const hn = await waitRows(() => supabase.from('presence_fix_requests').select('kind, entry_at, exit_at, touch_at, exit_log_id').eq('worker_id', b.id).eq('kind', 'entry_not_exit'));
-    check('"No, sto andando via": caso da sistemare con gli orari (entrata, uscita breve, tocco)', h.status === 200 && hn.length === 1 && hn[0].entry_at && hn[0].exit_at && hn[0].touch_at && hn[0].exit_log_id, { h, hn });
-    check('…e ancora niente scritto', await count(b) === 2);
-    const r4 = await punch(b, { confirmed: true });
-    check('"Sì, entro adesso": entrata scritta', r4.status === 200 && r4.body.event_type === 'ENTRY', r4);
+    check('nuova timbratura dopo un turno di 7 min oggi: entrata normale, nessuna domanda', r3.status === 200 && r3.body.event_type === 'ENTRY', r3);
+    // La rotta "sto andando via" (ENTRY_NOT_EXIT) resta funzionante anche se nessuna schermata la usa più
+    const h = await post(`/badge/${b.badge_code}/help-request`, { site_id: site.id, reason: 'OTHER' });
+    check('richiesta d\'aiuto generica: funziona come prima', h.status === 200, h);
 
     // 3. Turno normale: nessuna domanda
     const c = await worker('Normale');

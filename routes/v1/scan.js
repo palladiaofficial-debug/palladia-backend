@@ -4,7 +4,7 @@ const router      = require('express').Router();
 const supabase    = require('../../lib/supabase');
 const { scanLimiter, identifyLimiter, publicScanLimiter } = require('../../middleware/rateLimit');
 const { notifyPunch, notifyAnomalousPunch, notifyRejectedGeofencePunch } = require('../../services/telegramNotifications');
-const { checkPunchGuard, alertShortShift } = require('../../lib/punchGuard');
+const { checkPunchGuard, alertShortShift, noteLateFirstEntry } = require('../../lib/punchGuard');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
 const { latestPosForWorker } = require('../../lib/posForWorker');
 
@@ -830,6 +830,9 @@ router.post('/scan/punch', scanLimiter, async (req, res) => {
   // F-266: turno sotto i 30 minuti appena chiuso → avviso al titolare in giornata
   if (eventType === 'EXIT') {
     alertShortShift({ workerId: session.worker_id, companyId: site.company_id, workerName, siteId: effectiveSiteId, siteName: effectiveSiteName, exitAt: tsServer });
+  } else {
+    // Primo tocco nel pomeriggio: nessuna domanda all'operaio, caso per il titolare
+    noteLateFirstEntry({ workerId: session.worker_id, companyId: site.company_id, siteId: worksite_id, entryAt: tsServer });
   }
 
   // ── Alert timbratura anomala ──────────────────────────────────────────────

@@ -24,7 +24,7 @@ const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch
 const { badgePunchLimiter }  = require('../../middleware/rateLimit');
 const { complianceStatus }   = require('../../lib/compliance');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
-const { checkPunchGuard, alertShortShift } = require('../../lib/punchGuard');
+const { checkPunchGuard, alertShortShift, noteLateFirstEntry } = require('../../lib/punchGuard');
 const { fixRequestFromWorker } = require('../../lib/presenceFix');
 
 // F-145 (AUDIT.md): limiter dedicato, chiave IP+badge_code (non solo IP come
@@ -539,6 +539,11 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
   // F-266: turno sotto i 30 minuti appena chiuso → avviso al titolare in giornata
   if (eventType === 'EXIT' && !punchResult.replayed) {
     alertShortShift({ workerId: worker.id, companyId: worker.company_id, workerName: worker.full_name, siteId: effectiveSiteId, siteName: effectiveSiteName, exitAt: tsServer });
+  }
+  // Primo tocco nel pomeriggio di chi entra di solito la mattina: nessuna
+  // domanda all'operaio, il titolare trova il caso in Da fare (fire-and-forget)
+  if (eventType === 'ENTRY' && !punchResult.replayed) {
+    noteLateFirstEntry({ workerId: worker.id, companyId: worker.company_id, siteId: site_id, entryAt: tsServer });
   }
 
   } catch (err) {

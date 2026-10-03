@@ -1843,7 +1843,11 @@
   // (watchPosition già attivo, riavviarlo duplicherebbe il watcher).
   // Fascia "SEI AL LAVORO dalle 07:38" / "SEI FUORI · ultima uscita ieri alle
   // 17:01": stessa informazione che decide il tasto (next_action globale).
+  // Solo quando è AL LAVORO (2026-10-03, regola del titolare): "SEI FUORI"
+  // confondeva chi arriva in cantiere — fuori, la schermata resta quella di
+  // sempre, col solo tasto verde REGISTRA ENTRATA.
   function stateBandHtml(isExit) {
+    if (!isExit) return '';
     var since = isExit ? workerData.open_since : workerData.last_exit_at;
     var sub = '';
     if (since) {
