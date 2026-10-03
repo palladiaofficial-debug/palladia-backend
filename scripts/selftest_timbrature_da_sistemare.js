@@ -82,6 +82,9 @@ async function main() {
     const pome = await worker('Pomeriggio');
     await history(pome, 14 * 60, 22 * 60);
     check('chi lavora di pomeriggio (entra alle 14): nessuna domanda', await checkPunchGuard({ workerId: pome.id, companyId: company.id, now: at(14 * 60 + 5) }) === null);
+    const giaEntrato = await worker('GiaEntrato');
+    await log(giaEntrato, 'ENTRY', at(Math.max(0, nowMin - 30)).toISOString());
+    check('"ho dimenticato l\'entrata" quando oggi ha già timbrato: nessun caso', (await fixRequestFromWorker({ worker: giaEntrato, siteId: site.id, reason: 'FORGOT_ENTRY' })) === false);
     const nuovo = await worker('Nuovo');
     check('neoassunto senza storico: nessuna domanda', await checkPunchGuard({ workerId: nuovo.id, companyId: company.id, now: at(16 * 60) }) === null);
 
