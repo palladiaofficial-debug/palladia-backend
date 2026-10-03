@@ -2542,6 +2542,17 @@ async function sendEmailIngestDelegateInstructions({ to, companyName, address, p
   });
 }
 
+// ─── Email generica con il layout Palladia (F-270, modulo coordinatori) ──────
+// bodyHtml già sicuro (escape a cura del chiamante). replyTo: l'indirizzo del
+// coordinatore, così l'impresa risponde a lui e non a noreply.
+async function sendPlainLayoutEmail({ to, subject, title, bodyHtml, replyTo, attachments }) {
+  return getResend().emails.send({
+    from: FROM, to, subject, html: layout(title, bodyHtml),
+    ...(replyTo ? { replyTo } : {}),
+    ...(attachments && attachments.length ? { attachments } : {}),
+  });
+}
+
 module.exports = {
   sendWelcomeEmail,
   sendEmailIngestTestProbe,
@@ -2597,6 +2608,8 @@ module.exports = {
   sendMonthlyValueReport,
   sendStudioMonthlyValueReport,
   sendSubscriptionRenewalNotice,
+  sendPlainLayoutEmail,
+  emailButton: btn,
 };
 
 // ─── Studio CDL — Alert DURC clienti ──────────────────────────────────────────

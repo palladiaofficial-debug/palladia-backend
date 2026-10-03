@@ -71,6 +71,12 @@ router.use('/', require('./featureFlags'));
 // Portale Professionisti (CSE/CSP/DL/RUP) — accesso pubblico via magic link
 router.use('/', require('./coordinatorPro'));
 
+// F-270 — Palladia per coordinatori: rotte con auth per singola rotta (nessun
+// router.use(verifySupabaseJwt) globale), le pubbliche per token prima di tutto.
+router.use('/', require('./pscPublic'));
+router.use('/', require('./psc'));
+router.use('/', require('./pscCantiere'));
+
 // Badge digitale: verifica pubblica (no JWT) + PDF privato (JWT)
 router.use('/', require('./badge'));
 

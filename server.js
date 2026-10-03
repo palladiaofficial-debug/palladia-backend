@@ -1970,6 +1970,10 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     startMissingExitIntraDayCron();
     // Promemoria uscita all'operaio + caso in Da fare (mockup 2026-10-03)
     startExitReminderCron();
+    // F-270: vecchi PSC dei coordinatori rimasti a metà lettura prima del riavvio
+    require('./lib/psc/importPsc').resumePending()
+      .then(n => { if (n) logger.info({ n }, '[psc] letture rimesse in coda'); })
+      .catch(e => logger.error({ err: e.message }, '[psc] resume'));
     frozen('daily_digests', startEveningSummaryCron);
     startExpiryAlertCron();
     startDailyDocCheckCron();

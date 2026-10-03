@@ -1,4 +1,5 @@
 'use strict';
+const pscBeta = require('../../lib/psc/beta');
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { sendWelcomeEmail } = require('../../services/email');
@@ -76,7 +77,7 @@ router.get('/me', verifyJwtOnly, async (req, res) => {
 
 // POST /api/v1/onboarding/setup — crea la prima company per l'utente autenticato
 router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), async (req, res) => {
-  const { company_name, full_name, account_type = 'impresa' } = req.body || {};
+  const { company_name, full_name, account_type = 'impresa', beta_code = null } = req.body || {};
 
   // Validazione
   if (
@@ -122,6 +123,13 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
     });
   }
 
+  // F-270: i coordinatori entrano solo con un codice di invito finché la prova
+  // non è aperta a tutti (PSC_OPEN_SIGNUP=true).
+  if (account_type === 'coordinatore' && !pscBeta.openSignup()) {
+    const chk = await pscBeta.checkCode(beta_code);
+    if (!chk.ok) return res.status(403).json({ error: 'BETA_CODE_' + chk.reason, message: 'Serve un codice di invito valido per Palladia Coordinatori.' });
+  }
+
   // Crea la company
   const { data: company, error: compErr } = await supabase
     .from('companies')
@@ -151,6 +159,13 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
   }
 
   console.log(`[onboarding] company creata: ${company.id} (${cleanName}) type=${account_type} per user ${req.user.id}`);
+
+  if (account_type === 'coordinatore') {
+    const ok = pscBeta.openSignup()
+      ? await supabase.from('company_feature_flags').upsert({ company_id: company.id, feature: 'psc_coordinatori', enabled: true }, { onConflict: 'company_id,feature' }).then(r => !r.error)
+      : await pscBeta.activate(company.id, beta_code);
+    if (!ok) console.error('[onboarding] attivazione coordinatore fallita per', company.id);
+  }
 
   // Se Studio CDL: crea subito studio_partners + studio_users (owner)
   if (account_type === 'studio_cdl') {
