@@ -688,13 +688,19 @@ async function notifyPunchHelpRequest(companyId, siteId, siteName, workerName, r
       : reason === 'ENTRY_NOT_EXIT'
         // F-266: risultava già uscito (turno di pochi minuti) ma dice che sta andando via ora
         ? 'sta andando via ma risultava già uscito da stamattina: correggi l\'uscita di oggi'
-        : 'non riesce a timbrare';
+        : reason === 'FORGOT_ENTRY'
+          // primo tocco nel pomeriggio: "sto andando via, ho dimenticato l'entrata"
+          ? 'sta andando via e stamattina ha dimenticato di timbrare l\'entrata'
+          : 'non riesce a timbrare';
+  const readyInDaFare = reason === 'ENTRY_NOT_EXIT' || reason === 'FORGOT_ENTRY';
 
   const text =
     `🆘 <b>${esc(workerName)}</b> ha bisogno di aiuto per timbrare\n` +
     `📍 Cantiere: <b>${esc(siteName)}</b>\n` +
     `⚠️ Motivo: ${esc(reasonText)}\n` +
-    `<i>Registra tu la sua timbratura da Presenze &amp; Report → Correzione manuale.</i>`;
+    (readyInDaFare
+      ? `<i>La correzione è già pronta in Da fare → Timbrature da sistemare: confermala con un tocco.</i>`
+      : `<i>Registra tu la sua timbratura da Presenze &amp; Report → Correzione manuale.</i>`);
 
   const sends = users.map(u => {
     if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) return null;

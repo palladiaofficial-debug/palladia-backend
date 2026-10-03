@@ -24,7 +24,8 @@ const { notifyPunch, notifyRejectedGeofencePunch, notifyExpiredComplianceAtPunch
 const { badgePunchLimiter }  = require('../../middleware/rateLimit');
 const { complianceStatus }   = require('../../lib/compliance');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
-const { checkPunchGuard, alertShortShift, entryNotExitDetails } = require('../../lib/punchGuard');
+const { checkPunchGuard, alertShortShift } = require('../../lib/punchGuard');
+const { fixRequestFromWorker } = require('../../lib/presenceFix');
 
 // F-145 (AUDIT.md): limiter dedicato, chiave IP+badge_code (non solo IP come
 // il publicScanLimiter che riusava prima) — vedi middleware/rateLimit.js.
@@ -554,7 +555,9 @@ router.post('/badge/:code/punch', badgePunchLimiter, async (req, res) => {
 // timbratura da Correzione manuale. Nessuna scrittura in presence_logs.
 // ENTRY_NOT_EXIT (F-266): alla domanda "stai iniziando a lavorare?" l'operaio
 // risponde "No, sto andando via" — non si scrive niente, il titolare corregge.
-const HELP_REQUEST_REASONS = ['GPS_ACCURACY_TOO_LOW', 'OUTSIDE_GEOFENCE', 'ENTRY_NOT_EXIT', 'OTHER'];
+// FORGOT_ENTRY (mockup 2026-10-03): primo tocco nel pomeriggio, "sto andando
+// via, stamattina ho dimenticato di timbrare" — anche qui niente scritto.
+const HELP_REQUEST_REASONS = ['GPS_ACCURACY_TOO_LOW', 'OUTSIDE_GEOFENCE', 'ENTRY_NOT_EXIT', 'FORGOT_ENTRY', 'OTHER'];
 
 router.post('/badge/:code/help-request', badgePunchLimiter, async (req, res) => {
   try {
@@ -603,20 +606,26 @@ router.post('/badge/:code/help-request', badgePunchLimiter, async (req, res) => 
       user_agent:  (req.headers['user-agent'] || '').slice(0, 500) || null,
     }]).then(({ error }) => { if (error) console.error('[badge-help-request] audit log error:', error.message); });
 
+    // "Sto andando via" (ENTRY_NOT_EXIT, FORGOT_ENTRY): un caso in Da fare →
+    // Timbrature da sistemare, con l'orario già proposto, al posto dell'avviso
+    // generico. Telegram resta.
+    if (safeReason === 'ENTRY_NOT_EXIT' || safeReason === 'FORGOT_ENTRY') {
+      await fixRequestFromWorker({ worker, siteId: site_id, reason: safeReason });
+      notifyPunchHelpRequest(worker.company_id, site_id, site.name, worker.full_name, safeReason)
+        .catch(e => console.error('[badge-help-request] notifyPunchHelpRequest error:', e.message));
+      return res.json({ ok: true });
+    }
+
     // entity_id univoco per richiesta (non worker.id): la tabella `notifications`
     // ha un UNIQUE su (company_id, entity_type, entity_id, type) — con
     // entity_id=worker.id una seconda richiesta dello stesso lavoratore in un
     // altro giorno andrebbe in conflitto e non genererebbe una nuova notifica.
-    const entryNotExit = safeReason === 'ENTRY_NOT_EXIT'
-      ? await entryNotExitDetails({ workerId: worker.id, companyId: worker.company_id })
-      : null;
-
     supabase.from('notifications').insert({
       company_id:  worker.company_id,
       type:        'punch_help_request',
       severity:    'warning',
-      title:       entryNotExit ? `${worker.full_name} sta andando via: timbrature di oggi da correggere` : `${worker.full_name} ha bisogno di aiuto per timbrare`,
-      body:        entryNotExit ? `Cantiere: ${site.name}. ${entryNotExit}` : `Cantiere: ${site.name}. Registra tu la sua timbratura da Presenze & Report → Correzione manuale.`,
+      title:       `${worker.full_name} ha bisogno di aiuto per timbrare`,
+      body:        `Cantiere: ${site.name}. Registra tu la sua timbratura da Presenze & Report → Correzione manuale.`,
       entity_type: 'punch_help_request',
       entity_id:   crypto.randomUUID(),
     }).then(({ error }) => { if (error) console.error('[badge-help-request] notification insert error:', error.message); });

@@ -374,6 +374,7 @@
       border-radius: var(--radius); cursor: pointer;
     }
     .confirm-alt:disabled { opacity: 0.4; }
+    .confirm-alt-sub { display: block; margin-top: 4px; font-size: 15px; font-weight: 500; text-transform: none; opacity: 0.8; }
 
     /* ── Errore ── */
     .error-wrap {
@@ -726,6 +727,10 @@
       yesStartWork: 'Sì, inizio a lavorare', noGoingHome: 'No, sto andando via',
       goingHomeTitle: 'Va bene',
       goingHomeDone: "Abbiamo avvisato il responsabile: sistemerà lui l'orario di oggi. Non devi fare altro.",
+      lateTitle: 'Stai iniziando a lavorare adesso?',
+      lateText: function (h) { return 'Sono le ' + h + ' e oggi non hai ancora timbrato.'; },
+      yesStartNow: 'Sì, inizio adesso', forgotSub: 'stamattina ho dimenticato di timbrare',
+      goingHomeDoneMorning: "Abbiamo avvisato il responsabile: segnerà lui l'orario di stamattina. Non devi fare altro.",
       inCantiereStatus: 'In cantiere', fuoriCantiereStatus: 'Fuori cantiere',
       pressButtonHint: 'Premi il pulsante quando entri o esci dal cantiere.',
       entrataRegistrata: 'Entrata registrata', uscitaRegistrata: 'Uscita registrata',
@@ -894,6 +899,10 @@
       yesStartWork: 'Da, încep lucrul', noGoingHome: 'Nu, plec acasă',
       goingHomeTitle: 'În regulă',
       goingHomeDone: 'Am anunțat responsabilul: va corecta el ora de azi. Nu trebuie să mai faci nimic.',
+      lateTitle: 'Începi lucrul acum?',
+      lateText: function (h) { return 'Este ora ' + h + ' și azi nu ai pontat încă.'; },
+      yesStartNow: 'Da, încep acum', forgotSub: 'azi-dimineață am uitat să pontez',
+      goingHomeDoneMorning: 'Am anunțat responsabilul: va trece el ora de azi-dimineață. Nu trebuie să mai faci nimic.',
       inCantiereStatus: 'Pe șantier', fuoriCantiereStatus: 'În afara șantierului',
       pressButtonHint: 'Apasă butonul când intri sau ieși din șantier.',
       entrataRegistrata: 'Intrare înregistrată', uscitaRegistrata: 'Ieșire înregistrată',
@@ -1068,6 +1077,10 @@
       yesStartWork: 'Po, filloj punën', noGoingHome: 'Jo, po iki',
       goingHomeTitle: 'Në rregull',
       goingHomeDone: 'Njoftuam përgjegjësin: do ta rregullojë ai orarin e sotëm. Nuk duhet të bësh asgjë tjetër.',
+      lateTitle: 'Po fillon punën tani?',
+      lateText: function (h) { return 'Ora është ' + h + ' dhe sot nuk je regjistruar ende.'; },
+      yesStartNow: 'Po, filloj tani', forgotSub: 'këtë mëngjes harrova të regjistrohem',
+      goingHomeDoneMorning: 'Njoftuam përgjegjësin: do ta shënojë ai orarin e këtij mëngjesi. Nuk duhet të bësh asgjë tjetër.',
       inCantiereStatus: 'Në kantier', fuoriCantiereStatus: 'Jashtë kantierit',
       pressButtonHint: 'Shtyp butonin kur hyn ose del nga kantieri.',
       entrataRegistrata: 'Hyrja u regjistrua', uscitaRegistrata: 'Dalja u regjistrua',
@@ -1235,6 +1248,10 @@
       yesStartWork: 'نعم، أبدأ العمل', noGoingHome: 'لا، أنا مغادر',
       goingHomeTitle: 'حسناً',
       goingHomeDone: 'أبلغنا المسؤول: سيصحح هو وقت اليوم. لا تحتاج إلى فعل أي شيء آخر.',
+      lateTitle: 'هل تبدأ العمل الآن؟',
+      lateText: function (h) { return 'الساعة الآن ' + h + ' ولم تسجل اليوم بعد.'; },
+      yesStartNow: 'نعم، أبدأ الآن', forgotSub: 'نسيت التسجيل هذا الصباح',
+      goingHomeDoneMorning: 'أبلغنا المسؤول: سيسجل هو وقت هذا الصباح. لا تحتاج إلى فعل أي شيء آخر.',
       inCantiereStatus: 'في الورشة', fuoriCantiereStatus: 'خارج الورشة',
       pressButtonHint: 'اضغط الزر عند دخولك أو خروجك من الورشة.',
       entrataRegistrata: 'تم تسجيل الدخول', uscitaRegistrata: 'تم تسجيل الخروج',
@@ -2147,16 +2164,22 @@
   function renderConfirm(info) {
     _rerenderCurrent = function () { renderConfirm(info); };
     var isShortExit = info.reason === 'SHORT_EXIT';
-    var title = isShortExit ? t().confirmExitTitle : t().confirmEntryTitle;
+    // Primo tocco nel pomeriggio di chi di solito entra la mattina (mockup 2026-10-03)
+    var isLate = info.reason === 'LATE_FIRST_ENTRY';
+    var title = isShortExit ? t().confirmExitTitle : isLate ? t().lateTitle : t().confirmEntryTitle;
     var text  = isShortExit
       ? t().confirmExitText(fmtTime(info.entry_at), info.minutes)
-      : t().confirmEntryText(fmtTime(info.entry_at), fmtTime(info.exit_at));
+      : isLate
+        ? t().lateText(fmtTime(info.now_at || new Date().toISOString()))
+        : t().confirmEntryText(fmtTime(info.entry_at), fmtTime(info.exit_at));
     var mainBtn = isShortExit
       ? '<button class="punch-btn entry" id="confirm-main" onclick="renderPunchScreen()">' + esc(t().stayAtWork) + '</button>'
-      : '<button class="punch-btn entry" id="confirm-main" onclick="confirmPunch(this)">' + esc(t().yesStartWork) + '</button>';
+      : '<button class="punch-btn entry" id="confirm-main" onclick="confirmPunch(this)">' + esc(isLate ? t().yesStartNow : t().yesStartWork) + '</button>';
     var altBtn = isShortExit
       ? '<button class="confirm-alt" id="confirm-alt" onclick="confirmPunch(this)">' + esc(t().yesExitNow) + '</button>'
-      : '<button class="confirm-alt" id="confirm-alt" onclick="goingHome(this)">' + esc(t().noGoingHome) + '</button>';
+      : isLate
+        ? '<button class="confirm-alt" id="confirm-alt" onclick="goingHome(\'FORGOT_ENTRY\')">' + esc(t().noGoingHome) + '<span class="confirm-alt-sub">' + esc(t().forgotSub) + '</span></button>'
+        : '<button class="confirm-alt" id="confirm-alt" onclick="goingHome(\'ENTRY_NOT_EXIT\')">' + esc(t().noGoingHome) + '</button>';
     wrap.innerHTML = `
       <div class="card confirm-wrap fade-in" id="confirm-card" data-reason="${esc(info.reason)}">
         <div class="confirm-title">${esc(title)}</div>
@@ -2174,20 +2197,22 @@
 
   // "No, sto andando via": niente timbratura — avvisa il titolare con gli orari
   // di oggi (routes/v1/badgePunch.js, help-request ENTRY_NOT_EXIT).
-  async function goingHome() {
+  // reason: ENTRY_NOT_EXIT (dopo un turno di pochi minuti) o FORGOT_ENTRY
+  // (primo tocco nel pomeriggio: ha dimenticato l'entrata di stamattina)
+  async function goingHome(reason) {
     document.querySelectorAll('#confirm-card button').forEach(function (b) { b.disabled = true; });
     pendingConfirmCrid = null;
-    if (!helpRequestSent) await sendHelpRequest('ENTRY_NOT_EXIT', null);
-    renderGoingHome();
+    if (!helpRequestSent) await sendHelpRequest(reason === 'FORGOT_ENTRY' ? 'FORGOT_ENTRY' : 'ENTRY_NOT_EXIT', null);
+    renderGoingHome(reason);
   }
 
-  function renderGoingHome() {
-    _rerenderCurrent = renderGoingHome;
+  function renderGoingHome(reason) {
+    _rerenderCurrent = function () { renderGoingHome(reason); };
     stopGps();
     wrap.innerHTML = `
       <div class="card success-wrap fade-in" id="going-home">
         <div class="success-title">${esc(t().goingHomeTitle)}</div>
-        <div class="success-sub">${esc(t().goingHomeDone)}</div>
+        <div class="success-sub">${esc(reason === 'FORGOT_ENTRY' ? t().goingHomeDoneMorning : t().goingHomeDone)}</div>
         <div class="success-close">${esc(t().canCloseAfterSuccess)}</div>
       </div>`;
   }

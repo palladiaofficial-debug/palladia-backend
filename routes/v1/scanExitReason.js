@@ -12,7 +12,8 @@ const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { scanLimiter } = require('../../middleware/rateLimit');
 const { tagPresenceLogReason } = require('../../lib/presenceLogReasons');
-const { entryNotExitDetails } = require('../../lib/punchGuard');
+const { fixRequestFromWorker } = require('../../lib/presenceFix');
+const { notifyPunchHelpRequest } = require('../../services/telegramNotifications');
 
 const REASONS = ['pausa', 'maltempo', 'permesso'];
 const WINDOW_MS = 30 * 60 * 1000; // solo l'uscita appena fatta
@@ -62,9 +63,12 @@ router.post('/scan/exit-reason', scanLimiter, async (req, res) => {
 // Alla domanda "Stai iniziando a lavorare?" (dopo un turno di pochi minuti
 // oggi) l'operaio risponde che sta andando via: non si scrive nessuna
 // timbratura, il titolare riceve un avviso con gli orari da correggere —
-// stesso esito di help-request ENTRY_NOT_EXIT del badge personale.
+// stesso esito di help-request ENTRY_NOT_EXIT del badge personale. Con
+// reason FORGOT_ENTRY (primo tocco nel pomeriggio): "ho dimenticato l'entrata".
+// Entrambi aprono un caso in Da fare → Timbrature da sistemare.
 router.post('/scan/help-entry-not-exit', scanLimiter, async (req, res) => {
   const { worksite_id, session_token } = req.body || {};
+  const reason = req.body?.reason === 'FORGOT_ENTRY' ? 'FORGOT_ENTRY' : 'ENTRY_NOT_EXIT';
   if (!worksite_id || !session_token) return res.status(400).json({ error: 'MISSING_FIELDS' });
   if (typeof session_token !== 'string' || session_token.length !== 64) return res.status(401).json({ error: 'INVALID_SESSION_TOKEN' });
 
@@ -76,16 +80,11 @@ router.post('/scan/help-entry-not-exit', scanLimiter, async (req, res) => {
   const { data: site } = await supabase.from('sites').select('name, company_id').eq('id', worksite_id).maybeSingle();
   if (!site || site.company_id !== session.company_id) return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
 
-  const details = await entryNotExitDetails({ workerId: session.worker_id, companyId: session.company_id });
-  const name = session.worker?.full_name || 'Un operaio';
-  const { error } = await supabase.from('notifications').insert({
-    company_id: session.company_id, type: 'punch_help_request', severity: 'warning',
-    title: `${name} sta andando via: timbrature di oggi da correggere`,
-    body: `Cantiere: ${site.name}. ${details}`,
-    entity_type: 'punch_help_request', entity_id: crypto.randomUUID(),
-  });
-  if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  res.json({ ok: true });
+  const worker = { id: session.worker_id, company_id: session.company_id };
+  const ok = await fixRequestFromWorker({ worker, siteId: worksite_id, reason });
+  notifyPunchHelpRequest(session.company_id, worksite_id, site.name, session.worker?.full_name || 'Un operaio', reason)
+    .catch(e => console.error('[scan-help] notifyPunchHelpRequest error:', e.message));
+  res.json({ ok: true, recorded: ok });
 });
 
 module.exports = router;

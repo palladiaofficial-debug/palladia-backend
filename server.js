@@ -24,6 +24,7 @@ const v1Router = require('./routes/v1');
 const { generateAndSave: generateSiteChecklist } = require('./routes/v1/siteChecklist');
 const { startMissingExitCron }      = require('./services/missingExitCron');
 const { startMissingExitIntraDayCron } = require('./services/missingExitIntraDayCron');
+const { startExitReminderCron }     = require('./services/exitReminderCron');
 // dailySummaryCron rimosso — sostituito da push notification native
 const { startEveningSummaryCron }   = require('./services/eveningSummaryCron');
 const { startExpiryAlertCron }      = require('./services/expiryAlertCron');
@@ -1967,6 +1968,8 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     const frozen = (module, start) => { if (isModuleEnabledGlobally(module)) start(); else logger.info({ module }, '[cron] congelato, non avviato'); };
     startMissingExitCron();
     startMissingExitIntraDayCron();
+    // Promemoria uscita all'operaio + caso in Da fare (mockup 2026-10-03)
+    startExitReminderCron();
     frozen('daily_digests', startEveningSummaryCron);
     startExpiryAlertCron();
     startDailyDocCheckCron();

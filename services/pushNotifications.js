@@ -61,12 +61,13 @@ async function sendPushToUser(userId, payload) {
  * tabella worker_push_subscriptions — separata dagli utenti dell'app).
  */
 async function sendPushToWorker(workerId, payload) {
-  if (!ready) return;
+  if (!ready) return 0;
   const { data: subs } = await supabase
     .from('worker_push_subscriptions')
     .select('id, endpoint, p256dh, auth')
     .eq('worker_id', workerId);
   await _dispatch(subs || [], payload, 'worker_push_subscriptions');
+  return (subs || []).length; // telefoni a cui è stata mandata
 }
 
 async function _dispatch(subs, payload, table = 'push_subscriptions') {

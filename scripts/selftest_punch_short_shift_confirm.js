@@ -75,8 +75,9 @@ async function main() {
     check('…e niente scritto', await count(a) === 1);
     const r2 = await punch(a, { confirmed: true });
     check('confermata: uscita scritta come sempre', r2.status === 200 && r2.body.event_type === 'EXIT', r2);
-    const notif = await waitRows(() => supabase.from('notifications').select('type, title, body').eq('company_id', company.id).eq('type', 'punch_short_shift'));
-    check('avviso al titolare: turno di pochi minuti', notif?.length === 1 && notif[0].title.includes('Armand') && /7 minuti/.test(notif[0].body), notif);
+    // Avviso al titolare = caso in Da fare → Timbrature da sistemare (la nuova app non ha la campanella)
+    const notif = await waitRows(() => supabase.from('presence_fix_requests').select('kind, entry_at, exit_at, exit_log_id').eq('worker_id', a.id).eq('kind', 'short_shift'));
+    check('avviso al titolare: turno di pochi minuti in Timbrature da sistemare', notif?.length === 1 && Math.round((new Date(notif[0].exit_at) - new Date(notif[0].entry_at)) / 60000) === 7 && !!notif[0].exit_log_id, notif);
 
     // 2. Dopo un turno di pochi minuti oggi, la timbratura successiva chiede se sta entrando
     const b = await worker('Sera');
@@ -86,8 +87,8 @@ async function main() {
     check('nuova timbratura dopo un turno di 7 min oggi: 409 ENTRY_AFTER_SHORT', r3.status === 409 && r3.body.reason === 'ENTRY_AFTER_SHORT' && !!r3.body.exit_at, r3);
     check('…niente scritto', await count(b) === 2);
     const h = await post(`/badge/${b.badge_code}/help-request`, { site_id: site.id, reason: 'ENTRY_NOT_EXIT' });
-    const hn = await waitRows(() => supabase.from('notifications').select('title, body').eq('company_id', company.id).eq('type', 'punch_help_request'));
-    check('"No, sto andando via": avviso al titolare con gli orari da correggere', h.status === 200 && hn?.some(x => x.title.includes('Sera') && /uscit/i.test(x.body) && /\d\d:\d\d/.test(x.body)), { h, hn });
+    const hn = await waitRows(() => supabase.from('presence_fix_requests').select('kind, entry_at, exit_at, touch_at, exit_log_id').eq('worker_id', b.id).eq('kind', 'entry_not_exit'));
+    check('"No, sto andando via": caso da sistemare con gli orari (entrata, uscita breve, tocco)', h.status === 200 && hn.length === 1 && hn[0].entry_at && hn[0].exit_at && hn[0].touch_at && hn[0].exit_log_id, { h, hn });
     check('…e ancora niente scritto', await count(b) === 2);
     const r4 = await punch(b, { confirmed: true });
     check('"Sì, entro adesso": entrata scritta', r4.status === 200 && r4.body.event_type === 'ENTRY', r4);
@@ -124,12 +125,13 @@ async function main() {
     check('QR: confermata → uscita scritta', r9.status === 200 && r9.body.event_type === 'EXIT', r9);
     const before = await count(f);
     const g = await post('/scan/help-entry-not-exit', { worksite_id: site.id, session_token: token });
-    const gn = await waitRows(() => supabase.from('notifications').select('title, body').eq('company_id', company.id).ilike('title', '%QR sta andando via%'));
-    check('QR "No, sto andando via": avviso al titolare con gli orari, niente scritto', g.status === 200 && gn.length === 1 && /\d\d:\d\d/.test(gn[0].body) && await count(f) === before, { g, gn });
+    const gn = await waitRows(() => supabase.from('presence_fix_requests').select('kind, touch_at').eq('worker_id', f.id).eq('kind', 'entry_not_exit'));
+    check('QR "No, sto andando via": caso da sistemare, niente scritto', g.status === 200 && gn.length === 1 && !!gn[0].touch_at && await count(f) === before, { g, gn });
     check('QR "No, sto andando via" senza sessione valida: 401', (await post('/scan/help-entry-not-exit', { worksite_id: site.id, session_token: 'b'.repeat(64) })).status === 401);
   } finally {
     server.close();
     await supabase.from('notifications').delete().eq('company_id', company.id);
+    await supabase.from('presence_fix_requests').delete().eq('company_id', company.id);
     await supabase.from('worker_device_sessions').delete().eq('company_id', company.id);
     await supabase.from('worksite_workers').delete().eq('company_id', company.id);
     await supabase.from('presence_logs').delete().eq('company_id', company.id);

@@ -29,6 +29,8 @@ router.use('/', require('./sessions'));
 router.use('/', require('./qr'));
 router.use('/', require('./presence'));
 router.use('/', require('./presenceCorrections'));
+// Timbrature da sistemare (mockup 2026-10-03): conferma in un tocco da Da fare
+router.use('/', require('./presenceFixRoutes'));
 router.use('/', require('./reports'));
 router.use('/', require('./oreAssenze').router); // F-265 ore e assenze
 router.use('/', require('./alerts'));
