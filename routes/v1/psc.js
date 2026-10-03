@@ -32,9 +32,13 @@ async function mustProject(req) {
   return p;
 }
 
-async function touch(projectId, extra = {}) {
+function touch(projectId, extra = {}) {
   // Ogni modifica a un PSC firmato lo riporta in bozza: la prossima firma è una nuova revisione.
-  await supabase.from('psc_projects').update({ updated_at: new Date().toISOString(), status: 'bozza', ...extra }).eq('id', projectId).neq('status', 'archiviato');
+  // Senza await quando non serve aspettare (data di modifica); con dati (layout, computo) si aspetta.
+  // .then() fa partire subito la query (i builder di Supabase partono solo quando
+  // qualcuno li "aspetta"): chi non ha bisogno di aspettare non la perde.
+  return supabase.from('psc_projects').update({ updated_at: new Date().toISOString(), status: 'bozza', ...extra }).eq('id', projectId).neq('status', 'archiviato')
+    .then(r => { if (r.error) console.error('[psc touch]', r.error.message); return r; }, e => { console.error('[psc touch]', e && e.message); return { error: e }; });
 }
 
 async function full(req, projectId) {
@@ -232,7 +236,7 @@ router.post('/psc/projects/:id/archivia', ...auth, h(async (req, res) => {
 // ── Contesto da OpenStreetMap ───────────────────────────────────────────────
 router.post('/psc/projects/:id/contesto', ...auth, h(async (req, res) => {
   const p = await mustProject(req);
-  const address = [p.address, p.comune].filter(Boolean).join(', ');
+  const address = require('../../lib/psc/documento').luogo(p.address, p.comune);
   if (!p.address || p.address.length < 5) throw fail(400, 'Scrivi prima l\'indirizzo del cantiere', 'ADDRESS_REQUIRED');
   let r;
   try { r = await contesto.analizza(address, { prev: p.contesto || {} }); }
@@ -332,7 +336,7 @@ router.post('/psc/projects/:id/lavorazioni', ...auth, h(async (req, res) => {
   };
   const { data, error } = await supabase.from('psc_lavorazioni').insert(row).select('*').single();
   if (error) throw error;
-  await touch(p.id);
+  touch(p.id);
   res.status(201).json({ lavorazione: data });
 }));
 
@@ -367,7 +371,7 @@ router.patch('/psc/lavorazioni/:lid', ...auth, h(async (req, res) => {
   }
   const { data, error } = await supabase.from('psc_lavorazioni').update({ ...b, updated_at: new Date().toISOString() }).eq('id', l.id).select('*').single();
   if (error) throw error;
-  await touch(l.project_id);
+  touch(l.project_id);
   res.json({ lavorazione: data });
 }));
 
@@ -375,14 +379,14 @@ router.post('/psc/lavorazioni/:lid/approva-tutte', ...auth, h(async (req, res) =
   const l = await mustLav(req);
   const misure = (l.misure || []).map(m => ({ ...m, approvata: true }));
   const { data } = await supabase.from('psc_lavorazioni').update({ misure, updated_at: new Date().toISOString() }).eq('id', l.id).select('*').single();
-  await touch(l.project_id);
+  touch(l.project_id);
   res.json({ lavorazione: data });
 }));
 
 router.delete('/psc/lavorazioni/:lid', ...auth, h(async (req, res) => {
   const l = await mustLav(req);
   await supabase.from('psc_lavorazioni').delete().eq('id', l.id);
-  await touch(l.project_id);
+  touch(l.project_id);
   res.json({ ok: true });
 }));
 
@@ -432,7 +436,7 @@ router.post('/psc/projects/:id/interferenze', ...auth, h(async (req, res) => {
     testo: b.testo || scelta.testo, rischio: sol.rischio, decided_by: req.user.id, decided_at: new Date().toISOString(),
   }, { onConflict: 'project_id,lav_a,lav_b' });
   if (error) throw error;
-  await touch(all.project.id);
+  touch(all.project.id);
   res.json(await full(req, all.project.id));
 }));
 
@@ -440,7 +444,7 @@ router.delete('/psc/interferenze/:iid', ...auth, h(async (req, res) => {
   if (!isUuid(req.params.iid)) throw fail(404, 'Non trovata');
   const { data } = await supabase.from('psc_interferenze').delete().eq('id', req.params.iid).eq('company_id', req.companyId).select('project_id');
   if (!data || !data.length) throw fail(404, 'Non trovata');
-  await touch(data[0].project_id);
+  touch(data[0].project_id);
   res.json({ ok: true });
 }));
 
@@ -453,7 +457,7 @@ router.post('/psc/projects/:id/costi/proponi', ...auth, h(async (req, res) => {
     project: all.project, lavorazioni: all.lavorazioni, contestoKeys: contesto.chiaviAttive(all.project.contesto),
     decisioni: all.decisioni, nImprese: all.imprese.length, library: lib, esistenti: all.costi,
   }).map(r => ({ ...r, project_id: all.project.id, company_id: req.companyId }));
-  if (rows.length) { const { error } = await supabase.from('psc_costi').insert(rows); if (error) throw error; await touch(all.project.id); }
+  if (rows.length) { const { error } = await supabase.from('psc_costi').insert(rows); if (error) throw error; touch(all.project.id); }
   res.json({ aggiunte: rows.length, ...(await full(req, all.project.id)) });
 }));
 
@@ -480,7 +484,7 @@ router.post('/psc/projects/:id/costi', ...auth, h(async (req, res) => {
   const { count } = await supabase.from('psc_costi').select('id', { count: 'exact', head: true }).eq('project_id', p.id);
   const { data, error } = await supabase.from('psc_costi').insert({ ...row, ordine: count || 0, project_id: p.id, company_id: req.companyId }).select('*').single();
   if (error) throw error;
-  await touch(p.id);
+  touch(p.id);
   res.status(201).json({ costo: data });
 }));
 
@@ -494,7 +498,7 @@ router.patch('/psc/costi/:cid', ...auth, h(async (req, res) => {
   if (('prezzo' in b && Number(b.prezzo) !== Number(c.prezzo)) || b.conferma_prezzo) upd.prezzo_fonte = 'manuale';
   const { data, error } = await supabase.from('psc_costi').update(upd).eq('id', c.id).select('*').single();
   if (error) throw error;
-  await touch(c.project_id);
+  touch(c.project_id);
   res.json({ costo: data });
 }));
 
@@ -502,7 +506,7 @@ router.delete('/psc/costi/:cid', ...auth, h(async (req, res) => {
   if (!isUuid(req.params.cid)) throw fail(404, 'Non trovata');
   const { data } = await supabase.from('psc_costi').delete().eq('id', req.params.cid).eq('company_id', req.companyId).select('project_id');
   if (!data || !data.length) throw fail(404, 'Voce non trovata');
-  await touch(data[0].project_id);
+  touch(data[0].project_id);
   res.json({ ok: true });
 }));
 

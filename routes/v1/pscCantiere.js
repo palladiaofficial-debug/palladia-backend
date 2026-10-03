@@ -30,7 +30,7 @@ async function mustImpresa(req) {
   if (!data) throw fail(404, 'Impresa non trovata', 'NOT_FOUND');
   return data;
 }
-const touch = (projectId) => supabase.from('psc_projects').update({ updated_at: new Date().toISOString() }).eq('id', projectId);
+const touch = (projectId) => { supabase.from('psc_projects').update({ updated_at: new Date().toISOString() }).eq('id', projectId).then(() => {}, () => {}); };
 
 // ── Imprese ─────────────────────────────────────────────────────────────────
 const IMPRESA_FIELDS = {
@@ -48,7 +48,7 @@ router.post('/psc/projects/:id/imprese', ...auth, h(async (req, res) => {
   if (b.ruolo === 'affidataria') await supabase.from('psc_imprese').update({ ruolo: 'esecutrice' }).eq('project_id', p.id).eq('ruolo', 'affidataria');
   const { data, error } = await supabase.from('psc_imprese').insert({ ...b, project_id: p.id, company_id: req.companyId, color: PALETTE[(count || 0) % PALETTE.length] }).select('*').single();
   if (error) throw error;
-  await touch(p.id);
+  touch(p.id);
   res.status(201).json({ impresa: data });
 }));
 
@@ -59,14 +59,14 @@ router.patch('/psc/imprese/:iid', ...auth, h(async (req, res) => {
   if (b.ruolo === 'affidataria') await supabase.from('psc_imprese').update({ ruolo: 'esecutrice' }).eq('project_id', i.project_id).eq('ruolo', 'affidataria').neq('id', i.id);
   const { data, error } = await supabase.from('psc_imprese').update(b).eq('id', i.id).select('*').single();
   if (error) throw error;
-  await touch(i.project_id);
+  touch(i.project_id);
   res.json({ impresa: data });
 }));
 
 router.delete('/psc/imprese/:iid', ...auth, h(async (req, res) => {
   const i = await mustImpresa(req);
   await supabase.from('psc_imprese').delete().eq('id', i.id);
-  await touch(i.project_id);
+  touch(i.project_id);
   res.json({ ok: true });
 }));
 
@@ -130,7 +130,7 @@ function prescrizioniPer(impresaId, all) {
     const a = lavById.get(d.lav_a), b = lavById.get(d.lav_b);
     out.push({ id: `int-${d.id.slice(0, 8)}`, titolo: `interferenza ${a ? a.nome : ''} × ${b ? b.nome : ''}`, testo: d.testo });
   }
-  for (const u of all.project.uso_comune || []) if (u.testo && (!u.impresa_id || u.impresa_id === impresaId)) out.push({ id: `uso-${u.key || out.length}`, titolo: `uso comune: ${u.titolo}`, testo: u.testo });
+  for (const u of all.project.uso_comune || []) if (u.testo && u.approvata !== false && (!u.impresa_id || u.impresa_id === impresaId)) out.push({ id: `uso-${u.key || out.length}`, titolo: `uso comune: ${u.titolo}`, testo: u.testo });
   return out.slice(0, 15);
 }
 
@@ -214,7 +214,7 @@ router.post('/psc/projects/:id/verbali', ...auth, h(async (req, res) => {
     for (const x of ((all.project.contesto || {}).da_sopralluogo || [])) if (!x.verificato) checklist.push({ key: `ctx:${x.key}`, titolo: x.domanda || x.titolo, esito: null, nota: '', contesto_key: x.key });
     for (const d of all.decisioni) {
       const inter = detect(all.lavorazioni, all.decisioni).risolte.find(r => r.id === d.id);
-      if (inter && inter.ancora_sovrapposte) checklist.push({ key: `int:${d.id}`, titolo: `Prescrizione interferenza: ${d.testo.slice(0, 120)}`, esito: null, nota: '' });
+      if (inter && inter.ancora_sovrapposte) checklist.push({ key: `int:${d.id}`, titolo: `Prescrizione interferenza: ${d.testo.length > 140 ? `${d.testo.slice(0, 138).replace(/\s+\S*$/, '')}…` : d.testo}`, esito: null, nota: '' });
     }
   } else {
     checklist.push({ key: 'riunione:ordine', titolo: 'Illustrazione del PSC e delle prescrizioni alle imprese presenti', esito: null, nota: '' });
