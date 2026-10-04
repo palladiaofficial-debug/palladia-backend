@@ -314,6 +314,8 @@ function testParte2() {
   check('indirizzo senza comune ripetuto nella lettera', /Via Roma 1, Genova\./.test(t1) && !/Genova, Genova/.test(t1));
   const t2 = documento.testoSegnalazione({ project: p, impresa: null, nc: [], destinatario: 'asl', precedente: '2026-10-05T10:00:00Z' });
   check('lettera all\'ASL: committente inadempiente, data della segnalazione precedente', /non ha adottato alcun provvedimento/.test(t2) && /05\/10\/2026/.test(t2) && /Ispettorato/.test(t2));
+  const lv = controlla({ project: base, lavorazioni: [{ nome: 'Copertura', rischi: [{ testo: 'r' }], misure: [{ testo: 'Linea vita provvisoria sul colmo', approvata: true }] }], imprese: [], costi: [{ descrizione: 'Linea di ancoraggio provvisoria orizzontale (UNI EN 795 tipo C)', origine: 'catalogo:linea_vita', quantita: 40, prezzo: 25, categoria: 'a' }], decisioni: [], interferenzeAperte: [], library: [], riep: C.riepilogo([], []) });
+  check('ispettore: "linea di ancoraggio" nei costi conta come linea vita (niente falso allarme)', !lv.osservazioni.some(o => /linea vita/.test(o.testo)), lv.osservazioni.map(o => o.testo));
   const acc = controlla({ project: base, lavorazioni: [], imprese: [{ ragione_sociale: 'Edil', invite_token: 'x', psc_accettato_rev: null, ruolo: 'affidataria' }], costi: [], decisioni: [], interferenzeAperte: [], library: [], riep: C.riepilogo([], []), revisioni: [{ revision: 1 }] });
   check('ispettore: impresa invitata che non ha accettato l\'ultima revisione', acc.osservazioni.some(o => /non ha ancora accettato il PSC rev\. 1/.test(o.testo)), acc.osservazioni.map(o => o.testo));
 }
