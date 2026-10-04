@@ -10,6 +10,8 @@ const checkoutSchema = z.object({
   plan: z.enum(['starter', 'grow', 'pro', 'business', 'coordinatore'], {
     errorMap: () => ({ message: 'plan deve essere starter, grow, pro o business' }),
   }),
+  // F-270: il coordinatore sceglie mensile (49 €) o annuale (490 €, due mesi regalati)
+  intervallo: z.enum(['mese', 'anno']).optional(),
 });
 
 // FRONTEND_URL = URL Vercel del frontend (per redirect Stripe)
@@ -72,7 +74,7 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo il proprietario può gestire l\'abbonamento.' });
   }
 
-  const { plan } = req.body || {};
+  const { plan, intervallo } = req.body || {};
   // F-270: il piano coordinatore solo per gli account coordinatore, e viceversa
   const { data: acct } = await supabase.from('companies').select('account_type').eq('id', req.companyId).maybeSingle();
   const isCoord = acct && acct.account_type === 'coordinatore';
@@ -84,7 +86,7 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
   }
 
   let priceId;
-  try { priceId = getPriceId(plan); }
+  try { priceId = getPriceId(plan === 'coordinatore' && intervallo === 'anno' ? 'coordinatore_annuale' : plan); }
   catch (e) {
     console.error('[billing] getPriceId error:', e.message);
     return res.status(503).json({ error: 'STRIPE_NOT_CONFIGURED' });

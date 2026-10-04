@@ -30,6 +30,7 @@ const PLAN_PRICES = {
   business: () => process.env.STRIPE_PRICE_BUSINESS,
   // F-270: abbonamento mensile del coordinatore della sicurezza (cantieri illimitati)
   coordinatore: () => process.env.STRIPE_PRICE_COORDINATORE,
+  coordinatore_annuale: () => process.env.STRIPE_PRICE_COORDINATORE_ANNUALE, // stesso piano, pagato una volta l'anno
 };
 
 /**
