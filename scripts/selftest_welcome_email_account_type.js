@@ -34,5 +34,11 @@ check(/primo cantiere/i.test(imp.html) && /\/dashboard/.test(imp.html), 'impresa
 const def = buildWelcomeEmail({ name: 'Mario Rossi', companyName: 'Edilizia Rossi' });
 check(def.html === imp.html, 'senza account_type: come impresa');
 
+// Il titolo professionale non è il nome: "Arch. Prova Giro" → "Ciao Prova", non "Ciao Arch."
+for (const [full, atteso] of [['Arch. Prova Giro', 'Prova'], ['Ing. Mario Rossi', 'Mario'], ['geom. Luca Bianchi', 'Luca'], ['Dott.ssa Anna Neri', 'Anna'], ['Amabile Veiga', 'Amabile']]) {
+  const e = buildWelcomeEmail({ name: full, companyName: 'X', accountType: 'coordinatore' });
+  check(e.html.includes(`Ciao ${atteso},`) && e.subject.endsWith(atteso), `saluto: "${full}" → Ciao ${atteso}`);
+}
+
 console.log(fail ? `\n${fail} controlli falliti` : '\nTutti i controlli passati');
 process.exit(fail ? 1 : 0);

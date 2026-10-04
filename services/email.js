@@ -130,8 +130,15 @@ async function sendWelcomeEmail({ to, name, companyName, accountType }) {
   return getResend().emails.send({ from: FROM, to, subject, html });
 }
 
+// "Arch. Mario Rossi" → "Mario": il titolo professionale non è il nome (F-274)
+const TITOLO_RE = /^(arch|ing|geom|dott|dott\.ssa|dr|avv|per|ind|p\.?i|prof|sig|sig\.ra)\.?$/i;
+function welcomeFirstName(name, to) {
+  const parts = String(name || to || '').trim().split(/\s+/);
+  return parts.find(p => !TITOLO_RE.test(p)) || parts[0] || '';
+}
+
 function buildWelcomeEmail({ to, name, companyName, accountType = 'impresa' }) {
-  const firstName = (name || to || '').split(' ')[0];
+  const firstName = welcomeFirstName(name, to);
 
   if (accountType === 'coordinatore') {
     const body = `
