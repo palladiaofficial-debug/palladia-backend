@@ -283,7 +283,10 @@ async function testDb() {
     code = beta.newCode();
     await supabase.from('psc_beta_invites').insert({ code, note: T });
     check('codice di prova valido', (await beta.checkCode(code.toLowerCase())).ok === true);
-    check('attivazione: codice usato, modulo acceso, prova 90 giorni', await beta.activate(c1.id, code));
+    check('attivazione: codice usato, modulo acceso', await beta.activate(c1.id, code));
+    const { data: tr } = await supabase.from('companies').select('trial_ends_at').eq('id', c1.id).single();
+    const giorni = Math.round((new Date(tr.trial_ends_at) - Date.now()) / 86400000);
+    check('prova di 60 giorni (decisione del titolare, 2026-10-04)', giorni === 60, giorni);
     const { data: ff } = await supabase.from('company_feature_flags').select('enabled').eq('company_id', c1.id).eq('feature', 'psc_coordinatori').maybeSingle();
     check('flag psc_coordinatori acceso per quella sola company', ff && ff.enabled === true);
     check('lo stesso codice non vale una seconda volta', (await beta.checkCode(code)).reason === 'GIA_USATO' && (await beta.activate(c2.id, code)) === false);
