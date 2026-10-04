@@ -97,15 +97,17 @@ function btn(text, href) {
 /**
  * @param {{ to: string, name: string, companyName: string }} opts
  */
-async function sendWelcomeEmail({ to, name, companyName }) {
-  const firstName = (name || to).split(' ')[0];
+// F-274: il testo dipende dal tipo di account. Il coordinatore della sicurezza
+// non ha cantieri, lavoratori o timbrature: riceve i passi dell'area PSC.
+const WELCOME_COORDINATORE_STEPS = [
+  { n: '1', title: 'Apri il cantiere di esempio', desc: 'Un PSC già compilato da guardare: opera, lavorazioni, interferenze, costi della sicurezza.' },
+  { n: '2', title: 'Crea il tuo primo PSC', desc: "Parti dall'indirizzo del cantiere. Palladia propone, tu approvi: nel PSC va solo quello che hai approvato." },
+  { n: '3', title: 'Invita le imprese', desc: 'Ricevono un link con quello che il PSC dice di loro e ti consegnano il POS. Lo verifichi con Palladia.' },
+  { n: '4', title: 'Il sopralluogo dal telefono', desc: 'Controlli, non conformità con foto e firma: il verbale arriva alle imprese.' },
+];
 
-  const steps = [
-    { n: '1', title: 'Crea il primo cantiere', desc: 'Aggiungi indirizzo, cliente e stato. Puoi creare quanti cantieri vuoi.' },
-    { n: '2', title: 'Inserisci i lavoratori', desc: 'Nome e codice fiscale sono sufficienti. I dati sono al sicuro e conformi GDPR.' },
-    { n: '3', title: 'Genera il QR per le timbrature', desc: 'Stampa il QR e attaccalo all\'ingresso. I lavoratori timbrano con il telefono, senza app.' },
-    { n: '4', title: 'Genera il POS', desc: 'Piano Operativo di Sicurezza in PDF pronto in meno di un minuto, personalizzato per il cantiere.' },
-  ].map(s => `
+function welcomeStepRow(s) {
+  return `
     <tr>
       <td style="padding:14px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;">
         <table cellpadding="0" cellspacing="0">
@@ -120,7 +122,48 @@ async function sendWelcomeEmail({ to, name, companyName }) {
           </tr>
         </table>
       </td>
-    </tr>`).join('');
+    </tr>`;
+}
+
+async function sendWelcomeEmail({ to, name, companyName, accountType }) {
+  const { subject, html } = buildWelcomeEmail({ to, name, companyName, accountType });
+  return getResend().emails.send({ from: FROM, to, subject, html });
+}
+
+function buildWelcomeEmail({ to, name, companyName, accountType = 'impresa' }) {
+  const firstName = (name || to || '').split(' ')[0];
+
+  if (accountType === 'coordinatore') {
+    const body = `
+    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${firstName},</p>
+    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
+      Palladia per coordinatori è attivo per <strong style="color:#1a1a1a;">${companyName}</strong>.
+      PSC, imprese e POS, verbali di sopralluogo: tutto in un posto.
+    </p>
+
+    <p style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Come iniziare</p>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      ${WELCOME_COORDINATORE_STEPS.map(welcomeStepRow).join('')}
+    </table>
+
+    ${btn('Apri Palladia Coordinatori →', `${APP_URL}/coordinatori`)}
+
+    <p style="margin:32px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
+      Palladia propone testi e controlli: il PSC resta del coordinatore che lo firma, con la sua responsabilità (D.Lgs.&nbsp;81/2008, art.&nbsp;91 e Allegato&nbsp;XV).
+    </p>
+  `;
+    return {
+      subject: `Benvenuto in Palladia Coordinatori, ${firstName}`,
+      html: layout(`Benvenuto in Palladia Coordinatori, ${firstName}!`, body),
+    };
+  }
+
+  const steps = [
+    { n: '1', title: 'Crea il primo cantiere', desc: 'Aggiungi indirizzo, cliente e stato. Puoi creare quanti cantieri vuoi.' },
+    { n: '2', title: 'Inserisci i lavoratori', desc: 'Nome e codice fiscale sono sufficienti. I dati sono al sicuro e conformi GDPR.' },
+    { n: '3', title: 'Genera il QR per le timbrature', desc: 'Stampa il QR e attaccalo all\'ingresso. I lavoratori timbrano con il telefono, senza app.' },
+    { n: '4', title: 'Genera il POS', desc: 'Piano Operativo di Sicurezza in PDF pronto in meno di un minuto, personalizzato per il cantiere.' },
+  ].map(welcomeStepRow).join('');
 
   const body = `
     <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${firstName},</p>
@@ -142,12 +185,10 @@ async function sendWelcomeEmail({ to, name, companyName }) {
     </p>
   `;
 
-  return getResend().emails.send({
-    from: FROM,
-    to,
+  return {
     subject: `Benvenuto su Palladia — ${companyName} è pronta`,
     html: layout(`Benvenuto su Palladia, ${firstName}!`, body),
-  });
+  };
 }
 
 // ─── Email: Reset password (backup — Supabase la gestisce nativamente) ────
@@ -2555,6 +2596,7 @@ async function sendPlainLayoutEmail({ to, subject, title, bodyHtml, replyTo, att
 
 module.exports = {
   sendWelcomeEmail,
+  buildWelcomeEmail,
   sendEmailIngestTestProbe,
   sendEmailIngestDelegateInstructions,
   sendPasswordResetEmail,

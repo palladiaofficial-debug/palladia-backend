@@ -199,7 +199,7 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
     const displayName = (typeof full_name === 'string' && full_name.trim().length > 0)
       ? full_name.trim()
       : req.user.email;
-    sendWelcomeEmail({ to: req.user.email, name: displayName, companyName: cleanName })
+    sendWelcomeEmail({ to: req.user.email, name: displayName, companyName: cleanName, accountType: company.account_type })
       .then(result => {
         if (result?.error) {
           console.error('[onboarding] welcome email Resend error:', JSON.stringify(result.error));
