@@ -325,6 +325,7 @@ app.post('/api/webhooks/stripe',
               [process.env.STRIPE_PRICE_BASE]:    'starter',
               [process.env.STRIPE_PRICE_GROW]:    'grow',
               [process.env.STRIPE_PRICE_PRO]:     'pro',
+              [process.env.STRIPE_PRICE_COORDINATORE]: 'coordinatore', // F-270
             };
             if (priceToplan[newPriceId]) updatePayload.subscription_plan = priceToplan[newPriceId];
           }

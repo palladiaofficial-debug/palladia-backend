@@ -57,6 +57,11 @@ function vistaImpresa(i, all) {
     orari: (p.testi && p.testi.orari) || null,
     emergenze: { pronto_soccorso: em.pronto_soccorso || null, punto_raccolta: em.punto_raccolta || null },
     psc: firmata ? { revision: firmata.revision, data: firmata.created_at } : null,
+    // Accettazione del PSC (art. 100 c.5): vale per l'ultima revisione firmata
+    accettazione: {
+      rev: i.psc_accettato_rev, at: i.psc_accettato_at, da: i.psc_accettato_da,
+      da_fare: !!firmata && (i.psc_accettato_rev == null || i.psc_accettato_rev < firmata.revision),
+    },
   };
 }
 
@@ -64,7 +69,10 @@ router.get('/psc-pub/invito/:token', coordinatorLimiter, h(async (req, res) => {
   const { impresa: i, all } = await byInvite(req.params.token);
   if (!i.opened_at) await supabase.from('psc_imprese').update({ opened_at: new Date().toISOString() }).eq('id', i.id);
   const { data: last } = await supabase.from('psc_pos_checks').select('esito, messaggio, sent_at, created_at').eq('impresa_id', i.id).not('esito', 'is', null).order('created_at', { ascending: false }).limit(1);
-  res.json({ ...vistaImpresa(i, all), ultimo_esito: last && last[0] && last[0].sent_at ? last[0] : null });
+  // Le non conformità aperte di questa impresa, ognuna con il suo link di chiusura
+  const { data: nc } = await supabase.from('psc_nc').select('descrizione, sospensione, scadenza, status, close_token, created_at')
+    .eq('impresa_id', i.id).neq('status', 'chiusa').order('created_at', { ascending: false }).limit(20);
+  res.json({ ...vistaImpresa(i, all), ultimo_esito: last && last[0] && last[0].sent_at ? last[0] : null, nc: (nc || []).map(n => ({ ...n, link: `/psc/nc/${n.close_token}`, close_token: undefined })) });
 }));
 
 router.get('/psc-pub/invito/:token/psc', coordinatorLimiter, h(async (req, res) => {
@@ -96,6 +104,38 @@ router.post('/psc-pub/invito/:token/pos', coordinatorLimiter, upPos('file'), h(a
   await supabase.from('psc_imprese').update({ pos_path: path, pos_name: req.file.originalname.slice(0, 200), pos_status: 'ricevuto', pos_received_at: new Date().toISOString() }).eq('id', i.id);
   notificaCse(all, i, 'caricato il POS');
   res.json({ ok: true });
+}));
+
+// ── Accettazione del PSC (art. 100 c.5; consultazione RLS, art. 102) ────────
+router.post('/psc-pub/invito/:token/accetta', coordinatorLimiter, h(async (req, res) => {
+  const { impresa: i, all } = await byInvite(req.params.token);
+  const firmata = all.revisioni.length ? all.revisioni[all.revisioni.length - 1] : null;
+  if (!firmata) throw fail(409, 'Il coordinatore non ha ancora firmato il PSC', 'NOT_SIGNED');
+  const nome = str(req.body && req.body.nome, 120);
+  if (!nome || nome.length < 3) throw fail(400, 'Scrivi nome e cognome del datore di lavoro', 'NAME_REQUIRED');
+  if (!(req.body && req.body.rls_consultato === true)) throw fail(400, 'Conferma di aver consultato il rappresentante dei lavoratori (RLS)', 'RLS_REQUIRED');
+  const proposte = str(req.body && req.body.proposte, 3000) || null;
+  await supabase.from('psc_imprese').update({
+    psc_accettato_rev: firmata.revision, psc_accettato_at: new Date().toISOString(), psc_accettato_da: nome,
+    rls_consultato: true, psc_proposte: proposte,
+  }).eq('id', i.id);
+  const cse = (all.project.soggetti && all.project.soggetti.cse) || {};
+  if (cse.email && process.env.RESEND_API_KEY) {
+    sendPlainLayoutEmail({
+      to: cse.email, subject: `${i.ragione_sociale} ha accettato il PSC rev. ${firmata.revision} · ${all.project.title}`,
+      title: proposte ? 'PSC accettato, con proposte di integrazione' : 'PSC accettato',
+      bodyHtml: `<p style="margin:0 0 14px;font-size:15px;color:#3E3A32;line-height:1.6;"><b>${esc(i.ragione_sociale)}</b> (${esc(nome)}) ha accettato il PSC rev. ${firmata.revision} di <b>${esc(all.project.title)}</b> e dichiara di aver consultato il proprio RLS.</p>${proposte ? `<p style="margin:0 0 6px;font-size:14px;color:#3E3A32;"><b>Proposte di integrazione:</b></p><p style="margin:0 0 14px;font-size:14px;color:#3E3A32;line-height:1.6;white-space:pre-line;">${esc(proposte)}</p>` : ''}${emailButton('Apri il cantiere', `${APP_URL}/coordinatori/cantieri/${all.project.id}/imprese`)}`,
+    }).catch(e => console.error('[psc accetta] email:', e.message));
+  }
+  res.json({ ok: true, revision: firmata.revision });
+}));
+
+// ── Impresa con account Palladia: i suoi cantieri, per collegare quello giusto ──
+router.get('/psc-pub/invito/:token/miei-cantieri', verifySupabaseJwt, h(async (req, res) => {
+  await byInvite(req.params.token);
+  const { data } = await supabase.from('sites').select('id, name, address, status').eq('company_id', req.companyId)
+    .neq('status', 'eliminato').order('created_at', { ascending: false }).limit(100);
+  res.json({ cantieri: data || [] });
 }));
 
 // ── Impresa con account Palladia: collega e crea il POS con i dati del PSC ──

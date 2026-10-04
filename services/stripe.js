@@ -28,6 +28,8 @@ const PLAN_PRICES = {
   grow:     () => process.env.STRIPE_PRICE_GROW,
   pro:      () => process.env.STRIPE_PRICE_PRO,
   business: () => process.env.STRIPE_PRICE_BUSINESS,
+  // F-270: abbonamento mensile del coordinatore della sicurezza (cantieri illimitati)
+  coordinatore: () => process.env.STRIPE_PRICE_COORDINATORE,
 };
 
 /**
@@ -75,6 +77,7 @@ const AI_BUDGET_LIMITS = {
   grow:       20,
   pro:        40,
   business:   100,
+  coordinatore: 20, // F-270: letture di vecchi PSC e verifiche POS
   enterprise: null,
 };
 

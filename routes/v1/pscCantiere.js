@@ -192,11 +192,12 @@ async function mustVerbale(req) {
 
 router.get('/psc/projects/:id/verbali', ...auth, h(async (req, res) => {
   const p = await mustProject(req, req.params.id);
-  const [{ data: v }, { data: nc }] = await Promise.all([
+  const [{ data: v }, { data: nc }, { data: sg }] = await Promise.all([
     supabase.from('psc_verbali').select('id, numero, tipo, data, status, signed_at, sent_to').eq('project_id', p.id).order('numero', { ascending: false }),
     supabase.from('psc_nc').select('*').eq('project_id', p.id).order('created_at', { ascending: false }),
+    supabase.from('psc_segnalazioni').select('id, impresa_id, destinatario, proposta, nc_ids, email_to, sent_at, created_at').eq('project_id', p.id).order('created_at', { ascending: false }),
   ]);
-  res.json({ verbali: v || [], nc: nc || [] });
+  res.json({ verbali: v || [], nc: nc || [], segnalazioni: sg || [] });
 }));
 
 router.post('/psc/projects/:id/verbali', ...auth, h(async (req, res) => {
@@ -376,6 +377,107 @@ router.get('/psc/verbali/:vid/pdf', ...auth, h(async (req, res) => {
   const v = await mustVerbale(req);
   if (!v.pdf_path) throw fail(404, 'Il PDF si crea alla firma');
   res.json({ url: await store.signedUrl(v.pdf_path, 600, `Verbale-${v.numero}.pdf`) });
+}));
+
+// ── Segnalazione al committente / all'ASL (art. 92 c.1 lett. e) ──────────────
+router.post('/psc/projects/:id/segnalazioni/anteprima', ...auth, h(async (req, res) => {
+  const all = await store.loadAll(req.companyId, req.params.id);
+  if (!all) throw fail(404, 'Cantiere non trovato');
+  const b = req.body || {};
+  const impresa = all.imprese.find(i => i.id === b.impresa_id) || null;
+  const ncIds = Array.isArray(b.nc_ids) ? b.nc_ids.filter(isUuid).slice(0, 30) : [];
+  const { data: nc } = ncIds.length ? await supabase.from('psc_nc').select('id, descrizione, created_at').in('id', ncIds).eq('project_id', all.project.id) : { data: [] };
+  let precedente = null;
+  if (b.destinatario === 'asl') {
+    const { data: prev } = await supabase.from('psc_segnalazioni').select('created_at').eq('project_id', all.project.id).eq('destinatario', 'committente').order('created_at', { ascending: false }).limit(1);
+    precedente = prev && prev[0] ? prev[0].created_at : null;
+  }
+  const testo = documento.testoSegnalazione({ project: all.project, impresa, nc: nc || [], destinatario: b.destinatario === 'asl' ? 'asl' : 'committente', proposta: b.proposta, precedente });
+  const committenteEmail = (all.project.soggetti && all.project.soggetti.committente && all.project.soggetti.committente.email) || null;
+  res.json({ testo, email_committente: committenteEmail });
+}));
+
+router.post('/psc/projects/:id/segnalazioni', ...auth, h(async (req, res) => {
+  const all = await store.loadAll(req.companyId, req.params.id);
+  if (!all) throw fail(404, 'Cantiere non trovato');
+  const b = pick(req.body, {
+    destinatario: (v) => (['committente', 'asl'].includes(v) ? v : undefined),
+    proposta: (v) => (v === null || ['sospensione', 'allontanamento', 'risoluzione'].includes(v) ? v : undefined),
+    impresa_id: (v) => (v === null || isUuid(v) ? v : undefined),
+    nc_ids: (v) => (Array.isArray(v) ? v.filter(isUuid).slice(0, 30) : undefined),
+    testo: (v) => str(v, 8000),
+    invia_email: (v) => (typeof v === 'boolean' ? v : undefined),
+  });
+  if (!b.destinatario || !b.testo || b.testo.length < 30) throw fail(400, 'Manca il testo della segnalazione');
+  const html = documento.segnalazioneHtml({ project: all.project, testo: b.testo, destinatario: b.destinatario });
+  const { rendererPool } = require('../../pdf-renderer');
+  const pdf = await rendererPool.render(html, { docTitle: `Segnalazione art. 92 · ${all.project.title}`, headerLeft: ((all.project.soggetti || {}).cse || {}).studio || 'Segnalazione', footerLeft: 'D.Lgs. 81/2008 · art. 92 c. 1 e', revision: '0' });
+  const path = `${req.companyId}/${all.project.id}/segnalazioni/${b.destinatario}-${Date.now()}.pdf`;
+  await store.upload(path, pdf, 'application/pdf');
+  const committenteEmail = (all.project.soggetti && all.project.soggetti.committente && all.project.soggetti.committente.email) || null;
+  let sent = null;
+  if (b.destinatario === 'committente' && b.invia_email !== false && committenteEmail && process.env.RESEND_API_KEY) {
+    const cse = (all.project.soggetti && all.project.soggetti.cse) || {};
+    try {
+      const r = await sendPlainLayoutEmail({
+        to: committenteEmail, subject: `Segnalazione art. 92 D.Lgs. 81/2008 · ${all.project.title}`, title: 'Segnalazione del coordinatore per la sicurezza',
+        bodyHtml: `<p style="margin:0 0 14px;font-size:15px;color:#3E3A32;line-height:1.65;white-space:pre-line;">${esc(b.testo)}</p><p style="margin:0;font-size:13px;color:#8A8171;">In allegato la segnalazione in PDF. Per rispondere scrivi a ${esc(cse.email || 'il coordinatore')}.</p>`,
+        replyTo: cse.email || undefined, attachments: [{ filename: 'Segnalazione-art92.pdf', content: pdf.toString('base64') }],
+      });
+      if (!(r && r.error)) sent = new Date().toISOString();
+    } catch (e) { console.error('[psc segnalazione] email:', e.message); }
+  }
+  const { data, error } = await supabase.from('psc_segnalazioni').insert({
+    project_id: all.project.id, company_id: req.companyId, impresa_id: b.impresa_id || null, destinatario: b.destinatario,
+    proposta: b.proposta || null, nc_ids: b.nc_ids || [], testo: b.testo, pdf_path: path, email_to: sent ? committenteEmail : null, sent_at: sent, created_by: req.user.id,
+  }).select('*').single();
+  if (error) throw error;
+  res.status(201).json({ segnalazione: data, inviata: !!sent, url: await store.signedUrl(path, 600, 'Segnalazione-art92.pdf') });
+}));
+
+router.get('/psc/segnalazioni/:sid/pdf', ...auth, h(async (req, res) => {
+  if (!isUuid(req.params.sid)) throw fail(404, 'Non trovata');
+  const { data } = await supabase.from('psc_segnalazioni').select('pdf_path').eq('id', req.params.sid).eq('company_id', req.companyId).maybeSingle();
+  if (!data || !data.pdf_path) throw fail(404, 'Non trovata');
+  res.json({ url: await store.signedUrl(data.pdf_path, 600, 'Segnalazione-art92.pdf') });
+}));
+
+// ── Documenti dell'impresa collegata (solo se l'impresa ha scelto di collegarsi) ──
+const CATEGORIE_DOC = { durc: 'DURC', visura: 'Visura camerale', assicurazione: 'Assicurazione RCT/RCO', polizza: 'Polizza', soa: 'Attestazione SOA', rspp: 'Nomina RSPP', medico_competente: 'Nomina medico competente', rls: 'Nomina RLS', primo_soccorso: 'Addetti primo soccorso', emergenze: 'Addetti emergenze', preposto: 'Nomina preposto' };
+router.get('/psc/imprese/:iid/documenti', ...auth, h(async (req, res) => {
+  const i = await mustImpresa(req);
+  if (!i.linked_company_id) return res.json({ collegata: false });
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: docs } = await supabase.from('company_documents').select('id, name, category, ai_expiry_date, created_at')
+    .eq('company_id', i.linked_company_id).in('category', Object.keys(CATEGORIE_DOC)).order('created_at', { ascending: false }).limit(200);
+  const ultimo = new Map();
+  for (const d of docs || []) if (!ultimo.has(d.category)) ultimo.set(d.category, d);
+  const documenti = [...ultimo.values()].map(d => ({ id: d.id, titolo: CATEGORIE_DOC[d.category], nome: d.name, scadenza: d.ai_expiry_date, scaduto: !!(d.ai_expiry_date && d.ai_expiry_date < today) }));
+  let lavoratori = [];
+  if (i.linked_site_id) {
+    const { data: ww } = await supabase.from('worksite_workers').select('worker_id, status').eq('company_id', i.linked_company_id).eq('site_id', i.linked_site_id).neq('status', 'removed');
+    const ids = [...new Set((ww || []).map(w => w.worker_id))].slice(0, 200);
+    if (ids.length) {
+      const [{ data: ws }, { data: certs }] = await Promise.all([
+        supabase.from('workers').select('id, full_name, qualification, is_active').in('id', ids).eq('is_active', true),
+        supabase.from('worker_certificates').select('worker_id, expiry_date, course_types(name)').in('worker_id', ids).is('deleted_at', null),
+      ]);
+      lavoratori = (ws || []).map(w => ({
+        nome: w.full_name, mansione: w.qualification,
+        attestati: (certs || []).filter(c => c.worker_id === w.id).map(c => ({ corso: c.course_types ? c.course_types.name : 'Attestato', scadenza: c.expiry_date, scaduto: !!(c.expiry_date && c.expiry_date < today) })),
+      })).sort((a, b) => a.nome.localeCompare(b.nome));
+    }
+  }
+  res.json({ collegata: true, cantiere_collegato: !!i.linked_site_id, documenti, lavoratori });
+}));
+
+router.get('/psc/imprese/:iid/documenti/:docId', ...auth, h(async (req, res) => {
+  const i = await mustImpresa(req);
+  if (!i.linked_company_id || !isUuid(req.params.docId)) throw fail(404, 'Documento non trovato');
+  const { data: d } = await supabase.from('company_documents').select('file_path, name, category').eq('id', req.params.docId).eq('company_id', i.linked_company_id).maybeSingle();
+  if (!d || !CATEGORIE_DOC[d.category]) throw fail(404, 'Documento non trovato');
+  const { data } = await supabase.storage.from('site-documents').createSignedUrl(d.file_path, 600, { download: d.name });
+  res.json({ url: data ? data.signedUrl : null });
 }));
 
 module.exports = router;

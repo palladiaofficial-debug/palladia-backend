@@ -296,10 +296,64 @@ async function testDb() {
   }
 }
 
+function testParte2() {
+  console.log('\n\x1b[1mParte 2: ordigni, segnalazioni, accettazione\x1b[0m');
+  const base = { address: 'Via Roma 1', descrizione: 'Nuova palazzina con scavo di fondazione', start_date: '2026-10-12', end_date: '2026-12-23', soggetti: {}, contesto: { analizzato: true }, organizzazione: {}, emergenze: {}, coordinamento: {} };
+  const scavo = [{ nome: 'Scavo', scheda_id: 'scavo-sbancamento', rischi: [{ testo: 'r' }], misure: [{ testo: 'm', approvata: true }] }];
+  const c1 = controlla({ project: base, lavorazioni: scavo, imprese: [], costi: [], decisioni: [], interferenzeAperte: [], library: [], riep: C.riepilogo([], []) });
+  check('scavi senza valutazione ordigni bellici → manca in c)', c1.contenuti.find(c => c.key === 'c').mancanze.some(m => /ordigni bellici/.test(m)));
+  const c2 = controlla({ project: { ...base, contesto: { analizzato: true, ordigni: { esito: 'trascurabile' } } }, lavorazioni: scavo, imprese: [], costi: [], decisioni: [], interferenzeAperte: [], library: [], riep: C.riepilogo([], []) });
+  check('con valutazione "trascurabile" non manca più', !c2.contenuti.find(c => c.key === 'c').mancanze.some(m => /ordigni/.test(m)));
+  const c3 = controlla({ project: { ...base, contesto: { analizzato: true, ordigni: { esito: 'nessuno_scavo' } } }, lavorazioni: scavo, imprese: [], costi: [], decisioni: [], interferenzeAperte: [], library: [], riep: C.riepilogo([], []) });
+  check('"nessuno scavo" mentre ci sono scavi: segnalato', c3.contenuti.find(c => c.key === 'c').mancanze.some(m => /ordigni/.test(m)));
+  const html = documento.pscHtml({ project: { title: 'X', soggetti: {}, contesto: { ordigni: { esito: 'bonifica' } }, organizzazione: {}, emergenze: {}, coordinamento: {} }, lavorazioni: [], imprese: [], costi: [], decisioni: [], revisioni: [] });
+  check('PSC: sezione ordigni bellici con il testo della bonifica', /ordigni bellici inesplosi/.test(html) && /bonifica bellica sistematica/.test(html));
+  const p = { title: 'Scuola', address: 'Via Roma 1, Genova', comune: 'Genova', soggetti: { cse: { nome: 'Ing. Bianchi' } } };
+  const t1 = documento.testoSegnalazione({ project: p, impresa: { ragione_sociale: 'Ponteggi Riviera' }, nc: [{ descrizione: 'Manca il parapetto' }], destinatario: 'committente', proposta: 'allontanamento' });
+  check('lettera al committente: art. 92 c.1 e, inosservanze, proposta scelta', /art\. 92, comma 1, lettera e\)/.test(t1) && /Manca il parapetto/.test(t1) && /allontanamento dell'impresa/.test(t1));
+  check('indirizzo senza comune ripetuto nella lettera', /Via Roma 1, Genova\./.test(t1) && !/Genova, Genova/.test(t1));
+  const t2 = documento.testoSegnalazione({ project: p, impresa: null, nc: [], destinatario: 'asl', precedente: '2026-10-05T10:00:00Z' });
+  check('lettera all\'ASL: committente inadempiente, data della segnalazione precedente', /non ha adottato alcun provvedimento/.test(t2) && /05\/10\/2026/.test(t2) && /Ispettorato/.test(t2));
+  const acc = controlla({ project: base, lavorazioni: [], imprese: [{ ragione_sociale: 'Edil', invite_token: 'x', psc_accettato_rev: null, ruolo: 'affidataria' }], costi: [], decisioni: [], interferenzeAperte: [], library: [], riep: C.riepilogo([], []), revisioni: [{ revision: 1 }] });
+  check('ispettore: impresa invitata che non ha accettato l\'ultima revisione', acc.osservazioni.some(o => /non ha ancora accettato il PSC rev\. 1/.test(o.testo)), acc.osservazioni.map(o => o.testo));
+}
+
+async function testDb2() {
+  console.log('\n\x1b[1mParte 2 su DB: esempio e "Da fare" dell\'impresa\x1b[0m');
+  const mk = async (name, account_type) => { const { data, error } = await supabase.from('companies').insert({ name, account_type }).select().single(); if (error) throw error; return data; };
+  const cse = await mk(`${T}-cse-es`, 'coordinatore');
+  const imp = await mk(`${T}-impresa`, 'impresa');
+  try {
+    const { creaEsempio } = require('../lib/psc/esempio');
+    const ex = await creaEsempio(cse.id, { id: '00000000-0000-0000-0000-000000000000', email: 'cse@test.it' });
+    const all = await store.loadAll(cse.id, ex.id);
+    const st = await store.stato(cse.id, all);
+    check('esempio: 7 lavorazioni, 3 imprese senza email, costi, 1 interferenza decisa e 2 da provare', all.lavorazioni.length === 7 && all.imprese.length === 3 && all.imprese.every(i => !i.email) && all.costi.length > 10 && all.decisioni.length === 1 && st.interferenze.aperte.length === 2, { l: all.lavorazioni.length, i: all.imprese.length, d: all.decisioni.length, a: st.interferenze.aperte.length });
+    check('esempio: tutte le misure approvate, marcato come esempio', all.lavorazioni.every(l => l.misure.every(m => m.approvata)) && all.project.esempio === true);
+    // impresa collegata a un invito
+    const im = all.imprese[1];
+    await supabase.from('psc_imprese').update({ linked_company_id: imp.id, invite_token: `${T}tok`.replace(/[^A-Za-z0-9]/g, '').padEnd(24, 'x'), pos_status: 'richiesto', pos_due_date: '2026-10-09' }).eq('id', im.id);
+    await supabase.from('psc_nc').insert({ project_id: ex.id, company_id: cse.id, impresa_id: im.id, descrizione: 'Manca il parapetto', sospensione: true, close_token: `${T}nc`.replace(/[^A-Za-z0-9]/g, '').padEnd(24, 'y') });
+    const { buildDaFare } = require('../lib/daFare');
+    const df = await buildDaFare(imp.id, null, { todayStr: '2026-10-10' });
+    const items = (df.items || df).filter ? (df.items || df) : [];
+    const coord = items.filter(i => i.kind === 'coordinatore');
+    check('Da fare dell\'impresa: POS richiesto (in ritardo, urgente) con link al suo invito', coord.some(i => i.type === 'pos_richiesto' && i.urgent && /^\/psc\/invito\//.test(i.link)), coord);
+    check('Da fare dell\'impresa: lavorazione sospesa con link per chiuderla', coord.some(i => i.type === 'non_conformita' && i.severity === 'critical' && /^\/psc\/nc\//.test(i.link)));
+    const df2 = await buildDaFare(cse.id, null, { todayStr: '2026-10-10' });
+    check('il Da fare di altre aziende non vede niente', !((df2.items || df2).filter ? (df2.items || df2) : []).some(i => i.kind === 'coordinatore'));
+  } finally {
+    await supabase.from('psc_projects').delete().eq('company_id', cse.id);
+    await supabase.from('companies').delete().in('id', [cse.id, imp.id]);
+  }
+}
+
 (async () => {
   console.log('\x1b[1mF-270 — Palladia per coordinatori\x1b[0m');
   testInterferenze(); testLavorazioni(); testCosti(); testControllo(); testFiles(); testContesto(); testAiSanitize(); testDocumento();
+  testParte2();
   await testDb();
+  await testDb2();
   console.log(`\n${passed} ok, ${failed} falliti`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });

@@ -7,7 +7,7 @@ const { getStripe, getPriceId, getSiteLimit } = require('../../services/stripe')
 const { checkAiBudget, formatAiUsageStatus } = require('../../lib/ladiaUsageLog');
 
 const checkoutSchema = z.object({
-  plan: z.enum(['starter', 'grow', 'pro', 'business'], {
+  plan: z.enum(['starter', 'grow', 'pro', 'business', 'coordinatore'], {
     errorMap: () => ({ message: 'plan deve essere starter, grow, pro o business' }),
   }),
 });
@@ -73,7 +73,13 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
   }
 
   const { plan } = req.body || {};
-  if (!['starter', 'grow', 'pro', 'business'].includes(plan)) {
+  // F-270: il piano coordinatore solo per gli account coordinatore, e viceversa
+  const { data: acct } = await supabase.from('companies').select('account_type').eq('id', req.companyId).maybeSingle();
+  const isCoord = acct && acct.account_type === 'coordinatore';
+  if ((plan === 'coordinatore') !== !!isCoord) {
+    return res.status(400).json({ error: 'INVALID_PLAN', message: isCoord ? 'Per i coordinatori c\'è un solo piano.' : 'Piano non disponibile.' });
+  }
+  if (!['starter', 'grow', 'pro', 'business', 'coordinatore'].includes(plan)) {
     return res.status(400).json({ error: 'INVALID_PLAN', message: 'plan deve essere starter, grow, pro o business' });
   }
 
@@ -114,8 +120,8 @@ router.post('/billing/checkout', verifySupabaseJwt, validate(checkoutSchema), as
     mode:                'subscription',
     payment_method_types: ['card'],
     line_items: [{ price: priceId, quantity: 1 }],
-    success_url: `${FRONTEND_URL()}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url:  `${FRONTEND_URL()}/paywall?canceled=true`,
+    success_url: isCoord ? `${FRONTEND_URL()}/coordinatori/abbonamento?attivato=1` : `${FRONTEND_URL()}/billing/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url:  isCoord ? `${FRONTEND_URL()}/coordinatori/abbonamento` : `${FRONTEND_URL()}/paywall?canceled=true`,
     client_reference_id: req.companyId,
     metadata: { company_id: req.companyId, plan },
     subscription_data: { metadata: { company_id: req.companyId, plan } },
@@ -148,7 +154,7 @@ router.post('/billing/portal', verifySupabaseJwt, async (req, res) => {
 
   const { data: company } = await supabase
     .from('companies')
-    .select('stripe_customer_id')
+    .select('stripe_customer_id, account_type')
     .eq('id', req.companyId)
     .single();
 
@@ -163,7 +169,7 @@ router.post('/billing/portal', verifySupabaseJwt, async (req, res) => {
   try {
     const session = await stripe.billingPortal.sessions.create({
       customer:   company.stripe_customer_id,
-      return_url: `${FRONTEND_URL()}/account`,
+      return_url: company.account_type === 'coordinatore' ? `${FRONTEND_URL()}/coordinatori/abbonamento` : `${FRONTEND_URL()}/account`, // F-270
     });
     res.json({ url: session.url });
   } catch (e) {

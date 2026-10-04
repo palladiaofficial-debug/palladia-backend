@@ -56,6 +56,7 @@ router.get('/psc/catalogo', ...auth, h(async (req, res) => {
     organizzazione: catalog.ORGANIZZAZIONE.map(o => ({ key: o.key, titolo: o.titolo, rif: o.rif, testo: o.testo })),
     usoComune: catalog.USO_COMUNE.map(u => ({ key: u.key, titolo: u.titolo, testo: u.testo })),
     contesto: Object.fromEntries(Object.entries(catalog.CONTESTO).map(([k, v]) => [k, { titolo: v.titolo, misure: v.misure }])),
+    ordigni: catalog.ORDIGNI,
     categorieCosti: catalog.CATEGORIE_COSTI,
     vociCosto: catalog.VOCI_COSTO.map(v => ({ key: v.key, cat: v.cat, descrizione: v.descrizione, um: v.um, prezzo: v.prezzo })),
     pscContenuti: catalog.PSC_CONTENUTI,
@@ -90,7 +91,7 @@ router.patch('/psc/me', ...auth, h(async (req, res) => {
 
 // ── Oggi: la scrivania del coordinatore ─────────────────────────────────────
 router.get('/psc/oggi', ...auth, h(async (req, res) => {
-  const { data: projects } = await supabase.from('psc_projects').select('id, title, address, comune, status, revision, start_date, end_date, updated_at')
+  const { data: projects } = await supabase.from('psc_projects').select('id, title, address, comune, status, revision, start_date, end_date, esempio, updated_at')
     .eq('company_id', req.companyId).is('deleted_at', null).neq('status', 'archiviato').order('updated_at', { ascending: false });
   const ids = (projects || []).map(p => p.id);
   const today = new Date().toISOString().slice(0, 10);
@@ -145,8 +146,16 @@ router.get('/psc/oggi', ...auth, h(async (req, res) => {
 }));
 
 // ── Cantieri / PSC ──────────────────────────────────────────────────────────
+// Cantiere di esempio: uno per coordinatore, già compilato
+router.post('/psc/esempio', ...auth, h(async (req, res) => {
+  const { data: ex } = await supabase.from('psc_projects').select('id').eq('company_id', req.companyId).eq('esempio', true).is('deleted_at', null).limit(1);
+  if (ex && ex[0]) return res.json({ project: ex[0], esisteva: true });
+  const p = await require('../../lib/psc/esempio').creaEsempio(req.companyId, req.user);
+  res.status(201).json({ project: { id: p.id } });
+}));
+
 router.get('/psc/projects', ...auth, h(async (req, res) => {
-  const { data } = await supabase.from('psc_projects').select('id, title, address, comune, status, revision, start_date, end_date, source, updated_at, created_at')
+  const { data } = await supabase.from('psc_projects').select('id, title, address, comune, status, revision, start_date, end_date, source, esempio, updated_at, created_at')
     .eq('company_id', req.companyId).is('deleted_at', null).order('updated_at', { ascending: false });
   res.json({ projects: data || [] });
 }));
