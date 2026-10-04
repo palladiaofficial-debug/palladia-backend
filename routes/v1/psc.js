@@ -290,9 +290,18 @@ router.post('/psc/projects/:id/computo', ...auth, aiLimiter, upComputo('file'), 
   if (!req.file) throw fail(400, 'Scegli il file del computo', 'FILE_REQUIRED');
   const name = req.file.originalname || '';
   let parsed;
-  if (/\.(xpwe|xml)$/i.test(name)) parsed = parseXpwe(req.file.buffer);
-  else if (isPdf(req.file)) parsed = await parsePdf(req.file.buffer, req.companyId, req.user.id);
-  else parsed = await parseExcel(req.file.buffer, req.companyId, req.user.id);
+  try {
+    if (/\.(xpwe|xml)$/i.test(name)) parsed = parseXpwe(req.file.buffer);
+    else if (isPdf(req.file)) parsed = await parsePdf(req.file.buffer, req.companyId, req.user.id);
+    else parsed = await parseExcel(req.file.buffer, req.companyId, req.user.id);
+  } catch (e) {
+    // F-281: il lettore del computo spiega già cosa non va ("Nessuna voce trovata…"),
+    // ma senza codice di stato diventava 500 "Qualcosa non ha funzionato".
+    if (e && e.status) throw e;
+    console.error('[psc computo] non letto:', e && e.message);
+    const leggibile = e && typeof e.message === 'string' && /voc[ei]|computo|documento|file/i.test(e.message);
+    throw fail(422, leggibile ? e.message : 'Non riesco a leggere questo file. Prova con il computo in PDF, Excel o XPWE (Primus).', 'COMPUTO_NON_LETTO');
+  }
   // computoParser restituisce anche le righe "categoria": portiamo il nome sulla voce.
   let cat = null;
   const voci = [];

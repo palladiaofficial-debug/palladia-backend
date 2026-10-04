@@ -82,7 +82,8 @@ router.post('/psc/imprese/:iid/invita', ...auth, h(async (req, res) => {
   const url = `${APP_URL}/psc/invito/${token}`;
   let emailed = false;
   const cse = (p.soggetti && p.soggetti.cse) || {};
-  if (b.invia_email !== false && i.email && process.env.RESEND_API_KEY) {
+  // F-280: nel cantiere di esempio non parte nessuna email, qualunque indirizzo ci sia
+  if (b.invia_email !== false && i.email && process.env.RESEND_API_KEY && !p.esempio) {
     const lav = all.lavorazioni.filter(l => l.impresa_id === i.id);
     const body = `
       <p style="margin:0 0 16px;font-size:15px;color:#3E3A32;line-height:1.6;"><b>${esc(cse.nome || 'Il coordinatore per la sicurezza')}</b> ti chiede il POS per il cantiere <b>${esc(p.title)}</b>${p.comune ? `, ${esc(p.comune)}` : ''}${due ? `, entro il <b>${new Date(due).toLocaleDateString('it-IT', { day: 'numeric', month: 'long' })}</b>` : ''}.</p>
@@ -167,7 +168,7 @@ router.post('/psc/pos-checks/:cid/esito', ...auth, h(async (req, res) => {
   const { data: i } = await supabase.from('psc_imprese').select('*').eq('id', c.impresa_id).maybeSingle();
   const p = await store.getProject(req.companyId, c.project_id);
   let sent = false;
-  if (b.invia && i && i.email && process.env.RESEND_API_KEY) {
+  if (b.invia && i && i.email && process.env.RESEND_API_KEY && !p.esempio) { // F-280
     const cse = (p.soggetti && p.soggetti.cse) || {};
     const token = i.invite_token || store.token();
     if (!i.invite_token) await supabase.from('psc_imprese').update({ invite_token: token }).eq('id', i.id);
@@ -352,7 +353,7 @@ router.post('/psc/verbali/:vid/firma', ...auth, h(async (req, res) => {
   if (ctxChanged) await supabase.from('psc_projects').update({ contesto: ctx }).eq('id', all.project.id);
 
   const sentTo = [];
-  if (b.invia !== false && process.env.RESEND_API_KEY) {
+  if (b.invia !== false && process.env.RESEND_API_KEY && !all.project.esempio) { // F-280
     const cse = (all.project.soggetti && all.project.soggetti.cse) || {};
     const destinatari = all.imprese.filter(i => i.email);
     for (const i of destinatari) {
@@ -416,7 +417,7 @@ router.post('/psc/projects/:id/segnalazioni', ...auth, h(async (req, res) => {
   await store.upload(path, pdf, 'application/pdf');
   const committenteEmail = (all.project.soggetti && all.project.soggetti.committente && all.project.soggetti.committente.email) || null;
   let sent = null;
-  if (b.destinatario === 'committente' && b.invia_email !== false && committenteEmail && process.env.RESEND_API_KEY) {
+  if (b.destinatario === 'committente' && b.invia_email !== false && committenteEmail && process.env.RESEND_API_KEY && !all.project.esempio) { // F-280
     const cse = (all.project.soggetti && all.project.soggetti.cse) || {};
     try {
       const r = await sendPlainLayoutEmail({
