@@ -36,6 +36,7 @@ const SHORT_METHOD_LABEL = {
   personal_phone:                'Badge',
   capocantiere_action:           'Capocant.',
   admin_manual_correction:       'Manuale',
+  worker_offline_punch:          'Senza rete',
   auto_exit_on_site_change:      'Auto',
   auto_exit_stale_before_reopen: 'Auto',
   ladia_action:                  'Auto (IA)',

@@ -23,6 +23,7 @@ const { latestReasonsByLogId } = require('../lib/presenceLogReasons');
 // come se fosse la lettura originale del dispositivo.
 const METHOD_NOTE = {
   admin_manual_correction:       'Corretto manualmente',
+  worker_offline_punch:          'Timbrata senza internet',
   auto_exit_on_site_change:      'Uscita auto (cambio cantiere)',
   // F-146 (AUDIT.md): mancavano queste due — un'uscita indovinata dal
   // sistema finiva in busta paga identica a una timbratura reale, senza

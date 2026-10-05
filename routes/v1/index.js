@@ -91,6 +91,8 @@ router.use('/', require('./workerPush'));
 // Badge Punch: timbratura via badge personale lavoratore (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale
 router.use('/', require('./badgePunch'));
+// F-284: timbratura senza internet (file separato, la timbratura normale non cambia)
+router.use('/', require('./badgeOfflinePunch'));
 router.use('/', require('./badgeDdt'));
 
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
