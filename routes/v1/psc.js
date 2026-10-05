@@ -11,6 +11,10 @@ const store = require('../../lib/psc/store');
 const L = require('../../lib/psc/lavorazioni');
 const { soluzioni, detect, pairKey } = require('../../lib/psc/interferenze');
 const costiLib = require('../../lib/psc/costi');
+const prezzario = require('../../lib/psc/prezzario');
+const W = require('../../lib/psc/settimane');
+const ortografia = require('../../lib/psc/ortografia');
+const { callTool } = require('../../lib/psc/ai');
 const contesto = require('../../lib/psc/contesto');
 const catalog = require('../../lib/psc/catalog');
 const documento = require('../../lib/psc/documento');
@@ -23,6 +27,7 @@ const { auth, h, fail, uploader, LIMITI_MB, isUuid, DOCX, isPdf, isImage, str, d
 
 const upDocs = uploader(30, (f) => isPdf(f) || f.mimetype === DOCX || /\.docx$/i.test(f.originalname));
 const upComputo = uploader(LIMITI_MB.computo, (f) => isPdf(f) || /\.(xlsx|xls|xpwe|xml)$/i.test(f.originalname) || /excel|spreadsheet/.test(f.mimetype));
+const upPrezzario = uploader(LIMITI_MB.prezzario, (f) => isPdf(f) || /\.(xlsx|xls|csv|xpwe|xml)$/i.test(f.originalname) || /excel|spreadsheet|csv/.test(f.mimetype));
 const upLayout = uploader(20, (f) => isPdf(f) || isImage(f));
 const upSigned = uploader(40, (f) => isPdf(f) || /\.p7m$/i.test(f.originalname));
 
@@ -30,6 +35,17 @@ async function mustProject(req) {
   const p = await store.getProject(req.companyId, req.params.id);
   if (!p) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
   return p;
+}
+
+// F-298: scala del cronoprogramma e arrotondamento delle date alle settimane
+const scalaDi = (p) => ({ scala: p.crono_scala === 'giorni' ? 'giorni' : 'settimane', inizio: p.start_date || null });
+function settimanePer(p, l) {
+  if (p.crono_scala === 'giorni' || !l.start_date || !l.end_date) return l;
+  const r = W.arrotonda(l);
+  // la prima settimana parte dal giorno di inizio lavori, l'ultima finisce il giorno di fine lavori
+  if (p.start_date && r.start_date < p.start_date && r.end_date >= p.start_date) r.start_date = p.start_date;
+  if (p.end_date && r.end_date > p.end_date && r.start_date <= p.end_date) r.end_date = p.end_date;
+  return r;
 }
 
 function touch(projectId, extra = {}) {
@@ -212,7 +228,7 @@ router.get('/psc/projects/:id', ...auth, h(async (req, res) => {
 const PROJECT_FIELDS = {
   title: (v) => str(v, 200), address: (v) => str(v, 300), comune: (v) => str(v, 120), provincia: (v) => str(v, 60),
   descrizione: (v) => str(v, 6000), tipo_opera: (v) => str(v, 200), start_date: dateOrNull, end_date: dateOrNull,
-  importo_lavori: (v) => numOrNull(v, 0, 1e11),
+  importo_lavori: (v) => numOrNull(v, 0, 1e11), crono_scala: (v) => (['settimane', 'giorni'].includes(v) ? v : undefined),
   soggetti: jsonOf, contesto: jsonOf, organizzazione: jsonOf, emergenze: jsonOf, coordinamento: jsonOf, testi: jsonOf,
   uso_comune: (v) => (Array.isArray(v) ? jsonOf(v) : undefined), procedure: (v) => (Array.isArray(v) ? jsonOf(v) : undefined),
 };
@@ -226,6 +242,13 @@ router.patch('/psc/projects/:id', ...auth, h(async (req, res) => {
   if ('address' in b && b.address !== p.address) b.contesto = { ...(b.contesto || p.contesto || {}), analizzato: false };
   const { data, error } = await supabase.from('psc_projects').update({ ...b, updated_at: new Date().toISOString(), status: p.status === 'archiviato' ? 'archiviato' : 'bozza' }).eq('id', p.id).select('*').single();
   if (error) throw error;
+  if (b.crono_scala === 'settimane' && p.crono_scala !== 'settimane') {
+    const { data: lavs } = await supabase.from('psc_lavorazioni').select('id, start_date, end_date').eq('project_id', p.id);
+    for (const l of lavs || []) {
+      const r = settimanePer(data, l);
+      if (r.start_date !== l.start_date || r.end_date !== l.end_date) await supabase.from('psc_lavorazioni').update({ start_date: r.start_date, end_date: r.end_date }).eq('id', l.id);
+    }
+  }
   res.json({ project: data });
 }));
 
@@ -319,7 +342,7 @@ router.post('/psc/projects/:id/computo', ...auth, aiLimiter, upComputo('file'), 
   const { data: esistenti } = await supabase.from('psc_lavorazioni').select('id, scheda_id, voci_computo, rischi, misure').eq('project_id', p.id).order('ordine');
   const { nuove, aggiorna } = L.unisciAlleEsistenti(lavs, esistenti || []);
   const count = (esistenti || []).length;
-  const rows = nuove.map((l, i) => ({
+  const rows = nuove.map(l => settimanePer({ ...p, start_date: start, end_date: end || p.end_date }, l)).map((l, i) => ({
     project_id: p.id, company_id: req.companyId, ordine: count + i, nome: l.nome, descrizione: l.descrizione, scheda_id: l.scheda_id,
     fasi: l.fasi, rischi: l.rischi, misure: l.misure, dpi: l.dpi, apprestamenti: l.apprestamenti, voci_computo: l.voci_computo,
     uomini_giorno: l.uomini_giorno, addetti: l.addetti, start_date: l.start_date, end_date: l.end_date,
@@ -354,7 +377,7 @@ router.post('/psc/projects/:id/crono/adatta', ...auth, h(async (req, res) => {
   if (!p.start_date || !p.end_date) throw fail(400, 'Scrivi prima inizio e fine lavori (o la durata) in Opera e luogo', 'DATES_REQUIRED');
   const { data: lavs } = await supabase.from('psc_lavorazioni').select('id, start_date, end_date, uomini_giorno, addetti').eq('project_id', p.id);
   const prima = new Map((lavs || []).map(l => [l.id, `${l.start_date}|${l.end_date}|${l.addetti}`]));
-  const out = L.adattaAllaDurata((lavs || []).map(l => ({ ...l })), p.start_date, p.end_date);
+  const out = L.adattaAllaDurata((lavs || []).map(l => ({ ...l })), p.start_date, p.end_date).map(l => settimanePer(p, l));
   let spostate = 0;
   for (const l of out) {
     if (prima.get(l.id) === `${l.start_date}|${l.end_date}|${l.addetti}`) continue;
@@ -384,9 +407,10 @@ router.post('/psc/projects/:id/lavorazioni', ...auth, h(async (req, res) => {
   const { data: last } = await supabase.from('psc_lavorazioni').select('ordine, end_date').eq('project_id', p.id).order('ordine', { ascending: false }).limit(1);
   const ordine = last && last[0] ? last[0].ordine + 1 : 0;
   const start = (last && last[0] && last[0].end_date) ? L.addWorkdays(last[0].end_date, 2) : p.start_date || null;
+  const date = settimanePer(p, { start_date: start, end_date: start ? L.addWorkdays(start, 10) : null });
   const row = {
     project_id: p.id, company_id: req.companyId, ordine, ...(base || L.libera(b.nome)),
-    start_date: start, end_date: start ? L.addWorkdays(start, 10) : null, addetti: 3, uomini_giorno: start ? 30 : null,
+    start_date: date.start_date, end_date: date.end_date, addetti: 3, uomini_giorno: start ? 30 : null,
   };
   const { data, error } = await supabase.from('psc_lavorazioni').insert(row).select('*').single();
   if (error) throw error;
@@ -419,6 +443,11 @@ router.patch('/psc/lavorazioni/:lid', ...auth, h(async (req, res) => {
   if ('nome' in b && !b.nome) throw fail(400, 'Il nome non può essere vuoto');
   const sd = 'start_date' in b ? b.start_date : l.start_date, ed = 'end_date' in b ? b.end_date : l.end_date;
   if (sd && ed && ed < sd) throw fail(400, 'La fine è prima dell\'inizio', 'DATE_ORDER');
+  if (('start_date' in b || 'end_date' in b) && sd && ed) {
+    const { data: pr } = await supabase.from('psc_projects').select('crono_scala, start_date, end_date').eq('id', l.project_id).single();
+    const r = settimanePer(pr || {}, { start_date: sd, end_date: ed });
+    b.start_date = r.start_date; b.end_date = r.end_date;
+  }
   if (b.impresa_id) {
     const { data: imp } = await supabase.from('psc_imprese').select('id').eq('id', b.impresa_id).eq('project_id', l.project_id).maybeSingle();
     if (!imp) throw fail(400, 'Impresa non di questo cantiere');
@@ -477,7 +506,7 @@ router.get('/psc/projects/:id/interferenze', ...auth, h(async (req, res) => {
   const lavById = new Map(all.lavorazioni.map(l => [l.id, l]));
   const impById = new Map(all.imprese.map(i => [i.id, i]));
   res.json({
-    aperte: inter.aperte.map(x => ({ ...x, ...soluzioni(x, lavById, impById, all.project.end_date) })),
+    aperte: inter.aperte.map(x => ({ ...x, ...soluzioni(x, lavById, impById, all.project.end_date, scalaDi(all.project)) })),
     risolte: inter.risolte,
   });
 }));
@@ -491,7 +520,7 @@ router.post('/psc/projects/:id/interferenze', ...auth, h(async (req, res) => {
   if (!lavById.has(b.lav_a) || !lavById.has(b.lav_b)) throw fail(404, 'Lavorazione non trovata');
   const inter = detect(all.lavorazioni, all.decisioni).aperte.find(x => x.key === pairKey(b.lav_a, b.lav_b));
   if (!inter) throw fail(409, 'Questa interferenza non c\'è più: il cronoprogramma è cambiato', 'GONE');
-  const sol = soluzioni(inter, lavById, new Map(all.imprese.map(i => [i.id, i])), all.project.end_date);
+  const sol = soluzioni(inter, lavById, new Map(all.imprese.map(i => [i.id, i])), all.project.end_date, scalaDi(all.project));
   const scelta = sol.opzioni.find(o => o.soluzione === b.soluzione);
   if (b.soluzione === 'temporale') {
     await supabase.from('psc_lavorazioni').update({ start_date: scelta.sposta.start_date, end_date: scelta.sposta.end_date, updated_at: new Date().toISOString() }).eq('id', scelta.sposta.lavorazione_id).eq('company_id', req.companyId);
@@ -522,6 +551,7 @@ router.post('/psc/projects/:id/costi/proponi', ...auth, h(async (req, res) => {
   const rows = costiLib.proponi({
     project: all.project, lavorazioni: all.lavorazioni, contestoKeys: contesto.chiaviAttive(all.project.contesto),
     decisioni: all.decisioni, nImprese: all.imprese.length, library: lib, esistenti: all.costi,
+    regionale: prezzario.regionalePer(all.project),
   }).map(r => ({ ...r, project_id: all.project.id, company_id: req.companyId }));
   if (rows.length) { const { error } = await supabase.from('psc_costi').insert(rows); if (error) throw error; touch(all.project.id); }
   res.json({ aggiunte: rows.length, ...(await full(req, all.project.id)) });
@@ -535,12 +565,15 @@ const COSTO_FIELDS = {
 
 router.post('/psc/projects/:id/costi', ...auth, h(async (req, res) => {
   const p = await mustProject(req);
-  const b = pick(req.body, { ...COSTO_FIELDS, catalog_key: (v) => str(v, 60), library_id: (v) => (isUuid(v) ? v : undefined) });
+  const b = pick(req.body, { ...COSTO_FIELDS, catalog_key: (v) => str(v, 60), library_id: (v) => (isUuid(v) ? v : undefined), prezzario: PREZZARIO_REF });
   let row = { categoria: b.categoria || 'a', descrizione: b.descrizione, um: b.um || null, quantita: b.quantita || 0, prezzo: b.prezzo || 0, codice: b.codice || null, impresa_id: b.impresa_id || null, prezzo_fonte: 'manuale' };
   if (b.catalog_key) {
     const v = catalog.VOCI_COSTO.find(x => x.key === b.catalog_key);
     if (!v) throw fail(400, 'Voce sconosciuta');
     row = { ...row, categoria: v.cat, descrizione: v.descrizione, um: v.um, prezzo: v.prezzo, prezzo_fonte: 'indicativo', origine: `catalogo:${v.key}` };
+  } else if (b.prezzario) {
+    const pv = await vocePrezzario(req.companyId, b.prezzario);
+    row = { ...row, codice: pv.codice, descrizione: pv.descrizione, um: pv.um, prezzo: pv.prezzo, prezzo_fonte: 'prezzario', prezzario_fonte: pv.fonte_nome, quantita: b.quantita || 0 };
   } else if (b.library_id) {
     const { data: lb } = await supabase.from('psc_library').select('*').eq('id', b.library_id).eq('company_id', req.companyId).maybeSingle();
     if (!lb) throw fail(404, 'Voce non trovata');
@@ -558,10 +591,16 @@ router.patch('/psc/costi/:cid', ...auth, h(async (req, res) => {
   if (!isUuid(req.params.cid)) throw fail(404, 'Non trovata');
   const { data: c } = await supabase.from('psc_costi').select('*').eq('id', req.params.cid).eq('company_id', req.companyId).maybeSingle();
   if (!c) throw fail(404, 'Voce non trovata');
-  const b = pick(req.body, { ...COSTO_FIELDS, conferma_prezzo: (v) => (v === true ? true : undefined) });
+  const b = pick(req.body, { ...COSTO_FIELDS, conferma_prezzo: (v) => (v === true ? true : undefined), da_prezzario: PREZZARIO_REF });
   const upd = { ...b };
   delete upd.conferma_prezzo;
-  if (('prezzo' in b && Number(b.prezzo) !== Number(c.prezzo)) || b.conferma_prezzo) upd.prezzo_fonte = 'manuale';
+  delete upd.da_prezzario;
+  if (('prezzo' in b && Number(b.prezzo) !== Number(c.prezzo)) || b.conferma_prezzo) { upd.prezzo_fonte = 'manuale'; upd.prezzario_fonte = null; }
+  if (b.da_prezzario) {
+    // F-293: la voce diventa l'articolo del prezzario (codice, descrizione, U.M., prezzo); la quantità resta
+    const pv = await vocePrezzario(req.companyId, b.da_prezzario);
+    Object.assign(upd, { codice: pv.codice, descrizione: pv.descrizione, um: pv.um, prezzo: pv.prezzo, prezzo_fonte: 'prezzario', prezzario_fonte: pv.fonte_nome });
+  }
   const { data, error } = await supabase.from('psc_costi').update(upd).eq('id', c.id).select('*').single();
   if (error) throw error;
   touch(c.project_id);
@@ -582,7 +621,140 @@ router.get('/psc/costi/cerca', ...auth, h(async (req, res) => {
     .map(x => ({ library_id: x.id, descrizione: x.testo, um: x.data.um, prezzo: x.data.prezzo, codice: x.data.codice, fonte_nome: x.source_name }));
   const cat = catalog.VOCI_COSTO.filter(v => !q || v.descrizione.toLowerCase().includes(q)).slice(0, 25)
     .map(v => ({ catalog_key: v.key, descrizione: v.descrizione, um: v.um, prezzo: v.prezzo, categoria: v.cat }));
-  res.json({ mie: lib, catalogo: cat });
+  res.json({ mie: lib, catalogo: cat, prezzario: q ? await cercaPrezzari(req.companyId, q, req.query.project_id) : [] });
+}));
+
+// ── Controlla l'ortografia (F-297) ──────────────────────────────────────────
+router.post('/psc/projects/:id/ortografia', ...auth, aiLimiter, h(async (req, res) => {
+  const all = await store.loadAll(req.companyId, req.params.id);
+  if (!all) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
+  const testi = ortografia.testiDa(all);
+  if (!testi.length) return res.json({ correzioni: [], testi: 0 });
+  const correzioni = await ortografia.controlla(testi, ({ system, content, tool }) => callTool({ system, content, tool, maxTokens: 4000, companyId: req.companyId, userId: req.user.id, callSite: 'psc_ortografia' }));
+  res.json({ correzioni, testi: testi.length });
+}));
+
+router.post('/psc/projects/:id/ortografia/applica', ...auth, h(async (req, res) => {
+  const all = await store.loadAll(req.companyId, req.params.id);
+  if (!all) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
+  const lista = Array.isArray(req.body && req.body.correzioni) ? req.body.correzioni.slice(0, 500)
+    .map(c => ({ ref: str(c && c.ref, 200), sbagliato: str(c && c.sbagliato, 60), corretto: str(c && c.corretto, 80) })).filter(c => c.ref && c.sbagliato && c.corretto) : [];
+  if (!lista.length) throw fail(400, 'Nessuna correzione scelta', 'EMPTY');
+  const r = ortografia.applica(all, lista);
+  const now = new Date().toISOString();
+  if (Object.keys(r.project).length) {
+    const { error } = await supabase.from('psc_projects').update({ ...r.project, updated_at: now }).eq('id', all.project.id).eq('company_id', req.companyId);
+    if (error) throw error;
+  }
+  for (const [id, patch] of r.lavorazioni) {
+    const { error } = await supabase.from('psc_lavorazioni').update({ ...patch, updated_at: now }).eq('id', id).eq('project_id', all.project.id);
+    if (error) throw error;
+  }
+  for (const [id, testo] of r.decisioni) {
+    const { error } = await supabase.from('psc_interferenze').update({ testo }).eq('id', id).eq('project_id', all.project.id);
+    if (error) throw error;
+  }
+  if (r.applicate) await touch(all.project.id);
+  res.json({ ok: true, applicate: r.applicate });
+}));
+
+// ── Prezzari (F-293) ────────────────────────────────────────────────────────
+// Quelli inclusi in Palladia (lib/psc/prezzari/*.json, oggi la Liguria) e quelli
+// che il coordinatore carica (Excel, CSV o XPWE), in psc_prezzario_voci.
+const PREZZARIO_REF = (v) => (v && typeof v === 'object' && typeof v.fonte === 'string' && typeof v.codice === 'string' ? { fonte: v.fonte.slice(0, 200), codice: v.codice.slice(0, 60) } : undefined);
+
+async function vocePrezzario(companyId, ref) {
+  const pub = prezzario.pubblico(ref.fonte);
+  if (pub) {
+    const v = pub.voci.find(x => x.codice === ref.codice);
+    if (v) return { ...v, fonte_nome: pub.nome };
+  } else {
+    const { data } = await supabase.from('psc_prezzario_voci').select('*').eq('company_id', companyId).eq('fonte', ref.fonte).eq('codice', ref.codice).maybeSingle();
+    if (data) return { ...data, prezzo: Number(data.prezzo), fonte_nome: data.fonte };
+  }
+  throw fail(404, 'Voce del prezzario non trovata', 'PREZZARIO_NOT_FOUND');
+}
+
+async function cercaPrezzari(companyId, q, projectId) {
+  let regione = null;
+  if (isUuid(projectId)) {
+    const { data: p } = await supabase.from('psc_projects').select('provincia, comune, address, lat, lon').eq('id', projectId).eq('company_id', companyId).maybeSingle();
+    regione = p ? prezzario.regioneDi(p) : null;
+  }
+  const out = [];
+  // prima il prezzario della regione del cantiere, poi gli altri inclusi
+  const pubblici = [...prezzario.PUBBLICI].sort((a, b) => (b.regione === regione) - (a.regione === regione) || b.anno - a.anno);
+  for (const pub of pubblici) for (const v of prezzario.cerca(pub.voci, q, 20)) out.push({ fonte: pub.id, fonte_nome: pub.nome, ...v });
+  const { data: mie } = await supabase.from('psc_prezzario_voci').select('fonte, codice, descrizione, um, prezzo, capitolo').eq('company_id', companyId).limit(20000);
+  const perFonte = new Map();
+  for (const v of mie || []) { if (!perFonte.has(v.fonte)) perFonte.set(v.fonte, []); perFonte.get(v.fonte).push({ ...v, prezzo: Number(v.prezzo) }); }
+  for (const [fonte, voci] of perFonte) for (const v of prezzario.cerca(voci, q, 20)) out.push({ fonte, fonte_nome: fonte, ...v });
+  return out.slice(0, 40);
+}
+
+router.get('/psc/prezzari', ...auth, h(async (req, res) => {
+  const { data } = await supabase.from('psc_prezzario_voci').select('fonte, created_at').eq('company_id', req.companyId).limit(20000);
+  const miei = new Map();
+  for (const r of data || []) { const m = miei.get(r.fonte) || { fonte: r.fonte, voci: 0, caricato_at: r.created_at }; m.voci++; miei.set(r.fonte, m); }
+  res.json({
+    inclusi: prezzario.PUBBLICI.map(p => ({ id: p.id, nome: p.nome, regione: p.regione, anno: p.anno, voci: p.voci.length, fonte: p.fonte })),
+    miei: [...miei.values()],
+  });
+}));
+
+router.post('/psc/prezzari', ...auth, upPrezzario('file'), h(async (req, res) => {
+  if (!req.file) throw fail(400, 'Scegli il file del prezzario', 'FILE_REQUIRED');
+  const fileName = req.file.originalname || 'prezzario';
+  const nome = str(req.body && req.body.nome, 120) || fileName.replace(/\.[^.]+$/, '');
+  let voci = [];
+  if (/\.(xpwe|xml)$/i.test(fileName)) {
+    voci = parseXpwe(req.file.buffer).voci.filter(v => v.codice && v.prezzo_unitario > 0)
+      .map(v => ({ codice: v.codice, descrizione: v.descrizione, um: v.unita_misura, prezzo: v.prezzo_unitario, capitolo: v.categoria || null }));
+  } else if (isPdf(req.file)) {
+    const { extractPdfText } = require('../../lib/pdfExtract');
+    const { text } = await extractPdfText(req.file.buffer, { maxPages: 3000, minChars: 1 });
+    voci = prezzario.parseLiguriaPdfText(text, { sezione: '95' });
+  } else {
+    if (/\.csv$/i.test(fileName)) {
+      const txt = req.file.buffer.toString('utf8').replace(/^\uFEFF/, '');
+      const prima = txt.split(/\r?\n/)[0] || '';
+      const sep = (prima.match(/;/g) || []).length > (prima.match(/,/g) || []).length ? ';' : ',';
+      const righe = txt.split(/\r?\n/).map(r => r.split(sep).map(c => c.replace(/^"|"$/g, '').trim()));
+      voci = prezzario.parseListinoRighe(righe);
+    } else {
+      if (/\.xls$/i.test(fileName)) throw fail(422, 'Il vecchio formato .xls non si legge: aprilo e salvalo come .xlsx', 'PREZZARIO_XLS');
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      try { await wb.xlsx.load(req.file.buffer); } catch { throw fail(422, 'Il file non si apre: salvalo di nuovo come .xlsx o .csv', 'PREZZARIO_NON_LETTO'); }
+      wb.eachSheet((ws) => {
+        const rows = [];
+        ws.eachRow({ includeEmpty: false }, (row) => {
+          rows.push(row.values.slice(1).map(c => (c && typeof c === 'object' ? (c.result ?? c.text ?? (c.richText ? c.richText.map(t => t.text).join('') : null)) : c)));
+        });
+        voci.push(...prezzario.parseListinoRighe(rows));
+      });
+    }
+  }
+  const seen = new Set();
+  voci = voci.filter(v => v.codice && !seen.has(v.codice) && seen.add(v.codice));
+  if (!voci.length) throw fail(422, 'Non ho trovato voci con codice, descrizione e prezzo. Serve un Excel con le colonne Codice, Descrizione, U.M., Prezzo (o il file XPWE del prezzario).', 'PREZZARIO_VUOTO');
+  if (voci.length > 20000) throw fail(422, 'Il prezzario ha più di 20.000 voci: carica solo la sezione della sicurezza', 'PREZZARIO_TROPPO_GRANDE');
+  await supabase.from('psc_prezzario_voci').delete().eq('company_id', req.companyId).eq('fonte', nome);
+  for (let i = 0; i < voci.length; i += 1000) {
+    const { error } = await supabase.from('psc_prezzario_voci').insert(voci.slice(i, i + 1000).map(v => ({
+      company_id: req.companyId, fonte: nome, codice: String(v.codice).slice(0, 60), descrizione: String(v.descrizione).slice(0, 1200), um: v.um ? String(v.um).slice(0, 20) : null, prezzo: v.prezzo, capitolo: v.capitolo ? String(v.capitolo).slice(0, 300) : null,
+    })));
+    if (error) throw error;
+  }
+  res.status(201).json({ ok: true, fonte: nome, voci: voci.length });
+}));
+
+router.delete('/psc/prezzari/:fonte', ...auth, h(async (req, res) => {
+  const fonte = String(req.params.fonte || '').slice(0, 200);
+  const { data, error } = await supabase.from('psc_prezzario_voci').delete().eq('company_id', req.companyId).eq('fonte', fonte).select('id');
+  if (error) throw error;
+  if (!data || !data.length) throw fail(404, 'Prezzario non trovato', 'NOT_FOUND');
+  res.json({ ok: true, eliminate: data.length });
 }));
 
 // ── Documenti ───────────────────────────────────────────────────────────────

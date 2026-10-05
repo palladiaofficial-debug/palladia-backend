@@ -50,6 +50,15 @@ const VOCI = [
   ['Ponteggi a castelli a servizio del canale di gronda e parapetti esterni delle terrazze e trabattelli. Fornitura, montaggio e successivo smontaggio delle necessarie impalcature di servizio metalliche.', 'ponteggio-montaggio'],
   ['Solo posa in opera di membrane bituminose semplici, autoprotette, mediante rinvenimento a fiamma, su canali di gronda, converse, risvolti e simili. Copertura terrazzi privati.', 'guaina-fiamma'],
   ['Assistenza muraria secondo progetto esecutivo agli impianti tecnologici', null],
+  // F-299: lavorazioni aggiunte
+  ['Rinforzo di travi con tessuti in fibra di carbonio (FRP) incollati con resina epossidica', 'rinforzi-frp'],
+  ['Fornitura e posa di tubazione in PVC per fognatura, compreso pozzetto di ispezione', 'fognature-tubazioni'],
+  ['Consolidamento della muratura mediante cuci-scuci con mattoni pieni', 'consolidamento-murature'],
+  ['Sabbiatura delle superfici metalliche con abrasivo', 'sabbiatura'],
+  ['Fornitura e posa di impianto di climatizzazione con unità esterna in copertura', 'impianti-climatizzazione'],
+  ['Installazione di linea vita permanente in copertura conforme UNI EN 795', 'linee-vita-permanenti'],
+  ['Posa di porte interne in legno tamburato con controtelaio', 'porte-falegnameria'],
+  ['Recinzione definitiva in pannelli metallici su cordolo in calcestruzzo', 'recinzioni-muretti'],
 ];
 for (const [d, atteso] of VOCI) {
   const got = classifica(d, null);
