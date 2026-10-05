@@ -29,6 +29,8 @@ router.use('/', require('./sessions'));
 router.use('/', require('./qr'));
 router.use('/', require('./presence'));
 router.use('/', require('./presenceCorrections'));
+// F-285: chi non ha timbrato oggi (sola lettura)
+router.use('/', require('./presenceMissing'));
 // Timbrature da sistemare (mockup 2026-10-03): conferma in un tocco da Da fare
 router.use('/', require('./presenceFixRoutes'));
 router.use('/', require('./reports'));
