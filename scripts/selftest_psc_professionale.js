@@ -115,7 +115,7 @@ function check(name, cond, got) {
   check('legenda delle imprese sotto il cronoprogramma', /class="leg-imp"[\s\S]*Ponteggi srl[\s\S]*Elettro snc/.test(html));
   check('organigramma disegnato: collegamenti in SVG, coordinamento tratteggiato', /<div class="org"[\s\S]*<svg[\s\S]*stroke-dasharray/.test(html));
   check('interferenze come schede con periodo a settimane, rischio e prescrizione', /class="intf"[\s\S]*Periodo: settimane 3–4[\s\S]*Rischio[\s\S]*Misure di coordinamento/.test(html));
-  check('costi: fonte del prezzario dichiarata; colonna Codice solo dove ci sono codici', /Prezzi unitari: Prezzario Regione Liguria 2025/.test(html) && (html.match(/<th style="width:27mm">Codice<\/th>/g) || []).length === 1);
+  check('costi: fonte del prezzario dichiarata; colonna Codice solo dove ci sono codici', /Prezzi unitari: Prezzario Regione Liguria 2025/.test(html) && (html.match(/<th style="width:31mm">Codice<\/th>/g) || []).length === 1);
   check('firme raccolte in un blocco con il titolo "Firme"', /<div class="firme"><h3>Firme<\/h3>/.test(html));
   const word = documento.pscWord(snap);
   check('Word: cronoprogramma e organigramma restano tabelle (Word non legge l\'SVG)', !/<svg/.test(word) && /class="gantt"/.test(word) && /class="org"/.test(word));
