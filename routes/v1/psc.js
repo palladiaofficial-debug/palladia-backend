@@ -19,10 +19,10 @@ const { riconosci } = require('../../lib/psc/firma');
 const { parseXpwe } = require('../../lib/psc/files');
 const { parsePdf, parseExcel } = require('../../services/computoParser');
 const { aiLimiter } = require('../../middleware/rateLimit');
-const { auth, h, fail, uploader, isUuid, DOCX, isPdf, isImage, str, dateOrNull, numOrNull, jsonOf, pick, safeName } = require('../../lib/psc/http');
+const { auth, h, fail, uploader, LIMITI_MB, isUuid, DOCX, isPdf, isImage, str, dateOrNull, numOrNull, jsonOf, pick, safeName } = require('../../lib/psc/http');
 
 const upDocs = uploader(30, (f) => isPdf(f) || f.mimetype === DOCX || /\.docx$/i.test(f.originalname));
-const upComputo = uploader(25, (f) => isPdf(f) || /\.(xlsx|xls|xpwe|xml)$/i.test(f.originalname) || /excel|spreadsheet/.test(f.mimetype));
+const upComputo = uploader(LIMITI_MB.computo, (f) => isPdf(f) || /\.(xlsx|xls|xpwe|xml)$/i.test(f.originalname) || /excel|spreadsheet/.test(f.mimetype));
 const upLayout = uploader(20, (f) => isPdf(f) || isImage(f));
 const upSigned = uploader(40, (f) => isPdf(f) || /\.p7m$/i.test(f.originalname));
 
@@ -312,22 +312,58 @@ router.post('/psc/projects/:id/computo', ...auth, aiLimiter, upComputo('file'), 
   if (!voci.length) throw fail(422, 'Nel file non ho trovato voci di computo', 'NO_VOCI');
   const lib = await store.library(req.companyId, ['misura']);
   const start = p.start_date || new Date().toISOString().slice(0, 10);
-  const lavs = L.fromComputo(voci, { start, library: lib });
-  const { count } = await supabase.from('psc_lavorazioni').select('id', { count: 'exact', head: true }).eq('project_id', p.id);
-  const rows = lavs.map((l, i) => ({
-    project_id: p.id, company_id: req.companyId, ordine: (count || 0) + i, nome: l.nome, descrizione: l.descrizione, scheda_id: l.scheda_id,
+  // F-286: con la fine lavori già scritta, il cronoprogramma resta dentro la durata.
+  const end = p.end_date && p.end_date > start ? p.end_date : null;
+  const lavs = L.fromComputo(voci, { start, end, library: lib });
+  // F-289: le voci di una lavorazione già presente (stessa scheda) si uniscono a quella.
+  const { data: esistenti } = await supabase.from('psc_lavorazioni').select('id, scheda_id, voci_computo, rischi, misure').eq('project_id', p.id).order('ordine');
+  const { nuove, aggiorna } = L.unisciAlleEsistenti(lavs, esistenti || []);
+  const count = (esistenti || []).length;
+  const rows = nuove.map((l, i) => ({
+    project_id: p.id, company_id: req.companyId, ordine: count + i, nome: l.nome, descrizione: l.descrizione, scheda_id: l.scheda_id,
     fasi: l.fasi, rischi: l.rischi, misure: l.misure, dpi: l.dpi, apprestamenti: l.apprestamenti, voci_computo: l.voci_computo,
     uomini_giorno: l.uomini_giorno, addetti: l.addetti, start_date: l.start_date, end_date: l.end_date,
   }));
-  const { error } = await supabase.from('psc_lavorazioni').insert(rows);
-  if (error) throw error;
-  const totale = voci.reduce((s, v) => s + (Number(v.importo) || 0), 0);
-  const upd = { computo: { nome: parsed.nome || name, file: name, voci: voci.length, lavorazioni: rows.length, totale: Math.round(totale * 100) / 100, letto_at: new Date().toISOString() }, source: p.source || 'progetto' };
-  if (!p.importo_lavori && totale > 0) upd.importo_lavori = Math.round(totale * 100) / 100;
+  if (rows.length) {
+    const { error } = await supabase.from('psc_lavorazioni').insert(rows);
+    if (error) throw error;
+  }
+  for (const a of aggiorna) {
+    const upd = { voci_computo: a.voci_computo, updated_at: new Date().toISOString() };
+    if (a.rischi) upd.rischi = a.rischi;
+    if (a.misure) upd.misure = a.misure;
+    const { error } = await supabase.from('psc_lavorazioni').update(upd).eq('id', a.id).eq('project_id', p.id);
+    if (error) throw error;
+  }
+  const totale = Math.round(voci.reduce((s, v) => s + (Number(v.importo) || 0), 0) * 100) / 100;
+  // F-293: il nome è quello del file (il lettore dei PDF chiamava tutto "Capitolato speciale d'appalto").
+  const upd = { computo: { nome: /\.(xpwe|xml)$/i.test(name) && parsed.nome ? parsed.nome : name, file: name, voci: voci.length, lavorazioni: rows.length, unite: aggiorna.length, totale, letto_at: new Date().toISOString() }, source: p.source || 'progetto' };
+  if (!p.importo_lavori && totale > 0) upd.importo_lavori = totale;
   if (!p.end_date) upd.end_date = rows.map(r => r.end_date).filter(Boolean).sort().reverse()[0] || null;
   if (!p.start_date) upd.start_date = start;
   await touch(p.id, upd);
-  res.json({ ok: true, voci: voci.length, lavorazioni: rows.length, totale: upd.computo.totale });
+  // F-286: un totale molto diverso dall'importo dichiarato gonfia (o sgonfia) le durate stimate.
+  const fuori = p.importo_lavori && totale > 0 && (totale > p.importo_lavori * 1.5 || totale < p.importo_lavori / 1.5);
+  const avviso = fuori ? `Il computo letto somma ${totale.toLocaleString('it-IT', { maximumFractionDigits: 0 })} €, l'importo dei lavori che hai scritto è ${Number(p.importo_lavori).toLocaleString('it-IT', { maximumFractionDigits: 0 })} €: controlla durate e uomini-giorno stimati.` : null;
+  res.json({ ok: true, voci: voci.length, lavorazioni: rows.length, unite: aggiorna.length, totale, avviso });
+}));
+
+// F-286: riporta il cronoprogramma dentro inizio–fine lavori.
+router.post('/psc/projects/:id/crono/adatta', ...auth, h(async (req, res) => {
+  const p = await mustProject(req);
+  if (!p.start_date || !p.end_date) throw fail(400, 'Scrivi prima inizio e fine lavori (o la durata) in Opera e luogo', 'DATES_REQUIRED');
+  const { data: lavs } = await supabase.from('psc_lavorazioni').select('id, start_date, end_date, uomini_giorno, addetti').eq('project_id', p.id);
+  const prima = new Map((lavs || []).map(l => [l.id, `${l.start_date}|${l.end_date}|${l.addetti}`]));
+  const out = L.adattaAllaDurata((lavs || []).map(l => ({ ...l })), p.start_date, p.end_date);
+  let spostate = 0;
+  for (const l of out) {
+    if (prima.get(l.id) === `${l.start_date}|${l.end_date}|${l.addetti}`) continue;
+    const { error } = await supabase.from('psc_lavorazioni').update({ start_date: l.start_date, end_date: l.end_date, addetti: l.addetti, updated_at: new Date().toISOString() }).eq('id', l.id).eq('project_id', p.id);
+    if (error) throw error;
+    spostate++;
+  }
+  if (spostate) await touch(p.id);
+  res.json({ ok: true, spostate });
 }));
 
 // ── Lavorazioni ─────────────────────────────────────────────────────────────
@@ -399,6 +435,18 @@ router.post('/psc/lavorazioni/:lid/approva-tutte', ...auth, h(async (req, res) =
   const { data } = await supabase.from('psc_lavorazioni').update({ misure, updated_at: new Date().toISOString() }).eq('id', l.id).select('*').single();
   touch(l.project_id);
   res.json({ lavorazione: data });
+}));
+
+// F-291: eliminare più lavorazioni insieme dall'elenco.
+router.post('/psc/projects/:id/lavorazioni/elimina', ...auth, h(async (req, res) => {
+  const p = await mustProject(req);
+  const ids = Array.isArray(req.body && req.body.ids) ? req.body.ids.filter(isUuid).slice(0, 500) : [];
+  if (!ids.length) throw fail(400, 'Scegli le lavorazioni da eliminare', 'IDS_REQUIRED');
+  const { data, error } = await supabase.from('psc_lavorazioni').delete().in('id', ids).eq('project_id', p.id).eq('company_id', req.companyId).select('id');
+  if (error) throw error;
+  // le decisioni sulle loro interferenze se ne vanno da sole (ON DELETE CASCADE)
+  await touch(p.id);
+  res.json({ ok: true, eliminate: (data || []).length });
 }));
 
 router.delete('/psc/lavorazioni/:lid', ...auth, h(async (req, res) => {
