@@ -14,6 +14,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
 const { complianceStatus, overallStatus } = require('../../lib/compliance');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
 
 // Rate limit specifico per la verifica pubblica del badge
 // 60/min per IP — abbastanza generoso per ispezioni multiple
@@ -64,6 +65,9 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
 
   const safetyStatus = complianceStatus(worker.safety_training_expiry);
   const healthStatus  = complianceStatus(worker.health_fitness_expiry);
+  // F-316: la scheda "I miei documenti" (5 lingue) solo dove l'azienda ha
+  // acceso Documenti senza cartelle. Campo in più, nient'altro cambia qui.
+  const documentiSemplici = await isFeatureEnabled(worker.company_id, 'documenti_semplici').catch(() => false);
 
   res.json({
     badge_code:   worker.badge_code,
@@ -91,6 +95,7 @@ router.get('/badge/:code', badgeLimiter, async (req, res) => {
     health_fitness_status:  healthStatus,
     overall_status: overallStatus(worker),
     is_active:    worker.is_active,
+    documenti_semplici: documentiSemplici,
     documents: (workerDocs || []).map(d => ({
       id:          d.id,
       doc_type:    d.doc_type,
