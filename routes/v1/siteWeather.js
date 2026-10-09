@@ -4,7 +4,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }              = require('../../middleware/verifyJwt');
 const { getActualWeather, buildWeatherLogUpdate, dataSourceRank } = require('../../services/weatherService');
 const { backfillSiteWeatherHistory, yesterdayISO } = require('../../services/weatherBackfill');
-const { calcEndDate }                    = require('../../lib/calcEndDate');
+const { confirmSuspension, dismissSuspension, undoSuspension } = require('../../lib/weatherSuspension');
 const { generateWeatherReportHtml, generateWeatherReportXlsx } = require('../../services/weatherReport');
 const { rendererPool }                   = require('../../pdf-renderer');
 const { validate } = require('../../middleware/validate');
@@ -145,138 +145,23 @@ router.post('/sites/:siteId/weather-log/backfill', verifySupabaseJwt, async (req
 
 // ── POST /api/v1/sites/:siteId/weather-log/:date/confirm ─────────────────────
 // Conferma sospensione: crea il giorno in site_suspension_days + aggiorna log.
+// Logica in lib/weatherSuspension.js (F-318: la usa anche "Pioggia da confermare").
 router.post('/sites/:siteId/weather-log/:date/confirm', verifySupabaseJwt, validate(confirmSuspensionSchema), async (req, res) => {
   const { siteId, date } = req.params;
   const { notes }        = req.body || {};
-
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
-
-  // Recupera il log meteo
-  const { data: log } = await supabase
-    .from('site_weather_logs')
-    .select('id, threshold_reason, precipitation_mm, wind_max_kmh, weather_desc, data_source, arpal_station_name')
-    .eq('site_id', siteId)
-    .eq('log_date', date)
-    .maybeSingle();
-
-  if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
-
-  // F-199 (AUDIT.md): "Fonte: Open-Meteo / ERA5" era scritto anche quando
-  // il dato era già certificato ARPAL — il titolare l'ha segnalato
-  // esplicitamente sulla stessa distinzione nell'interfaccia ("dovrebbe
-  // esserci scritto solo ARPAL, è così che guadagniamo la fiducia di
-  // tutti"). Questa nota finisce in site_suspension_days.notes, un
-  // documento legale — deve riflettere la fonte reale del giorno.
-  const fonteLabel = log.data_source === 'arpal_certified'
-    ? `ARPAL${log.arpal_station_name ? ` (stazione ${log.arpal_station_name})` : ''}`
-    : log.data_source === 'era5_confirmed' ? 'ERA5 (Open-Meteo)' : 'stima Open-Meteo, in attesa di certificazione ARPAL';
-
-  // Costruisce note automatiche con i dati meteo
-  const autoNotes = [
-    log.weather_desc,
-    log.precipitation_mm > 0 ? `${log.precipitation_mm}mm pioggia` : null,
-    log.wind_max_kmh > 0    ? `vento ${log.wind_max_kmh}km/h max` : null,
-    notes ? `— ${notes}` : null,
-    `| Fonte: ${fonteLabel}`,
-  ].filter(Boolean).join(' · ');
-
-  // Crea il giorno di sospensione
-  const { data: suspension, error: suspErr } = await supabase
-    .from('site_suspension_days')
-    .upsert({
-      company_id: req.companyId,
-      site_id:    siteId,
-      day:        date,
-      reason:     log.threshold_reason || 'pioggia',
-      notes:      autoNotes,
-      created_by: req.user?.id ?? null,
-    }, { onConflict: 'site_id,day' })
-    .select('id')
-    .single();
-
-  if (suspErr) return res.status(500).json({ error: 'DB_ERROR', message: suspErr.message });
-
-  // F-202 (AUDIT.md): come F-201 (dismiss) — questo update non veniva mai
-  // controllato. Qui la conseguenza è peggiore che su dismiss: il giorno
-  // finirebbe con un record legale in site_suspension_days (già creato
-  // sopra) ma il log ancora "da confermare" — continuerebbe a comparire
-  // come pendente e a generare notifiche nonostante la sospensione esista
-  // già davvero.
-  const { data: logUpdated, error: logUpdateErr } = await supabase
-    .from('site_weather_logs')
-    .update({ suspension_confirmed: true, suspension_id: suspension.id })
-    .eq('id', log.id)
-    .select('id');
-  if (logUpdateErr) return res.status(500).json({ error: 'DB_ERROR', message: logUpdateErr.message });
-  if (!logUpdated?.length) return res.status(500).json({ error: 'DB_ERROR', message: 'Sospensione creata ma il log meteo non è stato aggiornato: il giorno risulterebbe ancora "da confermare".' });
-
-  // Ricalcola end_date del cantiere
-  const { data: suspRows } = await supabase
-    .from('site_suspension_days').select('day').eq('site_id', siteId);
-  const newEnd = calcEndDate(site.start_date, site.contract_days, site.days_type, (suspRows||[]).map(r=>r.day), site.comune ?? null);
-  if (newEnd) {
-    const { error: endDateErr } = await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
-    if (endDateErr) console.error(`[weatherConfirm] ${siteId}: end_date non aggiornata:`, endDateErr.message);
-  }
-
-  // Aggiorna notifica (rimuovi questo giorno dal conteggio pendenti)
-  const { data: pending } = await supabase
-    .from('site_weather_logs').select('log_date')
-    .eq('site_id', siteId).eq('threshold_exceeded', true)
-    .eq('suspension_confirmed', false).eq('suspension_dismissed', false);
-
-  const pendingDays = (pending || []).map(r => r.log_date);
-  if (pendingDays.length === 0) {
-    await supabase.from('notifications').delete()
-      .eq('company_id', req.companyId).eq('entity_type', 'site')
-      .eq('entity_id', siteId).eq('type', 'weather_suspension');
-  } else {
-    const listIt = pendingDays.sort().map(d => new Date(d+'T00:00:00').toLocaleDateString('it-IT',{day:'numeric',month:'long'}));
-    await supabase.from('notifications').upsert({
-      company_id: req.companyId, type: 'weather_suspension', severity: 'warning',
-      title: `Meteo — ${pendingDays.length} ${pendingDays.length===1?'giornata':'giornate'} da confermare`,
-      body: `${site.name}\n${listIt.join(' · ')}`,
-      entity_type: 'site', entity_id: siteId, updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,entity_type,entity_id,type' });
-  }
-
-  res.json({ ok: true, suspension, newEndDate: newEnd ?? null });
+  const r = await confirmSuspension({ companyId: req.companyId, site, date, notes, userId: req.user?.id ?? null });
+  res.status(r.status).json(r.body);
 });
 
 // ── POST /api/v1/sites/:siteId/weather-log/:date/dismiss ─────────────────────
 router.post('/sites/:siteId/weather-log/:date/dismiss', verifySupabaseJwt, async (req, res) => {
   const { siteId, date } = req.params;
-
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
-
-  // F-201 (AUDIT.md): a differenza di confirm/undo, questa route rispondeva
-  // sempre 200 {ok:true} anche quando l'update non toccava nessuna riga
-  // (data inesistente, cantiere sbagliato) — un "falso successo" lato server,
-  // la stessa classe di bug già vista su annulla/crea (F-020/F-021). Un
-  // update senza corrispondenze non è un errore per Supabase (data:[],
-  // error:null), va controllato esplicitamente col numero di righe toccate.
-  const { data: updated, error: updateErr } = await supabase
-    .from('site_weather_logs')
-    .update({ suspension_dismissed: true })
-    .eq('site_id', siteId).eq('log_date', date)
-    .select('id');
-  if (updateErr) return res.status(500).json({ error: 'DB_ERROR', message: updateErr.message });
-  if (!updated?.length) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
-
-  const { data: pending } = await supabase
-    .from('site_weather_logs').select('log_date')
-    .eq('site_id', siteId).eq('threshold_exceeded', true)
-    .eq('suspension_confirmed', false).eq('suspension_dismissed', false);
-
-  if (!pending?.length) {
-    await supabase.from('notifications').delete()
-      .eq('company_id', req.companyId).eq('entity_type', 'site')
-      .eq('entity_id', siteId).eq('type', 'weather_suspension');
-  }
-
-  res.json({ ok: true });
+  const r = await dismissSuspension({ companyId: req.companyId, site, date });
+  res.status(r.status).json(r.body);
 });
 
 // ── POST /api/v1/sites/:siteId/weather-log/:date/undo ────────────────────────
@@ -284,71 +169,10 @@ router.post('/sites/:siteId/weather-log/:date/dismiss', verifySupabaseJwt, async
 // Elimina da site_suspension_days, azzera i flag sul log, ricalcola end_date.
 router.post('/sites/:siteId/weather-log/:date/undo', verifySupabaseJwt, async (req, res) => {
   const { siteId, date } = req.params;
-
   const site = await getSiteOrFail(siteId, req.companyId, res);
   if (!site) return;
-
-  // Recupera il log per avere suspension_id
-  const { data: log } = await supabase
-    .from('site_weather_logs')
-    .select('id, suspension_id, suspension_confirmed, threshold_exceeded')
-    .eq('site_id',  siteId)
-    .eq('log_date', date)
-    .maybeSingle();
-
-  if (!log) return res.status(404).json({ error: 'LOG_NOT_FOUND' });
-  if (!log.suspension_confirmed) return res.status(409).json({ error: 'NOT_CONFIRMED' });
-
-  // F-202 (AUDIT.md): stesso sweep di F-201/F-202 sopra — né la delete né
-  // il reset dei flag sul log venivano mai controllati per errore.
-  // Elimina il record da site_suspension_days
-  const suspensionDelete = log.suspension_id
-    ? supabase.from('site_suspension_days').delete()
-        .eq('id', log.suspension_id).eq('site_id', siteId).eq('company_id', req.companyId)
-    // Fallback: elimina per site_id + day nel caso suspension_id non sia stato salvato
-    : supabase.from('site_suspension_days').delete()
-        .eq('site_id', siteId).eq('day', date).eq('company_id', req.companyId);
-  const { error: suspDeleteErr } = await suspensionDelete;
-  if (suspDeleteErr) return res.status(500).json({ error: 'DB_ERROR', message: suspDeleteErr.message });
-
-  // Azzera i flag sul log meteo — il giorno torna nello stato "pendente"
-  const { data: logReset, error: logResetErr } = await supabase
-    .from('site_weather_logs')
-    .update({ suspension_confirmed: false, suspension_dismissed: false, suspension_id: null })
-    .eq('id', log.id)
-    .select('id');
-  if (logResetErr) return res.status(500).json({ error: 'DB_ERROR', message: logResetErr.message });
-  if (!logReset?.length) return res.status(500).json({ error: 'DB_ERROR', message: 'Sospensione rimossa ma il log meteo non è stato azzerato.' });
-
-  // Ricalcola end_date del cantiere
-  const { data: suspRows } = await supabase
-    .from('site_suspension_days').select('day').eq('site_id', siteId);
-  const newEnd = calcEndDate(
-    site.start_date, site.contract_days, site.days_type,
-    (suspRows || []).map(r => r.day), site.comune ?? null,
-  );
-  if (newEnd) {
-    const { error: endDateErr } = await supabase.from('sites').update({ end_date: newEnd }).eq('id', siteId).eq('company_id', req.companyId);
-    if (endDateErr) console.error(`[weatherUndo] ${siteId}: end_date non aggiornata:`, endDateErr.message);
-  }
-
-  // Aggiorna notifiche: questo giorno è di nuovo pendente se threshold_exceeded
-  if (log.threshold_exceeded) {
-    const { data: pending } = await supabase
-      .from('site_weather_logs').select('log_date')
-      .eq('site_id', siteId).eq('threshold_exceeded', true)
-      .eq('suspension_confirmed', false).eq('suspension_dismissed', false);
-    const pendingDays = (pending || []).map(r => r.log_date);
-    const listIt = pendingDays.sort().map(d => new Date(d + 'T00:00:00').toLocaleDateString('it-IT', { day: 'numeric', month: 'long' }));
-    await supabase.from('notifications').upsert({
-      company_id: req.companyId, type: 'weather_suspension', severity: 'warning',
-      title: `Meteo — ${pendingDays.length} ${pendingDays.length === 1 ? 'giornata' : 'giornate'} da confermare`,
-      body: `${site.name}\n${listIt.join(' · ')}`,
-      entity_type: 'site', entity_id: siteId, updated_at: new Date().toISOString(),
-    }, { onConflict: 'company_id,entity_type,entity_id,type' });
-  }
-
-  res.json({ ok: true, newEndDate: newEnd ?? null });
+  const r = await undoSuspension({ companyId: req.companyId, site, date });
+  res.status(r.status).json(r.body);
 });
 
 // ── GET /api/v1/sites/:siteId/weather-report.xlsx ────────────────────────────

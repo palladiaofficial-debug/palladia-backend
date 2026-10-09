@@ -35,6 +35,7 @@ router.use('/', require('./presenceMissing'));
 router.use('/', require('./presenceFixRoutes'));
 router.use('/', require('./reports'));
 router.use('/', require('./oreAssenze').router); // F-265 ore e assenze
+router.use('/', require('./oreDaVedere')); // F-318 pioggia da confermare, malattie e infortuni dagli operai
 router.use('/', require('./alerts'));
 router.use('/', require('./asl'));
 router.use('/', require('./auditLog'));
@@ -95,6 +96,8 @@ router.use('/', require('./workerPush'));
 router.use('/', require('./badgePunch'));
 // F-284: timbratura senza internet (file separato, la timbratura normale non cambia)
 router.use('/', require('./badgeOfflinePunch'));
+// F-318: uscita prima del solito, "Perché?" (file separato, la timbratura non cambia)
+router.use('/', require('./badgeUscitaAnticipata'));
 router.use('/', require('./badgeDdt'));
 
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
@@ -102,6 +105,8 @@ router.use('/', require('./badgeDdt'));
 router.use('/', require('./workerArea'));
 // F-265: richiesta ferie/permesso dall'Area lavoratore (stesso token PIN)
 router.use('/', require('./workerAreaAssenze'));
+// F-318: "Sono malato" dall'Area lavoratore (file separato)
+router.use('/', require('./workerAreaMalattia'));
 router.use('/', require('./payerArea'));
 
 // Consultazione fatture via Delega Unificata (sola lettura) — nessun webhook

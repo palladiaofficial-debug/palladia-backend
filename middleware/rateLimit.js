@@ -264,6 +264,25 @@ const badgePunchLimiter = rateLimit({
   ...makeStore('badgePunch'),
 });
 
+// F-318: "Esci prima del solito. Perché?" — budget proprio, separato dalla
+// timbratura: la domanda dopo l'uscita non deve mai consumare i tentativi di
+// timbratura dello stesso badge.
+const badgeUscitaLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders:   false,
+  validate:        { keyGeneratorIpFallback: false },
+  keyGenerator: (req) => {
+    const raw  = req.ip || '';
+    const ip   = raw.startsWith('::ffff:') ? raw.slice(7) : (raw || 'unknown');
+    const code = (req.params && req.params.code) || 'unknown';
+    return `badgeUscita:${ip}:${code}`;
+  },
+  message: { error: 'RATE_LIMIT_EXCEEDED' },
+  ...makeStore('badgeUscita'),
+});
+
 // Webhook fatture SdI: chiamato dal provider (Openapi), non da un browser —
 // limite generoso per non perdere fatture reali in un giorno di picco, ma
 // comunque presente per non lasciare la rotta senza nessun freno.
@@ -308,4 +327,4 @@ const emailIngestSenderLimiter = rateLimit({
   ...makeStore('emailIngestSender'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter };
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, badgeUscitaLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter };
