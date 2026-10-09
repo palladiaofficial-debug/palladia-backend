@@ -13,6 +13,7 @@
 
 const fs   = require('fs');
 const { ZONE_ORDER } = require('./sign-selector');
+const { editablePdfHtml } = require('./lib/pdfText');
 
 // ── ESCAPE / HELPERS ──────────────────────────────────────────────────────────
 function esc(str) {
@@ -1554,7 +1555,8 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   Documento generato con Palladia — D.lgs 81/2008 e s.m.i. — ${oggi} — Revisione ${rev}
 </p>`;
 
-  return `<!DOCTYPE html>
+  // F-302: dimensioni a mezzo pixel e niente crenatura → testo modificabile in Acrobat
+  return editablePdfHtml(`<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -1571,7 +1573,7 @@ ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
 </div>
 
 </body>
-</html>`;
+</html>`);
 }
 
 module.exports = { generatePosHtml };
