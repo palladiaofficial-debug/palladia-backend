@@ -73,7 +73,10 @@ async function main() {
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}/api/v1`;
   try {
-    const today = romeDay(new Date());
+    // Giorno dello scenario: l'ultimo giorno lavorativo (nel fine settimana il
+    // foglio del mese, giustamente, non conta ore di pioggia)
+    let today = romeDay(new Date());
+    while ([0, 6].includes(new Date(`${today}T12:00:00Z`).getUTCDay())) today = addDays(today, -1);
     const site = await ins('sites', { company_id: cid, name: `${T} Via Lucarno`, address: 'Via Lucarno 14, Genova', status: 'attivo', start_date: '2026-01-01', contract_days: 365, days_type: 'lavorativi' });
     const site2 = await ins('sites', { company_id: cid, name: `${T} Via Verdi`, address: 'Via Verdi 13, Savona', status: 'attivo', start_date: '2026-01-01', contract_days: 365, days_type: 'lavorativi' });
     const mk = (n) => ins('workers', { company_id: cid, full_name: `${T} ${n}`, is_active: true, fiscal_code: `F318${n}${stamp}`.slice(0, 16), badge_code: crypto.randomBytes(9).toString('hex').toUpperCase() });

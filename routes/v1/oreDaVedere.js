@@ -7,11 +7,12 @@
 // POST /api/v1/ore/pioggia/annulla           { fatti: [...] } (quello che hanno restituito conferma/scarta)
 // POST /api/v1/ore/malattie/:id/visto
 // POST /api/v1/ore/infortuni/:id/visto
+// POST /api/v1/ore/pausa/:id/conferma | scarta | annulla   (F-319, pausa pranzo saltata)
 // Solo titolare e amministratori, come il resto di Ore e assenze.
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { proposte, conferma, scarta, scartaSenzaOre, annulla, PioggiaError } = require('../../lib/pioggiaDaConfermare');
+const { proposte, conferma, scarta, scartaSenzaOre, annulla, pauseDaConfermare, confermaPausa, scartaPausa, annullaPausa, PioggiaError } = require('../../lib/pioggiaDaConfermare');
 const logger = require('../../lib/logger');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -31,13 +32,14 @@ router.get('/ore/da-vedere', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
   try {
     const since = new Date(Date.now() - 30 * 864e5).toISOString();
-    const [pioggia, malRes, infRes] = await Promise.all([
+    const [pioggia, malRes, infRes, pause] = await Promise.all([
       proposte(req.companyId),
       supabase.from('worker_absences').select('id, worker_id, date_from, date_to, protocollo, note, created_at, workers(full_name)')
         .eq('company_id', req.companyId).eq('tipo', 'malattia').eq('da_lavoratore', true).is('decided_at', null)
         .gte('created_at', since).order('created_at', { ascending: false }),
       supabase.from('notifications').select('id, title, body, read_by, created_at')
         .eq('company_id', req.companyId).eq('type', 'worker_injury').gte('created_at', since).order('created_at', { ascending: false }),
+      pauseDaConfermare(req.companyId),
     ]);
     if (malRes.error || infRes.error) throw new Error((malRes.error || infRes.error).message);
     const uid = req.user?.id;
@@ -45,22 +47,23 @@ router.get('/ore/da-vedere', verifySupabaseJwt, async (req, res) => {
       pioggia,
       malattie: (malRes.data || []).map(({ workers, ...m }) => ({ ...m, nome: workers?.full_name || '' })),
       infortuni: (infRes.data || []).filter(n => !uid || !(n.read_by || []).includes(uid)).map(({ read_by, ...n }) => n),
+      pause,
     });
   } catch (err) { fail(res, err, 'elenco'); }
 });
 
 router.post('/ore/pioggia/conferma', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
-  const { siteId, day } = req.body || {};
+  const { siteId, day, kind } = req.body || {};
   if (!UUID.test(String(siteId))) return res.status(400).json({ error: 'INVALID_SITE' });
-  try { res.json(await conferma({ companyId: req.companyId, siteId, day, userId: req.user?.id || null })); } catch (err) { fail(res, err, 'conferma'); }
+  try { res.json(await conferma({ companyId: req.companyId, siteId, day, kind: kind || 'pioggia', userId: req.user?.id || null })); } catch (err) { fail(res, err, 'conferma'); }
 });
 
 router.post('/ore/pioggia/scarta', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
-  const { siteId, day } = req.body || {};
+  const { siteId, day, kind } = req.body || {};
   if (!UUID.test(String(siteId))) return res.status(400).json({ error: 'INVALID_SITE' });
-  try { res.json(await scarta({ companyId: req.companyId, siteId, day, userId: req.user?.id || null })); } catch (err) { fail(res, err, 'scarta'); }
+  try { res.json(await scarta({ companyId: req.companyId, siteId, day, kind: kind || 'pioggia', userId: req.user?.id || null })); } catch (err) { fail(res, err, 'scarta'); }
 });
 
 router.post('/ore/pioggia/scarta-senza-ore', verifySupabaseJwt, async (req, res) => {
@@ -74,6 +77,8 @@ router.post('/ore/pioggia/annulla', verifySupabaseJwt, async (req, res) => {
   const ids = (a) => (Array.isArray(a) ? a.filter(x => UUID.test(String(x))) : []);
   try {
     for (const f of fatti) {
+      // F-319: annullo di una pausa saltata confermata o scartata
+      if (f?.pausa && UUID.test(String(f.reasonId))) { await annullaPausa({ companyId: req.companyId, reasonId: f.reasonId }); continue; }
       if (!UUID.test(String(f?.siteId))) continue;
       await annulla({ companyId: req.companyId, siteId: f.siteId, day: f.day, reasonIds: ids(f.reasonIds), absenceIds: ids(f.absenceIds), sospensione: !!f.sospensione, scartata: !!f.scartata });
     }
@@ -103,6 +108,18 @@ router.post('/ore/infortuni/:id/visto', verifySupabaseJwt, async (req, res) => {
     if (error) return res.status(500).json({ error: 'DB_ERROR' });
   }
   res.json({ ok: true });
+});
+
+router.post('/ore/pausa/:id/:azione', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'NOT_FOUND' });
+  const args = { companyId: req.companyId, reasonId: req.params.id, userId: req.user?.id || null };
+  try {
+    if (req.params.azione === 'conferma') return res.json(await confermaPausa(args));
+    if (req.params.azione === 'scarta') return res.json(await scartaPausa(args));
+    if (req.params.azione === 'annulla') return res.json(await annullaPausa(args));
+    res.status(404).json({ error: 'NOT_FOUND' });
+  } catch (err) { fail(res, err, 'pausa'); }
 });
 
 module.exports = router;

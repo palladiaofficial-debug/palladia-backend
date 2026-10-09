@@ -386,6 +386,8 @@
     .ua-sick { background: #FBE7E4; color: #A3322A; }
     .ua-hurt { background: #FBE7E4; color: #A3322A; border: 2px solid rgba(163,50,42,.4); }
     .ua-fine { background: var(--accent); color: #fff; align-items: center; }
+    .ua-heat { background: #FCE8D8; color: #9A3D00; }
+    .ua-lunch { background: #EAF1EB; color: #2F6B43; }
     .ua-done { display: flex; gap: 10px; align-items: flex-start; font-size: 18px; font-weight: 600; background: #E4F0E7; color: #1f3d2a; border-radius: 16px; padding: 16px; }
     .confirm-alt-sub { display: block; margin-top: 4px; font-size: 15px; font-weight: 500; text-transform: none; opacity: 0.8; }
 
@@ -751,6 +753,11 @@
       uaRain: ['Piove', 'Lavoro fermo per il tempo'], uaPerm: ['Permesso', 'Esco per un motivo mio'], uaSick: ['Sto male', 'Vado a casa o dal medico'], uaHurt: ['Mi sono fatto male', 'Un incidente qui in cantiere'], uaFine: 'Ho finito',
       uaDone: { maltempo: 'Il tuo capo lo vede e conferma le ore di pioggia.', permesso: 'Il tuo capo lo vede.', malattia: 'Il tuo capo lo vede. Se vai dal medico, manda il numero del certificato dall\'Area lavoratore.', infortunio: 'Il tuo capo è avvisato adesso. Se è grave chiama il 112.', fine: 'A domani!' },
       uaErr: 'Non sono riuscito a salvare. L\'uscita è registrata lo stesso.',
+      uaHeat: ['Fa troppo caldo', 'Lavoro fermo per il caldo'], uaLunch: ['Ho saltato la pausa', 'Ho lavorato senza fermarmi a pranzo'],
+      uaDone2: { caldo: 'Il tuo capo lo vede e conferma le ore di caldo.', pausa_saltata: 'Il tuo capo lo vede e conferma la pausa saltata.' },
+      eaQ: 'Entri più tardi del solito.', eaWhy: 'Perché?',
+      eaRain: ['Pioveva', 'Si è iniziato dopo per il tempo'], eaPerm: ['Permesso', 'Avevo un impegno mio'], eaMed: ['Visita medica', 'Ero dal medico'], eaLate: 'Ero in ritardo',
+      eaDone: { maltempo: 'Il tuo capo lo vede e conferma le ore di pioggia.', permesso: 'Il tuo capo lo vede.', visita_medica: 'Il tuo capo lo vede. Porta il foglio della visita.', ritardo: 'Buon lavoro!' },
       canCloseAfterSuccess: 'Presenza registrata. Puoi chiudere questa pagina.',
       gpsNotPrecise: 'GPS non abbastanza preciso',
       gpsRetryHint: "Spostati all'aperto, aspetta qualche secondo e riprova.",
@@ -927,6 +934,11 @@
       uaRain: ['Plouă', 'Lucrul e oprit din cauza vremii'], uaPerm: ['Permisie', 'Ies pentru un motiv personal'], uaSick: ['Mi-e rău', 'Merg acasă sau la medic'], uaHurt: ['M-am rănit', 'Un accident aici pe șantier'], uaFine: 'Am terminat',
       uaDone: { maltempo: 'Șeful tău vede și confirmă orele de ploaie.', permesso: 'Șeful tău vede.', malattia: 'Șeful tău vede. Dacă mergi la medic, trimite numărul certificatului din Zona lucrătorului.', infortunio: 'Șeful tău a fost anunțat acum. Dacă e grav, sună la 112.', fine: 'Pe mâine!' },
       uaErr: 'Nu am reușit să salvez. Ieșirea este înregistrată oricum.',
+      uaHeat: ['E prea cald', 'Lucrul e oprit din cauza căldurii'], uaLunch: ['Am sărit pauza', 'Am lucrat fără pauză de prânz'],
+      uaDone2: { caldo: 'Șeful tău vede și confirmă orele de căldură.', pausa_saltata: 'Șeful tău vede și confirmă pauza sărită.' },
+      eaQ: 'Intri mai târziu decât de obicei.', eaWhy: 'De ce?',
+      eaRain: ['Ploua', 'Am început mai târziu din cauza vremii'], eaPerm: ['Permisie', 'Am avut o treabă personală'], eaMed: ['Vizită medicală', 'Am fost la medic'], eaLate: 'Am întârziat',
+      eaDone: { maltempo: 'Șeful tău vede și confirmă orele de ploaie.', permesso: 'Șeful tău vede.', visita_medica: 'Șeful tău vede. Adu foaia de la medic.', ritardo: 'Spor la lucru!' },
       canCloseAfterSuccess: 'Prezență înregistrată. Poți închide această pagină.',
       gpsNotPrecise: 'GPS insuficient de precis',
       gpsRetryHint: 'Ieși afară, așteaptă câteva secunde și încearcă din nou.',
@@ -1109,6 +1121,11 @@
       uaRain: ['Bie shi', 'Puna ndalet për shkak të motit'], uaPerm: ['Leje', 'Dal për një arsye timen'], uaSick: ['Jam sëmurë', 'Shkoj në shtëpi ose te mjeku'], uaHurt: ['U lëndova', 'Një aksident këtu në kantier'], uaFine: 'Mbarova',
       uaDone: { maltempo: 'Përgjegjësi yt e sheh dhe konfirmon orët e shiut.', permesso: 'Përgjegjësi yt e sheh.', malattia: 'Përgjegjësi yt e sheh. Nëse shkon te mjeku, dërgo numrin e certifikatës nga Zona e punëtorit.', infortunio: 'Përgjegjësi yt u njoftua tani. Nëse është rëndë, telefono 112.', fine: 'Shihemi nesër!' },
       uaErr: 'Nuk arrita ta ruaj. Dalja është regjistruar gjithsesi.',
+      uaHeat: ['Bën shumë vapë', 'Puna ndalet për shkak të vapës'], uaLunch: ['E kalova pushimin', 'Punova pa u ndalur për drekë'],
+      uaDone2: { caldo: 'Përgjegjësi yt e sheh dhe konfirmon orët e vapës.', pausa_saltata: 'Përgjegjësi yt e sheh dhe konfirmon pushimin e kaluar.' },
+      eaQ: 'Po hyn më vonë se zakonisht.', eaWhy: 'Pse?',
+      eaRain: ['Binte shi', 'Filluam më vonë për shkak të motit'], eaPerm: ['Leje', 'Kisha një punë timen'], eaMed: ['Vizitë mjekësore', 'Isha te mjeku'], eaLate: 'U vonova',
+      eaDone: { maltempo: 'Përgjegjësi yt e sheh dhe konfirmon orët e shiut.', permesso: 'Përgjegjësi yt e sheh.', visita_medica: 'Përgjegjësi yt e sheh. Sill fletën e vizitës.', ritardo: 'Punë të mbarë!' },
       canCloseAfterSuccess: 'Prania u regjistrua. Mund ta mbyllësh këtë faqe.',
       gpsNotPrecise: 'GPS jo mjaftueshëm i saktë',
       gpsRetryHint: 'Dil jashtë, prit disa sekonda dhe provo përsëri.',
@@ -1284,6 +1301,11 @@
       uaRain: ['تمطر', 'العمل متوقف بسبب الطقس'], uaPerm: ['إذن', 'أخرج لسبب شخصي'], uaSick: ['أنا مريض', 'أذهب إلى البيت أو إلى الطبيب'], uaHurt: ['أصبت', 'حادث هنا في الورشة'], uaFine: 'انتهيت',
       uaDone: { maltempo: 'رئيسك يرى ذلك ويؤكد ساعات المطر.', permesso: 'رئيسك يرى ذلك.', malattia: 'رئيسك يرى ذلك. إذا ذهبت إلى الطبيب، أرسل رقم الشهادة من منطقة العامل.', infortunio: 'تم إبلاغ رئيسك الآن. إذا كان الأمر خطيرًا اتصل بـ 112.', fine: 'إلى الغد!' },
       uaErr: 'لم أتمكن من الحفظ. تم تسجيل الخروج على أي حال.',
+      uaHeat: ['الحر شديد', 'العمل متوقف بسبب الحر'], uaLunch: ['لم آخذ استراحة الغداء', 'عملت دون توقف للغداء'],
+      uaDone2: { caldo: 'رئيسك يرى ذلك ويؤكد ساعات الحر.', pausa_saltata: 'رئيسك يرى ذلك ويؤكد الاستراحة التي لم تأخذها.' },
+      eaQ: 'أنت تدخل متأخرًا عن موعدك المعتاد.', eaWhy: 'لماذا؟',
+      eaRain: ['كانت تمطر', 'بدأنا متأخرين بسبب الطقس'], eaPerm: ['إذن', 'كان لدي أمر شخصي'], eaMed: ['زيارة طبية', 'كنت عند الطبيب'], eaLate: 'تأخرت',
+      eaDone: { maltempo: 'رئيسك يرى ذلك ويؤكد ساعات المطر.', permesso: 'رئيسك يرى ذلك.', visita_medica: 'رئيسك يرى ذلك. أحضر ورقة الزيارة.', ritardo: 'عمل موفق!' },
       canCloseAfterSuccess: 'تم تسجيل الحضور. يمكنك إغلاق هذه الصفحة.',
       gpsNotPrecise: 'دقة GPS غير كافية',
       gpsRetryHint: 'اخرج إلى الخارج، انتظر بضع ثوانٍ وحاول مرة أخرى.',
@@ -2188,7 +2210,7 @@
         <div class="success-close">${esc(t().canCloseAfterSuccess)}</div>
       </div>
       <div id="ua-slot"></div>`;
-    if (!isEntry) uscitaAnticipata(tsServer);
+    uscitaAnticipata(tsServer, isEntry ? 'entrata' : 'uscita');
   }
 
   // ── "Esci prima del solito. Perché?" (F-318, AUDIT.md del frontend) ─────────
@@ -2197,14 +2219,20 @@
   // server). L'uscita è già registrata qui sopra: la domanda non può mai
   // bloccarla, e se il server non risponde non compare niente. "Ho finito" è
   // il tasto grande e sicuro. Backend: routes/v1/badgeUscitaAnticipata.js.
-  var ua = { key: null, ask: false, done: null, busy: false, err: false };
-  async function uscitaAnticipata(key) {
+  // F-319: anche dopo un'entrata almeno un'ora dopo il solito (mode 'entrata');
+  // all'uscita "Fa troppo caldo" (giugno-settembre) e "Ho saltato la pausa"
+  // (fino a 90 minuti prima) solo quando il server li propone.
+  var ua = { key: null, mode: 'uscita', ask: false, caldo: false, pausa: false, done: null, busy: false, err: false };
+  function uaPath() { return '/api/v1/badge/' + BADGE_CODE + (ua.mode === 'entrata' ? '/entrata-tardiva' : '/uscita-anticipata'); }
+  async function uscitaAnticipata(key, mode) {
     if (ua.key !== key) {
-      ua = { key: key, ask: false, done: null, busy: false, err: false };
+      ua = { key: key, mode: mode || 'uscita', ask: false, caldo: false, pausa: false, done: null, busy: false, err: false };
       try {
-        var r = await apiFetch('GET', '/api/v1/badge/' + BADGE_CODE + '/uscita-anticipata');
+        var r = await apiFetch('GET', uaPath());
         if (ua.key !== key) return;
         ua.ask = r.status === 200 && r.body && r.body.ask === true;
+        ua.caldo = !!(r.body && r.body.caldo);
+        ua.pausa = !!(r.body && r.body.pausa);
       } catch (e) { ua.ask = false; }
     }
     renderUa();
@@ -2217,15 +2245,29 @@
     if (!slot || !ua.ask) return;
     var T = t();
     if (ua.done) {
-      slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card"><div class="ua-done" id="ua-done">✓ <span>' + esc(T.uaDone[ua.done]) + '</span></div></div>';
+      var doneText = ua.mode === 'entrata' ? T.eaDone[ua.done] : (T.uaDone[ua.done] || T.uaDone2[ua.done]);
+      slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card"><div class="ua-done" id="ua-done">✓ <span>' + esc(doneText) + '</span></div></div>';
       return;
     }
-    slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card">' +
+    if (ua.mode === 'entrata') {
+      slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card" data-mode="entrata">' +
+        '<div class="ua-q">' + esc(T.eaQ) + '<br>' + esc(T.eaWhy) + '</div>' +
+        uaButton('maltempo', 'ua-rain', T.eaRain[0], T.eaRain[1]) +
+        uaButton('permesso', 'ua-perm', T.eaPerm[0], T.eaPerm[1]) +
+        uaButton('visita_medica', 'ua-sick', T.eaMed[0], T.eaMed[1]) +
+        uaButton('ritardo', 'ua-fine', T.eaLate, null) +
+        (ua.err ? '<div class="hint-help" style="color:#A3322A">' + esc(T.uaErr) + '</div>' : '') +
+        '</div>';
+      return;
+    }
+    slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card" data-mode="uscita">' +
       '<div class="ua-q">' + esc(T.uaQ) + '<br>' + esc(T.uaWhy) + '</div>' +
       uaButton('maltempo', 'ua-rain', T.uaRain[0], T.uaRain[1]) +
+      (ua.caldo ? uaButton('caldo', 'ua-heat', T.uaHeat[0], T.uaHeat[1]) : '') +
       uaButton('permesso', 'ua-perm', T.uaPerm[0], T.uaPerm[1]) +
       uaButton('malattia', 'ua-sick', T.uaSick[0], T.uaSick[1]) +
       uaButton('infortunio', 'ua-hurt', T.uaHurt[0], T.uaHurt[1]) +
+      (ua.pausa ? uaButton('pausa_saltata', 'ua-lunch', T.uaLunch[0], T.uaLunch[1]) : '') +
       uaButton('fine', 'ua-fine', T.uaFine, null) +
       (ua.err ? '<div class="hint-help" style="color:#A3322A">' + esc(T.uaErr) + '</div>' : '') +
       '</div>';
@@ -2234,7 +2276,7 @@
     if (ua.busy) return;
     ua.busy = true; ua.err = false; renderUa();
     try {
-      var r = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/uscita-anticipata', { motivo: motivo });
+      var r = await apiFetch('POST', uaPath(), { motivo: motivo });
       if (r.status !== 200) throw new Error('x');
       ua.done = motivo;
     } catch (e) { ua.err = true; }

@@ -7,7 +7,7 @@
 // File separato da badgePunch.js di proposito: la timbratura resta intoccata.
 const router = require('express').Router();
 const { badgeUscitaLimiter } = require('../../middleware/rateLimit');
-const { domanda, rispondi } = require('../../lib/uscitaAnticipata');
+const { domanda, rispondi, domandaEntrata, rispondiEntrata } = require('../../lib/uscitaAnticipata');
 const { notifyIncidente } = require('../../services/telegramNotifications');
 
 const BADGE_RE = /^[A-Fa-f0-9]{18}$/;
@@ -35,6 +35,33 @@ router.post('/badge/:code/uscita-anticipata', badgeUscitaLimiter, async (req, re
     res.json(r);
   } catch (err) {
     console.error('[uscita-anticipata] POST:', err.message);
+    res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── Entrata almeno un'ora dopo il solito (F-319) ────────────────────────────
+// GET  /api/v1/badge/:code/entrata-tardiva             → { ask, entrata, entrata_solita }
+// POST /api/v1/badge/:code/entrata-tardiva { motivo }  → maltempo | permesso | visita_medica | ritardo
+router.get('/badge/:code/entrata-tardiva', badgeUscitaLimiter, async (req, res) => {
+  if (!BADGE_RE.test(req.params.code)) return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
+  try {
+    const r = await domandaEntrata(req.params.code);
+    if (r.error) return res.status(r.status).json({ error: r.error, ask: false });
+    res.json(r);
+  } catch (err) {
+    console.error('[entrata-tardiva] GET:', err.message);
+    res.status(500).json({ error: 'INTERNAL_ERROR', ask: false });
+  }
+});
+
+router.post('/badge/:code/entrata-tardiva', badgeUscitaLimiter, async (req, res) => {
+  if (!BADGE_RE.test(req.params.code)) return res.status(400).json({ error: 'INVALID_BADGE_CODE' });
+  try {
+    const r = await rispondiEntrata(req.params.code, req.body?.motivo);
+    if (r.error) return res.status(r.status).json({ error: r.error });
+    res.json(r);
+  } catch (err) {
+    console.error('[entrata-tardiva] POST:', err.message);
     res.status(500).json({ error: 'INTERNAL_ERROR' });
   }
 });

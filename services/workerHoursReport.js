@@ -247,7 +247,8 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
           const { entry, exit } = ev.pair;
           const lr   = minutesByEntryId.get(entry.id);
           const mins = lr.minutes;
-          const reasonTag = reasonByLogId.get(exit.id);
+          // F-319: anche il motivo dell'entrata in ritardo (sull'ENTRY della coppia)
+          const reasonTag = reasonByLogId.get(exit.id) || reasonByLogId.get(entry.id);
           const reasonText = reasonTag ? reasonTag.label + (reasonTag.note ? `: ${reasonTag.note}` : '') : null;
           // F-222 (AUDIT.md): entrata e uscita di una coppia possono ora
           // appartenere a cantieri diversi (spostamento reale nello stesso
