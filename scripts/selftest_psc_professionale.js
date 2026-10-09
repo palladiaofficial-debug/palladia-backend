@@ -42,7 +42,7 @@ function check(name, cond, got) {
   check('regione: Genova → Liguria, Milano → nessuna', P.regioneDi({ provincia: 'Genova' }) === 'Liguria' && P.regioneDi({ comune: 'Milano', provincia: 'MI' }) === null);
   const voci = C.proponi({ project: { start_date: '2026-10-15', end_date: '2027-01-14', provincia: 'GE' }, lavorazioni: [{ scheda_id: 'ponteggio-montaggio' }], regionale: P.regionalePer({ provincia: 'GE' }) });
   const recP = voci.find(v => v.origine === 'catalogo:recinzione');
-  check('cantiere ligure: "Proponi le voci" usa codice e prezzo del prezzario regionale', recP && recP.codice === '95.A10.A10.010' && recP.prezzo === 7.51 && recP.prezzo_fonte === 'prezzario' && /Liguria 2025/.test(recP.prezzario_fonte), recP);
+  check('cantiere ligure: "Proponi le voci" usa codice e prezzo del prezzario regionale (F-310: 2026)', recP && recP.codice === '95.A10.A10.010' && recP.prezzo === 8.01 && recP.prezzo_fonte === 'prezzario' && /Liguria 2026/.test(recP.prezzario_fonte), recP);
   check('cantiere ligure: il ponteggio prende 95.B10.S10.011', voci.some(v => v.codice === '95.B10.S10.011'));
   const fuori = C.proponi({ project: { start_date: '2026-10-15', end_date: '2027-01-14', provincia: 'MI' }, lavorazioni: [] });
   check('cantiere fuori Liguria: prezzi indicativi come prima', fuori.every(v => v.prezzo_fonte !== 'prezzario'));

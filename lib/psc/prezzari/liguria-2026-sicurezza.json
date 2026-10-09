@@ -1,0 +1,753 @@
+{
+ "id": "liguria-2026",
+ "nome": "Prezzario Regione Liguria 2026 · Sicurezza",
+ "regione": "Liguria",
+ "anno": 2026,
+ "sezione": "95 - Sicurezza (D.Lgs. 81/2008)",
+ "fonte": "Regione Liguria, Prezzario regionale delle opere edili ed impiantistiche",
+ "pagine_pdf": 1046,
+ "voci": [
+  {
+   "codice": "95.A10.A05.010",
+   "descrizione": "Quadro elettrico di cantiere: Ammortamento giornaliero quadro elettrico da cantiere 12 prese (durata 2 anni)",
+   "um": "giorno",
+   "prezzo": 2.24,
+   "capitolo": "Quadro elettrico di cantiere"
+  },
+  {
+   "codice": "95.A10.A05.015",
+   "descrizione": "Quadro elettrico di cantiere: Ammortamento giornaliero quadro elettrico cantiere 6 prese (durata 2 anni)",
+   "um": "giorno",
+   "prezzo": 1.43,
+   "capitolo": "Quadro elettrico di cantiere"
+  },
+  {
+   "codice": "95.A10.A05.020",
+   "descrizione": "Quadro elettrico di cantiere: Ammortamento giornaliero quadro elettrico cantiere 4 prese (durata 2 anni)",
+   "um": "giorno",
+   "prezzo": 1.29,
+   "capitolo": "Quadro elettrico di cantiere"
+  },
+  {
+   "codice": "95.A10.A05.050",
+   "descrizione": "Quadro elettrico di cantiere: Sola posa in opera di quadro elettrico di cantiere sino 12 prese, escluso il solo costo del cavo di alimentazione e compresi: l'allaccio a terra e la certificazione di legge.",
+   "um": "cad",
+   "prezzo": 448.96,
+   "capitolo": "Quadro elettrico di cantiere"
+  },
+  {
+   "codice": "95.A10.A07.010",
+   "descrizione": "Impianto di cantiere: per intervento di minuta manutenzione di durata inferiore a 1 giornata lavorativa",
+   "um": "cad",
+   "prezzo": 411.41,
+   "capitolo": "Impianto di cantiere"
+  },
+  {
+   "codice": "95.A10.A10.010",
+   "descrizione": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m: costituita da pannelli in acciaio elettrosaldato e zincato, del peso di 20 kg circa, montati su basi di calcestruzzo prefabbricate. Montaggio e smontaggio.",
+   "um": "m",
+   "prezzo": 8.01,
+   "capitolo": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m"
+  },
+  {
+   "codice": "95.A10.A10.015",
+   "descrizione": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m: costituita da pannelli in acciaio elettrosaldato e zincato, del peso di 20 kg circa, montati su basi di calcestruzzo prefabbricate. Nolo valutato a metro giorno. (i giorni oltre il 500° non daranno più diritto ad alcuna contabilizzazione)",
+   "um": "m",
+   "prezzo": 0.1,
+   "capitolo": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m"
+  },
+  {
+   "codice": "95.A10.A10.020",
+   "descrizione": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m: realizzata con tavole di legname o pannelli multistrato. Montaggio e smontaggio",
+   "um": "m",
+   "prezzo": 32.57,
+   "capitolo": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m"
+  },
+  {
+   "codice": "95.A10.A10.030",
+   "descrizione": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m: costituita da tavole di legname o pannelli multistrato. Nolo valutato a metro giorno. (i giorni oltre il primo anno, non daranno più diritto ad alcuna contabilizzazione)",
+   "um": "m",
+   "prezzo": 0.28,
+   "capitolo": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m"
+  },
+  {
+   "codice": "95.A10.A10.040",
+   "descrizione": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m: realizzata in lamiera grecata, montaggio e smontaggio",
+   "um": "m",
+   "prezzo": 29.61,
+   "capitolo": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m"
+  },
+  {
+   "codice": "95.A10.A10.050",
+   "descrizione": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m: recinzione in lamiera grecata. Nolo valutato a metro giorno. (i giorni oltre il primo anno, non daranno più diritto ad alcuna contabilizzazione)",
+   "um": "m",
+   "prezzo": 0.24,
+   "capitolo": "Recinzione di cantiere, avente altezza minima fuori terra di 2,00 m"
+  },
+  {
+   "codice": "95.A10.A15.005",
+   "descrizione": "Delimitazione area di lavoro con rete arancione: Delimitazione di area di lavoro con rete in polietilene di colore arancione e tondino in acciaio con relativo fungo copritondino per un'altezza complessiva fuori terra di 1,2 m.",
+   "um": "m",
+   "prezzo": 7.77,
+   "capitolo": "Delimitazione area di lavoro con rete arancione"
+  },
+  {
+   "codice": "95.A10.A20.010",
+   "descrizione": "Delimitazione area di lavoro con nastro bianco rosso: Delimitazione di area di lavoro con nastro bianco - rosso e tondino in acciaio con relativo fungo copritondino per un'altezza complessiva fuori terra di 1,2 m.",
+   "um": "m",
+   "prezzo": 7.06,
+   "capitolo": "Delimitazione area di lavoro con nastro bianco rosso"
+  },
+  {
+   "codice": "95.A10.A30.010",
+   "descrizione": "Recinzione di delimitazione realizzata in elementi di calcestruzzo precompresso, tipo \"barriera New Jersey\": posizionamento e smontaggio o eventuale riposizionamento",
+   "um": "m",
+   "prezzo": 16.77,
+   "capitolo": "Recinzione di delimitazione realizzata in elementi di calcestruzzo precompresso, tipo \"barriera New Jersey\""
+  },
+  {
+   "codice": "95.A10.A30.020",
+   "descrizione": "Recinzione di delimitazione realizzata in elementi di calcestruzzo precompresso, tipo \"barriera New Jersey\": Nolo valutato a metro giorno (i giorni oltre il 500° non daranno più diritto ad alcuna contabilizzazione)",
+   "um": "m",
+   "prezzo": 0.57,
+   "capitolo": "Recinzione di delimitazione realizzata in elementi di calcestruzzo precompresso, tipo \"barriera New Jersey\""
+  },
+  {
+   "codice": "95.A10.A35.010",
+   "descrizione": "Recinzione di delimitazione realizzata in elementi in PVC appesantiti da acqua o sabbia, tipo \"barriera New Jersey\": posizionamento e smontaggio",
+   "um": "m",
+   "prezzo": 13.22,
+   "capitolo": "Recinzione di delimitazione realizzata in elementi in PVC appesantiti da acqua o sabbia, tipo \"barriera New Jersey\""
+  },
+  {
+   "codice": "95.A10.A35.020",
+   "descrizione": "Recinzione di delimitazione realizzata in elementi in PVC appesantiti da acqua o sabbia, tipo \"barriera New Jersey\": Nolo valutato a metro giorno.",
+   "um": "m",
+   "prezzo": 0.12,
+   "capitolo": "Recinzione di delimitazione realizzata in elementi in PVC appesantiti da acqua o sabbia, tipo \"barriera New Jersey\""
+  },
+  {
+   "codice": "95.A10.A40.010",
+   "descrizione": "Impianto semaforico provvisorio composto da due carrelli mobili corredati di lanterne tre luci a batteria a funzionamento automatico alternato, comprese batterie,, caricabatterie, centralina, la manutenzione e i maggiori oneri di spostamento dell'impianto.: valutato giorno",
+   "um": "giorno",
+   "prezzo": 31.05,
+   "capitolo": "Impianto semaforico provvisorio composto da due carrelli mobili corredati di lanterne tre luci a batteria a funzionamento automatico alternato, comprese batterie,, caricabatterie, centralina, la manutenzione e i maggiori oneri di spostamento dell'impianto."
+  },
+  {
+   "codice": "95.A10.A50.010",
+   "descrizione": "Protezione di aperture verso il vuoto: mediante la formazione di parapetto dell'altezza minima di 1 m, costituito da due correnti di tavole e una tavola fermapiede ancorata su montanti di legno o metallo.",
+   "um": "m",
+   "prezzo": 30.72,
+   "capitolo": "Protezione di aperture verso il vuoto"
+  },
+  {
+   "codice": "95.A10.A60.010",
+   "descrizione": "Formazione di passerelle o andatoie pedonabili della larghezza minima di 80 cm: realizzate a norma di legge, comprese le necessarie protezioni e parapetti",
+   "um": "m",
+   "prezzo": 41.32,
+   "capitolo": "Formazione di passerelle o andatoie pedonabili della larghezza minima di 80 cm"
+  },
+  {
+   "codice": "95.B10.S10.011",
+   "descrizione": "Ponteggiature: \"di facciata\", in elementi metallici prefabbricati e/o \"giunto-tubo\", compreso il montaggio e lo smontaggio finale, i piani di lavoro, idonea segnaletica, compresi gli eventuali oneri di progettazione, escluso: impianto di messa a terra, mantovane, illuminazione notturna e reti di protezione - Montaggio, smontaggio e noleggio per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 29.75,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.016",
+   "descrizione": "Ponteggiature: \"di facciata\", in elementi metallici prefabbricati e/o \"giunto-tubo\", compreso il montaggio e lo smontaggio finale, i piani di lavoro, idonea segnaletica, compresi gli eventuali oneri di progettazione, escluso: impianto di messa a terra, mantovane, illuminazione notturna e reti di protezione - Noleggio per ogni mese oltre il primo.",
+   "um": "m²",
+   "prezzo": 2.32,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.030",
+   "descrizione": "Ponteggiature: mantovana parasassi posta in opera lungo il paramento esterno del ponteggio con inclinazione a 45° e sporgenza di 1.50 m completa di orditura e chiusura ermetica - Montaggio e smontaggio e noleggio primo mese.",
+   "um": "m",
+   "prezzo": 33.73,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.040",
+   "descrizione": "Ponteggiature: mantovana parasassi posta in opera lungo il paramento esterno del ponteggio con inclinazione a 45° e sporgenza di 1.50 m completa di orditura e chiusura ermetica - Noleggio per ogni mese successivo al primo.",
+   "um": "m",
+   "prezzo": 1.86,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.046",
+   "descrizione": "Ponteggiature: Sovrapprezzo per estensione del ponteggio in presenza di lavorazione ai poggioli o logge, commisurato alla dimensione frontale della loggia o alla lunghezza del poggiolo misurata sul fronte esterno, escluse le parti laterali",
+   "um": "m",
+   "prezzo": 79.05,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.050",
+   "descrizione": "Ponteggiature: montaggio e smontaggio di ponteggio a castelli con esecuzione di ponte continuo sottocornicione, compreso sottoponte, mantovana paraschegge, parapetto continuo dell'altezza di m 2, impianti di messa a terra valutato a metro lineare di ponteggio, misurato su perimetro esterno, per altezze medie comprese tra i 15 e i 20 metri. Noleggio per il primo mese di utilizzo",
+   "um": "m",
+   "prezzo": 345,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.055",
+   "descrizione": "Ponteggiature: a castelli a cornicione come da articolo 95.B10.S10.050 altezza tra 15 e 20 m, noleggio per ogni mese successivo al primo",
+   "um": "m",
+   "prezzo": 22.72,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.060",
+   "descrizione": "Ponteggiature: montaggio e smontaggio di ponteggio a castelli con esecuzione di ponte continuo sottocornicione, compreso sottoponte, mantovana paraschegge, parapetto continuo dell'altezza di m 2, impianti di messa a terra valutato a metro lineare di ponteggio, misurato su perimetro esterno, per altezze inferiori a 15 metri. Noleggio per il primo mese di utilizzo.",
+   "um": "m",
+   "prezzo": 339.85,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.065",
+   "descrizione": "Ponteggiature: a castelli a cornicione come da articolo 95.B10.S10.060 altezza minore di 15 m, noleggio per ogni mese successivo al primo.",
+   "um": "m",
+   "prezzo": 20.46,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.070",
+   "descrizione": "Ponteggiature: ponteggio per castello di servizio 3,60x1,10 m (due castelli affiancati) misurato in altezza",
+   "um": "m",
+   "prezzo": 268.33,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.075",
+   "descrizione": "Ponteggiature: Illuminazione fissa con lampade elettriche posate su perimetro di ponteggi, recinzioni o simili, poste a distanza non superiore a ml 6 compresa la linea di collegamento e allacciamento fino a 10 ml. Alimentazione a 24 volt compreso trasformatore. Valutato a metro lineare del perimetro del ponteggio, recinzione o simile, per i primi 3 mesi di impiego.",
+   "um": "m",
+   "prezzo": 11.81,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.080",
+   "descrizione": "Ponteggiature: Impianto di illuminazione per segnalazione ingombro ponteggi di facciata e simili, a bassa tensione, completo di quadri elettrici, trasformatori, cavi e lampade. Per ogni mese oltre il terzo. Valutato a metro lineare del perimetro del ponteggio.",
+   "um": "m",
+   "prezzo": 0.71,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.082",
+   "descrizione": "Ponteggiature: impianto di messa a terra per ponteggiature di facciata, realizzato secondo la normativa vigente in materia, sino ad un massimo di tre dispersori",
+   "um": "cad",
+   "prezzo": 449.06,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.083",
+   "descrizione": "Ponteggiature: sovraprezzo all'articolo precedente per ogni dispersore in più",
+   "um": "cad",
+   "prezzo": 148.19,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.085",
+   "descrizione": "Ponteggiature: Reti o teli per contenimento polveri/materiali, per segregazione di ponteggi di facciata, continui, legati al ponteggio (almeno una legatura al m² di telo).",
+   "um": "m²",
+   "prezzo": 2.15,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.090",
+   "descrizione": "Ponteggiature: parapetto contrappesato a norma di legge in tubi innocenti per realizzazione lavori sui terrazzi privi di protezione.",
+   "um": "m",
+   "prezzo": 30.72,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.100",
+   "descrizione": "Ponteggiature: Verifica di sicurezza dei ponteggi metallici fissi così come previsto dall'allegato XIX del D.lgs 81/2008 e s.m.i.",
+   "um": "m²",
+   "prezzo": 0.53,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S10.110",
+   "descrizione": "Ponteggiature: Realizzazione di piano di carico di dimensioni in pianta 3,60 x 1,80 m., portata circa 200 Kg/mq. con partenza da terra. Montaggio, smontaggio e noleggio per il primo mese di utilizzo",
+   "um": "m²",
+   "prezzo": 32.53,
+   "capitolo": "Ponteggiature"
+  },
+  {
+   "codice": "95.B10.S15.004",
+   "descrizione": "Coperture provvisorie per tetti: montaggio e smontaggio di copertura provvisoria di tetti, realizzata con struttura a travi prefabbricate o tubolari di allumino poggiante sulla ponteggiatura di facciata e teli in PVC di adeguato spessore, il tutto conforme alla normativa vigente in materia. Misurazione a superficie effettiva di telo utilizzato comprese le parti verticali laterali. Noleggio per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 63.25,
+   "capitolo": "Coperture provvisorie per tetti"
+  },
+  {
+   "codice": "95.B10.S15.007",
+   "descrizione": "Coperture provvisorie per tetti: montaggio e smontaggio di copertura provvisoria di tetti, realizzata con struttura a travi prefabbricate o tubolari di allumino poggiante sulla ponteggiatura di facciata e teli in PVC di adeguato spessore, il tutto conforme alla normativa vigente in materia. Misurazione a superficie effettiva di telo utilizzato comprese le parti verticali laterali. Noleggio per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 3.16,
+   "capitolo": "Coperture provvisorie per tetti"
+  },
+  {
+   "codice": "95.B10.S20.011",
+   "descrizione": "Impalcature: per interni in elementi metallici prefabbricati e/o \"giunto-tubo\", compreso il montaggio e lo smontaggio finale, piano di lavoro, idonea segnaletica, impianto di messa a terra, compresi gli eventuali oneri di progettazione, escluso: mantovane, illuminazione notturna e reti di protezione. Escluso inoltre il costo del trasporto dei componenti, da valutare a parte, qualora l'ubicazione della zona interessata dai lavori non sia direttamente accessibile dal piano di scarico del materiale. Per piano di lavoro all'altezza sino a m. 2,00. Misurazione in proiezione orizzontale. Noleggio per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 12.02,
+   "capitolo": "Impalcature"
+  },
+  {
+   "codice": "95.B10.S20.012",
+   "descrizione": "Impalcature: impalcatura sino a h 2,00 m nolo per ogni mese successivo al primo",
+   "um": "m²",
+   "prezzo": 1.92,
+   "capitolo": "Impalcature"
+  },
+  {
+   "codice": "95.B10.S20.021",
+   "descrizione": "Impalcature: per interni in elementi metallici prefabbricati e/o \"giunto-tubo\", compreso il montaggio e lo smontaggio finale, piano di lavoro, sottoponte, idonea segnaletica, impianto di messa a terra, compresi gli eventuali oneri di progettazione, escluso: mantovane, illuminazione notturna e reti di protezione. Escluso inoltre il costo del trasporto dei componenti, da valutare a parte, qualora l'ubicazione della zona interessata dai lavori non sia direttamente accessibile dal piano di scarico del materiale. Per piano di lavoro all'altezza da m 2,00 sino a m. 4,00. Misurazione in proiezione orizzontale. Noleggio per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 24.07,
+   "capitolo": "Impalcature"
+  },
+  {
+   "codice": "95.B10.S20.022",
+   "descrizione": "Impalcature: impalcatura per h da 2,00 sino 4,00 m costo di noleggio per ogni mese successivo al primo",
+   "um": "m²",
+   "prezzo": 3.86,
+   "capitolo": "Impalcature"
+  },
+  {
+   "codice": "95.B10.S20.031",
+   "descrizione": "Impalcature: per interni in elementi metallici prefabbricati e/o \"giunto-tubo\", compreso il montaggio e lo smontaggio finale, piano di lavoro, sottoponte, idonea segnaletica, impianto di messa a terra, compresi gli eventuali oneri di progettazione, escluso: mantovane, illuminazione notturna e reti di protezione. Escluso inoltre il costo del trasporto dei componenti, da valutare a parte, qualora l'ubicazione della zona interessata dai lavori non sia direttamente accessibile dal piano di scarico del materiale. Per piano di lavoro all'altezza da m 4,00 sino a m. 6,00. Misurazione in proiezione orizzontale. Noleggio per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 28.91,
+   "capitolo": "Impalcature"
+  },
+  {
+   "codice": "95.B10.S20.032",
+   "descrizione": "Impalcature: impalcatura per h da 4,00 m sino 6,00 m costo di noleggio per ogni mese successivo al primo",
+   "um": "m²",
+   "prezzo": 5.28,
+   "capitolo": "Impalcature"
+  },
+  {
+   "codice": "95.B10.S25.010",
+   "descrizione": "Trabatello: Montaggio e smontaggio trabattello con piano di lavoro h 4,00 m.",
+   "um": "cad",
+   "prezzo": 36.34,
+   "capitolo": "Trabatello"
+  },
+  {
+   "codice": "95.B10.S25.015",
+   "descrizione": "Trabatello: Montaggio e smontaggio trabatello con piano di lavoro oltre 4,00 sino h 6,00m",
+   "um": "cad",
+   "prezzo": 73.03,
+   "capitolo": "Trabatello"
+  },
+  {
+   "codice": "95.B10.S25.060",
+   "descrizione": "Trabatello: Noleggio mensile di trabatello piano lavoro sino a m 4,00",
+   "um": "cad",
+   "prezzo": 50.58,
+   "capitolo": "Trabatello"
+  },
+  {
+   "codice": "95.B10.S25.065",
+   "descrizione": "Trabatello: Noleggio mensile di trabatello piano lavoro oltre m 4,00 sino a m. 6,00",
+   "um": "cad",
+   "prezzo": 94.25,
+   "capitolo": "Trabatello"
+  },
+  {
+   "codice": "95.B10.S28.010",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo S, classe A1, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per superfici sino a 200 mq. Primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 24.67,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.015",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo S, classe A1, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per superfici oltre 200 mq sino a 500 mq. Primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 21.68,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.020",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo S, classe A1, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per superfici oltre 500 mq. Per il primo mese.",
+   "um": "m²",
+   "prezzo": 20.93,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.025",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo S, classe A1, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per ogni mese successivo al primo e per qualsiasi superficie.",
+   "um": "m²",
+   "prezzo": 1.5,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.030",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 100 x 100 mm tipo S, classe A2, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per superfici sino a 200 mq. Per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 19.43,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.035",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 100 x 100 mm tipo S, classe A2, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per superfici oltre 200 sino a 500 mq. Per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 17.14,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.040",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 100 x 100 mm tipo S, classe A2, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per superfici oltre 500 mq. Per il primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 15.7,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.045",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 100 x 100 mm tipo S, classe A2, Ea 2,3 KJ, per posa in orizzontale esclusi accessori di ancoraggio e fissaggio. Per i mesi successivi al primo.",
+   "um": "m²",
+   "prezzo": 1.21,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.050",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo U, classe A1, Ea 2,3 KJ, per posa in verticale esclusi accessori di ancoraggio e fissaggio compresa la struttura di sostegno verticale. Primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 119.6,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.052",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo U, classe A1, Ea 2,3 KJ, per posa in verticale esclusi accessori di ancoraggio e fissaggio compresa la struttura di sostegno verticale. Per i mesi successivi al primo.",
+   "um": "m²",
+   "prezzo": 14.95,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.053",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo U, classe A1, Ea 2,3 KJ, per posa in verticale esclusi accessori di ancoraggio e fissaggio e la struttura di sostegno verticale. Primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 10.7,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.055",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale100 x 100 mm tipo U, classe A2, Ea 2,3 KJ, per posa in verticale esclusi accessori di ancoraggio e fissaggio compresa la struttura di sostegno verticale. Primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 112.13,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.057",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 100 x 100 mm tipo U, classe A2, Ea 2,3 KJ, per posa in verticale esclusi accessori di ancoraggio e fissaggio compresa la struttura di sostegno verticale. Per i mesi successivi al primo.",
+   "um": "m²",
+   "prezzo": 11.96,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S28.060",
+   "descrizione": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, mezzi di sollevamento e piattaforme di lavoro eventuali. Costi di utilizzo unitari.: Rete a maglia quadra o romboidale 60 x 60mm tipo U, classe A1, Ea 2,3 KJ, per posa in verticale esclusi accessori di ancoraggio e fissaggio e la struttura di sostegno verticale. Primo mese di utilizzo.",
+   "um": "m²",
+   "prezzo": 7.02,
+   "capitolo": "Reti di sicurezza per protezione cadute dall'alto UNI EN 1263-1 e 12632.Noleggio, compresa posa in opera da parte di ditta specializzata e lo smontaggio a fine lavori, esclusi: accessori di ancoraggio e fissaggio, oneri per la progettazione, le dichiarazioni di legge, oneri per eventuali controlli, "
+  },
+  {
+   "codice": "95.B10.S29.010",
+   "descrizione": "Fornitura e posa in opera di rete di sicurezza per protezione dall'alto certificata UNI EN1263-1 e EN 1263-2, per posa in verticale sull'ultimo piano dell'impalcato del ponteggio, compresa bordatura e cordone perimetrale e fascette di fissaggio.: a maglia quadra o romboidale 100 x 100 mm tipo U, filo diam. 6 mm",
+   "um": "m²",
+   "prezzo": 12.51,
+   "capitolo": "Fornitura e posa in opera di rete di sicurezza per protezione dall'alto certificata UNI EN1263-1 e EN 1263-2, per posa in verticale sull'ultimo piano dell'impalcato del ponteggio, compresa bordatura e cordone perimetrale e fascette di fissaggio."
+  },
+  {
+   "codice": "95.B10.S30.010",
+   "descrizione": "Tettoia di protezione materiali e attrezzature di cantiere: Dimensioni in pianta 3,60 x 2,50 h 2,50 costituita da n. 6 piedritti h. 2,50 distanza nel senso della lunghezza m. 1,80, in tubo da ponteggio con basette regolabili, traversi in tubo (doppi per il lato da 2,50 per un totale di 6 pezzi) oltre a 2 traversi di collegamento L=4,00. Copertura con lamiera grecata zincata sp. mm. 1,5 legata con filo di ferro alla struttura sopradescritta. Costo di Costruzione e Smontaggio.",
+   "um": "cad",
+   "prezzo": 1301.32,
+   "capitolo": "Tettoia di protezione materiali e attrezzature di cantiere"
+  },
+  {
+   "codice": "95.B10.S30.015",
+   "descrizione": "Tettoia di protezione materiali e attrezzature di cantiere: Dimensioni in pianta 3,60 x 2,50 h 2,50 costituita da n. 6 piedritti h. 2,50 distanza nel senso della lunghezza m. 1,80, in tubo da ponteggio con basette regolabili, traversi in tubo (doppi per il lato da 2,50 per un totale di 6 pezzi) oltre a 2 traversi di collegamento L=4,00. Copertura con lamiera grecata zincata sp. mm. 1,5 legata con filo di ferro alla struttura sopradescritta. C O S T O D I M O N T A G G I O, S M O N T A G G I O E A M M O R T A M E N T O D E L M A T E R I A L E I N A N N I 1 0",
+   "um": "cad",
+   "prezzo": 493.71,
+   "capitolo": "Tettoia di protezione materiali e attrezzature di cantiere"
+  },
+  {
+   "codice": "95.C10.A10.010",
+   "descrizione": "Locale igienico: costituito da un monoblocco in lamiera zincata preverniciata e coibentata completo di impianto elettrico idrico e di scarico dotato di wc completo di cassetta di cacciata valutato per impieghi fino a 12 mesi",
+   "um": "cad",
+   "prezzo": 922.96,
+   "capitolo": "Locale igienico"
+  },
+  {
+   "codice": "95.C10.A10.015",
+   "descrizione": "Locale igienico: costituito da un monoblocco in lamiera zincata preverniciata e coibentata completo di impianto elettrico idrico e di scarico dotato di wc completo di cassetta di cacciata valutato per ogni mese di impiego oltre i primi 12 mesi.",
+   "um": "cad",
+   "prezzo": 54.88,
+   "capitolo": "Locale igienico"
+  },
+  {
+   "codice": "95.C10.A10.050",
+   "descrizione": "Locale igienico: chimico. Compreso il montaggio ed il successivo smontaggio, la preparazione della base di appoggio, gli oneri per la periodica pulizia ed i relativi materiali di consumo. Per ogni mese di impiego.",
+   "um": "cad",
+   "prezzo": 172.5,
+   "capitolo": "Locale igienico"
+  },
+  {
+   "codice": "95.C10.A20.010",
+   "descrizione": "Locale spogliatoio: Locale spogliatoio, costituito da monoblocco in lamiera ziancata coibentata, completo di impianto elettrico e idrico, di armadietti e panche, compresi oneri di montaggio e smontaggio, il tutto conforme a quanto previsto nell'allegato XIII del D.lgs. 9/4/2008, n° 81 e s.m.i., delle dimensioni di circa 2,20x4,50x2,40 m circa,valutato per i primi 12 mesi di utilizzo.",
+   "um": "cad",
+   "prezzo": 905.46,
+   "capitolo": "Locale spogliatoio"
+  },
+  {
+   "codice": "95.C10.A30.010",
+   "descrizione": "Locale ricovero attrezzi: Box in lamiera per ricovero attrezzi e materiali, realizzato in tubolare e lamiera zincata grecata spessore 4/10, porte a battente con serratura a cilindretto, asta di chiusura in profilato zincato, completo di capriate di rinforzo a sostegno del tetto in tubolare mm. 10/10, tetto a due pendenze con lamiera grecate mm. 5/10, fascia sovrastante per chiusura tetto mm. 7/10, pareti e porta con rinforzi e saldate su telaio in tubolare mm. 10/10. Senza basamento. Misure:Lunghezza: 1,70 metri, Larghezza: 2,55 metri, Altezza: 2,00 Metri (a Colmo 2,20). Noleggio per il primo anno",
+   "um": "cad",
+   "prezzo": 471.13,
+   "capitolo": "Locale ricovero attrezzi"
+  },
+  {
+   "codice": "95.C10.A30.015",
+   "descrizione": "Locale ricovero attrezzi: Box in lamiera per ricovero attrezzi e materiali, realizzato in tubolare e lamiera zincata grecata spessore 4/10, porte a battente con serratura a cilindretto, asta di chiusura in profilato zincato, completo di capriate di rinforzo a sostegno del tetto in tubolare mm. 10/10, tetto a due pendenze con lamiera grecate mm. 5/10, fascia sovrastante per chiusura tetto mm. 7/10, pareti e porta con rinforzi e saldate su telaio in tubolare mm. 10/10. Senza basamento. Misure:Lunghezza: 1,70 metri, Larghezza: 2,55 metri, Altezza: 2,00 Metri (a Colmo 2,20). Noleggio per ogni mese successivo al 1° anno",
+   "um": "cad",
+   "prezzo": 110.39,
+   "capitolo": "Locale ricovero attrezzi"
+  },
+  {
+   "codice": "95.C10.A40.010",
+   "descrizione": "Locale mensa: Box monoblocco costituito da struttura portante in profili di acciaio zincato e pareti e copertura in panelli tipo sandwich sp. 40 mm costituito da lamiere zincate preverniciate ed isolamento in poliuretano, compresa una porta ed una finestra in alluminio preverniciato, il tutto conforme a quanto previsto nell'allegato XIII del D. lgs. 9/4/2008, n° 81 e s.m.i., delle dimensioni di circa 3,10x2,40x2,40 m. circa, da adibire a locale mensa, valutato per i primi 12 mesi di utilizzo.",
+   "um": "cad",
+   "prezzo": 1017.04,
+   "capitolo": "Locale mensa"
+  },
+  {
+   "codice": "95.C10.A40.015",
+   "descrizione": "Locale mensa: Box monoblocco costituito da struttura portante in profili di acciaio zincato e pareti e copertura in panelli tipo sandwich sp. 40 mm costituito da lamiere zincate preverniciate ed isolamento in poliuretano, compresa una porta ed una finestra in alluminio preverniciato, il tutto conforme a quanto previsto nell'allegato XIII del D. lgs. 9/4/2008, n° 81 e s.m.i., delle dimensioni di circa 3,10x2,40x2,40 m. circa, da adibire a locale mensa, valutato per ogni mese successivo ai primi 12 mesi di utilizzo.",
+   "um": "cad",
+   "prezzo": 559.41,
+   "capitolo": "Locale mensa"
+  },
+  {
+   "codice": "95.D10.A10.010",
+   "descrizione": "Dispersori di terra: Sola posa in opera di profilato a croce di acciaio zincato della lunghezza fino a 2.00 m, compreso collegamento della corda (questa esclusa) all'apposito morsetto sul profilato.",
+   "um": "cad",
+   "prezzo": 13.04,
+   "capitolo": "Dispersori di terra"
+  },
+  {
+   "codice": "95.D10.A20.020",
+   "descrizione": "Corda di rame nuda con terminali: Sola posa in opera di corda in rame nudo sez. sino a150 mmq",
+   "um": "m",
+   "prezzo": 3.01,
+   "capitolo": "Corda di rame nuda con terminali"
+  },
+  {
+   "codice": "95.E10.A10.010",
+   "descrizione": "Dispositivo anticaduta: costituito da cavo retrattile strozzafune per montaggi verticali valutato a metro/giorno per fase operativa, comprensivo di fune di sostegno per dispositivo anticaduta",
+   "um": "cad",
+   "prezzo": 0.86,
+   "capitolo": "Dispositivo anticaduta"
+  },
+  {
+   "codice": "95.E10.A10.015",
+   "descrizione": "Dispositivo anticaduta: Fune di sostegno per dispositivo anticaduta a cavo retrattile, compreso lo smontaggio",
+   "um": "m",
+   "prezzo": 23.17,
+   "capitolo": "Dispositivo anticaduta"
+  },
+  {
+   "codice": "95.E10.A10.020",
+   "descrizione": "Dispositivo anticaduta: dispositivo anticaduta con recupero automatico della fune, per montaggio orizzontale, valutato a giorno per fase lavorativa, compresa fune di scorrimento della lunghezza fino a 10 m.",
+   "um": "cad",
+   "prezzo": 0.28,
+   "capitolo": "Dispositivo anticaduta"
+  },
+  {
+   "codice": "95.E10.A20.010",
+   "descrizione": "Protezione ferri d'armatura: Protezione della sommità dei ferri d'armatura con tappo copritondino",
+   "um": "cad",
+   "prezzo": 0.8,
+   "capitolo": "Protezione ferri d'armatura"
+  },
+  {
+   "codice": "95.E15.A05.015",
+   "descrizione": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con: tondo di acciaio zincato sino a Ø 10 mm",
+   "um": "m",
+   "prezzo": 21.62,
+   "capitolo": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con"
+  },
+  {
+   "codice": "95.E15.A05.025",
+   "descrizione": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con: tondo di rame Ø 10 mm",
+   "um": "m",
+   "prezzo": 31,
+   "capitolo": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con"
+  },
+  {
+   "codice": "95.E15.A05.030",
+   "descrizione": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con: Bandella 30 x 3",
+   "um": "m",
+   "prezzo": 21.1,
+   "capitolo": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con"
+  },
+  {
+   "codice": "95.E15.A05.035",
+   "descrizione": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con: Bandella 40 x 3",
+   "um": "m",
+   "prezzo": 25.84,
+   "capitolo": "Maglie o calate, compreso la sola posa degli appositi supporti su cui vanno poste in opera, nonché la fornitura e posa dei relativi accessori di fissaggio di qualsiasi natura e le necessarie sagomature. Realizzate con"
+  },
+  {
+   "codice": "95.E15.B05.010",
+   "descrizione": "Sola posa in opera di captatore compresa la fornitura e posa in opera dei relativi accessori di fissaggio: ad asta",
+   "um": "cad",
+   "prezzo": 120.88,
+   "capitolo": "Sola posa in opera di captatore compresa la fornitura e posa in opera dei relativi accessori di fissaggio"
+  },
+  {
+   "codice": "95.E15.C05.010",
+   "descrizione": "Sola posa in opera di derivazioni per maglie o calate completa della relativa piastra di acciaio zincato e dei relativi accessori di fissaggio.: a croce",
+   "um": "cad",
+   "prezzo": 11.06,
+   "capitolo": "Sola posa in opera di derivazioni per maglie o calate completa della relativa piastra di acciaio zincato e dei relativi accessori di fissaggio."
+  },
+  {
+   "codice": "95.F10.A10.010",
+   "descrizione": "Segnaletica: Cartello generale di cantiere conforme alle norme del regolamento edilizio, del D.lgs. 81/2008, del D.lgs. 163/2006 e loro s.m.i., della dimensione minima di 2.00 m².",
+   "um": "cad",
+   "prezzo": 345,
+   "capitolo": "Segnaletica"
+  },
+  {
+   "codice": "95.F10.A10.020",
+   "descrizione": "Segnaletica: Cartello di segnaletica generale, delle dimensioni di 1.00x 1,40, in PVC pesante antiurto, contenente segnali di pericolo, divieto e obbligo, inerenti il cantiere, valutato a cartello per distanza di lettura fino a 23 m, conformi UNI EN ISO 7010:2012.",
+   "um": "cad",
+   "prezzo": 14.58,
+   "capitolo": "Segnaletica"
+  },
+  {
+   "codice": "95.F10.A20.010",
+   "descrizione": "Segnaletica stradale: Segnaletica stradale orizzontale temporanea, costituita da strisce di larghezza 10- 12 cm, di colore giallo, per la delimitazione di cantieri e zone di lavoro, realizzata con vernice spartitraffico su superfici stradali bituminate o selciate o in calcestruzzo",
+   "um": "m",
+   "prezzo": 1.66,
+   "capitolo": "Segnaletica stradale"
+  },
+  {
+   "codice": "95.F10.A20.015",
+   "descrizione": "Segnaletica stradale: Rimozione di segnaletica orizzontale spartitraffico temporanea mediante la stesura di vernice speciale di colore nero a base di ossidi, oleoresinoso o resina fenolica",
+   "um": "m",
+   "prezzo": 1.83,
+   "capitolo": "Segnaletica stradale"
+  },
+  {
+   "codice": "95.F10.A26.005",
+   "descrizione": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di: 30 cm",
+   "um": "cad",
+   "prezzo": 1.14,
+   "capitolo": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di"
+  },
+  {
+   "codice": "95.F10.A26.010",
+   "descrizione": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di: 50 cm",
+   "um": "cad",
+   "prezzo": 1.35,
+   "capitolo": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di"
+  },
+  {
+   "codice": "95.F10.A26.015",
+   "descrizione": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di: 54 cm antiribaltabile",
+   "um": "cad",
+   "prezzo": 2.03,
+   "capitolo": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di"
+  },
+  {
+   "codice": "95.F10.A26.020",
+   "descrizione": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di: 75 cm",
+   "um": "cad",
+   "prezzo": 2.38,
+   "capitolo": "Fornitura e posa di coni in gomma a bande bianche e rosse, rifrangenti, conforme alla normativa vigente del Codice della Strada, dell'altezza di"
+  },
+  {
+   "codice": "95.F10.A31.005",
+   "descrizione": "Fornitura e posa di sacchetto di appesantimento per la stabilizzazione di supporti mobili quali cavalletti, basi per pali, sostegni, segnali stradali, in pvc di colore arancio: standard con riempimento in graniglia",
+   "um": "cad",
+   "prezzo": 1.48,
+   "capitolo": "Fornitura e posa di sacchetto di appesantimento per la stabilizzazione di supporti mobili quali cavalletti, basi per pali, sostegni, segnali stradali, in pvc di colore arancio"
+  },
+  {
+   "codice": "95.F10.A31.010",
+   "descrizione": "Fornitura e posa di sacchetto di appesantimento per la stabilizzazione di supporti mobili quali cavalletti, basi per pali, sostegni, segnali stradali, in pvc di colore arancio: termosaldato del peso di 14-15Kg",
+   "um": "cad",
+   "prezzo": 2.15,
+   "capitolo": "Fornitura e posa di sacchetto di appesantimento per la stabilizzazione di supporti mobili quali cavalletti, basi per pali, sostegni, segnali stradali, in pvc di colore arancio"
+  },
+  {
+   "codice": "95.F10.A35.010",
+   "descrizione": "Moviere: Segnalazione di lavori effettuata da moviere con bandierina rossa",
+   "um": "h",
+   "prezzo": 31.63,
+   "capitolo": "Moviere"
+  },
+  {
+   "codice": "95.F10.A35.015",
+   "descrizione": "Moviere: segnalazioni effettuata da moviere per la regolazione dei flussi di traffico viario con palette rosse e verdi",
+   "um": "h",
+   "prezzo": 31.67,
+   "capitolo": "Moviere"
+  },
+  {
+   "codice": "95.G10.A10.010",
+   "descrizione": "Innaffiamento per l'abbattimento delle polveri: Innaffiamento dei manufatti durante le opere di demolizione, valutata a m³ vuoto per pieno della struttura.",
+   "um": "m³vpp",
+   "prezzo": 0.56,
+   "capitolo": "Innaffiamento per l'abbattimento delle polveri"
+  },
+  {
+   "codice": "95.G10.A20.010",
+   "descrizione": "Puntellatura di strutture da demolire eseguita con legnami e puntelli metallici regolabili per altezze fino a 3,50 m dal piano di appoggio: Puntellatura di strutture in genere valutate a mc vuoto per pieno",
+   "um": "m³vpp",
+   "prezzo": 9.01,
+   "capitolo": "Puntellatura di strutture da demolire eseguita con legnami e puntelli metallici regolabili per altezze fino a 3,50 m dal piano di appoggio"
+  },
+  {
+   "codice": "95.G10.A40.010",
+   "descrizione": "Puntellamento discontinuo di pareti di scavo in trincea: mediante la posa in opera di puntelli e tavolame contrapposto valutato a singolo puntello",
+   "um": "cad",
+   "prezzo": 11.19,
+   "capitolo": "Puntellamento discontinuo di pareti di scavo in trincea"
+  },
+  {
+   "codice": "95.H10.A10.005",
+   "descrizione": "Riunione di coordinamento sui contenuti del PSC da svolgersi tra i rappresentanti della sicurezza delle imprese che concorrono ai lavori ed i lavoratori: Costo orario ad personam per ogni Responsabile",
+   "um": "h",
+   "prezzo": 37.48,
+   "capitolo": "Riunione di coordinamento sui contenuti del PSC da svolgersi tra i rappresentanti della sicurezza delle imprese che concorrono ai lavori ed i lavoratori"
+  },
+  {
+   "codice": "95.H10.A10.010",
+   "descrizione": "Riunione di coordinamento sui contenuti del PSC da svolgersi tra i rappresentanti della sicurezza delle imprese che concorrono ai lavori ed i lavoratori: Costo orario ad personam per ogni lavoratore",
+   "um": "h",
+   "prezzo": 29.6,
+   "capitolo": "Riunione di coordinamento sui contenuti del PSC da svolgersi tra i rappresentanti della sicurezza delle imprese che concorrono ai lavori ed i lavoratori"
+  },
+  {
+   "codice": "95.H10.A15.005",
+   "descrizione": "Formazione ai lavoratori sulle procedure e istruzioni di sicurezza in relazione alle fasi di lavoro: Costo orario ad personam per ogni Responsabile",
+   "um": "h",
+   "prezzo": 37.48,
+   "capitolo": "Formazione ai lavoratori sulle procedure e istruzioni di sicurezza in relazione alle fasi di lavoro"
+  },
+  {
+   "codice": "95.H10.A15.010",
+   "descrizione": "Formazione ai lavoratori sulle procedure e istruzioni di sicurezza in relazione alle fasi di lavoro: Costo orario ad personam per ogni lavoratore",
+   "um": "h",
+   "prezzo": 29.6,
+   "capitolo": "Formazione ai lavoratori sulle procedure e istruzioni di sicurezza in relazione alle fasi di lavoro"
+  }
+ ]
+}

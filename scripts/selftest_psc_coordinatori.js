@@ -60,7 +60,8 @@ function testInterferenze() {
   const lavById = new Map(lav.map(l => [l.id, l]));
   const sol = I.soluzioni(x, lavById, new Map([['i1', { ragione_sociale: 'Ponteggi Riviera' }]]), '2026-12-23');
   const t = sol.opzioni.find(o => o.soluzione === 'temporale');
-  check('tre soluzioni con testo', sol.opzioni.length === 3 && sol.opzioni.every(o => o.testo.length > 20));
+  // F-308: più la quarta, "Non è un'interferenza"
+  check('quattro soluzioni con testo (F-308: anche "non è un\'interferenza")', sol.opzioni.length === 4 && sol.opzioni[3].soluzione === 'compatibili' && sol.opzioni.every(o => o.testo.length > 20));
   check('temporale: l\'elettrico parte il primo giorno lavorativo dopo il ponteggio (lun 9/11)', t.sposta.lavorazione_id === 'b2' && t.sposta.start_date === '2026-11-09', t.sposta);
   check('temporale consigliato se la fine lavori non si sposta', sol.consigliata === 'temporale' && t.sfora_fine === false);
   check('misure: nomina l\'impresa del ponteggio e la mantovana', /Ponteggi Riviera/.test(sol.opzioni[2].testo) && /mantovana/.test(sol.opzioni[2].testo), sol.opzioni[2].testo);

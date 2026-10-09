@@ -61,7 +61,9 @@ async function full(req, projectId) {
   const all = await store.loadAll(req.companyId, projectId);
   if (!all) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
   const st = await store.stato(req.companyId, all);
-  return { ...all, ...st };
+  // F-310: quante voci hanno ancora i prezzi di un prezzario regionale vecchio
+  const agg = prezzario.aggiornamentiPrezzario(all.costi, all.project);
+  return { ...all, ...st, prezzarioAggiornabile: agg.voci.length ? { prezzario: agg.prezzario, voci: agg.voci.length } : null };
 }
 
 // ── Catalogo ────────────────────────────────────────────────────────────────
@@ -69,6 +71,8 @@ router.get('/psc/catalogo', ...auth, h(async (req, res) => {
   res.json({
     schede: L.catalogo(),
     categorieSchede: require('../../lib/lavorazioniSchede').CATEGORIE,
+    // F-314: i DPI che il coordinatore può aggiungere a una lavorazione (stesso testo delle schede)
+    dpi: Object.values(require('../../lib/lavorazioniSchede').DPI).map(x => `${x.nome} (${x.norma})`),
     organizzazione: catalog.ORGANIZZAZIONE.map(o => ({ key: o.key, titolo: o.titolo, rif: o.rif, testo: o.testo })),
     usoComune: catalog.USO_COMUNE.map(u => ({ key: u.key, titolo: u.titolo, testo: u.testo })),
     contesto: Object.fromEntries(Object.entries(catalog.CONTESTO).map(([k, v]) => [k, { titolo: v.titolo, misure: v.misure }])),
@@ -229,6 +233,8 @@ const PROJECT_FIELDS = {
   title: (v) => str(v, 200), address: (v) => str(v, 300), comune: (v) => str(v, 120), provincia: (v) => str(v, 60),
   descrizione: (v) => str(v, 6000), tipo_opera: (v) => str(v, 200), start_date: dateOrNull, end_date: dateOrNull,
   importo_lavori: (v) => numOrNull(v, 0, 1e11), crono_scala: (v) => (['settimane', 'giorni'].includes(v) ? v : undefined),
+  // F-305: entità presunta scritta dal coordinatore
+  uomini_giorno: (v) => numOrNull(v, 0, 1e6),
   soggetti: jsonOf, contesto: jsonOf, organizzazione: jsonOf, emergenze: jsonOf, coordinamento: jsonOf, testi: jsonOf,
   uso_comune: (v) => (Array.isArray(v) ? jsonOf(v) : undefined), procedure: (v) => (Array.isArray(v) ? jsonOf(v) : undefined),
 };
@@ -272,13 +278,27 @@ router.post('/psc/projects/:id/contesto', ...auth, h(async (req, res) => {
   if (!p.address || p.address.length < 5) throw fail(400, 'Scrivi prima l\'indirizzo del cantiere', 'ADDRESS_REQUIRED');
   let r;
   try { r = await contesto.analizza(address, { prev: p.contesto || {} }); }
-  catch (e) { throw fail(503, 'Il servizio delle mappe non risponde. Riprova tra poco.', 'MAP_UNAVAILABLE'); }
+  catch (e) {
+    console.warn('[psc/contesto] analizza:', e && e.message);
+    throw fail(503, 'Il servizio delle mappe non risponde in questo momento. Non dipende dall\'indirizzo: riprova tra un minuto.', 'MAP_UNAVAILABLE');
+  }
   if (!r.ok) throw fail(422, 'Non trovo questo indirizzo sulla mappa. Controlla via, numero e comune.', 'ADDRESS_NOT_FOUND');
+  // F-303: indirizzo trovato ma dintorni non disponibili: si salva il punto, il resto si ricerca dopo.
+  if (r.parziale) {
+    const upd = { lat: r.lat, lon: r.lon, contesto: r.contesto, updated_at: new Date().toISOString() };
+    if (!p.comune && r.comune) upd.comune = r.comune;
+    if (!p.provincia && r.provincia) upd.provincia = r.provincia;
+    const emP = { ...(p.emergenze || {}) };
+    if (r.pronto_soccorso && !(emP.pronto_soccorso && (emP.pronto_soccorso.manuale || emP.pronto_soccorso.confermato))) { emP.pronto_soccorso = r.pronto_soccorso; upd.emergenze = emP; }
+    const { data } = await supabase.from('psc_projects').update(upd).eq('id', p.id).select('*').single();
+    return res.json({ project: data, avviso: `Indirizzo trovato: ${r.contesto.indirizzo_trovato}. La mappa dei dintorni (strade, scuole, linee elettriche) non risponde in questo momento: riprova tra un minuto.` });
+  }
   // Le scelte già fatte (voci spente, misure riscritte) restano.
   const prevTrovati = new Map(((p.contesto || {}).trovati || []).map(t => [t.key, t]));
   r.contesto.trovati = r.contesto.trovati.map(t => (prevTrovati.has(t.key) ? { ...t, attivo: prevTrovati.get(t.key).attivo, misure_testo: prevTrovati.get(t.key).misure_testo } : t));
   const emergenze = { ...(p.emergenze || {}) };
-  if (r.pronto_soccorso && !(emergenze.pronto_soccorso && emergenze.pronto_soccorso.manuale)) emergenze.pronto_soccorso = r.pronto_soccorso;
+  // F-304: un pronto soccorso scritto o confermato dal coordinatore non si tocca
+  if (r.pronto_soccorso && !(emergenze.pronto_soccorso && (emergenze.pronto_soccorso.manuale || emergenze.pronto_soccorso.confermato))) emergenze.pronto_soccorso = r.pronto_soccorso;
   const upd = { contesto: { ...(p.contesto || {}), ...r.contesto }, lat: r.lat, lon: r.lon, emergenze, updated_at: new Date().toISOString() };
   if (!p.comune && r.comune) upd.comune = r.comune;
   if (!p.provincia && r.provincia) upd.provincia = r.provincia;
@@ -410,7 +430,8 @@ router.post('/psc/projects/:id/lavorazioni', ...auth, h(async (req, res) => {
   const date = settimanePer(p, { start_date: start, end_date: start ? L.addWorkdays(start, 10) : null });
   const row = {
     project_id: p.id, company_id: req.companyId, ordine, ...(base || L.libera(b.nome)),
-    start_date: date.start_date, end_date: date.end_date, addetti: 3, uomini_giorno: start ? 30 : null,
+    // F-305: addetti e uomini-giorno li scrive il coordinatore, se servono (prima 3 e 30 per ogni lavorazione)
+    start_date: date.start_date, end_date: date.end_date, addetti: null, uomini_giorno: null,
   };
   const { data, error } = await supabase.from('psc_lavorazioni').insert(row).select('*').single();
   if (error) throw error;
@@ -514,7 +535,7 @@ router.get('/psc/projects/:id/interferenze', ...auth, h(async (req, res) => {
 router.post('/psc/projects/:id/interferenze', ...auth, h(async (req, res) => {
   const all = await store.loadAll(req.companyId, req.params.id);
   if (!all) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
-  const b = pick(req.body, { lav_a: (v) => (isUuid(v) ? v : undefined), lav_b: (v) => (isUuid(v) ? v : undefined), soluzione: (v) => (['temporale', 'spaziale', 'misure'].includes(v) ? v : undefined), testo: (v) => str(v, 3000) });
+  const b = pick(req.body, { lav_a: (v) => (isUuid(v) ? v : undefined), lav_b: (v) => (isUuid(v) ? v : undefined), soluzione: (v) => (['temporale', 'spaziale', 'misure', 'compatibili'].includes(v) ? v : undefined), testo: (v) => str(v, 3000) });
   if (!b.lav_a || !b.lav_b || !b.soluzione) throw fail(400, 'Dati mancanti');
   const lavById = new Map(all.lavorazioni.map(l => [l.id, l]));
   if (!lavById.has(b.lav_a) || !lavById.has(b.lav_b)) throw fail(404, 'Lavorazione non trovata');
@@ -555,6 +576,19 @@ router.post('/psc/projects/:id/costi/proponi', ...auth, h(async (req, res) => {
   }).map(r => ({ ...r, project_id: all.project.id, company_id: req.companyId }));
   if (rows.length) { const { error } = await supabase.from('psc_costi').insert(rows); if (error) throw error; touch(all.project.id); }
   res.json({ aggiunte: rows.length, ...(await full(req, all.project.id)) });
+}));
+
+// F-310: porta i prezzi del prezzario regionale vecchio a quello nuovo (stesso codice)
+router.post('/psc/projects/:id/costi/aggiorna-prezzario', ...auth, h(async (req, res) => {
+  const all = await store.loadAll(req.companyId, req.params.id);
+  if (!all) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
+  const agg = prezzario.aggiornamentiPrezzario(all.costi, all.project);
+  for (const v of agg.voci) {
+    const { error } = await supabase.from('psc_costi').update({ prezzo: v.a, prezzario_fonte: agg.prezzario }).eq('id', v.id).eq('company_id', req.companyId);
+    if (error) throw error;
+  }
+  if (agg.voci.length) touch(all.project.id);
+  res.json({ aggiornate: agg.voci.length, prezzario: agg.prezzario, ...(await full(req, all.project.id)) });
 }));
 
 const COSTO_FIELDS = {
@@ -683,7 +717,9 @@ async function cercaPrezzari(companyId, q, projectId) {
   }
   const out = [];
   // prima il prezzario della regione del cantiere, poi gli altri inclusi
-  const pubblici = [...prezzario.PUBBLICI].sort((a, b) => (b.regione === regione) - (a.regione === regione) || b.anno - a.anno);
+  // F-310: per ogni regione solo l'anno più recente (2026), niente voci doppie
+  const ultimi = prezzario.PUBBLICI.filter(x => !prezzario.PUBBLICI.some(y => y.regione === x.regione && y.anno > x.anno));
+  const pubblici = [...ultimi].sort((a, b) => (b.regione === regione) - (a.regione === regione) || b.anno - a.anno);
   for (const pub of pubblici) for (const v of prezzario.cerca(pub.voci, q, 20)) out.push({ fonte: pub.id, fonte_nome: pub.nome, ...v });
   const { data: mie } = await supabase.from('psc_prezzario_voci').select('fonte, codice, descrizione, um, prezzo, capitolo').eq('company_id', companyId).limit(20000);
   const perFonte = new Map();
@@ -697,7 +733,7 @@ router.get('/psc/prezzari', ...auth, h(async (req, res) => {
   const miei = new Map();
   for (const r of data || []) { const m = miei.get(r.fonte) || { fonte: r.fonte, voci: 0, caricato_at: r.created_at }; m.voci++; miei.set(r.fonte, m); }
   res.json({
-    inclusi: prezzario.PUBBLICI.map(p => ({ id: p.id, nome: p.nome, regione: p.regione, anno: p.anno, voci: p.voci.length, fonte: p.fonte })),
+    inclusi: prezzario.PUBBLICI.filter(x => !prezzario.PUBBLICI.some(y => y.regione === x.regione && y.anno > x.anno)).map(p => ({ id: p.id, nome: p.nome, regione: p.regione, anno: p.anno, voci: p.voci.length, fonte: p.fonte })),
     miei: [...miei.values()],
   });
 }));

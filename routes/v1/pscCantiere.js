@@ -38,6 +38,11 @@ const IMPRESA_FIELDS = {
   email: (v) => (v === null || v === '' ? null : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(v).trim()) ? String(v).trim().toLowerCase() : undefined),
   telefono: (v) => str(v, 40), referente: (v) => str(v, 120), ruolo: (v) => (['affidataria', 'esecutrice', 'autonomo'].includes(v) ? v : undefined),
   pos_due_date: dateOrNull,
+  // F-311: i dati dell'impresa che il PSC riporta (come nei PSC fatti con ACCA)
+  datore_lavoro: (v) => str(v, 160), indirizzo: (v) => str(v, 240), cap: (v) => str(v, 10), citta: (v) => str(v, 120),
+  codice_fiscale: (v) => (v === null || v === '' ? null : /^[0-9A-Za-z]{11,16}$/.test(String(v).replace(/\s/g, '')) ? String(v).replace(/\s/g, '').toUpperCase() : undefined),
+  posizione_inps: (v) => str(v, 60), posizione_inail: (v) => str(v, 60), cassa_edile: (v) => str(v, 120),
+  art97_nome: (v) => str(v, 160), art97_mansione: (v) => str(v, 120),
 };
 
 router.post('/psc/projects/:id/imprese', ...auth, h(async (req, res) => {
