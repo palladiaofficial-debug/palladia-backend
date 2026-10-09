@@ -374,6 +374,19 @@
       border-radius: var(--radius); cursor: pointer;
     }
     .confirm-alt:disabled { opacity: 0.4; }
+    /* F-318: "Esci prima del solito. Perché?" — sotto l'uscita già registrata */
+    .ua-card { margin-top: 14px; padding: 18px 16px; display: flex; flex-direction: column; gap: 10px; text-align: start; }
+    .ua-q { font-size: 22px; font-weight: 800; line-height: 1.25; }
+    .ua-btn { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 64px; padding: 12px 16px; border-radius: 16px; border: 0; text-align: start; font: inherit; cursor: pointer; }
+    .ua-btn b { font-size: 19px; font-weight: 800; }
+    .ua-btn span { font-size: 14px; opacity: 0.9; }
+    .ua-btn:disabled { opacity: 0.6; }
+    .ua-rain { background: #E5ECF5; color: #2D5F8A; }
+    .ua-perm { background: #FCEFDD; color: #9A4F00; }
+    .ua-sick { background: #FBE7E4; color: #A3322A; }
+    .ua-hurt { background: #FBE7E4; color: #A3322A; border: 2px solid rgba(163,50,42,.4); }
+    .ua-fine { background: var(--accent); color: #fff; align-items: center; }
+    .ua-done { display: flex; gap: 10px; align-items: flex-start; font-size: 18px; font-weight: 600; background: #E4F0E7; color: #1f3d2a; border-radius: 16px; padding: 16px; }
     .confirm-alt-sub { display: block; margin-top: 4px; font-size: 15px; font-weight: 500; text-transform: none; opacity: 0.8; }
 
     /* ── Errore ── */
@@ -734,6 +747,10 @@
       inCantiereStatus: 'In cantiere', fuoriCantiereStatus: 'Fuori cantiere',
       pressButtonHint: 'Premi il pulsante quando entri o esci dal cantiere.',
       entrataRegistrata: 'Entrata registrata', uscitaRegistrata: 'Uscita registrata',
+      uaQ: 'Esci prima del solito.', uaWhy: 'Perché?',
+      uaRain: ['Piove', 'Lavoro fermo per il tempo'], uaPerm: ['Permesso', 'Esco per un motivo mio'], uaSick: ['Sto male', 'Vado a casa o dal medico'], uaHurt: ['Mi sono fatto male', 'Un incidente qui in cantiere'], uaFine: 'Ho finito',
+      uaDone: { maltempo: 'Il tuo capo lo vede e conferma le ore di pioggia.', permesso: 'Il tuo capo lo vede.', malattia: 'Il tuo capo lo vede. Se vai dal medico, manda il numero del certificato dall\'Area lavoratore.', infortunio: 'Il tuo capo è avvisato adesso. Se è grave chiama il 112.', fine: 'A domani!' },
+      uaErr: 'Non sono riuscito a salvare. L\'uscita è registrata lo stesso.',
       canCloseAfterSuccess: 'Presenza registrata. Puoi chiudere questa pagina.',
       gpsNotPrecise: 'GPS non abbastanza preciso',
       gpsRetryHint: "Spostati all'aperto, aspetta qualche secondo e riprova.",
@@ -906,6 +923,10 @@
       inCantiereStatus: 'Pe șantier', fuoriCantiereStatus: 'În afara șantierului',
       pressButtonHint: 'Apasă butonul când intri sau ieși din șantier.',
       entrataRegistrata: 'Intrare înregistrată', uscitaRegistrata: 'Ieșire înregistrată',
+      uaQ: 'Ieși mai devreme decât de obicei.', uaWhy: 'De ce?',
+      uaRain: ['Plouă', 'Lucrul e oprit din cauza vremii'], uaPerm: ['Permisie', 'Ies pentru un motiv personal'], uaSick: ['Mi-e rău', 'Merg acasă sau la medic'], uaHurt: ['M-am rănit', 'Un accident aici pe șantier'], uaFine: 'Am terminat',
+      uaDone: { maltempo: 'Șeful tău vede și confirmă orele de ploaie.', permesso: 'Șeful tău vede.', malattia: 'Șeful tău vede. Dacă mergi la medic, trimite numărul certificatului din Zona lucrătorului.', infortunio: 'Șeful tău a fost anunțat acum. Dacă e grav, sună la 112.', fine: 'Pe mâine!' },
+      uaErr: 'Nu am reușit să salvez. Ieșirea este înregistrată oricum.',
       canCloseAfterSuccess: 'Prezență înregistrată. Poți închide această pagină.',
       gpsNotPrecise: 'GPS insuficient de precis',
       gpsRetryHint: 'Ieși afară, așteaptă câteva secunde și încearcă din nou.',
@@ -1084,6 +1105,10 @@
       inCantiereStatus: 'Në kantier', fuoriCantiereStatus: 'Jashtë kantierit',
       pressButtonHint: 'Shtyp butonin kur hyn ose del nga kantieri.',
       entrataRegistrata: 'Hyrja u regjistrua', uscitaRegistrata: 'Dalja u regjistrua',
+      uaQ: 'Po del më herët se zakonisht.', uaWhy: 'Pse?',
+      uaRain: ['Bie shi', 'Puna ndalet për shkak të motit'], uaPerm: ['Leje', 'Dal për një arsye timen'], uaSick: ['Jam sëmurë', 'Shkoj në shtëpi ose te mjeku'], uaHurt: ['U lëndova', 'Një aksident këtu në kantier'], uaFine: 'Mbarova',
+      uaDone: { maltempo: 'Përgjegjësi yt e sheh dhe konfirmon orët e shiut.', permesso: 'Përgjegjësi yt e sheh.', malattia: 'Përgjegjësi yt e sheh. Nëse shkon te mjeku, dërgo numrin e certifikatës nga Zona e punëtorit.', infortunio: 'Përgjegjësi yt u njoftua tani. Nëse është rëndë, telefono 112.', fine: 'Shihemi nesër!' },
+      uaErr: 'Nuk arrita ta ruaj. Dalja është regjistruar gjithsesi.',
       canCloseAfterSuccess: 'Prania u regjistrua. Mund ta mbyllësh këtë faqe.',
       gpsNotPrecise: 'GPS jo mjaftueshëm i saktë',
       gpsRetryHint: 'Dil jashtë, prit disa sekonda dhe provo përsëri.',
@@ -1255,6 +1280,10 @@
       inCantiereStatus: 'في الورشة', fuoriCantiereStatus: 'خارج الورشة',
       pressButtonHint: 'اضغط الزر عند دخولك أو خروجك من الورشة.',
       entrataRegistrata: 'تم تسجيل الدخول', uscitaRegistrata: 'تم تسجيل الخروج',
+      uaQ: 'أنت تخرج قبل موعدك المعتاد.', uaWhy: 'لماذا؟',
+      uaRain: ['تمطر', 'العمل متوقف بسبب الطقس'], uaPerm: ['إذن', 'أخرج لسبب شخصي'], uaSick: ['أنا مريض', 'أذهب إلى البيت أو إلى الطبيب'], uaHurt: ['أصبت', 'حادث هنا في الورشة'], uaFine: 'انتهيت',
+      uaDone: { maltempo: 'رئيسك يرى ذلك ويؤكد ساعات المطر.', permesso: 'رئيسك يرى ذلك.', malattia: 'رئيسك يرى ذلك. إذا ذهبت إلى الطبيب، أرسل رقم الشهادة من منطقة العامل.', infortunio: 'تم إبلاغ رئيسك الآن. إذا كان الأمر خطيرًا اتصل بـ 112.', fine: 'إلى الغد!' },
+      uaErr: 'لم أتمكن من الحفظ. تم تسجيل الخروج على أي حال.',
       canCloseAfterSuccess: 'تم تسجيل الحضور. يمكنك إغلاق هذه الصفحة.',
       gpsNotPrecise: 'دقة GPS غير كافية',
       gpsRetryHint: 'اخرج إلى الخارج، انتظر بضع ثوانٍ وحاول مرة أخرى.',
@@ -2157,7 +2186,59 @@
           ${fmtTime(tsServer)}
         </div>
         <div class="success-close">${esc(t().canCloseAfterSuccess)}</div>
-      </div>`;
+      </div>
+      <div id="ua-slot"></div>`;
+    if (!isEntry) uscitaAnticipata(tsServer);
+  }
+
+  // ── "Esci prima del solito. Perché?" (F-318, AUDIT.md del frontend) ─────────
+  // Decisione del titolare (2026-10-09): nessuna domanda nei giorni normali,
+  // UNA domanda solo a chi esce almeno un'ora prima del solito (lo decide il
+  // server). L'uscita è già registrata qui sopra: la domanda non può mai
+  // bloccarla, e se il server non risponde non compare niente. "Ho finito" è
+  // il tasto grande e sicuro. Backend: routes/v1/badgeUscitaAnticipata.js.
+  var ua = { key: null, ask: false, done: null, busy: false, err: false };
+  async function uscitaAnticipata(key) {
+    if (ua.key !== key) {
+      ua = { key: key, ask: false, done: null, busy: false, err: false };
+      try {
+        var r = await apiFetch('GET', '/api/v1/badge/' + BADGE_CODE + '/uscita-anticipata');
+        if (ua.key !== key) return;
+        ua.ask = r.status === 200 && r.body && r.body.ask === true;
+      } catch (e) { ua.ask = false; }
+    }
+    renderUa();
+  }
+  function uaButton(m, cls, label, sub) {
+    return '<button class="ua-btn ' + cls + '" data-motivo="' + m + '" onclick="rispondiUa(\'' + m + '\')"' + (ua.busy ? ' disabled' : '') + '><b>' + esc(label) + '</b>' + (sub ? '<span>' + esc(sub) + '</span>' : '') + '</button>';
+  }
+  function renderUa() {
+    var slot = document.getElementById('ua-slot');
+    if (!slot || !ua.ask) return;
+    var T = t();
+    if (ua.done) {
+      slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card"><div class="ua-done" id="ua-done">✓ <span>' + esc(T.uaDone[ua.done]) + '</span></div></div>';
+      return;
+    }
+    slot.innerHTML = '<div class="card ua-card fade-in" id="ua-card">' +
+      '<div class="ua-q">' + esc(T.uaQ) + '<br>' + esc(T.uaWhy) + '</div>' +
+      uaButton('maltempo', 'ua-rain', T.uaRain[0], T.uaRain[1]) +
+      uaButton('permesso', 'ua-perm', T.uaPerm[0], T.uaPerm[1]) +
+      uaButton('malattia', 'ua-sick', T.uaSick[0], T.uaSick[1]) +
+      uaButton('infortunio', 'ua-hurt', T.uaHurt[0], T.uaHurt[1]) +
+      uaButton('fine', 'ua-fine', T.uaFine, null) +
+      (ua.err ? '<div class="hint-help" style="color:#A3322A">' + esc(T.uaErr) + '</div>' : '') +
+      '</div>';
+  }
+  async function rispondiUa(motivo) {
+    if (ua.busy) return;
+    ua.busy = true; ua.err = false; renderUa();
+    try {
+      var r = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/uscita-anticipata', { motivo: motivo });
+      if (r.status !== 200) throw new Error('x');
+      ua.done = motivo;
+    } catch (e) { ua.err = true; }
+    ua.busy = false; renderUa();
   }
 
   // ── Domanda di conferma (F-266, AUDIT.md) ───────────────────────────────────
