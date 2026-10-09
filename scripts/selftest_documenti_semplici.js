@@ -70,6 +70,12 @@ async function main() {
     check('rinnovo: il documento da aprire è quello nuovo', visitaB?.doc?.name === 'Idoneità 2026', visitaB?.doc);
     check('le due visite non ricompaiono tra gli altri documenti', !sB.documents.some(x => x.label === 'Visita medica'), sB.documents);
     check('antincendio scaduto tra gli altri documenti, con download', sB.documents.some(x => x.label === 'Corso antincendio' && x.state === 'scaduto' && x.download), sB.documents);
+    // F-317: nome = codice di categoria (pagine ritagliate dall'importazione)
+    await ins('company_documents', { company_id: cid, name: 'busta_paga', category: 'altro', file_path: `test/${T}/p.pdf` });
+    await ins('company_documents', { company_id: cid, name: 'altro', category: 'altro', file_path: `test/${T}/a.pdf` });
+    const sI0 = await scheda(cid, 'impresa', 'impresa');
+    check('F-317: nessun codice tecnico come nome ("altro", "busta_paga")', !sI0.documents.some(x => /^(altro|busta_paga)$/.test(x.label)) &&
+      sI0.documents.some(x => x.label === 'Busta paga senza lavoratore') && sI0.documents.some(x => x.label === 'Documento senza nome'), sI0.documents.map(x => x.label));
     check('la busta paga NON è tra i documenti', !sB.documents.some(x => /busta|cedolino/i.test(`${x.label} ${x.name}`)), sB.documents);
     check('un documento altro scaduto rende il lavoratore da sistemare', sB.state === 'scaduto' && sB.worst?.label === 'Corso antincendio', sB.worst);
 
