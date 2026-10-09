@@ -19,10 +19,10 @@ const areaLimiter = rateLimit({
   message: { error: 'RATE_LIMIT_EXCEEDED' },
 });
 
-const TIPI_LAVORATORE = ['ferie', 'permesso']; // la malattia la registra l'ufficio (protocollo INPS)
+const TIPI_LAVORATORE = ['ferie', 'permesso']; // la malattia ha la sua rotta: workerAreaMalattia.js (F-318)
 const MAX_GIORNI = 60;
 const MAX_IN_ATTESA = 10;
-const COLS = 'id, tipo, date_from, date_to, ora_dalle, ora_alle, note, stato, decided_at, created_at';
+const COLS = 'id, tipo, date_from, date_to, ora_dalle, ora_alle, note, protocollo, stato, decided_at, created_at';
 const oggiRoma = () => new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
 
 async function lavoratoreAttivo(wid, cid) {

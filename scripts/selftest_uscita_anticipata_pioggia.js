@@ -68,6 +68,7 @@ async function main() {
   const cid = company.id;
   const app = express(); app.use(express.json()); app.set('trust proxy', 1);
   app.use('/api/v1', require('../routes/v1/workerAreaMalattia'));
+  app.use('/api/v1', require('../routes/v1/workerAreaAssenze'));
   app.use('/api/v1', require('../routes/v1/badgeUscitaAnticipata'));
   const server = app.listen(0);
   const base = `http://127.0.0.1:${server.address().port}/api/v1`;
@@ -180,6 +181,8 @@ async function main() {
     check('doppio tocco: stessa malattia, nessun doppione', (await call('POST', '/malattia', { dal: today })).body.id === m.body.id);
     const p = await call('PATCH', `/malattia/${m.body.id}`, { protocollo: ' 123456789 ' });
     check('numero del certificato mandato dopo', p.status === 200 && p.body.protocollo === '123456789', p);
+    const lista = await call('GET', '/assenze');
+    check('la lista dell\'operaio mostra il numero del certificato', lista.body.find?.(x => x.id === m.body.id)?.protocollo === '123456789', lista.body);
     const { data: nIll } = await supabase.from('notifications').select('type').eq('company_id', cid).eq('type', 'worker_illness');
     check('il titolare riceve l\'avviso', nIll?.length === 1, nIll);
 
