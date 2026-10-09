@@ -50,6 +50,9 @@ async function pure() {
   const ps = Ctx.sceglieProntoSoccorso(els, SAVONA.lat, SAVONA.lon);
   check('F-304: Savona → Ospedale San Paolo, non la Casa della Comunità né Cairo Montenotte', ps && ps.nome === 'Ospedale San Paolo', ps);
   check('F-304: distanza plausibile (sotto i 5 km) e "da confermare"', ps && ps.distanza_km < 5 && ps.da_confermare === true, ps);
+  // Dati veri di OSM a Savona: il punto più vicino è l'ingresso "Emergency Room" del San Paolo
+  const er = Ctx.sceglieProntoSoccorso([el('node', 861803093, 44.3045, 8.4585, { amenity: 'hospital', name: 'Emergency Room' }), els[2], els[3]], SAVONA.lat, SAVONA.lon);
+  check('F-304: ingresso "Emergency Room" → nel PSC "Ospedale San Paolo · Pronto soccorso"', er && er.nome === 'Ospedale San Paolo · Pronto soccorso' && /Savona/.test(er.indirizzo || ''), er);
   check('F-304: senza ospedali veri nessuna proposta', Ctx.sceglieProntoSoccorso([els[0], els[1]], SAVONA.lat, SAVONA.lon) === null);
 
   // ── F-303 ──
@@ -62,7 +65,7 @@ async function pure() {
       return { ok: false, status: 504, json: async () => ({}) };
     }
     const q = decodeURIComponent(String(opts.body).slice(5));
-    return { ok: true, json: async () => ({ elements: /hospital\]/.test(q) && /30000/.test(q) ? els : [] }) };
+    return { ok: true, json: async () => ({ elements: /hospital\]/.test(q) && /around:12000/.test(q) ? els : [] }) };
   };
   const ok2 = await Ctx.overpass('[out:json];node(1);out;', fakeFetch(u => !u.includes('private.coffee')), { pausaMs: 1 });
   check('F-303: due server giù (HTML "too busy" e 504) → risponde il terzo', Array.isArray(ok2) && seen.some(u => u.includes('private.coffee')));
@@ -152,6 +155,14 @@ async function http() {
     const p = (await call('POST', '/psc/projects', { title: `${RUN} Via Verdi`, address: 'Via Verdi 13', comune: 'Savona', provincia: 'Savona' })).body.project;
     await call('PATCH', `/psc/projects/${p.id}`, { comune: 'Savona', provincia: 'Savona', start_date: '2026-10-15', end_date: '2026-12-13', uomini_giorno: 48 });
 
+    // Facoltativo (PSC_LIVE_MAP=1): la rotta vera con OpenStreetMap. Fuori da npm test
+    // perché dipende da server pubblici che cadono spesso (F-303).
+    if (process.env.PSC_LIVE_MAP === '1') {
+      await call('PATCH', `/psc/projects/${p.id}`, { address: 'Via Verdi 13' });
+      const cx = await call('POST', `/psc/projects/${p.id}/contesto`);
+      const psL = cx.body && cx.body.project && cx.body.project.emergenze && cx.body.project.emergenze.pronto_soccorso;
+      check('LIVE F-303/F-304: contesto di Via Verdi 13 Savona → pronto soccorso a Savona, non Cairo Montenotte', cx.status === 200 && psL && /San Paolo/.test(psL.nome) && psL.distanza_km < 5 && psL.da_confermare, { status: cx.status, avviso: cx.body && cx.body.avviso, ps: psL });
+    }
     const l1 = (await call('POST', `/psc/projects/${p.id}/lavorazioni`, { scheda_id: 'allestimento-cantiere' })).body.lavorazione;
     const l2 = (await call('POST', `/psc/projects/${p.id}/lavorazioni`, { scheda_id: 'impianto-cantiere' })).body.lavorazione;
     check('HTTP F-305: lavorazione nuova senza 3 addetti / 30 uomini-giorno inventati', l1 && l1.addetti == null && l1.uomini_giorno == null, l1 && { addetti: l1.addetti, ug: l1.uomini_giorno });
