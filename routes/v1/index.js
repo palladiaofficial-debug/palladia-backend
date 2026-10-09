@@ -265,6 +265,9 @@ router.use('/', require('./expiryCalendar'));
 // Da fare: lista unica di scadenze, meteo da confermare, uscite automatiche e avvisi (F-236)
 router.use('/', require('./daFare'));
 
+// Documenti senza cartelle: cinque voci, cosa serve e cosa manca, un solo caricamento (F-316)
+router.use('/', require('./documentiSemplici'));
+
 // Diario di cantiere: voce giornaliera, meteo auto, presenze, PDF
 router.use('/', require('./diary'));
 
