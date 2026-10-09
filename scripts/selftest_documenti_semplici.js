@@ -73,7 +73,9 @@ async function main() {
     // F-317: nome = codice di categoria (pagine ritagliate dall'importazione)
     await ins('company_documents', { company_id: cid, name: 'busta_paga', category: 'altro', file_path: `test/${T}/p.pdf` });
     await ins('company_documents', { company_id: cid, name: 'altro', category: 'altro', file_path: `test/${T}/a.pdf` });
+    await ins('company_documents', { company_id: cid, name: 'DVR 2026.pdf', category: 'dvr', file_path: `test/${T}/dvr.pdf` });
     const sI0 = await scheda(cid, 'impresa', 'impresa');
+    check('F-317: le pagine senza nome vanno in fondo, dopo i documenti veri', sI0.documents[0]?.label === 'DVR', sI0.documents.map(x => x.label));
     check('F-317: nessun codice tecnico come nome ("altro", "busta_paga")', !sI0.documents.some(x => /^(altro|busta_paga)$/.test(x.label)) &&
       sI0.documents.some(x => x.label === 'Busta paga senza lavoratore') && sI0.documents.some(x => x.label === 'Documento senza nome'), sI0.documents.map(x => x.label));
     check('la busta paga NON è tra i documenti', !sB.documents.some(x => /busta|cedolino/i.test(`${x.label} ${x.name}`)), sB.documents);
