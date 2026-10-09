@@ -6,6 +6,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { sendDbError } = require('../../lib/httpErrors');
+const { assignSubcontractorToSite } = require('../../lib/siteSubcontractors');
 const { rendererPool } = require('../../pdf-renderer');
 const { buildSubcontractorEconomia, generateSubcontractorStatementHtml, buildSubcontractorsEconomiaOverview } = require('../../services/subcontractorEconomia');
 const {
@@ -274,14 +275,14 @@ router.post('/sites/:siteId/subcontractors', verifySupabaseJwt, validate(assignS
   const { subcontractor_id, role } = req.body;
   if (!subcontractor_id) return res.status(400).json({ error: 'SUBCONTRACTOR_ID_REQUIRED' });
 
-  const { data: site } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
-  if (!site) return res.status(404).json({ error: 'NOT_FOUND' });
-
-  const { error } = await supabase.from('site_subcontractors').insert([{
-    company_id: req.companyId, site_id: siteId, subcontractor_id, role: role || null,
-  }]);
-  if (error?.code === '23505') return res.status(409).json({ error: 'ALREADY_ASSIGNED' });
-  if (error) return sendDbError(res, error);
+  // F-301: anche il subappaltatore deve essere dell'azienda (prima non si controllava)
+  try {
+    const r = await assignSubcontractorToSite(req.companyId, siteId, subcontractor_id, role);
+    if (!r.created) return res.status(409).json({ error: 'ALREADY_ASSIGNED' });
+  } catch (e) {
+    if (e.status === 404) return res.status(404).json({ error: 'NOT_FOUND' });
+    return sendDbError(res, e);
+  }
   res.status(201).json({ ok: true });
 });
 

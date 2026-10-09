@@ -27,11 +27,13 @@ async function ins(table, row) {
 
 async function main() {
   console.log('\n\x1b[1mF-257 — panoramica POS per cantiere e impresa\x1b[0m');
-  process.env.FEATURE_SUBAPPALTATORI_DEFAULT = 'true';
   const company = await ins('companies', { name: T });
   const other = await ins('companies', { name: `${T}-altra` });
   const companies = [company.id, other.id];
   try {
+    // I default dei flag si leggono al caricamento di lib/featureFlags: l'env
+    // impostato qui non conta. Serve la riga per l'azienda (F-301).
+    await ins('company_feature_flags', { company_id: company.id, feature: 'subappaltatori', enabled: true });
     const siteA = await ins('sites', { company_id: company.id, name: `${T}-A`, address: 'Via Test 1', city: 'Genova', status: 'attivo' });
     const siteB = await ins('sites', { company_id: company.id, name: `${T}-B`, address: 'Via B', status: 'attivo' });
     const siteClosed = await ins('sites', { company_id: company.id, name: `${T}-Chiuso`, address: 'Via C', status: 'chiuso' });
@@ -84,6 +86,7 @@ async function main() {
       await supabase.from('workers').delete().eq('company_id', id);
       await supabase.from('subcontractors').delete().eq('company_id', id);
       await supabase.from('sites').delete().eq('company_id', id);
+      await supabase.from('company_feature_flags').delete().eq('company_id', id);
       await supabase.from('companies').delete().eq('id', id);
     }
   }
