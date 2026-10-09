@@ -75,6 +75,16 @@ async function pure() {
   const parz = await Ctx.analizza('Via Verdi 13, Savona', { fetchImpl: fakeFetch(() => true), prev: { trovati: [{ key: 'strada', titolo: 'Strada' }] } });
   check('F-303: mappa dei dintorni giù ma indirizzo trovato → parziale, coordinate salvate, dintorni di prima conservati', parz.ok && parz.parziale && parz.lat === SAVONA.lat && parz.comune === 'Savona' && parz.contesto.trovati.length === 1, parz);
 
+  // F-303: server che non rispondono mai → la ricerca si ferma entro il budget (la rotta ha un limite di 60 s)
+  const lento = async (url, opts) => {
+    if (String(url).includes('nominatim')) return { ok: true, json: async () => [{ lat: String(SAVONA.lat), lon: String(SAVONA.lon), display_name: 'Savona', address: { city: 'Savona' } }] };
+    // come una connessione vera: tiene vivo il processo finché non scade (AbortSignal.timeout non lo fa)
+    return new Promise((_, rej) => { const keep = setTimeout(() => {}, 120000); opts.signal.addEventListener('abort', () => { clearTimeout(keep); rej(new Error('timeout')); }); });
+  };
+  const t0 = Date.now();
+  const lr = await Ctx.analizza('Via Verdi 13, Savona', { fetchImpl: lento, budgetMs: 6000 });
+  check('F-303: server bloccati → risposta entro il budget, indirizzo salvato (parziale)', Date.now() - t0 < 9000 && lr.ok && lr.parziale, { ms: Date.now() - t0, parziale: lr.parziale });
+
   // ── F-305 ──
   const lav = [
     { id: 'a', nome: 'Allestimento e smobilizzo del cantiere', uomini_giorno: 30, rischi: [{ testo: 'Investimento da mezzi in manovra' }], apprestamenti: [{ nome: 'Autogru o gru su autocarro', verifica: 'Verifiche periodiche' }] },
@@ -198,10 +208,14 @@ async function http() {
   }
 }
 
+let finito = false;
+// Se il processo si svuota prima del riepilogo (una promessa mai risolta), è un fallimento, non un successo.
+process.on('beforeExit', () => { if (!finito) { console.error('✗ lo script è finito prima del riepilogo'); process.exitCode = 1; } });
 (async () => {
   console.log('\nF-303→F-315 — seconda prova della coordinatrice sul PSC');
   await pure();
   await http();
+  finito = true;
   console.log(`\n${passed} passati, ${failed} falliti`);
   process.exit(failed ? 1 : 0);
 })().catch(e => { console.error(e); process.exit(1); });
