@@ -10,6 +10,7 @@
 
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
+const { checklistDocumenti } = require('../../lib/cantiereRiepilogo');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 
 // F-100 (AUDIT.md): scoped ai propri path — vedi archive.js per la spiegazione.
@@ -311,7 +312,7 @@ router.get('/sites/:siteId/documents/summary', async (req, res) => {
   const presto      = futureDate(30);
 
   const { data: site } = await supabase
-    .from('sites').select('id, name').eq('id', siteId).eq('company_id', companyId).maybeSingle();
+    .from('sites').select('id, name, documenti_non_servono').eq('id', siteId).eq('company_id', companyId).maybeSingle();
   if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
 
   try {
@@ -347,16 +348,11 @@ router.get('/sites/:siteId/documents/summary', async (req, res) => {
       });
     });
 
-    // Checklist documenti tipici
+    // F-321: solo i documenti del cantiere (POS, PSC, notifica), ognuno
+    // segnabile "non serve". Prima c'erano anche DVR (spento in tutta la
+    // piattaforma), DURC e assicurazione (dell'azienda): "6 mancanti".
     const categoriePresenti = new Set(Object.keys(byCategory));
-    const checklist = [
-      { tipo: 'pos',           label: 'POS',           presente: (posDocs || []).length > 0 },
-      { tipo: 'dvr',           label: 'DVR',           presente: categoriePresenti.has('dvr')  },
-      { tipo: 'psc',           label: 'PSC',           presente: categoriePresenti.has('psc')  },
-      { tipo: 'notifica_asl',  label: 'Notifica ASL',  presente: categoriePresenti.has('notifica_asl') },
-      { tipo: 'durc',          label: 'DURC',          presente: categoriePresenti.has('durc') },
-      { tipo: 'assicurazione', label: 'Assicurazione', presente: categoriePresenti.has('assicurazione') },
-    ];
+    const checklist = checklistDocumenti({ conPos: (posDocs || []).length > 0, categorie: categoriePresenti, nonServono: site.documenti_non_servono || [] });
 
     // Compliance lavoratori
     const lavoratori = (siteWorkers || []).map(sw => {
@@ -396,7 +392,7 @@ router.get('/sites/:siteId/documents/summary', async (req, res) => {
         pos:            (posDocs || []).map(p => ({ id: p.id, revisione: p.revision, data: p.created_at?.slice(0,10) })),
         per_categoria:  byCategory,
         checklist,
-        mancanti:       checklist.filter(c => !c.presente).map(c => c.label),
+        mancanti:       checklist.filter(c => !c.presente && !c.non_serve).map(c => c.label),
       },
       compliance_lavoratori: {
         totale: total,

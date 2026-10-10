@@ -14,6 +14,8 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { proposte, conferma, scarta, scartaSenzaOre, annulla, pauseDaConfermare, confermaPausa, scartaPausa, annullaPausa, PioggiaError } = require('../../lib/pioggiaDaConfermare');
 const logger = require('../../lib/logger');
+// F-321: il Riepilogo dei cantieri tiene le proposte in cache per qualche minuto
+const { invalidaPioggia } = require('../../lib/cantiereRiepilogo');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -56,19 +58,19 @@ router.post('/ore/pioggia/conferma', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
   const { siteId, day, kind } = req.body || {};
   if (!UUID.test(String(siteId))) return res.status(400).json({ error: 'INVALID_SITE' });
-  try { res.json(await conferma({ companyId: req.companyId, siteId, day, kind: kind || 'pioggia', userId: req.user?.id || null })); } catch (err) { fail(res, err, 'conferma'); }
+  try { const r = await conferma({ companyId: req.companyId, siteId, day, kind: kind || 'pioggia', userId: req.user?.id || null }); invalidaPioggia(req.companyId); res.json(r); } catch (err) { fail(res, err, 'conferma'); }
 });
 
 router.post('/ore/pioggia/scarta', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
   const { siteId, day, kind } = req.body || {};
   if (!UUID.test(String(siteId))) return res.status(400).json({ error: 'INVALID_SITE' });
-  try { res.json(await scarta({ companyId: req.companyId, siteId, day, kind: kind || 'pioggia', userId: req.user?.id || null })); } catch (err) { fail(res, err, 'scarta'); }
+  try { const r = await scarta({ companyId: req.companyId, siteId, day, kind: kind || 'pioggia', userId: req.user?.id || null }); invalidaPioggia(req.companyId); res.json(r); } catch (err) { fail(res, err, 'scarta'); }
 });
 
 router.post('/ore/pioggia/scarta-senza-ore', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
-  try { res.json(await scartaSenzaOre({ companyId: req.companyId, userId: req.user?.id || null })); } catch (err) { fail(res, err, 'scarta senza ore'); }
+  try { const r = await scartaSenzaOre({ companyId: req.companyId, userId: req.user?.id || null }); invalidaPioggia(req.companyId); res.json(r); } catch (err) { fail(res, err, 'scarta senza ore'); }
 });
 
 router.post('/ore/pioggia/annulla', verifySupabaseJwt, async (req, res) => {
@@ -80,8 +82,9 @@ router.post('/ore/pioggia/annulla', verifySupabaseJwt, async (req, res) => {
       // F-319: annullo di una pausa saltata confermata o scartata
       if (f?.pausa && UUID.test(String(f.reasonId))) { await annullaPausa({ companyId: req.companyId, reasonId: f.reasonId }); continue; }
       if (!UUID.test(String(f?.siteId))) continue;
-      await annulla({ companyId: req.companyId, siteId: f.siteId, day: f.day, reasonIds: ids(f.reasonIds), absenceIds: ids(f.absenceIds), sospensione: !!f.sospensione, scartata: !!f.scartata });
+      await annulla({ companyId: req.companyId, siteId: f.siteId, day: f.day, reasonIds: ids(f.reasonIds), nuoviMotivi: ids(f.nuoviMotivi), absenceIds: ids(f.absenceIds), sospensione: !!f.sospensione, scartata: !!f.scartata });
     }
+    invalidaPioggia(req.companyId);
     res.json({ ok: true });
   } catch (err) { fail(res, err, 'annulla'); }
 });

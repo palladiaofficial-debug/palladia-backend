@@ -16,11 +16,14 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { riepiloghi } = require('../../lib/cantiereRiepilogo');
+const logger = require('../../lib/logger');
 
 // Documenti obbligatori per cantiere
 const REQUIRED_SITE_DOCS    = ['pos', 'notifica_asl'];
 // Documenti aziendali fondamentali
-const REQUIRED_COMPANY_DOCS = ['durc', 'visura', 'dvr'];
+// F-321: niente DVR, spento in tutta la piattaforma
+const REQUIRED_COMPANY_DOCS = ['durc', 'visura'];
 
 function daysRemaining(endDateStr) {
   if (!endDateStr) return null;
@@ -65,6 +68,9 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
 
   const siteIds = sites.map(s => s.id);
   const { utcFrom, romeDate } = todayRomeStart();
+
+  // F-321: al lavoro / fermo e quante cose da sistemare (stessa logica del Riepilogo)
+  const riepPromise = riepiloghi(companyId, { siteIds }).catch((err) => { logger.error({ err }, 'sites/overview riepiloghi'); return new Map(); });
 
   // 2. Query batch parallele
   const [presRes, ncRes, cseRes, siteDocsRes, companyDocsRes, workersRes, suspRes] = await Promise.all([
@@ -155,6 +161,8 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
     if (!latestByWorker.has(log.worker_id)) latestByWorker.set(log.worker_id, log); // già ordinati DESC
   }
 
+  const riep = await riepPromise;
+
   // 4. Assembla per ogni cantiere
   const overview = sites.map(site => {
     // Live presences
@@ -219,6 +227,9 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
       suoloOccupazione:      site.suolo_occupazione ?? false,
       suoloOccupazioneEnd:   site.suolo_occupazione_end ?? null,
       suspensionDaysCount:   suspCountBySite[site.id] ?? 0,
+      alLavoro:              riep.get(site.id)?.alLavoro ?? false,
+      ultimoGiorno:          riep.get(site.id)?.ultimoGiorno ?? null,
+      daSistemare:           riep.get(site.id)?.daSistemare.length ?? 0,
     };
   });
 
