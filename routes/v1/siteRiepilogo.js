@@ -1,6 +1,8 @@
 'use strict';
 // ── Scheda cantiere senza cartelle (F-321, AUDIT.md del frontend) ─────────────
 // GET /api/v1/sites/:siteId/riepilogo            → { alLavoro, ultimoGiorno, daSistemare, urgenti, documenti, maltempoGiorni, oreMese }
+// GET /api/v1/sites/:siteId/settimana?da=YYYY-MM-DD → griglia operaio × giorno (F-326)
+// GET /api/v1/sites/:siteId/squadra               → { lavorano, nonVengono } (F-326)
 // PUT /api/v1/sites/:siteId/documenti-non-servono  { tipo: 'pos'|'psc'|'notifica_asl', nonServe: boolean }
 // La logica è in lib/cantiereRiepilogo.js. Le azioni del Riepilogo usano le
 // rotte che esistono già (pioggia: /ore/pioggia/*, togliere un operaio:
@@ -10,6 +12,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { riepiloghi, oreDelMese, DOC_NON_SERVE } = require('../../lib/cantiereRiepilogo');
 const logger = require('../../lib/logger');
+const { settimana, squadra } = require('../../lib/cantiereSquadra');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,6 +29,34 @@ router.get('/sites/:siteId/riepilogo', verifySupabaseJwt, async (req, res) => {
     res.json({ ...r, maltempoGiorni: count || 0, oreMese });
   } catch (err) {
     logger.error({ err }, 'sites/riepilogo');
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+// F-326: Presenze (settimana) e Squadra del cantiere — lib/cantiereSquadra.js
+router.get('/sites/:siteId/settimana', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  const da = String(req.query.da || new Date().toLocaleDateString('sv', { timeZone: 'Europe/Rome' }));
+  if (!UUID.test(siteId)) return res.status(400).json({ error: 'INVALID_SITE' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(da)) return res.status(400).json({ error: 'INVALID_DATE' });
+  try {
+    res.json(await settimana(req.companyId, siteId, da));
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+    logger.error({ err }, 'sites/settimana');
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+router.get('/sites/:siteId/squadra', verifySupabaseJwt, async (req, res) => {
+  const { siteId } = req.params;
+  if (!UUID.test(siteId)) return res.status(400).json({ error: 'INVALID_SITE' });
+  const { data: site } = await supabase.from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).neq('status', 'eliminato').maybeSingle();
+  if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
+  try {
+    res.json(await squadra(req.companyId, siteId));
+  } catch (err) {
+    logger.error({ err }, 'sites/squadra');
     res.status(500).json({ error: 'DB_ERROR' });
   }
 });
