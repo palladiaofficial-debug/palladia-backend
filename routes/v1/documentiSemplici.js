@@ -4,12 +4,14 @@
 // GET  /api/v1/documenti/elenco/:kind         → chi ha problemi prima
 // GET  /api/v1/documenti/scheda/:kind/:id     → cosa serve e cosa c'è
 // POST /api/v1/documenti/carica               → file + scadenza confermata
+// PATCH /api/v1/documenti/doc/:docId           → correggi la scadenza (F-329)
 // La logica sta in lib/documentiStato.js e lib/documentiCarica.js.
 const router = require('express').Router();
 const multer = require('multer');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { riepilogo, elenco, scheda } = require('../../lib/documentiStato');
 const { carica, CaricaError } = require('../../lib/documentiCarica');
+const { correggi, CorreggiError } = require('../../lib/documentiCorreggi');
 const logger = require('../../lib/logger');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -61,5 +63,22 @@ router.post('/documenti/carica', verifySupabaseJwt,
       fail(res, err, 'carica');
     }
   });
+
+// F-329: un documento in regola si deve poter correggere (data letta male,
+// "È giusta, salva" premuto per sbaglio). L'eliminazione usa le rotte che
+// esistono già: la scheda dà il percorso `elimina` di ogni documento.
+router.patch('/documenti/doc/:docId', verifySupabaseJwt, async (req, res) => {
+  if (req.userRole && !WRITE_ROLES.includes(req.userRole)) return res.status(403).json({ error: 'FORBIDDEN' });
+  const { scadenza } = req.body || {};
+  try {
+    res.json(await correggi({
+      companyId: req.companyId, docId: req.params.docId, scadenza: scadenza || null,
+      userId: req.user?.id || null, userRole: req.userRole || null, req,
+    }));
+  } catch (err) {
+    if (err instanceof CorreggiError) return res.status(err.status).json({ error: err.code, message: err.message });
+    fail(res, err, 'correggi');
+  }
+});
 
 module.exports = router;
