@@ -86,6 +86,9 @@ async function main() {
     const r2 = (await riepiloghi(cid, { siteIds: [sardegna.id], fresh: true, today })).get(sardegna.id);
     check('POS "non serve": sparisce da Da sistemare', !r2.daSistemare.some(x => x.tipo === 'pos') && r2.documenti.pos === 'non_serve', r2.documenti);
     check('posizione per timbrare mancante → da sistemare', r2.daSistemare.some(x => x.tipo === 'posizione'));
+    const nuovo = await mkSite('Via Nuova 1', { latitude: null, longitude: null });
+    const rn = (await riepiloghi(cid, { siteIds: [nuovo.id], fresh: true, today })).get(nuovo.id);
+    check('cantiere appena creato senza posizione: "manca la posizione" anche senza timbrature', rn.alLavoro === false && rn.daSistemare.some(x => x.tipo === 'posizione'), rn.daSistemare);
     const bad = await supabase.from('sites').update({ documenti_non_servono: ['dvr'] }).eq('id', sardegna.id);
     check('il database rifiuta un documento che non è del cantiere', !!bad.error, bad.error?.message);
   } finally {
