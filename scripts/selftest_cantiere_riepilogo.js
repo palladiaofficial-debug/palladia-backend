@@ -10,13 +10,14 @@
  *   - chi lavora qui con formazione scaduta → da sistemare; chi non lavora qui no;
  *   - assegnati che non vengono: "altrove" o "mai";
  *   - data di fine passata ma si lavora → da sistemare;
- *   - cantiere fermo (nessuna timbratura in 30 giorni) → non "al lavoro", niente lista.
+ *   - cantiere fermo (nessuna timbratura in 30 giorni) → non "al lavoro", niente lista;
+ *   - F-324: urgente (rosso) solo chi ha lavorato qui in settimana con un documento scaduto; ore del mese.
  */
 'use strict';
 require('dotenv').config();
 const crypto = require('crypto');
 const supabase = require('../lib/supabase');
-const { riepiloghi, checklistDocumenti } = require('../lib/cantiereRiepilogo');
+const { riepiloghi, checklistDocumenti, oreDelMese } = require('../lib/cantiereRiepilogo');
 
 let passed = 0, failed = 0;
 function check(name, cond, got) {
@@ -71,6 +72,15 @@ async function main() {
     const tipi = r.daSistemare.map(x => x.tipo);
     const giu = r.daSistemare.find(x => x.tipo === 'lavoratore' && x.workerId === giuseppe.id);
     check('Giuseppe lavora qui con la formazione scaduta → da sistemare', giu?.cosa === 'formazione' && giu.stato === 'scaduta', r.daSistemare);
+    // F-324: rosso solo per l'urgente — chi ha lavorato qui negli ultimi 7 giorni con un documento scaduto
+    check('F-324: Giuseppe (qui ieri, formazione scaduta) è urgente', giu?.urgente === true, giu);
+    check('F-324: le voci urgenti vengono per prime', r.daSistemare[0]?.urgente === true, r.daSistemare.map(x => x.tipo));
+    check('F-324: il POS mancante non è urgente', r.daSistemare.find(x => x.tipo === 'pos')?.urgente !== true);
+    check('F-324: urgenti contati a parte', r.urgenti === r.daSistemare.filter(x => x.urgente).length && r.urgenti >= 1, r.urgenti);
+    if (ieri.slice(0, 7) === today.slice(0, 7)) {
+      const ore = typeof oreDelMese === 'function' ? await oreDelMese(cid, sardegna.id, today) : null;
+      check('F-324: ore del mese dal foglio ore (2 persone, più di 16 ore)', ore?.persone === 2 && ore.minuti > 16 * 60, ore);
+    }
     check('chi ha documenti scaduti ma lavora altrove non compare qui', !r.daSistemare.some(x => x.workerId === lontano.id));
     check('POS mancante → da sistemare', tipi.includes('pos'));
     const ass = r.daSistemare.find(x => x.tipo === 'assenti');

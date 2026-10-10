@@ -231,6 +231,7 @@ router.get('/sites/overview', verifySupabaseJwt, async (req, res) => {
       nuovo:                 riep.get(site.id)?.nuovo ?? false,
       ultimoGiorno:          riep.get(site.id)?.ultimoGiorno ?? null,
       daSistemare:           riep.get(site.id)?.daSistemare.length ?? 0,
+      urgenti:               riep.get(site.id)?.urgenti ?? 0,
     };
   });
 

@@ -1,6 +1,6 @@
 'use strict';
 // ── Scheda cantiere senza cartelle (F-321, AUDIT.md del frontend) ─────────────
-// GET /api/v1/sites/:siteId/riepilogo            → { alLavoro, ultimoGiorno, daSistemare, documenti, maltempoGiorni }
+// GET /api/v1/sites/:siteId/riepilogo            → { alLavoro, ultimoGiorno, daSistemare, urgenti, documenti, maltempoGiorni, oreMese }
 // PUT /api/v1/sites/:siteId/documenti-non-servono  { tipo: 'pos'|'psc'|'notifica_asl', nonServe: boolean }
 // La logica è in lib/cantiereRiepilogo.js. Le azioni del Riepilogo usano le
 // rotte che esistono già (pioggia: /ore/pioggia/*, togliere un operaio:
@@ -8,7 +8,7 @@
 const router = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
-const { riepiloghi, DOC_NON_SERVE } = require('../../lib/cantiereRiepilogo');
+const { riepiloghi, oreDelMese, DOC_NON_SERVE } = require('../../lib/cantiereRiepilogo');
 const logger = require('../../lib/logger');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -19,9 +19,11 @@ router.get('/sites/:siteId/riepilogo', verifySupabaseJwt, async (req, res) => {
   try {
     const r = (await riepiloghi(req.companyId, { siteIds: [siteId], fresh: req.query.fresh === '1' })).get(siteId);
     if (!r) return res.status(404).json({ error: 'SITE_NOT_FOUND' });
-    const { count } = await supabase.from('site_suspension_days').select('id', { count: 'exact', head: true })
-      .eq('company_id', req.companyId).eq('site_id', siteId);
-    res.json({ ...r, maltempoGiorni: count || 0 });
+    const [{ count }, oreMese] = await Promise.all([
+      supabase.from('site_suspension_days').select('id', { count: 'exact', head: true }).eq('company_id', req.companyId).eq('site_id', siteId),
+      oreDelMese(req.companyId, siteId).catch((err) => { logger.warn({ err }, 'sites/riepilogo oreDelMese'); return null; }),
+    ]);
+    res.json({ ...r, maltempoGiorni: count || 0, oreMese });
   } catch (err) {
     logger.error({ err }, 'sites/riepilogo');
     res.status(500).json({ error: 'DB_ERROR' });
