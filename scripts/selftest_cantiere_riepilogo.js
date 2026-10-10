@@ -11,13 +11,15 @@
  *   - assegnati che non vengono: "altrove" o "mai";
  *   - data di fine passata ma si lavora → da sistemare;
  *   - cantiere fermo (nessuna timbratura in 30 giorni) → non "al lavoro", niente lista;
+ *   - F-325: liste lunghe in .in() lette a blocchi;
  *   - F-324: urgente (rosso) solo chi ha lavorato qui in settimana con un documento scaduto; ore del mese.
  */
 'use strict';
 require('dotenv').config();
 const crypto = require('crypto');
 const supabase = require('../lib/supabase');
-const { riepiloghi, checklistDocumenti, oreDelMese } = require('../lib/cantiereRiepilogo');
+const cr = require('../lib/cantiereRiepilogo');
+const { riepiloghi, checklistDocumenti, oreDelMese } = cr;
 
 let passed = 0, failed = 0;
 function check(name, cond, got) {
@@ -90,6 +92,14 @@ async function main() {
 
     const f = m.get(fermo.id);
     check('Via Ponza: nessuno timbra da 30 giorni → fermo, niente da sistemare', f?.alLavoro === false && f.daSistemare.length === 0, f);
+
+    // F-325: con ~400 operai che timbrano in un mese la .in() nell'indirizzo fallisce
+    // e la lista degli operai tornava vuota in silenzio (spariva "formazione scaduta").
+    const tanti = [giuseppe.id, ...Array.from({ length: 449 }, () => crypto.randomUUID())];
+    const grezza = await supabase.from('workers').select('id').eq('company_id', cid).in('id', tanti);
+    check('F-325: una .in() con 450 id nell\'indirizzo fallisce (la causa)', !!grezza.error, grezza.error?.message);
+    const trovati = typeof cr.lavoratoriPerId === 'function' ? await cr.lavoratoriPerId(cid, tanti).catch(e => e.message) : null;
+    check('F-325: letti a blocchi, Giuseppe c\'è', Array.isArray(trovati) && trovati.some(w => w.id === giuseppe.id), trovati);
 
     // "Non serve" sul POS (es. il magazzino) e posizione mancante
     await supabase.from('sites').update({ documenti_non_servono: ['pos'], latitude: null, longitude: null }).eq('id', sardegna.id);
