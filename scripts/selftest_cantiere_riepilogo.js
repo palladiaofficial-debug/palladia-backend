@@ -110,10 +110,17 @@ async function main() {
     const rn = (await riepiloghi(cid, { siteIds: [nuovo.id], fresh: true, today })).get(nuovo.id);
     check('cantiere appena creato senza posizione: "manca la posizione" anche senza timbrature', rn.alLavoro === false && rn.daSistemare.some(x => x.tipo === 'posizione'), rn.daSistemare);
     check('...ed è "nuovo" (in cima, non tra i fermi)', rn.nuovo === true, rn);
+    // F-327: un POS fatto fuori e caricato come file conta come POS
+    const balbi0 = (await riepiloghi(cid, { siteIds: [altro.id], fresh: true, today })).get(altro.id);
+    check('F-327: Via Balbi senza POS → manca', balbi0.documenti.pos === 'manca', balbi0.documenti);
+    await ins('site_documents', { company_id: cid, site_id: altro.id, name: 'POS consulente.pdf', category: 'pos', file_path: `${cid}/${altro.id}/pos.pdf` });
+    const balbi1 = (await riepiloghi(cid, { siteIds: [altro.id], fresh: true, today })).get(altro.id);
+    check('F-327: POS caricato come file → presente, niente "Manca il POS"', balbi1.documenti.pos === 'presente' && !balbi1.daSistemare.some(x => x.tipo === 'pos'), balbi1.documenti);
     const bad = await supabase.from('sites').update({ documenti_non_servono: ['dvr'] }).eq('id', sardegna.id);
     check('il database rifiuta un documento che non è del cantiere', !!bad.error, bad.error?.message);
   } finally {
     await supabase.from('presence_logs').delete().eq('company_id', cid);
+    await supabase.from('site_documents').delete().eq('company_id', cid);
     await supabase.from('worksite_workers').delete().eq('company_id', cid);
     await supabase.from('workers').delete().eq('company_id', cid);
     await supabase.from('sites').delete().eq('company_id', cid);

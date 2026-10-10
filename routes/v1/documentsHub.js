@@ -352,7 +352,8 @@ router.get('/sites/:siteId/documents/summary', async (req, res) => {
     // segnabile "non serve". Prima c'erano anche DVR (spento in tutta la
     // piattaforma), DURC e assicurazione (dell'azienda): "6 mancanti".
     const categoriePresenti = new Set(Object.keys(byCategory));
-    const checklist = checklistDocumenti({ conPos: (posDocs || []).length > 0, categorie: categoriePresenti, nonServono: site.documenti_non_servono || [] });
+    // F-327: conta anche il POS caricato come file (fatto fuori da Palladia)
+    const checklist = checklistDocumenti({ conPos: (posDocs || []).length > 0 || categoriePresenti.has('pos'), categorie: categoriePresenti, nonServono: site.documenti_non_servono || [] });
 
     // Compliance lavoratori
     const lavoratori = (siteWorkers || []).map(sw => {
