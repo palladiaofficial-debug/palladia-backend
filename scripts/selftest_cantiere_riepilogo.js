@@ -89,6 +89,7 @@ async function main() {
     const nuovo = await mkSite('Via Nuova 1', { latitude: null, longitude: null });
     const rn = (await riepiloghi(cid, { siteIds: [nuovo.id], fresh: true, today })).get(nuovo.id);
     check('cantiere appena creato senza posizione: "manca la posizione" anche senza timbrature', rn.alLavoro === false && rn.daSistemare.some(x => x.tipo === 'posizione'), rn.daSistemare);
+    check('...ed è "nuovo" (in cima, non tra i fermi)', rn.nuovo === true, rn);
     const bad = await supabase.from('sites').update({ documenti_non_servono: ['dvr'] }).eq('id', sardegna.id);
     check('il database rifiuta un documento che non è del cantiere', !!bad.error, bad.error?.message);
   } finally {
