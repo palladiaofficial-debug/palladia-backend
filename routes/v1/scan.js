@@ -7,6 +7,7 @@ const { notifyPunch, notifyAnomalousPunch, notifyRejectedGeofencePunch } = requi
 const { checkPunchGuard, alertShortShift, noteLateFirstEntry } = require('../../lib/punchGuard');
 const { hasValidConsent, recordConsent } = require('../../lib/workerPrivacyConsent');
 const { latestPosForWorker } = require('../../lib/posForWorker');
+const { impreseDelCantiere } = require('../../lib/subPresenze');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -313,6 +314,21 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     let workerNeedsConsent = true;
 
     if (!worker) {
+      // F-336 (AUDIT.md del frontend): un codice fiscale sconosciuto diventa
+      // dipendente SOLO se la persona ha scelto la nostra impresa ("Di quale
+      // impresa sei?"). Prima chiunque inquadrasse il QR del cantiere — anche
+      // l'operaio di un subappaltatore — finiva in Organico, foglio ore e
+      // buste paga. Gli operai dei sub passano da /sub-scan (F-337).
+      const impresa = req.body?.impresa;
+      if (impresa !== 'own') {
+        let imprese = [{ id: 'own', nome: '', nostra: true }];
+        try { ({ imprese } = await impreseDelCantiere(worksite_id)); } catch (e) { console.error('[identify] imprese:', e.message); }
+        if (!impresa) {
+          return res.status(400).json({ error: 'IMPRESA_REQUIRED', message: 'Di quale impresa sei?', imprese });
+        }
+        return res.status(409).json({ error: 'IMPRESA_SUBAPPALTATORE', impresa, imprese });
+      }
+
       // Worker sconosciuto — prima registrazione: richiede nome completo
       if (!full_name || String(full_name).trim().length < 2) {
         return res.status(400).json({

@@ -90,6 +90,8 @@ router.use('/', require('./badge'));
 router.use('/', require('./scan'));
 // F-265: "Perché esci?" dopo l'uscita (stessa autenticazione di /scan/note), file separato da scan.js
 router.use('/', require('./scanExitReason'));
+// F-337: presenze delle imprese subappaltatrici (QR, link della squadra, ufficio)
+router.use('/', require('./subPresenze'));
 // F-267: iscrizione push dell'operaio dal badge (identità = badge_code, file separato)
 router.use('/', require('./workerPush'));
 

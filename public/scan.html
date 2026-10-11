@@ -895,7 +895,8 @@
     btn.innerHTML = '<span class="spin"></span>Verifica…';
     $('field-error').classList.add('hidden');
 
-    const payload = { worksite_id: WSITE_ID, fiscal_code: cf, t: QR_TOKEN, exp: QR_EXP };
+    // F-336: chi arriva qui ha scelto la nostra impresa (o il modulo imprese è spento)
+    const payload = { worksite_id: WSITE_ID, fiscal_code: cf, t: QR_TOKEN, exp: QR_EXP, impresa: 'own' };
     if (nameRequired) payload.full_name = name;
 
     try {
@@ -978,8 +979,19 @@
     if (!qrOk) return;
     const ok = await loadSite();
     if (!ok) return;
-    if (sessionToken) { activateSession(workerName || 'Lavoratore'); }
-    else              { showState('identify'); }
+    if (sessionToken) { activateSession(workerName || 'Lavoratore'); return; }
+    // F-337: se il cantiere ha imprese subappaltatrici, prima "Di quale impresa sei?"
+    // (pagina /ingresso); chi sceglie la nostra torna qui con noi=1.
+    if (_qp.get('noi') !== '1') {
+      try {
+        const { status, body } = await apiFetch('GET', `/api/v1/sub-scan/context?site=${encodeURIComponent(WSITE_ID)}&t=${encodeURIComponent(QR_TOKEN)}&exp=${encodeURIComponent(QR_EXP)}`);
+        if (status === 200 && Array.isArray(body.imprese) && body.imprese.length > 1) {
+          location.replace(`/ingresso/${encodeURIComponent(WSITE_ID)}?t=${encodeURIComponent(QR_TOKEN)}&exp=${encodeURIComponent(QR_EXP)}`);
+          return;
+        }
+      } catch (e) { /* senza risposta resta il flusso di sempre */ }
+    }
+    showState('identify');
   })().catch(function (err) {
     console.error('[scan] boot failed:', err);
     document.getElementById('site-name').textContent = 'Errore di caricamento';

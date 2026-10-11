@@ -517,6 +517,16 @@ app.get('/scan/:worksiteId', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('scan.html', { root: __dirname + '/public' });
 });
+// F-337: ingresso degli operai dei subappaltatori e pagina del caposquadra
+app.get('/ingresso/:worksiteId', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.sendFile('ingresso.html', { root: __dirname + '/public' });
+});
+app.get('/squadra/:token', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.sendFile('squadra.html', { root: __dirname + '/public' });
+});
 app.get('/asl/:token', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile('asl.html', { root: __dirname + '/public' });

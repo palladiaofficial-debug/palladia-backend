@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F6F4F0">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="no-referrer">
+  <title>Squadra in cantiere · Palladia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+  <!--
+    F-337 (AUDIT.md del frontend): il caposquadra di un subappaltatore segna
+    chi della sua squadra è in cantiere, con il link ricevuto dall'impresa
+    (nessun account). Vale solo per la sua impresa su quel cantiere.
+  -->
+  <style>
+    :root { --bg: #F6F4F0; --surface: #fff; --border: #E6E1D8; --text: #1A1714; --muted: #6E6459; --green: #4A7358; --red: #A8453B; --accent: #22384F; --amber: #A6570A; }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { min-height: 100dvh; background: var(--bg); color: var(--text); }
+    body { font-family: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif; font-size: 17px; line-height: 1.4; display: flex; flex-direction: column; align-items: center; padding: env(safe-area-inset-top, 0px) 16px calc(110px + env(safe-area-inset-bottom, 0px)); }
+    .wrap { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 12px; }
+    .top { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 14px 0 4px; flex-wrap: wrap; }
+    .langs { display: flex; gap: 6px; }
+    .lang-btn { min-width: 40px; height: 40px; padding: 0 10px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); font: inherit; font-size: 13px; font-weight: 800; color: var(--muted); cursor: pointer; }
+    .lang-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .head b { display: block; font-size: 15px; color: var(--muted); }
+    h1 { font-size: 26px; font-weight: 800; line-height: 1.15; overflow-wrap: anywhere; }
+    .count { font-size: 16px; color: var(--muted); font-weight: 700; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 66px; background: var(--surface); border: 2px solid var(--border); border-radius: 16px; padding: 10px 12px 10px 16px; font: inherit; color: var(--text); cursor: pointer; text-align: start; }
+    .row.in { border-color: var(--green); }
+    .row .n { font-size: 18px; font-weight: 800; min-width: 0; overflow-wrap: anywhere; }
+    .row .w { display: block; font-size: 13px; color: var(--muted); font-weight: 600; }
+    .chip { flex: none; font-size: 13px; font-weight: 800; padding: 9px 12px; border-radius: 12px; white-space: nowrap; }
+    .chip.in { background: var(--green); color: #fff; }
+    .chip.out { background: #EDE8E0; color: var(--muted); }
+    .add { display: flex; gap: 8px; }
+    .add input { flex: 1; min-width: 0; min-height: 56px; border: 2px solid var(--border); border-radius: 14px; padding: 0 14px; font: inherit; font-size: 18px; background: var(--surface); color: var(--text); }
+    .add input:focus { outline: none; border-color: var(--accent); }
+    .btn { min-height: 56px; border: 0; border-radius: 14px; padding: 0 18px; font: inherit; font-size: 17px; font-weight: 800; color: #fff; background: var(--accent); cursor: pointer; }
+    .link { background: none; border: 0; font: inherit; font-size: 16px; font-weight: 700; color: var(--accent); text-decoration: underline; padding: 12px; cursor: pointer; align-self: center; }
+    .bottom { position: fixed; left: 0; right: 0; bottom: 0; padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px)); background: var(--bg); border-top: 1px solid var(--border); display: flex; justify-content: center; }
+    .bottom .in { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 8px; }
+    .bigred { width: 100%; min-height: 60px; border: 0; border-radius: 16px; font: inherit; font-size: 18px; font-weight: 800; color: #fff; background: var(--red); cursor: pointer; }
+    .confirm { display: flex; gap: 8px; }
+    .confirm button { flex: 1; min-height: 56px; border-radius: 14px; font: inherit; font-size: 16px; font-weight: 800; cursor: pointer; }
+    .confirm .yes { background: var(--red); color: #fff; border: 0; }
+    .confirm .no { background: var(--surface); color: var(--text); border: 2px solid var(--border); }
+    .toast { position: fixed; left: 16px; right: 16px; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); max-width: 520px; margin: 0 auto; background: var(--text); color: #fff; border-radius: 14px; padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 700; font-size: 15px; }
+    .toast button { background: none; border: 0; color: #fff; font: inherit; font-weight: 800; text-decoration: underline; cursor: pointer; padding: 6px; }
+    .msg { font-size: 16px; font-weight: 700; padding: 14px; border-radius: 12px; background: #F7ECDD; color: var(--amber); }
+    .empty { font-size: 16px; color: var(--muted); background: var(--surface); border: 1px dashed var(--border); border-radius: 14px; padding: 16px; }
+    [hidden] { display: none !important; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top"><div class="head"><b id="impresa"></b></div><div class="langs" id="langs"></div></div>
+    <h1 id="cantiere"></h1>
+    <p class="count" id="count"></p>
+    <p class="msg" id="msg" hidden></p>
+    <div id="list" style="display:flex;flex-direction:column;gap:10px"></div>
+    <button class="link" id="btn-add" data-t="addPerson"></button>
+    <div class="add" id="add" hidden>
+      <input type="text" id="in-name" autocomplete="off" maxlength="80">
+      <button class="btn" id="btn-add-ok" data-t="add"></button>
+    </div>
+  </div>
+  <div class="bottom" id="bottom" hidden><div class="in">
+    <button class="bigred" id="btn-fuori" data-t="allOut"></button>
+    <div class="confirm" id="confirm" hidden><button class="yes" id="btn-fuori-si" data-t="yesAllOut"></button><button class="no" id="btn-fuori-no" data-t="no"></button></div>
+  </div></div>
+  <div class="toast" id="toast" hidden><span id="toast-t"></span><button id="toast-undo" data-t="undo"></button></div>
+
+<script>
+'use strict';
+(function () {
+  var TOKEN = location.pathname.split('/').pop();
+  var BASE = '/api/v1/squadra/' + encodeURIComponent(TOKEN);
+  var LANGS = ['it', 'ro', 'sq', 'ar'], LABEL = { it: 'IT', ro: 'RO', sq: 'AL', ar: 'ع' }, K_LANG = 'palladia_badge_lang';
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  var LANG = (function () { var s = lsGet(K_LANG); if (s && LANGS.indexOf(s) !== -1) return s; var n = (navigator.language || '').slice(0, 2).toLowerCase(); return LANGS.indexOf(n) !== -1 ? n : 'it'; })();
+  // Traduzioni curate ma non riviste da un madrelingua (come badge-punch.html).
+  var T = {
+    it: { in: 'DENTRO', out: 'tocca se c\'è', since: function (h) { return 'dalle ' + h; }, left: function (h) { return 'uscito alle ' + h; }, elsewhere: 'in un altro cantiere', count: function (n, m) { return n + ' dentro su ' + m; }, addPerson: '+ Aggiungi una persona', add: 'Aggiungi', namePh: 'Nome e cognome', allOut: 'Fine giornata: tutti fuori', yesAllOut: 'Sì, tutti fuori', no: 'No', undo: 'Annulla', markedIn: function (n) { return n + ': dentro'; }, markedOut: function (n) { return n + ': fuori'; }, allOutDone: function (n) { return n + ' segnati fuori'; }, empty: 'Nessuno ancora. Aggiungi le persone della squadra una volta: dal giorno dopo basta un tocco.', bad: 'Questo link non vale più. Chiedi un link nuovo all\'impresa.', offline: 'Niente internet. Riprova tra poco.', fullName: 'Scrivi nome e cognome' },
+    ro: { in: 'ÎNĂUNTRU', out: 'atinge dacă e aici', since: function (h) { return 'de la ' + h; }, left: function (h) { return 'a ieșit la ' + h; }, elsewhere: 'pe alt șantier', count: function (n, m) { return n + ' înăuntru din ' + m; }, addPerson: '+ Adaugă o persoană', add: 'Adaugă', namePh: 'Nume și prenume', allOut: 'Sfârșit de zi: toți afară', yesAllOut: 'Da, toți afară', no: 'Nu', undo: 'Anulează', markedIn: function (n) { return n + ': înăuntru'; }, markedOut: function (n) { return n + ': afară'; }, allOutDone: function (n) { return n + ' marcați afară'; }, empty: 'Nimeni încă. Adaugă persoanele echipei o singură dată: de a doua zi ajunge o atingere.', bad: 'Acest link nu mai este valabil. Cere un link nou firmei.', offline: 'Nu ai internet. Încearcă puțin mai târziu.', fullName: 'Scrie numele și prenumele' },
+    sq: { in: 'BRENDA', out: 'prek nëse është', since: function (h) { return 'nga ora ' + h; }, left: function (h) { return 'doli në orën ' + h; }, elsewhere: 'në një kantier tjetër', count: function (n, m) { return n + ' brenda nga ' + m; }, addPerson: '+ Shto një person', add: 'Shto', namePh: 'Emri dhe mbiemri', allOut: 'Fundi i ditës: të gjithë jashtë', yesAllOut: 'Po, të gjithë jashtë', no: 'Jo', undo: 'Anulo', markedIn: function (n) { return n + ': brenda'; }, markedOut: function (n) { return n + ': jashtë'; }, allOutDone: function (n) { return n + ' u shënuan jashtë'; }, empty: 'Askush ende. Shto njerëzit e ekipit një herë: nga dita tjetër mjafton një prekje.', bad: 'Ky link nuk vlen më. Kërko një link të ri nga firma.', offline: 'Nuk ka internet. Provo pak më vonë.', fullName: 'Shkruaj emrin dhe mbiemrin' },
+    ar: { in: 'بالداخل', out: 'المس إذا كان حاضراً', since: function (h) { return 'منذ ' + h; }, left: function (h) { return 'خرج الساعة ' + h; }, elsewhere: 'في ورشة أخرى', count: function (n, m) { return n + ' بالداخل من ' + m; }, addPerson: '+ أضف شخصاً', add: 'أضف', namePh: 'الاسم واللقب', allOut: 'نهاية اليوم: الجميع خارجاً', yesAllOut: 'نعم، الجميع خارجاً', no: 'لا', undo: 'تراجع', markedIn: function (n) { return n + ': بالداخل'; }, markedOut: function (n) { return n + ': بالخارج'; }, allOutDone: function (n) { return 'تم تسجيل خروج ' + n; }, empty: 'لا أحد بعد. أضف أفراد الفريق مرة واحدة: من اليوم التالي تكفي لمسة.', bad: 'هذا الرابط لم يعد صالحاً. اطلب رابطاً جديداً من الشركة.', offline: 'لا يوجد إنترنت. أعد المحاولة بعد قليل.', fullName: 'اكتب الاسم واللقب' },
+  };
+  function t(k) { var v = (T[LANG] || T.it)[k]; return v == null ? T.it[k] : v; }
+  var $ = function (id) { return document.getElementById(id); };
+  var dati = null, toastTimer = null, undo = null;
+
+  function api(method, path, body) {
+    return fetch(BASE + path, { method: method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); });
+  }
+  function reqId() { try { return crypto.randomUUID(); } catch (e) { return Date.now() + '-' + Math.random().toString(36).slice(2); } }
+  function msg(text) { $('msg').textContent = text || ''; $('msg').hidden = !text; }
+
+  function render() {
+    document.documentElement.lang = LANG; document.documentElement.dir = LANG === 'ar' ? 'rtl' : 'ltr';
+    document.querySelectorAll('[data-t]').forEach(function (el) { var v = t(el.getAttribute('data-t')); if (typeof v === 'string') el.textContent = v; });
+    $('in-name').placeholder = t('namePh');
+    $('langs').innerHTML = LANGS.map(function (c) { return '<button class="lang-btn' + (c === LANG ? ' active' : '') + '" data-l="' + c + '">' + LABEL[c] + '</button>'; }).join('');
+    if (!dati) return;
+    $('impresa').textContent = dati.impresa; $('cantiere').textContent = dati.cantiere.nome;
+    var dentro = dati.persone.filter(function (p) { return p.dentro; }).length;
+    $('count').textContent = dati.persone.length ? t('count')(dentro, dati.persone.length) : '';
+    var list = $('list'); list.innerHTML = '';
+    if (!dati.persone.length) { var e = document.createElement('p'); e.className = 'empty'; e.textContent = t('empty'); list.appendChild(e); }
+    dati.persone.forEach(function (p) {
+      var b = document.createElement('button'); b.className = 'row' + (p.dentro ? ' in' : ''); b.setAttribute('data-id', p.id);
+      var n = document.createElement('span'); n.className = 'n'; n.textContent = p.nome;
+      var w = document.createElement('span'); w.className = 'w';
+      w.textContent = p.dentro ? (p.entrata ? t('since')(p.entrata) : '') : p.altroCantiere ? t('elsewhere') : p.uscita ? t('left')(p.uscita) : '';
+      if (w.textContent) n.appendChild(w);
+      var c = document.createElement('span'); c.className = 'chip ' + (p.dentro ? 'in' : 'out'); c.textContent = p.dentro ? t('in') : t('out');
+      b.appendChild(n); b.appendChild(c); list.appendChild(b);
+    });
+    $('bottom').hidden = !dentro;
+  }
+  $('langs').addEventListener('click', function (e) { var c = e.target.getAttribute('data-l'); if (c) { LANG = c; lsSet(K_LANG, c); render(); } });
+
+  function carica() {
+    return api('GET', '/dati').then(function (r) {
+      if (r.status === 401) { dati = null; $('list').innerHTML = ''; $('btn-add').hidden = true; $('bottom').hidden = true; msg(t('bad')); return; }
+      if (r.status !== 200) { msg(t('offline')); return; }
+      msg(''); dati = r.body; render();
+    }).catch(function () { msg(t('offline')); });
+  }
+
+  function mostraToast(testo, annulla) {
+    $('toast-t').textContent = testo; undo = annulla || null; $('toast-undo').hidden = !annulla; $('toast').hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { $('toast').hidden = true; undo = null; }, 5000);
+  }
+  $('toast-undo').addEventListener('click', function () { var u = undo; $('toast').hidden = true; undo = null; if (u) u(); });
+
+  function segna(p, event) {
+    p.dentro = event === 'entrata'; render();
+    return api('POST', '/segna', { sub_worker_id: p.id, event: event, client_request_id: reqId() }).then(function (r) {
+      if (r.status !== 200) { msg(r.status === 401 ? t('bad') : t('offline')); return carica(); }
+      return carica();
+    }).catch(function () { msg(t('offline')); return carica(); });
+  }
+  $('list').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-id]'); if (!b || !dati) return;
+    var p = dati.persone.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0]; if (!p) return;
+    var ev = p.dentro ? 'uscita' : 'entrata', nome = p.nome;
+    segna(p, ev).then(function () {
+      mostraToast(ev === 'entrata' ? t('markedIn')(nome) : t('markedOut')(nome), function () {
+        var q = dati && dati.persone.filter(function (x) { return x.nome === nome; })[0]; if (q) segna(q, ev === 'entrata' ? 'uscita' : 'entrata');
+      });
+    });
+  });
+
+  $('btn-add').addEventListener('click', function () { $('add').hidden = false; $('btn-add').hidden = true; $('in-name').focus(); });
+  function aggiungi() {
+    var v = $('in-name').value.trim();
+    if (!/\S+\s+\S+/.test(v)) { msg(t('fullName')); $('in-name').focus(); return; }
+    $('btn-add-ok').disabled = true;
+    api('POST', '/persone', { full_name: v }).then(function (r) {
+      $('btn-add-ok').disabled = false;
+      if (r.status !== 200) { msg(r.body.message || t('offline')); return; }
+      $('in-name').value = ''; $('add').hidden = true; $('btn-add').hidden = false; msg('');
+      return carica();
+    }).catch(function () { $('btn-add-ok').disabled = false; msg(t('offline')); });
+  }
+  $('btn-add-ok').addEventListener('click', aggiungi);
+  $('in-name').addEventListener('keydown', function (e) { if (e.key === 'Enter') aggiungi(); });
+
+  $('btn-fuori').addEventListener('click', function () { $('btn-fuori').hidden = true; $('confirm').hidden = false; });
+  $('btn-fuori-no').addEventListener('click', function () { $('btn-fuori').hidden = false; $('confirm').hidden = true; });
+  $('btn-fuori-si').addEventListener('click', function () {
+    $('btn-fuori-si').disabled = true;
+    api('POST', '/tutti-fuori').then(function (r) {
+      $('btn-fuori-si').disabled = false; $('btn-fuori').hidden = false; $('confirm').hidden = true;
+      if (r.status === 200) mostraToast(t('allOutDone')(r.body.usciti || 0));
+      return carica();
+    }).catch(function () { $('btn-fuori-si').disabled = false; msg(t('offline')); });
+  });
+
+  render(); carica();
+  setInterval(function () { if (!document.hidden) carica(); }, 30000);
+})();
+</script>
+</body>
+</html>

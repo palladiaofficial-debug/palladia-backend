@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#F6F4F0">
+  <meta name="robots" content="noindex">
+  <title>Ingresso cantiere · Palladia</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;700;800&display=swap" rel="stylesheet">
+  <!--
+    F-337 (AUDIT.md del frontend): ingresso in cantiere degli operai delle
+    imprese subappaltatrici. Si arriva da /scan/<cantiere> ("Di quale impresa
+    sei?"). Prima volta: foto della tessera sanitaria → "Sei tu?" → entrato.
+    Dalla seconda: un solo tasto, ENTRO o ESCO. Una domanda per schermata, il
+    tasto grande è sempre quello sicuro. Nessun accesso a presence_logs.
+  -->
+  <style>
+    :root {
+      --bg: #F6F4F0; --surface: #ffffff; --border: #E6E1D8; --text: #1A1714; --muted: #6E6459;
+      --green: #4A7358; --green-dk: #3A5C46; --red: #A8453B; --red-dk: #8F3A31; --accent: #22384F; --amber: #A6570A;
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { min-height: 100dvh; background: var(--bg); color: var(--text); }
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+      font-size: 17px; line-height: 1.4; -webkit-font-smoothing: antialiased;
+      display: flex; flex-direction: column; align-items: center;
+      padding: env(safe-area-inset-top, 0px) 16px calc(32px + env(safe-area-inset-bottom, 0px));
+    }
+    .top { width: 100%; max-width: 480px; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 0 10px; flex-wrap: wrap; }
+    .site { font-size: 14px; color: var(--muted); font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+    .langs { display: flex; gap: 6px; }
+    .lang-btn { min-width: 40px; height: 40px; padding: 0 10px; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); font: inherit; font-size: 13px; font-weight: 800; color: var(--muted); cursor: pointer; }
+    .lang-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .screen { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; padding-top: 10px; flex: 1; }
+    [hidden] { display: none !important; }
+    h1 { font-size: 28px; font-weight: 800; line-height: 1.15; letter-spacing: -0.01em; text-wrap: balance; }
+    .sub { font-size: 16px; color: var(--muted); }
+    .opt { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 68px; padding: 14px 16px; border: 2px solid var(--border); border-radius: 16px; background: var(--surface); font: inherit; font-size: 19px; font-weight: 800; color: var(--text); text-align: start; cursor: pointer; }
+    .opt:active { border-color: var(--accent); }
+    .opt .ic { width: 40px; height: 40px; flex: none; border-radius: 12px; background: #E4E9EF; color: var(--accent); display: grid; place-items: center; font-size: 14px; font-weight: 800; }
+    .opt.own .ic { background: #E7EFE9; color: var(--green); }
+    .big { width: 100%; min-height: 76px; border: 0; border-radius: var(--radius); font: inherit; font-size: 22px; font-weight: 800; color: #fff; background: var(--green); display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; padding: 16px; }
+    .big:active { background: var(--green-dk); }
+    .big.red { background: var(--red); } .big.red:active { background: var(--red-dk); }
+    .big.blue { background: var(--accent); }
+    .big.huge { min-height: 150px; font-size: 34px; letter-spacing: 0.02em; }
+    .big[disabled] { opacity: .6; }
+    .link { background: none; border: 0; font: inherit; font-size: 16px; font-weight: 700; color: var(--accent); text-decoration: underline; padding: 12px; cursor: pointer; align-self: center; }
+    .card-pic { width: 100%; aspect-ratio: 1.58; max-height: 230px; border-radius: 16px; border: 2px dashed #C9C1B5; background: var(--surface); display: grid; place-items: center; color: var(--muted); }
+    .who { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 4px; }
+    .who b { font-size: 26px; font-weight: 800; overflow-wrap: anywhere; }
+    .who span { font-size: 17px; color: var(--muted); }
+    .fine { font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .fine button { background: none; border: 0; font: inherit; color: var(--accent); font-weight: 700; text-decoration: underline; cursor: pointer; padding: 0; }
+    .info { font-size: 15px; line-height: 1.55; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+    .msg { font-size: 16px; font-weight: 700; padding: 12px 14px; border-radius: 12px; background: #F7ECDD; color: var(--amber); }
+    .done { display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; padding-top: 30px; }
+    .done .tick { width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center; background: var(--green); color: #fff; }
+    .done .tick.out { background: var(--red); }
+    .done b { font-size: 30px; font-weight: 800; }
+    input[type=text] { width: 100%; min-height: 60px; border: 2px solid var(--border); border-radius: 14px; padding: 0 14px; font: inherit; font-size: 20px; background: var(--surface); color: var(--text); }
+    input[type=text]:focus { outline: none; border-color: var(--accent); }
+    .spin { width: 44px; height: 44px; border-radius: 50%; border: 4px solid #E6E1D8; border-top-color: var(--accent); animation: sp 0.8s linear infinite; align-self: center; margin-top: 40px; }
+    @keyframes sp { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
+    .spacer { flex: 1; }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+  <div class="top">
+    <div class="site" id="site-name"></div>
+    <div class="langs" id="langs"></div>
+  </div>
+
+  <div class="screen" id="s-loading"><div class="spin"></div><p class="sub" style="text-align:center" data-t="loading"></p></div>
+
+  <div class="screen" id="s-impresa" hidden>
+    <h1 data-t="whichCompany"></h1>
+    <div id="imprese" style="display:flex;flex-direction:column;gap:10px"></div>
+    <button class="link" id="btn-altra" data-t="notListed"></button>
+  </div>
+
+  <div class="screen" id="s-altra" hidden>
+    <h1 data-t="companyName"></h1>
+    <input type="text" id="in-altra" autocomplete="organization" maxlength="80">
+    <button class="big blue" id="btn-altra-ok" data-t="continue"></button>
+  </div>
+
+  <div class="screen" id="s-foto" hidden>
+    <h1 data-t="photoTitle"></h1>
+    <p class="sub" data-t="photoHint"></p>
+    <p class="msg" id="foto-msg" hidden data-t="unreadable"></p>
+    <div class="card-pic" aria-hidden="true">
+      <svg width="84" height="84" viewBox="0 0 256 256" fill="currentColor"><path d="M208 56h-27.72l-13.63-20.44A8 8 0 0 0 160 32H96a8 8 0 0 0-6.65 3.56L75.71 56H48a24 24 0 0 0-24 24v112a24 24 0 0 0 24 24h160a24 24 0 0 0 24-24V80a24 24 0 0 0-24-24Zm8 136a8 8 0 0 1-8 8H48a8 8 0 0 1-8-8V80a8 8 0 0 1 8-8h32a8 8 0 0 0 6.66-3.56L100.28 48h55.43l13.63 20.44A8 8 0 0 0 176 72h32a8 8 0 0 1 8 8ZM128 88a44 44 0 1 0 44 44 44.05 44.05 0 0 0-44-44Zm0 72a28 28 0 1 1 28-28 28 28 0 0 1-28 28Z"/></svg>
+    </div>
+    <label class="big blue" for="in-foto" id="lbl-foto"><span data-t="takePhoto"></span></label>
+    <input type="file" id="in-foto" accept="image/*" capture="environment" hidden>
+    <button class="link" id="btn-nocard" data-t="noCard"></button>
+  </div>
+
+  <div class="screen" id="s-leggo" hidden><div class="spin"></div><p class="sub" style="text-align:center" data-t="reading"></p></div>
+
+  <div class="screen" id="s-conferma" hidden>
+    <h1 data-t="isItYou"></h1>
+    <div class="who"><b id="c-nome"></b><span id="c-impresa"></span></div>
+    <div class="spacer"></div>
+    <button class="big" id="btn-si"><span data-t="yesEnter"></span></button>
+    <button class="link" id="btn-rifai" data-t="retryPhoto"></button>
+    <p class="fine"><span data-t="informativaLine"></span> <button id="btn-info" data-t="read"></button></p>
+    <div class="info" id="info" hidden></div>
+  </div>
+
+  <div class="screen" id="s-chiedi" hidden>
+    <h1 data-t="askForeman"></h1>
+    <p class="sub" data-t="askForemanSub"></p>
+  </div>
+
+  <div class="screen" id="s-tasto" hidden>
+    <div class="who"><b id="t-nome"></b><span id="t-impresa"></span></div>
+    <div class="spacer"></div>
+    <button class="big huge" id="btn-tasto"></button>
+    <div class="spacer"></div>
+    <button class="link" id="btn-nonsei" data-t="notYou"></button>
+  </div>
+
+  <div class="screen" id="s-fatto" hidden>
+    <div class="done">
+      <div class="tick" id="f-tick"><svg width="56" height="56" viewBox="0 0 256 256" fill="currentColor"><path d="M232.49 80.49l-128 128a12 12 0 0 1-17 0l-56-56a12 12 0 1 1 17-17L96 183 215.51 63.51a12 12 0 0 1 17 17Z"/></svg></div>
+      <b id="f-testo"></b>
+      <p class="sub" id="f-sub"></p>
+    </div>
+  </div>
+
+  <div class="screen" id="s-errore" hidden>
+    <h1 id="e-testo"></h1>
+    <div class="spacer"></div>
+    <button class="big blue" id="btn-riprova" data-t="retry"></button>
+  </div>
+
+<script>
+'use strict';
+(function () {
+  var parts = location.pathname.split('/');
+  var SITE = parts[parts.length - 1];
+  var qp = new URLSearchParams(location.search);
+  var QR = { site: SITE, t: qp.get('t') || '', exp: qp.get('exp') || '' };
+  var QS = 'site=' + encodeURIComponent(SITE) + '&t=' + encodeURIComponent(QR.t) + '&exp=' + encodeURIComponent(QR.exp);
+  var K_TOK = 'palladia_sub_tok', K_LANG = 'palladia_badge_lang';
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+
+  var LANGS = ['it', 'ro', 'sq', 'ar'], LABEL = { it: 'IT', ro: 'RO', sq: 'AL', ar: 'ع' };
+  var LANG = (function () {
+    var s = lsGet(K_LANG); if (s && LANGS.indexOf(s) !== -1) return s;
+    var n = (navigator.language || '').slice(0, 2).toLowerCase();
+    return LANGS.indexOf(n) !== -1 ? n : 'it';
+  })();
+
+  // Traduzioni curate ma non riviste da un madrelingua (come badge-punch.html).
+  var T = {
+    it: {
+      loading: 'Un momento…', whichCompany: 'Di quale impresa sei?', notListed: 'La mia impresa non c\'è',
+      companyName: 'Come si chiama la tua impresa?', continue: 'Avanti',
+      photoTitle: 'Fotografa la tua tessera sanitaria', photoHint: 'Il lato con il tuo nome e il codice fiscale.',
+      takePhoto: 'Scatta la foto', noCard: 'Non ce l\'ho', reading: 'Sto leggendo la tessera…',
+      unreadable: 'Non si legge bene. Riprova con più luce, con la tessera dritta.',
+      isItYou: 'Sei tu?', yesEnter: 'Sì, entro', retryPhoto: 'No, rifai la foto',
+      informativaLine: 'Toccando "Sì" confermi di aver letto l\'informativa.', read: 'Leggi',
+      askForeman: 'Chiedi al tuo caposquadra di segnarti', askForemanSub: 'Ha un elenco con il tuo nome: gli basta un tocco.',
+      enter: 'ENTRO', exit: 'ESCO', notYou: 'Non sei tu?',
+      enteredAt: function (h) { return 'Sei entrato alle ' + h; }, exitedAt: function (h) { return 'Sei uscito alle ' + h; },
+      canClose: 'Puoi chiudere questa pagina.', bossWarned: 'Il capocantiere è avvisato.',
+      alreadyEmployee: function (a) { return 'Sei già un lavoratore di ' + a + ': usa il tuo badge personale.'; },
+      notAssigned: 'La tua impresa non è assegnata a questo cantiere. Chiedi al capocantiere.',
+      error: 'Qualcosa non ha funzionato.', retry: 'Riprova', offline: 'Niente internet. Riprova tra poco.',
+      qrBad: 'Questo QR non vale più. Chiedi al capocantiere.',
+      info: function (a) { return 'Titolare: ' + a + ', l\'impresa che gestisce questo cantiere. Registriamo il tuo nome, il codice fiscale, la tua impresa e l\'ora in cui entri ed esci da questo cantiere; la posizione solo nel momento in cui tocchi il tasto, se la concedi. Serve per la sicurezza del cantiere: l\'impresa deve sapere chi c\'è (D.Lgs 81/2008, artt. 26 e 97). La foto della tessera non viene conservata. I dati restano per la durata del cantiere e 5 anni dopo, poi vengono cancellati. Puoi chiedere a ' + a + ' di vederli o di correggerli.'; },
+    },
+    ro: {
+      loading: 'O clipă…', whichCompany: 'Din ce firmă ești?', notListed: 'Firma mea nu este aici',
+      companyName: 'Cum se numește firma ta?', continue: 'Înainte',
+      photoTitle: 'Fotografiază cardul de sănătate', photoHint: 'Partea cu numele tău și codul fiscal.',
+      takePhoto: 'Fă poza', noCard: 'Nu am', reading: 'Citesc cardul…',
+      unreadable: 'Nu se citește bine. Încearcă din nou cu mai multă lumină, cu cardul drept.',
+      isItYou: 'Tu ești?', yesEnter: 'Da, intru', retryPhoto: 'Nu, refă poza',
+      informativaLine: 'Atingând „Da" confirmi că ai citit informarea.', read: 'Citește',
+      askForeman: 'Roagă-l pe șeful de echipă să te înregistreze', askForemanSub: 'Are o listă cu numele tău: îi ajunge o atingere.',
+      enter: 'INTRU', exit: 'IES', notYou: 'Nu ești tu?',
+      enteredAt: function (h) { return 'Ai intrat la ' + h; }, exitedAt: function (h) { return 'Ai ieșit la ' + h; },
+      canClose: 'Poți închide această pagină.', bossWarned: 'Șeful de șantier a fost anunțat.',
+      alreadyEmployee: function (a) { return 'Ești deja angajat la ' + a + ': folosește ecusonul tău personal.'; },
+      notAssigned: 'Firma ta nu este repartizată pe acest șantier. Întreabă șeful de șantier.',
+      error: 'Ceva nu a mers.', retry: 'Încearcă din nou', offline: 'Nu ai internet. Încearcă puțin mai târziu.',
+      qrBad: 'Acest cod QR nu mai este valabil. Întreabă șeful de șantier.',
+      info: function (a) { return 'Operator: ' + a + ', firma care conduce acest șantier. Înregistrăm numele tău, codul fiscal, firma ta și ora la care intri și ieși de pe acest șantier; locația doar în momentul în care atingi butonul, dacă o permiți. Este pentru siguranța șantierului: firma trebuie să știe cine este prezent (D.Lgs 81/2008, art. 26 și 97). Poza cardului nu este păstrată. Datele rămân pe durata șantierului și încă 5 ani, apoi sunt șterse. Poți cere la ' + a + ' să le vezi sau să le corectezi.'; },
+    },
+    sq: {
+      loading: 'Një moment…', whichCompany: 'Nga cila firmë je?', notListed: 'Firma ime nuk është këtu',
+      companyName: 'Si quhet firma jote?', continue: 'Vazhdo',
+      photoTitle: 'Fotografo kartën shëndetësore', photoHint: 'Ana me emrin tënd dhe kodin fiskal.',
+      takePhoto: 'Bëj foton', noCard: 'Nuk e kam', reading: 'Po lexoj kartën…',
+      unreadable: 'Nuk lexohet mirë. Provo përsëri me më shumë dritë, me kartën drejt.',
+      isItYou: 'Je ti?', yesEnter: 'Po, hyj', retryPhoto: 'Jo, bëje përsëri foton',
+      informativaLine: 'Duke prekur "Po" konfirmon që ke lexuar njoftimin.', read: 'Lexo',
+      askForeman: 'Kërkoji kryepunëtorit të të regjistrojë', askForemanSub: 'Ka një listë me emrin tënd: i mjafton një prekje.',
+      enter: 'HYJ', exit: 'DAL', notYou: 'Nuk je ti?',
+      enteredAt: function (h) { return 'Hyre në orën ' + h; }, exitedAt: function (h) { return 'Dole në orën ' + h; },
+      canClose: 'Mund ta mbyllësh këtë faqe.', bossWarned: 'Përgjegjësi i kantierit është njoftuar.',
+      alreadyEmployee: function (a) { return 'Je tashmë punëtor i ' + a + ': përdor kartën tënde personale.'; },
+      notAssigned: 'Firma jote nuk është caktuar në këtë kantier. Pyet përgjegjësin e kantierit.',
+      error: 'Diçka nuk funksionoi.', retry: 'Provo përsëri', offline: 'Nuk ka internet. Provo pak më vonë.',
+      qrBad: 'Ky kod QR nuk vlen më. Pyet përgjegjësin e kantierit.',
+      info: function (a) { return 'Përgjegjësi i të dhënave: ' + a + ', firma që drejton këtë kantier. Regjistrojmë emrin tënd, kodin fiskal, firmën tënde dhe orën kur hyn dhe del nga ky kantier; vendndodhjen vetëm në momentin kur prek butonin, nëse e lejon. Shërben për sigurinë e kantierit: firma duhet të dijë kush është i pranishëm (D.Lgs 81/2008, nenet 26 dhe 97). Fotoja e kartës nuk ruhet. Të dhënat ruhen gjatë kohës së kantierit dhe 5 vjet më pas, pastaj fshihen. Mund t\'i kërkosh ' + a + ' t\'i shohësh ose t\'i korrigjosh.'; },
+    },
+    ar: {
+      loading: 'لحظة…', whichCompany: 'من أي شركة أنت؟', notListed: 'شركتي غير موجودة',
+      companyName: 'ما اسم شركتك؟', continue: 'التالي',
+      photoTitle: 'صوّر بطاقتك الصحية', photoHint: 'الجهة التي فيها اسمك والرمز الضريبي.',
+      takePhoto: 'التقط الصورة', noCard: 'ليست معي', reading: 'جارٍ قراءة البطاقة…',
+      unreadable: 'الصورة غير واضحة. أعد المحاولة بإضاءة أكثر والبطاقة مستقيمة.',
+      isItYou: 'هل هذا أنت؟', yesEnter: 'نعم، أدخل', retryPhoto: 'لا، أعد التصوير',
+      informativaLine: 'بلمس "نعم" تؤكد أنك قرأت إشعار الخصوصية.', read: 'اقرأ',
+      askForeman: 'اطلب من رئيس فريقك أن يسجّلك', askForemanSub: 'لديه قائمة فيها اسمك: تكفيه لمسة واحدة.',
+      enter: 'دخول', exit: 'خروج', notYou: 'لست أنت؟',
+      enteredAt: function (h) { return 'دخلت الساعة ' + h; }, exitedAt: function (h) { return 'خرجت الساعة ' + h; },
+      canClose: 'يمكنك إغلاق هذه الصفحة.', bossWarned: 'تم إبلاغ مسؤول الورشة.',
+      alreadyEmployee: function (a) { return 'أنت بالفعل عامل في ' + a + ': استخدم بطاقتك الشخصية.'; },
+      notAssigned: 'شركتك غير مسجلة في هذه الورشة. اسأل مسؤول الورشة.',
+      error: 'حدث خطأ.', retry: 'أعد المحاولة', offline: 'لا يوجد إنترنت. أعد المحاولة بعد قليل.',
+      qrBad: 'رمز QR هذا لم يعد صالحاً. اسأل مسؤول الورشة.',
+      info: function (a) { return 'المسؤول عن البيانات: ' + a + '، الشركة التي تدير هذه الورشة. نسجّل اسمك ورمزك الضريبي وشركتك ووقت دخولك وخروجك من هذه الورشة، والموقع فقط لحظة لمس الزر إذا سمحت بذلك. الهدف هو سلامة الورشة: يجب أن تعرف الشركة من يوجد فيها (المرسوم التشريعي 81/2008، المادتان 26 و97). لا نحتفظ بصورة البطاقة. تبقى البيانات طوال مدة الورشة و5 سنوات بعدها ثم تُحذف. يمكنك أن تطلب من ' + a + ' الاطلاع عليها أو تصحيحها.'; },
+    },
+  };
+  function t(k) { var v = (T[LANG] || T.it)[k]; return v == null ? T.it[k] : v; }
+
+  var $ = function (id) { return document.getElementById(id); };
+  var ctx = null, scelta = null, letto = null, stato = null, tentativi = 0, screenNow = 's-loading', onRetry = null;
+
+  function render() {
+    document.documentElement.lang = LANG;
+    document.documentElement.dir = LANG === 'ar' ? 'rtl' : 'ltr';
+    document.querySelectorAll('[data-t]').forEach(function (el) { var v = t(el.getAttribute('data-t')); if (typeof v === 'string') el.textContent = v; });
+    $('langs').innerHTML = LANGS.map(function (c) { return '<button class="lang-btn' + (c === LANG ? ' active' : '') + '" data-l="' + c + '">' + LABEL[c] + '</button>'; }).join('');
+    if (ctx) $('info').textContent = t('info')(azienda());
+    if (screenNow === 's-tasto') renderTasto();
+  }
+  $('langs').addEventListener('click', function (e) { var c = e.target.getAttribute('data-l'); if (c) { LANG = c; lsSet(K_LANG, c); render(); } });
+
+  function show(id) {
+    screenNow = id;
+    document.querySelectorAll('.screen').forEach(function (s) { s.hidden = s.id !== id; });
+    window.scrollTo(0, 0);
+  }
+  function errore(testo, retry) { $('e-testo').textContent = testo; onRetry = retry || function () { location.reload(); }; show('s-errore'); }
+  $('btn-riprova').addEventListener('click', function () { onRetry && onRetry(); });
+  function azienda() { var o = (ctx && ctx.imprese || []).filter(function (i) { return i.nostra; })[0]; return o ? o.nome : ''; }
+
+  function api(method, path, body, token) {
+    var h = { 'Content-Type': 'application/json' };
+    if (token) h['X-Sub-Token'] = token;
+    return fetch(path, { method: method, headers: h, body: body ? JSON.stringify(body) : undefined })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (b) { return { status: r.status, body: b }; }); });
+  }
+  function msgErrore(r) {
+    var e = r && r.body && r.body.error;
+    if (e === 'GIA_DIPENDENTE') return t('alreadyEmployee')(azienda());
+    if (e === 'IMPRESA_NON_ASSEGNATA') return t('notAssigned');
+    if (e === 'QR_EXPIRED' || e === 'INVALID_QR_SIGNATURE' || e === 'MISSING_QR_SIGNATURE') return t('qrBad');
+    if (e === 'MODULO_NON_ATTIVO') return t('askForeman');
+    return t('error');
+  }
+  function reqId() { try { return crypto.randomUUID(); } catch (e) { return Date.now() + '-' + Math.random().toString(36).slice(2); } }
+  function ora(iso) { return new Date(iso || Date.now()).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); }
+
+  // Posizione: chiesta, mai obbligatoria. Se non arriva entro 4 secondi si entra lo stesso.
+  var gps = null;
+  function chiediGps() {
+    if (!navigator.geolocation) return;
+    try { navigator.geolocation.getCurrentPosition(function (p) { gps = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }; }, function () {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }); } catch (e) {}
+  }
+  function conGps() { return new Promise(function (res) { if (gps) return res(gps); var n = 0; var iv = setInterval(function () { if (gps || ++n > 8) { clearInterval(iv); res(gps); } }, 500); }); }
+
+  // ── Scelta dell'impresa ──
+  function mostraImprese() {
+    var subs = ctx.imprese.filter(function (i) { return !i.nostra; });
+    var own = ctx.imprese.filter(function (i) { return i.nostra; })[0];
+    var html = subs.concat(own ? [own] : []).map(function (i) {
+      var sigla = i.nome.replace(/[^A-Za-zÀ-ÿ ]/g, ' ').split(/\s+/).filter(function (w) { return w.length > 2 && !/^(srl|spa|snc|sas|s\.r\.l)$/i.test(w); }).slice(0, 2).map(function (w) { return w[0].toUpperCase(); }).join('') || i.nome.slice(0, 2).toUpperCase();
+      return '<button class="opt' + (i.nostra ? ' own' : '') + '" data-id="' + i.id + '"><span class="ic">' + sigla + '</span><span></span></button>';
+    }).join('');
+    $('imprese').innerHTML = html;
+    Array.prototype.forEach.call($('imprese').children, function (b, k) { b.lastChild.textContent = subs.concat(own ? [own] : [])[k].nome; });
+    show('s-impresa');
+  }
+  $('imprese').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-id]'); if (!b) return;
+    var id = b.getAttribute('data-id');
+    if (id === 'own') { location.href = (ctx.appBase || '') + '/scan/' + encodeURIComponent(SITE) + '?t=' + encodeURIComponent(QR.t) + '&exp=' + encodeURIComponent(QR.exp) + '&noi=1'; return; }
+    scelta = ctx.imprese.filter(function (i) { return i.id === id; })[0];
+    tentativi = 0; $('foto-msg').hidden = true; show('s-foto');
+  });
+  $('btn-altra').addEventListener('click', function () { show('s-altra'); setTimeout(function () { $('in-altra').focus(); }, 50); });
+  $('btn-altra-ok').addEventListener('click', function () {
+    var v = $('in-altra').value.trim(); if (v.length < 2) { $('in-altra').focus(); return; }
+    scelta = { id: 'altra', nome: v }; tentativi = 0; $('foto-msg').hidden = true; show('s-foto');
+  });
+
+  // ── Foto della tessera ──
+  $('btn-nocard').addEventListener('click', function () { show('s-chiedi'); });
+  function riduci(file) {
+    return new Promise(function (res, rej) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () {
+        var max = 1600, s = Math.min(1, max / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+        res(c.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error('img')); };
+      img.src = url;
+    });
+  }
+  $('in-foto').addEventListener('change', function () {
+    var f = this.files && this.files[0]; this.value = '';
+    if (!f) return;
+    show('s-leggo');
+    riduci(f).then(function (data) {
+      return api('POST', '/api/v1/sub-scan/read-card', { site: QR.site, t: QR.t, exp: QR.exp, image: data });
+    }).then(function (r) {
+      if (r.status === 200 && r.body.fiscalCode) {
+        letto = r.body;
+        $('c-nome').textContent = letto.fullName; $('c-impresa').textContent = scelta.nome;
+        $('info').hidden = true; show('s-conferma'); return;
+      }
+      if (r.status === 422 || r.status === 400) {
+        tentativi++;
+        if (tentativi >= 2) { show('s-chiedi'); return; }
+        $('foto-msg').hidden = false; show('s-foto'); return;
+      }
+      if (r.status === 429) { show('s-chiedi'); return; }
+      errore(msgErrore(r), function () { show('s-foto'); });
+    }).catch(function () { errore(t('offline'), function () { show('s-foto'); }); });
+  });
+  $('btn-rifai').addEventListener('click', function () { tentativi = 0; $('foto-msg').hidden = true; show('s-foto'); });
+  $('btn-info').addEventListener('click', function () { $('info').hidden = !$('info').hidden; });
+
+  // ── "Sì, entro" ──
+  $('btn-si').addEventListener('click', function () {
+    var btn = this; btn.disabled = true;
+    chiediGps();
+    var fine = function () { btn.disabled = false; };
+    if (scelta.id === 'altra') {
+      api('POST', '/api/v1/sub-scan/ignota', { site: QR.site, t: QR.t, exp: QR.exp, impresa_nome: scelta.nome, full_name: letto.fullName, fiscal_code: letto.fiscalCode })
+        .then(function (r) {
+          fine();
+          if (r.status === 200) { fatto(true, t('bossWarned')); return; }
+          errore(msgErrore(r), function () { show('s-conferma'); });
+        }).catch(function () { fine(); errore(t('offline'), function () { show('s-conferma'); }); });
+      return;
+    }
+    api('POST', '/api/v1/sub-scan/register', { site: QR.site, t: QR.t, exp: QR.exp, impresa: scelta.id, full_name: letto.fullName, fiscal_code: letto.fiscalCode })
+      .then(function (r) {
+        if (r.status !== 200) { fine(); errore(msgErrore(r), function () { show('s-conferma'); }); return null; }
+        lsSet(K_TOK, r.body.deviceToken);
+        return conGps().then(function (g) {
+          return api('POST', '/api/v1/sub-scan/punch', { site: QR.site, t: QR.t, exp: QR.exp, event: 'entrata', client_request_id: reqId(), gps: g }, r.body.deviceToken);
+        });
+      })
+      .then(function (p) {
+        if (!p) return; fine();
+        if (p.status === 200) { fatto(true, null, p.body.at); return; }
+        errore(msgErrore(p), function () { avviaTasto(); });
+      }).catch(function () { fine(); errore(t('offline'), function () { show('s-conferma'); }); });
+  });
+
+  // ── Tasto unico ──
+  function renderTasto() {
+    var b = $('btn-tasto');
+    b.textContent = stato.dentro ? t('exit') : t('enter');
+    b.className = 'big huge' + (stato.dentro ? ' red' : '');
+  }
+  function avviaTasto() {
+    var tok = lsGet(K_TOK);
+    if (!tok) { mostraImprese(); return; }
+    show('s-loading');
+    api('GET', '/api/v1/sub-scan/stato?' + QS, null, tok).then(function (r) {
+      if (r.status === 401 && r.body.error === 'DEVICE_TOKEN_INVALID') { lsSet(K_TOK, null); mostraImprese(); return; }
+      if (r.status !== 200) { errore(msgErrore(r)); return; }
+      stato = r.body;
+      $('t-nome').textContent = stato.nome; $('t-impresa').textContent = stato.impresa;
+      renderTasto(); show('s-tasto'); chiediGps();
+    }).catch(function () { errore(t('offline'), avviaTasto); });
+  }
+  $('btn-tasto').addEventListener('click', function () {
+    var btn = this; btn.disabled = true;
+    var ev = stato.dentro ? 'uscita' : 'entrata';
+    conGps().then(function (g) {
+      return api('POST', '/api/v1/sub-scan/punch', { site: QR.site, t: QR.t, exp: QR.exp, event: ev, client_request_id: reqId(), gps: g }, lsGet(K_TOK));
+    }).then(function (r) {
+      btn.disabled = false;
+      if (r.status === 200) { fatto(r.body.event === 'entrata', null, r.body.at); return; }
+      if (r.status === 401 && r.body.error === 'DEVICE_TOKEN_INVALID') { lsSet(K_TOK, null); mostraImprese(); return; }
+      errore(msgErrore(r), avviaTasto);
+    }).catch(function () { btn.disabled = false; errore(t('offline'), avviaTasto); });
+  });
+  $('btn-nonsei').addEventListener('click', function () { lsSet(K_TOK, null); mostraImprese(); });
+
+  function fatto(entrato, sub, at) {
+    $('f-tick').className = 'tick' + (entrato ? '' : ' out');
+    $('f-testo').textContent = entrato ? t('enteredAt')(ora(at)) : t('exitedAt')(ora(at));
+    $('f-sub').textContent = sub || t('canClose');
+    show('s-fatto');
+  }
+
+  // ── Avvio ──
+  render();
+  if (!QR.t || !QR.exp) { errore(t('qrBad')); return; }
+  api('GET', '/api/v1/sub-scan/context?' + QS).then(function (r) {
+    if (r.status !== 200) { errore(msgErrore(r)); return; }
+    ctx = r.body;
+    $('site-name').textContent = ctx.cantiere.nome;
+    render();
+    if (!ctx.attivo) { show('s-chiedi'); return; }
+    var imp = qp.get('impresa');
+    if (lsGet(K_TOK)) { avviaTasto(); return; }
+    if (imp === 'altra') { show('s-altra'); return; }
+    var pre = imp && ctx.imprese.filter(function (i) { return i.id === imp && !i.nostra; })[0];
+    if (pre) { scelta = pre; show('s-foto'); return; }
+    mostraImprese();
+  }).catch(function () { errore(t('offline')); });
+})();
+</script>
+</body>
+</html>

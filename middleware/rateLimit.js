@@ -327,4 +327,24 @@ const emailIngestSenderLimiter = rateLimit({
   ...makeStore('emailIngestSender'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, badgeUscitaLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter };
+// ── F-337: presenze delle imprese subappaltatrici (pagine pubbliche) ─────────
+// Per IP: un'intera squadra dietro lo stesso WiFi di cantiere entra insieme.
+const ipKey = (req) => { const raw = req.ip || ''; return raw.startsWith('::ffff:') ? raw.slice(7) : (raw || 'unknown'); };
+const subScanLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false }, keyGenerator: ipKey,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }, ...makeStore('subscan'),
+});
+// Lettura della tessera con l'IA: costa, quindi stretta (una squadra di 15 la prima mattina ci sta)
+const subCardLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false }, keyGenerator: ipKey,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }, ...makeStore('subcard'),
+});
+const squadraLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false }, keyGenerator: (req) => `${ipKey(req)}:${String(req.params?.token || '').slice(0, 12)}`,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }, ...makeStore('squadra'),
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, badgeUscitaLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter, subScanLimiter, subCardLimiter, squadraLimiter };
