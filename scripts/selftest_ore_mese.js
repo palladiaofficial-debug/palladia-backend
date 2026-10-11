@@ -6,7 +6,7 @@
  * azienda di prova creata e cancellata qui):
  *  - le ore sono IDENTICHE a buildWorkerHoursReport (stesso calcolo dei report);
  *  - pausa automatica (turno continuo) e pausa timbrata (motivo "pausa");
- *  - straordinario oltre 8 h; uscita per maltempo → ore maltempo;
+ *  - ore contate sull'orario 8–17 (F-335): prima delle 8 non conta, straordinario dalle 17:30; uscita per maltempo → ore maltempo;
  *  - ferie, permesso a ore, malattia; richieste in attesa (anche di altri mesi);
  *    rifiutate ignorate;
  *  - festività (Epifania) e weekend non sono "da giustificare"; un giorno
@@ -52,7 +52,7 @@ async function main() {
     const day = async (d, pairs) => { const out = []; for (const [a, b] of pairs) { await log(wA, 'ENTRY', `2026-01-${d}T${a}:00+01:00`); out.push(await log(wA, 'EXIT', `2026-01-${d}T${b}:00+01:00`)); } return out; };
 
     await day('07', [['08:00', '17:00']]);                     // 9 h - 60 pausa automatica = 8 h
-    await day('08', [['07:00', '18:00']]);                     // 11 h - 60 = 10 h → 2 h straordinario
+    await day('08', [['07:00', '18:00']]);                     // F-335: dalle 8, 8 h + 1 h straordinario (non 10 + 2)
     const [mal] = await day('09', [['08:00', '12:00']]);       // uscita per maltempo → 4 h maltempo
     await supabase.from('presence_log_reasons').insert({ company_id: company.id, presence_log_id: mal.id, reason: 'maltempo' });
     const [pausa] = await day('12', [['08:00', '12:00'], ['13:00', '17:00']]); // pausa timbrata → 8 h, nessuna detrazione
@@ -76,9 +76,10 @@ async function main() {
 
     const rep = await buildWorkerHoursReport(null, company.id, '2026-01-01', '2026-01-31', null, true);
     const repA = rep.workers.find(w => w.id === wA.id);
-    check('ore del mese identiche al report ore esistente', A.cells.reduce((s, x) => s + x.ore, 0) === repA.total_minutes, { mese: A.cells.reduce((s, x) => s + x.ore, 0), report: repA.total_minutes });
+    const meseA = A.cells.reduce((s, x) => s + x.ore + x.straord, 0);
+    check("F-335: rispetto ai minuti timbrati manca solo l'ora prima delle 8 dell'8/1", repA.total_minutes - meseA === 60, { mese: meseA, report: repA.total_minutes });
     check('7/1: turno continuo, pausa automatica 60 min → 8 h', c(A, '07').ore === 480 && c(A, '07').pausaMin === 60 && c(A, '07').straord === 0, c(A, '07'));
-    check('8/1: 10 h → 2 h di straordinario', c(A, '08').ore === 600 && c(A, '08').straord === 120, c(A, '08'));
+    check('8/1 7:00–18:00: 8 h + 1 h di straordinario, entrata prima segnata', c(A, '08').ore === 480 && c(A, '08').straord === 60 && c(A, '08').entratoPrima === 60, c(A, '08'));
     check('9/1: uscita per maltempo dopo 4 h → 4 h maltempo', c(A, '09').ore === 240 && c(A, '09').maltempoMin === 240, c(A, '09'));
     check('12/1: pausa timbrata → 8 h, nessuna detrazione, niente maltempo/permesso', c(A, '12').ore === 480 && c(A, '12').pausaMin === 0 && c(A, '12').maltempoMin === 0 && c(A, '12').permessoMin === 0, c(A, '12'));
     check('13–14/1: ferie', c(A, '13').tipo === 'ferie' && c(A, '14').tipo === 'ferie');
@@ -89,19 +90,33 @@ async function main() {
     check('27/1 ferie rifiutate: resta da giustificare', c(A, '27').tipo === 'giustificare');
     const oggi = await buildOreMese(company.id, '2026-01', { today: '2026-01-16' });
     const Ao = oggi.lavoratori.find(l => l.id === wA.id);
-    check('oggi non è ancora da giustificare (la giornata non è finita), ieri sì', Ao.cells.find(x => x.date === '2026-01-16').tipo === null && Ao.cells.find(x => x.date === '2026-01-15').tipo === 'lavoro' && Ao.cells.find(x => x.date === '2026-01-02').tipo === 'giustificare', Ao.cells.slice(0, 16).map(x => x.tipo));
-    check('totali Anna: 2 gg ferie, 4 h permesso, 4 h maltempo, 2 h straordinario',
-      A.tot.ferieGiorni === 2 && A.tot.permessoMin === 240 && A.tot.maltempoMin === 240 && A.tot.straordMin === 120, A.tot);
+    check('oggi non è ancora da giustificare (la giornata non è finita), ieri sì', Ao.cells.find(x => x.date === '2026-01-16').tipo === null && Ao.cells.find(x => x.date === '2026-01-15').tipo === 'lavoro' && Ao.cells.find(x => x.date === '2026-01-02').tipo === 'prima', Ao.cells.slice(0, 16).map(x => x.tipo));
+    check('totali Anna: 2 gg ferie, 4 h permesso, 4 h maltempo, 1 h straordinario',
+      A.tot.ferieGiorni === 2 && A.tot.permessoMin === 240 && A.tot.maltempoMin === 240 && A.tot.straordMin === 60, A.tot);
+    check('F-335: Anna timbra dal 7/1 → 2 e 5 gennaio "prima di Palladia" e una domanda per chiederlo', c(A, '02').tipo === 'prima' && c(A, '05').tipo === 'prima' && r.domande.some(d => d.tipo === 'prima' && d.workerId === wA.id), r.domande);
+    check("F-335: l'uscita per maltempo del 9/1 non è un'uscita anticipata", c(A, '09').uscitoPrima === 0, c(A, '09'));
     check('Bruno (solo malattia): 2 gg malattia, nessun giorno da giustificare', B && B.tot.malattiaGiorni === 2 && B.tot.daGiustificare === 0, B && B.tot);
     check('richiesta di marzo in attesa visibile anche guardando gennaio', r.richieste.length === 1 && r.richieste[0].date_from === '2026-03-02' && r.richieste[0].nome === wA.full_name, r.richieste);
     check('giorni lavorativi di gennaio 2026: 20 (Capodanno ed Epifania esclusi)', r.giorniLavorativi === 20, r.giorniLavorativi);
 
     const html = generateFoglioHtml(r, T);
-    check('foglio PDF: lavoratori, protocollo malattia, giorni da giustificare', html.includes(wA.full_name) && html.includes('PROT-F265') && html.includes('Giorni da giustificare'));
+    check('foglio PDF: lavoratori con codice fiscale, protocollo malattia, giorni senza timbrature da verificare', html.includes(wA.full_name) && html.includes(wA.fiscal_code) && html.includes('PROT-F265') && html.includes('giorni senza timbrature né assenza'));
+    check('F-335 foglio PDF: regole di conteggio in testa e legenda delle causali', html.includes('Orario 08:00–17:00, pausa 12:00–13:00') && html.includes('Legenda delle causali') && html.includes('Ore per cantiere'));
     const xbuf = await generateFoglioXlsx(r, T);
     const ExcelJS = require('exceljs');
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(xbuf);
-    check('foglio Excel: 3 fogli, ore permesso di Anna = 4', wb.worksheets.length === 3 && wb.getWorksheet('Riepilogo').getRow(4).getCell(5).value === 4, wb.worksheets.map(s => s.name));
+    const nomi = wb.worksheets.map(x => x.name);
+    check('F-335 foglio Excel: Riepilogo, Calendario, Movimenti, Ore per cantiere, Assenze, Da verificare', JSON.stringify(nomi) === JSON.stringify(['Riepilogo', 'Calendario', 'Movimenti', 'Ore per cantiere', 'Assenze', 'Da verificare']), nomi);
+    const riep = wb.getWorksheet('Riepilogo');
+    let rigaA = null; riep.eachRow((row) => { if (row.getCell(1).value === wA.full_name) rigaA = row; });
+    check('Excel Riepilogo: Anna con codice fiscale, 4 ore di permesso, 1 ora di straordinario', rigaA && rigaA.getCell(2).value === wA.fiscal_code && rigaA.getCell(8).value === 4 && rigaA.getCell(5).value === 1, rigaA && rigaA.values);
+    const { movimenti } = require('../lib/oreMeseFoglio');
+    const mov = movimenti(r);
+    const somma = (caus) => mov.filter(x => x.causale === caus).reduce((t, x) => t + x.min, 0);
+    check('Movimenti: le ore ordinarie e straordinarie sommano esattamente al riepilogo', somma('ORD') === r.lavoratori.reduce((t, l) => t + l.tot.ordinarieMin, 0) && somma('STR') + somma('STF') === r.lavoratori.reduce((t, l) => t + l.tot.straordMin, 0), { ord: somma('ORD'), str: somma('STR') });
+    check('Movimenti: ferie 2 × 8 h, malattia di Bruno 2 × 8 h, tutte con codice fiscale', somma('FER') === 960 && somma('MAL') === 960 && mov.every(x => x.cf), mov.filter(x => !x.cf));
+    const mws = wb.getWorksheet('Movimenti');
+    check('Excel Movimenti: una riga per movimento, intestazione con codice fiscale', mws.rowCount === mov.length + 1 && mws.getRow(1).getCell(1).value === 'Codice fiscale', mws.rowCount);
   } finally {
     await supabase.from('worker_absences').delete().eq('company_id', company.id);
     const { data: logs } = await supabase.from('presence_logs').select('id').eq('company_id', company.id);

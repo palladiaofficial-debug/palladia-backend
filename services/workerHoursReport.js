@@ -277,6 +277,12 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
             late_deduction_minutes: lr.lateDeductionMinutes || 0,
             late_minutes:           lr.lateMinutes || 0,
             site_name:             siteChanged ? `${entrySiteName} → ${exitSiteName}` : entrySiteName,
+            // F-335: per il conteggio sull'orario (lib/oreContrattuali.js) —
+            // cantiere e motivo in codice, non solo in parole
+            entry_site_id:         entry.site_id || null,
+            exit_site_id:          exit.site_id || null,
+            exit_reason:           reasonByLogId.get(exit.id)?.reason || null,
+            entry_reason:          reasonByLogId.get(entry.id)?.reason || null,
           });
           dayMin += mins;
           dayLunchBreakMinutes += lr.lunchBreakMinutes || 0;
