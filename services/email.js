@@ -2601,7 +2601,62 @@ async function sendPlainLayoutEmail({ to, subject, title, bodyHtml, replyTo, att
   });
 }
 
+// ─── Email: risposta all'inoltro di una fattura (F-338 Da pagare) ────────────
+// Chi ha inoltrato (titolare/amministratore/tecnico) sa subito cosa ha letto
+// Palladia, senza aprire l'app. Mai mandata a mittenti esterni (lib/daPagareEmail.js).
+function _euroIt(n) {
+  const [i, d] = Number(n || 0).toFixed(2).split('.');
+  return `${i.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${d} €`;
+}
+function _dataIt(d) {
+  if (!d) return null;
+  return new Date(`${d}T12:00:00Z`).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' });
+}
+const _escHtml = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+async function sendDaPagareReply({ to, righe = [], nessuna = false, giaPresente = false, azienda = '' }) {
+  let subject, body;
+  if (righe.length) {
+    subject = righe.length === 1
+      ? `Aggiunto a Da pagare: ${righe[0].fornitore} ${_euroIt(righe[0].importo)}`
+      : `Aggiunte a Da pagare: ${righe.length} fatture`;
+    const blocchi = righe.map(r => `
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFFEFD;border-radius:14px;border:1px solid #ECE7DF;margin-bottom:12px;">
+        <tr><td style="padding:16px 18px;">
+          <p style="margin:0 0 4px;font-size:14px;font-weight:700;color:#4A7358;">${_escHtml(r.fornitore)}</p>
+          <p style="margin:0 0 6px;font-size:26px;font-weight:800;color:#1A1714;letter-spacing:-0.5px;">${_euroIt(r.importo)}</p>
+          <p style="margin:0;font-size:14px;color:#1A1714;">${r.scadenza ? `entro <strong>${_escHtml(_dataIt(r.scadenza))}</strong>` : '<strong>scadenza non scritta</strong>: scegli tu entro quando'}${r.numero ? ` · fattura n. ${_escHtml(r.numero)}` : ''}</p>
+          <p style="margin:8px 0 0;font-size:12px;color:#7A736A;">${r.certa
+            ? 'Letto dal file XML della fattura elettronica: importo e scadenza sono quelli della fattura.'
+            : 'Letto dal PDF: controllalo in Da fare e tocca "È giusto".'}</p>
+        </td></tr>
+      </table>`).join('');
+    body = `
+      <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1A1714;">${righe.length === 1 ? 'Aggiunto a Da pagare' : `${righe.length} fatture aggiunte a Da pagare`}</p>
+      <p style="margin:0 0 18px;font-size:14px;color:#7A736A;">${_escHtml(azienda)}</p>
+      ${blocchi}
+      ${btn('Apri Da pagare', `${APP_URL}/scadenze?type=pagare`)}
+      <p style="margin:18px 0 0;font-size:12px;color:#9C948A;">Se qualcosa non torna, toccalo in Da fare e correggilo.</p>`;
+  } else if (giaPresente) {
+    subject = 'Questa fattura c\'è già in Palladia';
+    body = `
+      <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1A1714;">Questa fattura c'è già</p>
+      <p style="margin:0 0 18px;font-size:15px;color:#7A736A;line-height:1.6;">L'avevi già inoltrata o caricata: non l'ho aggiunta una seconda volta.</p>
+      ${btn('Apri Da pagare', `${APP_URL}/scadenze?type=pagare`)}`;
+  } else if (nessuna) {
+    subject = 'Non ho trovato una fattura in questa email';
+    body = `
+      <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1A1714;">Non ho trovato una fattura</p>
+      <p style="margin:0 0 18px;font-size:15px;color:#7A736A;line-height:1.6;">Nell'email che hai inoltrato non c'è un allegato che sembri una fattura (PDF o file XML). Inoltra l'email del fornitore con la fattura allegata, oppure fotografala da Da fare.</p>
+      ${btn('Apri Da pagare', `${APP_URL}/scadenze?type=pagare`)}`;
+  } else {
+    return null;
+  }
+  return getResend().emails.send({ from: FROM, to, subject, html: layout(subject, body) });
+}
+
 module.exports = {
+  sendDaPagareReply,
   sendWelcomeEmail,
   buildWelcomeEmail,
   sendEmailIngestTestProbe,

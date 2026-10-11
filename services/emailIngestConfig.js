@@ -291,6 +291,26 @@ async function getSenderRule(companyId, emailAddress) {
   return data?.action || null;
 }
 
+// F-339 (AUDIT.md del frontend): dal 14/09 (F-106) il canale chiede l'inoltro
+// MANUALE di una fattura alla volta, quindi chi inoltra è il mittente. Il
+// titolare, gli amministratori e i tecnici registrati nell'azienda sono
+// autorizzati da soli: prima finivano in quarantena (nessuno si metteva
+// nell'elenco). Chi ha solo la lettura e chiunque altro restano fuori.
+const RUOLI_CHE_INOLTRANO = ['owner', 'admin', 'tech'];
+async function isStaffSender(companyId, emailAddress) {
+  const normalized = String(emailAddress || '').trim().toLowerCase();
+  if (!normalized.includes('@')) return false;
+  const { data } = await supabase.from('company_users').select('user_id')
+    .eq('company_id', companyId).in('role', RUOLI_CHE_INOLTRANO);
+  for (const u of data || []) {
+    try {
+      const { data: got } = await supabase.auth.admin.getUserById(u.user_id);
+      if (String(got?.user?.email || '').trim().toLowerCase() === normalized) return true;
+    } catch { /* utente cancellato: si passa al prossimo */ }
+  }
+  return false;
+}
+
 // ── Registro (ogni messaggio, accettato o no) ────────────────────────────────────
 
 // Non deve mai far fallire il webhook che la richiama — un errore di log non deve
@@ -325,6 +345,7 @@ module.exports = {
   upsertAllowedSender,
   removeAllowedSender,
   getSenderRule,
+  isStaffSender,
   logIngestEvent,
   listIngestLog,
   startTest,

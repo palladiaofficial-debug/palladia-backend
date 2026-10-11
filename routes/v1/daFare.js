@@ -10,7 +10,7 @@ const logger = require('../../lib/logger');
 
 router.get('/da-fare', verifySupabaseJwt, async (req, res) => {
   try {
-    const result = await buildDaFare(req.companyId, req.user?.id || null);
+    const result = await buildDaFare(req.companyId, req.user?.id || null, { role: req.userRole || null });
     res.json(result);
   } catch (err) {
     logger.error({ err, companyId: req.companyId }, 'da-fare: errore di costruzione della lista');

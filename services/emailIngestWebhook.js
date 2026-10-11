@@ -42,7 +42,8 @@ const { extractInvoiceCandidates } = require('../lib/fatturaPaEnvelopeParser');
 const { extractExpenseFromDocument } = require('../lib/expenseOcr');
 const { toInvoiceShapeForAi, mapCandidateToExpenseRow, checkOcrOverlap } = require('../lib/fatturaCandidateMapper');
 const { ingestMappedExpense } = require('./sdiInvoices');
-const { resolveCompanyByToken, getSenderRule, logIngestEvent, consumeTestNonce, checkRetiredToken } = require('./emailIngestConfig');
+const { resolveCompanyByToken, getSenderRule, isStaffSender, logIngestEvent, consumeTestNonce, checkRetiredToken } = require('./emailIngestConfig');
+const { segnaComeDaPagare } = require('../lib/daPagareEmail');
 
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
@@ -375,11 +376,13 @@ async function handleInboundWebhook(body, files, headers) {
   }
 
   const senderRule = await getSenderRule(companyId, fromAddress);
+  // F-339: titolare, amministratori e tecnici dell'azienda inoltrano senza elenco
+  const staff = senderRule === 'block' ? false : await isStaffSender(companyId, fromAddress).catch(() => false);
   if (senderRule === 'block') {
     await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome: 'blocked_sender', reject_reason: 'mittente bloccato esplicitamente dall\'azienda' });
     return { httpStatus: 200, body: { ok: true, outcome: 'blocked_sender' } };
   }
-  if (senderRule !== 'allow') {
+  if (senderRule !== 'allow' && !staff) {
     // F-104: conserva gli allegati (se presenti e di estensione ammessa) PRIMA
     // di scartare — se l'upload fallisce non deve mai bloccare la risposta al
     // webhook, il messaggio resta comunque quarantenato normalmente.
@@ -400,6 +403,10 @@ async function handleInboundWebhook(body, files, headers) {
 
   const result = await extractAndImport(companyId, files, fromAddress, messageId);
   await logIngestEvent({ ...logBase, spf_result: spf, dkim_result: dkim, outcome: result.outcome, reject_reason: result.rejectReason, created_expense_ids: result.createdExpenseIds });
+  // F-338: con "Da pagare" acceso le fatture entrano nella lista, e a chi ha
+  // inoltrato (solo titolare/amministratori/tecnici) arriva la risposta.
+  await segnaComeDaPagare({ companyId, expenseIds: result.createdExpenseIds, outcome: result.outcome, rispondiA: staff ? fromAddress : null })
+    .catch((err) => console.error('[email-ingest] da pagare:', err.message));
   return { httpStatus: 200, body: { ok: true, outcome: result.outcome, imported: result.createdExpenseIds.length } };
 }
 
