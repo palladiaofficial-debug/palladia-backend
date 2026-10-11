@@ -85,4 +85,28 @@ router.post('/lavagna/righe/:id/collega', verifySupabaseJwt, async (req, res) =>
   } catch (err) { fallito(res, err, 'lavagna collega'); }
 });
 
+// ── "Già in corso" (F-334): gli avvisi della riga si mettono da parte con la
+// stessa prenotazione di Da fare; tornano da soli alla data scelta.
+router.post('/lavagna/in-corso', verifySupabaseJwt, async (req, res) => {
+  if (!(await guard(req, res, true))) return;
+  const { siteId, chiavi, giorni } = req.body || {};
+  if (!UUID.test(siteId || '')) return res.status(400).json({ error: 'INVALID_ID' });
+  try {
+    const r = await L.inCorso(req.companyId, req.user?.id, { siteId, chiavi, giorni });
+    audit(req, 'lavagna.in_corso', siteId, { chiavi, giorni, tornaIl: r.tornaIl });
+    res.json({ ok: true, tornaIl: r.tornaIl });
+  } catch (err) { fallito(res, err, 'lavagna in corso'); }
+});
+
+router.post('/lavagna/in-corso/annulla', verifySupabaseJwt, async (req, res) => {
+  if (!(await guard(req, res, true))) return;
+  const { siteId, chiavi } = req.body || {};
+  if (!UUID.test(siteId || '')) return res.status(400).json({ error: 'INVALID_ID' });
+  try {
+    await L.annullaInCorso(req.companyId, { siteId, chiavi });
+    audit(req, 'lavagna.in_corso_annulla', siteId, { chiavi });
+    res.json({ ok: true });
+  } catch (err) { fallito(res, err, 'lavagna annulla in corso'); }
+});
+
 module.exports = router;
