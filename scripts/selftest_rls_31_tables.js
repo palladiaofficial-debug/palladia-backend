@@ -33,8 +33,10 @@ function fail(name, got) { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (go
 function skip(name, why) { console.log(`  \x1b[33m–\x1b[0m ${name} (skip: ${why})`); skipped++; }
 function check_(name, cond, got) { cond ? ok(name) : fail(name, got); }
 
+// 'attendance' tolta l'11/10/2026: la tabella non esiste più (eliminata dalla
+// migrazione 229, F-229 Inventario) e il test la segnava come "senza RLS".
 const THIRTY_ONE = [
-  '_migrations', 'ai_spend_alerts', 'app_migrations', 'attendance', 'booking_certificates',
+  '_migrations', 'ai_spend_alerts', 'app_migrations', 'booking_certificates',
   'consultant_clients', 'consultant_payouts', 'consultant_profiles', 'coordinator_pro_sessions',
   'coordinator_profiles', 'coordinator_verifications', 'course_bookings', 'course_quote_requests',
   'course_reviews', 'course_sessions', 'course_types', 'document_extra_homes', 'document_sync_failures',
@@ -77,9 +79,21 @@ async function main() {
       check_(`${t} — RLS attiva`, !!row?.rls_enabled, row);
       check_(`${t} — almeno 1 policy reale (non più deny-all silenzioso)`, (row?.policy_count ?? 0) > 0, row);
     }
-    // Nessuna nuova tabella RLS-enabled-zero-policy sfuggita all'elenco
-    const stillGap = audit.filter(t => t.rls_enabled && t.policy_count === 0);
-    check_('Nessuna tabella RLS-enabled/zero-policy oltre le 31 note', stillGap.length === 0, stillGap.map(t => t.table_name));
+    // RLS accesa e nessuna policy = "solo il backend" (schema scelto da
+    // settembre 2026: lavagna_righe, psc_*, da_fare_*, sub_* di F-337…). Non è
+    // un buco: il rischio da escludere è che una di queste si legga dall'esterno.
+    // Prova dal vivo con la chiave pubblica, tabella per tabella (prima il
+    // controllo era "nessuna tabella così", rosso dall'arrivo di quelle tabelle).
+    const soloBackend = audit.filter(t => t.rls_enabled && t.policy_count === 0).map(t => t.table_name);
+    const pub = createClient(SUPABASE_URL, ANON_KEY);
+    const leggibili = [];
+    for (const t of soloBackend) {
+      const { data, error } = await pub.from(t).select('*').limit(1);
+      if (!error && data && data.length > 0) leggibili.push(t);
+    }
+    check_(`Tabelle "solo backend" (${soloBackend.length}): nessuna leggibile con la chiave pubblica`, leggibili.length === 0, leggibili);
+    const senzaRls = audit.filter(t => !t.rls_enabled).map(t => t.table_name);
+    check_('Nessuna tabella pubblica con RLS spenta', senzaRls.length === 0, senzaRls);
   }
 
   // ── 2. Probe dal vivo: company-scoped (site_equipment) ─────────────────
