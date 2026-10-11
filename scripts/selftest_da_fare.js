@@ -140,6 +140,21 @@ async function main() {
     check('card: ogni riga porta dove si sistema (link), il numero Da fare è quello della campanella',
       brief.alerts.every(a => typeof a.link === 'string' && a.link.startsWith('/')) && brief.kpi.da_fare === rp.attention, { kpi: brief.kpi });
 
+    // ── F-332: ogni riga della card si chiude da lì (Fatto / È giusta / Prenotata) ──
+    const briefU = await buildDailyBrief(cid, userId);
+    const help = briefU.alerts.find(a => /aiuto per timbrare/.test(a.title));
+    const fine = briefU.alerts.find(a => /Fine lavori — .*aperto/.test(a.title));
+    check('card F-332: ogni riga ha il suo id di Da fare', briefU.alerts.every(a => typeof a.id === 'string' && a.id.length > 0), briefU.alerts.map(a => a.id));
+    check('card F-332: avviso (aiuto per timbrare) → "Fatto" che lo segna letto',
+      help?.action?.kind === 'fatto' && /^\/api\/v1\/notifications\/[\w-]+\/read$/.test(help.action.path) && help.action.method === 'PATCH', help);
+    check('card F-332: scadenza (fine lavori) → "Prenotata" sulla stessa prenotazione di Da fare',
+      fine?.action?.kind === 'prenota' && fine.action.path === '/api/v1/da-fare/prenota' && fine.action.body?.itemId === `site:${sOpen.id}:fine`, fine);
+    const helpNotifId = help?.action?.path?.split('/')[4];
+    await supabase.from('notifications').update({ read_by: [userId] }).eq('id', helpNotifId);
+    const briefAfter = await buildDailyBrief(cid, userId);
+    check('card F-332: dopo "Fatto" l\'avviso non torna nella card di chi l\'ha chiuso',
+      !briefAfter.alerts.some(a => /aiuto per timbrare/.test(a.title)), briefAfter.alerts.map(a => a.title));
+
     // Subappaltatori: modulo congelato → anche un DURC subappaltatore scaduto non entra
     const { data: sub } = await supabase.from('subcontractors').insert({ company_id: cid, company_name: `${T} Sub`, durc_expiry: d(-2), is_active: true }).select().single();
     if (sub) {

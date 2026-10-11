@@ -6625,9 +6625,9 @@ conteggio) — mai l'elenco riga per riga.`;
 // ─────────────────────────────────────────────────────────────────────────────
 // F-242: la card "Buonasera" legge Da fare (lib/dailyBrief.js) invece di una
 // lista propria — stessa fonte della porta Da fare e della campanella.
-async function computeDailyBrief(companyId) {
+async function computeDailyBrief(companyId, userId = null) {
   try {
-    return await buildDailyBrief(companyId);
+    return await buildDailyBrief(companyId, userId);
   } catch (e) {
     console.error('[brief]', e.message);
     throw new Error('BRIEF_ERROR');
@@ -6636,7 +6636,7 @@ async function computeDailyBrief(companyId) {
 
 router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
   try {
-    res.json(await computeDailyBrief(req.companyId));
+    res.json(await computeDailyBrief(req.companyId, req.user?.id || null));
   } catch {
     res.status(500).json({ error: 'BRIEF_ERROR' });
   }
@@ -6649,7 +6649,7 @@ router.get('/chat/brief', verifySupabaseJwt, async (req, res) => {
 // documento ufficiale con intestazione/piè di pagina fissi.
 router.get('/chat/brief/export', verifySupabaseJwt, async (req, res) => {
   try {
-    const brief = await computeDailyBrief(req.companyId);
+    const brief = await computeDailyBrief(req.companyId, req.user?.id || null);
     const { data: company } = await supabase.from('companies').select('name').eq('id', req.companyId).maybeSingle();
 
     const SEVERITY_LABEL = { critical: 'Critico', warning: 'Attenzione', info: 'Info' };
