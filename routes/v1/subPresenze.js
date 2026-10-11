@@ -246,8 +246,8 @@ router.post('/sub-impresa-ignota/:id/chiudi', verifySupabaseJwt, async (req, res
 // il cartello appeso non scade dopo 7 giorni come il QR del capocantiere.
 const esc = (s) => String(s || '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const SCRITTE = [
-  ['Inquadra con il telefono per entrare e uscire', 'Scanează cu telefonul la intrare și la ieșire', 'Skano me telefon kur hyn dhe kur del', 'امسح الرمز بهاتفك عند الدخول والخروج'],
-  ['Registriamo solo quando entri ed esci da questo cantiere, per la sicurezza.', 'Înregistrăm doar când intri și ieși de pe acest șantier, pentru siguranță.', 'Regjistrojmë vetëm kur hyn dhe del nga ky kantier, për sigurinë.', 'نسجّل فقط وقت دخولك وخروجك من هذه الورشة، من أجل السلامة.'],
+  ['Inquadra il QR con il telefono quando entri e quando esci', 'Scanează codul cu telefonul când intri și când ieși', 'Skano kodin me telefon kur hyn dhe kur del', 'امسح الرمز بهاتفك عند الدخول وعند الخروج'],
+  ['Registriamo solo l\'ora in cui entri ed esci da questo cantiere, per la sicurezza.', 'Înregistrăm doar ora la care intri și ieși de pe acest șantier, pentru siguranță.', 'Regjistrojmë vetëm orën kur hyn dhe del nga ky kantier, për sigurinë.', 'نسجّل فقط وقت دخولك وخروجك من هذه الورشة، من أجل السلامة.'],
 ];
 
 router.get('/sites/:siteId/cartello-ingresso', verifySupabaseJwt, async (req, res) => {
