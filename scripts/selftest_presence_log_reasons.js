@@ -115,11 +115,12 @@ async function main() {
     const dayBefore      = hoursBefore.workers[0]?.days[0];
     const summaryRowBefore = summaryBefore.rows[0];
 
-    check('baseline: 7 ore totali (3h mattina + 4h pomeriggio, nessuna pausa doppia)',
-      dayBefore?.day_total_minutes === 420, dayBefore?.day_total_minutes);
+    // F-335: dalle 8: 2h mattina (8–10) + 4h pomeriggio = 6h, nessuna pausa doppia
+    check('baseline: 6 ore contate (2h mattina dalle 8 + 4h pomeriggio, nessuna pausa doppia)',
+      dayBefore?.day_total_minutes === 360, dayBefore?.day_total_minutes);
     check('baseline: due coppie distinte (mattina/pomeriggio)', dayBefore?.entries?.length === 2, dayBefore?.entries?.length);
-    check('baseline Registro Presenze: 7.00h, 2 intervalli, nessuna anomalia motivo',
-      summaryRowBefore?.hours_total === 7 && summaryRowBefore?.intervals_count === 2, summaryRowBefore);
+    check('baseline Registro Presenze: 6.00h (come il report ore), 2 intervalli, nessuna anomalia motivo',
+      summaryRowBefore?.hours_total === 6 && summaryRowBefore?.intervals_count === 2, summaryRowBefore);
 
     // ── 2. Ruolo: tech negato, owner riesce ───────────────────────────────
     const techRes = await fetch(`${BASE}/api/v1/presence/${rainExitLogId}/reason`, {

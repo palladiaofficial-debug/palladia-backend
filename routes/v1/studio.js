@@ -1,6 +1,6 @@
 'use strict';
 const { logStudioAction } = require('../../lib/studioAudit');
-const { pairLogsByDay, shiftDateStr } = require('../../lib/presencePairing');
+const { oreMensiliPerStudio } = require('../../lib/oreMese');
 const { sendDbError } = require('../../lib/httpErrors');
 /**
  * routes/v1/studio.js
@@ -3156,16 +3156,6 @@ router.get('/studio/scadenziario.ics', verifyStudioJwt, async (req, res) => {
 // FEATURE: Export ore/presenze per cedolini (payroll)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// Un consulente del lavoro deve poter distinguere una timbratura reale da una
-// generata dal sistema o corretta a mano — vedi services/workerHoursReport.js.
-const METHOD_NOTE = {
-  admin_manual_correction:       'Corretto manualmente',
-  worker_offline_punch:          'Timbrata senza internet',
-  auto_exit_on_site_change:      'Uscita auto (cambio cantiere)',
-  // F-146 (AUDIT.md): vedi services/workerHoursReport.js per il dettaglio.
-  ladia_action:                  'Uscita auto (turno lasciato aperto)',
-  auto_exit_stale_before_reopen: 'Uscita auto (turno anomalo, chiuso automaticamente)',
-};
 
 router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req, res) => {
   const { companyId } = req.params;
@@ -3177,83 +3167,21 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
     return res.status(400).json({ error: 'month obbligatorio (YYYY-MM)' });
   }
 
-  const from = `${month}-01`;
-  const lastDay = new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate();
-  const to = `${month}-${String(lastDay).padStart(2, '0')}`;
-
-  // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
-  // +02:00/+01:00 invece di Z): permette di accoppiare correttamente anche un
-  // turno a cavallo del bordo mese — il pairing avviene su tutto lo stream
-  // cronologico del lavoratore (lib/presencePairing.js), poi si scartano i
-  // giorni fuori dal mese richiesto.
-  const fetchFrom = shiftDateStr(from, -1);
-  const fetchTo   = shiftDateStr(to, 1);
-  const { data: logs, error: logsErr } = await supabase
-    .from('presence_logs')
-    .select('worker_id, event_type, timestamp_server, site_id, method, workers(full_name, fiscal_code)')
-    .eq('company_id', companyId)
-    .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
-    .lte('timestamp_server', `${fetchTo}T23:59:59.999+01:00`)
-    .order('worker_id').order('timestamp_server')
-    .limit(50000);
-
-  if (logsErr) return res.status(500).json({ error: logsErr.message });
-
-  // Raggruppa per worker (stream cronologico completo, cross-giorno)
-  const byWorker = new Map();
-  for (const log of (logs || [])) {
-    if (!log.workers) continue;
-    if (!byWorker.has(log.worker_id)) {
-      byWorker.set(log.worker_id, {
-        full_name: log.workers.full_name,
-        fiscal_code: log.workers.fiscal_code,
-        logs: [],
-      });
-    }
-    byWorker.get(log.worker_id).logs.push(log);
+  // F-335 (AUDIT.md del frontend): stesse ore del foglio per il commercialista
+  // (lib/oreMese.js) — contate sull'orario di lavoro, pausa tolta, straordinario
+  // solo oltre la fine + soglia. Prima qui si sommavano i minuti timbrati
+  // senza nemmeno togliere la pausa (7:30–17:00 valeva 9,5 ore).
+  let results;
+  try { results = await oreMensiliPerStudio(companyId, month); } catch (e) {
+    return res.status(e.status || 500).json({ error: e.message });
   }
-
-  const results = [];
-  for (const [workerId, worker] of byWorker) {
-    const dayMap = pairLogsByDay(worker.logs);   // ← accoppia PRIMA, sull'intero stream
-    let totalMinutes = 0;
-    let totalDays = 0;
-    const dayDetails = [];
-
-    for (const [dateKey, { pairs }] of dayMap) {
-      if (dateKey.slice(0, 7) !== month) continue;   // fuori dal mese richiesto
-
-      let dayMinutes = 0;
-      let dayNote = null;
-      for (const { entry, exit } of pairs) {
-        dayMinutes += (new Date(exit.timestamp_server) - new Date(entry.timestamp_server)) / 60000;
-        dayNote = dayNote || METHOD_NOTE[exit.method] || METHOD_NOTE[entry.method] || null;
-      }
-
-      if (dayMinutes > 0) {
-        totalDays++;
-        totalMinutes += dayMinutes;
-        dayDetails.push({ date: dateKey, hours: Math.round(dayMinutes / 60 * 100) / 100, note: dayNote });
-      }
-    }
-
-    results.push({
-      worker_id:   workerId,
-      full_name:   worker.full_name,
-      fiscal_code: worker.fiscal_code,
-      total_hours: Math.round(totalMinutes / 60 * 100) / 100,
-      total_days:  totalDays,
-      days:        dayDetails,
-    });
-  }
-
   results.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
 
   // CSV export
   if (req.query.format === 'csv') {
-    const header = 'Cognome e Nome,Codice Fiscale,Ore Totali,Giorni Lavorati';
+    const header = 'Cognome e Nome,Codice Fiscale,Ore Totali,Ore Ordinarie,Ore Straordinarie,Giorni Lavorati';
     const rows = results.map(r =>
-      `"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${r.total_hours}","${r.total_days}"`
+      `"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${r.total_hours}","${r.ore_ordinarie}","${r.ore_straordinarie}","${r.total_days}"`
     );
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="ore_${month}_${companyId.slice(0,8)}.csv"`);
@@ -3262,11 +3190,11 @@ router.get('/studio/clients/:companyId/ore-mensili', verifyStudioJwt, async (req
 
   // CSV dettagliato (giorno per giorno)
   if (req.query.format === 'csv-detail') {
-    const header = 'Cognome e Nome,Codice Fiscale,Data,Ore,Nota';
+    const header = 'Cognome e Nome,Codice Fiscale,Data,Ore,Ore Ordinarie,Ore Straordinarie,Nota';
     const rows = [];
     for (const r of results) {
       for (const d of r.days) {
-        rows.push(`"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${d.date}","${d.hours}","${d.note || ''}"`);
+        rows.push(`"${(r.full_name||'').replace(/"/g,'""')}","${r.fiscal_code || ''}","${d.date}","${d.hours}","${d.ordinarie}","${d.straordinario}","${d.note || ''}"`);
       }
     }
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');

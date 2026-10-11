@@ -170,7 +170,9 @@ async function main() {
       const { data: fr } = await supabase.from('presence_fix_requests').select('id').eq('worker_id', breve.id).single();
       const r = await applyFixRequest({ id: fr.id, companyId: company.id, userId: null, userRole: 'owner' });
       const rep = await buildWorkerHoursReport(null, company.id, today, today, null, true);
-      const mins = rep.workers.find(w => w.id === breve.id)?.total_minutes;
+      // F-335: qui si verifica la correzione della timbratura, non il conteggio
+      // sull'orario (che dipende dall'ora e dal giorno in cui gira il test)
+      const mins = rep.workers.find(w => w.id === breve.id)?.timbrato_minutes;
       check('uscita sbagliata: annotata, il giorno conta da entrata a tocco (~60 min, non 5)', created && r.ok && mins >= 59 && mins <= 61, { created, r, mins });
     }
 

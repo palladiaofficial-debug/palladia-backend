@@ -59,9 +59,8 @@ async function main() {
     }]).select('id').single();
 
     async function makeWorker(fullName, isActive) {
-      const uniq = `${Date.now()}${Math.floor(Math.random() * 9999)}`;
       const { data: w } = await admin.from('workers').insert([{
-        company_id: company.id, full_name: fullName, fiscal_code: `F184X${uniq}`.slice(0, 16).toUpperCase(),
+        company_id: company.id, full_name: fullName, fiscal_code: `F184X${crypto.randomBytes(6).toString('hex')}`.slice(0, 16).toUpperCase(), // casuale per intero: prima il taglio a 16 lasciava solo il timestamp e due lavoratori nello stesso istante collidevano
         is_active: isActive, badge_code: crypto.randomBytes(9).toString('hex').toUpperCase(),
       }]).select('id').single();
       return w.id;

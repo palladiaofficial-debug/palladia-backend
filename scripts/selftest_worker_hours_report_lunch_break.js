@@ -88,8 +88,10 @@ async function main() {
     const reportA = await buildWorkerHoursReport(siteA.id, company.id, '2026-06-15', '2026-06-15', worker1.id);
     const w1a = reportA.workers.find(w => w.id === worker1.id);
     check('worker1@siteA presente nel report', !!w1a, reportA);
-    check('worker1@siteA: 9h24m raw - 45min = 8h39m (eredita default azienda)',
-      w1a?.total_minutes === 519, w1a); // 564 - 45 = 519
+    // F-335: si conta dalle 8 alle 17 (7:37 e 17:01 non aggiungono niente), meno
+    // la pausa di 45 min dell'azienda = 8h15m
+    check('worker1@siteA: 8–17 meno 45 min di pausa (eredita default azienda) = 8h15m',
+      w1a?.total_minutes === 495, w1a);
 
     // ── Cantiere B, worker1: override 20min/4h ────────────────────────────────
     const reportB = await buildWorkerHoursReport(siteB.id, company.id, '2026-06-16', '2026-06-16', worker1.id);
@@ -102,9 +104,10 @@ async function main() {
     const reportW2 = await buildWorkerHoursReport(siteA.id, company.id, '2026-06-15', '2026-06-15', worker2.id);
     const w2 = reportW2.workers.find(w => w.id === worker2.id);
     check('worker2@siteA presente nel report', !!w2, reportW2);
-    // (12:00-07:00) + (16:00-12:45) = 300 + 195 = 495 min, nessuna detrazione
-    check('worker2 (2 coppie, pausa reale) → nessuna detrazione automatica, somma grezza invariata',
-      w2?.total_minutes === 495, w2);
+    // F-335: dalle 8: (12:00-08:00) + (16:00-12:45) = 240 + 195 = 435 min, pausa
+    // timbrata → nessuna detrazione in più; il tempo timbrato resta 495
+    check('worker2 (2 coppie, pausa reale) → nessuna detrazione automatica, 7h15m contate (timbrato 8h15m)',
+      w2?.total_minutes === 435 && w2?.timbrato_minutes === 495, w2);
     const w2Day = w2?.days?.[0];
     check('worker2: has_lunch_break_deduction = false (pausa già reale, non automatica)',
       w2Day?.has_lunch_break_deduction === false, w2Day);

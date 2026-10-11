@@ -69,7 +69,7 @@ async function main() {
     const ib = s.persone.find(p => p.workerId === ibrahim.id);
     check('Ibrahim lunedì: entrata e uscita all\'ora di Roma', ib?.giorni[lun]?.entrata === romeHm(at(lun, '05:45')) && ib.giorni[lun].uscita === romeHm(at(lun, '15:00')), ib?.giorni[lun]);
     check('Ibrahim mercoledì: uscito alle ' + romeHm(at(addDays(lun, 2), '11:28')), ib?.giorni[addDays(lun, 2)]?.uscita === romeHm(at(addDays(lun, 2), '11:28')), ib?.giorni[addDays(lun, 2)]);
-    check('minuti dal foglio ore (lunedì > 8 ore, con la pausa tolta < 9h15)', ib.giorni[lun].minuti > 480 && ib.giorni[lun].minuti < 555, ib.giorni[lun].minuti);
+    check('F-335: minuti dal foglio ore (lunedì 8 ore contate sull\'orario, pausa tolta)', ib.giorni[lun].minuti === 480, ib.giorni[lun].minuti);
     check('totale settimana = somma dei giorni', ib.totaleMin === Object.values(ib.giorni).reduce((t, g) => t + g.minuti, 0), ib.totaleMin);
     check('chi non ha lavorato quella settimana non compare', !s.persone.some(p => p.workerId === armand.id || p.workerId === mario.id));
 

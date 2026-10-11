@@ -82,7 +82,8 @@ async function main() {
       !(day?.entries || []).some(e => e.anomaly === 'Entrata non registrata'), day?.entries);
     // 07:52→17:00 = 9h08m grezzi (548min); pausa pranzo automatica (60min,
     // unica coppia > soglia 6h) dedotta → 488min netti.
-    check('ore totali corrette per l\'intera giornata (548min grezzi - 60min pausa pranzo = 488min netti)', day?.day_total_minutes === 488, day);
+    // F-335: si conta dalle 8 alle 17 meno la pausa = 480 (i minuti prima delle 8 non contano)
+    check('ore totali corrette per l\'intera giornata (8–17 meno la pausa = 480 min; timbrato 488)', day?.day_total_minutes === 480 && day?.day_timbrato_minutes === 488, day);
     check('il cantiere cambiato è visibile nella riga (San Nazaro → Riboli), non nascosto', day?.entries?.[0]?.site_name === 'TEST-Cantiere-F222-SanNazaro → TEST-Cantiere-F222-Riboli', day?.entries?.[0]);
     check('anomalia segnala il cambio di cantiere (composta con "Corretto manualmente", non sostituita)',
       /Cantiere cambiato/.test(day?.entries?.[0]?.anomaly || '') && /Corretto manualmente/.test(day?.entries?.[0]?.anomaly || ''), day?.entries?.[0]?.anomaly);

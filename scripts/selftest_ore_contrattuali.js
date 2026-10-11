@@ -44,6 +44,16 @@ check('azienda senza orario: predefinito, segnato come da confermare', def.inizi
 const conf = risolviOrario({ company: { orario_inizio: '08:00', orario_fine: '17:00', pausa_inizio: '12:00', pausa_fine: '13:00', orario_tolleranza_min: 0, straord_soglia_min: 15, straord_blocco_min: 15 } });
 check('azienda: tolleranza e straordinario personalizzati', conf.tolleranza === 0 && conf.straordSoglia === 15 && conf.straordBlocco === 15 && conf.fonte === 'azienda', conf);
 
+// F-152: la pausa configurata in minuti (azienda o cantiere) vale se l'orario non dice la pausa
+const p45 = risolviOrario({ company: { lunch_break_minutes: 45 }, site: { lunch_break_minutes: 20 } });
+check('pausa in minuti del cantiere (20) senza pausa nell\'orario → 12:00–12:20', p45.pausaDa === 720 && p45.pausaA === 740, p45);
+const pAz = risolviOrario({ company: { lunch_break_minutes: 45 }, site: { lunch_break_minutes: null } });
+check('pausa in minuti dell\'azienda (45) → 12:00–12:45, 8 h 15 da contratto', pAz.pausaA === 765 && O.oreGiornoContratto(pAz) === 495, pAz);
+const p0 = risolviOrario({ company: { lunch_break_minutes: 0 } });
+check('pausa 0 minuti → nessuna pausa tolta', p0.pausaA === p0.pausaDa && O.oreGiornoContratto(p0) === 540, p0);
+const pOr = risolviOrario({ company: { lunch_break_minutes: 45, orario_inizio: '08:00', orario_fine: '17:00', pausa_inizio: '12:30', pausa_fine: '13:30' } });
+check('la pausa scritta nell\'orario vince sui minuti di pausa', pOr.pausaDa === 750 && pOr.pausaA === 810, pOr);
+
 // ── Il caso del titolare ──
 let r = g([['07:38', '17:02']]);
 check('7:38–17:02: 8 h, niente straordinario, entrato prima segnato', r.ordinarie === 480 && r.straordinario === 0 && r.entratoPrima === 22 && r.ritardo === 0 && r.uscitoPrima === 0, r);
@@ -117,6 +127,12 @@ r = contaGiorno({ coppie: P(['07:27', '16:30']), orario: p, lavorativo: true });
 check('orario personale 7:30–16:30: 7:27–16:30 → 8 h, niente segnalato', r.ordinarie === 480 && r.uscitoPrima === 0 && r.ritardo === 0, r);
 r = contaGiorno({ coppie: P(['07:27', '15:35']), orario: p, lavorativo: true });
 check('orario personale: 15:35 è uscita anticipata di 55 min', r.uscitoPrima === 55 && r.ordinarie === 425, r);
+
+// ── Turno a cavallo della mezzanotte (getto notturno) ──
+const notte = O.coppieDelGiorno({ entries: [{ entry_time: '22:00', exit_time: '06:00' }] });
+check('coppia 22:00–06:00: l\'uscita è il giorno dopo (06:00 = 30:00), non viene scartata', notte.length === 1 && notte[0].in === 1320 && notte[0].out === 1800, notte);
+r = contaGiorno({ coppie: notte, orario: OR, lavorativo: true });
+check('notte 22:00–06:00 in un giorno feriale: fuori orario → 8 h di straordinario, 0 ordinarie', r.ordinarie === 0 && r.straordinario === 480, r);
 
 // ── Casi limite ──
 r = g([]);

@@ -63,7 +63,8 @@ async function main() {
     check('report generato senza errore', !!report, report);
     const row = report.rows?.find(r => r.worker_name === 'TEST-F152-RegistroWorker');
     check('riga del lavoratore presente', !!row, report.rows);
-    check('9h24m raw − 30m pausa pranzo = 8h54m (8.9h)', row?.hours_total === 8.9, row);
+    // F-335: si conta dalle 8 alle 17 (7:37 e 17:01 non aggiungono), meno la pausa di 30 min del cantiere
+    check('8–17 meno 30m di pausa del cantiere = 8.5h, con la nota "conta dalle 08:00"', row?.hours_total === 8.5 && row?.anomalies?.some(a => a.startsWith('Conteggio: conta dalle 08:00')), row);
   } finally {
     await admin.from('presence_logs').delete().eq('worker_id', worker.id);
     await admin.from('workers').delete().eq('id', worker.id);

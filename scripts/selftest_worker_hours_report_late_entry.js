@@ -101,16 +101,20 @@ async function main() {
     // 08:14->17:00 = 526min raw; turno singolo continuo >6h → -60 pausa pranzo
     // automatica (default, migration 195, sempre attiva indipendentemente dal
     // ritardo) = 466; poi -30 ritardo (9min oltre soglia 5min) = 436.
-    check('worker1@siteA: ingresso 08:14 (9min oltre soglia 5min) → detratti 30min ritardo sopra i 60min pausa pranzo (436min totali)',
-      w1a?.total_minutes === 436 && w1a?.late_deduction_minutes === 30 && w1a?.late_days === 1, w1a);
+    // F-335 (scelta del titolare 11/10): niente detrazione forfettaria, il
+    // ritardo si conta dall'ora vera: 08:14->17:00 meno la pausa = 466 min,
+    // ritardo 14 min segnato nel conteggio.
+    check('worker1@siteA: ingresso 08:14 → si conta dall\'ora vera (466 min), ritardo 14 min, nessuna detrazione forfettaria',
+      w1a?.total_minutes === 466 && w1a?.late_deduction_minutes === 0 && w1a?.days?.[0]?.conteggio?.conto?.ritardo === 14, w1a);
 
     // ── Cantiere B, worker1: override 08:30/10min/15min ───────────────────────
     const reportB = await buildWorkerHoursReport(siteB.id, company.id, '2026-06-16', '2026-06-16', worker1.id);
     const w1b = reportB.workers.find(w => w.id === worker1.id);
     check('worker1@siteB presente nel report', !!w1b, reportB);
     // 08:38->13:00 = 262min raw, sotto soglia 10min → nessuna detrazione
-    check('worker1@siteB: ingresso 08:38 (8min oltre l\'orario, sotto soglia 10min override) → nessuna detrazione (262min totali)',
-      w1b?.total_minutes === 262 && w1b?.late_deduction_minutes === 0, w1b);
+    // F-335: 08:38->13:00 meno la pausa 12-13 = 202 min, nessuna detrazione forfettaria
+    check('worker1@siteB: ingresso 08:38 → 202 min contati (pausa 12–13 tolta), nessuna detrazione forfettaria',
+      w1b?.total_minutes === 202 && w1b?.late_deduction_minutes === 0, w1b);
 
     // ── Cantiere senza shift_start_time configurato: regola mai attivata ──────
     const reportOff = await buildWorkerHoursReport(siteOff.id, companyOff.id, '2026-06-15', '2026-06-15', workerOff.id);
@@ -130,7 +134,7 @@ async function main() {
     check('buildWorkerHoursReport(includeOvertime=false) → include_overtime false nell\'output',
       reportNoOt.include_overtime === false, reportNoOt.include_overtime);
     check('include_overtime=false NON tocca il calcolo delle ore (stesso total_minutes)',
-      reportNoOt.workers.find(w => w.id === worker1.id)?.total_minutes === 436, reportNoOt);
+      reportNoOt.workers.find(w => w.id === worker1.id)?.total_minutes === 466, reportNoOt);
   } finally {
     await admin.from('presence_logs').delete().in('worker_id', [worker1.id, workerOff.id]);
     await admin.from('workers').delete().in('id', [worker1.id, workerOff.id]);

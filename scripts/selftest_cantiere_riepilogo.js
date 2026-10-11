@@ -81,7 +81,7 @@ async function main() {
     check('F-324: urgenti contati a parte', r.urgenti === r.daSistemare.filter(x => x.urgente).length && r.urgenti >= 1, r.urgenti);
     if (ieri.slice(0, 7) === today.slice(0, 7)) {
       const ore = typeof oreDelMese === 'function' ? await oreDelMese(cid, sardegna.id, today) : null;
-      check('F-324: ore del mese dal foglio ore (2 persone, più di 16 ore)', ore?.persone === 2 && ore.minuti > 16 * 60, ore);
+      check('F-324/F-335: ore del mese dal foglio ore (2 persone, 8 h ciascuna: gli ingressi prima delle 8 non contano)', ore?.persone === 2 && ore.minuti === 16 * 60, ore);
     }
     check('chi ha documenti scaduti ma lavora altrove non compare qui', !r.daSistemare.some(x => x.workerId === lontano.id));
     check('POS mancante → da sistemare', tipi.includes('pos'));

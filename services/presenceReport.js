@@ -15,8 +15,10 @@
 
 const crypto   = require('crypto');
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction, isTestOrInactiveWorker } = require('../lib/presencePairing');
+const { pairLogsByDay, flattenDayLogs, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, isTestOrInactiveWorker } = require('../lib/presencePairing');
 const { latestReasonsByLogId } = require('../lib/presenceLogReasons');
+// F-335: le ore del registro si contano sull'orario di lavoro, come nel foglio del mese
+const { contaGiorno, risolviOrario, coppieDelGiorno, lavorativoIl, fmt, durataTesto } = require('../lib/oreContrattuali');
 
 // Soglia GPS (stessa del backend punch)
 const GPS_MAX_ACCURACY_M = (() => {
@@ -52,8 +54,10 @@ function shortMethodLabel(method) {
 // Motivo uscita (migrations/217): informativo/esplicativo, mai un problema
 // — stesso trattamento della pausa pranzo automatica sopra. F-264: usata
 // anche da "Chiudi giornata", che prima le contava come anomalie.
+// F-335: le note del conteggio sull'orario ("Conteggio: conta dalle 08:00 ·
+// ritardo 12 min") sono informative: non bloccano "Chiudi giornata".
 function isInfoAnnotation(label) {
-  return String(label).startsWith('Pausa pranzo automatica') || String(label).startsWith('Uscita per ');
+  return String(label).startsWith('Pausa pranzo automatica') || String(label).startsWith('Uscita per ') || String(label).startsWith('Conteggio:');
 }
 function anomalyBadgeClass(label) {
   return isInfoAnnotation(label) ? 'badge-info' : 'badge-anom';
@@ -155,7 +159,7 @@ function formatAnomalies(list) {
  *   anomalies:       string[]       // anomalie formattate con conteggio
  * }}
  */
-function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLunchDeduction = false, reasonByLogId = new Map()) {
+function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLunchDeduction = false, reasonByLogId = new Map(), conteggio = null) {
   const { pairs, orphanEntries, orphanExits } = dayBucket;
   const dayLogs = flattenDayLogs(dayBucket);
 
@@ -186,14 +190,35 @@ function summarizeDay(dayBucket, geofenceRadius, lunchConfig, lateConfig, skipLu
   // sempre, anche se non cambia hoursTotal rispetto a un giorno già senza
   // deduzione, per trasparenza nel registro presenze.
   if (skipLunchDeduction) rawAnomalies.push('Pausa pranzo: dichiarata saltata (nessuna detrazione)');
-  const lateResults = applyLateEntryDeduction(lunchResults, lateConfig || {});
-  const lateDeductionMinutes = lateResults.reduce((s, r) => s + (r.lateDeductionMinutes || 0), 0);
-  if (lateDeductionMinutes > 0) {
-    const lateMin = Math.max(...lateResults.map(r => r.lateMinutes || 0));
-    rawAnomalies.push(`Ritardo ingresso: −${lateDeductionMinutes}m (oltre ${lateConfig.thresholdMinutes}min di tolleranza, +${lateMin}min)`);
+  // F-335: niente detrazione forfettaria del ritardo (sostituita dal conteggio
+  // sull'orario); con `conteggio` ({ orario, lavorativo }) le ore sono quelle
+  // contate come nel foglio del mese, e la nota dice perché.
+  const lateDeductionMinutes = 0;
+  let hoursTotal = Math.round(lunchResults.reduce((s, r) => s + r.minutes / 60, 0) * 100) / 100;
+  if (conteggio) {
+    const entries = pairs.map(p => ({
+      entry_time: formatTimeRome(p.entry.timestamp_server), exit_time: formatTimeRome(p.exit.timestamp_server),
+      entry_site_id: p.entry.site_id || null, exit_site_id: p.exit.site_id || null,
+      exit_reason: reasonByLogId.get(p.exit.id)?.reason || null, entry_reason: reasonByLogId.get(p.entry.id)?.reason || null,
+    }));
+    const k = contaGiorno({ coppie: coppieDelGiorno({ entries }), orario: conteggio.orario, lavorativo: conteggio.lavorativo, pausaSaltata: skipLunchDeduction });
+    hoursTotal = Math.round(((k.ordinarie + k.straordinario) / 60) * 100) / 100;
+    const o = conteggio.orario;
+    // La nota della pausa automatica segue la finestra dell'orario
+    const iPausa = rawAnomalies.findIndex(a => a.startsWith('Pausa pranzo automatica'));
+    if (iPausa >= 0) rawAnomalies.splice(iPausa, 1);
+    if (!k.pausaTimbrata && !skipLunchDeduction && o.pausaA > o.pausaDa && k.primaEntrata && k.primaEntrata < fmt(o.pausaDa) && k.ultimaUscita > fmt(o.pausaA)) {
+      rawAnomalies.push(`Pausa pranzo automatica: ${fmt(o.pausaDa)}–${fmt(o.pausaA)}`);
+    }
+    const note = [
+      k.entratoPrima ? `conta dalle ${fmt(o.inizio)}` : null,
+      k.ritardo ? `ritardo ${k.ritardo} min` : null,
+      k.mezzaGiornata && !k.motivo ? 'entrato dopo la pausa' : null,
+      k.uscitoPrima ? `uscito ${durataTesto(k.uscitoPrima)} prima` : null,
+      k.straordinario ? `straordinario ${durataTesto(k.straordinario)}` : null,
+    ].filter(Boolean);
+    if (note.length) rawAnomalies.push(`Conteggio: ${note.join(' · ')}`);
   }
-  const sumH = lateResults.reduce((s, r) => s + r.minutes / 60, 0);
-  const hoursTotal = Math.round(sumH * 100) / 100;
 
   // Prima entrata = min tra ENTRY delle coppie + ENTRY orfani del giorno
   // Ultima uscita = max tra EXIT delle coppie + EXIT orfani del giorno
@@ -251,7 +276,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   // 1. Cantiere (verifica ownership + dati display + config pausa pranzo)
   const { data: site, error: siteErr } = await supabase
     .from('sites')
-    .select('id, name, address, geofence_radius_m, company_id, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
+    .select('id, name, address, geofence_radius_m, company_id, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, orario_inizio, orario_fine, pausa_inizio, pausa_fine')
     .eq('id', siteId)
     .eq('company_id', companyId)
     .maybeSingle();
@@ -262,7 +287,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
   // 2. Azienda (nome + default pausa pranzo, ereditato dal cantiere senza override)
   const { data: company, error: compErr } = await supabase
     .from('companies')
-    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
+    .select('id, name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, orario_inizio, orario_fine, pausa_inizio, pausa_fine, orario_tolleranza_min, straord_soglia_min, straord_blocco_min')
     .eq('id', companyId)
     .maybeSingle();
 
@@ -296,7 +321,7 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
     .from('presence_logs')
     .select(`
       id, event_type, timestamp_server, distance_m, gps_accuracy_m, worker_id, method,
-      worker:workers (id, full_name, fiscal_code, is_active)
+      worker:workers (id, full_name, fiscal_code, is_active, orario_inizio, orario_fine, pausa_inizio, pausa_fine)
     `)
     .eq('site_id', siteId)
     .eq('company_id', companyId)
@@ -336,7 +361,8 @@ async function buildDailyPresenceSummary(siteId, companyId, from, to) {
       if (dateKey < from || dateKey > to) continue;   // fuori dal periodo richiesto
 
       const skipLunchDeduction = noLunchSet.has(`${wData.worker.id}__${dateKey}`);
-      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig, skipLunchDeduction, reasonByLogId);
+      const conteggio = { orario: risolviOrario({ company: company || {}, site, worker: wData.worker }), lavorativo: lavorativoIl(dateKey) };
+      const result = summarizeDay(dayBucket, site.geofence_radius_m, lunchConfig, lateConfig, skipLunchDeduction, reasonByLogId, conteggio);
       const dayLogCount = dayBucket.pairs.length * 2
         + dayBucket.orphanEntries.length + dayBucket.orphanExits.length;
       if (dayLogCount === 0) continue;

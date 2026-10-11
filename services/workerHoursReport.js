@@ -15,8 +15,10 @@
  */
 
 const supabase = require('../lib/supabase');
-const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, resolveLateEntryConfig, applyLateEntryDeduction, isTestOrInactiveWorker } = require('../lib/presencePairing');
+const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, isTestOrInactiveWorker } = require('../lib/presencePairing');
 const { latestReasonsByLogId } = require('../lib/presenceLogReasons');
+// F-335: le ore si contano sull'orario di lavoro, come nel foglio del mese
+const { contaGiorno, risolviOrario, oreGiornoContratto, coppieDelGiorno, lavorativoIl, fmt, durataTesto } = require('../lib/oreContrattuali');
 
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
@@ -85,7 +87,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   // filtro bloccato). Servono anche per risolvere la config pausa pranzo e
   // ritardo ingresso per cantiere (override) — vedi resolveLunchBreakConfig
   // e resolveLateEntryConfig.
-  const SITE_COLS = 'id, name, address, company_id, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes';
+  const SITE_COLS = 'id, name, address, company_id, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, orario_inizio, orario_fine, pausa_inizio, pausa_fine';
   let sitesRows;
   if (singleSite) {
     const { data: site, error: siteErr } = await supabase
@@ -105,7 +107,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   // cantieri senza override)
   const { data: company } = await supabase
     .from('companies')
-    .select('name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes')
+    .select('name, lunch_break_minutes, lunch_break_threshold_hours, shift_start_time, late_entry_threshold_minutes, late_entry_deduction_minutes, orario_inizio, orario_fine, pausa_inizio, pausa_fine, orario_tolleranza_min, straord_soglia_min, straord_blocco_min')
     .eq('id', companyId).maybeSingle();
 
   // Override "niente pausa oggi" (F-169, AUDIT.md, migrations/200) — giorni
@@ -131,7 +133,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     .from('presence_logs')
     .select(`
       id, worker_id, site_id, event_type, timestamp_server, distance_m, gps_accuracy_m, method,
-      worker:workers (id, full_name, first_name, last_name, fiscal_code, is_active)
+      worker:workers (id, full_name, first_name, last_name, fiscal_code, is_active, orario_inizio, orario_fine, pausa_inizio, pausa_fine)
     `)
     .eq('company_id', companyId)
     .gte('timestamp_server', `${fetchFrom}T00:00:00+02:00`)
@@ -215,7 +217,6 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       const site       = siteById.get(daySiteId);
       const siteName   = site?.name || '—';
       const lunchConfig = resolveLunchBreakConfig(company, site);
-      const lateConfig  = resolveLateEntryConfig(company, site);
 
       // Detrazione pausa pranzo (F-152, AUDIT.md) — solo se il giorno è
       // un'unica coppia continua sopra soglia; se ci sono 2+ coppie il
@@ -226,7 +227,9 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       // giorno, dopo la pausa pranzo (mai prima: la detrazione ritardo si
       // applica ai minuti già corretti, non a quelli grezzi). Nessun effetto
       // se lateConfig.shiftStart è null (regola disattivata per l'azienda).
-      const lateResults  = applyLateEntryDeduction(lunchResults, lateConfig);
+      // F-335: la detrazione forfettaria del ritardo (migr. 199) è sostituita dal
+      // conteggio sull'orario: il ritardo si conta dall'ora vera (conteggio.conto.ritardo).
+      const lateResults  = lunchResults.map(p => ({ ...p, lateDeductionMinutes: 0, lateMinutes: 0 }));
       const minutesByEntryId = new Map(lateResults.map(r => [r.entry.id, r]));
 
       // Ricompone l'ordine cronologico del giorno tra coppie e orfani
@@ -295,17 +298,29 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
         }
       }
 
+      // F-335: ore contate sull'orario di lavoro (lib/oreContrattuali.js) —
+      // chi entra prima non conta, straordinario solo dopo la fine + soglia.
+      // Il tempo timbrato (meno pausa) resta in day_timbrato_minutes.
+      const orario = risolviOrario({ company: company || {}, site, worker: info });
+      const conto = contaGiorno({ coppie: coppieDelGiorno({ entries }), orario, lavorativo: lavorativoIl(dk), pausaSaltata: skipLunchDeduction });
+      const contate = conto.ordinarie + conto.straordinario;
+      const conteggio = { conto, orario, contratto: oreGiornoContratto(orario), orarioTesto: `${fmt(orario.inizio)}–${fmt(orario.fine)}`, fonte: orario.fonte, pausaSaltata: skipLunchDeduction };
       workerAgg.days.push({
         date_key:               dk,
         date_formatted:         fmtDateRome(dk),
         weekday:                italianWeekday(dk),
         site_name:              siteName,
         entries,
-        day_total_minutes:      dayMin,
-        day_total_str:          fmtDuration(dayMin),
+        day_total_minutes:      contate,
+        day_total_str:          fmtDuration(contate),
+        day_timbrato_minutes:   dayMin,
+        ordinarie_minutes:      conto.ordinarie,
+        conteggio,
+        // perché il giorno vale quelle ore (stesso testo nel PDF e nella pagina Presenze)
+        note_conteggio:         noteConteggio({ conteggio }),
         has_anomaly:            entries.some(e => e.anomaly),
-        is_overtime:            dayMin > 480, // > 8h
-        overtime_minutes:       Math.max(0, dayMin - 480),
+        is_overtime:            conto.straordinario > 0,
+        overtime_minutes:       conto.straordinario,
         lunch_break_minutes:    dayLunchBreakMinutes,
         has_lunch_break_deduction: dayLunchBreakMinutes > 0,
         no_lunch_override:      skipLunchDeduction, // F-169: "niente pausa oggi" dichiarato dall'admin
@@ -320,6 +335,7 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   for (const [wId, { info, days }] of perWorker) {
     days.sort((a, b) => a.date_key.localeCompare(b.date_key));
     const totalMinutes    = days.reduce((s, d) => s + d.day_total_minutes, 0);
+    const timbratoMinutes = days.reduce((s, d) => s + (d.day_timbrato_minutes || 0), 0);
     const overtimeMinutes = days.reduce((s, d) => s + d.overtime_minutes, 0);
     const lunchBreakTotal = days.reduce((s, d) => s + d.lunch_break_minutes, 0);
     const lateDeductionTotal = days.reduce((s, d) => s + d.late_deduction_minutes, 0);
@@ -331,6 +347,8 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       total_minutes:         totalMinutes,
       total_hours:           toDecimalHours(totalMinutes),
       total_hours_str:       fmtDuration(totalMinutes),
+      ordinarie_minutes:     days.reduce((s, d) => s + (d.ordinarie_minutes || 0), 0),
+      timbrato_minutes:      timbratoMinutes,
       overtime_minutes:      overtimeMinutes,
       overtime_str:          overtimeMinutes > 0 ? fmtDuration(overtimeMinutes) : null,
       overtime_days:         days.filter(d => d.is_overtime).length,
@@ -362,6 +380,11 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     // lavoro o i tecnici") — il calcolo resta sempre corretto in `workers`,
     // solo il rendering in PDF/XLSX lo rispetta.
     include_overtime: includeOvertime,
+    // F-335: regole con cui sono contate le ore, scritte in testa ai documenti
+    regole: (() => {
+      const o = risolviOrario({ company: company || {} });
+      return { testo: `Si conta dalle ${fmt(o.inizio)} alle ${fmt(o.fine)}${o.pausaA > o.pausaDa ? `, pausa ${fmt(o.pausaDa)}–${fmt(o.pausaA)} non retribuita` : ''} · chi entra prima non conta · ritardo dall'ora vera (tolleranza ${o.tolleranza} min) · straordinario oltre le ${fmt(o.fine)} da ${o.straordSoglia} min, a blocchi di ${o.straordBlocco} min` };
+    })(),
     totals: {
       workers_count:         workers.length,
       grand_total_minutes:   workers.reduce((s, w) => s + w.total_minutes, 0),
@@ -377,6 +400,26 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
 }
 
 // ── HTML → PDF (Puppeteer) ────────────────────────────────────────────────────
+
+// F-335: perché un giorno vale quelle ore (stesse regole del foglio del mese)
+const MOTIVO_TESTO = { maltempo: 'uscito per pioggia', caldo: 'uscito per il caldo', permesso: 'uscito per permesso', malattia: 'uscito per malattia', infortunio: 'uscito per infortunio', ritardo_maltempo: 'entrato tardi per pioggia', ritardo_permesso: 'entrato tardi per permesso', visita_medica: 'entrato tardi per visita medica' };
+function noteConteggio(d) {
+  const c = d.conteggio;
+  if (!c) return [];
+  const k = c.conto, o = c.orario, out = [];
+  if (k.entratoPrima) out.push(`conta dalle ${fmt(o.inizio)}`);
+  if (k.ritardo) out.push(`ritardo ${k.ritardo} min`);
+  if (k.mezzaGiornata && !k.motivo) out.push('entrato dopo la pausa');
+  if (k.uscitoPrima) out.push(`uscito ${durataTesto(k.uscitoPrima)} prima`);
+  const mot = k.motivo || k.motivoEntrata;
+  if (mot && MOTIVO_TESTO[mot]) out.push(MOTIVO_TESTO[mot]);
+  if (c.pausaSaltata) out.push('pausa saltata');
+  else if (k.pausaTimbrata) out.push('pausa timbrata');
+  else if (o.pausaA > o.pausaDa && k.primaEntrata && k.ultimaUscita && k.primaEntrata < fmt(o.pausaDa) && k.ultimaUscita > fmt(o.pausaA)) out.push(`pausa ${fmt(o.pausaDa)}–${fmt(o.pausaA)}`);
+  if (k.festivo && k.straordinario) out.push('giorno festivo o di riposo');
+  if (c.fonte === 'lavoratore' || c.fonte === 'cantiere') out.push(`orario ${c.orarioTesto}`);
+  return out;
+}
 
 function generateWorkerHoursPdfHtml(data) {
   const { site, company, period, workers, totals, generated_at, single_site: singleSite } = data;
@@ -409,26 +452,14 @@ function generateWorkerHoursPdfHtml(data) {
         const otBadge = includeOvertime && d.is_overtime && idx === 0 && !e.anomaly
           ? `<span class="ot-badge">+${fmtDuration(d.overtime_minutes)} straord.</span>` : '';
         const siteTag = singleSite ? '' : ` <span class="small" style="color:#888;">— ${esc(d.site_name)}</span>`;
-        const lunchTag = e.lunch_break_minutes > 0
-          ? `<span class="lunch-badge">−${e.lunch_break_minutes}m pausa pranzo</span>`
-          : (e.no_lunch_override ? `<span class="lunch-badge">Pausa saltata (dichiarata)</span>` : '');
-        // Ritardo ingresso: sempre visibile, non gated da includeOvertime —
-        // è una detrazione reale sulle ore, non un'informazione facoltativa
-        // come lo straordinario (l'utente ha chiesto esplicitamente che
-        // resti "scritto nel resoconto").
-        const lateTag = e.late_deduction_minutes > 0
-          ? `<span class="late-badge">−${e.late_deduction_minutes}m ritardo (ingresso ${e.entry_time}, +${e.late_minutes}min)</span>` : '';
+        // F-335: le ore del giorno (contate sull'orario) una volta sola, con il perché
+        const note = idx === 0 ? noteConteggio(d).map(t => `<span class="lunch-badge">${esc(t)}</span>`).join('') : '';
+        const oreGiorno = idx === 0 ? `<strong>${d.day_total_str}</strong>` : '';
         dayRows += `<tr class="${cls}">
           <td>${idx === 0 ? `<strong>${d.weekday}</strong> ${d.date_formatted}${siteTag}${otBadge}` : ''}</td>
           <td class="center">${e.entry_time || '—'}</td>
           <td class="center">${e.exit_time  || '—'}</td>
-          <td class="right">${e.anomaly ? `<span class="anom-lbl">⚠ ${esc(e.anomaly)}</span>` : `${e.hours_str}${lunchTag}${lateTag}`}</td>
-        </tr>`;
-      }
-      if (d.entries.length > 1) {
-        dayRows += `<tr class="day-sub-total">
-          <td colspan="3" class="right small">Totale ${d.date_formatted}</td>
-          <td class="right bold">${d.day_total_str}</td>
+          <td class="right">${e.anomaly ? `<span class="anom-lbl">⚠ ${esc(e.anomaly)}</span>${idx === 0 ? ` ${oreGiorno}` : ''}` : `${oreGiorno}${note}`}</td>
         </tr>`;
       }
     }
@@ -444,7 +475,7 @@ function generateWorkerHoursPdfHtml(data) {
             <th style="width:30%">Data</th>
             <th class="center" style="width:18%">Entrata</th>
             <th class="center" style="width:18%">Uscita</th>
-            <th class="right"  style="width:34%">Ore lavorate</th>
+            <th class="right"  style="width:34%">Ore contate</th>
           </tr>
         </thead>
         <tbody>${dayRows}</tbody>
@@ -588,9 +619,8 @@ function generateWorkerHoursPdfHtml(data) {
     <div><div class="meta-k">Periodo</div><div class="meta-v">${esc(period.formatted)}</div></div>
     <div><div class="meta-k">Generato il</div><div class="meta-v">${genStr}</div></div>
     ${site.address ? `<div><div class="meta-k">Indirizzo</div><div class="meta-v">${esc(site.address)}</div></div>` : ''}
-    ${totals.grand_lunch_break_minutes > 0 ? `<div><div class="meta-k">Pausa pranzo</div><div class="meta-v">−${fmtDuration(totals.grand_lunch_break_minutes)} detratti automaticamente</div></div>` : ''}
-    ${totals.grand_late_deduction_minutes > 0 ? `<div><div class="meta-k">Ritardo ingresso</div><div class="meta-v">−${fmtDuration(totals.grand_late_deduction_minutes)} detratti per ritardo</div></div>` : ''}
   </div>
+  ${data.regole ? `<p class="small" style="margin:6px 0 12px;color:#4D4740;">${esc(data.regole.testo)}.</p>` : ''}
 
   <!-- Summary -->
   <div class="section-hdr">Riepilogo per lavoratore</div>
@@ -677,12 +707,9 @@ async function generateWorkerHoursXlsx(data) {
   const TEXT           = '1A1714';
   const MUTED          = '7A736A';
   const WHITE          = 'FFFFFF';
-  const WARNING        = 'A8672A';  // pausa pranzo (informativo)
-  const WARNING_BG     = 'FBF3E8';
   const DESTRUCTIVE    = 'A8453B';  // vere anomalie
   const DESTRUCTIVE_BG = 'FBF0EE';
   const GRAY           = 'F7F5F1';  // alternating row
-  const TOTAL_BG       = PRIMARY_TINT;
 
   function headerCell(ws, row, col, value, width) {
     const cell = ws.getCell(row, col);
@@ -734,12 +761,7 @@ async function generateWorkerHoursXlsx(data) {
   if (site.address) metaRow(ws1, 'Indirizzo', site.address);
   metaRow(ws1, 'Periodo', period.formatted);
   if (company.name) metaRow(ws1, 'Azienda', company.name);
-  if (totals.grand_lunch_break_minutes > 0) {
-    metaRow(ws1, 'Pausa pranzo', `−${fmtDuration(totals.grand_lunch_break_minutes)} detratti automaticamente (vedi colonna "Pausa pranzo" nel foglio Dettaglio)`);
-  }
-  if (totals.grand_late_deduction_minutes > 0) {
-    metaRow(ws1, 'Ritardo ingresso', `−${fmtDuration(totals.grand_late_deduction_minutes)} detratti per ritardo (vedi colonna "Ritardo" nel foglio Dettaglio)`);
-  }
+  if (data.regole) metaRow(ws1, 'Come sono contate', data.regole.testo);
   metaRow(ws1, 'Generato il', genStr);
   ws1.addRow([]);
 
@@ -812,7 +834,7 @@ async function generateWorkerHoursXlsx(data) {
   const det2Cols = [
     ['Lavoratore', 28], ['Codice Fiscale', 18], ['Cantiere', 22], ['Data', 12],
     ['Giorno', 8], ['Entrata', 10], ['Uscita', 10], ['Pausa pranzo', 14],
-    ['Ore (h)', 12], ['Ore (dec.)', 12], ['Note / Anomalie', 32], ['Ritardo', 14],
+    ['Ore contate', 12], ['Ore (dec.)', 12], ['Note / Anomalie', 40], ['Ritardo (min)', 14],
   ];
   det2Cols.forEach(([label, w], i) => headerCell(ws2, 1, i + 1, label, w));
   ws2.getRow(1).height = 22;
@@ -834,36 +856,26 @@ async function generateWorkerHoursXlsx(data) {
         dataCell(r.getCell(5), d.weekday, { bg, border: true, align: 'center' });
         dataCell(r.getCell(6), e.entry_time || '—', { bg, border: true, align: 'center' });
         dataCell(r.getCell(7), e.exit_time  || '—', { bg, border: true, align: 'center' });
-        dataCell(r.getCell(8), e.lunch_break_minutes > 0 ? `−${e.lunch_break_minutes}m` : (e.no_lunch_override ? 'Pausa saltata (dichiarata)' : '—'), {
-          bg: e.lunch_break_minutes > 0 ? WARNING_BG : bg, border: true, align: 'center',
-          color: e.lunch_break_minutes > 0 ? WARNING : MUTED,
-        });
-        dataCell(r.getCell(9), e.hours_str, { bg, border: true, align: 'right', bold: !e.anomaly });
-        dataCell(r.getCell(10), toDecimalHours(e.minutes), { bg, border: true, align: 'right', numFmt: '0.00' });
-        dataCell(r.getCell(11), e.anomaly || '', {
+        const k = d.conteggio?.conto;
+        const o = d.conteggio?.orario;
+        const pausaTxt = ei !== 0 ? '' : e.no_lunch_override ? 'Pausa saltata (dichiarata)' : k?.pausaTimbrata ? 'Timbrata' : (o && o.pausaA > o.pausaDa && k?.primaEntrata && k.primaEntrata < fmt(o.pausaDa) && k.ultimaUscita > fmt(o.pausaA)) ? `${fmt(o.pausaDa)}–${fmt(o.pausaA)}` : '—';
+        dataCell(r.getCell(8), pausaTxt, { bg, border: true, align: 'center', color: MUTED });
+        // F-335: le ore del giorno, contate sull'orario, sulla prima riga del giorno
+        dataCell(r.getCell(9), ei === 0 ? d.day_total_str : '', { bg, border: true, align: 'right', bold: true });
+        dataCell(r.getCell(10), ei === 0 ? toDecimalHours(d.day_total_minutes) : '', { bg, border: true, align: 'right', numFmt: '0.00' });
+        const noteTxt = [e.anomaly, ...(ei === 0 ? noteConteggio(d).filter(t => !t.startsWith('pausa')) : [])].filter(Boolean).join(' · ');
+        dataCell(r.getCell(11), noteTxt, {
           bg, border: true,
           color: e.anomaly ? DESTRUCTIVE : TEXT,
           bold: !!e.anomaly,
         });
-        dataCell(r.getCell(12), e.late_deduction_minutes > 0 ? `−${e.late_deduction_minutes}m` : '—', {
-          bg: e.late_deduction_minutes > 0 ? DESTRUCTIVE_BG : bg, border: true, align: 'center',
-          color: e.late_deduction_minutes > 0 ? DESTRUCTIVE : MUTED,
-          bold: e.late_deduction_minutes > 0,
+        dataCell(r.getCell(12), ei === 0 && k?.ritardo ? k.ritardo : '—', {
+          bg: ei === 0 && k?.ritardo ? DESTRUCTIVE_BG : bg, border: true, align: 'center',
+          color: ei === 0 && k?.ritardo ? DESTRUCTIVE : MUTED,
+          bold: !!(ei === 0 && k?.ritardo),
         });
       }
-      // Sub-total for multi-interval days
-      if (d.entries.length > 1) {
-        const r = ws2.addRow([]);
-        r.height = 16;
-        for (let c = 1; c <= 12; c++) {
-          r.getCell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: TOTAL_BG } };
-          r.getCell(c).font = { name: FONT, size: 9, italic: true, color: { argb: TEXT } };
-        }
-        dataCell(r.getCell(4), d.date_formatted, { bg: TOTAL_BG, align: 'center' });
-        dataCell(r.getCell(5), '→ tot.', { bg: TOTAL_BG, align: 'center' });
-        dataCell(r.getCell(9), d.day_total_str, { bg: TOTAL_BG, align: 'right', bold: true });
-        dataCell(r.getCell(10), toDecimalHours(d.day_total_minutes), { bg: TOTAL_BG, align: 'right', numFmt: '0.00' });
-      }
+      // F-335: le ore del giorno sono già sulla prima riga — niente subtotale
       altIdx++;
     }
     // Worker subtotal

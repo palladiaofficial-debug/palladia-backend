@@ -77,7 +77,7 @@ async function main() {
     const rep = await buildWorkerHoursReport(null, company.id, '2026-01-01', '2026-01-31', null, true);
     const repA = rep.workers.find(w => w.id === wA.id);
     const meseA = A.cells.reduce((s, x) => s + x.ore + x.straord, 0);
-    check("F-335: rispetto ai minuti timbrati manca solo l'ora prima delle 8 dell'8/1", repA.total_minutes - meseA === 60, { mese: meseA, report: repA.total_minutes });
+    check('F-335: report "Ore lavorate" e foglio del mese danno le stesse ore', repA.total_minutes === meseA, { mese: meseA, report: repA.total_minutes });
     check('7/1: turno continuo, pausa automatica 60 min → 8 h', c(A, '07').ore === 480 && c(A, '07').pausaMin === 60 && c(A, '07').straord === 0, c(A, '07'));
     check('8/1 7:00–18:00: 8 h + 1 h di straordinario, entrata prima segnata', c(A, '08').ore === 480 && c(A, '08').straord === 60 && c(A, '08').entratoPrima === 60, c(A, '08'));
     check('9/1: uscita per maltempo dopo 4 h → 4 h maltempo', c(A, '09').ore === 240 && c(A, '09').maltempoMin === 240, c(A, '09'));
