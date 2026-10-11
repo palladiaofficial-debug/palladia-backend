@@ -264,6 +264,9 @@ router.get('/sites/:siteId/cartello-ingresso', verifySupabaseJwt, async (req, re
     const exp = Math.max(anno, fine);
     const url = `${baseUrl()}/scan/${encodeURIComponent(site.id)}?t=${signQrToken(site.id, exp)}&exp=${exp}`;
     const qr = await QRCode.toDataURL(url, { width: 900, margin: 1, errorCorrectionLevel: 'M' });
+    // "Via Riboli 4b · Via Riboli 4b, Genova" → solo l'indirizzo quando contiene già il nome
+    const dove = site.address && String(site.address).toLowerCase().includes(String(site.name).toLowerCase())
+      ? site.address : [site.name, site.address].filter(Boolean).join(' · ');
     const righe = (i) => SCRITTE[i].map((t, k) => `<p class="${k === 3 ? 'ar' : ''}">${esc(t)}</p>`).join('');
     const html = `<!doctype html><html><head><meta charset="utf-8"><style>
       body { font-family: 'Inter', Arial, sans-serif; color: #1A1714; margin: 0; text-align: center; }
@@ -276,7 +279,7 @@ router.get('/sites/:siteId/cartello-ingresso', verifySupabaseJwt, async (req, re
       .foot { font-size: 9pt; color: #6E6459; margin-top: 8mm; }
     </style></head><body>
       <h1>Ingresso cantiere</h1>
-      <p class="cant">${esc(site.name)}${site.address ? ` · ${esc(site.address)}` : ''}</p>
+      <p class="cant">${esc(dove)}</p>
       <img class="qr" src="${qr}">
       <div class="big">${righe(0)}</div>
       <div class="small" style="margin-top:5mm">${righe(1)}</div>
