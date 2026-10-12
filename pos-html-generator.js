@@ -966,6 +966,9 @@ function buildSigBox(role, name, fullWidth = false) {
 }
 
 // ── MAIN BUILDER (async per caricamento immagini cartelli) ─────────────────────
+// F-342/F-343: tabelle costruite da ciò che il POS dice davvero (lib/posPdfContenuti.js)
+const PC = require('./lib/posPdfContenuti');
+
 async function generatePosHtml(posData, revision, aiRisks, signs = []) {
   const d    = posData || {};
   const rev  = revision || 1;
@@ -976,15 +979,6 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
   const workersCount = (d.workers && d.workers.length > 0)
     ? d.workers.length
     : (d.numWorkers || '[DA COMPILARE]');
-
-  const workerRows = (d.workers && d.workers.length > 0)
-    ? d.workers.map((w, i) => `<tr>
-        <td>${i + 1}</td><td>${v(w.name)}</td>
-        <td>${v(w.qualification)}</td><td>${v(w.matricola)}</td>
-      </tr>`).join('')
-    : `<tr><td>1</td><td><span class="placeholder">[DA COMPILARE]</span></td>
-       <td><span class="placeholder">[DA COMPILARE]</span></td>
-       <td><span class="placeholder">[DA COMPILARE]</span></td></tr>`;
 
   const workerDeclRows = (d.workers && d.workers.length > 0)
     ? d.workers.map((w, i) => `<tr>
@@ -1006,7 +1000,7 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
 
     <div class="cover-sidebar-item">
       <div class="cover-label">Oggetto</div>
-      <div class="cover-value">${esc(d.workType || '[DA COMPILARE]')}</div>
+      <div class="cover-value">${esc(d.descrizioneOpera || d.workType || '[DA COMPILARE]')}</div>
     </div>
     <div class="cover-sidebar-item">
       <div class="cover-label">Committente</div>
@@ -1046,6 +1040,7 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
       <div class="cover-rev-badge">Revisione ${rev}</div>
       <div class="cover-divider"></div>
       <div class="cover-info-box">
+        ${d.descrizioneOpera ? `<div class="cover-info-row"><span class="cover-info-label">Lavori</span><span class="cover-info-val">${esc(d.descrizioneOpera)}</span></div>` : ''}
         ${d.workType    ? `<div class="cover-info-row"><span class="cover-info-label">Natura dei lavori</span><span class="cover-info-val">${esc(d.workType)}</span></div>` : ''}
         ${d.client      ? `<div class="cover-info-row"><span class="cover-info-label">Committente</span><span class="cover-info-val">${esc(d.client)}</span></div>` : ''}
         ${siteName      ? `<div class="cover-info-row"><span class="cover-info-label">Cantiere</span><span class="cover-info-val">${esc(siteName)}</span></div>` : ''}
@@ -1060,7 +1055,7 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
       <div class="cover-sig-row">
         <div class="cover-sig-box">
           <div class="cover-sig-label">Datore di lavoro</div>
-          <div class="cover-sig-name">${esc(d.companyName||'—')}</div>
+          <div class="cover-sig-name">${esc(d.datoreLavoro || d.companyName || '—')}</div>
         </div>
         <div class="cover-sig-box">
           <div class="cover-sig-label">RSPP</div>
@@ -1107,7 +1102,11 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
   <tbody>
     <tr><td>Impresa esecutrice</td><td>${v(d.companyName)}</td></tr>
     <tr><td>Partita IVA</td><td>${v(d.companyVat)}</td></tr>
+    <tr><td>Sede legale</td><td>${v(d.companyAddress)}</td></tr>
+    <tr><td>Telefono</td><td>${v(d.companyPhone)}</td></tr>
+    <tr><td>Datore di lavoro</td><td>${v(d.datoreLavoro)}</td></tr>
     <tr><td>Cantiere</td><td>${v(d.siteAddress)}</td></tr>
+    ${d.descrizioneOpera ? `<tr><td>Oggetto dei lavori</td><td>${esc(d.descrizioneOpera)}</td></tr>` : ''}
     <tr><td>Committente</td><td>${v(d.client)}</td></tr>
     ${d.cfCommittente ? `<tr><td>Codice Fiscale Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
     <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
@@ -1125,6 +1124,7 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
   <thead><tr><th style="width:40%">Campo</th><th>Valore</th></tr></thead>
   <tbody>
     <tr><td>Indirizzo cantiere</td><td>${v(d.siteAddress)}</td></tr>
+    ${d.descrizioneOpera ? `<tr><td>Oggetto dei lavori</td><td>${esc(d.descrizioneOpera)}</td></tr>` : ''}
     <tr><td>Committente</td><td>${v(d.client)}</td></tr>
     ${d.cfCommittente ? `<tr><td>CF Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
     <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
@@ -1136,15 +1136,7 @@ ove previsto, e contiene le misure preventive e protettive specifiche dell'impre
   </tbody>
 </table>
 <div class="sub-title">2.2 Elenco lavoratori impiegati in cantiere</div>
-<table class="allow-break">
-  <thead><tr>
-    <th style="width:6%">N.</th>
-    <th style="width:30%">Nominativo</th>
-    <th style="width:34%">Qualifica</th>
-    <th style="width:30%">Matricola</th>
-  </tr></thead>
-  <tbody>${workerRows}</tbody>
-</table>
+${PC.tabellaLavoratori(d)}
 <div class="sub-title">2.3 Orario di lavoro</div>
 <ul>
   <li>Inizio turno: ${esc(d.inizioTurno || '08:00')}</li>
@@ -1171,7 +1163,7 @@ ${(d.fasi && d.fasi.length > 0)
     </tr>`).join('')}
   </tbody>
 </table>`
-  : '<p class="muted">Nessuna fase di lavoro inserita.</p>'
+  : PC.lavorazioniPreviste(d)
 }`;
 
   const s3 = `
@@ -1202,12 +1194,12 @@ ${(d.fasi && d.fasi.length > 0)
     <th style="width:22%">Email</th>
   </tr></thead>
   <tbody>
-    <tr><td>CSE</td><td>${v(d.cse)}</td><td>${v(d.cseTel)}</td><td>${v(d.cseEmail)}</td></tr>
-    <tr><td>RSPP</td><td>${v(d.rspp)}</td><td>${v(d.rsppTel)}</td><td>${v(d.rsppEmail)}</td></tr>
-    <tr><td>RLS</td><td>${v(d.rls)}</td><td>${v(d.rlsTel)}</td><td>—</td></tr>
-    <tr><td>Medico Competente</td><td>${v(d.medico)}</td><td>${v(d.medicoTel)}</td><td>—</td></tr>
-    <tr><td>Addetto Primo Soccorso</td><td>${v(d.primoSoccorso)}</td><td>${v(d.primoSoccorsoTel)}</td><td>—</td></tr>
-    <tr><td>Addetto Antincendio</td><td>${v(d.antincendio)}</td><td>${v(d.antincendioTel)}</td><td>—</td></tr>
+    <tr><td>CSE</td><td>${v(d.cse)}</td><td>${d.cseTel ? esc(d.cseTel) : '—'}</td><td>${d.cseEmail ? esc(d.cseEmail) : '—'}</td></tr>
+    <tr><td>RSPP</td><td>${v(d.rspp)}</td><td>${d.rsppTel ? esc(d.rsppTel) : '—'}</td><td>${d.rsppEmail ? esc(d.rsppEmail) : '—'}</td></tr>
+    <tr><td>RLS</td><td>${v(d.rls)}</td><td>${d.rlsTel ? esc(d.rlsTel) : '—'}</td><td>—</td></tr>
+    <tr><td>Medico Competente</td><td>${v(d.medico)}</td><td>${d.medicoTel ? esc(d.medicoTel) : '—'}</td><td>—</td></tr>
+    <tr><td>Addetto Primo Soccorso</td><td>${v(d.primoSoccorso)}</td><td>${d.primoSoccorsoTel ? esc(d.primoSoccorsoTel) : '—'}</td><td>—</td></tr>
+    <tr><td>Addetto Antincendio</td><td>${v(d.antincendio)}</td><td>${d.antincendioTel ? esc(d.antincendioTel) : '—'}</td><td>—</td></tr>
   </tbody>
 </table>
 <div class="sub-title">3.3 Compiti e responsabilità</div>
@@ -1238,37 +1230,36 @@ ${(d.subappaltatori && d.subappaltatori.length > 0)
   : '<p class="muted">Nessuna impresa subappaltatrice.</p>'
 }`;
 
+  let n4 = 9; // sottosezioni facoltative: numerate di seguito, senza buchi (F-342)
   const s4 = `
 <div class="section-title">Sezione 4 — Area di Cantiere e Organizzazione</div>
-<div class="sub-title">4.1 Caratteristiche dell'area e recinzione</div>
-<p>L'area di cantiere sarà delimitata con recinzione perimetrale continua di altezza minima 2 metri,
-realizzata con pannelli metallici modulari su basi in calcestruzzo. Accessi controllati con cancello chiudibile a chiave.</p>
-<div class="sub-title">4.2 Viabilità di cantiere</div>
+<div class="sub-title">4.1 Delimitazione dell'area e accessi</div>
+<p>L'area di lavoro è delimitata con recinzione o transennatura stabile e segnalata, adeguata al contesto
+(area condominiale, cortile, suolo pubblico), secondo quanto previsto dal PSC e dalle eventuali autorizzazioni
+di occupazione del suolo. Gli accessi restano chiusi fuori dall'orario di lavoro; ai non addetti è vietato l'ingresso.</p>
+<div class="sub-title">4.2 Viabilità e movimentazione dei materiali</div>
 <ul>
-  <li>Accesso carraio: cancello principale larghezza minima 4 m</li>
-  <li>Accesso pedonale: separato, con percorso protetto</li>
-  <li>Velocità massima in cantiere: 10 km/h</li>
-  <li>Senso unico di marcia dove la larghezza non consente doppio senso</li>
+  <li>Mezzi in area di cantiere a passo d'uomo, con manovre assistite da un operatore a terra</li>
+  <li>Percorsi pedonali separati da quelli dei mezzi dove possibile, e comunque segnalati</li>
+  <li>Carichi sollevati solo con apparecchi idonei, mai sopra persone o aree di passaggio non interdette</li>
 </ul>
-<div class="sub-title">4.3 Impianto elettrico di cantiere</div>
-<ul>
-  <li>Quadro generale con interruttore differenziale Id = 30 mA</li>
-  <li>Sottoquadri di zona con protezioni magnetotermiche e differenziali</li>
-  <li>Impianto di messa a terra con verifica biennale (DPR 462/01)</li>
-  <li>Cavi e prolunghe di tipo H07RN-F (resistenti all'acqua e all'abrasione)</li>
-</ul>
+<div class="sub-title">4.3 Impianto elettrico</div>
+${(d.impiantiCantiere || []).some(i => /elettric/i.test(i))
+  ? `<ul>
+  <li>Quadro elettrico di cantiere (ASC) con interruttore differenziale Id ≤ 30 mA, installato da impresa abilitata con dichiarazione di conformità (D.M. 37/2008)</li>
+  <li>Cavi e prolunghe per posa mobile di tipo H07RN-F o equivalenti, protetti dal passaggio dei mezzi</li>
+  <li>Impianto di terra denunciato e verificato ogni 2 anni (DPR 462/2001)</li>
+</ul>`
+  : `<p>L'impresa non installa impianti elettrici di cantiere: utilizza quelli predisposti dall'impresa affidataria o dal committente,
+controllando prima dell'uso l'integrità di quadri, prese e cavi; attrezzature con marcatura CE e cavi per posa mobile.</p>`}
 <div class="sub-title">4.4 Servizi igienico-assistenziali</div>
-<ul>
-  <li>Spogliatoi con armadietti a doppio scomparto</li>
-  <li>Servizi igienici: min. 1 ogni 10 lavoratori</li>
-  <li>Locale refettorio con scaldavivande e frigorifero</li>
-  <li>Cassetta di primo soccorso conforme al D.M. 388/2003 (Gruppo B)</li>
-</ul>
+<p>Servizi igienici, spogliatoio e locale per i pasti secondo l'Allegato XIII del D.lgs 81/2008, propri o messi a disposizione
+dall'impresa affidataria o dal committente; acqua potabile disponibile; cassetta di primo soccorso secondo il D.M. 388/2003.</p>
 <div class="sub-title">4.5 Depositi e stoccaggi</div>
 <ul>
-  <li>Deposito materiali: superficie piana e stabile, accatastamento sicuro</li>
-  <li>Deposito sostanze pericolose: area dedicata, coperta, con bacino di contenimento</li>
-  <li>Deposito rifiuti: area recintata con contenitori differenziati e cartellonistica</li>
+  <li>Materiali depositati su superfici piane e stabili, lontano dai bordi e dai percorsi</li>
+  <li>Sostanze pericolose in contenitori chiusi ed etichettati, in area dedicata, con le schede di sicurezza</li>
+  <li>Rifiuti separati per tipo in contenitori identificati (Sezione 11)</li>
 </ul>
 <div class="sub-title">4.6 Rischi specifici del cantiere</div>
 ${(d.rischiSpecifici && d.rischiSpecifici.length > 0)
@@ -1286,9 +1277,9 @@ ${(d.impiantiCantiere && d.impiantiCantiere.length > 0)
   ? `<ul>${d.impiantiCantiere.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
   : '<p class="muted">Nessun impianto di cantiere indicato.</p>'
 }
-${d.noteAggiuntive ? `<div class="sub-title">4.9 Note e condizioni particolari</div><p>${esc(d.noteAggiuntive)}</p>` : ''}
-${d.rumore ? `<div class="sub-title">4.10 Esito della valutazione del rumore (art. 190 D.lgs 81/2008)</div><p>${esc(d.rumore)}</p>` : ''}
-${(Array.isArray(d.pscRichieste) && d.pscRichieste.length > 0) ? `<div class="sub-title">4.11 Misure integrative e procedure richieste dal PSC</div>
+${d.noteAggiuntive ? `<div class="sub-title">4.${n4++} Note e condizioni particolari</div><p>${esc(d.noteAggiuntive)}</p>` : ''}
+${d.rumore ? `<div class="sub-title">4.${n4++} Esito della valutazione del rumore (art. 190 D.lgs 81/2008)</div><p>${esc(d.rumore)}</p>` : ''}
+${(Array.isArray(d.pscRichieste) && d.pscRichieste.length > 0) ? `<div class="sub-title">4.${n4++} Misure integrative e procedure richieste dal PSC</div>
 ${d.pscRef ? `<p class="muted">Riferimento: ${esc(d.pscRef)}</p>` : ''}
 <ul>${d.pscRichieste.map(r => `<li><strong>${esc(r.titolo || '')}</strong>${r.dettaglio ? ` — ${esc(r.dettaglio)}` : ''}${r.pagina ? ` <span class="muted">(PSC p. ${esc(String(r.pagina))})</span>` : ''}</li>`).join('')}</ul>` : ''}`;
 
@@ -1394,39 +1385,10 @@ ${(Array.isArray(d.macchine) && d.macchine.length > 0) ? `<div class="sub-title"
 <div class="sub-title">9.1 Disposizioni generali</div>
 <p>Tutte le macchine e attrezzature devono essere conformi alla Direttiva Macchine 2006/42/CE, dotate di
 marcatura CE e dichiarazione di conformità. Devono essere usate secondo le istruzioni del fabbricante.</p>
-<div class="sub-title">9.2 Verifiche obbligatorie — All. VII D.lgs 81/2008</div>
-<table class="allow-break">
-  <thead><tr>
-    <th style="width:28%">Attrezzatura</th>
-    <th style="width:28%">Tipo di verifica</th>
-    <th style="width:18%">Frequenza</th>
-    <th>Riferimento normativo</th>
-  </tr></thead>
-  <tbody>
-    <tr><td>Gru a torre</td><td>Prima verifica + periodica</td><td>Biennale</td><td>All. VII D.lgs 81/08</td></tr>
-    <tr><td>Gru su autocarro</td><td>Prima verifica + periodica</td><td>Annuale</td><td>All. VII D.lgs 81/08</td></tr>
-    <tr><td>Piattaforme elevabili (PLE)</td><td>Prima verifica + periodica</td><td>Annuale</td><td>All. VII D.lgs 81/08</td></tr>
-    <tr><td>Ponteggi metallici</td><td>Verifica prima del montaggio</td><td>Ad ogni montaggio</td><td>Art. 137 D.lgs 81/08</td></tr>
-    <tr><td>Scale portatili</td><td>Controllo visivo</td><td>Giornaliero</td><td>UNI EN 131</td></tr>
-    <tr><td>Impianto elettrico</td><td>Verifica impianto di terra</td><td>Biennale</td><td>DPR 462/01</td></tr>
-    <tr><td>Funi e catene</td><td>Controllo periodico</td><td>Trimestrale</td><td>Art. 71 D.lgs 81/08</td></tr>
-  </tbody>
-</table>
-<div class="sub-title">9.3 Abilitazioni operatori — Acc. Stato-Regioni 22/02/2012</div>
-<table class="allow-break">
-  <thead><tr>
-    <th style="width:35%">Attrezzatura</th>
-    <th style="width:35%">Abilitazione richiesta</th>
-    <th>Riferimento</th>
-  </tr></thead>
-  <tbody>
-    <tr><td>Gru a torre e su autocarro</td><td>Patentino gruista</td><td>Acc. Stato-Regioni 22/02/2012</td></tr>
-    <tr><td>Piattaforme elevabili (PLE)</td><td>Patentino PLE</td><td>Acc. Stato-Regioni 22/02/2012</td></tr>
-    <tr><td>Escavatori (&gt;6 t)</td><td>Patentino escavatorista</td><td>Acc. Stato-Regioni 22/02/2012</td></tr>
-    <tr><td>Carrello elevatore</td><td>Patentino carrellista</td><td>Acc. Stato-Regioni 22/02/2012</td></tr>
-    <tr><td>Autobetoniera</td><td>Patente C + CQC</td><td>Codice della Strada</td></tr>
-  </tbody>
-</table>`;
+<div class="sub-title">9.2 Verifiche delle attrezzature</div>
+${PC.tabellaVerifiche(d)}
+<div class="sub-title">9.3 Abilitazioni degli operatori</div>
+${PC.tabellaAbilitazioni(d)}`;
 
   const s10 = `
 <div class="section-title">Sezione 10 — Sostanze e Preparati Pericolosi</div>
@@ -1434,74 +1396,29 @@ ${(Array.isArray(d.sostanze) && d.sostanze.length > 0) ? `<div class="sub-title"
 <div class="sub-title">10.1 Obblighi — Regolamento REACH e Reg. CLP</div>
 <p>Per ogni sostanza pericolosa: SDS (Scheda Dati di Sicurezza) aggiornata in 16 sezioni, conservata accessibile
 a tutti i lavoratori, stoccaggio in area dedicata con bacino di contenimento.</p>
-<div class="sub-title">10.2 Sostanze comuni in cantiere</div>
-<table class="allow-break">
-  <thead><tr>
-    <th style="width:22%">Sostanza</th>
-    <th style="width:22%">Classificazione CLP</th>
-    <th style="width:30%">Rischi principali</th>
-    <th>DPI richiesti</th>
-  </tr></thead>
-  <tbody>
-    <tr><td>Cemento / calcestruzzo</td><td>H315, H317, H318</td><td>Irritazione cutanea, sensibilizzazione, lesioni oculari</td><td>Guanti, occhiali, mascherina</td></tr>
-    <tr><td>Vernici e solventi</td><td>H225, H304, H336</td><td>Infiammabile, tossicità per inalazione</td><td>Maschera filtri A, guanti chimici</td></tr>
-    <tr><td>Resine epossidiche</td><td>H315, H317, H319</td><td>Sensibilizzazione cutanea e oculare</td><td>Guanti nitrile, occhiali</td></tr>
-    <tr><td>Gasolio per macchine</td><td>H226, H304, H332</td><td>Infiammabile, nocivo per inalazione</td><td>Guanti, maschera se vapori</td></tr>
-    <tr><td>Amianto (se presente)</td><td>H350 — Cancerogeno</td><td>Cancerogeno — gestione speciale</td><td>Piano specifico art. 256 D.lgs 81/08</td></tr>
-  </tbody>
-</table>`;
+<div class="sub-title">10.2 ${PC.nuovoPercorso(d) ? 'Rischi e cautele delle sostanze impiegate' : 'Sostanze comuni in cantiere'}</div>
+${PC.tabellaSostanze(d)}`;
 
   const s11 = `
 <div class="section-title">Sezione 11 — Gestione Rifiuti</div>
 <div class="sub-title">11.1 Normativa — D.lgs 152/2006 (TUA) e s.m.i.</div>
 <p>La gestione dei rifiuti è effettuata nel rispetto del D.lgs 152/2006. Deposito temporaneo effettuato
 nel rispetto dell'art. 183 co. 1 lett. bb) TUA. Formulari di Identificazione Rifiuti per ogni trasporto.</p>
-<div class="sub-title">11.2 Codici CER dei rifiuti tipici di cantiere</div>
-<table class="allow-break">
-  <thead><tr>
-    <th style="width:18%">Codice CER</th>
-    <th style="width:35%">Descrizione</th>
-    <th style="width:20%">Tipo</th>
-    <th>Gestione</th>
-  </tr></thead>
-  <tbody>
-    <tr><td>17 01 01</td><td>Cemento</td><td>Non pericoloso</td><td>Recupero / discarica</td></tr>
-    <tr><td>17 01 02</td><td>Mattoni</td><td>Non pericoloso</td><td>Recupero / discarica</td></tr>
-    <tr><td>17 02 01</td><td>Legno</td><td>Non pericoloso</td><td>Recupero</td></tr>
-    <tr><td>17 02 02</td><td>Vetro</td><td>Non pericoloso</td><td>Recupero</td></tr>
-    <tr><td>17 04 05</td><td>Ferro e acciaio</td><td>Non pericoloso</td><td>Recupero</td></tr>
-    <tr><td>17 09 04</td><td>Rifiuti misti costruzione/demolizione</td><td>Non pericoloso</td><td>Recupero / discarica</td></tr>
-    <tr><td>17 06 01*</td><td>Materiali isolanti con amianto</td><td><strong>Pericoloso</strong></td><td>Ditta specializzata</td></tr>
-    <tr><td>08 01 11*</td><td>Pitture/vernici con solventi organici</td><td><strong>Pericoloso</strong></td><td>Impianto autorizzato</td></tr>
-    <tr><td>13 02 08*</td><td>Oli esausti</td><td><strong>Pericoloso</strong></td><td>Consorzio CONOU</td></tr>
-  </tbody>
-</table>`;
+<div class="sub-title">11.2 Codici CER dei rifiuti ${PC.nuovoPercorso(d) ? 'prodotti dalle lavorazioni' : 'tipici di cantiere'}</div>
+${PC.tabellaRifiuti(d)}`;
 
   const s12 = `
 <div class="section-title">Sezione 12 — Formazione e Informazione dei Lavoratori</div>
-<div class="sub-title">12.1 Formazione obbligatoria — Acc. Stato-Regioni 21/12/2011</div>
-<table class="allow-break">
-  <thead><tr>
-    <th style="width:38%">Tipo di formazione</th>
-    <th style="width:14%">Durata</th>
-    <th style="width:22%">Aggiornamento</th>
-    <th>Note</th>
-  </tr></thead>
-  <tbody>
-    <tr><td>Formazione generale</td><td>4 ore</td><td>—</td><td>Valida per sempre</td></tr>
-    <tr><td>Formazione specifica (rischio alto — edilizia)</td><td>12 ore</td><td>6 ore ogni 5 anni</td><td>Obbligatoria per cantieri</td></tr>
-    <tr><td>Preposto</td><td>+8 ore</td><td>6 ore ogni 2 anni</td><td>Per chi svolge funzioni di preposto</td></tr>
-    <tr><td>Primo Soccorso (Gruppo B)</td><td>12 ore</td><td>4 ore ogni 3 anni</td><td>Addetti designati</td></tr>
-    <tr><td>Antincendio (rischio medio)</td><td>8 ore</td><td>5 ore ogni 5 anni</td><td>Addetti designati</td></tr>
-    <tr><td>RLS</td><td>32 ore</td><td>4 ore/anno</td><td>Rappresentante Lavoratori Sicurezza</td></tr>
-    <tr><td>Ponteggi PIMUS</td><td>28 ore</td><td>4 ore ogni 4 anni</td><td>Montaggio/smontaggio ponteggi</td></tr>
-    <tr><td>Lavori in quota</td><td>4–8 ore</td><td>Secondo tipologia</td><td>Per chi opera oltre 2 m</td></tr>
-  </tbody>
-</table>
+<div class="sub-title">12.1 Formazione obbligatoria — art. 37 D.lgs 81/2008 e Accordo Stato-Regioni 17/04/2025</div>
+${PC.tabellaFormazione(d)}
+<p class="muted">La formazione e l'idoneità di ciascun lavoratore impiegato in questo cantiere sono riportate nella tabella 2.2.</p>
 <div class="sub-title">12.2 Informazione all'ingresso in cantiere</div>
 <p>All'ingresso in cantiere, ogni lavoratore riceve informazione su: rischi specifici, misure preventive,
 procedure di emergenza, nominativi delle figure di sicurezza, ubicazione presidi di primo soccorso,
-estintori e punto di raccolta. L'avvenuta informazione è documentata con firma su apposito registro.</p>`;
+estintori e punto di raccolta. L'avvenuta informazione è documentata con firma su apposito registro.</p>
+<p>Inoltre, quando timbra l'entrata con il badge Palladia, ogni lavoratore vede un riepilogo dei rischi principali di questo POS
+e delle misure per proteggersi, nella sua lingua, e ne conferma la presa visione: data, ora e lingua restano registrate
+e il riepilogo si ripropone finché non è confermato e a ogni nuova revisione del POS.</p>`;
 
   const s13 = `
 <div class="section-title">Sezione 13 — Sorveglianza Sanitaria</div>
@@ -1527,17 +1444,8 @@ da assenza &gt;60 giorni per malattia.</p>
 </table>`;
 
   const s14 = `
-<div class="section-title page-break">Sezione 14 — Firme e Presa Visione</div>
-<p>Il presente Piano Operativo di Sicurezza è stato redatto ai sensi del D.lgs 81/2008 e s.m.i.
-e viene sottoscritto per accettazione e presa visione dalle seguenti figure responsabili.
-Le firme devono essere apposte con timbro aziendale a fianco della firma per piena validità.</p>
-<div class="signature-grid">
-  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', d.datoreLavoro ? esc(d.datoreLavoro) : v(d.companyName))}
-  ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', v(d.rspp))}
-  ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', v(d.rls))}
-  ${buildSigBox('Medico Competente', v(d.medico))}
-</div>
-${buildSigBox('CSE — Coordinatore per la Sicurezza in fase di Esecuzione (per presa visione)', v(d.cse), true)}
+<div class="section-title page-break">Sezione 14 — Presa visione dei lavoratori</div>
+<p class="muted">Le firme del datore di lavoro, dell'RSPP, dell'RLS, del medico competente e del CSE sono nella pagina «Firme e sottoscrizione del documento», all'inizio del POS.</p>
 <div class="sub-title" style="margin-top:16pt;">Dichiarazione presa visione dei lavoratori</div>
 <p>I sottoscritti dichiarano di aver ricevuto copia del presente POS e di impegnarsi al rispetto delle disposizioni
 ai sensi dell'art. 17 D.lgs 81/2008.</p>
