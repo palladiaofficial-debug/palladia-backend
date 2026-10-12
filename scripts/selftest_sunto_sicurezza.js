@@ -78,7 +78,7 @@ async function main() {
     const arben = await mk('Arben');
     const ion = await mk('Ion', { subcontractor_id: sub.id });
     const nuovo = await mk('Nuovo');
-    const pos1 = await ins('pos_documents', { company_id: cid, site_id: site.id, revision: 1, content: '', pos_data: { selectedSchede: ['ponteggio-uso', 'intonaci'], primoSoccorso: 'Addetto F340' } });
+    const pos1 = await ins('pos_documents', { company_id: cid, site_id: site.id, revision: 1, content: '', created_at: new Date(Date.now() - 3600e3).toISOString(), pos_data: { selectedSchede: ['ponteggio-uso', 'intonaci'], primoSoccorso: 'Addetto F340' } });
     const posSub = await ins('pos_documents', { company_id: cid, site_id: site.id, revision: 1, content: '', pos_data: { selectedSchede: ['guaina-fiamma'], subcontractorId: sub.id } });
     const log = (w, st, type, minAgo) => ins('presence_logs', { company_id: cid, site_id: st.id, worker_id: w.id, event_type: type, timestamp_server: new Date(Date.now() - minAgo * 60e3).toISOString(), method: 'worker_self_punch' });
 
