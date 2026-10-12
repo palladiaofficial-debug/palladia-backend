@@ -93,8 +93,20 @@ function parseTable(rows) {
   const valid = rows.filter(r => !isSepRow(r));
   if (valid.length === 0) return '';
   const headers = valid[0].split('|').slice(1, -1).map(c => c.trim());
+  // F-350: larghezza di ogni colonna in proporzione al testo che contiene.
+  // Prima erano tutte uguali: una colonna "P" con una cifra larga quanto
+  // quella delle misure, e ogni riga lunga mezza pagina.
+  const body = valid.slice(1).map(r => r.split('|').slice(1, -1).map(c => c.trim()));
+  const peso = headers.map((h, ci) => {
+    const lens = body.map(r => (r[ci] || '').replace(/\*\*/g, '').length);
+    const media = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
+    const parolaLungaHdr = Math.max(...h.split(/\s+/).map(w => w.length));
+    return Math.max(media, parolaLungaHdr * 0.8, 3) ** 0.6;
+  });
+  const tot = peso.reduce((a, b) => a + b, 0);
+  const larghezze = headers.length >= 3 ? peso.map(p => Math.max(6, Math.round((p / tot) * 100))) : null;
   let html = '<table class="allow-break"><thead><tr>';
-  headers.forEach(h => { html += `<th>${boldify(h)}</th>`; });
+  headers.forEach((h, ci) => { html += `<th${larghezze ? ` style="width:${larghezze[ci]}%${h.length <= 6 ? ';white-space:nowrap' : ''}"` : ''}>${boldify(h)}</th>`; });
   html += '</tr></thead><tbody>';
   valid.slice(1).forEach(row => {
     const cells = row.split('|').slice(1, -1).map(c => c.trim());
@@ -102,7 +114,7 @@ function parseTable(rows) {
     cells.forEach((cell, ci) => {
       const hdr = (headers[ci] || '').toLowerCase();
       const isLivello = /livello/i.test(hdr);
-      const isRiskNum = /^\s*r\s*[(=]|^\s*r\s*$/i.test(hdr);
+      const isRiskNum = /^\s*r\s*[(=]|^\s*r\s*$|^\s*r\s+res\.?\s*$/i.test(hdr);
       let content = boldify(cell);
       if (isLivello && cell) {
         const bc = riskBadgeClass(cell);
@@ -975,6 +987,7 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
   const oggi = new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
   const siteName = d.siteAddress || d.siteName || 'Cantiere';
   const docTitle = `POS – ${siteName} – Rev. ${rev}`;
+  const rumoreCalcolato = /^### 5\.1 Esposizione al rumore/m.test(aiRisks || '');
 
   const workersCount = (d.workers && d.workers.length > 0)
     ? d.workers.length
@@ -1278,7 +1291,11 @@ ${(d.impiantiCantiere && d.impiantiCantiere.length > 0)
   : '<p class="muted">Nessun impianto di cantiere indicato.</p>'
 }
 ${d.noteAggiuntive ? `<div class="sub-title">4.${n4++} Note e condizioni particolari</div><p>${esc(d.noteAggiuntive)}</p>` : ''}
-${d.rumore ? `<div class="sub-title">4.${n4++} Esito della valutazione del rumore (art. 190 D.lgs 81/2008)</div><p>${esc(d.rumore)}</p>` : ''}
+${rumoreCalcolato
+    // F-350: con le schede nuove l'esposizione è calcolata per gruppo omogeneo
+    // nella 5.1; la risposta data a mano in /pos/crea la contraddiceva.
+    ? `<div class="sub-title">4.${n4++} Esito della valutazione del rumore (art. 190 D.lgs 81/2008)</div><p>L'esposizione al rumore è valutata per gruppo omogeneo, con dati di letteratura, nella Sezione 5.1: livello di esposizione giornaliera, fascia e obblighi per ogni mansione.</p>`
+    : d.rumore ? `<div class="sub-title">4.${n4++} Esito della valutazione del rumore (art. 190 D.lgs 81/2008)</div><p>${esc(d.rumore)}</p>` : ''}
 ${(Array.isArray(d.pscRichieste) && d.pscRichieste.length > 0) ? `<div class="sub-title">4.${n4++} Misure integrative e procedure richieste dal PSC</div>
 ${d.pscRef ? `<p class="muted">Riferimento: ${esc(d.pscRef)}</p>` : ''}
 <ul>${d.pscRichieste.map(r => `<li><strong>${esc(r.titolo || '')}</strong>${r.dettaglio ? ` — ${esc(r.dettaglio)}` : ''}${r.pagina ? ` <span class="muted">(PSC p. ${esc(String(r.pagina))})</span>` : ''}</li>`).join('')}</ul>` : ''}`;

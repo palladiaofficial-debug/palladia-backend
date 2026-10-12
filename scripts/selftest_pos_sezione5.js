@@ -54,7 +54,9 @@ async function main() {
   const posData = { siteAddress: 'Via Prova 1, Genova', companyName: 'Impresa Prova', selectedWorks: S.SCHEDE.map(s => s.nome), workers: [], subappaltatori: [], fasi: [] };
   const html = await generatePosHtml(posData, 1, all.markdown, []);
   const blocchi = (html.match(/class="lavorazione-block"/g) || []).length;
-  check(`renderer PDF: ${S.SCHEDE.length} blocchi lavorazione`, blocchi === S.SCHEDE.length, blocchi);
+  // F-350: con schede nel formato nuovo, in testa i blocchi 5.1 (rumore) e 5.2 (vibrazioni)
+  const esposizioni = (all.markdown.match(/^### 5\.[12] /gm) || []).length;
+  check(`renderer PDF: ${S.SCHEDE.length} blocchi lavorazione + ${esposizioni} di esposizione`, blocchi === S.SCHEDE.length + esposizioni, blocchi);
   check('renderer PDF: nessun "Nessuna lavorazione generata"', !html.includes('Nessuna lavorazione generata'));
   check('renderer PDF: livelli colorati (molto alto, alto, medio)',
     html.includes('badge badge-very-high') && html.includes('badge badge-high') && html.includes('badge badge-medium'));
