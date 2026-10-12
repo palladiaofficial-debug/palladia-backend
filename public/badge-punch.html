@@ -389,6 +389,28 @@
     .ua-heat { background: #FCE8D8; color: #9A3D00; }
     .ua-lunch { background: #EAF1EB; color: #2F6B43; }
     .ua-done { display: flex; gap: 10px; align-items: flex-start; font-size: 18px; font-weight: 600; background: #E4F0E7; color: #1f3d2a; border-radius: 16px; padding: 16px; }
+    /* ── Sunto del POS dopo l'entrata (F-340) ── */
+    .sunto { position: fixed; inset: 0; z-index: 9000; background: var(--bg); overflow-y: auto; display: flex; justify-content: center; padding: calc(18px + env(safe-area-inset-top, 0px)) 16px calc(18px + env(safe-area-inset-bottom, 0px)); }
+    .sunto-in { width: 100%; max-width: 480px; display: flex; flex-direction: column; gap: 14px; }
+    .sunto-head { text-align: center; }
+    .sunto-head h2 { font-size: 24px; font-weight: 800; line-height: 1.2; }
+    .sunto-head p { font-size: 15px; color: var(--muted); margin-top: 4px; }
+    .sunto-dots { display: flex; justify-content: center; gap: 8px; }
+    .sunto-dots i { width: 10px; height: 10px; border-radius: 50%; background: #DDD6CC; }
+    .sunto-dots i.on { background: var(--accent); }
+    .sunto-card { background: var(--surface); border-radius: var(--radius); padding: 22px 18px; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; box-shadow: 0 1px 2px rgba(26,23,20,.06); }
+    .sunto-card svg { width: 132px; height: 132px; flex: none; }
+    .sunto-per { font-size: 24px; font-weight: 800; line-height: 1.25; }
+    .sunto-reg { font-size: 22px; font-weight: 700; line-height: 1.3; padding: 12px 14px; border-radius: 12px; width: 100%; }
+    .sunto-reg.divieto { background: #FBE7E4; color: #8F2A22; }
+    .sunto-reg.obbligo { background: #E3ECF7; color: #1F4E86; }
+    .sunto-reg.pericolo { background: #FCF1D6; color: #6E4A00; }
+    .sunto-reg.soccorso { background: #E4F0E7; color: #1F5C34; }
+    .sunto-n { font-size: 14px; color: var(--muted); text-align: center; }
+    .sunto-btn { width: 100%; min-height: 68px; border: 0; border-radius: 16px; background: var(--accent); color: #fff; font: inherit; font-size: 21px; font-weight: 800; letter-spacing: .02em; cursor: pointer; }
+    .sunto-btn.ok { background: var(--green); }
+    .sunto-btn:disabled { opacity: .6; }
+    .sunto-err { color: #A3322A; text-align: center; font-size: 15px; }
     .confirm-alt-sub { display: block; margin-top: 4px; font-size: 15px; font-weight: 500; text-transform: none; opacity: 0.8; }
 
     /* ── Errore ── */
@@ -2211,6 +2233,76 @@
       </div>
       <div id="ua-slot"></div>`;
     uscitaAnticipata(tsServer, isEntry ? 'entrata' : 'uscita');
+    if (isEntry) suntoSicurezza(tsServer);
+  }
+
+  // ── Sunto del POS dopo l'entrata (F-340, AUDIT.md del frontend) ─────────────
+  // Richiesta del titolare (2026-10-12): l'operaio deve vedere e accettare i
+  // pericoli del cantiere e come proteggersi. L'entrata è GIÀ registrata qui
+  // sopra: il sunto compare dopo, a schermo intero, e se il server non
+  // risponde non compare niente (la timbratura non si blocca mai). Nessun
+  // tasto per chiuderlo: si va avanti scheda per scheda fino a HO CAPITO.
+  // Se l'operaio chiude il telefono prima, ricompare alla prossima entrata.
+  // Backend: routes/v1/badgeSuntoSicurezza.js, lib/suntoSicurezza.js.
+  var sunto = { key: null, data: null, i: 0, t0: 0, secondi: [], busy: false, err: false, done: false };
+  async function suntoSicurezza(key) {
+    if (sunto.key === key && (sunto.done || !sunto.data)) return;
+    var keep = sunto.key === key ? sunto.i : 0;
+    var keepSec = sunto.key === key ? sunto.secondi : [];
+    try {
+      var r = await apiFetch('GET', '/api/v1/badge/' + BADGE_CODE + '/sunto-sicurezza?lingua=' + encodeURIComponent(LANG));
+      if (r.status !== 200 || !r.body || r.body.show !== true || !Array.isArray(r.body.schede) || !r.body.schede.length) { if (sunto.key !== key) sunto = { key: key, data: null }; return; }
+      sunto = { key: key, data: r.body, i: Math.min(keep, r.body.schede.length - 1), t0: Date.now(), secondi: keepSec, busy: false, err: false, done: false };
+      renderSunto();
+    } catch (e) { /* niente sunto: la timbratura è già fatta */ }
+  }
+  function suntoCartello(c) {
+    var paths = (c.icona || []).map(function (d) { return '<path d="' + esc(d) + '"/>'; }).join('');
+    var icon = function (x, y, s, fill) { return '<g transform="translate(' + x + ' ' + y + ') scale(' + (s / 256) + ')" fill="' + fill + '">' + paths + '</g>'; };
+    if (c.tipo === 'divieto') return '<svg viewBox="0 0 120 120" role="img" aria-label="' + esc(c.iso7010 || '') + '"><circle cx="60" cy="60" r="54" fill="#fff" stroke="#C8102E" stroke-width="11"/>' + icon(31, 31, 58, '#1A1714') + '<line x1="22" y1="22" x2="98" y2="98" stroke="#C8102E" stroke-width="11"/></svg>';
+    if (c.tipo === 'obbligo') return '<svg viewBox="0 0 120 120" role="img" aria-label="' + esc(c.iso7010 || '') + '"><circle cx="60" cy="60" r="57" fill="#005387"/>' + icon(26, 26, 68, '#fff') + '</svg>';
+    if (c.tipo === 'soccorso') return '<svg viewBox="0 0 120 120" role="img" aria-label="' + esc(c.iso7010 || '') + '"><rect x="3" y="3" width="114" height="114" rx="10" fill="#008D4C"/>' + icon(24, 24, 72, '#fff') + '</svg>';
+    return '<svg viewBox="0 0 120 120" role="img" aria-label="' + esc(c.iso7010 || '') + '"><path d="M60 6 L116 108 H4 Z" fill="#F9A800" stroke="#1A1714" stroke-width="7" stroke-linejoin="round"/>' + icon(36, 44, 48, '#1A1714') + '</svg>';
+  }
+  function renderSunto() {
+    var d = sunto.data;
+    if (!d) return;
+    var el = document.getElementById('sunto');
+    if (!el) { el = document.createElement('div'); el.id = 'sunto'; el.className = 'sunto'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); document.body.appendChild(el); }
+    if (sunto.done) {
+      el.innerHTML = '<div class="sunto-in"><div class="ua-done" id="sunto-fatto" style="margin-top:40vh">✓ <span>' + esc(d.testi.fatto) + '</span></div></div>';
+      setTimeout(function () { var x = document.getElementById('sunto'); if (x) x.remove(); }, 1600);
+      return;
+    }
+    var n = d.schede.length, c = d.schede[sunto.i], last = sunto.i === n - 1;
+    var dots = d.schede.map(function (_, j) { return '<i' + (j === sunto.i ? ' class="on"' : '') + '></i>'; }).join('');
+    el.innerHTML = '<div class="sunto-in">' +
+      '<div class="sunto-head"><h2>' + esc(d.testi.titolo) + '</h2><p>' + esc(d.cantiere ? d.cantiere + ' · ' : '') + esc(d.testi.sotto) + '</p></div>' +
+      '<div class="sunto-dots">' + dots + '</div>' +
+      '<div class="sunto-card" id="sunto-card" data-scheda="' + esc(c.id) + '">' + suntoCartello(c) +
+        '<div class="sunto-per">' + esc(c.pericolo) + '</div>' +
+        '<div class="sunto-reg ' + esc(c.tipo) + '">' + esc(c.regola) + '</div></div>' +
+      '<div class="sunto-n">' + esc(d.testi.scheda.replace('{n}', sunto.i + 1).replace('{tot}', n)) + '</div>' +
+      '<button class="sunto-btn' + (last ? ' ok' : '') + '" id="sunto-avanti" onclick="suntoAvanti()"' + (sunto.busy ? ' disabled' : '') + '>' + esc(last ? d.testi.hoCapito : d.testi.avanti) + '</button>' +
+      (sunto.err ? '<div class="sunto-err">' + esc(d.testi.errore) + '</div>' : '') +
+      '</div>';
+    el.scrollTop = 0;
+  }
+  async function suntoAvanti() {
+    var d = sunto.data;
+    if (!d || sunto.busy) return;
+    sunto.secondi[sunto.i] = (sunto.secondi[sunto.i] || 0) + Math.round((Date.now() - sunto.t0) / 1000);
+    sunto.t0 = Date.now();
+    if (sunto.i < d.schede.length - 1) { sunto.i++; renderSunto(); return; }
+    sunto.busy = true; sunto.err = false; renderSunto();
+    try {
+      var r = await apiFetch('POST', '/api/v1/badge/' + BADGE_CODE + '/sunto-sicurezza', {
+        pos_id: d.pos_id, lingua: d.lingua, schede: d.schede.map(function (s) { return s.id; }), secondi: sunto.secondi,
+      });
+      if (r.status !== 200) throw new Error('x');
+      sunto.done = true;
+    } catch (e) { sunto.err = true; }
+    sunto.busy = false; renderSunto();
   }
 
   // ── "Esci prima del solito. Perché?" (F-318, AUDIT.md del frontend) ─────────

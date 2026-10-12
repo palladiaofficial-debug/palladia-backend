@@ -12,6 +12,7 @@ const { aiLimiter } = require('../../middleware/rateLimit');
 const { isBillingActive } = require('../../lib/billing');
 const { catalogoPerScelta } = require('../../lib/lavorazioniSchede');
 const { saveRegistry } = require('../../lib/posFigures');
+const { elencoPresaVisione } = require('../../lib/posPresaVisione');
 
 /**
  * POST /api/v1/pos/psc-extract { siteId, documentId, impresaName?, lavori? }
@@ -186,40 +187,21 @@ router.get('/pos/:posId/acknowledgments', verifySupabaseJwt, async (req, res) =>
 
   const { data: doc, error: docErr } = await supabase
     .from('pos_documents')
-    .select('id, site_id')
+    .select('id, site_id, created_at, pos_data')
     .eq('id', posId)
     .eq('company_id', companyId)
     .maybeSingle();
 
   if (docErr || !doc) return res.status(404).json({ error: 'POS non trovato' });
 
-  const { data: assigned } = await supabase
-    .from('worksite_workers')
-    .select('worker_id, workers(id, full_name)')
-    .eq('site_id', doc.site_id)
-    .eq('status', 'active');
-
-  const { data: acks } = await supabase
-    .from('pos_acknowledgments')
-    .select('worker_id, acknowledged_at')
-    .eq('pos_id', posId);
-
-  const ackMap = Object.fromEntries((acks || []).map(a => [a.worker_id, a.acknowledged_at]));
-
-  res.json(
-    (assigned || [])
-      .map(a => {
-        const w = a.workers;
-        if (!w) return null;
-        return {
-          worker_id:   w.id,
-          worker_name: w.full_name,
-          signed:      !!ackMap[w.id],
-          signed_at:   ackMap[w.id] || null,
-        };
-      })
-      .filter(Boolean)
-  );
+  // F-340: assegnati + entrati in cantiere dopo il POS, con quando e come
+  // hanno preso visione (canale, lingua, secondi). lib/posPresaVisione.js
+  try {
+    res.json(await elencoPresaVisione(doc));
+  } catch (err) {
+    console.error('[pos acknowledgments]', err.message);
+    res.status(500).json({ error: 'INTERNAL_ERROR' });
+  }
 });
 
 /**

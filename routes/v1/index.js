@@ -103,6 +103,8 @@ router.use('/', require('./badgePunch'));
 router.use('/', require('./badgeOfflinePunch'));
 // F-318: uscita prima del solito, "Perché?" (file separato, la timbratura non cambia)
 router.use('/', require('./badgeUscitaAnticipata'));
+// F-340: sunto del POS dopo l'entrata (file separato, la timbratura non cambia)
+router.use('/', require('./badgeSuntoSicurezza'));
 router.use('/', require('./badgeDdt'));
 
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
