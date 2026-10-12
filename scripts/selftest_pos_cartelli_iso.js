@@ -96,5 +96,18 @@ check('...e il casco con M014', /ISO 7010 M014/.test(by('Obbligo casco di protez
 const nomi = signs.map(s => s.name);
 check('nessun cartello ripetuto due volte con lo stesso significato (accesso vietato)', !(nomi.includes('Divieto di accesso ai non addetti') && nomi.includes("Vietato l'accesso al personale non autorizzato")), nomi);
 
+// F-342: cartelli pertinenti, non scelti da parole dentro altre parole
+const nomiDi = (pd) => selectSigns(pd).map(x => x.name);
+const vero = nomiDi({ selectedSchede: ['ponteggio-uso', 'guaina-fiamma', 'tinteggiature'], selectedWorks: ['Lavori sul ponteggio', 'Impermeabilizzazione con guaina a fiamma', 'Tinteggiature e verniciature'], workType: 'Lavori in quota, Caldo e chimico, Finiture', siteAddress: 'Via Lucarno 45' });
+check('guaina a fiamma: niente visiera "saldatura ad arco"', !vero.includes('Obbligo protezione facciale'), vero);
+check('guaina a fiamma: vietato usare fiamme libere e materiale infiammabile ci sono', vero.includes('Vietato fumare e usare fiamme libere') && vero.includes('Pericolo materiale infiammabile'), vero);
+check('categoria "Caldo e chimico": niente doccia di emergenza, corrosivi, veleni', !vero.includes('Doccia di emergenza') && !vero.includes('Pericolo sostanze corrosive') && !vero.includes('Pericolo sostanze velenose'), vero);
+const sald = nomiDi({ selectedWorks: ['Saldatura e taglio termico dei metalli'] });
+check('saldatura vera: visiera sì', sald.includes('Obbligo protezione facciale'), sald);
+const parole = nomiDi({ selectedWorks: ['Miglioramento sismico del gruppo scale', 'Basamento del parco giochi'] });
+check('"gruppo", "parco", "basamento", "miglioramento" non accendono gru, saldatura, chimici', !parole.includes('Pericolo carichi sospesi') && !parole.includes('Obbligo protezione facciale') && !parole.includes('Pericolo sostanze corrosive'), parole);
+const gru = nomiDi({ selectedWorks: ['Movimentazione di carichi con gru a torre'] });
+check('gru vera: carichi sospesi sì', gru.includes('Pericolo carichi sospesi'), gru);
+
 console.log(`\n${passed} passati, ${failed} falliti`);
 process.exit(failed ? 1 : 0);

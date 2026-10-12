@@ -170,7 +170,7 @@ const RULES = [
       ),
       s(CAT_PER, 'Pericolo carichi sospesi.jpg',
         Z_LAVORO,
-        'Proiezione verticale della gru e delle zone di sollevamento carichi',
+        'Zone di sollevamento e calo dei materiali (argani, montacarichi, gru)',
         'ISO 7010 W015 — D.lgs 81/08 Art. 190'
       ),
       s(CAT_DIV, 'Divieto di passaggio ai pedoni.jpg',
@@ -248,7 +248,9 @@ const RULES = [
     ]
   },
   {
-    keywords: ['saldatura', 'saldatr', 'taglio term', 'fiamma', 'cannello',
+    // F-342: 'fiamma' e 'cannello' (guaina a fiamma) hanno la loro regola qui sotto:
+    // la visiera per la saldatura ad arco non c'entra con la posa delle guaine
+    keywords: ['saldatura', 'saldatr', 'taglio term',
                'ossiacetilenica', 'plasma', 'elettrodo', 'mig', 'tig', 'arco'],
     signs: [
       s(CAT_DIV, 'Vietato fumare e usare fiamme libere.jpg',
@@ -274,6 +276,26 @@ const RULES = [
     ]
   },
   {
+    keywords: ['a fiamma', 'cannello', 'guaina'],
+    signs: [
+      s(CAT_DIV, 'Vietato fumare e usare fiamme libere.jpg',
+        Z_LAVORO,
+        'Zone di posa a fiamma, deposito delle bombole di gas, materiali isolanti e infiammabili',
+        'ISO 7010 P003 — D.lgs 81/08 Art. 163'
+      ),
+      s(CAT_PER, 'Pericolo materiale infiammabile.jpg',
+        Z_LAVORO,
+        'Deposito delle bombole di propano/GPL e dei primer',
+        'ISO 7010 W021 — D.lgs 81/08 Art. 163'
+      ),
+      s(CAT_OBB, 'Obbligo occhiali di protezione.jpg',
+        Z_LAVORO,
+        'Posa a fiamma e preparazione dei supporti',
+        'ISO 7010 M004 — UNI EN 166:2002 — D.lgs 81/08 Art. 75'
+      ),
+    ]
+  },
+  {
     keywords: ['vernic', 'pittur', 'tinteggiat', 'solvente', 'resina',
                'impermeabil', 'rivestim', 'finitur', 'prodotto chim', 'eposs'],
     signs: [
@@ -287,11 +309,7 @@ const RULES = [
         'Zone di applicazione vernici, primer, adesivi e prodotti con pittogramma GHS07',
         'D.lgs 81/08 All. XXV — sostanze con pittogramma GHS07, Reg. CLP (UE) 1272/2008'
       ),
-      s(CAT_PER, 'Pericolo sostanze corrosive.jpg',
-        Z_LAVORO,
-        'Zone di utilizzo acidi, basi, prodotti con pittogramma GHS05',
-        'ISO 7010 W023 — Reg. CLP (UE) 1272/2008'
-      ),
+      // F-342: i corrosivi (acidi, basi) restano nella regola dei prodotti chimici
       s(CAT_OBB, 'Obbligo protezione vie respiratorie.jpg',
         Z_LAVORO,
         'Zone polverose e di applicazione vernici, solventi, primer, fibre',
@@ -417,13 +435,34 @@ const RULES = [
   },
 ];
 
+// F-342: una parola chiave conta solo a inizio parola ("ponteg" in "ponteggio"),
+// e quelle corte solo come parola intera: "gru" non è in "gruppo", "arco" non è
+// in "parco", "base" non è in "basamento", "mig" non è in "miglioramento".
+const LETTERA = /[a-zàèéìòù]/;
+function contieneParola(testo, kw) {
+  const t = testo.toLowerCase();
+  for (let i = t.indexOf(kw); i !== -1; i = t.indexOf(kw, i + 1)) {
+    const prima = i === 0 ? '' : t[i - 1];
+    const dopo = t[i + kw.length] || '';
+    if (LETTERA.test(prima)) continue;
+    if (kw.length <= 4 && LETTERA.test(dopo)) continue;
+    return true;
+  }
+  return false;
+}
+
 // ─── FUNZIONE PRINCIPALE ───────────────────────────────────────────────────────
 function selectSigns(posData) {
   const d = posData || {};
 
+  // F-342: con il nuovo percorso (/pos/crea) workType è l'elenco delle categorie
+  // ("Caldo e chimico"): accendeva i cartelli dei prodotti chimici anche senza
+  // prodotti chimici. Contano lavori, macchine e sostanze scelti davvero.
   const worksText = [
     ...(d.selectedWorks || []),
-    d.workType || '',
+    ...(Array.isArray(d.selectedSchede) ? [] : [d.workType || '']),
+    ...(d.macchine || []),
+    ...(d.sostanze || []),
     d.siteAddress || ''
   ].join(' ').toLowerCase();
 
@@ -433,7 +472,7 @@ function selectSigns(posData) {
     selected.set(sign.path, sign);
   }
   for (const rule of RULES) {
-    if (rule.keywords.some(kw => worksText.includes(kw))) {
+    if (rule.keywords.some(kw => contieneParola(worksText, kw))) {
       for (const sign of rule.signs) {
         selected.set(sign.path, sign);
       }
