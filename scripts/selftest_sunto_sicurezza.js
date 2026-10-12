@@ -85,7 +85,7 @@ async function main() {
     await log(arben, site, 'ENTRY', 2);
     const g1 = await get(arben.badge_code, 'ro');
     check('subito dopo l\'entrata: sunto da mostrare', g1.status === 200 && g1.body.show === true && g1.body.pos_id === pos1.id, g1.body);
-    check('...in rumeno, col cantiere e i tasti', g1.body.lingua === 'ro' && g1.body.testi.hoCapito === 'AM ÎNȚELES' && g1.body.cantiere === site.name && g1.body.schede[0].pericolo === FRASI['Dal ponteggio si cade.'].ro, g1.body);
+    check('...in rumeno, col cantiere e i tasti', g1.body.lingua === 'ro' && g1.body.testi.hoCapito === 'AM ÎNȚELES' && g1.body.testi.scheda === 'Fișa {n} din {tot}' && g1.body.cantiere === site.name && g1.body.schede[0].pericolo === FRASI['Dal ponteggio si cade.'].ro, g1.body);
     check('...il soccorso col nome dell\'addetto', /Addetto F340/.test(g1.body.schede.at(-1).regola));
 
     // Non ha premuto HO CAPITO: alla prossima entrata ricompare

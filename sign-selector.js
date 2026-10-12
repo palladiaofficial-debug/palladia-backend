@@ -71,15 +71,12 @@ const ALWAYS = [
     'Percorsi pedonali, depositi materiali, aree con dislivelli o ostacoli a terra',
     'ISO 7010 W007 — D.lgs 81/08 Art. 163'
   ),
+  // F-341: un solo cartello di accesso vietato (prima due uguali), e senza
+  // codice ISO: P006 è "vietato ai carrelli elevatori", non l'accesso alle persone
   s(CAT_DIV, 'Divieto di accesso ai non addetti.jpg',
     Z_INGRESSO,
-    'Accesso principale e tutti i varchi perimetrali del cantiere',
-    'ISO 7010 P006 — D.lgs 81/08 Art. 163'
-  ),
-  s(CAT_DIV, "Vietato l'accesso al personale non autorizzato.jpg",
-    Z_INGRESSO,
-    'Accessi secondari, cancelli di servizio, zone di deposito materiali pericolosi',
-    'ISO 7010 P006 — D.lgs 81/08 Art. 163'
+    'Accesso principale, varchi perimetrali, cancelli di servizio e depositi di materiali pericolosi',
+    'D.lgs 81/08 Art. 163 — All. XXV'
   ),
   s(CAT_DIV, 'Vietato fumare.jpg',
     Z_INGRESSO,
@@ -91,7 +88,7 @@ const ALWAYS = [
   s(CAT_OBB, 'Obbligo casco di protezione.jpg',
     Z_DPI,
     'Tutto il cantiere — obbligo per tutti gli operatori presenti',
-    'ISO 7010 M002 — UNI EN 397:2012 — D.lgs 81/08 Art. 75'
+    'ISO 7010 M014 — UNI EN 397:2012 — D.lgs 81/08 Art. 75'
   ),
   s(CAT_OBB, 'Obbligo calzature di sicurezza.jpg',
     Z_DPI,
@@ -164,12 +161,12 @@ const RULES = [
       s(CAT_PER, 'Pericolo di caduta.jpg',
         Z_LAVORO,
         'Zone ponteggi, bordi scavi, aperture nel vuoto, lavori in quota oltre 2 m',
-        'ISO 7010 W009 — D.lgs 81/08 Artt. 107-122'
+        'ISO 7010 W008 — D.lgs 81/08 Artt. 107-122'
       ),
       s(CAT_OBB, 'Obbligo imbracatura di sicurezza.jpg',
         Z_LAVORO,
         'Accesso a tutte le zone di lavoro in quota superiori a 2 metri',
-        'ISO 7010 M014 — UNI EN 361:2002 — D.lgs 81/08 Art. 115'
+        'ISO 7010 M018 — UNI EN 361:2002 — D.lgs 81/08 Art. 115'
       ),
       s(CAT_PER, 'Pericolo carichi sospesi.jpg',
         Z_LAVORO,
@@ -194,7 +191,7 @@ const RULES = [
       s(CAT_PER, 'Pericolo macchine in movimento.jpg',
         Z_LAVORO,
         'Viabilità interna nelle zone di manovra della gru e dei mezzi di cantiere',
-        'ISO 7010 W024 — D.lgs 81/08 Art. 70'
+        'ISO 7010 W001 — D.lgs 81/08 Art. 70'
       ),
       s(CAT_DIV, 'Divieto di passaggio ai pedoni.jpg',
         Z_LAVORO,
@@ -210,17 +207,17 @@ const RULES = [
       s(CAT_PER, 'Pericolo macchine in movimento.jpg',
         Z_LAVORO,
         'Viabilità interna nelle zone di manovra di escavatori, ruspe e dumper',
-        'ISO 7010 W024 — D.lgs 81/08 Art. 70'
+        'ISO 7010 W001 — D.lgs 81/08 Art. 70'
       ),
       s(CAT_PER, 'Pericolo di caduta.jpg',
         Z_LAVORO,
         'Bordi degli scavi, rampe di accesso, zone di sbancamento',
-        'ISO 7010 W009 — D.lgs 81/08 Artt. 118-120'
+        'ISO 7010 W008 — D.lgs 81/08 Artt. 118-120'
       ),
       s(CAT_DIV, 'Divieto di transito ai veicoli.jpg',
         Z_LAVORO,
         'Zone pedonali, aree di scavo attivo, percorsi riservati ai pedoni',
-        'ISO 7010 P006 — D.lgs 81/08 Art. 108'
+        'D.lgs 81/08 Art. 108 — All. XXV'
       ),
       s(CAT_DIV, 'Divieto di passaggio ai pedoni.jpg',
         Z_LAVORO,
@@ -288,7 +285,7 @@ const RULES = [
       s(CAT_PER, 'Pericolo sostanze irritanti.jpg',
         Z_LAVORO,
         'Zone di applicazione vernici, primer, adesivi e prodotti con pittogramma GHS07',
-        'ISO 7010 W026 — Reg. CLP (UE) 1272/2008'
+        'D.lgs 81/08 All. XXV — sostanze con pittogramma GHS07, Reg. CLP (UE) 1272/2008'
       ),
       s(CAT_PER, 'Pericolo sostanze corrosive.jpg',
         Z_LAVORO,
@@ -319,7 +316,7 @@ const RULES = [
       s(CAT_PER, 'Pericolo gas.jpg',
         Z_LAVORO,
         'Zone scavi in prossimità di gasdotti, impianti gas, zone di posa tubazioni',
-        'ISO 7010 W019 — D.lgs 81/08 Art. 163'
+        'D.lgs 81/08 Art. 163 — All. XXV (gas infiammabile e tossico)'
       ),
       s(CAT_DIV, 'Divieto di bere acqua non potabile.jpg',
         Z_LAVORO,
@@ -335,7 +332,7 @@ const RULES = [
       s(CAT_PER, 'Pericolo rumore.jpg',
         Z_LAVORO,
         'Zone con utilizzo di macchinari rumorosi con esposizione superiore a 85 dB(A)',
-        'ISO 7010 W038 — D.lgs 81/08 Artt. 189-198'
+        'D.lgs 81/08 Artt. 189-198 — All. XXV'
       ),
       s(CAT_OBB, 'Obbligo protezione udito.jpg',
         Z_LAVORO,
@@ -361,7 +358,7 @@ const RULES = [
       s(CAT_PER, 'Pericolo sostanze irritanti.jpg',
         Z_LAVORO,
         'Zone di produzione polveri irritanti: cemento, calce, silice, fibre',
-        'ISO 7010 W026 — Reg. CLP — D.lgs 81/08 Art. 163'
+        'D.lgs 81/08 Art. 163 — All. XXV — sostanze con pittogramma GHS07 (Reg. CLP)'
       ),
     ]
   },
@@ -383,7 +380,7 @@ const RULES = [
       s(CAT_PER, 'Pericolo macchine in movimento.jpg',
         Z_LAVORO,
         'Viabilità interna del cantiere, zone di manovra e scarico mezzi',
-        'ISO 7010 W024 — D.lgs 81/08 Art. 70'
+        'ISO 7010 W001 — D.lgs 81/08 Art. 70'
       ),
       s(CAT_OBB, 'Obbligo passaggio pedoni.jpg',
         Z_LAVORO,
