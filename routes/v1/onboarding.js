@@ -5,6 +5,7 @@ const supabase = require('../../lib/supabase');
 const { sendWelcomeEmail } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { setupCompanySchema } = require('../../lib/schemas/onboarding');
+const { invitiAperti, aziendaConNome } = require('../../lib/onboardingGuard');
 
 /**
  * verifyJwtOnly — verifica solo il JWT Supabase senza check company membership.
@@ -75,6 +76,17 @@ router.get('/me', verifyJwtOnly, async (req, res) => {
   });
 });
 
+// GET /api/v1/onboarding/controllo — F-348: inviti aperti per l'email di chi
+// è entrato senza azienda (spesso con Google, senza passare dal link)
+router.get('/onboarding/controllo', verifyJwtOnly, async (req, res) => {
+  try {
+    res.json({ email: req.user.email, inviti: await invitiAperti(req.user.email) });
+  } catch (err) {
+    console.error('[onboarding/controllo]', err.message);
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
 // POST /api/v1/onboarding/setup — crea la prima company per l'utente autenticato
 router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), async (req, res) => {
   const { company_name, full_name, account_type = 'impresa', beta_code = null } = req.body || {};
@@ -121,6 +133,25 @@ router.post('/onboarding/setup', verifyJwtOnly, validate(setupCompanySchema), as
       account_type:    existing.companies?.account_type ?? 'impresa',
       already_existed: true,
     });
+  }
+
+  // F-348: niente seconda azienda per chi è stato invitato. Un invito aperto
+  // per la sua email → si entra lì; un'azienda con lo stesso nome già su
+  // Palladia → si crea solo se conferma che è un'altra impresa.
+  try {
+    const inviti = await invitiAperti(req.user.email);
+    if (inviti.length) {
+      return res.status(409).json({ error: 'INVITO_APERTO', inviti, message: `Ti aspetta un invito da ${inviti[0].azienda}: entra lì invece di creare una nuova azienda.` });
+    }
+    if (!req.body.conferma_nome_simile) {
+      const esistente = await aziendaConNome(cleanName, account_type);
+      if (esistente) {
+        return res.status(409).json({ error: 'AZIENDA_ESISTENTE', nome: esistente.name, message: `«${esistente.name}» è già su Palladia.` });
+      }
+    }
+  } catch (err) {
+    console.error('[onboarding] controllo F-348:', err.message);
+    return res.status(500).json({ error: 'DB_ERROR' });
   }
 
   // F-270: i coordinatori entrano solo con un codice di invito finché la prova
