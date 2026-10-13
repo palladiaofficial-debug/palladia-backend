@@ -9,15 +9,16 @@
  *   3. Documenti aziendali in scadenza (DURC, DVR, ecc.)
  *   4. Scadenze mezzi (assicurazione, revisione, tagliando)
  *
- * I singoli cron (workerMissingDocsCron, workerExpiryCron, ecc.) gestiscono
+ * I singoli cron (dailyDocCheckCron, equipmentExpiryCron, ecc.) gestiscono
  * notifiche in-app e Telegram — questo cron gestisce solo l'email.
  */
 
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
-const { daysUntil, inDays, severityFor, getCompanyName, getCompanyAdminEmails } = require('./expiryHelper');
+const { daysUntil, inDays, severityFor, getCompanyName, getCompanyAdminEmails, latestCompanyDocs } = require('./expiryHelper');
 const { sendDailyAlertDigest } = require('./email');
-const { statoLavoratori } = require('../lib/documentiStato');
+const { problemiLavoratori } = require('../lib/documentiStato');
+const { allRows } = require('../lib/allRows');
 
 const CATEGORY_LABELS = {
   rspp: 'RSPP', rls: 'RLS', medico_competente: 'Medico Competente',
@@ -35,19 +36,6 @@ const EQUIPMENT_FIELDS = [
 ];
 
 const DASHBOARD_URL   = (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse';
-const PAGE = 1000;
-
-// Legge tutte le righe, a pagine: il limite di default di PostgREST è 1000
-async function allRows(build) {
-  const rows = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await build().range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    rows.push(...(data || []));
-    if (!data || data.length < PAGE) return rows;
-  }
-}
-
 /**
  * F-351: le sezioni di un'azienda. I lavoratori usano lo stesso calcolo della
  * pagina /documenti (campi del lavoratore + tabella unica dei documenti +
@@ -55,8 +43,8 @@ async function allRows(build) {
  * titolare vede aprendo Palladia.
  */
 async function sectionsFor(companyId, t30) {
-  const [lavoratori, cdRes, eqRes] = await Promise.all([
-    statoLavoratori(companyId),
+  const [lav, cdRes, eqRes] = await Promise.all([
+    problemiLavoratori(companyId),
     supabase
       .from('company_documents')
       .select('id, company_id, name, category, ai_expiry_date, ai_renewal_years')
@@ -73,31 +61,21 @@ async function sectionsFor(companyId, t30) {
   if (eqRes.error) throw new Error(`equipment: ${eqRes.error.message}`);
 
   // ── 1-2. Lavoratori: mancanti e in scadenza ───────────────────────────────
-  const missingDocs = [];
+  const missingDocs = lav.mancanti.map(m => ({ id: m.workerId, company_id: companyId, full_name: m.name, missingTypes: m.missing.map(x => x.label) }));
   const workerExpiry = [];
-  for (const w of lavoratori) {
-    const missingTypes = w.requirements.filter(r => r.state === 'manca').map(r => r.label);
-    if (missingTypes.length) missingDocs.push({ id: w.id, company_id: companyId, full_name: w.name, missingTypes });
-    const inScadenza = [...w.requirements, ...w.documents].filter(x => x.state === 'scaduto' || x.state === 'in_scadenza');
-    for (const x of inScadenza) {
-      const days = daysUntil(x.expiry);
-      if (days === null) continue;
-      workerExpiry.push({
-        worker_id: w.id, worker: { full_name: w.name },
-        typeLabel: x.label, expiry_date: x.expiry, days, severity: severityFor(days),
-      });
-    }
+  for (const x of lav.scadenze) {
+    const days = daysUntil(x.expiry);
+    if (days === null) continue;
+    workerExpiry.push({
+      worker_id: x.workerId, worker: { full_name: x.name },
+      typeLabel: x.label, expiry_date: x.expiry, days, severity: severityFor(days),
+    });
   }
   workerExpiry.sort((a, b) => a.days - b.days);
 
   // ── 3. Documenti aziendali: per tipo conta il più recente (rinnovi) ───────
-  const latest = new Map();
-  for (const d of cdRes.data || []) {
-    const key = d.category && d.category !== 'altro' ? d.category : `doc:${d.id}`;
-    if (!latest.has(key) || d.ai_expiry_date > latest.get(key).ai_expiry_date) latest.set(key, d);
-  }
   const companyExpiry = [];
-  for (const doc of latest.values()) {
+  for (const doc of latestCompanyDocs(cdRes.data)) {
     if (doc.ai_expiry_date > t30) continue;
     const days = daysUntil(doc.ai_expiry_date);
     if (days === null) continue;

@@ -16,6 +16,7 @@
 const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { sendExpiryAlertPro } = require('./email');
+const { problemiLavoratori } = require('../lib/documentiStato');
 
 // Calcola giorni rimanenti da oggi. Negativo = già scaduto.
 function daysUntil(dateStr) {
@@ -26,12 +27,7 @@ function daysUntil(dateStr) {
   return Math.ceil((target - now) / 86400000);
 }
 
-function complianceLabel(days) {
-  if (days === null)  return null; // non impostata — non la segnaliamo
-  if (days < 0)       return 'expired';
-  if (days <= 30)     return 'expiring';
-  return null;
-}
+const STATUS = { scaduto: 'expired', in_scadenza: 'expiring' };
 
 /**
  * Esegue il controllo completo e invia le email.
@@ -55,25 +51,34 @@ async function runExpiryAlerts() {
   const emails = [...new Set(sessions.map(s => s.email))];
   let emailsSent = 0;
 
+  // F-354: stato dei lavoratori dalla stessa fonte di /documenti, una volta per azienda
+  const problemiByCompany = new Map();
+  const problemiDi = async (companyId) => {
+    if (!problemiByCompany.has(companyId)) problemiByCompany.set(companyId, await problemiLavoratori(companyId));
+    return problemiByCompany.get(companyId);
+  };
+
   for (const email of emails) {
     try {
       // 2. Trova tutti gli inviti attivi per questa email
-      const { data: invites } = await supabase
+      const { data: invites, error: invErr } = await supabase
         .from('site_coordinator_invites')
         .select('id, site_id, company_id, coordinator_name')
         .eq('coordinator_email', email)
         .eq('is_active', true)
         .gt('expires_at', new Date().toISOString());
+      if (invErr) throw new Error(`inviti: ${invErr.message}`);
 
       if (!invites?.length) continue;
 
       const siteIds = [...new Set(invites.map(i => i.site_id))];
 
       // 3. Recupera nome cantieri
-      const { data: sites } = await supabase
+      const { data: sites, error: sitesErr } = await supabase
         .from('sites')
         .select('id, name, address')
         .in('id', siteIds);
+      if (sitesErr) throw new Error(`cantieri: ${sitesErr.message}`);
 
       const siteMap = Object.fromEntries((sites || []).map(s => [s.id, s]));
 
@@ -81,42 +86,32 @@ async function runExpiryAlerts() {
       const sitesWithIssues = [];
 
       for (const invite of invites) {
-        const { data: ww } = await supabase
+        const { data: ww, error: wwErr } = await supabase
           .from('worksite_workers')
           .select('worker_id')
           .eq('site_id', invite.site_id)
           .eq('company_id', invite.company_id)
           .eq('status', 'active');
+        if (wwErr) throw new Error(`lavoratori del cantiere: ${wwErr.message}`);
 
         if (!ww?.length) continue;
 
-        const workerIds = ww.map(r => r.worker_id);
-        const { data: workers } = await supabase
-          .from('workers')
-          .select('id, full_name, safety_training_expiry, health_fitness_expiry')
-          .in('id', workerIds)
-          .eq('is_active', true);
-
-        const issues = [];
-        for (const w of (workers || [])) {
-          const safetyDays = daysUntil(w.safety_training_expiry);
-          const healthDays = daysUntil(w.health_fitness_expiry);
-
-          const safetyLabel = complianceLabel(safetyDays);
-          const healthLabel = complianceLabel(healthDays);
-
-          if (safetyLabel || healthLabel) {
-            issues.push({
-              name:           w.full_name,
-              safety_expiry:  w.safety_training_expiry,
-              health_expiry:  w.health_fitness_expiry,
-              safety_status:  safetyLabel,
-              health_status:  healthLabel,
-              safety_days:    safetyDays,
-              health_days:    healthDays,
-            });
-          }
+        const onSite = new Set(ww.map(r => r.worker_id));
+        const { scadenze } = await problemiDi(invite.company_id);
+        const byWorker = new Map();
+        for (const x of scadenze) {
+          if (!onSite.has(x.workerId) || !x.key) continue; // solo visita e corso, come prima
+          if (!byWorker.has(x.workerId)) byWorker.set(x.workerId, { name: x.name });
+          const w = byWorker.get(x.workerId);
+          const pre = x.key === 'formazione' ? 'safety' : 'health';
+          w[`${pre}_expiry`] = x.expiry;
+          w[`${pre}_status`] = STATUS[x.state];
+          w[`${pre}_days`] = daysUntil(x.expiry);
         }
+        const issues = [...byWorker.values()].map(w => ({
+          safety_expiry: null, health_expiry: null, safety_status: null, health_status: null,
+          safety_days: null, health_days: null, ...w,
+        }));
 
         if (issues.length > 0) {
           const site = siteMap[invite.site_id];

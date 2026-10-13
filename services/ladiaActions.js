@@ -17,6 +17,7 @@
  *  openLadiaMode(chatId, siteId)                 → attiva ladia_mode su telegram_users
  */
 
+const { scheda } = require('../lib/documentiStato');
 const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
 const { getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
@@ -295,9 +296,10 @@ async function sendExpiryReminder(workerId, docType, companyId, chatId) {
     return { ok: false, sent: 0 };
   }
 
-  const expiryDate = docType === 'train'
-    ? worker.safety_training_expiry
-    : worker.health_fitness_expiry;
+  // F-354: la data che fa fede è quella di /documenti (scheda + documenti + attestati)
+  const stato = await scheda(companyId, 'lavoratori', workerId);
+  const req = stato?.requirements.find(r => r.key === (docType === 'train' ? 'formazione' : 'idoneita'));
+  const expiryDate = req ? req.expiry : (docType === 'train' ? worker.safety_training_expiry : worker.health_fitness_expiry);
 
   const docLabel = docType === 'train' ? 'Formazione sicurezza' : 'Idoneità sanitaria';
   const daysLeft = expiryDate

@@ -15,6 +15,9 @@ const supabase = require('../lib/supabase');
 const tg       = require('./telegram');
 const { sendWeeklyExpiryReport } = require('./email');
 const { filterUserIdsByChannel, getPrefsMap, isChannelEnabled } = require('../lib/notificationPrefs');
+const { problemiLavoratori } = require('../lib/documentiStato');
+const { isFeatureEnabled } = require('../lib/featureFlags');
+const { allRows } = require('../lib/allRows');
 
 const FRONTEND_URL = (process.env.FRONTEND_URL || process.env.APP_BASE_URL || 'https://palladia.net').replace(/\/$/, '');
 
@@ -31,14 +34,16 @@ async function buildExpiryEvents(companyId) {
   const from30  = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
   const to30    = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
-  const [workersRes, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
-    supabase.from('workers')
-      .select('id, full_name, safety_training_expiry, health_fitness_expiry')
-      .eq('company_id', companyId).eq('is_active', true),
+  const subsEnabled = await isFeatureEnabled(companyId, 'subappaltatori');
+  const [lav, subsRes, companyRes, sitesRes, salRes] = await Promise.all([
+    // F-354: lavoratori con lo stesso stato di /documenti (documenti e attestati, rinnovi)
+    problemiLavoratori(companyId),
 
-    supabase.from('subcontractors')
-      .select('id, company_name, durc_expiry, insurance_expiry, soa_expiry')
-      .eq('company_id', companyId),
+    subsEnabled
+      ? supabase.from('subcontractors')
+        .select('id, company_name, durc_expiry, insurance_expiry, soa_expiry')
+        .eq('company_id', companyId).eq('is_active', true)
+      : Promise.resolve({ data: [], error: null }),
 
     supabase.from('companies')
       .select('id, name, durc_expiry')
@@ -55,6 +60,11 @@ async function buildExpiryEvents(companyId) {
       .not('data_pagamento_prevista', 'is', null),
   ]);
 
+  // Mai un report costruito su una lettura fallita (F-354)
+  for (const r of [subsRes, companyRes, sitesRes, salRes]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
   const events = [];
 
   const push = (dateStr, label) => {
@@ -66,9 +76,11 @@ async function buildExpiryEvents(companyId) {
     if (sev) events.push({ label, date: d, days, severity: sev });
   };
 
-  for (const w of (workersRes.data || [])) {
-    if (w.safety_training_expiry) push(w.safety_training_expiry, `Formazione — ${w.full_name}`);
-    if (w.health_fitness_expiry)  push(w.health_fitness_expiry,  `Idoneità — ${w.full_name}`);
+  // Lavoratori: anche chi è scaduto da più di 30 giorni resta nel report
+  for (const x of lav.scadenze) {
+    const days = daysFrom(x.expiry);
+    if (days === null || x.expiry > to30) continue;
+    events.push({ label: `${x.label} — ${x.name}`, date: x.expiry, days, severity: days <= 7 ? 'critical' : 'warning' });
   }
   for (const s of (subsRes.data || [])) {
     if (s.durc_expiry)      push(s.durc_expiry,      `DURC — ${s.company_name}`);
@@ -104,14 +116,15 @@ async function runWeeklyExpiryReport() {
   console.log('[weeklyExpiryReport] avvio');
 
   // Tutte le company con almeno un utente owner/admin
-  const { data: companyUsers, error } = await supabase
-    .from('company_users')
-    .select('company_id, user_id, role')
-    .in('role', ['owner', 'admin'])
-    .limit(2000);
-
-  if (error) {
-    console.error('[weeklyExpiryReport] fetch company_users error:', error.message);
+  let companyUsers;
+  try {
+    companyUsers = await allRows(() => supabase
+      .from('company_users')
+      .select('company_id, user_id, role')
+      .in('role', ['owner', 'admin'])
+      .order('id'), 'company_users');
+  } catch (e) {
+    console.error('[weeklyExpiryReport] fetch company_users error:', e.message);
     return;
   }
 
@@ -133,11 +146,12 @@ async function runWeeklyExpiryReport() {
       const enabledEmailUserIds = await filterUserIdsByChannel(companyId, userIds, 'email');
 
       if (enabledEmailUserIds.length) {
-        const { data: emails } = await supabase
+        const { data: emails, error: emErr } = await supabase
           .from('auth_users_view')
           .select('email')
           .in('id', enabledEmailUserIds)
           .limit(10);
+        if (emErr) console.error(`[weeklyExpiryReport] email destinatari (${companyId}):`, emErr.message);
 
         for (const { email } of (emails || []).filter(u => u.email)) {
           try {
@@ -199,4 +213,4 @@ function startWeeklyExpiryReportCron() {
   console.log('[cron] weekly-expiry-report attivo — ogni lunedì 08:00 Europe/Rome');
 }
 
-module.exports = { startWeeklyExpiryReportCron, runWeeklyExpiryReport };
+module.exports = { startWeeklyExpiryReportCron, runWeeklyExpiryReport, buildExpiryEvents };

@@ -8,8 +8,9 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const {
   daysUntil, inDays, severityFor, severityLabel,
-  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
+  upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications, latestCompanyDocs,
 } = require('./expiryHelper');
+const { allRows } = require('../lib/allRows');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
   notifyExpiryAlert, notifyResolved, buildCompanyDocExpiryMessage,
@@ -28,16 +29,20 @@ async function runCompanyDocExpiryCheck() {
   console.log('[companyDocExpiry] avvio controllo scadenze documenti aziendali...');
   const t30 = inDays(30);
 
-  const { data: docs, error } = await supabase
-    .from('company_documents')
-    .select('id, company_id, name, category, ai_expiry_date, ai_renewal_years')
-    .not('ai_expiry_date', 'is', null)
-    .lte('ai_expiry_date', t30);
-
-  if (error) { console.error('[companyDocExpiry] fetch error:', error.message); return; }
+  // F-354: tutte le righe con scadenza (a pagine), così un rinnovo copre il
+  // documento vecchio; poi solo quelle entro 30 giorni.
+  let docs;
+  try {
+    docs = await allRows(() => supabase
+      .from('company_documents')
+      .select('id, company_id, name, category, ai_expiry_date, ai_renewal_years')
+      .not('ai_expiry_date', 'is', null)
+      .order('id'), 'company_documents');
+  } catch (e) { console.error('[companyDocExpiry] fetch error:', e.message); return; }
 
   const byCompany = {};
-  for (const doc of (docs || [])) {
+  for (const doc of latestCompanyDocs(docs)) {
+    if (doc.ai_expiry_date > t30) continue;
     const days = daysUntil(doc.ai_expiry_date);
     if (days === null) continue;
     if (!byCompany[doc.company_id]) byCompany[doc.company_id] = [];

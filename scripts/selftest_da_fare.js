@@ -87,10 +87,10 @@ async function main() {
     const has = (re) => r.items.find(i => re.test(i.title));
 
     check('idoneità di Anna: una riga sola (campo e documento con la stessa data sono lo stesso fatto)',
-      r.items.filter(i => /Idoneità medica — .*Anna/.test(i.title)).length === 1, titles);
+      r.items.filter(i => /Visita medica — .*Anna/.test(i.title)).length === 1, titles);
     check('idoneità di Anna in "Questa settimana", link alla sua scheda Documenti',
-      has(/Idoneità medica — .*Anna/)?.bucket === 'settimana' && has(/Idoneità medica — .*Anna/)?.link === `/lavoratori/${wA.id}/documenti`, has(/Idoneità medica — .*Anna/));
-    check('formazione di Anna (solo campo, scaduta) in "Scaduto"', has(/Formazione sicurezza — .*Anna/)?.bucket === 'scaduto', titles);
+      has(/Visita medica — .*Anna/)?.bucket === 'settimana' && has(/Visita medica — .*Anna/)?.link === `/lavoratori/${wA.id}/documenti`, has(/Visita medica — .*Anna/));
+    check('formazione di Anna (solo campo, scaduta) in "Scaduto"', has(/Corso sicurezza — .*Anna/)?.bucket === 'scaduto', titles);
     check('DURC rinnovato: nessuna riga DURC (né il documento vecchio né il campo con la stessa data)',
       !r.items.some(i => /DURC/.test(i.title)), titles);
     check('documento di Bruno "già prenotato" → sezione In corso, non tra le urgenze',
@@ -120,7 +120,7 @@ async function main() {
     check('contatore campanella = scaduto + questa settimana', r.attention === r.counts.scaduto + r.counts.settimana, r.counts);
 
     // ── F-243 "Prenotata": la formazione scaduta di Anna esce dalle urgenze ──
-    const formItem = r.items.find(i => /Formazione sicurezza — .*Anna/.test(i.title));
+    const formItem = r.items.find(i => /Corso sicurezza — .*Anna/.test(i.title));
     check('ogni scadenza è prenotabile', formItem?.prenotabile === true, formItem);
     await supabase.from('da_fare_prenotazioni').insert({ company_id: cid, item_id: formItem.id, torna_il: d(10) });
     const rp = await buildDaFare(cid, userId);
@@ -136,7 +136,7 @@ async function main() {
     await supabase.from('da_fare_prenotazioni').update({ torna_il: d(10) }).eq('company_id', cid).eq('item_id', formItem.id);
     const brief = await buildDailyBrief(cid);
     check('card: la richiesta di aiuto dalla timbratura è la prima riga', /aiuto per timbrare/.test(brief.alerts[0]?.title || ''), brief.alerts.map(a => a.title));
-    check('card: la riga prenotata non compare', !brief.alerts.some(a => /Formazione sicurezza — .*Anna/.test(a.title)), brief.alerts.map(a => a.title));
+    check('card: la riga prenotata non compare', !brief.alerts.some(a => /Corso sicurezza — .*Anna/.test(a.title)), brief.alerts.map(a => a.title));
     check('card: ogni riga porta dove si sistema (link), il numero Da fare è quello della campanella',
       brief.alerts.every(a => typeof a.link === 'string' && a.link.startsWith('/')) && brief.kpi.da_fare === rp.attention, { kpi: brief.kpi });
 

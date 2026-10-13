@@ -10,6 +10,7 @@ const {
   daysUntil, inDays, severityFor, severityLabel,
   upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
+const { allRows } = require('../lib/allRows');
 // Email rimossa: ora gestita dal digest unificato (dailyDigestCron)
 const {
   notifyExpiryAlert, notifyResolved, buildEquipmentExpiryMessage,
@@ -25,13 +26,15 @@ async function runEquipmentExpiryCheck() {
   console.log('[equipmentExpiry] avvio controllo scadenze mezzi...');
   const t30 = inDays(30);
 
-  const { data: equipment, error } = await supabase
-    .from('equipment')
-    .select('id, company_id, type, model, plate_or_serial, insurance_expiry, inspection_date, maintenance_date')
-    .eq('is_active', true)
-    .or(`insurance_expiry.lte.${t30},inspection_date.lte.${t30},maintenance_date.lte.${t30}`);
-
-  if (error) { console.error('[equipmentExpiry] fetch error:', error.message); return; }
+  let equipment;
+  try {
+    equipment = await allRows(() => supabase
+      .from('equipment')
+      .select('id, company_id, type, model, plate_or_serial, insurance_expiry, inspection_date, maintenance_date')
+      .eq('is_active', true)
+      .or(`insurance_expiry.lte.${t30},inspection_date.lte.${t30},maintenance_date.lte.${t30}`)
+      .order('id'), 'equipment');
+  } catch (e) { console.error('[equipmentExpiry] fetch error:', e.message); return; }
 
   const byCompany = {};
   for (const eq of (equipment || [])) {

@@ -59,7 +59,7 @@ async function main() {
     // ── Anteprima: testo con la riga nuova di Da fare ─────────────────────
     const preview = await digest.buildDigest(on.id);
     check('anteprima: il riepilogo contiene l\'idoneità scaduta di Anna e il link a Da fare',
-      !!preview && /Idoneità medica — .*Anna/.test(preview.text) && preview.text.includes('/scadenze'), preview?.text);
+      !!preview && /Visita medica — .*Anna/.test(preview.text) && preview.text.includes('/scadenze'), preview?.text);
 
     // ── Giro delle 7:30 ───────────────────────────────────────────────────
     const r1 = await digest.runDigestForCompany(on.id);

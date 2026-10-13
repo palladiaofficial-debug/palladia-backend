@@ -82,7 +82,7 @@ const SEVERITY_RANK = { info: 0, warning: 1, critical: 2 };
  *   - altrimenti           → non inviare (già notificato, non è peggiorato)
  */
 async function upsertNotification({ companyId, type, severity, title, body, entityType, entityId }) {
-  const { data: existing } = await supabase
+  const { data: existing, error: readErr } = await supabase
     .from('notifications')
     .select('id, severity, read_by, snoozed_until')
     .eq('company_id', companyId)
@@ -90,6 +90,8 @@ async function upsertNotification({ companyId, type, severity, title, body, enti
     .eq('entity_id',   entityId)
     .eq('type',        type)
     .maybeSingle();
+  // F-353: una lettura fallita non è "notifica nuova" (rimanderebbe l'avviso)
+  if (readErr) throw new Error(`notifications read: ${readErr.message}`);
 
   const isNew      = !existing;
   const escalated  = !isNew && (SEVERITY_RANK[severity] ?? 0) > (SEVERITY_RANK[existing.severity] ?? 0);
@@ -106,9 +108,10 @@ async function upsertNotification({ companyId, type, severity, title, body, enti
     ...(escalated ? { read_by: [] } : {}), // severity peggiorata → riappare come non letta
   };
 
-  await supabase
+  const { error: upErr } = await supabase
     .from('notifications')
     .upsert(record, { onConflict: 'company_id,entity_type,entity_id,type' });
+  if (upErr) throw new Error(`notifications upsert: ${upErr.message}`);
 
   // Trail append-only per il layer "proof of value" (widget/report Palladia) —
   // `notifications` sopra è stato live e viene CANCELLATO alla risoluzione,
@@ -157,18 +160,20 @@ function isSnoozeActive({ snoozedUntil, type, severity }) {
  * Restituisce { resolved } — lista di notifiche eliminate (per inviare "✅ Risolto" su Telegram).
  */
 async function pruneNotifications(companyId, type, entityType, relevantEntityIds) {
-  const { data: existing } = await supabase
+  const { data: existing, error: readErr } = await supabase
     .from('notifications')
     .select('id, entity_id, title')
     .eq('company_id', companyId)
     .eq('type', type)
     .eq('entity_type', entityType);
+  if (readErr) throw new Error(`notifications read: ${readErr.message}`);
 
   const toDelete = (existing || []).filter(n => !relevantEntityIds.has(n.entity_id));
   const resolved = toDelete.map(n => ({ id: n.id, title: n.title, entityId: n.entity_id }));
 
   if (toDelete.length) {
-    await supabase.from('notifications').delete().in('id', toDelete.map(n => n.id));
+    const { error: delErr } = await supabase.from('notifications').delete().in('id', toDelete.map(n => n.id));
+    if (delErr) throw new Error(`notifications delete: ${delErr.message}`);
 
     // Chiude il ciclo nel trail append-only: il problema non è più nel set "in
     // scadenza" → molto probabilmente rinnovato in tempo. resolved_at è il
@@ -197,21 +202,47 @@ async function pruneNotifications(companyId, type, entityType, relevantEntityIds
  * Questa funzione fa un secondo giro mirato SOLO alle company che hanno
  * ancora una notifica di questo tipo ma sono uscite dal set attivo di oggi.
  */
-async function pruneOrphanedNotifications(type, entityType, activeCompanyIds) {
-  const { data: existing } = await supabase
-    .from('notifications')
-    .select('company_id')
-    .eq('type', type)
-    .eq('entity_type', entityType);
+/**
+ * F-354: documenti aziendali, per categoria conta il più recente: un DURC
+ * scaduto e già rinnovato non è più una scadenza. I documenti "altro" (o
+ * senza categoria) restano uno per uno.
+ */
+function latestCompanyDocs(docs) {
+  const latest = new Map();
+  for (const d of docs || []) {
+    const key = d.category && d.category !== 'altro' ? `${d.company_id}|${d.category}` : `doc:${d.id}`;
+    if (!latest.has(key) || d.ai_expiry_date > latest.get(key).ai_expiry_date) latest.set(key, d);
+  }
+  return [...latest.values()];
+}
 
-  const orphanCompanyIds = [...new Set((existing || [])
+async function pruneOrphanedNotifications(type, entityType, activeCompanyIds) {
+  const existing = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('company_id')
+      .eq('type', type)
+      .eq('entity_type', entityType)
+      .order('id')
+      .range(from, from + 999);
+    if (error) { console.error(`[expiryHelper] orfani ${type}:`, error.message); return { resolved: [] }; }
+    existing.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+
+  const orphanCompanyIds = [...new Set(existing
     .map(n => n.company_id)
     .filter(id => !activeCompanyIds.has(id)))];
 
   const allResolved = [];
   for (const companyId of orphanCompanyIds) {
-    const { resolved } = await pruneNotifications(companyId, type, entityType, new Set());
-    for (const r of resolved) allResolved.push({ ...r, companyId });
+    try {
+      const { resolved } = await pruneNotifications(companyId, type, entityType, new Set());
+      for (const r of resolved) allResolved.push({ ...r, companyId });
+    } catch (e) {
+      console.error(`[expiryHelper] orfani ${type} ${companyId}:`, e.message);
+    }
   }
   return { resolved: allResolved };
 }
@@ -229,4 +260,5 @@ module.exports = {
   isSnoozeActive,
   pruneNotifications,
   pruneOrphanedNotifications,
+  latestCompanyDocs,
 };

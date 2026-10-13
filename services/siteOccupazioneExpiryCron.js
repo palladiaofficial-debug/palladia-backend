@@ -18,6 +18,7 @@ const {
   daysUntil, inDays, severityFor, severityLabel,
   upsertNotification, shouldSendTelegram, pruneNotifications, pruneOrphanedNotifications,
 } = require('./expiryHelper');
+const { allRows } = require('../lib/allRows');
 const {
   notifyExpiryAlert, notifyResolved,
 } = require('./telegramNotifications');
@@ -42,15 +43,17 @@ async function runOccupazioneExpiryCheck() {
   console.log('[occupazioneExpiry] avvio controllo scadenze suolo...');
   const t30 = inDays(30);
 
-  const { data: sites, error } = await supabase
-    .from('sites')
-    .select('id, name, company_id, suolo_occupazione_end')
-    .eq('suolo_occupazione', true)
-    .not('suolo_occupazione_end', 'is', null)
-    .lte('suolo_occupazione_end', t30)
-    .neq('status', 'eliminato');
-
-  if (error) { console.error('[occupazioneExpiry] fetch error:', error.message); return; }
+  let sites;
+  try {
+    sites = await allRows(() => supabase
+      .from('sites')
+      .select('id, name, company_id, suolo_occupazione_end')
+      .eq('suolo_occupazione', true)
+      .not('suolo_occupazione_end', 'is', null)
+      .lte('suolo_occupazione_end', t30)
+      .neq('status', 'eliminato')
+      .order('id'), 'sites');
+  } catch (e) { console.error('[occupazioneExpiry] fetch error:', e.message); return; }
 
   // Raggruppa per company
   const byCompany = {};

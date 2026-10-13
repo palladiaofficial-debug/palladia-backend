@@ -44,7 +44,7 @@ async function main() {
     const anna = await ins('workers', { company_id: cid, full_name: `${T} Anna`, is_active: true, fiscal_code: `F334A${stamp}`.slice(0, 16), badge_code: `F334A${stamp}`, health_fitness_expiry: d(-20), safety_training_expiry: d(300) });
     const bruno = await ins('workers', { company_id: cid, full_name: `${T} Bruno`, is_active: true, fiscal_code: `F334B${stamp}`.slice(0, 16), badge_code: `F334B${stamp}`, health_fitness_expiry: d(300), safety_training_expiry: d(-15) });
     // Bruno ha anche il documento della formazione, stessa data: in Da fare è la riga "doc:…"
-    await ins('worker_documents', { company_id: cid, worker_id: bruno.id, doc_type: 'formazione', name: 'Corso sicurezza Bruno', file_path: `test/${T}/b.pdf`, expiry_date: d(-15) });
+    await ins('worker_documents', { company_id: cid, worker_id: bruno.id, doc_type: 'formazione_sicurezza', name: 'Corso sicurezza Bruno', file_path: `test/${T}/b.pdf`, expiry_date: d(-15) });
     const y = d(-1);
     for (const w of [anna, bruno]) {
       await ins('presence_logs', { company_id: cid, site_id: site.id, worker_id: w.id, event_type: 'ENTRY', timestamp_server: `${y}T06:00:00Z`, method: 'worker_self_punch' });
