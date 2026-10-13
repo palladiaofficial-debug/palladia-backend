@@ -106,7 +106,7 @@ function parseTable(rows) {
   const tot = peso.reduce((a, b) => a + b, 0);
   // Colonne di numeri o etichette brevi (R, LEX, fascia): mai a capo dentro la cella
   const corte = headers.map((h, ci) => Math.max(0, ...body.map(r => (r[ci] || '').replace(/\*\*/g, '').length)) <= 8);
-  const larghezze = headers.length >= 3 ? peso.map((p, ci) => Math.max(ci === 0 ? 12 : corte[ci] ? 7 : 6, Math.round((p / tot) * 100))) : null;
+  const larghezze = headers.length >= 3 ? peso.map((p, ci) => Math.max(ci === 0 ? 12 : corte[ci] ? 8 : 6, Math.round((p / tot) * 100))) : null;
   let html = '<table class="allow-break"><thead><tr>';
   headers.forEach((h, ci) => { html += `<th${larghezze ? ` style="width:${larghezze[ci]}%${h.length <= 6 ? ';white-space:nowrap' : ''}"` : ''}>${boldify(h)}</th>`; });
   html += '</tr></thead><tbody>';
