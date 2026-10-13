@@ -195,3 +195,4 @@ scripts/selftest_sunto_sicurezza.js
 scripts/selftest_pos_cartelli_iso.js
 scripts/selftest_pos_pdf_contenuti.js
 scripts/selftest_onboarding_trappola.js
+scripts/selftest_daily_digest_f351.js

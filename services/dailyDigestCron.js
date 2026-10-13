@@ -4,7 +4,7 @@
  *
  * Cron giornaliero (07:30 Europe/Rome) — invia UNA sola email per company
  * che riassume TUTTI gli alert di conformità:
- *   1. Documenti obbligatori mancanti (idoneità medica, formazione sicurezza)
+ *   1. Documenti obbligatori mancanti (visita medica, corso sicurezza)
  *   2. Documenti lavoratori in scadenza (qualsiasi tipo entro 30gg)
  *   3. Documenti aziendali in scadenza (DURC, DVR, ecc.)
  *   4. Scadenze mezzi (assicurazione, revisione, tagliando)
@@ -17,20 +17,7 @@ const cron     = require('node-cron');
 const supabase = require('../lib/supabase');
 const { daysUntil, inDays, severityFor, getCompanyName, getCompanyAdminEmails } = require('./expiryHelper');
 const { sendDailyAlertDigest } = require('./email');
-
-const DOC_TYPE_LABELS = {
-  idoneita_medica:      'Idoneità medica',
-  formazione_sicurezza: 'Formazione sicurezza',
-  primo_soccorso:       'Primo soccorso',
-  antincendio:          'Antincendio',
-  lavori_quota:         'Lavori in quota',
-  ponteggi:             'Ponteggi',
-  gruista:              'Gruista',
-  pes_pav_pei:          'PES/PAV/PEI',
-  rspp:                 'RSPP',
-  patente_guida:        'Patente di guida',
-  altro:                'Documento',
-};
+const { statoLavoratori } = require('../lib/documentiStato');
 
 const CATEGORY_LABELS = {
   rspp: 'RSPP', rls: 'RLS', medico_competente: 'Medico Competente',
@@ -47,159 +34,112 @@ const EQUIPMENT_FIELDS = [
   { key: 'maintenance_date',  label: 'Tagliando / Manutenzione' },
 ];
 
-const REQUIRED_TYPES  = ['idoneita_medica', 'formazione_sicurezza'];
 const DASHBOARD_URL   = (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse';
+const PAGE = 1000;
 
-async function runDailyDigest() {
-  console.log('[dailyDigest] avvio digest giornaliero...');
+// Legge tutte le righe, a pagine: il limite di default di PostgREST è 1000
+async function allRows(build) {
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) return rows;
+  }
+}
 
-  const t30      = inDays(30);
-  const todayStr = new Date().toISOString().split('T')[0];
-
-  // ── Query parallele ────────────────────────────────────────────────────────
-  const [wRes, wdRes, cdRes, eqRes] = await Promise.all([
-    // 1. Tutti i lavoratori attivi
-    supabase.from('workers').select('id, company_id, full_name').eq('is_active', true),
-
-    // 2. Documenti lavoratori in scadenza entro 30gg
-    supabase
-      .from('worker_documents')
-      .select('id, company_id, worker_id, doc_type, name, expiry_date, worker:workers(full_name, is_active)')
-      .not('expiry_date', 'is', null)
-      .lte('expiry_date', t30),
-
-    // 3. Documenti aziendali in scadenza entro 30gg
+/**
+ * F-351: le sezioni di un'azienda. I lavoratori usano lo stesso calcolo della
+ * pagina /documenti (campi del lavoratore + tabella unica dei documenti +
+ * attestati, rinnovi compresi): l'email non può dire altro da quello che il
+ * titolare vede aprendo Palladia.
+ */
+async function sectionsFor(companyId, t30) {
+  const [lavoratori, cdRes, eqRes] = await Promise.all([
+    statoLavoratori(companyId),
     supabase
       .from('company_documents')
       .select('id, company_id, name, category, ai_expiry_date, ai_renewal_years')
-      .not('ai_expiry_date', 'is', null)
-      .lte('ai_expiry_date', t30),
-
-    // 4. Mezzi con scadenze entro 30gg
+      .eq('company_id', companyId)
+      .not('ai_expiry_date', 'is', null),
     supabase
       .from('equipment')
       .select('id, company_id, type, model, plate_or_serial, insurance_expiry, inspection_date, maintenance_date')
+      .eq('company_id', companyId)
       .eq('is_active', true)
       .or(`insurance_expiry.lte.${t30},inspection_date.lte.${t30},maintenance_date.lte.${t30}`),
   ]);
+  if (cdRes.error) throw new Error(`company_documents: ${cdRes.error.message}`);
+  if (eqRes.error) throw new Error(`equipment: ${eqRes.error.message}`);
 
-  if (wRes.error)  { console.error('[dailyDigest] workers error:', wRes.error.message); }
-  if (wdRes.error) { console.error('[dailyDigest] worker_docs error:', wdRes.error.message); }
-  if (cdRes.error) { console.error('[dailyDigest] company_docs error:', cdRes.error.message); }
-  if (eqRes.error) { console.error('[dailyDigest] equipment error:', eqRes.error.message); }
-
-  const workers     = wRes.data  || [];
-  const workerDocs  = wdRes.data || [];
-  const companyDocs = cdRes.data || [];
-  const equipment   = eqRes.data || [];
-
-  // ── 1. Documenti obbligatori mancanti ─────────────────────────────────────
-  const workerIds = workers.map(w => w.id);
-  let existingReqDocs = [];
-  if (workerIds.length) {
-    const { data } = await supabase
-      .from('worker_documents')
-      .select('worker_id, doc_type')
-      .in('worker_id', workerIds)
-      .in('doc_type', REQUIRED_TYPES)
-      .or(`expiry_date.is.null,expiry_date.gte.${todayStr}`);
-    existingReqDocs = data || [];
-  }
-
-  const workerDocTypes = new Map();
-  for (const d of existingReqDocs) {
-    if (!workerDocTypes.has(d.worker_id)) workerDocTypes.set(d.worker_id, new Set());
-    workerDocTypes.get(d.worker_id).add(d.doc_type);
-  }
-
-  const missingByWorker = workers.reduce((acc, w) => {
-    const present      = workerDocTypes.get(w.id) || new Set();
-    const missingTypes = REQUIRED_TYPES.filter(t => !present.has(t)).map(t => DOC_TYPE_LABELS[t] || t);
-    if (missingTypes.length) {
-      if (!acc[w.company_id]) acc[w.company_id] = [];
-      acc[w.company_id].push({ ...w, missingTypes });
-    }
-    return acc;
-  }, {});
-
-  // ── 2. Documenti lavoratori in scadenza ───────────────────────────────────
-  // Dedup per (worker_id, doc_type): tieni solo il doc con expiry massima.
-  // Evita che un doc vecchio scaduto generi alert quando esiste un rinnovo valido.
-  const latestByKey = new Map();
-  for (const d of workerDocs) {
-    if (!d.worker?.is_active) continue;
-    const key = `${d.worker_id}:${d.doc_type}`;
-    if (!latestByKey.has(key) || d.expiry_date > latestByKey.get(key).expiry_date) {
-      latestByKey.set(key, d);
+  // ── 1-2. Lavoratori: mancanti e in scadenza ───────────────────────────────
+  const missingDocs = [];
+  const workerExpiry = [];
+  for (const w of lavoratori) {
+    const missingTypes = w.requirements.filter(r => r.state === 'manca').map(r => r.label);
+    if (missingTypes.length) missingDocs.push({ id: w.id, company_id: companyId, full_name: w.name, missingTypes });
+    const inScadenza = [...w.requirements, ...w.documents].filter(x => x.state === 'scaduto' || x.state === 'in_scadenza');
+    for (const x of inScadenza) {
+      const days = daysUntil(x.expiry);
+      if (days === null) continue;
+      workerExpiry.push({
+        worker_id: w.id, worker: { full_name: w.name },
+        typeLabel: x.label, expiry_date: x.expiry, days, severity: severityFor(days),
+      });
     }
   }
-  const expiryByCompany = {};
-  for (const d of latestByKey.values()) {
-    if (d.expiry_date > t30) continue; // il rinnovo è valido oltre 30gg — non segnalare
-    const days     = daysUntil(d.expiry_date);
-    if (days === null) continue;
-    const severity = severityFor(days);
-    if (!expiryByCompany[d.company_id]) expiryByCompany[d.company_id] = [];
-    expiryByCompany[d.company_id].push({
-      ...d,
-      days,
-      severity,
-      typeLabel: DOC_TYPE_LABELS[d.doc_type] || d.doc_type,
-    });
-  }
+  workerExpiry.sort((a, b) => a.days - b.days);
 
-  // ── 3. Documenti aziendali in scadenza ────────────────────────────────────
-  const companyDocByCompany = {};
-  for (const doc of companyDocs) {
+  // ── 3. Documenti aziendali: per tipo conta il più recente (rinnovi) ───────
+  const latest = new Map();
+  for (const d of cdRes.data || []) {
+    const key = d.category && d.category !== 'altro' ? d.category : `doc:${d.id}`;
+    if (!latest.has(key) || d.ai_expiry_date > latest.get(key).ai_expiry_date) latest.set(key, d);
+  }
+  const companyExpiry = [];
+  for (const doc of latest.values()) {
+    if (doc.ai_expiry_date > t30) continue;
     const days = daysUntil(doc.ai_expiry_date);
     if (days === null) continue;
-    if (!companyDocByCompany[doc.company_id]) companyDocByCompany[doc.company_id] = [];
-    companyDocByCompany[doc.company_id].push({
-      ...doc,
-      days,
-      severity: severityFor(days),
-      catLabel: CATEGORY_LABELS[doc.category] || doc.category,
-    });
+    companyExpiry.push({ ...doc, days, severity: severityFor(days), catLabel: CATEGORY_LABELS[doc.category] || doc.category });
   }
 
   // ── 4. Scadenze mezzi ─────────────────────────────────────────────────────
-  const equipByCompany = {};
-  for (const eq of equipment) {
+  const equipmentExpiry = [];
+  for (const eq of eqRes.data || []) {
     const issues = [];
     for (const { key, label } of EQUIPMENT_FIELDS) {
       const days = daysUntil(eq[key]);
       if (days === null || days > 30) continue;
       issues.push({ key, label, date: eq[key], days, severity: severityFor(days) });
     }
-    if (!issues.length) continue;
-    if (!equipByCompany[eq.company_id]) equipByCompany[eq.company_id] = [];
-    equipByCompany[eq.company_id].push({ ...eq, issues });
+    if (issues.length) equipmentExpiry.push({ ...eq, issues });
   }
 
-  // ── Raccoglie tutti i company_id con almeno un problema ──────────────────
-  const allCompanyIds = new Set([
-    ...Object.keys(missingByWorker),
-    ...Object.keys(expiryByCompany),
-    ...Object.keys(companyDocByCompany),
-    ...Object.keys(equipByCompany),
-  ]);
+  return { missingDocs, workerExpiry, companyExpiry, equipmentExpiry };
+}
 
-  if (!allCompanyIds.size) {
-    console.log('[dailyDigest] nessun problema da segnalare — nessuna email inviata.');
-    return;
+/** @param {{ companyIds?: string[] }} [opts] solo queste aziende (test) */
+async function runDailyDigest(opts = {}) {
+  console.log('[dailyDigest] avvio digest giornaliero...');
+  const t30 = inDays(30);
+
+  // Aziende con qualcosa da guardare. Un'azienda alla volta: niente .in() con
+  // migliaia di id (F-351: Bad Request letto come "nessun documento").
+  let companyIds = opts.companyIds;
+  if (!companyIds) {
+    const [workers, docs, equip] = await Promise.all([
+      allRows(() => supabase.from('workers').select('company_id').eq('is_active', true).order('id')),
+      allRows(() => supabase.from('company_documents').select('company_id').not('ai_expiry_date', 'is', null).lte('ai_expiry_date', t30).order('id')),
+      allRows(() => supabase.from('equipment').select('company_id').eq('is_active', true)
+        .or(`insurance_expiry.lte.${t30},inspection_date.lte.${t30},maintenance_date.lte.${t30}`).order('id')),
+    ]);
+    companyIds = [...new Set([...workers, ...docs, ...equip].map(r => r.company_id).filter(Boolean))];
   }
 
-  // ── Invia un'email per company ────────────────────────────────────────────
-  for (const companyId of allCompanyIds) {
+  for (const companyId of companyIds) {
     try {
-      const sections = {
-        missingDocs:    missingByWorker[companyId]    || [],
-        workerExpiry:   expiryByCompany[companyId]    || [],
-        companyExpiry:  companyDocByCompany[companyId] || [],
-        equipmentExpiry: equipByCompany[companyId]    || [],
-      };
-
-      // Salta se non c'è nulla di reale
+      const sections = await sectionsFor(companyId, t30);
       const total = Object.values(sections).reduce((n, arr) => n + arr.length, 0);
       if (!total) continue;
 
@@ -209,15 +149,11 @@ async function runDailyDigest() {
       ]);
       if (!emails.length) continue;
 
-      await sendDailyAlertDigest({
-        to: emails,
-        companyName,
-        dashboardUrl: DASHBOARD_URL,
-        sections,
-      });
+      await sendDailyAlertDigest({ to: emails, companyName, dashboardUrl: DASHBOARD_URL, sections });
 
       console.log(`[dailyDigest] ${companyId} (${companyName}): email digest → ${emails.length} dest., problemi: missing=${sections.missingDocs.length}, expiry=${sections.workerExpiry.length}, compDoc=${sections.companyExpiry.length}, equip=${sections.equipmentExpiry.length}`);
     } catch (e) {
+      // Mai un'email costruita su dati che non siamo riusciti a leggere
       console.error(`[dailyDigest] errore company ${companyId}:`, e.message);
     }
   }
@@ -234,4 +170,4 @@ function startDailyDigestCron() {
   console.log('[cron] daily-digest attivo — 07:30 Europe/Rome');
 }
 
-module.exports = { startDailyDigestCron, runDailyDigest };
+module.exports = { startDailyDigestCron, runDailyDigest, sectionsFor };
