@@ -30,10 +30,11 @@ async function main() {
   const r = composeSezione5(['ple', 'scavo-trincea', 'ple', 'non-esiste']);
   check('doppioni tolti, ordine della scelta', JSON.stringify(r.schede) === '["ple","scavo-trincea"]', r.schede);
   check('id sconosciuti segnalati', JSON.stringify(r.sconosciute) === '["non-esiste"]', r.sconosciute);
-  check('un blocco ### per scheda', (r.markdown.match(/^### /gm) || []).length === 2);
-  check('PLE: rischio ribaltamento con P=2, D=4, R=8, Alto',
-    r.markdown.includes('| Ribaltamento per terreno cedevole o stabilizzatori non estesi | 2 | 4 | 8 | Alto |'));
-  check('PLE: DPI con norma', r.markdown.includes('| Imbracatura anticaduta | UNI EN 361 |'));
+  check('un blocco ### per scheda (più 5.1/5.2 di esposizione)', (r.markdown.match(/^### (?!5\.[12] )/gm) || []).length === 2);
+  // F-350: il rischio accanto alle sue misure e al residuo, il livello lo dà il colore di R
+  check('PLE: rischio ribaltamento con P=2, D=4, R=8 e residuo 4',
+    /\| Ribaltamento per terreno cedevole[^|]*\| 2 \| 4 \| 8 \| [^|]+\| 4 \|/.test(r.markdown));
+  check('PLE: DPI con norma', r.markdown.includes('Imbracatura anticaduta (UNI EN 361)'));
   check('PLE: formazione richiesta', r.markdown.includes(S.FORMAZIONE.ple));
   check('deterministica: stesso input, stesso testo', composeSezione5(['ple', 'scavo-trincea']).markdown === r.markdown);
 
@@ -58,8 +59,8 @@ async function main() {
   const esposizioni = (all.markdown.match(/^### 5\.[12] /gm) || []).length;
   check(`renderer PDF: ${S.SCHEDE.length} blocchi lavorazione + ${esposizioni} di esposizione`, blocchi === S.SCHEDE.length + esposizioni, blocchi);
   check('renderer PDF: nessun "Nessuna lavorazione generata"', !html.includes('Nessuna lavorazione generata'));
-  check('renderer PDF: livelli colorati (molto alto, alto, medio)',
-    html.includes('badge badge-very-high') && html.includes('badge badge-high') && html.includes('badge badge-medium'));
+  check('renderer PDF: livelli colorati (molto alto, alto, medio, basso)',
+    ['risk-very-high', 'risk-high', 'risk-medium', 'risk-low'].every(c => html.includes(`risk-num ${c}`)));
   // Il colore del numero R segue la legenda, come il badge del livello accanto
   const rp = await generatePosHtml(posData, 1, composeSezione5(['ple', 'scavo-trincea']).markdown, []);
   check('renderer PDF: R=8 colorato "alto" come il badge Alto', rp.includes('<span class="risk-num risk-high">8</span>'), (rp.match(/risk-num [a-z-]+">8</) || [])[0]);

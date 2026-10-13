@@ -136,7 +136,7 @@ check('schedaPerVoceVecchia(voce sconosciuta) → null', S.schedaPerVoceVecchia(
 const cat = S.catalogoPerScelta();
 check('catalogo: una voce per scheda, i campi per scelta e controllo (niente testi lunghi)',
   cat.schede.length === S.SCHEDE.length && cat.schede.every(s => Object.keys(s).sort().join() === 'categoria,dpi,formazione,id,misure,nome,pericolosita,rischioMax'));
-check('catalogo: rischio più alto della PLE = R 8 Alto', JSON.stringify(cat.schede.find(s => s.id === 'ple').rischioMax) === JSON.stringify({ rischio: 'Ribaltamento per terreno cedevole o stabilizzatori non estesi', livello: 'Alto', r: 8 }), cat.schede.find(s => s.id === 'ple').rischioMax);
+check('catalogo: rischio più alto della PLE = ribaltamento, R 8 Alto', (({ rischio, livello, r }) => /^Ribaltamento/.test(rischio) && livello === 'Alto' && r === 8)(cat.schede.find(s => s.id === 'ple').rischioMax), cat.schede.find(s => s.id === 'ple').rischioMax);
 check('catalogo: nomi di DPI e formazioni per ogni chiave usata', cat.schede.every(s => s.dpi.every(d => cat.dpi[d]) && s.formazione.every(f => cat.formazione[f])));
 const corsiBad = Object.entries(cat.corsiPerFormazione).filter(([k, re]) => { try { new RegExp(re, 'i'); return !cat.formazione[k]; } catch { return true; } }).map(([k]) => k); // eslint-disable-line security/detect-non-literal-regexp
 check('catalogo: corsi per formazione validi e su formazioni esistenti', corsiBad.length === 0, corsiBad);

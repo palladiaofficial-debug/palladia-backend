@@ -44,7 +44,7 @@ check('gruppi CPT delle vibrazioni: attrezzi esistenti, percentuali tra 1 e 100'
 
 console.log('\n\x1b[1mF-350 — Schede nel formato nuovo\x1b[0m');
 const v2 = S.SCHEDE.filter(s => s.v2);
-check(`almeno le 3 schede del modello (${v2.length})`, ['ponteggio-montaggio', 'getto-calcestruzzo', 'demolizioni-interne'].every(id => S.getScheda(id)?.v2));
+check(`tutte le ${S.SCHEDE.length} schede nel formato nuovo (${v2.length})`, v2.length === S.SCHEDE.length, S.SCHEDE.filter(s => !s.v2).map(s => s.id));
 const err = [];
 const attivitaNote = new Set(F.RUMORE_GRUPPI.flatMap(g => g.attivita.map(a => a[0])));
 for (const s of v2) {
@@ -78,7 +78,9 @@ check('sostanze cancerogene con frase o allegato del cancerogeno', Object.values
 
 (async () => {
   console.log('\n\x1b[1mF-350 — Sezione 5 del POS con le schede nuove\x1b[0m');
-  const { composeSezione5 } = require('../lib/posSezione5');
+  const { composeSezione5, schedaMarkdown, esposizioniMarkdown } = require('../lib/posSezione5');
+  // Il formato di prima resta gestito (POS salvati, schede future scritte a metà)
+  const vecchia = { ...S.getScheda('intonaci'), v2: false };
   const { generatePosHtml } = require('../pos-html-generator');
   const s5 = composeSezione5(['ponteggio-montaggio', 'getto-calcestruzzo', 'demolizioni-interne', 'intonaci']);
   const md = s5.markdown;
@@ -87,14 +89,14 @@ check('sostanze cancerogene con frase o allegato del cancerogeno', Object.values
   check('vibrazioni per attrezzo con il tempo massimo (vibratore: 1 h 1 min)', /Vibratore per calcestruzzo ad immersione \| 14 ± 8 \| 15 min \| \*\*1 h 1 min\*\*/.test(md));
   check('A(8) del gruppo demolizioni nelle ristrutturazioni = 7,84, oltre il limite', /Operaio addetto alle demolizioni \| Ristrutturazioni \|[^\n]*\| \*\*7,84\*\* \| Supera il valore limite/.test(md));
   check('ogni rischio della scheda nuova accanto alle sue misure e al residuo', /\| Colpo di frusta del tubo terminale o scoppio di una tubazione \| 2 \| 3 \| 6 \| Tubo terminale guidato[^|]*\| 3 \|/.test(md));
-  check('scheda nel formato di prima (intonaci) ancora presente', /^### Intonaci/m.test(md) && /Rischi identificati e valutazione/.test(md));
-  check('senza schede nuove: niente tabelle di esposizione', !/5\.1 Esposizione/.test(composeSezione5(['intonaci']).markdown));
+  check('scheda nel formato di prima: ancora resa come prima', /Rischi identificati e valutazione/.test(schedaMarkdown(vecchia)) && !/R res\./.test(schedaMarkdown(vecchia)));
+  check('senza schede nuove: niente tabelle di esposizione', esposizioniMarkdown([vecchia]) === null);
 
   const html = await generatePosHtml({ siteAddress: 'Via Prova 1', companyName: 'Impresa', rumore: 'Tra 80 e 85 dB(A)', selectedSchede: ['demolizioni-interne'] }, 1, composeSezione5(['demolizioni-interne']).markdown, []);
   check('4.9 rimanda al calcolo della 5.1 invece della risposta data a mano', /valutata per gruppo omogeneo, con dati di letteratura, nella Sezione 5\.1/.test(html) && !/<p>Tra 80 e 85 dB\(A\)<\/p>/.test(html));
   const htmlVecchio = await generatePosHtml({ siteAddress: 'Via Prova 1', companyName: 'Impresa', rumore: 'Tra 80 e 85 dB(A)' }, 1, '', []);
   check('POS senza schede nuove: 4.9 con la risposta di prima', /<p>Tra 80 e 85 dB\(A\)<\/p>/.test(htmlVecchio));
-  check('tabelle con larghezze proporzionali (colonna P stretta, misure larga)', /<th style="width:6%;white-space:nowrap">P<\/th>/.test(html) && /<th style="width:(4\d|5\d)%">Misure di prevenzione e protezione<\/th>/.test(html));
+  check('tabelle con larghezze proporzionali (colonna P stretta, misure larga)', /<th style="width:[6-8]%;white-space:nowrap">P<\/th>/.test(html) && /<th style="width:(4\d|5\d)%">Misure di prevenzione e protezione<\/th>/.test(html));
 
   const PC = require('../lib/posPdfContenuti');
   const t10 = PC.tabellaSostanze({ selectedSchede: ['demolizioni-interne', 'getto-calcestruzzo'], sostanze: ['Nessuna'] });
@@ -111,7 +113,8 @@ check('sostanze cancerogene con frase o allegato del cancerogeno', Object.values
   check('la misura prescritta è quella indicata per il PSC', lg.misure.some(m => m.testo === getto.valutazione[0].m[getto.valutazione[0].psc ?? 0]));
   check('prescrizioni di coordinamento sulle interferenze tipiche', lg.misure.some(m => /un solo mezzo per volta sul getto/.test(m.testo)));
   check('tutte da approvare dal coordinatore', lg.misure.every(m => m.approvata === false && m.fonte === 'palladia'));
-  check('scheda nel formato di prima: tutte le sue misure come prima', L.fromScheda('intonaci').misure.length === S.getScheda('intonaci').misure.length);
+  const propErr = S.SCHEDE.filter(s => L.fromScheda(s.id).misure.length !== new Set([...s.valutazione.map(v => v.m[v.psc ?? 0]), ...s.psc.interferenze]).size).map(s => s.id);
+  check('ogni scheda: nel PSC una misura per rischio più le interferenze tipiche', propErr.length === 0, propErr);
 
   console.log(`\n  ${passed} passati, ${failed} falliti\n`);
   process.exit(failed ? 1 : 0);

@@ -101,10 +101,12 @@ function parseTable(rows) {
     const lens = body.map(r => (r[ci] || '').replace(/\*\*/g, '').length);
     const media = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
     const parolaLungaHdr = Math.max(...h.split(/\s+/).map(w => w.length));
-    return Math.max(media, parolaLungaHdr * 0.8, 3) ** 0.6;
+    return Math.max(media, parolaLungaHdr * 0.8, h.length * 0.45, 3) ** 0.6;
   });
   const tot = peso.reduce((a, b) => a + b, 0);
-  const larghezze = headers.length >= 3 ? peso.map(p => Math.max(6, Math.round((p / tot) * 100))) : null;
+  // Colonne di numeri o etichette brevi (R, LEX, fascia): mai a capo dentro la cella
+  const corte = headers.map((h, ci) => Math.max(0, ...body.map(r => (r[ci] || '').replace(/\*\*/g, '').length)) <= 8);
+  const larghezze = headers.length >= 3 ? peso.map((p, ci) => Math.max(corte[ci] ? 7 : 6, Math.round((p / tot) * 100))) : null;
   let html = '<table class="allow-break"><thead><tr>';
   headers.forEach((h, ci) => { html += `<th${larghezze ? ` style="width:${larghezze[ci]}%${h.length <= 6 ? ';white-space:nowrap' : ''}"` : ''}>${boldify(h)}</th>`; });
   html += '</tr></thead><tbody>';
@@ -123,7 +125,7 @@ function parseTable(rows) {
         const rc = riskNumClass(cell);
         content = `<span class="risk-num ${rc}">${esc(cell)}</span>`;
       }
-      html += `<td>${content}</td>`;
+      html += `<td${larghezze && corte[ci] ? ' style="white-space:nowrap"' : ''}>${content}</td>`;
     });
     html += '</tr>';
   });
