@@ -35,7 +35,6 @@ const EQUIPMENT_FIELDS = [
   { key: 'maintenance_date',  label: 'Tagliando / Manutenzione' },
 ];
 
-const DASHBOARD_URL   = (process.env.FRONTEND_URL || 'https://palladia.net').replace(/\/$/, '') + '/risorse';
 /**
  * F-351: le sezioni di un'azienda. I lavoratori usano lo stesso calcolo della
  * pagina /documenti (campi del lavoratore + tabella unica dei documenti +
@@ -127,7 +126,7 @@ async function runDailyDigest(opts = {}) {
       ]);
       if (!emails.length) continue;
 
-      await sendDailyAlertDigest({ to: emails, companyName, dashboardUrl: DASHBOARD_URL, sections });
+      await sendDailyAlertDigest({ to: emails, companyName, sections });
 
       console.log(`[dailyDigest] ${companyId} (${companyName}): email digest → ${emails.length} dest., problemi: missing=${sections.missingDocs.length}, expiry=${sections.workerExpiry.length}, compDoc=${sections.companyExpiry.length}, equip=${sections.equipmentExpiry.length}`);
     } catch (e) {

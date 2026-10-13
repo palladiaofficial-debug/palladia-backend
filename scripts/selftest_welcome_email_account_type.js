@@ -30,14 +30,14 @@ check(/PSC/.test(txt), 'coordinatore: parla di PSC');
 check(!/L'azienda\s/.test(txt) && !/è pronta/.test(coord.subject), 'coordinatore: non lo chiama "azienda"');
 
 const imp = buildWelcomeEmail({ name: 'Mario Rossi', companyName: 'Edilizia Rossi', accountType: 'impresa' });
-check(/primo cantiere/i.test(imp.html) && /\/dashboard/.test(imp.html), 'impresa: email invariata');
+check(/primo cantiere/i.test(imp.html) && /\/dashboard/.test(imp.html), 'impresa: passi da impresa e link a /dashboard');
 const def = buildWelcomeEmail({ name: 'Mario Rossi', companyName: 'Edilizia Rossi' });
 check(def.html === imp.html, 'senza account_type: come impresa');
 
-// Il titolo professionale non è il nome: "Arch. Prova Giro" → "Ciao Prova", non "Ciao Arch."
+// Il titolo professionale non è il nome: "Arch. Prova Giro" → "…, Prova", non "…, Arch." (F-356: il saluto è nel titolo)
 for (const [full, atteso] of [['Arch. Prova Giro', 'Prova'], ['Ing. Mario Rossi', 'Mario'], ['geom. Luca Bianchi', 'Luca'], ['Dott.ssa Anna Neri', 'Anna'], ['Amabile Veiga', 'Amabile']]) {
   const e = buildWelcomeEmail({ name: full, companyName: 'X', accountType: 'coordinatore' });
-  check(e.html.includes(`Ciao ${atteso},`) && e.subject.endsWith(atteso), `saluto: "${full}" → Ciao ${atteso}`);
+  check(e.html.includes(`Coordinatori, ${atteso}</h1>`) && e.subject.endsWith(atteso), `saluto: "${full}" → ${atteso}`);
 }
 
 console.log(fail ? `\n${fail} controlli falliti` : '\nTutti i controlli passati');

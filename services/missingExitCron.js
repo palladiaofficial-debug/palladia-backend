@@ -146,7 +146,7 @@ async function runMissingExitCheck() {
       // Email admin (audit trail — manteniamo sempre). Isolata: e' un
       // effetto secondario, un fallimento di Resend non deve impedire la
       // registrazione automatica delle uscite qui sotto (F-206).
-      await sendMissingExitAlert({ companyId, date, missingList: missing })
+      await sendMissingExitAlert({ companyId, date, missingList: missing, chiusuraAutomatica: true })
         .catch(e => console.error(`[cron] email uscite mancanti fallita (company ${companyId}):`, e.message));
       console.log(`[cron] company ${companyId}: ${missing.length} uscite mancanti — auto-fix avviato`);
 

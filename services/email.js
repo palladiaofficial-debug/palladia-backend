@@ -18,66 +18,84 @@ function getResend() {
 
 // ─── Template helpers ──────────────────────────────────────────────────────
 
-// Redesign 2026-08-30 (F-103, su richiesta dell'utente — "raggiungiamo il
-// livello di comunicazioni di OpenAI"): via il banner navy a piena tinta,
-// via il footer di una riga senza identità legale, più spazio usato ai lati
-// (padding ridotto, container più largo). Stessi colori del brand (nessuna
-// palette nuova — #22384F/#1A1714/#F6F4F0 sono già i token reali del
-// prodotto, vedi src/index.css). Font di sistema INVARIATI dentro l'email:
-// Outlook e molti client mobile ignorano i font custom, non è un compromesso
-// di design, è compatibilità email reale.
+// F-356 (2026-10-13, modello approvato https://claude.ai/artifact/UL3JHR8HkoYxc6gYEwKoHY):
+// cornice nuova per tutte le email. Scritta PALLADIA in alto (con data e ora a
+// destra negli avvisi), un foglio bianco caldo con bordo sottile al posto
+// dell'ombra, titolo grande, piede con il motivo per cui si riceve l'email.
+// Solo tabelle e stili in linea: Outlook e Gmail ignorano flex/grid. Il font
+// del prodotto (Plus Jakarta Sans) arriva dove il client lo carica (Apple
+// Mail, iOS); altrove restano i font di sistema.
 //
-// NOTA per chi tocca questo file: ~30 delle funzioni sendXxxEmail qui sotto
-// ripetono il proprio titolo come prima riga del bodyHtml (retaggio del
-// vecchio hero navy, che aveva bisogno di un titolo "rinforzato" sotto).
-// Con l'hero ora su sfondo bianco quella riga è ridondante — da ripulire
-// caso per caso quando si tocca la funzione, non è stato fatto in blocco qui
-// per contenere il rischio di un edit meccanico su 30 funzioni diverse.
-function layout(title, bodyHtml) {
+// opts (tutti facoltativi, testo semplice: l'escape lo fa layout):
+//   eyebrow — riga piccola sopra il titolo («Documenti · Azienda»)
+//   tone    — 'red' la colora di rosso (avvisi da sistemare oggi)
+//   intro   — frase sotto il titolo
+//   stamp   — testo in alto a destra («mercoledì 14 ottobre · 7:30»)
+//   reason  — perché si riceve l'email (nel piede)
+//
+// Le email che ripetono il titolo come primo <h1> del corpo (vecchio hero
+// navy) non lo vedono più due volte: se il corpo apre con <h1> la cornice
+// non ne aggiunge un altro.
+const EMAIL_FONT = "'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif";
+const EMAIL_RED = '#A8453B';
+const EMAIL_RED_BG = '#FBF0EE';
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function layout(title, bodyHtml, opts = {}) {
+  const { eyebrow, tone, intro, stamp, reason } = opts;
+  const ownH1 = /^\s*<h1[\s>]/i.test(bodyHtml);
+  const head = ownH1 ? '' : `
+          ${eyebrow ? `<p style="margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:${tone === 'red' ? EMAIL_RED : '#9C948A'};">${escHtml(eyebrow)}</p>` : ''}
+          <h1 style="margin:0;font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-0.03em;color:#1A1714;">${title}</h1>
+          ${intro ? `<p style="margin:10px 0 0;font-size:15px;line-height:1.6;color:#7A736A;">${escHtml(intro)}</p>` : ''}
+          <div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div>`;
   return `<!DOCTYPE html>
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light" />
 <title>${title}</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;600;700;800&amp;display=swap" rel="stylesheet" />
+<style>
+  @media (max-width: 600px) {
+    .p-outer { padding: 24px 10px 32px !important; }
+    .p-card { padding: 28px 20px 26px !important; }
+    .p-stack { display: block !important; width: 100% !important; padding-left: 0 !important; text-align: left !important; }
+    .p-stack-pill { display: block !important; width: 100% !important; padding: 0 0 14px !important; text-align: left !important; border-top: 0 !important; }
+  }
+</style>
 </head>
-<body style="margin:0;padding:0;background:#F6F4F0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#F6F4F0;padding:40px 12px;">
+<body style="margin:0;padding:0;background:#F6F4F0;font-family:${EMAIL_FONT};color:#1A1714;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" class="p-outer" style="background:#F6F4F0;padding:40px 16px 48px;">
   <tr><td align="center">
 
-    <!-- Logo lockup -->
-    <table width="100%" style="max-width:640px;margin-bottom:20px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;">
       <tr>
-        <td style="padding:0 8px;">
-          <img src="https://palladia.net/icon-512.png" width="22" height="22" alt="" style="border-radius:6px;vertical-align:middle;display:inline-block;" />
-          <span style="font-size:15px;font-weight:800;letter-spacing:-0.01em;color:#1A1714;text-transform:uppercase;vertical-align:middle;margin-left:9px;">Palladia</span>
-        </td>
+        <td style="padding:0 4px 20px;font-size:17px;font-weight:800;letter-spacing:-0.04em;color:#1A1714;">PALLADIA</td>
+        <td align="right" style="padding:0 4px 20px;font-size:13px;color:#7A736A;">${stamp ? escHtml(stamp) : ''}</td>
       </tr>
     </table>
 
-    <!-- Card principale -->
-    <table width="100%" style="max-width:640px;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 1px 2px rgba(26,23,20,0.06),0 12px 32px rgba(26,23,20,0.06);">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;background:#FFFEFD;border:1px solid #ECE7DF;border-radius:12px;">
       <tr>
-        <td style="padding:44px 32px 40px;">
-          <h1 style="margin:0 0 24px;font-size:26px;font-weight:800;color:#1A1714;letter-spacing:-0.02em;line-height:1.25;">${title}</h1>
+        <td class="p-card" style="padding:36px 36px 32px;font-size:15px;line-height:1.6;color:#1A1714;">${head}
           ${bodyHtml}
         </td>
       </tr>
     </table>
 
-    <!-- Footer -->
-    <table width="100%" style="max-width:640px;margin-top:24px;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;">
       <tr>
-        <td style="padding:0 8px;text-align:center;">
-          <p style="margin:0 0 4px;font-size:12.5px;font-weight:700;color:#3E3A32;">Palladia</p>
-          <p style="margin:0 0 12px;font-size:12px;color:#8A8171;line-height:1.6;">Gestione Cantieri e Sicurezza sul Lavoro &middot; Sede legale: Genova (GE), Italia</p>
-          <p style="margin:0;font-size:12px;color:#8A8171;">
-            <a href="https://palladia.net/termini" style="color:#8A8171;text-decoration:underline;">Termini</a>
-            &nbsp;&middot;&nbsp;
-            <a href="https://palladia.net/privacy" style="color:#8A8171;text-decoration:underline;">Privacy</a>
-            &nbsp;&middot;&nbsp;
-            <a href="mailto:info@palladia.net" style="color:#8A8171;text-decoration:underline;">Contattaci</a>
-          </p>
+        <td style="padding:20px 8px 0;">
+          ${reason ? `<p style="margin:0 0 8px;font-size:12.5px;line-height:1.6;color:#7A736A;">${escHtml(reason)}</p>` : ''}
+          <p style="margin:0;font-size:12px;line-height:1.6;color:#9C948A;">Palladia &middot; Genova &middot;
+            <a href="https://palladia.net/termini" style="color:#9C948A;">Termini</a> &middot;
+            <a href="https://palladia.net/privacy" style="color:#9C948A;">Privacy</a> &middot;
+            <a href="mailto:info@palladia.net" style="color:#9C948A;">Scrivici</a></p>
         </td>
       </tr>
     </table>
@@ -89,7 +107,60 @@ function layout(title, bodyHtml) {
 }
 
 function btn(text, href) {
-  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:16px 36px;background:#22384F;color:#ffffff;text-decoration:none;border-radius:100px;font-size:15px;font-weight:700;letter-spacing:0.01em;">${text}</a>`;
+  return `<a href="${href}" style="display:inline-block;margin-top:28px;padding:15px 30px;background:#22384F;color:#ffffff;text-decoration:none;border-radius:999px;font-size:15px;font-weight:600;">${text}</a>`;
+}
+
+// Pulsante e link secondario sulla stessa riga (Apri Documenti · Vedi Da fare →)
+function emailActions(primary, secondary) {
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:28px;"><tr>
+    <td style="padding:0;"><a href="${primary.href}" style="display:inline-block;padding:15px 30px;background:#22384F;color:#ffffff;text-decoration:none;border-radius:999px;font-size:15px;font-weight:600;">${escHtml(primary.text)}</a></td>
+    ${secondary ? `<td style="padding:0 0 0 20px;"><a href="${secondary.href}" style="font-size:14px;font-weight:600;color:#22384F;text-decoration:none;">${escHtml(secondary.text)}</a></td>` : ''}
+  </tr></table>`;
+}
+
+// Etichetta arrotondata a destra di una riga. tone: red | amber | neutral
+function emailPill(text, tone = 'red') {
+  const [bg, fg] = tone === 'red' ? [EMAIL_RED_BG, EMAIL_RED] : tone === 'amber' ? ['#FBF4E6', '#7F5410'] : ['#F3F0EB', '#5F584F'];
+  return `<span style="display:inline-block;background:${bg};color:${fg};border-radius:999px;padding:5px 12px;font-size:12.5px;font-weight:600;white-space:nowrap;">${escHtml(text)}</span>`;
+}
+
+// Elenco a righe. rows: { title, lines: [testo], muted: [testo], pill: html di emailPill }
+// Testi semplici: l'escape lo fa qui.
+function emailRows(rows, { label } = {}) {
+  const trs = rows.map(r => {
+    const lines = (r.lines || []).map(l => `<div style="font-size:13px;line-height:1.5;color:#7A736A;">${escHtml(l)}</div>`).join('');
+    const muted = (r.muted || []).map(l => `<div style="font-size:13px;line-height:1.5;color:#9C948A;">${escHtml(l)}</div>`).join('');
+    return `<tr>
+      <td class="p-stack" style="padding:14px 0;border-top:1px solid #F4F1EC;vertical-align:middle;">
+        <div style="font-size:15px;font-weight:600;color:#1A1714;padding-bottom:3px;">${escHtml(r.title)}</div>${lines}${muted}
+      </td>
+      <td class="p-stack-pill" align="right" style="padding:14px 0 14px 16px;border-top:1px solid #F4F1EC;vertical-align:middle;white-space:nowrap;">${r.pill || ''}</td>
+    </tr>`;
+  }).join('');
+  return `${label ? `<p style="margin:0;padding-bottom:8px;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#9C948A;">${escHtml(label)}</p>` : ''}
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${trs}</table>`;
+}
+
+// Riquadri con i numeri (2 mancano · 7 scaduti · 0 in scadenza)
+function emailTiles(tiles) {
+  const w = Math.floor(100 / tiles.length);
+  const cells = tiles.map((t, i) => {
+    const [bg, fg, sub] = t.alert ? [EMAIL_RED_BG, EMAIL_RED, EMAIL_RED] : ['#F3F0EB', '#1A1714', '#7A736A'];
+    return `<td width="${w}%" style="padding:0 ${i < tiles.length - 1 ? '5px' : '0'} 0 ${i > 0 ? '5px' : '0'};vertical-align:top;">
+      <div style="background:${bg};border-radius:10px;padding:14px 16px;">
+        <div style="font-size:26px;line-height:1.2;font-weight:700;letter-spacing:-0.03em;color:${fg};">${Number(t.value) || 0}</div>
+        <div style="font-size:13px;color:${sub};">${escHtml(t.label)}</div>
+      </div>
+    </td>`;
+  }).join('');
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr></table>`;
+}
+
+// «mercoledì 14 ottobre · 7:30», ora italiana
+function emailStamp(d = new Date()) {
+  const day = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Rome' });
+  const time = d.toLocaleTimeString('it-IT', { hour: 'numeric', minute: '2-digit', timeZone: 'Europe/Rome' });
+  return `${day} · ${time}`;
 }
 
 // ─── Email: Benvenuto ──────────────────────────────────────────────────────
@@ -106,23 +177,22 @@ const WELCOME_COORDINATORE_STEPS = [
   { n: '4', title: 'Il sopralluogo dal telefono', desc: 'Controlli, non conformità con foto e firma: il verbale arriva alle imprese.' },
 ];
 
-function welcomeStepRow(s) {
+function welcomeStepRow(s, i, all) {
+  const bottom = i === all.length - 1 ? 'border-bottom:1px solid #F4F1EC;' : '';
   return `
     <tr>
-      <td style="padding:14px 0;border-bottom:1px solid #f0f0f0;vertical-align:top;">
-        <table cellpadding="0" cellspacing="0">
-          <tr>
-            <td style="vertical-align:top;padding-right:16px;">
-              <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;background:#1a1a1a;color:#fff;border-radius:50%;font-size:12px;font-weight:800;">${s.n}</span>
-            </td>
-            <td style="vertical-align:top;">
-              <p style="margin:0 0 3px;font-size:14px;font-weight:700;color:#1a1a1a;">${s.title}</p>
-              <p style="margin:0;font-size:13px;color:#6b7280;line-height:1.5;">${s.desc}</p>
-            </td>
-          </tr>
-        </table>
+      <td style="padding:18px 18px 18px 0;border-top:1px solid #F4F1EC;${bottom}vertical-align:top;width:32px;">
+        <div style="width:32px;height:32px;line-height:32px;border-radius:999px;background:#EEF2F6;color:#22384F;font-size:14px;font-weight:700;text-align:center;">${s.n}</div>
+      </td>
+      <td style="padding:18px 0;border-top:1px solid #F4F1EC;${bottom}vertical-align:top;">
+        <div style="font-size:16px;font-weight:600;color:#1A1714;padding-bottom:4px;">${s.title}</div>
+        <div style="font-size:14px;line-height:1.55;color:#7A736A;">${s.desc}</div>
       </td>
     </tr>`;
+}
+
+function welcomeSteps(steps) {
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0">${steps.map(welcomeStepRow).join('')}</table>`;
 }
 
 async function sendWelcomeEmail({ to, name, companyName, accountType }) {
@@ -140,61 +210,45 @@ function welcomeFirstName(name, to) {
 function buildWelcomeEmail({ to, name, companyName, accountType = 'impresa' }) {
   const firstName = welcomeFirstName(name, to);
 
+  const nome = escHtml(firstName);
+  const fine = (testo) => `
+    <p style="margin:28px 0 0;font-size:14px;line-height:1.6;color:#7A736A;">Hai una domanda? Scrivici a <a href="mailto:info@palladia.net" style="color:#22384F;">info@palladia.net</a>.</p>
+    <p style="margin:20px 0 0;padding-top:18px;border-top:1px solid #F4F1EC;font-size:12px;line-height:1.7;color:#9C948A;">${testo}</p>`;
+
   if (accountType === 'coordinatore') {
     const body = `
-    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${firstName},</p>
-    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
-      Palladia per coordinatori è attivo per <strong style="color:#1a1a1a;">${companyName}</strong>.
-      PSC, imprese e POS, verbali di sopralluogo: tutto in un posto.
-    </p>
-
-    <p style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Come iniziare</p>
-    <table width="100%" cellpadding="0" cellspacing="0">
-      ${WELCOME_COORDINATORE_STEPS.map(welcomeStepRow).join('')}
-    </table>
-
-    ${btn('Apri Palladia Coordinatori →', `${APP_URL}/coordinatori`)}
-
-    <p style="margin:32px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
-      Palladia propone testi e controlli: il PSC resta del coordinatore che lo firma, con la sua responsabilità (D.Lgs.&nbsp;81/2008, art.&nbsp;91 e Allegato&nbsp;XV).
-    </p>
+    ${welcomeSteps(WELCOME_COORDINATORE_STEPS)}
+    ${btn('Apri Palladia Coordinatori', `${APP_URL}/coordinatori`)}
+    ${fine('Palladia propone testi e controlli: il PSC resta del coordinatore che lo firma, con la sua responsabilità (D.Lgs.&nbsp;81/2008, art.&nbsp;91 e Allegato&nbsp;XV).')}
   `;
     return {
       subject: `Benvenuto in Palladia Coordinatori, ${firstName}`,
-      html: layout(`Benvenuto in Palladia Coordinatori, ${firstName}!`, body),
+      html: layout(`Benvenuto in Palladia Coordinatori, ${nome}`, body, {
+        eyebrow: companyName,
+        intro: 'Il tuo account è pronto. PSC, imprese e POS, verbali di sopralluogo: tutto in un posto. Si parte così.',
+      }),
     };
   }
 
   const steps = [
     { n: '1', title: 'Crea il primo cantiere', desc: 'Aggiungi indirizzo, cliente e stato. Puoi creare quanti cantieri vuoi.' },
-    { n: '2', title: 'Inserisci i lavoratori', desc: 'Nome e codice fiscale sono sufficienti. I dati sono al sicuro e conformi GDPR.' },
-    { n: '3', title: 'Genera il QR per le timbrature', desc: 'Stampa il QR e attaccalo all\'ingresso. I lavoratori timbrano con il telefono, senza app.' },
-    { n: '4', title: 'Genera il POS', desc: 'Piano Operativo di Sicurezza in PDF pronto in meno di un minuto, personalizzato per il cantiere.' },
-  ].map(welcomeStepRow).join('');
+    { n: '2', title: 'Inserisci i lavoratori', desc: 'Nome e codice fiscale sono sufficienti. I dati sono al sicuro e conformi al GDPR.' },
+    { n: '3', title: 'Genera il QR per le timbrature', desc: 'Stampalo e attaccalo all\'ingresso. I lavoratori timbrano con il telefono, senza app.' },
+    { n: '4', title: 'Genera il POS', desc: 'Piano Operativo di Sicurezza in PDF, personalizzato per il cantiere.' },
+  ];
 
   const body = `
-    <p style="margin:0 0 6px;font-size:20px;font-weight:800;color:#1a1a1a;">Ciao ${firstName},</p>
-    <p style="margin:0 0 24px;font-size:15px;color:#6b7280;line-height:1.6;">
-      L'azienda <strong style="color:#1a1a1a;">${companyName}</strong> è attiva su Palladia.
-      Puoi iniziare subito a gestire cantieri, lavoratori e timbrature.
-    </p>
-
-    <p style="margin:0 0 12px;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:#9ca3af;">Come iniziare</p>
-    <table width="100%" cellpadding="0" cellspacing="0">
-      ${steps}
-    </table>
-
-    ${btn('Apri la dashboard →', `${APP_URL}/dashboard`)}
-
-    <p style="margin:32px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
-      Palladia supporta la gestione digitale delle presenze in cantiere in conformità al D.Lgs.&nbsp;81/2008.
-      L'impresa resta responsabile del rispetto delle normative vigenti sulla sicurezza sul lavoro.
-    </p>
+    ${welcomeSteps(steps)}
+    ${btn('Apri Palladia', `${APP_URL}/dashboard`)}
+    ${fine('Palladia supporta la gestione digitale delle presenze in cantiere in conformità al D.Lgs.&nbsp;81/2008. L\'impresa resta responsabile del rispetto delle normative vigenti sulla sicurezza sul lavoro.')}
   `;
 
   return {
     subject: `Benvenuto su Palladia — ${companyName} è pronta`,
-    html: layout(`Benvenuto su Palladia, ${firstName}!`, body),
+    html: layout(`Benvenuto in Palladia, ${nome}`, body, {
+      eyebrow: companyName,
+      intro: 'Il tuo account è pronto. Quattro passi per avere cantieri, operai e sicurezza sotto controllo dal primo giorno.',
+    }),
   };
 }
 
@@ -235,7 +289,7 @@ async function sendPasswordResetEmail({ to, resetLink }) {
  *
  * @param {{ companyId: string, date: string, missingList: Array }} opts
  */
-async function sendMissingExitAlert({ companyId, date, missingList }) {
+async function sendMissingExitAlert({ companyId, date, missingList, chiusuraAutomatica = false }) {
   if (!missingList || missingList.length === 0) return;
 
   const supabase = require('../lib/supabase');
@@ -261,63 +315,51 @@ async function sendMissingExitAlert({ companyId, date, missingList }) {
 
   if (adminEmails.length === 0) return;
 
+  const { html, subject } = await buildMissingExitEmail({ companyId, date, missingList, chiusuraAutomatica });
+  return getResend().emails.send({ from: FROM, to: adminEmails, subject, html });
+}
+
+// F-356: costruzione separata dall'invio, così il test la controlla senza spedire.
+// Niente codici fiscali nell'email (non servono a sistemare l'uscita).
+async function buildMissingExitEmail({ companyId, date, missingList, chiusuraAutomatica = false, companyName }) {
+  if (companyName === undefined && companyId) {
+    const supabase = require('../lib/supabase');
+    const { data } = await supabase.from('companies').select('name').eq('id', companyId).maybeSingle();
+    companyName = data?.name || '';
+  }
   const [y, m, d] = date.split('-');
   const dateDisplay = `${d}/${m}/${y}`;
+  const ora = ts => new Date(ts).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+  const giorno = ts => new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
+  const giornoLungo = ts => new Date(ts).toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Rome' });
 
-  // Raggruppa per cantiere
-  const bySite = new Map();
-  for (const item of missingList) {
-    const key = item.site_id;
-    if (!bySite.has(key)) bySite.set(key, { name: item.site_name, workers: [] });
-    bySite.get(key).workers.push(item);
-  }
+  const rows = missingList.map(w => ({
+    title: w.worker_name || 'Lavoratore',
+    lines: [`${w.site_name || w.site_address || 'Cantiere'} · entrato ${giorno(w.last_entry_time) === date ? '' : `${giornoLungo(w.last_entry_time)} `}alle ${ora(w.last_entry_time)}`],
+    pill: emailPill('Uscita mancante'),
+  }));
 
-  let siteRows = '';
-  for (const [, { name, workers }] of bySite) {
-    const workerRows = workers.map(w =>
-      `<tr>
-        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;">${esc(w.worker_name)}</td>
-        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">${esc(w.fiscal_code)}</td>
-        <td style="padding:6px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;color:#64748b;">
-          ${new Date(w.last_entry_time).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' })}
-        </td>
-      </tr>`
-    ).join('');
-    siteRows += `
-      <p style="margin:20px 0 6px;font-size:13px;font-weight:700;color:#0f172a;">📍 ${esc(name)}</p>
-      <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:8px;">
-        <thead><tr style="background:#f8fafc;">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Cod. Fiscale</th>
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;">Ultima entrata</th>
-        </tr></thead>
-        <tbody>${workerRows}</tbody>
-      </table>`;
-  }
-
-  function esc(s) {
-    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
+  const n = missingList.length;
+  const title = n === 1 ? '1 operaio non ha timbrato l\'uscita' : `${n} operai non hanno timbrato l'uscita`;
+  const intro = chiusuraAutomatica
+    ? 'Palladia registra un\'uscita automatica per chiudere la giornata. Controlla l\'orario nelle presenze e correggilo se non è quello vero: il foglio ore usa quello.'
+    : 'Senza l\'uscita la giornata non entra giusta nel foglio ore. Sistemala tu dalle presenze o chiedi all\'operaio di timbrarla.';
 
   const body = `
-    <h1 style="margin:0 0 4px;font-size:20px;color:#0f172a;">⚠️ Uscite mancanti — ${dateDisplay}</h1>
-    <p style="margin:0 0 20px;color:#64748b;font-size:14px;line-height:1.6;">
-      I seguenti <strong>${missingList.length} lavoratori</strong> hanno una timbratura di entrata
-      senza la corrispondente uscita. Verificare con i diretti interessati.
-    </p>
-    ${siteRows}
-    <p style="margin:20px 0 0;font-size:12px;color:#94a3b8;line-height:1.6;">
-      Questo alert viene generato automaticamente da Palladia al termine della giornata lavorativa.
-      I dati di presenza sono registrati in modo append-only e non modificabili.
-    </p>
+    ${emailRows(rows)}
+    ${btn('Sistema le presenze', `${APP_URL}/persone?tab=presenze`)}
   `;
 
-  return getResend().emails.send({
-    from: FROM,
-    to:   adminEmails,
-    subject: `Palladia — ${missingList.length} uscite mancanti del ${dateDisplay}`,
-    html: layout(`Alert uscite mancanti — ${dateDisplay}`, body)
-  });
+  return {
+    subject: `${title} — ${dateDisplay}`,
+    html: layout(escHtml(title), body, {
+      eyebrow: 'Timbrature · da controllare oggi',
+      tone: 'red',
+      intro,
+      stamp: emailStamp(),
+      reason: companyName ? `Ricevi questa email perché gestisci ${companyName} su Palladia. Puoi scegliere cosa ricevere da Account → Notifiche.` : undefined,
+    }),
+  };
 }
 
 // ─── Email: Invito team ────────────────────────────────────────────────────
@@ -1985,176 +2027,122 @@ async function sendStudioMonthlyValueReport({ to, studioName, monthLabel, totalC
 // ── sendDailyAlertDigest ──────────────────────────────────────────────────────
 // Email digest giornaliera unica — raggruppa tutti gli alert in un'unica email per company.
 // sections: { missingDocs?, workerExpiry?, companyExpiry?, equipmentExpiry? }
-async function sendDailyAlertDigest({ to, companyName, dashboardUrl, sections }) {
-  function esc(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-  function fmtDate(d) {
-    if (!d) return '—';
-    return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
-  }
-  function sevColor(s) { return s === 'critical' ? '#ef4444' : s === 'warning' ? '#f59e0b' : '#3b82f6'; }
-  function sevLabel(days) {
-    if (days === null) return '';
-    if (days < 0) return `scaduto ${Math.abs(days)}gg fa`;
-    if (days === 0) return 'scade oggi';
-    return `scade in ${days}gg`;
-  }
+// F-356: una riga per operaio, impresa, mezzo (come /documenti), con i numeri in
+// cima. Gli elementi sono contati uno per documento: il titolo dice quante cose
+// ci sono da sistemare ed è la somma dei tre riquadri.
+const DOC_FEMMINILE = /^(visita|idoneit|assicuraz|revision|polizza|formazion|certific|iscriz|patente|dichiaraz|attestaz|nomina|valutaz|relazion|verific)/i;
 
-  const sectionHtml = [];
-  let totalIssues = 0;
-  let hasCritical = false;
+function digestData(iso) {
+  const d = new Date(`${String(iso).slice(0, 10)}T12:00:00Z`);
+  const anno = d.getUTCFullYear() !== new Date().getFullYear();
+  return d.toLocaleDateString('it-IT', { day: 'numeric', month: 'long', ...(anno ? { year: 'numeric' } : {}), timeZone: 'UTC' });
+}
+function digestGiorni(n) { return n === 1 ? '1 giorno' : `${n} giorni`; }
+// «scaduto il 2 settembre» / «scade oggi» / «scade il 4 novembre»
+function digestQuando(label, days, date, neutro) {
+  const a = !neutro && DOC_FEMMINILE.test(label) ? 'a' : 'o';
+  if (days < 0) return `scadut${a} il ${digestData(date)}`;
+  if (days === 0) return 'scade oggi';
+  return `scade il ${digestData(date)}`;
+}
+function digestPillUno(label, days, neutro) {
+  const a = !neutro && DOC_FEMMINILE.test(label) ? 'a' : 'o';
+  if (days < 0) return emailPill(`Scadut${a} da ${digestGiorni(-days)}`, 'red');
+  if (days === 0) return emailPill('Scade oggi', 'red');
+  return emailPill(`Scade tra ${digestGiorni(days)}`, 'amber');
+}
+// Etichetta di una riga con più problemi (mancanti e/o scadenze)
+function digestPill(mancanti, scadenze, neutro) {
+  if (!scadenze.length) return emailPill(mancanti.length > 1 ? 'Mancano' : 'Manca', 'red');
+  if (!mancanti.length && scadenze.length === 1) return digestPillUno(scadenze[0].label, scadenze[0].days, neutro);
+  const n = mancanti.length + scadenze.length;
+  const scaduti = scadenze.filter(s => s.days < 0).length;
+  if (!mancanti.length && scaduti === n) return emailPill(`${n} scaduti`, 'red');
+  return emailPill(`${n} da sistemare`, mancanti.length || scaduti ? 'red' : 'amber');
+}
 
-  // ── Sezione 1: Documenti obbligatori mancanti ────────────────────────────
-  if (sections.missingDocs?.length) {
-    const items = sections.missingDocs;
-    totalIssues += items.length;
-    hasCritical = true;
-    const rows = items.map(w => `<tr>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(w.full_name)}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#ef4444;">${esc((w.missingTypes || []).join(', '))}</td>
-    </tr>`).join('');
-    sectionHtml.push(`
-      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#ef4444;">
-        Documenti obbligatori mancanti (${items.length})
-      </p>
-      <table width="100%" cellpadding="0" cellspacing="0"
-        style="border:1px solid #fca5a5;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
-        <thead><tr style="background:#fef2f2;">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#ef4444;text-transform:uppercase;letter-spacing:0.05em;">Documenti mancanti</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`);
-  }
-
-  // ── Sezione 2: Documenti lavoratori in scadenza ──────────────────────────
-  if (sections.workerExpiry?.length) {
-    const items = sections.workerExpiry;
-    totalIssues += items.length;
-    if (items.some(d => d.severity === 'critical')) hasCritical = true;
-    const rows = items.map(d => {
-      const color = sevColor(d.severity);
-      return `<tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(d.worker?.full_name || '')}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(d.typeLabel || d.doc_type)}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right;">
-          <span style="color:${color};font-weight:700;">${fmtDate(d.expiry_date)}</span>
-          <br><span style="font-size:10px;color:${color};">${esc(sevLabel(d.days))}</span>
-        </td>
-      </tr>`;
-    }).join('');
-    sectionHtml.push(`
-      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#f59e0b;">
-        Documenti lavoratori in scadenza (${items.length})
-      </p>
-      <table width="100%" cellpadding="0" cellspacing="0"
-        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
-        <thead><tr style="background:#f8fafc;">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Lavoratore</th>
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Tipo</th>
-          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Scadenza</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`);
+function buildDailyAlertDigest({ companyName, sections }) {
+  const operai = new Map();
+  const operaio = (id, name) => {
+    const k = id || name;
+    if (!operai.has(k)) operai.set(k, { name, mancanti: [], scadenze: [] });
+    return operai.get(k);
+  };
+  for (const w of sections.missingDocs || []) operaio(w.id, w.full_name).mancanti.push(...(w.missingTypes || []));
+  for (const d of sections.workerExpiry || []) {
+    operaio(d.worker_id, d.worker?.full_name || '').scadenze.push({ label: d.typeLabel || d.doc_type, days: d.days, date: d.expiry_date });
   }
 
-  // ── Sezione 3: Documenti aziendali in scadenza ───────────────────────────
-  if (sections.companyExpiry?.length) {
-    const items = sections.companyExpiry;
-    totalIssues += items.length;
-    if (items.some(d => d.severity === 'critical')) hasCritical = true;
-    const rows = items.map(d => {
-      const color = sevColor(d.severity);
-      return `<tr>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:600;">${esc(d.name)}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(d.catLabel || d.category)}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right;">
-          <span style="color:${color};font-weight:700;">${fmtDate(d.ai_expiry_date)}</span>
-          <br><span style="font-size:10px;color:${color};">${esc(sevLabel(d.days))}</span>
-        </td>
-      </tr>`;
-    }).join('');
-    sectionHtml.push(`
-      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">
-        Documenti aziendali in scadenza (${items.length})
-      </p>
-      <table width="100%" cellpadding="0" cellspacing="0"
-        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
-        <thead><tr style="background:#f8fafc;">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Documento</th>
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Categoria</th>
-          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Scadenza</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`);
-  }
+  let mancano = 0, scaduti = 0, inScadenza = 0;
+  const conta = s => { if (s.days < 0) scaduti++; else inScadenza++; };
+  for (const o of operai.values()) { mancano += o.mancanti.length ? 1 : 0; o.scadenze.forEach(conta); }
 
-  // ── Sezione 4: Scadenze mezzi ────────────────────────────────────────────
-  if (sections.equipmentExpiry?.length) {
-    const items = sections.equipmentExpiry;
-    totalIssues += items.reduce((n, eq) => n + (eq.issues?.length || 0), 0);
-    if (items.some(eq => eq.issues?.some(i => i.severity === 'critical'))) hasCritical = true;
-    const rows = items.flatMap(eq => {
-      const name = esc([eq.type, eq.model, eq.plate_or_serial].filter(Boolean).join(' — '));
-      return (eq.issues || []).map((issue, idx) => {
-        const color = sevColor(issue.severity);
-        return `<tr>
-          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:13px;font-weight:${idx === 0 ? '700' : '400'};color:${idx === 0 ? '#1a1a1a' : '#9ca3af'};">${idx === 0 ? name : ''}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;color:#6b7280;">${esc(issue.label)}</td>
-          <td style="padding:8px 12px;border-bottom:1px solid #f1f5f9;font-size:12px;text-align:right;">
-            <span style="color:${color};font-weight:700;">${fmtDate(issue.date)}</span>
-            <br><span style="font-size:10px;color:${color};">${esc(sevLabel(issue.days))}</span>
-          </td>
-        </tr>`;
-      });
-    }).join('');
-    sectionHtml.push(`
-      <p style="margin:0 0 8px;font-size:13px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:#6b7280;">
-        Scadenze mezzi (${items.length})
-      </p>
-      <table width="100%" cellpadding="0" cellspacing="0"
-        style="border:1px solid #e2e8f0;border-radius:8px;border-collapse:separate;overflow:hidden;margin-bottom:28px;">
-        <thead><tr style="background:#f8fafc;">
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Mezzo</th>
-          <th style="padding:8px 12px;text-align:left;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Tipo scadenza</th>
-          <th style="padding:8px 12px;text-align:right;font-size:11px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Data</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>`);
-  }
+  // Prima chi non ha i documenti, poi i più scaduti
+  const ordine = o => (o.mancanti.length ? -1e6 : 0) + Math.min(...o.scadenze.map(s => s.days), 1e5);
+  const righeOperai = [...operai.values()].sort((a, b) => ordine(a) - ordine(b)).map(o => {
+    o.scadenze.sort((a, b) => a.days - b.days);
+    return {
+      title: o.name,
+      lines: [
+        ...(o.mancanti.length ? [o.mancanti.join(' · ')] : []),
+        ...o.scadenze.map(s => `${s.label} · ${digestQuando(s.label, s.days, s.date)}`),
+      ],
+      pill: digestPill(o.mancanti, o.scadenze),
+    };
+  });
 
-  if (!sectionHtml.length) return; // nessun problema → nessuna email
+  const righeImpresa = (sections.companyExpiry || []).slice().sort((a, b) => a.days - b.days).map(d => {
+    // Il tipo (DURC, Visite mediche), non il nome del file caricato
+    const s = { label: d.catLabel || String(d.name || 'Documento').replace(/\.[a-z0-9]{2,4}$/i, ''), days: d.days, date: d.ai_expiry_date };
+    conta(s);
+    return { title: s.label, lines: [`documento aziendale · ${digestQuando(s.label, s.days, s.date, true)}`], pill: digestPillUno(s.label, s.days, true) };
+  });
 
-  const today = new Date().toLocaleDateString('it-IT', { weekday: 'long', day: '2-digit', month: 'long' });
-  const subjectPrefix = hasCritical ? '⚠️ ' : '';
-  const subjectSummary = sections.missingDocs?.length
-    ? `${sections.missingDocs.length} doc. obbligatori mancanti`
-    : `${totalIssues} alert di conformità`;
+  const righeMezzi = (sections.equipmentExpiry || []).map(eq => {
+    const nome = [[eq.type, eq.model].filter(Boolean).join(' '), eq.plate_or_serial].filter(Boolean).join(' · ') || 'Mezzo';
+    const sc = (eq.issues || []).slice().sort((a, b) => a.days - b.days).map(i => ({ label: i.label, days: i.days, date: i.date }));
+    sc.forEach(conta);
+    return { title: nome, lines: sc.map(s => `${s.label} · ${digestQuando(s.label, s.days, s.date)}`), pill: digestPill([], sc) };
+  });
+
+  const totale = mancano + scaduti + inScadenza;
+  if (!totale) return null; // nessun problema → nessuna email
+
+  const title = totale === 1 ? '1 cosa da sistemare' : `${totale} cose da sistemare`;
+  const blocco = (label, righe) => righe.length ? `<div style="height:28px;line-height:28px;font-size:0;">&nbsp;</div>${emailRows(righe, { label })}` : '';
 
   const body = `
-    <p style="margin:0 0 4px;font-size:13px;color:#9ca3af;">${esc(today)}</p>
-    <p style="margin:0 0 28px;font-size:15px;color:#6b7280;line-height:1.6;">
-      Riepilogo giornaliero per <strong style="color:#1a1a1a;">${esc(companyName)}</strong>.
-      ${totalIssues === 1
-        ? 'C\'è <strong style="color:#1a1a1a;">1 problema</strong> che richiede attenzione.'
-        : `Ci sono <strong style="color:#1a1a1a;">${totalIssues} problemi</strong> che richiedono attenzione.`
-      }
-    </p>
-
-    ${sectionHtml.join('')}
-
-    ${btn('Apri la dashboard →', dashboardUrl)}
-
-    <p style="margin:24px 0 0;font-size:12px;color:#9ca3af;line-height:1.7;border-top:1px solid #f0f0f0;padding-top:20px;">
-      Questo riepilogo viene inviato ogni mattina e riassume tutti i problemi di conformità attivi.<br>
-      Rosso = già scaduto · Arancione = in scadenza entro 7 giorni · Blu = entro 30 giorni.
-    </p>
+    ${emailTiles([
+      { value: mancano, label: 'mancano', alert: mancano > 0 },
+      { value: scaduti, label: 'scaduti', alert: scaduti > 0 },
+      { value: inScadenza, label: 'in scadenza (30 giorni)' },
+    ])}
+    ${blocco('Operai', righeOperai)}
+    ${blocco('Impresa', righeImpresa)}
+    ${blocco('Mezzi', righeMezzi)}
+    ${emailActions({ text: 'Apri Documenti', href: `${APP_URL}/documenti` }, { text: 'Vedi Da fare →', href: `${APP_URL}/scadenze` })}
   `;
 
+  return {
+    subject: `${title} nei documenti — ${companyName}`,
+    html: layout(title, body, {
+      eyebrow: `Documenti · ${companyName}`,
+      intro: 'Sono le stesse che vedi in Palladia, nella pagina Documenti.',
+      stamp: emailStamp(),
+      reason: `Ricevi questa email perché gestisci ${companyName} su Palladia. Puoi scegliere cosa ricevere da Account → Notifiche.`,
+    }),
+    conteggi: { totale, mancano, scaduti, inScadenza },
+  };
+}
+
+async function sendDailyAlertDigest({ to, companyName, sections }) {
+  const email = buildDailyAlertDigest({ companyName, sections });
+  if (!email) return;
   return getResend().emails.send({
     from: FROM,
     to:   Array.isArray(to) ? to : [to],
-    subject: `Palladia ${subjectPrefix}— ${subjectSummary} | ${esc(companyName)}`,
-    html:    layout('Riepilogo conformità', body),
+    subject: email.subject,
+    html:    email.html,
   });
 }
 
@@ -2663,6 +2651,7 @@ module.exports = {
   sendEmailIngestDelegateInstructions,
   sendPasswordResetEmail,
   sendMissingExitAlert,
+  buildMissingExitEmail,
   sendInviteEmail,
   sendCoordinatorInviteEmail,
   sendCoordinatorNoteAlert,
@@ -2679,6 +2668,7 @@ module.exports = {
   sendCompanyDocExpiryAlert,
   sendWorkerMissingDocsAlert,
   sendDailyAlertDigest,
+  buildDailyAlertDigest,
   sendExpiryAlert,
   sendBookingConfirmation,
   sendBookingConfirmedConsultant,
