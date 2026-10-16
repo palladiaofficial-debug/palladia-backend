@@ -173,7 +173,7 @@ async function main() {
       .map(([f, a]) => ({ kind: 'pagamento', title: f, nome: P.nomeBreve(f), chiave: P.normNome(f), importo: a, days: -1, sollecitato: true, daControllare: false }));
     const ria = P.riassuntoPagamenti(vere);
     check('F-357: riassunto: "5 fatture da pagare, tutte scadute", 11.175,38 €', ria.titolo === '5 fatture da pagare, tutte scadute' && ria.totaleTesto === '11.175,38 €' && ria.urgente, ria);
-    check('F-357: riassunto: tre fornitori, tutti hanno sollecitato', ria.dettaglio === 'Guardalà Giuseppina, Stelli Impianti di Stelli Marco, WC Loc Italia · tutti hanno sollecitato', ria.dettaglio);
+    check('F-357: riassunto: tre fornitori, il più grosso per primo, tutti hanno sollecitato', ria.dettaglio === 'Guardalà Giuseppina, WC Loc Italia, Stelli Impianti di Stelli Marco · tutti hanno sollecitato', ria.dettaglio);
     const ria2 = P.riassuntoPagamenti([{ kind: 'pagamento', title: 'Rossi', importo: 10, days: 1, sollecitato: false }, { kind: 'pagamento', title: 'Bianchi', importo: 5, days: 20, sollecitato: true }, { kind: 'scadenza', title: 'x', days: -3 }]);
     check('F-357: riassunto misto: niente scadute, uno ha sollecitato, solo i pagamenti', ria2.n === 2 && ria2.titolo === '2 fatture da pagare, una scade domani' && /1 ha sollecitato/.test(ria2.dettaglio) && ria2.totale === 15, ria2);
     check('F-357: nessun pagamento → nessun riassunto', P.riassuntoPagamenti([{ kind: 'scadenza', days: -1 }]) === null);
