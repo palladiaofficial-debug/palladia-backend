@@ -95,9 +95,28 @@ async function main() {
     let L = (await call('GET', '/da-pagare', { company: A.id })).body;
     check('elenco: subito prima, poi settimana, poi più avanti', L.righe.map(r => r.gruppo).join(',') === 'subito,subito,settimana,piu_avanti', L.righe.map(r => r.gruppo));
     check('totale della settimana = scaduti/sollecitati + 7 giorni (640 + 2.300 + 1.840)', L.totaleSettimana === 4780 && L.totaleSettimanaTesto === '4.780,00 €', L.totaleSettimana);
+    // F-357: il totale di tutto, in cima alla pagina
+    check('F-357: totale di tutto (640 + 1.840 + 2.300 + 415,50)', L.totale === 5195.5 && L.totaleTesto === '5.195,50 €', [L.totale, L.totaleTesto]);
+    check('F-357: nome da mostrare senza forma societaria, chiave per raggruppare', L.righe.find(x => x.id === sett.body.id)?.nome === 'Edilmateriali Rossi' && L.righe.find(x => x.id === sett.body.id)?.chiave === 'edilmateriali rossi', L.righe.find(x => x.id === sett.body.id));
+
+    // ── F-357: IBAN e "pagata il" ──
+    const IBAN = 'IT60X0542811101000000123456';
+    const conIban = await nuovo(A.id, { fornitore: 'Ponteggi Riviera', importo: '300', entro: fra(4), iban: 'it60 x054 2811 1010 0000 0123 456' });
+    check('F-357: IBAN salvato normalizzato', conIban.status === 201 && conIban.body.iban === IBAN, conIban.body);
+    const ibanSbagliato = await nuovo(A.id, { fornitore: 'Ponteggi Riviera Due', importo: '300', entro: fra(4), iban: 'IT60X0542811101000000123457' });
+    check('F-357: IBAN con una cifra sbagliata: non salvato', ibanSbagliato.status === 201 && ibanSbagliato.body.iban === null, ibanSbagliato.body);
+    let r = await call('PATCH', `/da-pagare/${ibanSbagliato.body.id}`, { company: A.id, body: { iban: 'IT00 1234' } });
+    check('F-357: Correggi con IBAN non valido: 400', r.status === 400 && r.body.error === 'IBAN', r.body);
+    r = await call('POST', `/da-pagare/${ibanSbagliato.body.id}/pagato`, { company: A.id, body: { il: fra(1) } });
+    check('F-357: pagata domani: 400', r.status === 400 && r.body.error === 'DATA', r.body);
+    r = await call('POST', `/da-pagare/${ibanSbagliato.body.id}/pagato`, { company: A.id, body: { il: fra(-1) } });
+    check('F-357: "pagata ieri": la data è ieri', r.status === 200 && r.body.pagatoIl === fra(-1), r.body);
+    r = await call('POST', `/da-pagare/${conIban.body.id}/pagato`, { company: A.id, body: { today: '2020-01-01' } });
+    check('F-357: un "today" nel corpo della richiesta è ignorato', r.status === 200 && r.body.pagatoIl === oggi, r.body);
+    for (const x of [conIban, ibanSbagliato]) await supabase.from('company_expenses').delete().eq('id', x.body.id);
 
     // ── Azioni ──
-    let r = await call('POST', `/da-pagare/${scaduta.body.id}/pagato`, { company: A.id });
+    r = await call('POST', `/da-pagare/${scaduta.body.id}/pagato`, { company: A.id });
     L = (await call('GET', '/da-pagare', { company: A.id })).body;
     check('Pagato: esce dalla lista e va in "pagati questo mese"', r.body.pagatoIl === oggi && !L.righe.some(x => x.id === scaduta.body.id) && L.pagatiQuestoMese.some(x => x.id === scaduta.body.id), r.body);
     r = await call('POST', `/da-pagare/${scaduta.body.id}/non-pagato`, { company: A.id });
@@ -133,6 +152,31 @@ async function main() {
     // Risposta dell'IA (regole pure)
     check('IA: scadenza non scritta → nessuna data inventata', controllaLettura({ leggibile: true, fornitore: 'Rossi', totale_da_pagare: '1.840,00', scadenza: '', numero_fattura: '' })?.scadenza === null);
     check('IA: "1.840,00" → 1840', controllaLettura({ leggibile: true, fornitore: 'Rossi', totale_da_pagare: '1.840,00', scadenza: '2026-10-20', numero_fattura: '1' })?.importo === 1840);
+    const xmlIban = xml.replace('<ImportoPagamento>', '<IBAN>IT60X0542811101000000123456</IBAN><ImportoPagamento>');
+    const fxi = new FormData(); fxi.append('file', new Blob([xmlIban], { type: 'application/xml' }), 'IT01234567890_00078.xml');
+    const lxi = await call('POST', '/da-pagare/leggi', { company: A.id, form: fxi });
+    check('F-357: XML con IBAN: IBAN letto', lxi.status === 200 && lxi.body.iban === 'IT60X0542811101000000123456', lxi.body);
+    check('F-357: XML senza IBAN: null', lx.body.iban === null, lx.body);
+    check('F-357: IA, IBAN letto male (controllo che non torna) → null', controllaLettura({ leggibile: true, fornitore: 'Rossi', totale_da_pagare: '10', scadenza: '', numero_fattura: '', iban: 'IT60X0542811101000000123465' })?.iban === null);
+    check('F-357: IA, IBAN con spazi → normalizzato', controllaLettura({ leggibile: true, fornitore: 'Rossi', totale_da_pagare: '10', scadenza: '', numero_fattura: '', iban: 'IT60 X054 2811 1010 0000 0123 456' })?.iban === 'IT60X0542811101000000123456');
+
+    // F-357: nomi dei fornitori come quelli veri di MSCedilizia (16/10)
+    check('F-357: "GUARDALA\' GIUSEPPINA" → "Guardalà Giuseppina"', P.nomeBreve("GUARDALA' GIUSEPPINA") === 'Guardalà Giuseppina', P.nomeBreve("GUARDALA' GIUSEPPINA"));
+    check('F-357: "STELLI IMPIANTI DI STELLI MARCO" → "Stelli Impianti di Stelli Marco"', P.nomeBreve('STELLI IMPIANTI DI STELLI MARCO') === 'Stelli Impianti di Stelli Marco');
+    check('F-357: "WC LOC ITALIA S.r.l." e "WC Loc Italia S.r.l. Unipersonale": stesso nome e stessa chiave',
+      P.nomeBreve('WC LOC ITALIA S.r.l.') === 'WC Loc Italia' && P.nomeBreve('WC Loc Italia S.r.l. Unipersonale') === 'WC Loc Italia'
+      && P.normNome('WC LOC ITALIA S.r.l.') === P.normNome('WC Loc Italia S.r.l. Unipersonale'), [P.nomeBreve('WC LOC ITALIA S.r.l.'), P.normNome('WC Loc Italia S.r.l. Unipersonale')]);
+    check('F-357: nome scritto normale resta com\'è', P.nomeBreve('Edil-Sud S.p.A.') === 'Edil-Sud' && P.nomeBreve("D'ANGELO COSTRUZIONI SNC") === "D'Angelo Costruzioni");
+
+    // F-357: riassunto per "Tutto" e Buongiorno, con le 5 fatture vere del 16/10
+    const vere = [["GUARDALA' GIUSEPPINA", 4702], ['STELLI IMPIANTI DI STELLI MARCO', 600], ['STELLI IMPIANTI DI STELLI MARCO', 1500], ['WC LOC ITALIA S.r.l.', 3450.91], ['WC Loc Italia S.r.l. Unipersonale', 922.47]]
+      .map(([f, a]) => ({ kind: 'pagamento', title: f, nome: P.nomeBreve(f), chiave: P.normNome(f), importo: a, days: -1, sollecitato: true, daControllare: false }));
+    const ria = P.riassuntoPagamenti(vere);
+    check('F-357: riassunto: "5 fatture da pagare, tutte scadute", 11.175,38 €', ria.titolo === '5 fatture da pagare, tutte scadute' && ria.totaleTesto === '11.175,38 €' && ria.urgente, ria);
+    check('F-357: riassunto: tre fornitori, tutti hanno sollecitato', ria.dettaglio === 'Guardalà Giuseppina, Stelli Impianti di Stelli Marco, WC Loc Italia · tutti hanno sollecitato', ria.dettaglio);
+    const ria2 = P.riassuntoPagamenti([{ kind: 'pagamento', title: 'Rossi', importo: 10, days: 1, sollecitato: false }, { kind: 'pagamento', title: 'Bianchi', importo: 5, days: 20, sollecitato: true }, { kind: 'scadenza', title: 'x', days: -3 }]);
+    check('F-357: riassunto misto: niente scadute, uno ha sollecitato, solo i pagamenti', ria2.n === 2 && ria2.titolo === '2 fatture da pagare, una scade domani' && /1 ha sollecitato/.test(ria2.dettaglio) && ria2.totale === 15, ria2);
+    check('F-357: nessun pagamento → nessun riassunto', P.riassuntoPagamenti([{ kind: 'scadenza', days: -1 }]) === null);
     check('IA: non leggibile → null', controllaLettura({ leggibile: false, fornitore: '', totale_da_pagare: '', scadenza: '', numero_fattura: '' }) === null);
 
     // ── Altra azienda ──
@@ -154,10 +198,12 @@ async function main() {
     userId = u.user.id;
     await ins('company_users', { company_id: A.id, user_id: userId, role: 'owner' });
     const brief = await buildDailyBrief(A.id, userId);
-    const bp = brief.alerts.filter(a => String(a.id).startsWith('pagamento:'));
-    const scad = bp.find(a => a.id === `pagamento:${scaduta.body.id}`);
-    check('Buongiorno: la scaduta c\'è, con "Pagato" e Annulla', scad && scad.action?.kind === 'pagato' && /\/pagato$/.test(scad.action.path) && /non-pagato$/.test(scad.action.undo?.path || '') && /640,00 €/.test(scad.title), scad);
-    check('Buongiorno: quella entro 2 giorni c\'è, quelle tra 10-20 giorni no', bp.some(a => a.id === `pagamento:${sett.body.id}`) && !bp.some(a => a.id === `pagamento:${lontana.body.id}` || a.id === `pagamento:${avanti.body.id}`), bp.map(a => a.title));
+    // F-357: una riga sola per i pagamenti, senza "Pagato" (prima: una per fattura, segnabile pagata dalla home)
+    const bp = brief.alerts.filter(a => String(a.id).startsWith('pagamento'));
+    const riga1 = brief.alerts.find(a => a.id === 'pagamenti');
+    check('F-357: Buongiorno: niente righe per fattura', !brief.alerts.some(a => String(a.id).startsWith('pagamento:')), bp.map(a => a.id));
+    check('F-357: Buongiorno: una riga "pagamenti" in cima, senza tasto, con il totale e il link', riga1 && brief.alerts[0].id === 'pagamenti' && riga1.action === null && riga1.link === '/scadenze?type=pagare' && riga1.amount === dfOwner.pagamenti.totaleTesto && /^5 fatture da pagare/.test(riga1.title) && riga1.severity === 'critical', riga1);
+    check('F-357: Da fare: riassunto dei pagamenti con lo stesso totale della lista', dfOwner.pagamenti?.n === 5 && dfOwner.pagamenti.totale === (await call('GET', '/da-pagare', { company: A.id })).body.totale, dfOwner.pagamenti);
 
     // ── Elimina ──
     r = await call('DELETE', `/da-pagare/${lontana.body.id}`, { company: A.id });

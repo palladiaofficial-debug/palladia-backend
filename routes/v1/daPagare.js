@@ -4,7 +4,7 @@
 // POST   /api/v1/da-pagare                      multipart { fornitore, importo, entro, sollecitato?, numeroFattura?, file? }
 // POST   /api/v1/da-pagare/leggi                multipart { file } → { fornitore, importo, scadenza, numero, certa } (non salva)
 // PATCH  /api/v1/da-pagare/:id                  { fornitore?, importo?, entro?, sollecitato? }
-// POST   /api/v1/da-pagare/:id/pagato · /non-pagato · /conferma
+// POST   /api/v1/da-pagare/:id/pagato { il? } · /non-pagato · /conferma
 // POST   /api/v1/da-pagare/:id/rimanda          { giorni } | { al }
 // POST   /api/v1/da-pagare/:id/annulla-rimanda  { sollecitato? }
 // DELETE /api/v1/da-pagare/:id
@@ -88,7 +88,7 @@ router.post('/da-pagare', verifySupabaseJwt, conFile, async (req, res) => {
   try {
     const r = await P.crea({
       companyId: req.companyId, userId: req.user?.id, fornitore: b.fornitore, importo: b.importo, entro: b.entro,
-      sollecitato: vero(b.sollecitato), numeroFattura: b.numeroFattura || null, file: req.file || null,
+      sollecitato: vero(b.sollecitato), numeroFattura: b.numeroFattura || null, iban: b.iban || null, file: req.file || null,
     });
     audit(req, 'da_pagare.crea', r.id, { importo: r.importo, entro: r.scadenza, conFoto: !!req.file });
     res.status(201).json(r);
@@ -122,10 +122,10 @@ router.get('/da-pagare/email/contatto.vcf', verifySupabaseJwt, async (req, res) 
 
 router.patch('/da-pagare/:id', verifySupabaseJwt, async (req, res) => {
   if (!idOk(req, res) || !(await guard(req, res))) return;
-  const { fornitore, importo, entro, sollecitato } = req.body || {};
+  const { fornitore, importo, entro, sollecitato, iban } = req.body || {};
   try {
-    const r = await P.aggiorna({ companyId: req.companyId, id: req.params.id, fornitore, importo, entro, sollecitato });
-    audit(req, 'da_pagare.modifica', r.id, { fornitore: fornitore !== undefined, importo, entro, sollecitato });
+    const r = await P.aggiorna({ companyId: req.companyId, id: req.params.id, fornitore, importo, entro, sollecitato, iban });
+    audit(req, 'da_pagare.modifica', r.id, { fornitore: fornitore !== undefined, importo, entro, sollecitato, iban: iban !== undefined });
     res.json(r);
   } catch (err) { fallito(res, err, 'da-pagare PATCH'); }
 });
@@ -133,16 +133,18 @@ router.patch('/da-pagare/:id', verifySupabaseJwt, async (req, res) => {
 const azione = (nome, fn, auditName) => router.post(`/da-pagare/:id/${nome}`, verifySupabaseJwt, async (req, res) => {
   if (!idOk(req, res) || !(await guard(req, res))) return;
   try {
-    const r = await fn({ companyId: req.companyId, id: req.params.id, ...(req.body || {}) });
+    // Solo i campi di ogni azione: mai "today" o altro dal corpo della richiesta
+    const r = await fn({ companyId: req.companyId, id: req.params.id, body: req.body || {} });
     audit(req, auditName, req.params.id, req.body || {});
     res.json(r);
   } catch (err) { fallito(res, err, `da-pagare ${nome}`); }
 });
-azione('pagato', P.pagato, 'da_pagare.pagato');
-azione('non-pagato', P.nonPagato, 'da_pagare.non_pagato');
-azione('conferma', P.conferma, 'da_pagare.conferma');
-azione('rimanda', ({ companyId, id, giorni, al }) => P.rimanda({ companyId, id, giorni, al }), 'da_pagare.rimanda');
-azione('annulla-rimanda', ({ companyId, id, sollecitato }) => P.annullaRimanda({ companyId, id, sollecitato }), 'da_pagare.annulla_rimanda');
+// F-357: "Pagata oggi / ieri / altro giorno" → { il: 'YYYY-MM-DD' }
+azione('pagato', ({ companyId, id, body }) => P.pagato({ companyId, id, il: body.il }), 'da_pagare.pagato');
+azione('non-pagato', ({ companyId, id }) => P.nonPagato({ companyId, id }), 'da_pagare.non_pagato');
+azione('conferma', ({ companyId, id }) => P.conferma({ companyId, id }), 'da_pagare.conferma');
+azione('rimanda', ({ companyId, id, body }) => P.rimanda({ companyId, id, giorni: body.giorni, al: body.al }), 'da_pagare.rimanda');
+azione('annulla-rimanda', ({ companyId, id, body }) => P.annullaRimanda({ companyId, id, sollecitato: body.sollecitato }), 'da_pagare.annulla_rimanda');
 
 router.delete('/da-pagare/:id', verifySupabaseJwt, async (req, res) => {
   if (!idOk(req, res) || !(await guard(req, res))) return;
