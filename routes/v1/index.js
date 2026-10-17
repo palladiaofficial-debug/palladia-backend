@@ -40,6 +40,7 @@ router.use('/', require('./siteRiepilogo')); // F-321 scheda cantiere senza cart
 router.use('/', require('./lavagna')); // F-331 Lavagna cantieri
 router.use('/', require('./daPagare')); // F-338 Da pagare
 router.use('/', require('./contiSub')); // F-360 Conti dei sub
+router.use('/', require('./oggi')); // F-364 Palladia semplice: la home Oggi
 router.use('/', require('./alerts'));
 router.use('/', require('./asl'));
 router.use('/', require('./auditLog'));
