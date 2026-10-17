@@ -76,6 +76,8 @@ function puri() {
   // La stessa richiesta d'aiuto, ma di oggi: allora sì, in cima
   const oggi = items.map(i => (i.id === 'notif:aiuto' ? { ...i, date: '2026-10-17' } : i));
   const h2 = componi({ items: oggi, vedeSoldi: true, oggi: '2026-10-17' });
+  const vecchia = componi({ items: [{ ...items.find(i => i.id === 'notif:aiuto'), date: '2026-09-11' }], oggi: '2026-10-17' });
+  check('richiesta d\'aiuto vecchia: «Dell\'11 settembre: guarda se è ancora da fare»', vecchia.prima.sotto === 'Dell\'11 settembre: guarda se è ancora da fare' && vecchia.prima.tasto === 'Apri', vecchia.prima);
   check('richiesta d\'aiuto di oggi → prima cosa, con il cantiere', h2.prima.id === 'notif:aiuto' && h2.prima.sotto === 'Corso Sardegna 88. Registra tu la sua timbratura' && h2.prima.tasto === 'Aiutalo a timbrare', h2.prima);
 
   // Conto del sub in attesa: davanti ai documenti, dopo le fatture scadute
