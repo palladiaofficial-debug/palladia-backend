@@ -89,6 +89,11 @@ async function main() {
     check('sollecitata anche se lontana: subito', avanti.body.gruppo === 'subito' && avanti.body.sollecitato === true && avanti.body.conFoto === true, avanti.body);
     const fl = await call('GET', `/da-pagare/${avanti.body.id}/foto`, { company: A.id });
     check('foto allegata: link firmato', fl.status === 200 && /^https?:\/\//.test(fl.body.url || ''), fl.body);
+    // F-359: /fattura dice che file è e dà il link per scaricarlo col nome giusto
+    const fv = await call('GET', `/da-pagare/${avanti.body.id}/fattura`, { company: A.id });
+    check('F-359 /fattura: tipo immagine, nome leggibile, link per scaricare', fv.status === 200 && fv.body.tipo === 'immagine' && fv.body.nome === 'Fattura Noleggio Gru Ligure.jpg' && /download=/.test(fv.body.scarica || ''), fv.body);
+    check('F-359 fileTipo nella riga', avanti.body.fileTipo === 'immagine', avanti.body);
+    check('F-359 tipoFile', P.tipoFile('a/b.PDF') === 'pdf' && P.tipoFile('x.xml') === 'xml' && P.tipoFile('x.p7m') === 'xml' && P.tipoFile('x.heic') === 'immagine' && P.tipoFile('x.zip') === 'altro');
     const lontana = await nuovo(A.id, { fornitore: 'Carburanti Levante', importo: '415.50', entro: fra(25) });
     check('più avanti', lontana.body.gruppo === 'piu_avanti' && lontana.body.importo === 415.5, lontana.body);
 

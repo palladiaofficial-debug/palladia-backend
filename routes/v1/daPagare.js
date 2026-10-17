@@ -8,7 +8,7 @@
 // POST   /api/v1/da-pagare/:id/rimanda          { giorni } | { al }
 // POST   /api/v1/da-pagare/:id/annulla-rimanda  { sollecitato? }
 // DELETE /api/v1/da-pagare/:id
-// GET    /api/v1/da-pagare/:id/foto             → { url } firmato 10 min
+// GET    /api/v1/da-pagare/:id/fattura          → { url, scarica, tipo, nome } firmati 10 min (alias /foto)
 // POST   /api/v1/da-pagare/email/attiva         → indirizzo per inoltrare le fatture
 // GET    /api/v1/da-pagare/email/contatto.vcf   → contatto "Da pagare · azienda" da salvare
 // Solo titolare, amministratori e tecnici; dietro il flag `da_pagare`.
@@ -155,10 +155,11 @@ router.delete('/da-pagare/:id', verifySupabaseJwt, async (req, res) => {
   } catch (err) { fallito(res, err, 'da-pagare DELETE'); }
 });
 
-router.get('/da-pagare/:id/foto', verifySupabaseJwt, async (req, res) => {
+// F-359: /fattura (nuovo nome; /foto resta per le versioni dell'app già aperte)
+router.get(['/da-pagare/:id/fattura', '/da-pagare/:id/foto'], verifySupabaseJwt, async (req, res) => {
   if (!idOk(req, res) || !(await guard(req, res))) return;
-  try { res.json(await P.fotoFirmata({ companyId: req.companyId, id: req.params.id })); }
-  catch (err) { fallito(res, err, 'da-pagare foto'); }
+  try { res.json(await P.fileFirmato({ companyId: req.companyId, id: req.params.id })); }
+  catch (err) { fallito(res, err, 'da-pagare fattura'); }
 });
 
 module.exports = router;
