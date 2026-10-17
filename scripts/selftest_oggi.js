@@ -125,6 +125,19 @@ async function rotta() {
     check('l\'operaio del sub entrato oggi è contato', h.cantiere?.dentro === 1 && h.cantiere?.cantieri === 1, h.cantiere);
     const tec = await (await get(A.id, 'tech')).json();
     check('anche il tecnico vede il conto (controlla lui)', tec.prima?.titolo === 'Il conto di Ayat aspetta il tuo ok', tec.prima);
+    // F-366: il riquadro di Ladia = la home in piccolo (stesse righe, stesso numero)
+    const { buildDailyBrief } = require('../lib/dailyBrief');
+    const brief = await buildDailyBrief(A.id, null);
+    check('Ladia: «Da fare» = il numerino della home', brief.semplice === true && brief.kpi.da_fare === h.quante, { kpi: brief.kpi, quante: h.quante });
+    check('Ladia: le righe sono quelle della home, senza tasti dalla riga', brief.alerts.length === h.quante && brief.alerts[0].title === h.prima.titolo && brief.alerts.every(a => a.action === null), brief.alerts);
+    check('Ladia: senza menu a 4 voci il conto apre Da fare', brief.alerts[0].link === '/scadenze?type=conti', brief.alerts[0].link);
+    await ins('company_feature_flags', { company_id: A.id, feature: 'menu_semplice', enabled: true });
+    const brief2 = await buildDailyBrief(A.id, null);
+    check('Ladia: col menu a 4 voci il conto apre Soldi', brief2.alerts[0].link === '/soldi?vista=conti', brief2.alerts[0].link);
+    await supabase.from('company_feature_flags').delete().eq('company_id', A.id).in('feature', ['home_semplice', 'menu_semplice']);
+    const vecchio = await buildDailyBrief(A.id, null);
+    check('Ladia: flag spenti → il riquadro di prima (conteggio di Da fare)', !vecchio.semplice && typeof vecchio.kpi.da_fare === 'number', vecchio);
+    for (const feature of ['home_semplice']) await ins('company_feature_flags', { company_id: A.id, feature, enabled: true });
     const cs = await (await get(A.id, 'capocantiere')).json();
     check('un capocantiere non vede conti né soldi', cs.prima === null && cs.soldi === null, cs);
   } finally {
