@@ -10,7 +10,13 @@
  * Per attivare Redis: aggiungi un servizio Redis su Railway e setta
  * la variabile REDIS_URL = redis://default:<password>@<host>:<port>
  */
-const rateLimit = require('express-rate-limit');
+const baseRateLimit = require('express-rate-limit');
+
+// F-368 (AUDIT.md, 17/10): se Redis non risponde (riavvio, trasloco di regione,
+// rete) express-rate-limit di default rilancia l'errore e la richiesta finisce
+// in 500 — anche la timbratura col badge (badgePunchLimiter). Meglio lasciar
+// passare senza limite per quei minuti che bloccare chi timbra.
+const rateLimit = (opts) => baseRateLimit({ passOnStoreError: true, ...opts });
 
 // ── Store Redis opzionale ─────────────────────────────────────────────────────
 // NOTA: express-rate-limit vieta di condividere una singola istanza di store tra
@@ -28,6 +34,10 @@ if (process.env.REDIS_URL) {
       maxRetriesPerRequest: 3,
       enableReadyCheck:     false,
       lazyConnect:          true,
+      // F-368: con Redis che non risponde (non che rifiuta) una timbratura
+      // restava appesa 83 s. Dopo 1,5 s la domanda fallisce e si lascia passare.
+      connectTimeout:       2000,
+      commandTimeout:       1500,
     });
     redisClient.on('connect', () => console.log('[Redis] connesso — rate limit distribuito attivo'));
     redisClient.on('error',   (e) => console.warn('[Redis] errore connessione:', e.message));
@@ -41,12 +51,14 @@ if (process.env.REDIS_URL) {
 
 function makeStore(prefix) {
   if (!redisClient) return {};
-  return {
-    store: new RedisStoreClass({
-      prefix:      `rl:${prefix}:`,
-      sendCommand: (...args) => redisClient.call(...args),
-    }),
-  };
+  const store = new RedisStoreClass({
+    prefix:      `rl:${prefix}:`,
+    sendCommand: (...args) => redisClient.call(...args),
+  });
+  // F-368: lo script si carica subito; con Redis giù quella promessa falliva
+  // senza nessuno ad ascoltarla. Lo store la ricarica da solo al primo uso.
+  for (const p of [store.incrementScriptSha, store.getScriptSha]) if (p && p.catch) p.catch(() => {});
+  return { store };
 }
 
 // ── Rate limiter per POST /api/v1/scan/punch ──────────────────────────────────
