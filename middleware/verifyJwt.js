@@ -1,6 +1,7 @@
 'use strict';
 const supabase = require('../lib/supabase');
 const { isBillingActive } = require('../lib/billing');
+const authCache = require('../lib/authCache');
 
 // Endpoint che devono restare scrivibili anche ad abbonamento scaduto — altrimenti
 // una company bloccata non potrebbe più riattivarsi da sola (paradosso del lucchetto).
@@ -66,14 +67,19 @@ async function verifySupabaseJwt(req, res, next) {
   }
   const jwt = auth.slice(7);
 
+  // F-367: le letture riusano utente e ruolo verificati da meno di 60 s
+  // (lib/authCache.js); le scritture rifanno sempre tutto il giro.
+  const lettura = req.method === 'GET' || req.method === 'HEAD';
+
   // 2. Valida JWT con Supabase Auth (call HTTP a Supabase Auth server)
-  let user;
-  try {
+  let user = lettura ? authCache.utenteRicordato(jwt) : null;
+  if (!user) try {
     const { data, error } = await supabase.auth.getUser(jwt);
     if (error || !data?.user) {
       return res.status(401).json({ error: 'Invalid or expired token' });
     }
     user = data.user;
+    authCache.ricordaUtente(jwt, user);
   } catch (e) {
     console.error('[auth] getUser exception:', e.message);
     return res.status(401).json({ error: 'Token validation failed' });
@@ -87,7 +93,9 @@ async function verifySupabaseJwt(req, res, next) {
 
   // 4. Verifica membership reale in company_users (con retry su errore transitorio)
   let membership = null;
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  const ruoloNoto = lettura ? authCache.ruoloRicordato(user.id, companyId) : null;
+  if (ruoloNoto) membership = { role: ruoloNoto };
+  else for (let attempt = 1; attempt <= 2; attempt++) {
     const { data, error: memberErr } = await supabase
       .from('company_users')
       .select('role')
@@ -95,7 +103,7 @@ async function verifySupabaseJwt(req, res, next) {
       .eq('user_id', user.id)
       .maybeSingle();
 
-    if (!memberErr) { membership = data; break; }
+    if (!memberErr) { membership = data; if (data?.role) authCache.ricordaRuolo(user.id, companyId, data.role); break; }
     if (attempt === 2) {
       console.error('[auth] membership check failed after retry:', memberErr.message);
       return res.status(503).json({ error: 'Service temporarily unavailable' });

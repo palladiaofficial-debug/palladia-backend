@@ -200,3 +200,4 @@ scripts/selftest_daily_digest_f351.js
 scripts/selftest_comunicazioni_coerenti.js
 scripts/selftest_email_grafica_f356.js
 scripts/selftest_oggi.js
+scripts/selftest_auth_cache.js

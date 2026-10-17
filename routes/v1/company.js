@@ -2,6 +2,7 @@
 const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const authCache = require('../../lib/authCache');
 const { sendMemberRemovedEmail } = require('../../services/email');
 const { validate } = require('../../middleware/validate');
 const { patchCompanySchema, patchTeamMemberSchema, leaveCompanySchema } = require('../../lib/schemas/company');
@@ -306,6 +307,7 @@ router.delete('/team-members/:userId', verifySupabaseJwt, async (req, res) => {
     .delete()
     .eq('company_id', req.companyId)
     .eq('user_id', userId);
+  authCache.dimenticaMembro(userId, req.companyId); // F-367
 
   if (error) {
     console.error('[team-members] delete error:', error.message);
@@ -355,6 +357,7 @@ router.patch('/team-members/:userId', verifySupabaseJwt, validate(patchTeamMembe
     .update({ role })
     .eq('company_id', req.companyId)
     .eq('user_id', userId);
+  authCache.dimenticaMembro(userId, req.companyId); // F-367
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
 
@@ -403,6 +406,7 @@ router.post('/leave-company', validate(leaveCompanySchema), async (req, res) => 
     .delete()
     .eq('company_id', companyId)
     .eq('user_id', userId);
+  authCache.dimenticaMembro(userId, companyId); // F-367
 
   if (error) {
     console.error('[leave-company] error:', error.message);
