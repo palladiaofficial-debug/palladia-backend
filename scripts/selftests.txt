@@ -190,6 +190,7 @@ scripts/selftest_psc_http_sweep.js
 scripts/selftest_scan_identify_impresa.js
 scripts/selftest_sub_presenze.js
 scripts/selftest_da_pagare.js
+scripts/selftest_conti_sub.js
 scripts/selftest_da_pagare_email.js
 scripts/selftest_sunto_sicurezza.js
 scripts/selftest_pos_cartelli_iso.js

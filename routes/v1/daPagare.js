@@ -22,6 +22,7 @@ const logger = require('../../lib/logger');
 const supabase = require('../../lib/supabase');
 const P = require('../../lib/daPagare');
 const { leggiFattura } = require('../../lib/daPagareLettura');
+const contiSub = require('../../lib/contiSub');
 const { connectCompany, getStatus } = require('../../services/emailIngestConfig');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,6 +64,9 @@ router.get('/da-pagare', verifySupabaseJwt, async (req, res) => {
   if (!(await guard(req, res))) return;
   try {
     const [elenco, email] = await Promise.all([P.elenco(req.companyId), getStatus(req.companyId).catch(() => null)]);
+    // F-360: la fattura di un sub confrontata con il suo conto approvato
+    const conti = await contiSub.perDaPagare(req.companyId, [...elenco.righe, ...elenco.pagatiQuestoMese]).catch((err) => { logger.warn({ err }, 'da-pagare conti sub'); return new Map(); });
+    for (const r of [...elenco.righe, ...elenco.pagatiQuestoMese]) r.conto = conti.get(r.id) || null;
     res.json({ ...elenco, ruolo: req.userRole || null, email: email && email.status === 'active' ? { indirizzo: email.address } : null });
   } catch (err) { fallito(res, err, 'da-pagare GET'); }
 });
