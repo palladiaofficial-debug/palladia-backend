@@ -106,6 +106,16 @@ async function main() {
     check('nel DB: persona del sub con informativa registrata', ionRow.subcontractor_id === subY.id && ionRow.fiscal_code === cfIon && !!ionRow.informativa_at && ionRow.added_via === 'qr', ionRow);
     const reg2 = await call('POST', '/sub-scan/register', { body: { ...qr(), impresa: subY.id, full_name: 'Ion Popescu', fiscal_code: cfIon } });
     check('stessa persona di nuovo: nessun doppione', reg2.body.subWorkerId === reg.body.subWorkerId);
+    // F-361: senza tessera si entra con nome e cognome (prima: vicolo cieco «Chiedi al caposquadra»)
+    check('F-361 senza tessera, solo il nome: 400 «Scrivi nome e cognome»', (await call('POST', '/sub-scan/register', { body: { ...qr(), impresa: subY.id, full_name: 'Ionel', fiscal_code: null } })).body.error === 'FULL_NAME_REQUIRED');
+    const regNo = await call('POST', '/sub-scan/register', { body: { ...qr(), impresa: subY.id, full_name: 'Vasile Ionescu', fiscal_code: null } });
+    const { data: vasRow } = await supabase.from('sub_workers').select('*').eq('id', regNo.body.subWorkerId || '00000000-0000-0000-0000-000000000000').maybeSingle();
+    check('F-361 senza tessera, nome e cognome: entra (persona senza codice fiscale)', regNo.status === 200 && /^sw1\./.test(regNo.body.deviceToken) && vasRow?.fiscal_code === null && vasRow?.added_via === 'qr', regNo.body);
+    const regNo2 = await call('POST', '/sub-scan/register', { body: { ...qr(), impresa: subY.id, full_name: 'Ionescu Vasile', fiscal_code: null } });
+    check('F-361 stesso nome (anche al contrario) da un altro telefono: stessa persona', regNo2.body.subWorkerId === regNo.body.subWorkerId);
+    const regIonNo = await call('POST', '/sub-scan/register', { body: { ...qr(), impresa: subY.id, full_name: 'Popescu Ion', fiscal_code: null } });
+    const { data: ionDopo } = await supabase.from('sub_workers').select('full_name, fiscal_code').eq('id', reg.body.subWorkerId).single();
+    check('F-361 chi era già registrato con la tessera: stessa persona, codice fiscale e nome restano', regIonNo.body.subWorkerId === reg.body.subWorkerId && ionDopo.fiscal_code === cfIon && ionDopo.full_name === 'Ion Popescu', ionDopo);
 
     // ── QR: entrata e uscita ──
     const st0 = await call('GET', `/sub-scan/stato?${qs()}`, { token: tokIon });
@@ -194,6 +204,9 @@ async function main() {
     const { data: assZ } = await supabase.from('site_subcontractors').select('id').eq('site_id', site.id).eq('subcontractor_id', subZ.id);
     const b3 = (await call('GET', `/sites/${site.id}/imprese-oggi`, { company: A.id })).body;
     check('"Assegna": impresa assegnata al cantiere e avviso chiuso', ch.status === 200 && assZ.length === 1 && !b3.avvisi.some(a => a.tipo === 'impresa_non_assegnata'), { ch: ch.body, assZ });
+    const ig3 = await call('POST', '/sub-scan/ignota', { body: { ...qr(), impresa_nome: 'Edil Bucuresti', full_name: 'Mihai Dumitru', fiscal_code: null } });
+    const ig4 = await call('POST', '/sub-scan/ignota', { body: { ...qr(), impresa_nome: 'Edil Bucuresti', full_name: 'Mihai Dumitru', fiscal_code: null } });
+    check('F-361 impresa non assegnata, senza tessera: registrata, una volta al giorno', ig3.status === 200 && ig3.body.unchanged === false && ig4.body.unchanged === true, [ig3.body, ig4.body]);
 
     // ── Ufficio: appello, ruoli, annulla ──
     check('appello da un ruolo senza permesso: 403', (await call('POST', `/sites/${site.id}/sub-presenze`, { company: A.id, role: 'worker', body: { sub_worker_id: ahmed.body.id, event: 'entrata' } })).status === 403);

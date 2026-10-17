@@ -119,6 +119,16 @@
     <p class="sub" data-t="askForemanSub"></p>
   </div>
 
+  <!-- F-361: senza tessera (illeggibile o dimenticata) si entra scrivendo nome e cognome -->
+  <div class="screen" id="s-nome" hidden>
+    <h1 data-t="writeName"></h1>
+    <p class="sub" data-t="writeNameSub"></p>
+    <p class="msg" id="nome-msg" hidden data-t="nameAndSurname"></p>
+    <input type="text" id="in-nome" autocomplete="name" autocapitalize="words" spellcheck="false" maxlength="80">
+    <button class="big blue" id="btn-nome-ok" data-t="continue"></button>
+    <button class="link" id="btn-nome-foto" data-t="tryPhotoAgain"></button>
+  </div>
+
   <div class="screen" id="s-tasto" hidden>
     <div class="who"><b id="t-nome"></b><span id="t-impresa"></span></div>
     <div class="spacer"></div>
@@ -171,6 +181,7 @@
       unreadable: 'Non si legge bene. Riprova con più luce, con la tessera dritta.',
       isItYou: 'Sei tu?', yesEnter: 'Sì, entro', retryPhoto: 'No, rifai la foto',
       informativaLine: 'Toccando "Sì" confermi di aver letto l\'informativa.', read: 'Leggi',
+      writeName: 'Scrivi nome e cognome', writeNameSub: 'Come sono scritti sui tuoi documenti.', nameAndSurname: 'Servono il nome e il cognome.', tryPhotoAgain: 'Riprova con la foto della tessera',
       askForeman: 'Chiedi al tuo caposquadra di segnarti', askForemanSub: 'Ha un elenco con il tuo nome: gli basta un tocco.',
       enter: 'ENTRO', exit: 'ESCO', notYou: 'Non sei tu?',
       enteredAt: function (h) { return 'Sei entrato alle ' + h; }, exitedAt: function (h) { return 'Sei uscito alle ' + h; },
@@ -189,6 +200,7 @@
       unreadable: 'Nu se citește bine. Mai încearcă o dată, cu mai multă lumină și cu cardul drept.',
       isItYou: 'Tu ești?', yesEnter: 'Da, intru', retryPhoto: 'Nu, fac altă poză',
       informativaLine: 'Dacă apeși „Da", confirmi că ai citit nota de informare.', read: 'Citește',
+      writeName: 'Scrie numele și prenumele', writeNameSub: 'Așa cum sunt scrise în actele tale.', nameAndSurname: 'E nevoie de nume și prenume.', tryPhotoAgain: 'Încearcă din nou cu poza cardului',
       askForeman: 'Roagă-l pe șeful de echipă să te treacă pe listă', askForemanSub: 'El are lista cu numele tău și te marchează cu o singură atingere.',
       enter: 'INTRU', exit: 'IES', notYou: 'Nu ești tu?',
       enteredAt: function (h) { return 'Ai intrat la ora ' + h; }, exitedAt: function (h) { return 'Ai ieșit la ora ' + h; },
@@ -207,6 +219,7 @@
       unreadable: 'Nuk lexohet mirë. Provo përsëri me më shumë dritë dhe me kartën drejt.',
       isItYou: 'Je ti?', yesEnter: 'Po, hyj', retryPhoto: 'Jo, bëj një foto tjetër',
       informativaLine: 'Kur shtyp "Po", konfirmon që ke lexuar njoftimin për privatësinë.', read: 'Lexo',
+      writeName: 'Shkruaj emrin dhe mbiemrin', writeNameSub: 'Siç janë shkruar në dokumentet e tua.', nameAndSurname: 'Duhen emri dhe mbiemri.', tryPhotoAgain: 'Provo përsëri me foton e kartës',
       askForeman: 'Kërkoji përgjegjësit të ekipit të të shënojë', askForemanSub: 'Ai ka listën me emrin tënd dhe të shënon me një prekje.',
       enter: 'HYJ', exit: 'DAL', notYou: 'Nuk je ti?',
       enteredAt: function (h) { return 'Hyre në orën ' + h; }, exitedAt: function (h) { return 'Dole në orën ' + h; },
@@ -225,6 +238,7 @@
       unreadable: 'الصورة غير واضحة. حاول مرة أخرى في مكان فيه ضوء أكثر، والبطاقة مستقيمة.',
       isItYou: 'هل هذا أنت؟', yesEnter: 'نعم، أدخل', retryPhoto: 'لا، سألتقط صورة أخرى',
       informativaLine: 'عندما تضغط "نعم" فأنت تؤكد أنك قرأت إشعار الخصوصية.', read: 'اقرأ',
+      writeName: 'اكتب اسمك واسم عائلتك', writeNameSub: 'كما هما مكتوبان في وثائقك.', nameAndSurname: 'نحتاج الاسم واسم العائلة.', tryPhotoAgain: 'حاول مرة أخرى بصورة البطاقة',
       askForeman: 'اطلب من رئيس فريقك أن يسجّلك', askForemanSub: 'لديه قائمة فيها اسمك، ويسجّلك بلمسة واحدة.',
       enter: 'دخول', exit: 'خروج', notYou: 'لست أنت؟',
       enteredAt: function (h) { return 'دخلت الساعة ' + h; }, exitedAt: function (h) { return 'خرجت الساعة ' + h; },
@@ -252,6 +266,7 @@
   $('langs').addEventListener('click', function (e) { var c = e.target.getAttribute('data-l'); if (c) { LANG = c; lsSet(K_LANG, c); render(); } });
 
   function show(id) {
+    if (id === 's-conferma') chiediGps();
     screenNow = id;
     document.querySelectorAll('.screen').forEach(function (s) { s.hidden = s.id !== id; });
     window.scrollTo(0, 0);
@@ -278,12 +293,19 @@
   function ora(iso) { return new Date(iso || Date.now()).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }); }
 
   // Posizione: chiesta, mai obbligatoria. Se non arriva entro 4 secondi si entra lo stesso.
-  var gps = null;
+  // F-362: chiesta già quando compare «Sei tu?» o il tasto; se il telefono la rifiuta
+  // non si aspetta più (prima: fino a 4 secondi anche col permesso negato, 8 s in tutto).
+  var gps = null, gpsFinito = false;
   function chiediGps() {
-    if (!navigator.geolocation) return;
-    try { navigator.geolocation.getCurrentPosition(function (p) { gps = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }; }, function () {}, { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 }); } catch (e) {}
+    if (!navigator.geolocation) { gpsFinito = true; return; }
+    try {
+      navigator.geolocation.getCurrentPosition(
+        function (p) { gps = { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }; gpsFinito = true; },
+        function () { gpsFinito = true; },
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+    } catch (e) { gpsFinito = true; }
   }
-  function conGps() { return new Promise(function (res) { if (gps) return res(gps); var n = 0; var iv = setInterval(function () { if (gps || ++n > 8) { clearInterval(iv); res(gps); } }, 500); }); }
+  function conGps() { return new Promise(function (res) { if (gps || gpsFinito) return res(gps); var n = 0; var iv = setInterval(function () { if (gps || gpsFinito || ++n > 8) { clearInterval(iv); res(gps); } }, 250); }); }
 
   // ── Scelta dell'impresa ──
   function mostraImprese() {
@@ -311,7 +333,23 @@
   });
 
   // ── Foto della tessera ──
-  $('btn-nocard').addEventListener('click', function () { show('s-chiedi'); });
+  $('btn-nocard').addEventListener('click', function () { chiediNome(); });
+  // F-361: nome e cognome scritti a mano, con le maiuscole giuste
+  function maiuscole(v) {
+    v = v.replace(/\s+/g, ' ').trim();
+    if (v !== v.toLowerCase() && v !== v.toUpperCase()) return v;
+    return v.toLowerCase().replace(/(^|[\s'-])(\S)/g, function (m, a, c) { return a + c.toUpperCase(); });
+  }
+  function chiediNome() { $('nome-msg').hidden = true; $('in-nome').value = ''; show('s-nome'); setTimeout(function () { $('in-nome').focus(); }, 50); }
+  $('btn-nome-ok').addEventListener('click', function () {
+    var v = maiuscole($('in-nome').value);
+    if (v.length < 3 || v.indexOf(' ') < 0) { $('nome-msg').hidden = false; $('in-nome').focus(); return; }
+    letto = { fullName: v, fiscalCode: null };
+    $('c-nome').textContent = v; $('c-impresa').textContent = scelta.nome;
+    $('info').hidden = true; show('s-conferma');
+  });
+  $('in-nome').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('btn-nome-ok').click(); });
+  $('btn-nome-foto').addEventListener('click', function () { tentativi = 0; $('foto-msg').hidden = true; show('s-foto'); });
   function riduci(file) {
     return new Promise(function (res, rej) {
       var img = new Image(), url = URL.createObjectURL(file);
@@ -339,10 +377,10 @@
       }
       if (r.status === 422 || r.status === 400) {
         tentativi++;
-        if (tentativi >= 2) { show('s-chiedi'); return; }
+        if (tentativi >= 2) { chiediNome(); return; }
         $('foto-msg').hidden = false; show('s-foto'); return;
       }
-      if (r.status === 429) { show('s-chiedi'); return; }
+      if (r.status === 429) { chiediNome(); return; }
       errore(msgErrore(r), function () { show('s-foto'); });
     }).catch(function () { errore(t('offline'), function () { show('s-foto'); }); });
   });
