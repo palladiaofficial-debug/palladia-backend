@@ -61,6 +61,7 @@ function puri() {
   const h = componi({ items, conti: [], presenze: { dentro: 13, cantieri: 4 }, vedeSoldi: true, oggi: '2026-10-17' });
   const tutte = [h.prima, ...h.poi];
   check('54 voci → «Oggi 7 cose da fare»', h.titolo === 'Oggi 7 cose da fare', h.titolo);
+  check('il numerino del menu è 7 come la home, non 54', h.quante === 7, h.quante);
   check('in cima le fatture scadute (la richiesta d\'aiuto del 15/09 non è urgente)', h.prima.id === 'pagamenti' && h.prima.titolo === '4 fatture scadute da pagare', h.prima);
   check('importo col punto delle migliaia e i fornitori in breve', h.prima.sotto === '7.724,47 €, Guardalà Giuseppina e altri 2. Tutti ti hanno sollecitato', h.prima.sotto);
   check('poi: documenti scaduti, timbrature, pioggia (ordine di importanza)', JSON.stringify(h.poi.map(r => r.id)) === JSON.stringify(['documenti-scaduti', 'timbrature', 'pioggia']), h.poi.map(r => r.id));
