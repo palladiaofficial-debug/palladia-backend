@@ -744,7 +744,23 @@ async function notifyExpiredComplianceAtPunch(companyId, siteId, siteName, worke
   if (sends.length) await Promise.allSettled(sends);
 }
 
+/** F-377: un'impresa non in regola è entrata in cantiere (avviso, non blocco). */
+async function notifySubNonInRegola(companyId, siteId, title, body) {
+  if (!process.env.TELEGRAM_BOT_TOKEN) return;
+  let users;
+  try { users = await getCompanyTelegramUsers(companyId); } catch (e) { console.error('[notifySubNonInRegola] getCompanyTelegramUsers error:', e.message); return; }
+  const text = `⚠️ <b>${esc(title)}</b>
+${esc(body)}`;
+  const sends = users.map(u => {
+    if (u.allowedSiteIds !== null && !u.allowedSiteIds.includes(siteId)) return null;
+    if ((u.notificationLevel || 'balanced') === 'quiet') return null;
+    return tg.sendMessage(u.chatId, text).catch(e => console.error('[notifySubNonInRegola] error:', e.message));
+  }).filter(Boolean);
+  if (sends.length) await Promise.allSettled(sends);
+}
+
 module.exports = {
+  notifySubNonInRegola,
   notifyCompany,
   notifyCoordinators,
   notifyNonConformita,

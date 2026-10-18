@@ -206,3 +206,4 @@ scripts/selftest_altri_posti.js
 scripts/selftest_documenti_leggi.js
 scripts/selftest_mezzi_semplici.js
 scripts/selftest_imprese_semplici.js
+scripts/selftest_avviso_sub_non_in_regola.js
