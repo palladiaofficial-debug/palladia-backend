@@ -281,6 +281,7 @@ router.use('/', require('./daFare'));
 
 // Documenti senza cartelle: cinque voci, cosa serve e cosa manca, un solo caricamento (F-316)
 router.use('/', require('./documentiSemplici'));
+router.use('/', require('./mezziSemplici')); // F-375 Mezzi semplici
 
 // Diario di cantiere: voce giornaliera, meteo auto, presenze, PDF
 router.use('/', require('./diary'));
