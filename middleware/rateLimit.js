@@ -359,4 +359,17 @@ const squadraLimiter = rateLimit({
   message: { error: 'RATE_LIMIT_EXCEEDED' }, ...makeStore('squadra'),
 });
 
-module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, badgeUscitaLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter, subScanLimiter, subCardLimiter, squadraLimiter };
+// F-376: il link dell'impresa (pubblico, senza registrazione). Le letture come la squadra;
+// i caricamenti chiamano il modello (controllo del documento): al massimo 30 ogni 10 minuti per link.
+const impresaLinkLimiter = rateLimit({
+  windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false }, keyGenerator: (req) => `${ipKey(req)}:${String(req.params?.token || '').slice(0, 12)}`,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }, ...makeStore('impresa_link'),
+});
+const impresaCaricaLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000, max: 30, standardHeaders: true, legacyHeaders: false,
+  validate: { keyGeneratorIpFallback: false }, keyGenerator: (req) => `carica:${String(req.params?.token || '').slice(0, 24)}`,
+  message: { error: 'RATE_LIMIT_EXCEEDED' }, ...makeStore('impresa_carica'),
+});
+
+module.exports = { scanLimiter, identifyLimiter, apiLimiter, aslLimiter, coordinatorLimiter, chatLimiter, userChatLimiter, aiLimiter, userImportLimiter, publicScanLimiter, badgePunchLimiter, badgeUscitaLimiter, confirmActionLimiter, sdiWebhookLimiter, emailIngestWebhookLimiter, emailIngestSenderLimiter, subScanLimiter, subCardLimiter, squadraLimiter, impresaLinkLimiter, impresaCaricaLimiter };

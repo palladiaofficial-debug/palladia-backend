@@ -95,6 +95,8 @@ router.use('/', require('./scan'));
 router.use('/', require('./scanExitReason'));
 // F-337: presenze delle imprese subappaltatrici (QR, link della squadra, ufficio)
 router.use('/', require('./subPresenze'));
+// F-376: Imprese semplici + link dell'impresa (pubblico per token): auth per singola rotta, prima dei router con JWT globale
+router.use('/', require('./impreseSemplici'));
 // F-267: iscrizione push dell'operaio dal badge (identità = badge_code, file separato)
 router.use('/', require('./workerPush'));
 
