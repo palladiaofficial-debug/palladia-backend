@@ -9,6 +9,7 @@
 //   POST /api/v1/imprese/:id/inviato         → «Manda su WhatsApp» toccato
 //   POST /api/v1/imprese/:id/visti           → ho guardato quello che ha mandato
 //   POST /api/v1/imprese/:id/cantieri        → { siteId }
+//   POST /api/v1/imprese/:id/carica          → { tipo, siteId? } + file: carica il titolare, stesso controllo
 //   POST /api/v1/imprese/doc/:docId/va-bene  → decide il titolare, sopra al controllo
 // Impresa (link, senza registrazione):
 //   GET  /api/v1/impresa-link/:token                       → le sue richieste e i suoi operai
@@ -78,6 +79,10 @@ router.post('/imprese/:id/visti', ...auth, scrive, idValido('id'), async (req, r
 router.post('/imprese/:id/cantieri', ...auth, scrive, idValido('id'), async (req, res) => {
   if (!UUID.test(String(req.body?.siteId || ''))) return res.status(400).json({ error: 'SITE_NOT_FOUND' });
   try { await I.mettiInCantiere(req.companyId, req.params.id, req.body.siteId); res.json({ ok: true }); } catch (err) { fallito(res, err, 'cantieri'); }
+});
+router.post('/imprese/:id/carica', ...auth, scrive, aiLimiter, idValido('id'), unFile, async (req, res) => {
+  const siteId = req.body?.siteId && UUID.test(req.body.siteId) ? req.body.siteId : null;
+  try { res.status(201).json(await L.caricaDalTitolare(req.companyId, req.user?.id, req.params.id, { tipo: req.body?.tipo, siteId, file: req.file })); } catch (err) { fallito(res, err, 'carica titolare'); }
 });
 router.post('/imprese/doc/:docId/va-bene', ...auth, scrive, idValido('docId'), async (req, res) => {
   try { await I.vaBene(req.companyId, req.params.docId); res.json({ ok: true }); } catch (err) { fallito(res, err, 'va bene'); }

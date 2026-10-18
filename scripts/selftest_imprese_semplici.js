@@ -121,6 +121,10 @@ const letto = (x) => ({ tipo: 'altro', ragioneSociale: null, piva: null, sede: n
       p = await I.panoramica(E2E);
       check('dopo averli guardati la prima cosa non è più «guardali»', !(p.prima?.tipo === 'guardare' && p.prima.id === id), p.prima);
 
+      r = await L.caricaDalTitolare(E2E, null, id, { tipo: 'dvr', file }, finto({ tipo: 'dvr', ragione_sociale: 'Prova Selftest Impresa' }));
+      s = await I.scheda(E2E, id);
+      check('il titolare carica il DVR lui: stesso controllo, conta, e non finisce tra «ha mandato»', r.esito === 'va_bene' && s.requisiti.find(x => x.key === 'dvr').stato === 'ok' && s.ricevuti.length === 0, { r, ricevuti: s.ricevuti.length });
+
       const op = await L.aggiungiOperaio(token, { nome: 'Youssef Amrani' });
       let err = null;
       try { await L.aggiungiOperaio(token, { nome: 'Youssef' }); } catch (e) { err = e; }
