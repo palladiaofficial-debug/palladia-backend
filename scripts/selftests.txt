@@ -203,3 +203,4 @@ scripts/selftest_oggi.js
 scripts/selftest_auth_cache.js
 scripts/selftest_ratelimit_redis_down.js
 scripts/selftest_altri_posti.js
+scripts/selftest_documenti_leggi.js
