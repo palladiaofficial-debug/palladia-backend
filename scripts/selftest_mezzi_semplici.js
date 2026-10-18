@@ -94,6 +94,13 @@ const OGGI = '2026-10-18';
       try { await M.aggiungiPromemoria(E2E, null, id, { tipo: 'altro', scadenza: '2027-01-01' }); } catch (e) { err = e; }
       check('«Altro» senza testo → 400', err?.status === 400 && err.code === 'TESTO_RICHIESTO', err && err.code);
 
+      // Il nome scelto, non quello del file (prima: «IMG_2041» al posto di «Libretto di circolazione»)
+      const { carica } = require('../lib/documentiCarica');
+      await carica({ companyId: E2E, userId: null, kind: 'mezzi', id, label: 'Libretto di circolazione',
+        file: { buffer: Buffer.from('%PDF-1.4\n%%EOF\n'), mimetype: 'application/pdf', originalname: 'IMG_2041.pdf', size: 15 } });
+      const s2 = await M.scheda(E2E, id, OGGI);
+      check('documento di un mezzo col nome scelto: «Libretto di circolazione»', s2.documenti.some(d => d.label === 'Libretto di circolazione'), s2.documenti.map(d => d.label));
+
       const pan = await M.panoramica(E2E, OGGI);
       const riga = pan.mezzi.find(x => x.id === id);
       check('panoramica: la riga del mezzo dice «assicurazione scaduta» e il nome breve', riga?.problema?.key === 'assicurazione' && riga?.nome === 'Prova Selftest', riga);
@@ -102,6 +109,11 @@ const OGGI = '2026-10-18';
       check('«Non lo usiamo più»: sparisce dalla pagina', !dopo.mezzi.some(x => x.id === id));
     } finally {
       if (id) {
+        const { data: docs } = await supabase.from('equipment_documents').select('id, file_url').eq('equipment_id', id);
+        if (docs?.length) {
+          await supabase.storage.from('equipment-docs').remove(docs.map(d => d.file_url)).catch(() => {});
+          await supabase.from('equipment_documents').delete().eq('equipment_id', id);
+        }
         await supabase.from('equipment_promemoria').delete().eq('equipment_id', id);
         await supabase.from('site_equipment').delete().eq('equipment_id', id);
         await supabase.from('equipment').update({ is_active: false }).eq('id', id);
