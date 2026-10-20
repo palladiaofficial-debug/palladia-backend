@@ -195,7 +195,7 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
 
   let query = supabase
     .from('presence_logs')
-    .select('id, event_type, timestamp_server, worker_id, site_id')
+    .select('id, event_type, timestamp_server, worker_id, site_id, method')
     .eq('company_id', req.companyId)
     .gte('timestamp_server', `${fromDate}T00:00:00+02:00`)
     .lte('timestamp_server', `${toDate}T23:59:59.999+01:00`)
@@ -272,6 +272,8 @@ router.get('/presence/history', verifySupabaseJwt, async (req, res) => {
     worker:           workerMap[l.worker_id] || { id: l.worker_id, full_name: '—' },
     site:             siteMap[l.site_id]     || { id: l.site_id,   name: '—'       },
     annotation:       noteByLogId[l.id] || null,
+    // F-389: chi l'ha registrata (un'uscita chiusa in automatico va controllata)
+    method:           l.method || null,
   }));
 
   res.json(result);

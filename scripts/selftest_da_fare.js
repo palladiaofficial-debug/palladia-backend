@@ -81,6 +81,15 @@ async function main() {
     await pl({ worker_id: wB.id, event_type: 'ENTRY', timestamp_server: `${y}T06:00:00Z`, method: 'worker_self_punch' });
     await pl({ worker_id: wB.id, event_type: 'EXIT', timestamp_server: `${y}T15:00:00Z`, method: 'ladia_action' });
     await pl({ worker_id: wB.id, event_type: 'EXIT', timestamp_server: `${y}T14:30:00Z`, method: 'admin_manual_correction' });
+    // F-389 (Ibrahim, MSC 20/10): uscita corretta a mano sul PRIMO turno, poi una nuova
+    // entrata e il secondo turno chiuso in automatico → il secondo va controllato.
+    const wC = await ins('workers', { company_id: cid, full_name: `${T} Carla`, is_active: true, fiscal_code: `F236D${Date.now()}`.slice(0, 16), badge_code: `F236D${Date.now()}` });
+    created.workers.push(wC.id);
+    await pl({ worker_id: wC.id, event_type: 'ENTRY', timestamp_server: `${y}T06:17:00Z`, method: 'worker_self_punch' });
+    await pl({ worker_id: wC.id, event_type: 'EXIT', timestamp_server: `${y}T08:56:00Z`, method: 'admin_manual_correction' });
+    await pl({ worker_id: wC.id, event_type: 'EXIT', timestamp_server: `${y}T08:56:11Z`, method: 'worker_self_punch' });
+    await pl({ worker_id: wC.id, event_type: 'ENTRY', timestamp_server: `${y}T08:57:23Z`, method: 'worker_self_punch' });
+    await pl({ worker_id: wC.id, event_type: 'EXIT', timestamp_server: `${y}T17:00:00Z`, method: 'ladia_action' });
 
     const r = await buildDaFare(cid, userId);
     const titles = r.items.map(i => `${i.bucket}|${i.title}`);
@@ -108,6 +117,8 @@ async function main() {
     check('uscita automatica di ieri di Anna in lista, verso Persone → Presenze',
       r.items.some(i => i.kind === 'uscita' && /Anna/.test(i.title) && i.link === '/persone?tab=presenze'), titles);
     check('uscita automatica di Bruno già corretta a mano: fuori', !r.items.some(i => i.kind === 'uscita' && /Bruno/.test(i.title)), titles);
+    check('F-389: correzione a mano sul primo turno non nasconde il secondo chiuso in automatico',
+      r.items.some(i => i.kind === 'uscita' && /Carla/.test(i.title)), titles);
     check('richiesta di aiuto dalla timbratura: in cima, marcata urgente',
       r.items[0]?.type === 'punch_help_request' || (r.items.find(i => i.type === 'punch_help_request')?.urgent === true &&
         r.items.findIndex(i => i.type === 'punch_help_request') === r.items.findIndex(i => i.bucket === 'settimana')), titles);
