@@ -12,7 +12,8 @@ const { buildOreMese } = require('../../lib/oreMese');
 const { generateFoglioHtml, generateFoglioXlsx, meseLabel } = require('../../lib/oreMeseFoglio');
 const { rendererPool } = require('../../pdf-renderer');
 
-const TIPI = ['ferie', 'permesso', 'malattia', 'infortunio', 'ingiustificata', 'altro'];
+// F-386: 'sospensione' = sospensione disciplinare (migrations/256)
+const TIPI = ['ferie', 'permesso', 'malattia', 'infortunio', 'ingiustificata', 'sospensione', 'altro'];
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const isTime = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -153,7 +154,7 @@ router.post('/ore/prima', verifySupabaseJwt, async (req, res) => {
 
 // POST /api/v1/assenze/giorni { worker_id, tipo, giorni: ['YYYY-MM-DD', …], note? }
 // Giorni senza timbrature giustificati in un tocco (anche non consecutivi).
-const TIPI_GIORNO = ['ferie', 'permesso', 'malattia', 'infortunio', 'ingiustificata', 'altro'];
+const TIPI_GIORNO = ['ferie', 'permesso', 'malattia', 'infortunio', 'ingiustificata', 'sospensione', 'altro'];
 router.post('/assenze/giorni', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;
   const { worker_id: workerId, tipo, giorni, note } = req.body || {};
