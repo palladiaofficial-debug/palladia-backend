@@ -764,6 +764,11 @@
       yesStartWork: 'Sì, inizio a lavorare', noGoingHome: 'No, sto andando via',
       goingHomeTitle: 'Va bene',
       goingHomeDone: "Abbiamo avvisato il responsabile: sistemerà lui l'orario di oggi. Non devi fare altro.",
+      // F-391: nuova entrata pochi minuti dopo un'uscita
+      reentryTitle: 'Sei appena uscito',
+      reentryText: function (h, m) { return "Hai timbrato l'uscita alle " + h + ', ' + m + (m === 1 ? ' minuto' : ' minuti') + ' fa. Vuoi rientrare al lavoro?'; },
+      noIAmOut: 'No, sono uscito', yesReenter: 'Sì, rientro al lavoro',
+      alreadyOutDone: function (h) { return "La tua uscita delle " + h + " è registrata. Puoi chiudere."; },
       lateTitle: 'Stai iniziando a lavorare adesso?',
       lateText: function (h) { return 'Sono le ' + h + ' e oggi non hai ancora timbrato.'; },
       yesStartNow: 'Sì, inizio adesso', forgotSub: 'stamattina ho dimenticato di timbrare',
@@ -945,6 +950,10 @@
       yesStartWork: 'Da, încep lucrul', noGoingHome: 'Nu, plec acasă',
       goingHomeTitle: 'În regulă',
       goingHomeDone: 'Am anunțat responsabilul: va corecta el ora de azi. Nu trebuie să mai faci nimic.',
+      reentryTitle: 'Tocmai ai ieșit',
+      reentryText: function (h, m) { return 'Ai pontat ieșirea la ' + h + ', acum ' + m + (m === 1 ? ' minut' : ' minute') + '. Vrei să intri din nou la lucru?'; },
+      noIAmOut: 'Nu, am ieșit', yesReenter: 'Da, intru din nou la lucru',
+      alreadyOutDone: function (h) { return 'Ieșirea ta de la ' + h + ' este înregistrată. Poți închide.'; },
       lateTitle: 'Începi lucrul acum?',
       lateText: function (h) { return 'Este ora ' + h + ' și azi nu ai pontat încă.'; },
       yesStartNow: 'Da, încep acum', forgotSub: 'azi-dimineață am uitat să pontez',
@@ -1132,6 +1141,10 @@
       yesStartWork: 'Po, filloj punën', noGoingHome: 'Jo, po iki',
       goingHomeTitle: 'Në rregull',
       goingHomeDone: 'Njoftuam përgjegjësin: do ta rregullojë ai orarin e sotëm. Nuk duhet të bësh asgjë tjetër.',
+      reentryTitle: 'Sapo dole',
+      reentryText: function (h, m) { return 'E regjistrove daljen në ' + h + ', ' + m + (m === 1 ? ' minutë' : ' minuta') + ' më parë. Do të hysh përsëri në punë?'; },
+      noIAmOut: 'Jo, kam dalë', yesReenter: 'Po, hyj përsëri në punë',
+      alreadyOutDone: function (h) { return 'Dalja jote në ' + h + ' është regjistruar. Mund ta mbyllësh.'; },
       lateTitle: 'Po fillon punën tani?',
       lateText: function (h) { return 'Ora është ' + h + ' dhe sot nuk je regjistruar ende.'; },
       yesStartNow: 'Po, filloj tani', forgotSub: 'këtë mëngjes harrova të regjistrohem',
@@ -1312,6 +1325,10 @@
       yesStartWork: 'نعم، أبدأ العمل', noGoingHome: 'لا، أنا مغادر',
       goingHomeTitle: 'حسناً',
       goingHomeDone: 'أبلغنا المسؤول: سيصحح هو وقت اليوم. لا تحتاج إلى فعل أي شيء آخر.',
+      reentryTitle: 'لقد خرجت للتو',
+      reentryText: function (h, m) { return 'سجّلت الخروج الساعة ' + h + '، قبل ' + m + ' دقيقة. هل تريد العودة إلى العمل؟'; },
+      noIAmOut: 'لا، لقد خرجت', yesReenter: 'نعم، أعود إلى العمل',
+      alreadyOutDone: function (h) { return 'تم تسجيل خروجك الساعة ' + h + '. يمكنك الإغلاق.'; },
       lateTitle: 'هل تبدأ العمل الآن؟',
       lateText: function (h) { return 'الساعة الآن ' + h + ' ولم تسجل اليوم بعد.'; },
       yesStartNow: 'نعم، أبدأ الآن', forgotSub: 'نسيت التسجيل هذا الصباح',
@@ -2382,6 +2399,18 @@
   // sicura; l'altra resta un tasto pieno, mai un link piccolo.
   function renderConfirm(info) {
     _rerenderCurrent = function () { renderConfirm(info); };
+    // F-391: nuova entrata pochi minuti dopo l'uscita. Il tasto grande è «No,
+    // sono uscito» e non scrive niente; «Sì, rientro» rimanda la timbratura.
+    if (info.reason === 'QUICK_REENTRY') {
+      wrap.innerHTML = `
+        <div class="card confirm-wrap fade-in" id="confirm-card" data-reason="QUICK_REENTRY">
+          <div class="confirm-title">${esc(t().reentryTitle)}</div>
+          <div class="confirm-text">${esc(t().reentryText(fmtTime(info.exit_at), info.minutes))}</div>
+          <button class="punch-btn entry" id="confirm-main" onclick="renderAlreadyOut('${esc(info.exit_at)}')">${esc(t().noIAmOut)}</button>
+          <button class="confirm-alt" id="confirm-alt" onclick="confirmPunch(this)">${esc(t().yesReenter)}</button>
+        </div>`;
+      return;
+    }
     var isShortExit = info.reason === 'SHORT_EXIT';
     // Primo tocco nel pomeriggio di chi di solito entra la mattina (mockup 2026-10-03)
     var isLate = info.reason === 'LATE_FIRST_ENTRY';
@@ -2405,6 +2434,18 @@
         <div class="confirm-text">${esc(text)}</div>
         ${mainBtn}
         ${altBtn}
+      </div>`;
+  }
+
+  // F-391: «No, sono uscito» — niente timbratura, resta l'uscita di prima
+  function renderAlreadyOut(exitAt) {
+    _rerenderCurrent = function () { renderAlreadyOut(exitAt); };
+    pendingConfirmCrid = null;
+    stopGps();
+    wrap.innerHTML = `
+      <div class="card success-wrap fade-in" id="already-out">
+        <div class="success-title">${esc(t().goingHomeTitle)}</div>
+        <div class="success-sub">${esc(t().alreadyOutDone(fmtTime(exitAt)))}</div>
       </div>`;
   }
 

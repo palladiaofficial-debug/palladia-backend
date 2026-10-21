@@ -127,6 +127,34 @@ async function main() {
     const gn = await waitRows(() => supabase.from('presence_fix_requests').select('kind, touch_at').eq('worker_id', f.id).eq('kind', 'entry_not_exit'));
     check('QR "No, sto andando via": caso da sistemare, niente scritto', g.status === 200 && gn.length === 1 && !!gn[0].touch_at && await count(f) === before, { g, gn });
     check('QR "No, sto andando via" senza sessione valida: 401', (await post('/scan/help-entry-not-exit', { worksite_id: site.id, session_token: 'b'.repeat(64) })).status === 401);
+
+    // 7. F-391 (Ibrahim, MSC 14/10 e 20/10): uscita e, un minuto dopo, una nuova
+    //    entrata. Prima di scriverla si chiede; il tasto grande («No, sono uscito»)
+    //    non scrive niente, quindi qui basta che senza conferma non si scriva.
+    const i = await worker('Rientro');
+    await log(i, 'ENTRY', ago(160));
+    await log(i, 'EXIT', ago(1.2));
+    const q1 = await punch(i);
+    check("F-391: nuova entrata 1 minuto dopo l'uscita → 409 CONFIRM_REQUIRED (QUICK_REENTRY)", q1.status === 409 && q1.body.error === 'CONFIRM_REQUIRED' && q1.body.reason === 'QUICK_REENTRY', q1);
+    check("F-391: …con l'ora dell'uscita, per la domanda", !!q1.body.exit_at && q1.body.minutes === 1, q1.body);
+    check('F-391: …e niente scritto', await count(i) === 2);
+    const q2 = await punch(i, { confirmed: true });
+    check('F-391: confermata («Sì, rientro») → entrata scritta come sempre', q2.status === 200 && q2.body.event_type === 'ENTRY', q2);
+    // Oltre i 10 minuti: rientro normale (pausa, cambio di cantiere a mano), nessuna domanda
+    const j = await worker('Pausa');
+    await log(j, 'ENTRY', ago(180));
+    await log(j, 'EXIT', ago(12));
+    const q3 = await punch(j);
+    check("F-391: nuova entrata 12 minuti dopo l'uscita: nessuna domanda", q3.status === 200 && q3.body.event_type === 'ENTRY', q3);
+    // QR: stessa domanda
+    const k = await worker('QRRientro');
+    await ins('worksite_workers', { company_id: company.id, site_id: site.id, worker_id: k.id, status: 'active' });
+    const tk = crypto.randomBytes(32).toString('hex');
+    await ins('worker_device_sessions', { company_id: company.id, worker_id: k.id, token_hash: crypto.createHash('sha256').update(tk).digest('hex') });
+    await log(k, 'ENTRY', ago(200), { method: 'personal_phone' });
+    await log(k, 'EXIT', ago(2), { method: 'personal_phone' });
+    const q4 = await post('/scan/punch', { worksite_id: site.id, session_token: tk, ...GPS });
+    check('F-391: QR, rientro dopo 2 minuti → 409 QUICK_REENTRY', q4.status === 409 && q4.body.reason === 'QUICK_REENTRY', q4);
   } finally {
     server.close();
     // Gli avvisi partono dopo la risposta (fire-and-forget): si aspetta che arrivino prima di pulire
