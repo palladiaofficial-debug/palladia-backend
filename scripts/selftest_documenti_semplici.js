@@ -124,6 +124,21 @@ async function main() {
     const { data: eq } = await supabase.from('equipment').select('insurance_expiry').eq('id', furgone.id).single();
     check('assicurazione del furgone: il campo del mezzo prende la data', eq.insurance_expiry === d(200), eq);
 
+    // F-392: la concessione di suolo pubblico come documento del cantiere
+    const { data: cant, error: cErr } = await supabase.from('sites').insert({ company_id: cid, name: 'Cantiere suolo F-392', address: 'Via Test 392, Genova', status: 'attivo' }).select('id').single();
+    if (cErr) throw new Error(cErr.message);
+    paths.push(['site-documents', `${cid}/${cant.id}`]);
+    const sS0 = await scheda(cid, 'cantieri', cant.id);
+    check('F-392: cantiere senza suolo pubblico: la voce non compare', !sS0.requirements.some(r => r.key === 'suolo'), sS0.requirements);
+    await carica({ companyId: cid, kind: 'cantieri', id: cant.id, reqKey: 'suolo', expiry: d(90), file: { ...PDF, originalname: 'concessione.pdf' } });
+    const { data: siteRow } = await supabase.from('sites').select('suolo_occupazione, suolo_occupazione_end').eq('id', cant.id).single();
+    check('F-392: caricata la concessione, il cantiere ha l\'occupazione e la scadenza', siteRow.suolo_occupazione === true && siteRow.suolo_occupazione_end === d(90), siteRow);
+    const { data: sd } = await supabase.from('site_documents').select('category, ai_expiry_date').eq('site_id', cant.id).maybeSingle();
+    check('F-392: ...ed è un documento del cantiere di tipo suolo_pubblico', sd?.category === 'suolo_pubblico' && sd.ai_expiry_date === d(90), sd);
+    const sS1 = await scheda(cid, 'cantieri', cant.id);
+    const suoloReq = sS1.requirements.find(r => r.key === 'suolo');
+    check('F-392: ...e nella scheda del cantiere «Suolo pubblico» in regola fino a quella data', suoloReq?.state === 'in_regola' && suoloReq.expiry === d(90) && !!suoloReq.doc, sS1.requirements);
+
     await rejects('lavoratore di un\'altra azienda: non trovato', carica({ companyId: cid, kind: 'lavoratori', id: wOther.id, reqKey: 'idoneita', expiry: d(365), file: PDF }), 'NOT_FOUND');
     const { data: estraneo } = await supabase.from('workers').select('health_fitness_expiry').eq('id', wOther.id).single();
     check('...e la sua data non è cambiata', estraneo.health_fitness_expiry === d(-1), estraneo);
@@ -135,7 +150,7 @@ async function main() {
       const { data: files } = await supabase.storage.from(bucket).list(prefix);
       if (files?.length) await supabase.storage.from(bucket).remove(files.map(f => `${prefix}/${f.name}`)).catch(() => {});
     }
-    for (const t of ['worker_documents', 'payslips', 'company_documents', 'equipment_documents', 'admin_audit_log']) {
+    for (const t of ['worker_documents', 'payslips', 'company_documents', 'equipment_documents', 'site_documents', 'admin_audit_log']) {
       await supabase.from(t).delete().eq('company_id', cid);
     }
     await supabase.from('documents').delete().eq('company_id', cid);

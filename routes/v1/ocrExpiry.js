@@ -38,6 +38,8 @@ const DOC_LABELS = {
   idoneita:     'Idoneità medica lavorativa',
   assicurazione:'Polizza assicurativa cantiere/responsabilità civile',
   soa:          'Attestazione SOA (qualificazione imprese)',
+  // F-392: concessione/autorizzazione del Comune per occupare il suolo pubblico (ponteggio, cassone…)
+  suolo:        'Concessione/autorizzazione di occupazione temporanea di suolo pubblico rilasciata dal Comune',
   altro:        'documento amministrativo/normativo italiano',
 };
 
@@ -60,7 +62,8 @@ Regole:
 - expiry_date è il campo più importante: cerca "scade il", "valida fino al", "data di scadenza", "validità fino al".
 - confidence: 0.9 se trovi una data di scadenza chiara, 0.5 se deduci, 0.0 se non trovi nulla.
 - Non inventare date. Se non trovi la scadenza, metti null.
-- Per il DURC la validità è 120 giorni dalla data di emissione — se trovi solo issue_date, calcola expiry_date come issue_date + 120 giorni.`;
+- Per il DURC la validità è 120 giorni dalla data di emissione — se trovi solo issue_date, calcola expiry_date come issue_date + 120 giorni.${docType === 'suolo' ? `
+- Per il suolo pubblico expiry_date è la data di FINE dell'occupazione (in "dal … al …" è la seconda data), mai la data di rilascio o di protocollo.` : ''}`;
 }
 
 // ── POST /api/v1/ocr/expiry ───────────────────────────────────────────────────

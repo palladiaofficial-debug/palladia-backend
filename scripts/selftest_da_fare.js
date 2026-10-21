@@ -99,6 +99,13 @@ async function main() {
     await pl({ worker_id: wD.id, event_type: 'EXIT', timestamp_server: `${g3}T15:30:00Z`, method: 'admin_manual_correction' });
     await ins('presence_fix_requests', { company_id: cid, worker_id: wD.id, site_id: sOpen.id, kind: 'missing_exit', day: g3, entry_at: `${g3}T05:30:00Z`, proposed_at: `${g3}T14:00:00Z`, status: 'aperta' });
 
+    // F-392: suolo pubblico — l'avviso conta sul termine della proroga (10 giorni prima)
+    const sSuolo = await ins('sites', { company_id: cid, name: `${T} Ponteggio`, address: 'Via Test 3, Genova', status: 'attivo', suolo_occupazione: true, suolo_occupazione_end: d(15) });
+    const sSuoloLontano = await ins('sites', { company_id: cid, name: `${T} Cassone`, address: 'Via Test 4, Genova', status: 'attivo', suolo_occupazione: true, suolo_occupazione_end: d(45) });
+    created.sites.push(sSuolo.id, sSuoloLontano.id);
+    // La concessione caricata non deve diventare una seconda riga
+    await ins('site_documents', { company_id: cid, site_id: sSuolo.id, name: 'Concessione suolo', category: 'suolo_pubblico', file_path: `test/${T}/suolo.pdf`, ai_expiry_date: d(15) });
+
     const r = await buildDaFare(cid, userId);
     const titles = r.items.map(i => `${i.bucket}|${i.title}`);
     const has = (re) => r.items.find(i => re.test(i.title));
@@ -127,6 +134,10 @@ async function main() {
     check('uscita automatica di Bruno già corretta a mano: fuori', !r.items.some(i => i.kind === 'uscita' && /Bruno/.test(i.title)), titles);
     check('F-390: uscita mancante già messa a mano in ufficio: la richiesta non compare più',
       !r.items.some(i => i.kind === 'timbratura' && /Dario/.test(i.title) && i.date === g3), r.items.filter(i => /Dario/.test(i.title)));
+    const suolo = r.items.filter(i => /Ponteggio/.test(i.title));
+    check('F-392: suolo pubblico che scade tra 15 giorni → una riga, «proroga da chiedere entro» il giorno 10 prima, in Questa settimana',
+      suolo.length === 1 && suolo[0].type === 'suolo' && /proroga da chiedere entro/.test(suolo[0].subtitle) && suolo[0].date === d(5) && suolo[0].bucket === 'settimana', suolo);
+    check('F-392: suolo pubblico che scade tra 45 giorni (proroga tra 35): non ancora in lista', !r.items.some(i => /Cassone/.test(i.title)), titles);
     check('F-389: correzione a mano sul primo turno non nasconde il secondo chiuso in automatico',
       r.items.some(i => i.kind === 'uscita' && /Carla/.test(i.title)), titles);
     check('richiesta di aiuto dalla timbratura: in cima, marcata urgente',
