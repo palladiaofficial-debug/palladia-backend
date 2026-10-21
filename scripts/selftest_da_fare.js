@@ -91,6 +91,14 @@ async function main() {
     await pl({ worker_id: wC.id, event_type: 'ENTRY', timestamp_server: `${y}T08:57:23Z`, method: 'worker_self_punch' });
     await pl({ worker_id: wC.id, event_type: 'EXIT', timestamp_server: `${y}T17:00:00Z`, method: 'ladia_action' });
 
+    // F-390: uscita mancante di 3 giorni fa già messa a mano dall'ufficio → la richiesta non va più mostrata.
+    const wD = await ins('workers', { company_id: cid, full_name: `${T} Dario`, is_active: true, fiscal_code: `F236E${Date.now()}`.slice(0, 16), badge_code: `F236E${Date.now()}` });
+    created.workers.push(wD.id);
+    const g3 = d(-3);
+    await pl({ worker_id: wD.id, event_type: 'ENTRY', timestamp_server: `${g3}T05:30:00Z`, method: 'worker_self_punch' });
+    await pl({ worker_id: wD.id, event_type: 'EXIT', timestamp_server: `${g3}T15:30:00Z`, method: 'admin_manual_correction' });
+    await ins('presence_fix_requests', { company_id: cid, worker_id: wD.id, site_id: sOpen.id, kind: 'missing_exit', day: g3, entry_at: `${g3}T05:30:00Z`, proposed_at: `${g3}T14:00:00Z`, status: 'aperta' });
+
     const r = await buildDaFare(cid, userId);
     const titles = r.items.map(i => `${i.bucket}|${i.title}`);
     const has = (re) => r.items.find(i => re.test(i.title));
@@ -117,6 +125,8 @@ async function main() {
     check('uscita automatica di ieri di Anna in lista, verso Persone → Presenze',
       r.items.some(i => i.kind === 'uscita' && /Anna/.test(i.title) && i.link === '/persone?tab=presenze'), titles);
     check('uscita automatica di Bruno già corretta a mano: fuori', !r.items.some(i => i.kind === 'uscita' && /Bruno/.test(i.title)), titles);
+    check('F-390: uscita mancante già messa a mano in ufficio: la richiesta non compare più',
+      !r.items.some(i => i.kind === 'timbratura' && /Dario/.test(i.title) && i.date === g3), r.items.filter(i => /Dario/.test(i.title)));
     check('F-389: correzione a mano sul primo turno non nasconde il secondo chiuso in automatico',
       r.items.some(i => i.kind === 'uscita' && /Carla/.test(i.title)), titles);
     check('richiesta di aiuto dalla timbratura: in cima, marcata urgente',
@@ -182,7 +192,7 @@ async function main() {
       fail('seminare un subappaltatore per il controllo del modulo congelato');
     }
   } finally {
-    for (const t of ['notifications', 'site_weather_logs', 'worker_documents', 'company_documents', 'subcontractor_documents', 'da_fare_prenotazioni', 'company_feature_flags']) {
+    for (const t of ['notifications', 'site_weather_logs', 'worker_documents', 'company_documents', 'subcontractor_documents', 'da_fare_prenotazioni', 'company_feature_flags', 'presence_fix_requests']) {
       await supabase.from(t).delete().eq('company_id', cid);
     }
     await supabase.from('documents').delete().eq('company_id', cid);
