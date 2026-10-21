@@ -219,4 +219,34 @@ router.get('/ore/mese/foglio.xlsx', verifySupabaseJwt, async (req, res) => {
   res.send(Buffer.from(buf));
 });
 
+// ── F-393: il foglio al commercialista con un tocco ───────────────────────────
+const { statoInvio, salvaConsulente, mandaFoglio, InvioError } = require('../../lib/oreInvio');
+const invioErr = (res, e, tag) => {
+  if (e instanceof InvioError) return res.status(e.status).json({ error: e.code, message: e.message });
+  if (e?.status) return res.status(e.status).json({ error: e.message });
+  console.error(tag, e?.message);
+  return res.status(500).json({ error: 'SEND_ERROR', message: 'Non sono riuscito a mandarlo. Riprova.' });
+};
+
+// GET /api/v1/ore/invio?month=YYYY-MM — commercialista e invii del mese
+router.get('/ore/invio', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  try { res.json(await statoInvio(req.companyId, req.query.month || thisMonth())); } catch (e) { invioErr(res, e, '[ore/invio]'); }
+});
+
+// PATCH /api/v1/ore/consulente { nome?, email }
+router.patch('/ore/consulente', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  try { res.json(await salvaConsulente(req.companyId, req.body || {})); } catch (e) { invioErr(res, e, '[ore/consulente]'); }
+});
+
+// POST /api/v1/ore/mese/manda { month } — PDF ed Excel al commercialista
+router.post('/ore/mese/manda', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  try {
+    const row = await mandaFoglio({ companyId: req.companyId, userId: req.user?.id, userRole: req.userRole, userEmail: req.user?.email, month: req.body?.month, req });
+    res.status(201).json(row);
+  } catch (e) { invioErr(res, e, '[ore/mese/manda]'); }
+});
+
 module.exports = { router, validaAssenza };
