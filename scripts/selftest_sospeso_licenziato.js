@@ -18,7 +18,7 @@ const supabase = require('../lib/supabase');
 const { problemiLavoratori } = require('../lib/documentiStato');
 const { buildDaFare, romeDate, addDays } = require('../lib/daFare');
 const { missingToday } = require('../lib/presenceMissing');
-const { cessa, riattiva, sospensioni, MOTIVI } = require('../lib/rapportoLavoro');
+const { cessa, riattiva, sospensioni, conSospensione, MOTIVI } = require('../lib/rapportoLavoro');
 
 let passed = 0, failed = 0;
 function check(name, cond, got) {
@@ -63,6 +63,10 @@ async function main() {
     await ins('worker_absences', { company_id: cid, worker_id: binozi.id, tipo: 'sospensione', date_from: addDays(today, -1), date_to: addDays(today, 4), stato: 'approvata', da_lavoratore: false });
     const sosp = await sospensioni(cid, { today });
     check('sospensioni(): Binozi sospeso fino a fra 4 giorni', sosp.get(binozi.id)?.al === addDays(today, 4) && !sosp.has(carlos.id), [...sosp]);
+    // Persone: l'elenco intero (l'azienda E2E ne ha 679) deve portare la sospensione
+    const tanti = [...Array.from({ length: 700 }, () => ({ id: crypto.randomUUID() })), { id: binozi.id }, { id: carlos.id }];
+    const elenco = await conSospensione(cid, tanti);
+    check('conSospensione(): con 702 lavoratori Binozi risulta sospeso', elenco.find(w => w.id === binozi.id)?.sospensione?.al === addDays(today, 4) && elenco.find(w => w.id === carlos.id)?.sospensione === null, elenco.slice(-2));
     const p1 = await problemiLavoratori(cid, { today });
     check('sospeso: la sua visita scaduta non avvisa più (email, notifiche, Da fare)', suoi(p1, binozi.id) === 0, p1.scadenze.filter(s => s.workerId === binozi.id));
     check('...quella di Carlos sì', suoi(p1, carlos.id) > 0);

@@ -9,7 +9,7 @@ const { complianceStatus }  = require('../../lib/compliance');
 const { generateBadgeCode } = require('../../lib/badgeCode');
 const { sendDbError } = require('../../lib/httpErrors');
 const { hashPin } = require('../../lib/pinHash');
-const { sospensioni, cessa, riattiva } = require('../../lib/rapportoLavoro');
+const { conSospensione, cessa, riattiva } = require('../../lib/rapportoLavoro');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -52,15 +52,6 @@ const WORKER_SELECT =
   'photo_url, hire_date, birth_date, qualification, role, employer_name, ' +
   'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place, ' +
   'tariffa_oraria, area_pin_set_at, ddt_upload_enabled, cessato_il, cessazione_motivo';
-
-// F-396: la sospensione in corso o in arrivo, per la scheda e l'elenco
-async function conSospensione(companyId, workers) {
-  const sosp = await sospensioni(companyId, { workerIds: workers.map(w => w.id) });
-  return workers.map(w => {
-    const s = sosp.get(w.id);
-    return { ...w, sospensione: s ? { id: s.id, dal: s.dal, al: s.al } : null };
-  });
-}
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (req, res) => {
