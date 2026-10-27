@@ -164,6 +164,12 @@ async function main() {
     check('prenotazione scaduta senza documento nuovo: la riga torna tra le urgenze', rback.items.find(i => i.id === formItem.id)?.bucket === 'scaduto', rback.items.find(i => i.id === formItem.id));
 
     // ── F-242 card "Buonasera": stessa fonte di Da fare ──────────────────────
+    // È il riquadro di prima: dal 22/10 (F-395) home e menu semplici sono accesi
+    // per tutti e il riquadro diventa la home in piccolo (provato in
+    // selftest_oggi). Questo resta per chi li spegne con una riga.
+    for (const feature of ['home_semplice', 'menu_semplice']) {
+      await supabase.from('company_feature_flags').upsert({ company_id: cid, feature, enabled: false }, { onConflict: 'company_id,feature' });
+    }
     const { buildDailyBrief } = require('../lib/dailyBrief');
     await supabase.from('da_fare_prenotazioni').update({ torna_il: d(10) }).eq('company_id', cid).eq('item_id', formItem.id);
     const brief = await buildDailyBrief(cid);

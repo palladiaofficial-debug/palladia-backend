@@ -5,7 +5,7 @@
  * 1. Puri (lib/oggi.js::componi) sulle voci vere di MSC del 17/10 (54 in Da fare):
  *    diventano 7 righe in ordine di importanza, frasi semplici, importi col punto;
  *    una richiesta d'aiuto di un mese fa NON va in cima; nessuna voce → «Tutto a posto».
- * 2. Rotta vera contro il DB: flag spento → 404; acceso → il conto del sub in attesa
+ * 2. Rotta vera contro il DB: flag spento con una riga → 404 (F-395: acceso di default); acceso → il conto del sub in attesa
  *    è una riga, l'operaio del sub entrato oggi è contato; un tecnico non vede i soldi.
  */
 'use strict';
@@ -109,8 +109,13 @@ async function rotta() {
   const get = (company, role = 'owner') => fetch(`${base}/oggi`, { headers: { 'x-test-company': company, 'x-test-role': role } });
   const A = await ins('companies', { name: `TEST-F364-${Date.now()}` });
   try {
-    check('flag spento → 404', (await get(A.id)).status === 404);
-    for (const feature of ['home_semplice', 'conti_sub', 'da_pagare']) await ins('company_feature_flags', { company_id: A.id, feature, enabled: true });
+    // F-395: i flag semplici sono accesi di default per tutti; si spengono solo con una riga
+    const flag = (feature, enabled) => supabase.from('company_feature_flags').upsert({ company_id: A.id, feature, enabled }, { onConflict: 'company_id,feature' });
+    check('azienda nuova, nessuna riga: /oggi risponde (F-395)', (await get(A.id)).status === 200);
+    await flag('home_semplice', false); await flag('menu_semplice', false);
+    check('home e menu semplici spenti con una riga → 404', (await get(A.id)).status === 404);
+    for (const feature of ['home_semplice', 'conti_sub', 'da_pagare']) await flag(feature, true);
+    await flag('menu_semplice', false);
     const vuota = await (await get(A.id)).json();
     check('azienda nuova: «Tutto a posto», 0 dentro', vuota.titolo === 'Tutto a posto' && vuota.cantiere?.dentro === 0 && vuota.prima === null, vuota);
     check('il titolare vede il riquadro Soldi (0 €)', vuota.soldi?.totaleTesto === '0 €', vuota.soldi);
@@ -131,13 +136,13 @@ async function rotta() {
     check('Ladia: «Da fare» = il numerino della home', brief.semplice === true && brief.kpi.da_fare === h.quante, { kpi: brief.kpi, quante: h.quante });
     check('Ladia: le righe sono quelle della home, senza tasti dalla riga', brief.alerts.length === h.quante && brief.alerts[0].title === h.prima.titolo && brief.alerts.every(a => a.action === null), brief.alerts);
     check('Ladia: senza menu a 4 voci il conto apre Da fare', brief.alerts[0].link === '/scadenze?type=conti', brief.alerts[0].link);
-    await ins('company_feature_flags', { company_id: A.id, feature: 'menu_semplice', enabled: true });
+    await flag('menu_semplice', true);
     const brief2 = await buildDailyBrief(A.id, null);
     check('Ladia: col menu a 4 voci il conto apre Soldi', brief2.alerts[0].link === '/soldi?vista=conti', brief2.alerts[0].link);
-    await supabase.from('company_feature_flags').delete().eq('company_id', A.id).in('feature', ['home_semplice', 'menu_semplice']);
+    for (const feature of ['home_semplice', 'menu_semplice']) await flag(feature, false);
     const vecchio = await buildDailyBrief(A.id, null);
     check('Ladia: flag spenti → il riquadro di prima (conteggio di Da fare)', !vecchio.semplice && typeof vecchio.kpi.da_fare === 'number', vecchio);
-    for (const feature of ['home_semplice']) await ins('company_feature_flags', { company_id: A.id, feature, enabled: true });
+    await flag('home_semplice', true);
     const cs = await (await get(A.id, 'capocantiere')).json();
     check('un capocantiere non vede conti né soldi', cs.prima === null && cs.soldi === null, cs);
   } finally {
