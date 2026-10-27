@@ -209,3 +209,4 @@ scripts/selftest_imprese_semplici.js
 scripts/selftest_avviso_sub_non_in_regola.js
 scripts/selftest_pioggia_domenica_sospensione.js
 scripts/selftest_semplice_per_tutti.js
+scripts/selftest_sospeso_licenziato.js

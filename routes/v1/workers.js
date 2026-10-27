@@ -9,6 +9,7 @@ const { complianceStatus }  = require('../../lib/compliance');
 const { generateBadgeCode } = require('../../lib/badgeCode');
 const { sendDbError } = require('../../lib/httpErrors');
 const { hashPin } = require('../../lib/pinHash');
+const { sospensioni, cessa, riattiva } = require('../../lib/rapportoLavoro');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,16 @@ const WORKER_SELECT =
   'id, full_name, fiscal_code, is_active, created_at, badge_code, ' +
   'photo_url, hire_date, birth_date, qualification, role, employer_name, ' +
   'subcontracting_auth, safety_training_expiry, health_fitness_expiry, birth_place, ' +
-  'tariffa_oraria, area_pin_set_at, ddt_upload_enabled';
+  'tariffa_oraria, area_pin_set_at, ddt_upload_enabled, cessato_il, cessazione_motivo';
+
+// F-396: la sospensione in corso o in arrivo, per la scheda e l'elenco
+async function conSospensione(companyId, workers) {
+  const sosp = await sospensioni(companyId, { workerIds: workers.map(w => w.id) });
+  return workers.map(w => {
+    const s = sosp.get(w.id);
+    return { ...w, sospensione: s ? { id: s.id, dal: s.dal, al: s.al } : null };
+  });
+}
 
 // ── POST /api/v1/workers — crea lavoratore (PRIVATO) ─────────────────────────
 router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (req, res) => {
@@ -144,7 +154,8 @@ router.post('/workers', verifySupabaseJwt, validate(createWorkerSchema), async (
 
 // ── GET /api/v1/workers?siteId= — lista lavoratori (PRIVATO) ─────────────────
 // Con siteId: solo i lavoratori associati a quel cantiere (stessa company).
-// Senza siteId: tutti i lavoratori attivi dell'azienda.
+// Senza siteId: tutti i lavoratori attivi dell'azienda, con la sospensione (F-396).
+// ?inattivi=1: chi non lavora più qui, dal più recente (F-396).
 router.get('/workers', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.query;
 
@@ -162,6 +173,20 @@ router.get('/workers', verifySupabaseJwt, async (req, res) => {
     return res.json(data);
   }
 
+  if (req.query.inattivi === '1') {
+    const { data, error } = await supabase
+      .from('workers')
+      .select(WORKER_SELECT)
+      .eq('company_id', req.companyId)
+      .eq('is_active', false)
+      .or('pending_approval.is.null,pending_approval.eq.false')
+      .order('cessato_il', { ascending: false, nullsFirst: false })
+      .order('full_name')
+      .limit(500);
+    if (error) return sendDbError(res, error);
+    return res.json(data);
+  }
+
   const { data, error } = await supabase
     .from('workers')
     .select(WORKER_SELECT)
@@ -170,7 +195,12 @@ router.get('/workers', verifySupabaseJwt, async (req, res) => {
     .order('full_name');
 
   if (error) return sendDbError(res, error);
-  res.json(data);
+  try {
+    res.json(await conSospensione(req.companyId, data));
+  } catch (e) {
+    console.error('[workers] sospensioni:', e.message);
+    res.json(data);
+  }
 });
 
 // F-084: questa route DEVE stare prima di '/workers/:workerId' — Express
@@ -328,7 +358,48 @@ router.get('/workers/:workerId', verifySupabaseJwt, async (req, res) => {
 
   if (error) return sendDbError(res, error);
   if (!data)  return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
-  res.json(data);
+  try {
+    res.json((await conSospensione(req.companyId, [data]))[0]);
+  } catch (e) {
+    console.error('[workers] sospensione:', e.message);
+    res.json(data);
+  }
+});
+
+// ── F-396: non lavora più qui / torna a lavorare qui ─────────────────────────
+// La sospensione si registra come assenza (POST /assenze, tipo 'sospensione').
+function ownerAdmin(req, res) {
+  if (['owner', 'admin'].includes(req.userRole)) return true;
+  res.status(403).json({ error: 'FORBIDDEN', required_role: ['owner', 'admin'] });
+  return false;
+}
+
+// POST /api/v1/workers/:workerId/cessazione { ultimo_giorno, motivo }
+router.post('/workers/:workerId/cessazione', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  try {
+    const w = await cessa({ companyId: req.companyId, workerId: req.params.workerId, ultimoGiorno: req.body?.ultimo_giorno, motivo: req.body?.motivo });
+    auditLog({ companyId: req.companyId, userId: req.user?.id, userRole: req.userRole, action: 'worker.cessazione', targetType: 'worker', targetId: w.id, payload: { ultimo_giorno: w.cessato_il, motivo: w.cessazione_motivo }, req });
+    res.json(w);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    console.error('[workers/cessazione]', e.message);
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
+});
+
+// POST /api/v1/workers/:workerId/riattiva
+router.post('/workers/:workerId/riattiva', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  try {
+    const w = await riattiva({ companyId: req.companyId, workerId: req.params.workerId });
+    auditLog({ companyId: req.companyId, userId: req.user?.id, userRole: req.userRole, action: 'worker.riattiva', targetType: 'worker', targetId: w.id, payload: {}, req });
+    res.json(w);
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    console.error('[workers/riattiva]', e.message);
+    res.status(500).json({ error: 'DB_ERROR' });
+  }
 });
 
 // ── POST /api/v1/sites/:siteId/workers — autorizza lavoratore su cantiere ─────
