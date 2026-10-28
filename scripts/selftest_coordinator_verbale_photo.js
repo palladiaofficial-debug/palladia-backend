@@ -91,6 +91,8 @@ async function main() {
     const { data: otherCompany } = await admin.from('companies').insert({ name: 'TEST-VerbaleFoto-Other' }).select().single();
     otherCompanyId = otherCompany.id;
     const { data: otherSite } = await admin.from('sites').insert({ company_id: otherCompanyId, name: 'TEST altro cantiere', status: 'attivo', address: 'Via Test 2' }).select().single();
+    // Il modulo coordinatore è in standby dal 20/09 (F-218): acceso solo per le aziende di prova
+    for (const c of [companyId, otherCompanyId]) await admin.from('company_feature_flags').insert({ company_id: c, feature: 'coordinator_cse', enabled: true });
 
     const { data: userRes, error: userErr } = await admin.auth.admin.createUser({ email, email_confirm: true });
     check('Utente di test creato', !userErr && userRes?.user, userErr);
@@ -198,6 +200,7 @@ async function main() {
     try { if (userId) await admin.auth.admin.deleteUser(userId); } catch { /* best-effort */ }
     try { if (siteId) await admin.from('sites').delete().eq('id', siteId); } catch { /* best-effort */ }
     try { if (companyId) await admin.from('sites').delete().eq('company_id', otherCompanyId); } catch { /* best-effort */ }
+    try { await admin.from('company_feature_flags').delete().in('company_id', [companyId, otherCompanyId].filter(Boolean)); } catch { /* best-effort */ }
     try { if (companyId) await admin.from('companies').delete().eq('id', companyId); } catch { /* best-effort */ }
     try { if (otherCompanyId) await admin.from('companies').delete().eq('id', otherCompanyId); } catch { /* best-effort */ }
   }

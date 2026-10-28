@@ -177,8 +177,10 @@ async function rotte() {
   const A = await ins('companies', { name: `${T}-A` });
   const B = await ins('companies', { name: `${T}-B` });
   try {
+    // F-395: accesi di default per tutti; «spento» = una riga a false
+    await supabase.from('company_feature_flags').upsert({ company_id: A.id, feature: 'conti_sub', enabled: false }, { onConflict: 'company_id,feature' });
     check('modulo spento: 404', (await call('GET', '/conti-sub', { company: A.id })).status === 404);
-    for (const c of [A, B]) for (const feature of ['conti_sub', 'da_pagare']) await ins('company_feature_flags', { company_id: c.id, feature, enabled: true });
+    for (const c of [A, B]) for (const feature of ['conti_sub', 'da_pagare']) await supabase.from('company_feature_flags').upsert({ company_id: c.id, feature, enabled: true }, { onConflict: 'company_id,feature' });
     check('sola lettura: 403', (await call('GET', '/conti-sub', { company: A.id, role: 'viewer' })).status === 403);
 
     const site = await ins('sites', { company_id: A.id, name: `${T}-Riboli`, address: 'Via Riboli 4b', status: 'attivo' });

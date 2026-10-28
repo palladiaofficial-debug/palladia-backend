@@ -67,7 +67,9 @@ function netSalOwed(salRowsOneSite) {
 // una data vera: i SAL con data_pagamento_prevista (migrazione 086) e le
 // spese ricorrenti con day_of_month (company_recurring_expenses, esisteva
 // già nel DB ma non era mai stata esposta in nessuna schermata).
-function nextRecurringOccurrence(dayOfMonth, from) {
+function nextRecurringOccurrence(dayOfMonth, now) {
+  // F-397: dall'inizio della giornata, altrimenti la scadenza di oggi (mezzanotte) è «già passata»
+  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const lastDayThisMonth = new Date(from.getFullYear(), from.getMonth() + 1, 0).getDate();
   const dayThisMonth = Math.min(dayOfMonth, lastDayThisMonth);
   const thisMonth = new Date(from.getFullYear(), from.getMonth(), dayThisMonth);

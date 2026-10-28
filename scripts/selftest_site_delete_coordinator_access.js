@@ -120,6 +120,10 @@ async function main() {
     company_id: companyA.id, site_id: site.id, sal_number: 1, sal_percentuale: 30, data_emissione: new Date().toISOString().slice(0, 10),
     totale_contratto: 100000, importo_maturato: 30000,
   });
+  // Il modulo coordinatore è in standby dal 20/09 (F-218, spento per tutti): lo
+  // accendo solo qui per l'azienda di prova e lo rimetto com'era alla fine
+  const { data: flagPrima } = await admin.from('company_feature_flags').select('enabled').eq('company_id', companyA.id).eq('feature', 'coordinator_cse').maybeSingle();
+  await admin.from('company_feature_flags').upsert({ company_id: companyA.id, feature: 'coordinator_cse', enabled: true }, { onConflict: 'company_id,feature' });
   const rInvite = await apiCall(jwtOwner, companyA.id, 'POST', `/sites/${site.id}/coordinator-invites`, { coordinator_name: 'CSE Test F-092' });
   const rawCoordToken = (rInvite.body?.cse_url || '').split('/').pop();
   check_('Invito CSE creato con token reale', rInvite.status === 201 && !!rawCoordToken, rInvite.body);
@@ -180,6 +184,9 @@ async function main() {
     const portalResAfterRestore = await fetch(`${API_BASE}/coordinator/portal/${rawCoordToken}/site/${site.id}`);
     check_('Dopo ripristino: link CSE torna a funzionare', portalResAfterRestore.status === 200, portalResAfterRestore.status);
   }
+
+  if (flagPrima) await admin.from('company_feature_flags').update({ enabled: flagPrima.enabled }).eq('company_id', companyA.id).eq('feature', 'coordinator_cse');
+  else await admin.from('company_feature_flags').delete().eq('company_id', companyA.id).eq('feature', 'coordinator_cse');
 
   console.log(`\n${passed} passati, ${failed} falliti, ${skipped} skippati\n`);
   process.exitCode = failed > 0 ? 1 : 0;

@@ -69,9 +69,11 @@ async function main() {
   const B = await ins('companies', { name: `${T}-B` });
   let userId = null;
   try {
+    // F-395: accesi di default per tutti; «spento» = una riga a false
+    await supabase.from('company_feature_flags').upsert({ company_id: A.id, feature: 'da_pagare', enabled: false }, { onConflict: 'company_id,feature' });
     check('modulo spento: 404', (await call('GET', '/da-pagare', { company: A.id })).status === 404);
-    await ins('company_feature_flags', { company_id: A.id, feature: 'da_pagare', enabled: true });
-    await ins('company_feature_flags', { company_id: B.id, feature: 'da_pagare', enabled: true });
+    await supabase.from('company_feature_flags').upsert({ company_id: A.id, feature: 'da_pagare', enabled: true }, { onConflict: 'company_id,feature' });
+    await supabase.from('company_feature_flags').upsert({ company_id: B.id, feature: 'da_pagare', enabled: true }, { onConflict: 'company_id,feature' });
     check('ruolo in sola lettura: 403', (await call('GET', '/da-pagare', { company: A.id, role: 'viewer' })).status === 403);
     check('tecnico: vede la lista', (await call('GET', '/da-pagare', { company: A.id, role: 'tech' })).status === 200);
 
@@ -202,6 +204,8 @@ async function main() {
     if (ue) throw new Error(ue.message);
     userId = u.user.id;
     await ins('company_users', { company_id: A.id, user_id: userId, role: 'owner' });
+    // Il riquadro di prima (F-357): con home e menu semplici (F-395, accesi per tutti) è la home in piccolo
+    for (const f of ['home_semplice', 'menu_semplice']) await supabase.from('company_feature_flags').upsert({ company_id: A.id, feature: f, enabled: false }, { onConflict: 'company_id,feature' });
     const brief = await buildDailyBrief(A.id, userId);
     // F-357: una riga sola per i pagamenti, senza "Pagato" (prima: una per fattura, segnabile pagata dalla home)
     const bp = brief.alerts.filter(a => String(a.id).startsWith('pagamento'));

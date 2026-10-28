@@ -48,12 +48,14 @@ async function main() {
     const workersCount = async () => (await supabase.from('workers').select('id', { count: 'exact', head: true }).eq('company_id', company.id)).count;
 
     const cfSub = `SUBRSS80A01${stamp.slice(0, 4)}X`.slice(0, 16).toUpperCase();
+    // F-395: accesi di default per tutti; «spento» = una riga a false
+    await supabase.from('company_feature_flags').upsert({ company_id: company.id, feature: 'presenze_imprese', enabled: false }, { onConflict: 'company_id,feature' });
     const r1 = await post({ ...qr, fiscal_code: cfSub, full_name: 'Ion Popescu' });
     check('codice fiscale sconosciuto senza impresa: 400 IMPRESA_REQUIRED', r1.status === 400 && r1.body.error === 'IMPRESA_REQUIRED', r1);
     check('…e nessun lavoratore creato nell\'impresa', await workersCount() === 0, await workersCount());
     check('modulo presenze imprese spento: si sceglie solo tra la nostra impresa',
       Array.isArray(r1.body.imprese) && r1.body.imprese.length === 1 && r1.body.imprese[0].id === 'own', r1.body.imprese);
-    await ins('company_feature_flags', { company_id: company.id, feature: 'presenze_imprese', enabled: true });
+    await supabase.from('company_feature_flags').upsert({ company_id: company.id, feature: 'presenze_imprese', enabled: true }, { onConflict: 'company_id,feature' });
     const r1b = await post({ ...qr, fiscal_code: cfSub, full_name: 'Ion Popescu' });
     check('modulo acceso: la risposta elenca la nostra impresa e il subappaltatore del cantiere',
       r1b.status === 400 && r1b.body.imprese?.some(i => i.id === sub.id) && r1b.body.imprese?.some(i => i.id === 'own'), r1b.body);

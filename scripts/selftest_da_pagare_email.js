@@ -86,6 +86,8 @@ async function main() {
     const spese = async () => (await supabase.from('company_expenses').select('*').eq('company_id', company.id).order('created_at')).data || [];
 
     // ── Modulo Da pagare spento: F-339 vale lo stesso ──
+    // F-395: accesi di default per tutti; «spento» = una riga a false
+    await supabase.from('company_feature_flags').upsert({ company_id: company.id, feature: 'da_pagare', enabled: false }, { onConflict: 'company_id,feature' });
     const r1 = await manda(`Mario Titolare <${owner}>`, xml('412', '1840.00', '2026-10-20'));
     check('F-339: il titolare che inoltra una fattura NON finisce in quarantena', r1.body?.outcome === 'accepted', r1.body);
     let s = await spese();
@@ -98,7 +100,7 @@ async function main() {
     check('un utente in sola lettura resta in quarantena (Da pagare è per titolare e tecnici)', r3.body?.outcome === 'quarantined_unknown_sender', r3.body);
 
     // ── Modulo acceso ──
-    await ins('company_feature_flags', { company_id: company.id, feature: 'da_pagare', enabled: true });
+    await supabase.from('company_feature_flags').upsert({ company_id: company.id, feature: 'da_pagare', enabled: true }, { onConflict: 'company_id,feature' });
     const r4 = await manda(tech, xml('88', '980.00', '2026-10-24'));
     check('il tecnico che inoltra: accettata', r4.body?.outcome === 'accepted', r4.body);
     s = await spese();

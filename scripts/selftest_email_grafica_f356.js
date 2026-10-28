@@ -70,7 +70,9 @@ const iso = n => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
   check(!/PTRRFL80A01H501Z|RSSMRA80A01H501Z/.test(ex.html), 'niente codici fiscali');
   check(/^2 operai non hanno timbrato l'uscita/.test(ex.subject), 'oggetto con il numero di operai', ex.subject);
   check(/uscita automatica/.test(te), 'dal cron: dice che l\'uscita è registrata in automatico');
-  check(/entrato alle 07:44/.test(te), 'entrata di oggi: solo l\'ora');
+  // L'ora italiana di 05:44Z: 07:44 con l'ora legale, 06:44 d'inverno (il test era fisso su 07:44)
+  const oraEntrata = new Date(`${oggi}T05:44:00Z`).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Rome' });
+  check(new RegExp(`entrato alle ${oraEntrata}`).test(te),'entrata di oggi: solo l\'ora');
   check(/entrato \S+ \d+ \S+ alle/.test(te), 'entrata di un altro giorno: con la data');
   check(/\/persone\?tab=presenze/.test(ex.html), 'pulsante alle presenze');
   const ex1 = await buildMissingExitEmail({ companyName: 'Prova', date: oggi, missingList: missingList.slice(0, 1) });

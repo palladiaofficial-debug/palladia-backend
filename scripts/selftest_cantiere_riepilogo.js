@@ -35,7 +35,11 @@ async function ins(table, row) {
 }
 const romeDay = (d) => d.toLocaleDateString('sv', { timeZone: 'Europe/Rome' });
 function addDays(day, n) { const d = new Date(`${day}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
-const at = (day, h) => new Date(`${day}T${h}:00Z`).toISOString();
+// Ora italiana → ISO (prima era UTC fisso: d'inverno l'uscita delle 17 diventava le 16)
+function at(day, hm) {
+  const off = new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Rome', timeZoneName: 'shortOffset' }).formatToParts(new Date(`${day}T12:00:00Z`)).find(p => p.type === 'timeZoneName').value;
+  return new Date(Date.parse(`${day}T${hm}:00Z`) - Number(off.replace('GMT', '') || 0) * 3600e3).toISOString();
+}
 
 async function main() {
   console.log('\n\x1b[1mF-321 — Riepilogo del cantiere\x1b[0m');
@@ -65,8 +69,8 @@ async function main() {
     for (const w of [giuseppe, ibrahim, armand, mario]) await ins('worksite_workers', { company_id: cid, site_id: sardegna.id, worker_id: w.id, status: 'active' });
     await ins('worksite_workers', { company_id: cid, site_id: fermo.id, worker_id: mario.id, status: 'active' });
     const log = (w, s, type, day, h) => ins('presence_logs', { company_id: cid, site_id: s.id, worker_id: w.id, event_type: type, timestamp_server: at(day, h), method: 'worker_self_punch' });
-    for (const w of [giuseppe, ibrahim]) { await log(w, sardegna, 'ENTRY', ieri, '05:40'); await log(w, sardegna, 'EXIT', ieri, '15:00'); }
-    for (const w of [armand, lontano]) { await log(w, altro, 'ENTRY', ieri, '05:40'); await log(w, altro, 'EXIT', ieri, '15:00'); }
+    for (const w of [giuseppe, ibrahim]) { await log(w, sardegna, 'ENTRY', ieri, '07:40'); await log(w, sardegna, 'EXIT', ieri, '17:00'); }
+    for (const w of [armand, lontano]) { await log(w, altro, 'ENTRY', ieri, '07:40'); await log(w, altro, 'EXIT', ieri, '17:00'); }
 
     const m = await riepiloghi(cid, { fresh: true, today });
     const r = m.get(sardegna.id);
