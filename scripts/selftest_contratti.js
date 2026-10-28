@@ -142,6 +142,8 @@ async function db() {
     const nonVisura = await rifiuta(() => K.visura(co.id, null, sub.id, finto, { chiedi: async () => ({ e_una_visura: false }) }));
     check('un foglio che non è una visura: rifiutato e non salvato', nonVisura?.code === 'NON_E_UNA_VISURA');
 
+    // Il profilo senza indirizzo (come l'azienda E2E): la sede scritta nel contratto deve restare
+    await supabase.from('companies').update({ address: null, city: null, province: null }).eq('id', co.id);
     // Genera (PDF vero)
     const body = {
       affidataria: { ...p.affidataria, legaleRappresentante: 'Mario Rossi' },
