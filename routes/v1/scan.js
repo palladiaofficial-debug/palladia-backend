@@ -213,12 +213,13 @@ router.get('/scan/worksites/:worksiteId', publicScanLimiter, async (req, res) =>
 
   const { data: site, error } = await supabase
     .from('sites')
-    .select('id, name, address, geofence_radius_m, latitude, longitude')
+    .select('id, name, address, geofence_radius_m, latitude, longitude, status')
     .eq('id', worksiteId)
     .maybeSingle();
 
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
-  if (!site)  return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
+  // F-405: il QR del cantiere vale finché c'è il cantiere — eliminato, non si timbra più
+  if (!site || site.status === 'eliminato') return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
 
   res.json({
     id:                 site.id,
@@ -276,7 +277,7 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
     // Carica cantiere
     const { data: site, error: siteErr } = await supabase
       .from('sites')
-      .select('id, company_id')
+      .select('id, company_id, status')
       .eq('id', worksite_id)
       .maybeSingle();
 
@@ -284,7 +285,8 @@ router.post('/scan/identify', identifyLimiter, async (req, res) => {
       console.error('[identify] site query error:', siteErr.code, siteErr.message);
       return res.status(500).json({ error: 'DB_ERROR', detail: 'site_query' });
     }
-    if (!site)   return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
+    // F-405: il QR del cantiere vale finché c'è il cantiere — eliminato, non si timbra più
+    if (!site || site.status === 'eliminato') return res.status(404).json({ error: 'WORKSITE_NOT_FOUND' });
     if (!site.company_id) {
       return res.status(503).json({
         error:   'WORKSITE_NOT_CONFIGURED',

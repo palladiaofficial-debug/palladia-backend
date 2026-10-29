@@ -4,17 +4,14 @@ const QRCode   = require('qrcode');
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { rendererPool }      = require('../../pdf-renderer');
-const { signQrToken }       = require('./qr');
+const { signQrToken, ttlSecsDa, PER_CANTIERE_SECS } = require('./qr');
 
 const QR_TTL_SECS_DEFAULT = parseInt(process.env.QR_TOKEN_TTL_SECS || String(30 * 86400), 10);
 
 // GET /api/v1/sites/:siteId/qr-pdf — genera PDF stampabile con QR code (JWT protetto)
 router.get('/sites/:siteId/qr-pdf', verifySupabaseJwt, async (req, res) => {
   const { siteId } = req.params;
-  const rawDays = parseInt(req.query.ttl_days, 10);
-  const QR_TTL_SECS = (!req.query.ttl_days || isNaN(rawDays) || rawDays <= 0)
-    ? QR_TTL_SECS_DEFAULT
-    : Math.min(rawDays, 365) * 86400;
+  const QR_TTL_SECS = ttlSecsDa(req.query, QR_TTL_SECS_DEFAULT);
 
   // 1. Verifica ownership cantiere
   const { data: site, error: siteErr } = await supabase
@@ -275,7 +272,7 @@ router.get('/sites/:siteId/qr-pdf', verifySupabaseJwt, async (req, res) => {
     </div>
 
     <!-- Validity -->
-    <div class="validity">QR valido fino al ${expiresDate}</div>
+    <div class="validity">${QR_TTL_SECS === PER_CANTIERE_SECS ? 'QR valido finché c’è il cantiere' : `QR valido fino al ${expiresDate}`}</div>
 
     <!-- Footer -->
     <div class="footer">
