@@ -10,7 +10,9 @@ require('dotenv').config();
 const supabase = require('../lib/supabase');
 
 const MSC = '309e9018-1bcc-4876-9430-99cb89e043dd';
-const METODO = { personal_phone: 'QR', worker_self_punch: 'badge', admin_manual_correction: 'a mano', ladia_action: 'a mano' };
+// worker_offline_punch: senza rete, dal QR o dal badge (F-284, F-406)
+const METODO = { personal_phone: 'QR', worker_self_punch: 'badge', worker_offline_punch: 'senza rete', admin_manual_correction: 'a mano', ladia_action: 'a mano' };
+const VUOTO = () => ({ QR: 0, badge: 0, 'senza rete': 0, 'a mano': 0 });
 const giornoRoma = ts => new Date(ts).toLocaleDateString('sv-SE', { timeZone: 'Europe/Rome' });
 const oraRoma = ts => new Date(ts).toLocaleTimeString('it-IT', { timeZone: 'Europe/Rome', hour: '2-digit', minute: '2-digit' });
 
@@ -41,12 +43,12 @@ const oraRoma = ts => new Date(ts).toLocaleTimeString('it-IT', { timeZone: 'Euro
 
   const giorni = {};
   for (const l of logs || []) (giorni[giornoRoma(l.timestamp_server)] ||= []).push(l);
-  const tot = { QR: 0, badge: 0, 'a mano': 0 };
+  const tot = VUOTO();
   for (const [g, righe] of Object.entries(giorni)) {
-    const conta = { QR: 0, badge: 0, 'a mano': 0 };
+    const conta = VUOTO();
     for (const r of righe) conta[METODO[r.method] || 'a mano']++;
     Object.keys(tot).forEach(k => { tot[k] += conta[k]; });
-    console.log(`${g}: QR ${conta.QR} · badge ${conta.badge} · a mano ${conta['a mano']}`);
+    console.log(`${g}: QR ${conta.QR} · badge ${conta.badge} · senza rete ${conta['senza rete']} · a mano ${conta['a mano']}`);
     const perOp = {};
     for (const r of righe) (perOp[r.worker_id] ||= []).push(r);
     for (const [wid, rr] of Object.entries(perOp)) {
@@ -57,7 +59,9 @@ const oraRoma = ts => new Date(ts).toLocaleTimeString('it-IT', { timeZone: 'Euro
     const rif = rifiutiQui.filter(r => giornoRoma(r.created_at) === g);
     for (const r of rif) console.log(`   rifiutata fuori cantiere: ${nomeOp[r.target_id] || r.target_id} alle ${oraRoma(r.created_at)}, a ${r.payload.distance_m} m`);
   }
-  const tutte = tot.QR + tot.badge + tot['a mano'];
-  console.log(`\nTotale: ${tutte} timbrature — QR ${tot.QR}, badge ${tot.badge}, a mano ${tot['a mano']}, rifiutate fuori cantiere ${rifiutiQui.length}`);
+  const tutte = Object.values(tot).reduce((a, b) => a + b, 0);
+  console.log(`\nTotale: ${tutte} timbrature — QR ${tot.QR}, badge ${tot.badge}, senza rete ${tot['senza rete']}, a mano ${tot['a mano']}, rifiutate fuori cantiere ${rifiutiQui.length}`);
+  const { data: dubbi } = await supabase.from('presence_offline_punches').select('id').eq('site_id', site.id).eq('status', 'da_decidere').gte('received_at', da);
+  if (dubbi?.length) console.log(`Timbrature senza rete da decidere in Da fare: ${dubbi.length}`);
   if (tutte) console.log(`Quota QR: ${Math.round(100 * tot.QR / tutte)}% · correzioni a mano: ${Math.round(100 * tot['a mano'] / tutte)}%`);
 })();
