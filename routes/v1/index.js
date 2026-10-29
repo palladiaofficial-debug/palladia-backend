@@ -96,6 +96,7 @@ router.use('/', require('./scanExitReason'));
 // F-337: presenze delle imprese subappaltatrici (QR, link della squadra, ufficio)
 router.use('/', require('./subPresenze'));
 // F-376: Imprese semplici + link dell'impresa (pubblico per token): auth per singola rotta, prima dei router con JWT globale
+router.use('/', require('./impreseCarica')); // F-401 carica documenti delle imprese, tutti in un colpo
 router.use('/', require('./impreseSemplici'));
 router.use('/', require('./contratti')); // F-398 contratto di subappalto
 router.use('/', require('./busteCarica')); // F-399 carica le buste del mese
