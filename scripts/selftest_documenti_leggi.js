@@ -62,6 +62,13 @@ const L = (x) => pulisci(x);
   r = abbina(L({ tipo: 'idoneita', intestatario: 'Mario Rossi', tipo_intestatario: 'persona' }), owners);
   check('una persona non finisce mai su una ditta che le somiglia («Rossi» ≠ «Edil Ponteggi Rossi»)', r.proposta.kind !== 'subappaltatori', r);
 
+  // F-400: l'attestato porta la data del corso, non la scadenza: aggiornamento ogni 5 anni
+  const att = L({ tipo: 'formazione', intestatario: 'Luca Parodi', emissione: '2026-10-15', scadenza: null });
+  check('F-400: formazione con la sola data del corso → scade dopo 5 anni (15/10/2031), segnata come calcolata', att.scadenza === '2031-10-15' && att.scadenzaCalcolata === true, att);
+  const att2 = L({ tipo: 'formazione', emissione: '2026-10-15', scadenza: '2030-01-01' });
+  check('F-400: se la scadenza è scritta, vale quella scritta', att2.scadenza === '2030-01-01' && !att2.scadenzaCalcolata, att2);
+  const vis = L({ tipo: 'idoneita', emissione: '2026-10-15', scadenza: null });
+  check('F-400: una visita medica senza scadenza resta senza (la periodicità la decide il medico)', vis.scadenza === null, vis);
   const sporco = pulisci({ tipo: 'boh', scadenza: '31/12/2027', intestatario: { nome: 'X' } });
   check('risposta del modello strana: tipo «altro», data non ISO scartata, niente errori', sporco.tipo === 'altro' && sporco.scadenza === null, sporco);
 
