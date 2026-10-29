@@ -44,6 +44,7 @@ const { toInvoiceShapeForAi, mapCandidateToExpenseRow, checkOcrOverlap } = requi
 const { ingestMappedExpense } = require('./sdiInvoices');
 const { resolveCompanyByToken, getSenderRule, isStaffSender, logIngestEvent, consumeTestNonce, checkRetiredToken } = require('./emailIngestConfig');
 const { segnaComeDaPagare } = require('../lib/daPagareEmail');
+const impreseEmail = require('../lib/impreseEmail');
 
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
@@ -328,6 +329,12 @@ async function handleInboundWebhook(body, files, headers) {
   }
 
   const token       = extractRecipientToken(body);
+  // F-410: documenti-…@palladia.net sono i documenti delle imprese, non fatture
+  if (impreseEmail.eDocumenti(token)) {
+    const r = await impreseEmail.ricevi({ token, da: body?.sender || body?.from, oggetto: body?.subject, files });
+    console.log(`[email-ingest] documenti imprese: ${r.esito}${r.caricamentoId ? ` caricamento=${r.caricamentoId} documenti=${r.documenti}` : ''}`);
+    return { httpStatus: 200, body: { ok: true, canale: 'imprese', outcome: r.esito } };
+  }
   const companyId   = await resolveCompanyByToken(token).catch(() => null);
   const fromAddress = extractSenderAddress(body);
   const messageId   = extractMessageId(body);

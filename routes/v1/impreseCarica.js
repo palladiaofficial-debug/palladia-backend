@@ -15,6 +15,7 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { isFeatureEnabled } = require('../../lib/featureFlags');
 const { auditLog } = require('../../lib/audit');
 const K = require('../../lib/impreseCarica');
+const E = require('../../lib/impreseEmail');
 const logger = require('../../lib/logger');
 
 const WRITE_ROLES = ['owner', 'admin', 'tech'];
@@ -67,6 +68,14 @@ router.post('/imprese/caricamenti/:id/salva', ...auth, idValidi, async (req, res
     auditLog({ companyId: req.companyId, userId: req.user?.id, userRole: req.userRole, action: 'imprese.carica_tutto', targetType: 'imprese_caricamento', targetId: req.params.id, payload: { salvati: r.salvati, impreseNuove: r.impreseNuove, operaiNuovi: r.operaiNuovi }, req });
     res.json(r);
   } catch (err) { fallito(res, err, 'salva'); }
+});
+
+// F-410: l'indirizzo email per i documenti delle imprese e le email arrivate da guardare
+router.get('/imprese/email', ...auth, async (req, res) => {
+  try {
+    const [a, arrivati] = await Promise.all([E.indirizzo(req.companyId, req.user?.id), E.arrivati(req.companyId)]);
+    res.json({ ...a, arrivati });
+  } catch (err) { fallito(res, err, 'email'); }
 });
 
 module.exports = router;
