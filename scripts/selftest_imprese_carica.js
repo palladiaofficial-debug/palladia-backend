@@ -227,6 +227,18 @@ async function db() {
     check('il DURC buono porta avanti la data di Impianti Verdi; quello scaduto di Edil Bianchi no', imp.find(x => x.id === A.id).durc_expiry === '2027-02-10' && !imp.find(x => x.id === B.id).durc_expiry, imp);
     const { data: resto } = await supabase.storage.from('site-documents').list(`${co.id}/caricamenti-imprese/${id}`);
     check('i file del caricamento sono cancellati', !(resto || []).length, resto);
+    // Da fare: le scadenze degli operai delle imprese (prima non avvisavano mai)
+    await supabase.from('company_feature_flags').insert({ company_id: co.id, feature: 'subappaltatori', enabled: true });
+    const tra = (g) => { const x = new Date(); x.setDate(x.getDate() + g); return x.toISOString().slice(0, 10); };
+    const dw = (w, tipo, titolo, scadenza) => supabase.from('sub_worker_documenti').insert({ company_id: co.id, sub_worker_id: w, tipo, titolo, scadenza, file_path: `x/${w}/${tipo}`, esito: 'va_bene' });
+    await dw(mario.id, 'idoneita', null, tra(10));
+    await dw(luca.id, 'altro', 'Corso PLE', tra(5));
+    await new Promise(r => setTimeout(r, 1100));
+    await dw(luca.id, 'altro', 'Corso PLE', tra(1500)); // rinnovato
+    const df = await require('../lib/daFare').buildDaFare(co.id, null, { role: 'owner' });
+    const righe = df.items.filter(i => i.type === 'operaio_impresa');
+    check("Da fare: la visita di Mario Rossi che scade tra 10 giorni, con l'impresa, porta alla sua scheda", righe.some(i => i.title === 'Visita medica — Mario Rossi (Impianti Verdi Srl)' && i.link === `/imprese/${A.id}`), righe);
+    check('Da fare: il corso PLE rinnovato non avvisa più', !righe.some(i => /Corso PLE/.test(i.title)), righe);
     const due = await rifiuta(() => K.salva(co.id, null, id));
     check('salvare due volte: no', due?.code === 'GIA_SALVATO');
   } finally {
@@ -234,7 +246,7 @@ async function db() {
     const { data: od } = await supabase.from('sub_worker_documenti').select('file_path').eq('company_id', co.id);
     const paths = [...(sd || []), ...(od || [])].map(x => x.file_path);
     if (paths.length) await supabase.storage.from('site-documents').remove(paths).catch(() => {});
-    for (const t of ['sub_worker_documenti', 'imprese_caricamento_doc', 'imprese_caricamenti', 'subcontractor_documents', 'site_subcontractors', 'sub_workers', 'admin_audit_log']) await supabase.from(t).delete().eq('company_id', co.id);
+    for (const t of ['sub_worker_documenti', 'imprese_caricamento_doc', 'imprese_caricamenti', 'subcontractor_documents', 'site_subcontractors', 'sub_workers', 'admin_audit_log', 'company_feature_flags', 'notifications']) await supabase.from(t).delete().eq('company_id', co.id);
     await supabase.from('subcontractors').delete().eq('company_id', co.id);
     await supabase.from('sites').delete().eq('company_id', co.id);
     await supabase.from('companies').delete().in('id', [co.id, altra.id]);
