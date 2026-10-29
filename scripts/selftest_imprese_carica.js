@@ -74,6 +74,11 @@ function attribuzione() {
   check('attestato di uno sconosciuto, caricato dalla scheda di Edil Bianchi → loro, operaio nuovo «Luca Gialli»', p.impresa?.id === 'B' && p.come === 'scelta' && p.operaio?.nuovo?.nome === 'Luca Gialli', p);
   p = attribuisci(L({ tipo: 'durc', partita_iva: PIVA.nuova, ragione_sociale: 'PONTEGGI GIALLI SRL', sede: 'Via X', data_documento: '2026-09-01' }), { ...CTX, pre: 'A' });
   check('DURC con una P.IVA di nessuno, anche partendo da Impianti Verdi → impresa nuova (non Impianti Verdi)', p.impresa?.nuova?.piva === PIVA.nuova && p.come === 'nuova', p);
+  // Trovato dal test Playwright su palladia.net: il DURC di un'altra ditta, senza P.IVA letta, finiva sull'impresa di partenza
+  p = attribuisci(L({ tipo: 'durc', ragione_sociale: 'PONTEGGI GIALLI E2E S.R.L.', data_documento: '2026-10-01' }), { ...CTX, pre: 'A' });
+  check("DURC che nomina un'altra ditta, senza P.IVA, partendo da Impianti Verdi → impresa nuova «Ponteggi Gialli», MAI Impianti Verdi", p.impresa?.nuova?.nome === 'PONTEGGI GIALLI E2E S.R.L.' && p.impresa?.id !== 'A', p);
+  p = attribuisci(L({ tipo: 'durc', ragione_sociale: 'IMPIANTI VERDI', data_documento: '2026-10-01' }), { ...CTX, pre: 'A' });
+  check("…se il nome somiglia all'impresa di partenza, resta lì", p.impresa?.id === 'A', p);
   p = attribuisci(L({ tipo: 'dvr' }), CTX);
   check('un DVR senza nome né P.IVA, senza impresa di partenza → da assegnare', p.impresa === null, p);
   p = attribuisci(L({ tipo: 'pos', partita_iva: PIVA.A, cantiere: 'Piazza Galileo Ferraris 1A, 16142 Genova' }), CTX);
