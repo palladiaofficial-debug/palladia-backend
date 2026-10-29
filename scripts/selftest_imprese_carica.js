@@ -220,6 +220,9 @@ async function db() {
     const { data: od } = await supabase.from('sub_worker_documenti').select('sub_worker_id, tipo, titolo, scadenza').eq('company_id', co.id);
     const luca = ops.find(x => x.full_name === 'Luca Gialli');
     check('operai: Luca Gialli creato col suo preposto; Mario con visita e corso', !!luca && od.some(x => x.sub_worker_id === luca.id && x.tipo === 'altro' && x.titolo === 'Corso preposto' && x.scadenza === '2028-03-10') && od.filter(x => x.sub_worker_id === mario.id).map(x => x.tipo).sort().join(',') === 'formazione,idoneita', { ops, od });
+    const schedaA = await require('../lib/impreseLink').statoImpresa(co.id, { id: A.id, company_name: A.company_name, piva: A.piva });
+    const lucaScheda = schedaA.operai.find(x => x.nome === 'Luca Gialli');
+    check("nella scheda dell'impresa, sotto Luca Gialli, si vede il suo «Corso preposto» con la scadenza", lucaScheda?.altri?.[0]?.titolo === 'Corso preposto' && lucaScheda.altri[0].scadenza === '2028-03-10', lucaScheda);
     const { data: imp } = await supabase.from('subcontractors').select('id, durc_expiry').in('id', [A.id, B.id]);
     check('il DURC buono porta avanti la data di Impianti Verdi; quello scaduto di Edil Bianchi no', imp.find(x => x.id === A.id).durc_expiry === '2027-02-10' && !imp.find(x => x.id === B.id).durc_expiry, imp);
     const { data: resto } = await supabase.storage.from('site-documents').list(`${co.id}/caricamenti-imprese/${id}`);
