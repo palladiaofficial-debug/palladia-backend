@@ -56,6 +56,15 @@ function check(name, cond, got) {
     // Il webhook delle email (lo stesso delle fatture) passa i documenti-… a questo canale
     const w = await handleInboundWebhook({ recipient: 'documenti-nessuno-000000@palladia.net', sender: 'x@y.it', subject: 'prova' }, [], { 'x-ingest-secret': process.env.CLOUDFLARE_EMAIL_INGEST_SECRET });
     check('il webhook manda documenti-… al canale imprese', w.body?.canale === 'imprese', w.body);
+
+    // Il mittente mostrato è quello dell'intestazione From, non l'indirizzo tecnico della busta
+    const oggettoW = `F-410 mittente ${Date.now()}`;
+    await handleInboundWebhook({ recipient: a.indirizzo, sender: '0102abc-000000@send.edilprova.it', subject: oggettoW,
+      'message-headers': JSON.stringify([['From', 'Edil Prova <ufficio@edilprova.it>'], ['Subject', oggettoW]]) },
+      [{ originalname: 'DURC.pdf', mimetype: 'application/pdf', buffer: PDF, size: PDF.length }], { 'x-ingest-secret': process.env.CLOUDFLARE_EMAIL_INGEST_SECRET });
+    const { data: carW } = await supabase.from('imprese_caricamenti').select('id, email_da').eq('company_id', E2E).eq('email_oggetto', oggettoW).maybeSingle();
+    if (carW) creati.push(carW.id);
+    check('mittente dall’intestazione From', carW?.email_da === 'ufficio@edilprova.it', carW);
   } catch (e) {
     check('nessun errore', false, e.message);
   } finally {

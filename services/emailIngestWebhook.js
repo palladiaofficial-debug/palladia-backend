@@ -331,7 +331,10 @@ async function handleInboundWebhook(body, files, headers) {
   const token       = extractRecipientToken(body);
   // F-410: documenti-…@palladia.net sono i documenti delle imprese, non fatture
   if (impreseEmail.eDocumenti(token)) {
-    const r = await impreseEmail.ricevi({ token, da: body?.sender || body?.from, oggetto: body?.subject, files });
+    // Il mittente da mostrare è quello dell'intestazione From: il sender della busta
+    // può essere un indirizzo tecnico del servizio di posta (bounce …@send.dominio)
+    const da = findHeader(parseMessageHeaders(body), 'from') || body?.sender || body?.from;
+    const r = await impreseEmail.ricevi({ token, da, oggetto: body?.subject, files });
     console.log(`[email-ingest] documenti imprese: ${r.esito}${r.caricamentoId ? ` caricamento=${r.caricamentoId} documenti=${r.documenti}` : ''}`);
     return { httpStatus: 200, body: { ok: true, canale: 'imprese', outcome: r.esito } };
   }
