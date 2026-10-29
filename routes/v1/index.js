@@ -93,6 +93,8 @@ router.use('/', require('./badge'));
 router.use('/', require('./scan'));
 // F-265: "Perché esci?" dopo l'uscita (stessa autenticazione di /scan/note), file separato da scan.js
 router.use('/', require('./scanExitReason'));
+// F-406: timbratura senza internet dal QR del cantiere (come il badge, F-284), file separato da scan.js
+router.use('/', require('./scanOfflinePunch'));
 // F-337: presenze delle imprese subappaltatrici (QR, link della squadra, ufficio)
 router.use('/', require('./subPresenze'));
 // F-376: Imprese semplici + link dell'impresa (pubblico per token): auth per singola rotta, prima dei router con JWT globale
