@@ -98,6 +98,7 @@ router.use('/', require('./subPresenze'));
 // F-376: Imprese semplici + link dell'impresa (pubblico per token): auth per singola rotta, prima dei router con JWT globale
 router.use('/', require('./impreseSemplici'));
 router.use('/', require('./contratti')); // F-398 contratto di subappalto
+router.use('/', require('./busteCarica')); // F-399 carica le buste del mese
 // F-267: iscrizione push dell'operaio dal badge (identità = badge_code, file separato)
 router.use('/', require('./workerPush'));
 
