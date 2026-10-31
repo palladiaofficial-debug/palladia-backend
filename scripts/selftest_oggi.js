@@ -55,6 +55,9 @@ function vociMsc() {
 }
 
 function puri() {
+  // F-411: un'azienda senza cantieri non trova «Tutto a posto» ma da dove cominciare
+  const nuova = componi({ senzaCantieri: true, oggi: '2026-10-31' });
+  check('azienda nuova: prima cosa «crea il tuo primo cantiere»', nuova.prima?.id === 'primo-cantiere' && nuova.prima.link === '/cantieri?nuovo=1' && nuova.titolo !== 'Tutto a posto', nuova);
   console.log('\n\x1b[1mF-364 — la home sulle voci vere di MSC\x1b[0m');
   const items = vociMsc();
   check('le voci di partenza sono 54 come in Da fare (scaduto + settimana)', items.filter(i => ['scaduto', 'settimana'].includes(i.bucket)).length === 54, items.length);
@@ -117,7 +120,8 @@ async function rotta() {
     for (const feature of ['home_semplice', 'conti_sub', 'da_pagare']) await flag(feature, true);
     await flag('menu_semplice', false);
     const vuota = await (await get(A.id)).json();
-    check('azienda nuova: «Tutto a posto», 0 dentro', vuota.titolo === 'Tutto a posto' && vuota.cantiere?.dentro === 0 && vuota.prima === null, vuota);
+    // F-411: senza cantieri la prima cosa è crearne uno (prima qui si aspettava «Tutto a posto»)
+    check('azienda nuova: «crea il tuo primo cantiere», 0 dentro', vuota.prima?.id === 'primo-cantiere' && vuota.cantiere?.dentro === 0, vuota);
     check('il titolare vede il riquadro Soldi (0 €)', vuota.soldi?.totaleTesto === '0 €', vuota.soldi);
 
     const site = await ins('sites', { company_id: A.id, name: 'TEST Via Roma', address: 'Via Roma 1, Genova', status: 'attivo' });
