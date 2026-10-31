@@ -63,7 +63,8 @@ function puri() {
   check('le voci di partenza sono 54 come in Da fare (scaduto + settimana)', items.filter(i => ['scaduto', 'settimana'].includes(i.bucket)).length === 54, items.length);
   const h = componi({ items, conti: [], presenze: { dentro: 13, cantieri: 4 }, vedeSoldi: true, oggi: '2026-10-17' });
   const tutte = [h.prima, ...h.poi];
-  check('54 voci → «Oggi 7 cose da fare»', h.titolo === 'Oggi 7 cose da fare', h.titolo);
+  check('54 voci → «Hai 7 cose da fare» (F-414)', h.titolo === 'Hai 7 cose da fare', h.titolo);
+  check('F-414: ogni riga ha il suo pallino', h.righe.every(r => ['rosso', 'arancio', 'blu'].includes(r.tono)) && h.righe.some(r => r.tono === 'rosso'), h.righe.map(r => r.tono));
   check('il numerino del menu è 7 come la home, non 54', h.quante === 7, h.quante);
   check('in cima le fatture scadute (la richiesta d\'aiuto del 15/09 non è urgente)', h.prima.id === 'pagamenti' && h.prima.titolo === '4 fatture scadute da pagare', h.prima);
   check('importo col punto delle migliaia e i fornitori in breve', h.prima.sotto === '7.724,47 €, Guardalà Giuseppina e altri 2. Tutti ti hanno sollecitato', h.prima.sotto);
@@ -96,7 +97,7 @@ function puri() {
   ], vedeSoldi: true, oggi: '2026-10-17' });
   check('un\'uscita sola: «Marco Neri non ha timbrato l\'uscita»', h4.prima.titolo === 'Marco Neri non ha timbrato l\'uscita' && h4.prima.sotto === 'Ieri, Via Roma. Scrivi a che ora è uscito', h4.prima);
   check('una fattura non scaduta e non sollecitata NON è una cosa da fare (sta in Soldi)', h4.poi.length === 0 && h4.soldi.totaleTesto === '12.480 €' && h4.soldi.sotto === 'entro 7 giorni', h4);
-  check('«Oggi 1 cosa da fare» al singolare', h4.titolo === 'Oggi 1 cosa da fare', h4.titolo);
+  check('«Hai 1 cosa da fare» al singolare', h4.titolo === 'Hai 1 cosa da fare', h4.titolo);
 
   const vuota = componi({ items: [], vedeSoldi: false, oggi: '2026-10-17' });
   check('niente da fare → «Tutto a posto», nessuna prima cosa', vuota.titolo === 'Tutto a posto' && vuota.prima === null && vuota.poi.length === 0, vuota);
