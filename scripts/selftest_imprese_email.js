@@ -48,7 +48,7 @@ function check(name, cond, got) {
 
     const home = componi({ email: [mio] });
     const riga = home.righe.find(x => x.id === `email:${mio.id}`);
-    check('Oggi avvisa con il tasto per guardarli', riga && riga.link === `/imprese/carica?car=${mio.id}`, home.righe);
+    check('Oggi avvisa con il tasto per guardarli', riga && riga.link === `/carica?car=${mio.id}`, home.righe);
 
     const nessuno = await E.ricevi({ token: 'documenti-nessuno-000000', da: 'x@y.it', oggetto: '', files: [{ originalname: 'a.pdf', mimetype: 'application/pdf', buffer: PDF }] }, { senzaLavoro: true });
     check('indirizzo sconosciuto: niente caricamento', nessuno.esito === 'sconosciuto' && !nessuno.caricamentoId, nessuno);

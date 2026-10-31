@@ -65,7 +65,9 @@ function attribuzione() {
   p = attribuisci(L({ tipo: 'durc', ragione_sociale: 'EDIL BIANCHI S.R.L.', data_documento: '2026-09-01' }), CTX);
   check('DURC senza P.IVA, nome «EDIL BIANCHI S.R.L.» → Edil Bianchi per nome', p.impresa?.id === 'B' && p.come === 'nome', p);
   p = attribuisci(L({ tipo: 'durc', partita_iva: PIVA.noi, ragione_sociale: 'MSC', data_documento: '2026-09-01' }), { ...CTX, pre: 'A' });
-  check('DURC con la NOSTRA P.IVA → non va su un subappaltatore («documento della tua impresa»)', p.nostra && !p.impresa && p.esito === 'non_va' && p.motivo.codice === 'nostra_impresa', p);
+  check('DURC con la NOSTRA P.IVA → mai su un subappaltatore, mai un’impresa nuova (F-415: senza la tua impresa tra le imprese resta da assegnare)', !p.impresa, p);
+  p = attribuisci(L({ tipo: 'durc', partita_iva: PIVA.noi, ragione_sociale: 'MSC', data_documento: '2026-09-01' }), { ...CTX, pre: 'A', imprese: [{ id: 'nostra', nome: 'MSC', piva: PIVA.noi, nostra: true }, ...CTX.imprese] });
+  check('…e con la tua impresa tra le imprese (come in produzione, F-415) → la tua impresa', p.impresa?.id === 'nostra' && p.esito === 'va_bene', p);
   p = attribuisci(L({ tipo: 'idoneita', persona: 'ROSSI MARIO', codice_fiscale_persona: 'RSSMRA80A01D969A', scadenza: '2027-06-01' }), CTX);
   check('visita col codice fiscale di Mario Rossi → Impianti Verdi, Mario Rossi', p.impresa?.id === 'A' && p.come === 'operaio' && p.operaio?.id === 'a1' && p.esito === 'va_bene', p);
   p = attribuisci(L({ tipo: 'formazione', persona: 'NERI PAOLO', data_documento: '2026-02-01' }), CTX);
@@ -114,7 +116,7 @@ function ordine() {
   check('lo stesso file due volte → doppione', o.doppioni.some(d => d.id === 'durc-copia' && /Uguale a durc-nuovo/.test(d.perche)), o.doppioni);
   check('un file già in Palladia → doppione «È già in Palladia»', o.doppioni.some(d => d.id === 'gia' && d.perche === 'È già in Palladia'));
   check('la visita di Mario Rossi sotto Impianti Verdi › Mario Rossi', A?.operai.length === 1 && A.operai[0].nome === 'Mario Rossi' && A.operai[0].documenti[0].label === 'Visita medica', A?.operai);
-  check('il DVR senza nome da assegnare; il DURC nostro a parte; il file rotto tra i non letti', o.daAssegnare.some(d => d.id === 'dvr-chi') && o.nostri.some(d => d.id === 'nostro') && o.errori.some(d => d.id === 'rotto'), o);
+  check('il DVR senza nome da assegnare; il DURC nostro a parte; il file rotto tra i non letti', o.daAssegnare.some(d => d.id === 'dvr-chi') && o.daAssegnare.some(d => d.id === 'nostro') && !o.imprese.some(g => g.nuova?.piva === PIVA.noi) && o.errori.some(d => d.id === 'rotto'), o);
   check('POS di Edil Bianchi con un solo cantiere → «POS · Corso Sardegna»', o.imprese.find(g => g.id === 'B')?.documenti[0]?.label === 'POS · Corso Sardegna');
   check('si salvano solo quelli in ordine (DURC nuovo, visita, POS)', o.daSalvare.sort().join(',') === ['durc-nuovo', 'pos-b', 'visita-mario'].sort().join(','), o.daSalvare);
   check('pezzi del PDF: sovrapposti o fuori dal file → un documento solo', K.pezziValidi([{ da: 1, a: 2 }, { da: 2, a: 3 }], 3).length === 1 && K.pezziValidi([{ da: 1, a: 1 }, { da: 2, a: 5 }], 3).length === 1 && K.pezziValidi([{ da: 1, a: 1 }, { da: 2, a: 3 }], 3).length === 2);

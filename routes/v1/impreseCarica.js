@@ -5,7 +5,7 @@
 //   GET   /api/v1/imprese/caricamenti/:id                 → avanzamento + tutto in ordine
 //   GET   /api/v1/imprese/caricamenti/:id/doc/:docId      → link per guardarlo
 //   PATCH /api/v1/imprese/caricamenti/:id/doc/:docId      → correggere (tipo, impresa, operaio, cantiere, scadenza, scartato)
-//   POST  /api/v1/imprese/caricamenti/:id/salva           → nelle schede delle imprese
+//   POST  /api/v1/imprese/caricamenti/:id/salva           → nelle schede delle imprese (F-415: e della tua impresa e dei tuoi operai)
 // Stessa porta di Imprese (modulo «subappaltatori») e stessi ruoli che scrivono.
 // La logica sta in lib/impreseCarica/.
 const router = require('express').Router();
