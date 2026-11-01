@@ -44,10 +44,16 @@ async function avvisoDi(subId) {
   let t = testoAvviso({ impresa: 'AYAT SRLS', cantiere: 'Via Riboli 4b', nomi: ['Youssef Amrani'],
     stato: stato({ requisiti: [{ key: 'visura', label: 'Visura camerale', stato: 'scaduto' }, { key: 'durc', label: 'DURC', stato: 'ok' }, { key: 'assicurazione', label: 'Assicurazione RC', stato: 'manca', consigliata: true }], pos: [{ siteId: 's1', label: 'POS per Via Riboli 4b', stato: 'manca' }] }), siteId: 's1' });
   check('impresa non in regola → titolo, chi è entrato, cosa manca (non la consigliata), «non l\'ho bloccato»',
-    t && t.title === 'AYAT SRLS è in cantiere ma non è in regola' && /Youssef Amrani/.test(t.body) && /visura camerale/i.test(t.body) && /POS di questo cantiere/.test(t.body) && !/Assicurazione/i.test(t.body) && /non l'ho bloccat/.test(t.body), t);
+    t && t.title === 'AYAT SRLS è in Via Riboli 4b, ma non può entrare' && /Youssef Amrani/.test(t.body) && /visura camerale/i.test(t.body) && /POS di questo cantiere/.test(t.body) && !/Assicurazione/i.test(t.body) && /non l'ho bloccat/.test(t.body), t);
   t = testoAvviso({ impresa: 'Edil Rossi', cantiere: 'Via Chiodo 9C', nomi: ['Karim Benali'], siteId: 's2',
     stato: stato({ puoLavorare: true, operai: [{ nome: 'Karim Benali', idoneita: { stato: 'manca' }, formazione: { stato: 'ok' } }] }) });
-  check('impresa in regola ma l\'operaio senza visita → avviso sull\'operaio', t && /Karim Benali/.test(t.body) && /visita medica/i.test(t.body), t);
+  check('impresa in regola ma l\'operaio senza visita → «Karim Benali è in Via Chiodo 9C, ma non può entrare · Manca la sua visita medica» (F-420)', t && t.title === 'Karim Benali è in Via Chiodo 9C, ma non può entrare' && /Manca la sua visita medica/.test(t.body), t);
+  t = testoAvviso({ impresa: 'Edil Rossi', cantiere: 'Via Chiodo 9C', nomi: ['Karim Benali'], siteId: 's2', orari: { 'Karim Benali': '2026-11-02T06:40:00Z' },
+    stato: stato({ puoLavorare: true, operai: [{ nome: 'Karim Benali', idoneita: { stato: 'manca' }, formazione: { stato: 'ok' } }] }) });
+  check('…con l\'ora della timbratura: «Ha timbrato alle 7:40» (ora di Roma)', /^Ha timbrato alle 7:40\./.test(t.body), t);
+  t = testoAvviso({ impresa: 'Edil Rossi', cantiere: 'Via Chiodo 9C', nomi: ['Karim Benali'], siteId: 's2',
+    stato: stato({ puoLavorare: true, pos: [{ siteId: 's2', label: 'POS per Via Chiodo 9C', stato: 'manca' }], operai: [{ nome: 'Karim Benali', idoneita: { stato: 'ok' }, formazione: { stato: 'ok' } }] }) });
+  check('impresa in regola senza il POS di quel cantiere → «… ma manca il POS»', t && t.title === 'Edil Rossi è in Via Chiodo 9C, ma manca il POS', t);
   t = testoAvviso({ impresa: 'Edil Rossi', cantiere: 'Via Chiodo 9C', nomi: ['Karim Benali'], siteId: 's2',
     stato: stato({ puoLavorare: true, operai: [{ nome: 'Karim Benali', idoneita: { stato: 'ok' }, formazione: { stato: 'in_scadenza' } }] }) });
   check('tutto in regola → nessun avviso', t === null, t);
@@ -69,7 +75,7 @@ async function avvisoDi(subId) {
       const r1 = await S.segnaDaUfficio({ companyId: E2E, userId: null, siteId, subWorkerId: a.id, event: 'entrata' });
       check('l\'entrata è registrata: non si blocca', r1.dentro === true && r1.unchanged === false && !!r1.id, r1);
       let av = await avvisoDi(subId);
-      check('arriva UN avviso «… è in cantiere ma non è in regola» con chi è entrato e cosa manca', av.length === 1 && /è in cantiere ma non è in regola/.test(av[0].title) && /Youssef Amrani/.test(av[0].body) && /DURC/.test(av[0].body), av);
+      check('arriva UN avviso «… è in <cantiere>, ma non può entrare» con chi è entrato e cosa manca', av.length === 1 && /, ma non può entrare$/.test(av[0].title) && /Youssef Amrani/.test(av[0].body) && /DURC/.test(av[0].body), av);
 
       await S.segnaDaUfficio({ companyId: E2E, userId: null, siteId, subWorkerId: b.id, event: 'entrata' });
       for (let i = 0; i < 20; i++) { av = await avvisoDi(subId); if (/Karim Benali/.test(av[0]?.body || '')) break; await aspetta(500); }

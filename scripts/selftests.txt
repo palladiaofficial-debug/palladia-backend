@@ -218,3 +218,4 @@ scripts/selftest_carica_tutto.js
 scripts/selftest_da_rinnovare.js
 scripts/selftest_essenziale.js
 scripts/selftest_pronta_lavorare.js
+scripts/selftest_oggi_imprese.js
