@@ -23,38 +23,14 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { patchFeatureFlagSchema } = require('../../lib/schemas/featureFlags');
-const { FEATURES, FROZEN_FEATURES, MASTER_IDS } = require('../../lib/featureFlags');
+const { FEATURES, MASTER_IDS, flagsPer } = require('../../lib/featureFlags');
 const { sendDbError } = require('../../lib/httpErrors');
 
 // ── GET /api/v1/feature-flags ─────────────────────────────────────────────────
 router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
-  const companyId = req.companyId;
-  const isMaster  = MASTER_IDS.has(companyId);
-
-  // Leggi override specifici dal DB
-  const { data: rows } = await supabase
-    .from('company_feature_flags')
-    .select('feature, enabled')
-    .eq('company_id', companyId);
-
-  const dbOverrides = {};
-  for (const row of (rows || [])) {
-    dbOverrides[row.feature] = row.enabled;
-  }
-
-  // Componi risposta: master company → ON per tutto TRANNE le feature "frozen"
-  // (vedi lib/featureFlags.js — dvr/pimus restano disattivate anche per i test
-  // interni); per tutti gli altri, DB override > default env.
-  const flags = {};
-  for (const [feature, envDefault] of Object.entries(FEATURES)) {
-    if (isMaster && !FROZEN_FEATURES.has(feature)) {
-      flags[feature] = true;
-    } else {
-      flags[feature] = feature in dbOverrides ? dbOverrides[feature] : envDefault;
-    }
-  }
-
-  res.json(flags);
+  // Riga per azienda > default env; master company tutto ON tranne i congelati;
+  // F-418 «essenziale» spegne lavagna/da_pagare/conti_sub (lib/featureFlags.flagsPer)
+  res.json(await flagsPer(req.companyId));
 });
 
 // ── PATCH /api/v1/feature-flags/:feature — solo master company ────────────────
