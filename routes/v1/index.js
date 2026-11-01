@@ -100,6 +100,7 @@ router.use('/', require('./subPresenze'));
 // F-376: Imprese semplici + link dell'impresa (pubblico per token): auth per singola rotta, prima dei router con JWT globale
 router.use('/', require('./impreseCarica')); // F-401 carica documenti delle imprese, tutti in un colpo
 router.use('/', require('./impreseSemplici'));
+router.use('/', require('./bolle'));  // F-422: le bolle del cantiere
 router.use('/', require('./pronto'));  // F-421: pronto a fare da subappalto, e il link con i tuoi documenti
 router.use('/', require('./contratti')); // F-398 contratto di subappalto
 router.use('/', require('./busteCarica')); // F-399 carica le buste del mese

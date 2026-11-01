@@ -85,8 +85,9 @@ function ordine() {
   const N = o.imprese.find(g => g.id === NOSTRA);
   check('un gruppo «La tua impresa» col DURC e la visita di Elton Lika', N?.nostra === true && N.documenti.some(d => d.id === 'durc-nostro') && N.operai[0]?.nome === 'Elton Lika', N);
   check('la visita di uno sconosciuto della tua impresa → da guardare, col motivo', o.daAssegnare.some(d => d.id === 'visita-gino' && /Gino Sconosciuto/.test(d.motivo || '')), o.daAssegnare);
-  check('la bolla tra le bolle e fatture, non salvata qui', o.bolle?.some(d => d.id === 'bolla') && !o.daSalvare.includes('bolla'), o.bolle);
-  check('si salvano DURC nostro, visita di Elton, DURC di Impianti Verdi', o.daSalvare.sort().join(',') === ['durc-a', 'durc-nostro', 'visita-elton'].join(','), o.daSalvare);
+  // F-422: la bolla va nel tuo unico cantiere (Via Balbi 31) e si salva lì
+  check('la bolla tra le bolle, nel cantiere Via Balbi 31, da salvare (F-422)', o.bolle?.some(d => d.id === 'bolla' && d.bolla?.cantiere?.id === 's9') && o.daSalvare.includes('bolla'), o.bolle);
+  check('si salvano DURC nostro, visita di Elton, DURC di Impianti Verdi e la bolla', [...o.daSalvare].sort().join(',') === ['bolla', 'durc-a', 'durc-nostro', 'visita-elton'].join(','), o.daSalvare);
   check('niente più «nostri» scartati', !o.nostri || o.nostri.length === 0, o.nostri);
 }
 
