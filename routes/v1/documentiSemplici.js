@@ -6,12 +6,14 @@
 // POST /api/v1/documenti/carica               → file + scadenza confermata
 // PATCH /api/v1/documenti/doc/:docId           → correggi la scadenza (F-329)
 // GET  /api/v1/documenti/panoramica           → F-374: la pagina in una richiesta
+// GET  /api/v1/documenti/da-rinnovare         → F-417: scaduti, mancanti, entro un mese (lib/daRinnovare.js)
 // POST /api/v1/documenti/leggi                → F-374: cos'è, di chi è, quando scade (non salva)
 // La logica sta in lib/documentiStato.js e lib/documentiCarica.js.
 const router = require('express').Router();
 const multer = require('multer');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { riepilogo, elenco, scheda, panoramica } = require('../../lib/documentiStato');
+const { daRinnovare } = require('../../lib/daRinnovare');
 const { leggi } = require('../../lib/documentiLeggi');
 const { aiLimiter } = require('../../middleware/rateLimit');
 const { carica, CaricaError } = require('../../lib/documentiCarica');
@@ -32,6 +34,10 @@ router.get('/documenti/riepilogo', verifySupabaseJwt, async (req, res) => {
 
 router.get('/documenti/panoramica', verifySupabaseJwt, async (req, res) => {
   try { res.json(await panoramica(req.companyId)); } catch (err) { fail(res, err, 'panoramica'); }
+});
+
+router.get('/documenti/da-rinnovare', verifySupabaseJwt, async (req, res) => {
+  try { res.json(await daRinnovare(req.companyId)); } catch (err) { fail(res, err, 'da-rinnovare'); }
 });
 
 const uploadLettura = multer({
