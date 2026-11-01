@@ -9,6 +9,7 @@
 //   POST /api/v1/imprese/:id/inviato         → «Manda su WhatsApp» toccato
 //   POST /api/v1/imprese/:id/visti           → ho guardato quello che ha mandato
 //   POST /api/v1/imprese/:id/cantieri        → { siteId }
+//   POST /api/v1/imprese/:id/autonomo        → { autonomo: true|false } (F-419: cambia cosa gli si chiede)
 //   POST /api/v1/imprese/:id/carica          → { tipo, siteId? } + file: carica il titolare, stesso controllo
 //   POST /api/v1/imprese/doc/:docId/va-bene  → decide il titolare, sopra al controllo
 // Impresa (link, senza registrazione):
@@ -79,6 +80,9 @@ router.post('/imprese/:id/visti', ...auth, scrive, idValido('id'), async (req, r
 router.post('/imprese/:id/cantieri', ...auth, scrive, idValido('id'), async (req, res) => {
   if (!UUID.test(String(req.body?.siteId || ''))) return res.status(400).json({ error: 'SITE_NOT_FOUND' });
   try { await I.mettiInCantiere(req.companyId, req.params.id, req.body.siteId); res.json({ ok: true }); } catch (err) { fallito(res, err, 'cantieri'); }
+});
+router.post('/imprese/:id/autonomo', ...auth, scrive, idValido('id'), async (req, res) => {
+  try { res.json(await I.autonomo(req.companyId, req.params.id, req.body?.autonomo)); } catch (err) { fallito(res, err, 'autonomo'); }
 });
 router.post('/imprese/:id/carica', ...auth, scrive, aiLimiter, idValido('id'), unFile, async (req, res) => {
   const siteId = req.body?.siteId && UUID.test(req.body.siteId) ? req.body.siteId : null;

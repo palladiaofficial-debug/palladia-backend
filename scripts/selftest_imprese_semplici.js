@@ -157,7 +157,7 @@ const letto = (x) => ({ tipo: 'altro', ragioneSociale: null, piva: null, sede: n
   check('MSC: AYAT c\'è, non può ancora lavorare', ayat && !ayat.puoLavorare, ayat);
   const sm = await I.scheda(MSC, ayat.id);
   const manca = [...sm.requisiti.filter(r => !r.consigliata), ...sm.pos].filter(r => r.stato !== 'ok' && r.stato !== 'in_scadenza').map(r => r.label); // «in scadenza» è ancora valido (come in impreseLink.statoImpresa)
-  check('MSC: mancano visura (di novembre 2025), DVR, dichiarazione, POS per Via Riboli 4b e Via Chiodo 9C', manca.length === 5 && manca.includes('Visura camerale') && manca.includes('POS per Via Chiodo 9C'), manca);
+  check('MSC: mancano patente a crediti (F-419), visura (di novembre 2025), DVR, dichiarazione, POS per Via Riboli 4b e Via Chiodo 9C', manca.length === 6 && manca.includes('Patente a crediti') && manca.includes('Visura camerale') && manca.includes('POS per Via Chiodo 9C'), manca);
   check('MSC: il DURC c\'è, fino al 28 novembre', sm.requisiti.find(r => r.key === 'durc')?.scadenza === '2026-11-28');
 
   console.log(`\n${passed} ok, ${failed} falliti`);

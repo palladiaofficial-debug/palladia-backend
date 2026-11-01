@@ -197,7 +197,7 @@ async function db() {
     check('Edil Bianchi: il DURC (scaduto) smistato da solo, anche partendo da Impianti Verdi', gB?.documenti[0]?.tipo === 'durc' && gB.documenti[0].esito === 'non_va', gB);
     check('il POS caricato due volte: un doppione', s.doppioni.length === 1 && /Uguale a/.test(s.doppioni[0].perche), s.doppioni);
     check('la foto HEIC tra i non letti, col perché', s.errori.some(e => /HEIC/.test(e.errore)), s.errori);
-    check('dopo il salvataggio a Impianti Verdi mancherà la dichiarazione (il DVR senza nome è finito su di loro)', gA?.dopo && !gA.dopo.puoLavorare && gA.dopo.mancano.join(',') === 'Dichiarazione che non è sospesa', gA?.dopo);
+    check('dopo il salvataggio a Impianti Verdi mancherà la dichiarazione (il DVR senza nome è finito su di loro)', gA?.dopo && !gA.dopo.puoLavorare && gA.dopo.mancano.join(',') === 'Patente a crediti,Dichiarazione che non è sospesa', gA?.dopo);
 
     // Il DVR «chi.pdf» è stato messo su Impianti Verdi perché si è partiti dalla loro scheda: lo sposto su Edil Bianchi
     const dvr = gA.documenti.find(d => d.tipo === 'dvr');
@@ -209,7 +209,7 @@ async function db() {
     check('un\'altra azienda non vede il caricamento', presto?.status === 404);
     s = await K.stato(co.id, id);
     check('dopo la correzione il DVR è di Edil Bianchi', s.imprese.find(g => g.id === B.id)?.documenti.some(d => d.tipo === 'dvr'));
-    check('…e a Impianti Verdi torna a mancare il DVR', s.imprese.find(g => g.id === A.id)?.dopo.mancano.join(',') === 'DVR o autocertificazione,Dichiarazione che non è sospesa', s.imprese.find(g => g.id === A.id)?.dopo);
+    check('…e a Impianti Verdi torna a mancare il DVR', s.imprese.find(g => g.id === A.id)?.dopo.mancano.join(',') === 'Patente a crediti,DVR o autocertificazione,Dichiarazione che non è sospesa', s.imprese.find(g => g.id === A.id)?.dopo);
 
     const r = await K.salva(co.id, null, id);
     check('salva: 8 documenti (il POS doppio no), 2 imprese, 1 operaio nuovo, ResultCard verificata', r.salvati === 8 && r.imprese.length === 2 && r.operaiNuovi === 1 && r.resultCard.fatto.verified, r);

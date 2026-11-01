@@ -217,3 +217,4 @@ scripts/selftest_imprese_email.js
 scripts/selftest_carica_tutto.js
 scripts/selftest_da_rinnovare.js
 scripts/selftest_essenziale.js
+scripts/selftest_pronta_lavorare.js
