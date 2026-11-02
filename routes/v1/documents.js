@@ -102,6 +102,8 @@ router.post('/sites/:siteId/documents', verifySupabaseJwt,
     // Analisi AI in background (non blocca la risposta) — vedi services/documentAI.js
     analyzeSiteDoc(doc.id, filePath, req.file.mimetype).catch(() => {});
 
+    // F-426: il PSC si legge subito (una volta), così la catena della sicurezza sa cosa chiede
+    if (category === 'psc' && doc.mime_type === 'application/pdf') require('../../lib/pscLetto').avvia(req.companyId, req.params.siteId);
     res.status(201).json({ ok: true, document: doc });
   }
 );
