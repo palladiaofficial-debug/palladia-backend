@@ -225,3 +225,4 @@ scripts/selftest_confronto.js
 scripts/selftest_sicurezza_cantieri.js
 scripts/selftest_pos_rapido.js
 scripts/selftest_psc_letto.js
+scripts/selftest_pos_imprese.js

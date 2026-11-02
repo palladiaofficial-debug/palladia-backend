@@ -4,16 +4,19 @@
 //   GET /api/v1/sicurezza/cantieri/:siteId  → la catena di un cantiere e chi ha letto il POS
 //   GET /api/v1/sicurezza/cantieri/:siteId/psc → F-426: il PSC letto e confrontato con il tuo POS
 //                                               (la prima volta risponde «in_lettura»: si ripassa)
+//   GET  /api/v1/sicurezza/cantieri/:siteId/imprese/:subId/pos         → F-427: il POS dell'impresa, controllato
+//   POST /api/v1/sicurezza/cantieri/:siteId/imprese/:subId/pos/va-bene → «Va bene così»
 // Logica in lib/sicurezzaCantieri.js.
 const router = require('express').Router();
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const S = require('../../lib/sicurezzaCantieri');
 const P = require('../../lib/pscLetto');
+const I = require('../../lib/posImprese');
 const logger = require('../../lib/logger');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fallito = (res, err, what) => {
-  if (err instanceof S.SicurezzaError || err instanceof P.PscError) return res.status(err.status).json({ error: err.code });
+  if (err instanceof S.SicurezzaError || err instanceof P.PscError || err instanceof I.PosImpreseError) return res.status(err.status).json({ error: err.code });
   logger.error({ err }, `sicurezza: ${what}`);
   res.status(500).json({ error: 'DB_ERROR' });
 };
@@ -33,6 +36,14 @@ router.get('/sicurezza/cantieri/:siteId/psc', verifySupabaseJwt, async (req, res
     delete out.dati;
     res.json(out);
   } catch (err) { fallito(res, err, 'psc'); }
+});
+router.get('/sicurezza/cantieri/:siteId/imprese/:subId/pos', verifySupabaseJwt, async (req, res) => {
+  if (!UUID.test(req.params.siteId) || !UUID.test(req.params.subId)) return res.status(404).json({ error: 'NOT_FOUND' });
+  try { res.json(await I.controllo(req.companyId, req.params.siteId, req.params.subId)); } catch (err) { fallito(res, err, 'pos impresa'); }
+});
+router.post('/sicurezza/cantieri/:siteId/imprese/:subId/pos/va-bene', verifySupabaseJwt, async (req, res) => {
+  if (!UUID.test(req.params.siteId) || !UUID.test(req.params.subId)) return res.status(404).json({ error: 'NOT_FOUND' });
+  try { res.json(await I.vaBene(req.companyId, req.params.siteId, req.params.subId)); } catch (err) { fallito(res, err, 'pos impresa va bene'); }
 });
 // Per il POS rapido: la lettura completa (committente, coordinatori, fasi, richieste)
 router.get('/sicurezza/cantieri/:siteId/psc/dati', verifySupabaseJwt, async (req, res) => {
