@@ -6,17 +6,23 @@
 //                                               (la prima volta risponde «in_lettura»: si ripassa)
 //   GET  /api/v1/sicurezza/cantieri/:siteId/imprese/:subId/pos         → F-427: il POS dell'impresa, controllato
 //   POST /api/v1/sicurezza/cantieri/:siteId/imprese/:subId/pos/va-bene → «Va bene così»
+//   POST /api/v1/sicurezza/cantieri/:siteId/manda   → F-428: il link per il coordinatore e il messaggio pronto
+//   GET  /api/v1/sicurezza-per/:token               → (senza login) la pagina del coordinatore
+//   GET  /api/v1/sicurezza-per/:token/file/:chiave  → un POS (PDF o link firmato)
+//   GET  /api/v1/sicurezza-per/:token/tutto.pdf     → tutti in un PDF
 // Logica in lib/sicurezzaCantieri.js.
 const router = require('express').Router();
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const S = require('../../lib/sicurezzaCantieri');
 const P = require('../../lib/pscLetto');
 const I = require('../../lib/posImprese');
+const K = require('../../lib/sicurezzaPacchetto');
+const { impresaLinkLimiter } = require('../../middleware/rateLimit');
 const logger = require('../../lib/logger');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const fallito = (res, err, what) => {
-  if (err instanceof S.SicurezzaError || err instanceof P.PscError || err instanceof I.PosImpreseError) return res.status(err.status).json({ error: err.code });
+  if (err instanceof S.SicurezzaError || err instanceof P.PscError || err instanceof I.PosImpreseError || err instanceof K.PacchettoError) return res.status(err.status).json({ error: err.code });
   logger.error({ err }, `sicurezza: ${what}`);
   res.status(500).json({ error: 'DB_ERROR' });
 };
@@ -44,6 +50,31 @@ router.get('/sicurezza/cantieri/:siteId/imprese/:subId/pos', verifySupabaseJwt, 
 router.post('/sicurezza/cantieri/:siteId/imprese/:subId/pos/va-bene', verifySupabaseJwt, async (req, res) => {
   if (!UUID.test(req.params.siteId) || !UUID.test(req.params.subId)) return res.status(404).json({ error: 'NOT_FOUND' });
   try { res.json(await I.vaBene(req.companyId, req.params.siteId, req.params.subId)); } catch (err) { fallito(res, err, 'pos impresa va bene'); }
+});
+router.post('/sicurezza/cantieri/:siteId/manda', verifySupabaseJwt, async (req, res) => {
+  if (!UUID.test(req.params.siteId)) return res.status(404).json({ error: 'NOT_FOUND' });
+  try { res.json(await K.crea(req.companyId, req.user?.id, req.params.siteId)); } catch (err) { fallito(res, err, 'manda'); }
+});
+// ── Chi riceve il link (il coordinatore, senza registrazione) ──
+router.get('/sicurezza-per/:token', impresaLinkLimiter, async (req, res) => {
+  try { res.json(await K.pubblico(req.params.token)); } catch (err) { fallito(res, err, 'pubblico'); }
+});
+router.get('/sicurezza-per/:token/file/:chiave', impresaLinkLimiter, async (req, res) => {
+  try {
+    const r = await K.file(req.params.token, String(req.params.chiave).slice(0, 20));
+    if (r.url) return res.redirect(302, r.url);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${r.nome}.pdf"`);
+    res.send(r.pdf);
+  } catch (err) { fallito(res, err, 'file'); }
+});
+router.get('/sicurezza-per/:token/tutto.pdf', impresaLinkLimiter, async (req, res) => {
+  try {
+    const r = await K.pdf(req.params.token);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${r.nome}.pdf"`);
+    res.send(r.pdf);
+  } catch (err) { fallito(res, err, 'tutto'); }
 });
 // Per il POS rapido: la lettura completa (committente, coordinatori, fasi, richieste)
 router.get('/sicurezza/cantieri/:siteId/psc/dati', verifySupabaseJwt, async (req, res) => {
