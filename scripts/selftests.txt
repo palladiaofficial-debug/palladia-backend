@@ -222,3 +222,4 @@ scripts/selftest_oggi_imprese.js
 scripts/selftest_pronto_subappalto.js
 scripts/selftest_bolle.js
 scripts/selftest_confronto.js
+scripts/selftest_sicurezza_cantieri.js

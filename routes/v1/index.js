@@ -102,6 +102,7 @@ router.use('/', require('./impreseCarica')); // F-401 carica documenti delle imp
 router.use('/', require('./impreseSemplici'));
 router.use('/', require('./bolle'));  // F-422: le bolle del cantiere
 router.use('/', require('./pronto'));  // F-421: pronto a fare da subappalto, e il link con i tuoi documenti
+router.use('/', require('./sicurezza'));  // F-424: la sicurezza di ogni cantiere (PSC, POS, imprese, operai)
 router.use('/', require('./contratti')); // F-398 contratto di subappalto
 router.use('/', require('./busteCarica')); // F-399 carica le buste del mese
 // F-267: iscrizione push dell'operaio dal badge (identità = badge_code, file separato)
