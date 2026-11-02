@@ -31,6 +31,8 @@ const PLAN_PRICES = {
   // F-270: abbonamento mensile del coordinatore della sicurezza (cantieri illimitati)
   coordinatore: () => process.env.STRIPE_PRICE_COORDINATORE,
   coordinatore_annuale: () => process.env.STRIPE_PRICE_COORDINATORE_ANNUALE, // stesso piano, pagato una volta l'anno
+  // F-429: il prezzo unico dei coordinatori, 150 € l'anno + IVA (sostituisce i due sopra)
+  coordinatore_150: () => process.env.STRIPE_PRICE_COORDINATORE_150,
 };
 
 /**
@@ -87,4 +89,4 @@ function getAiBudgetLimit(plan) {
   return null;
 }
 
-module.exports = { getStripe, getPriceId, getSiteLimit, getAiBudgetLimit, PLAN_LIMITS, AI_BUDGET_LIMITS };
+module.exports = { getStripe, getPriceId, getSiteLimit, getAiBudgetLimit, PLAN_LIMITS, AI_BUDGET_LIMITS, PLAN_PRICES };
