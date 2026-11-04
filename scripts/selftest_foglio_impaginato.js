@@ -70,6 +70,7 @@ const data = {
   check('riga di Bruno: solo Via Balbi 31', rigaB.includes('Via Balbi 31') && !rigaB.includes('Corso Sardegna'), rigaB);
   check('il calendario giorno per giorno resta', html.includes('Giorno per giorno') && html.includes('class="cal"'));
   check('niente «D.Lgs 81/2008» nel foglio', !html.includes('81/2008'));
+  check('carattere Inter dentro il foglio (niente rete, uguale sul server)', /@font-face { font-family: "Inter PDF"; font-weight: 400; src: url(data:font/ttf;base64,[A-Za-z0-9+/]{1000}/.test(html) && !html.includes('fonts.googleapis'));
 
   // 4. Excel
   const ExcelJS = require('exceljs');
