@@ -168,6 +168,7 @@ scripts/selftest_schede_v2.js
 scripts/selftest_pos_figures.js
 scripts/selftest_ore_contrattuali.js
 scripts/selftest_ore_mese.js
+scripts/selftest_ore_aggiunte.js
 scripts/selftest_ore_domande.js
 scripts/selftest_scan_exit_reason.js
 scripts/selftest_area_assenze.js
