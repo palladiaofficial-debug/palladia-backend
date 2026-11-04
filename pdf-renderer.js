@@ -60,13 +60,16 @@ function buildHeaderTemplate(docTitle, headerLeft) {
  * → sempre deterministici, zero stima, zero 2-pass manuale.
  * CRITICO: font-size esplicito su ogni <span>, altrimenti Chrome usa 0.
  */
-function buildFooterTemplate(revision, footerLeft) {
+// footerRight (facoltativo, F-433): testo a destra al posto di «Rev. N», per i
+// documenti che non hanno revisioni (es. il foglio presenze). Stessa barra, stesse misure.
+function buildFooterTemplate(revision, footerLeft, footerRight) {
   const rev = escT(String(revision || 1));
   const left = escT(footerLeft || 'D.Lgs 81/2008 e s.m.i.');
+  const right = footerRight ? escT(footerRight) : `Rev.&#160;${rev}`;
   return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #E7E2D8;background:#FFFEFC;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
   <span style="font-size:8.5px;color:#9C948A;line-height:1.1;flex:1;white-space:nowrap;">${left}</span>
   <span style="font-size:8.5px;color:#1A1714;font-weight:700;line-height:1.1;white-space:nowrap;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:8.5px;"></span>&#160;/&#160;<span class="totalPages" style="font-size:8.5px;"></span></span>
-  <span style="font-size:8.5px;color:#9C948A;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">Rev.&#160;${rev}</span>
+  <span style="font-size:8.5px;color:#9C948A;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">${right}</span>
 </div>`;
 }
 
@@ -107,7 +110,7 @@ function makePdfOpts(opts = {}) {
     printBackground:     true,
     displayHeaderFooter: true,
     headerTemplate:      buildHeaderTemplate(opts.docTitle || '', opts.headerLeft),
-    footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1, opts.footerLeft),
+    footerTemplate:      buildFooterTemplate(opts.revision || opts.rev || 1, opts.footerLeft, opts.footerRight),
     margin: {
       top:    '26mm',
       bottom: '24mm',

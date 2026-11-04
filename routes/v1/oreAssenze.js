@@ -9,7 +9,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { sendDbError } = require('../../lib/httpErrors');
 const { buildOreMese } = require('../../lib/oreMese');
-const { generateFoglioHtml, generateFoglioXlsx, meseLabel } = require('../../lib/oreMeseFoglio');
+const { generateFoglioHtml, generateFoglioXlsx, foglioPdfOpts } = require('../../lib/oreMeseFoglio');
 const { rendererPool } = require('../../pdf-renderer');
 
 // F-386: 'sospensione' = sospensione disciplinare (migrations/256)
@@ -194,7 +194,8 @@ router.get('/ore/mese/foglio.pdf', verifySupabaseJwt, async (req, res) => {
     return res.status(500).json({ error: 'DATA_ERROR' });
   }
   try {
-    const pdf = await rendererPool.render(generateFoglioHtml(data, await companyName(req.companyId)), { docTitle: `Presenze ${meseLabel(data.month)}`, rev: 1 });
+    const azienda = await companyName(req.companyId);
+    const pdf = await rendererPool.render(generateFoglioHtml(data, azienda), foglioPdfOpts(data, azienda));
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="presenze-${data.month}.pdf"`);
     res.setHeader('Content-Length', pdf.length);
