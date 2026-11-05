@@ -98,6 +98,17 @@ router.delete('/assenze/:id', verifySupabaseJwt, async (req, res) => {
 const hm = (s) => (isTime(s) ? `${s}:00` : null);
 const minOf = (s) => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 
+// GET /api/v1/ore/orario — l'orario dell'impresa, per le Impostazioni del cantiere (F-434)
+router.get('/ore/orario', verifySupabaseJwt, async (req, res) => {
+  const { data, error } = await supabase.from('companies')
+    .select('orario_inizio, orario_fine, pausa_inizio, pausa_fine, lunch_break_minutes, orario_tolleranza_min, straord_soglia_min, straord_blocco_min')
+    .eq('id', req.companyId).maybeSingle();
+  if (error) return sendDbError(res, error);
+  const { risolviOrario, fmt } = require('../../lib/oreContrattuali');
+  const o = risolviOrario({ company: data || {} });
+  res.json({ inizio: fmt(o.inizio), fine: fmt(o.fine), pausaDa: fmt(o.pausaDa), pausaA: fmt(o.pausaA), straordSoglia: o.straordSoglia, straordBlocco: o.straordBlocco });
+});
+
 // PATCH /api/v1/ore/orario { inizio, fine, pausaDa, pausaA, tolleranza?, straordSoglia?, straordBlocco? }
 router.patch('/ore/orario', verifySupabaseJwt, async (req, res) => {
   if (!ownerAdmin(req, res)) return;

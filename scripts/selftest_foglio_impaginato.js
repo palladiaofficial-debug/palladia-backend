@@ -36,7 +36,7 @@ const data = {
   assenze: [], richieste: [], domande: [],
   lavoratori: [
     { id: 'wA', nome: 'Anna Rossi', cf: 'RSSNNA80A41D969X', orario: null,
-      cells: [lavoro('2026-10-01', { [S1]: 540 }, 60), lavoro('2026-10-02', { [S2]: 480 }), libero('2026-10-03', 'weekend'), libero('2026-10-04', 'weekend')],
+      cells: [lavoro('2026-10-01', { [S1]: 540 }, 60), { ...lavoro('2026-10-02', { [S2]: 480 }), corretto: { id: 'k1', entrata: '08:00', uscita: '17:00', siteId: S2, nota: 'badge scarico', prima: { entrata: '08:47', uscita: '17:00' } } }, libero('2026-10-03', 'weekend'), libero('2026-10-04', 'weekend')],
       tot: tot({ ordinarieMin: 960, straordMin: 60, giorniLavorati: 2, perCantiere: { [S1]: 540, [S2]: 480 } }) },
     { id: 'wB', nome: 'Bruno Bianchi', cf: 'BNCBRN75B12D969Y', orario: null,
       cells: [lavoro('2026-10-01', { [S1]: 480 }), libero('2026-10-02', 'giustificare'), libero('2026-10-03', 'weekend'), libero('2026-10-04', 'weekend')],
@@ -60,15 +60,20 @@ const data = {
     check('piè di pagina del foglio presenze, non del POS', /presenze/i.test(o.footerLeft || '') && !/81\/2008/.test(o.footerLeft || ''), o);
   }
 
-  // 3. Riepilogo: i cantieri a destra nella riga del lavoratore
-  const riep = (html.match(/<table class="riep"[\s\S]*?<\/table>/) || [''])[0];
-  check('c\'è la tabella «Riepilogo del mese»', !!riep && html.includes('Riepilogo del mese'));
+  // 3. F-435: una tabella sola, i cantieri a destra nella riga del lavoratore
+  const riep = (html.match(/<table class="mese"[\s\S]*?<\/table>/) || [''])[0];
+  check('una tabella sola del mese', !!riep && (html.match(/<table/g) || []).length === 1, (html.match(/<table/g) || []).length);
+  check('niente più pagina «Riepilogo del mese» separata', !html.includes('Riepilogo del mese'));
   const rigaA = (riep.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*Anna Rossi[\s\S]*?<\/tr>/) || [''])[0];
   check('riga di Anna: Via Balbi 31 con 9 h e Corso Sardegna 88 con 8 h', /Via Balbi 31[\s\S]*?9/.test(rigaA) && /Corso Sardegna 88[\s\S]*?8/.test(rigaA), rigaA);
   check('i cantieri sono l\'ultima colonna della riga', /class="cant"[\s\S]*<\/td>\s*<\/tr>$/.test(rigaA.trim()), rigaA.slice(-200));
   const rigaB = (riep.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*Bruno Bianchi[\s\S]*?<\/tr>/) || [''])[0];
   check('riga di Bruno: solo Via Balbi 31', rigaB.includes('Via Balbi 31') && !rigaB.includes('Corso Sardegna'), rigaB);
-  check('il calendario giorno per giorno resta', html.includes('Giorno per giorno') && html.includes('class="cal"'));
+  check('i giorni sono nella stessa riga del lavoratore', (rigaA.match(/class="d/g) || []).length === 4, (rigaA.match(/class="d/g) || []).length);
+  check('Anna, 2 ottobre: casella corretta (blu)', /class="d cor">8<\/td>/.test(rigaA), rigaA.slice(0, 600));
+  check('correzioni dell\'ufficio con l\'orario di prima e il perché', html.includes("Correzioni dell'ufficio") && html.includes('entrata 08:47 → 08:00') && html.includes('badge scarico'));
+  check('legenda nella stessa pagina', /class="key"[\s\S]*ferie[\s\S]*corretto dall'ufficio/.test(html));
+  check('spazio per la firma', html.includes('Firma del datore di lavoro'));
   check('niente «D.Lgs 81/2008» nel foglio', !html.includes('81/2008'));
   const font = html.indexOf('font-family: "Inter PDF"; font-weight: 400; src: url(data:font/ttf;base64,');
   check('carattere Inter dentro il foglio (niente rete, uguale sul server)', font > 0 && /^[A-Za-z0-9+/]{1000}/.test(html.slice(html.indexOf('base64,', font) + 7)) && !html.includes('fonts.googleapis'));
@@ -76,6 +81,10 @@ const data = {
   // 4. Excel
   const ExcelJS = require('exceljs');
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await generateFoglioXlsx(data, 'Edile Prova srl'));
+  check('Excel: primo foglio «Ore del mese»', wb.worksheets[0].name === 'Ore del mese', wb.worksheets.map(w => w.name));
+  let rA0 = null; wb.worksheets[0].eachRow((row) => { if (row.getCell(1).value === 'Anna Rossi') rA0 = row; });
+  check('Excel Ore del mese: giorni, ore e cantieri nella riga di Anna', rA0 && rA0.getCell(2).value === '8 +1' && /Via Balbi 31 9 h/.test(String(rA0.getCell(4 + 4).value)), rA0 && rA0.values);
+  check('Excel: foglio «Correzioni»', !!wb.getWorksheet('Correzioni'));
   const ws = wb.getWorksheet('Riepilogo');
   let head = null, rA = null;
   ws.eachRow((row) => { if (row.getCell(1).value === 'Lavoratore') head = row; if (row.getCell(1).value === 'Anna Rossi') rA = row; });

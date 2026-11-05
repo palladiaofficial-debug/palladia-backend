@@ -36,6 +36,7 @@ router.use('/', require('./presenceFixRoutes'));
 router.use('/', require('./reports'));
 router.use('/', require('./oreAssenze').router); // F-265 ore e assenze
 router.use('/', require('./oreAggiunte').router); // F-432 ore in più dall'ufficio
+router.use('/', require('./oreCorrezioni').router); // F-435 correzioni dell'orario dalla tabella delle ore
 router.use('/', require('./oreDaVedere')); // F-318 pioggia da confermare, malattie e infortuni dagli operai
 router.use('/', require('./siteRiepilogo')); // F-321 scheda cantiere senza cartelle: Riepilogo e Da sistemare
 router.use('/', require('./lavagna')); // F-331 Lavagna cantieri
