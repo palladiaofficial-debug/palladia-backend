@@ -101,12 +101,12 @@ async function main() {
 
     const html = generateFoglioHtml(r, T);
     check('foglio PDF: lavoratori con codice fiscale, protocollo malattia, giorni senza timbrature da verificare', html.includes(wA.full_name) && html.includes(wA.fiscal_code) && html.includes('PROT-F265') && html.includes('giorni senza timbrature né assenza'));
-    check('F-335 foglio PDF: regole di conteggio in testa e legenda delle causali', html.includes('Orario 08:00–17:00, pausa 12:00–13:00') && html.includes('Legenda delle causali') && html.includes('Cantieri e ore'));
+    check('F-335 foglio PDF: regole di conteggio in testa e legenda delle causali', html.includes('Orario 08:00–17:00, pausa 12:00–13:00') && html.includes('class="key"') && html.includes('>Cantieri</th>')); // F-435: legenda sotto la tabella, cantieri come colonna
     const xbuf = await generateFoglioXlsx(r, T);
     const ExcelJS = require('exceljs');
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(xbuf);
     const nomi = wb.worksheets.map(x => x.name);
-    check('F-335 foglio Excel: Riepilogo, Calendario, Movimenti, Ore per cantiere, Assenze, Da verificare', JSON.stringify(nomi) === JSON.stringify(['Riepilogo', 'Calendario', 'Movimenti', 'Ore per cantiere', 'Assenze', 'Da verificare']), nomi);
+    check('F-435 foglio Excel: Ore del mese, Riepilogo, Movimenti, Ore per cantiere, Assenze, Da verificare', JSON.stringify(nomi) === JSON.stringify(['Ore del mese', 'Riepilogo', 'Movimenti', 'Ore per cantiere', 'Assenze', 'Da verificare']), nomi);
     const riep = wb.getWorksheet('Riepilogo');
     let rigaA = null; riep.eachRow((row) => { if (row.getCell(1).value === wA.full_name) rigaA = row; });
     check('Excel Riepilogo: Anna con codice fiscale, 4 ore di permesso, 1 ora di straordinario', rigaA && rigaA.getCell(2).value === wA.fiscal_code && rigaA.getCell(9).value === 4 && rigaA.getCell(5).value === 1, rigaA && rigaA.values);
