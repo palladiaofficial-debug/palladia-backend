@@ -132,12 +132,20 @@ async function main() {
   report();
 }
 
+// F-458: le timbrature sono solo-aggiunta (non si cancellano), quindi cantiere e lavoratori di
+// questo test non si possono cancellare: prima il delete falliva in silenzio e a ogni giro
+// restavano 2 lavoratori ATTIVI e un cantiere attivo (456 «TEST-F206 A/B» nell'azienda di prova,
+// oltre il limite di 500 del POS). Ora quello che non si cancella si spegne.
 async function cleanup(siteId, workers) {
   if (siteId) {
-    await supabase.from('presence_logs').delete().eq('site_id', siteId);
-    await supabase.from('sites').delete().eq('id', siteId);
+    const { error } = await supabase.from('sites').delete().eq('id', siteId);
+    if (error) await supabase.from('sites').update({ status: 'eliminato' }).eq('id', siteId);
   }
-  for (const w of workers || []) if (w?.id) await supabase.from('workers').delete().eq('id', w.id);
+  for (const w of workers || []) {
+    if (!w?.id) continue;
+    const { error } = await supabase.from('workers').delete().eq('id', w.id);
+    if (error) await supabase.from('workers').update({ is_active: false }).eq('id', w.id);
+  }
 }
 
 function report() {
