@@ -77,6 +77,9 @@ function check(name, cond, got) {
     const presto = o.righe.find(x => /scade|Visita medica di Verdi/.test(x.titolo));
     check('Oggi: «scadono questa settimana» solo quello che scade davvero (non il corso che manca)', presto && presto.titolo === 'Visita medica di Verdi' && !o.righe.some(x => /scadono questa settimana/.test(x.titolo)), o.righe.map(x => x.titolo));
     check('Oggi: le righe dei documenti portano a Documenti', r('documenti-scaduti')?.link === '/documenti' && r('documenti-mancano')?.link === '/documenti', [r('documenti-scaduti')?.link, r('documenti-mancano')?.link]);
+    // F-436 (foto dal vivo): «dall'8 ottobre», non «dal 8 ottobre»
+    const pg = componi({ items: [{ kind: 'meteo', bucket: 'settimana', title: 'Pioggia — Via A', date: '2026-10-08' }, { kind: 'meteo', bucket: 'settimana', title: 'Pioggia — Via B', date: '2026-10-09' }], oggi });
+    check('Oggi: la pioggia «dall’8 ottobre»', pg.righe[0]?.sotto === "In 2 cantieri, dall'8 ottobre", pg.righe[0]?.sotto);
   } catch (e) {
     console.error(e); failed++;
   } finally {
