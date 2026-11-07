@@ -120,6 +120,14 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
 
   if (docsErr) return res.status(500).json({ error: docsErr.message });
 
+  // F-450: di chi è il POS (il tuo o quello fatto per un'impresa), per distinguerli in «Tutti i POS fatti»
+  const subIds = [...new Set((docs || []).map(d => d.pos_data?.subcontractorId).filter(Boolean))];
+  const subNome = new Map();
+  if (subIds.length) {
+    const { data: subs } = await supabase.from('subcontractors').select('id, company_name').eq('company_id', companyId).in('id', subIds);
+    for (const x of subs || []) subNome.set(x.id, x.company_name);
+  }
+
   res.json((docs || []).map(d => ({
     id:         d.id,
     site_id:    d.site_id,
@@ -127,6 +135,7 @@ router.get('/pos', verifySupabaseJwt, async (req, res) => {
     revision:   d.revision,
     created_at: d.created_at,
     title:      d.pos_data?.workType || d.pos_data?.siteAddress || `Rev. ${d.revision}`,
+    impresa:    (d.pos_data?.subcontractorId && subNome.get(d.pos_data.subcontractorId)) || d.pos_data?.companyName || null,
   })));
 });
 
