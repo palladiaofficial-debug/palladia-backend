@@ -93,9 +93,11 @@ router.get('/payslips/draft', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!rows?.length) return res.json([]);
 
-  const workerIds = [...new Set(rows.map(r => r.worker_id))];
-  const { data: workers } = await supabase
-    .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId);
+  // F-455: una busta orfana (lavoratore cancellato) ha worker_id nullo: con null nella lista la richiesta
+  // dei nomi falliva in silenzio e TUTTE le righe diventavano «Lavoratore sconosciuto»
+  const workerIds = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
+  const { data: workers } = workerIds.length ? await supabase
+    .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId) : { data: [] };
   const workerById = Object.fromEntries((workers || []).map(w => [w.id, w]));
 
   const withNames = rows.map(r => ({
@@ -278,9 +280,11 @@ router.get('/payslips/shared', verifySupabaseJwt, async (req, res) => {
   if (error) return res.status(500).json({ error: 'DB_ERROR' });
   if (!rows?.length) return res.json([]);
 
-  const workerIds = [...new Set(rows.map(r => r.worker_id))];
-  const { data: workers } = await supabase
-    .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId);
+  // F-455: una busta orfana (lavoratore cancellato) ha worker_id nullo: con null nella lista la richiesta
+  // dei nomi falliva in silenzio e TUTTE le righe diventavano «Lavoratore sconosciuto»
+  const workerIds = [...new Set(rows.map(r => r.worker_id).filter(Boolean))];
+  const { data: workers } = workerIds.length ? await supabase
+    .from('workers').select('id, full_name, is_active').in('id', workerIds).eq('company_id', req.companyId) : { data: [] };
   const workerById = Object.fromEntries((workers || []).map(w => [w.id, w]));
 
   const withNames = rows.map(r => ({
