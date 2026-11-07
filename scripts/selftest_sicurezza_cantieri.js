@@ -65,7 +65,7 @@ const giorno = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0,
     const op = (n, cf) => ins('workers', { company_id: co.id, full_name: `${T} ${n}`, is_active: true, fiscal_code: `F424${cf}${stamp}`, badge_code: `F424${cf}${stamp}` });
     const ion = await op('Ion Popescu', 'AA'), marco = await op('Marco Rossi', 'BB'), luca = await op('Luca Bianco', 'CC');
     for (const w of [ion, marco, luca]) await ins('worksite_workers', { company_id: co.id, site_id: verdi.id, worker_id: w.id, status: 'active' });
-    await ins('pos_acknowledgments', { pos_id: posVerdi.id, worker_id: marco.id, company_id: co.id, site_id: verdi.id, lingua: 'ro' });
+    await ins('pos_acknowledgments', { pos_id: posVerdi.id, worker_id: marco.id, company_id: co.id, site_id: verdi.id, lingua: 'ro', secondi_schede: [9, 5, 6] });
     await ins('pos_acknowledgments', { pos_id: posVerdi.id, worker_id: luca.id, company_id: co.id, site_id: verdi.id, lingua: 'it' });
 
     const el = await S.elenco(co.id);
@@ -94,6 +94,7 @@ const giorno = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0,
 
     const pv = await S.cantiere(co.id, verdi.id);
     check('la pagina di Via Verdi ha la stessa catena', pv.nome === v.nome && pv.operai.letto === 2 && pv.psc.stato === 'presente', pv);
+    check('F-450: chi ha letto porta i secondi passati sulle schede (Marco 20)', pv.operaiElenco.find(o => o.workerId === marco.id)?.secondi === 20, pv.operaiElenco);
     const nomi = pv.operaiElenco.map(o => o.nome);
     check('chi ha letto: prima chi manca (Ion), poi gli altri', nomi.length === 3 && nomi[0] === `${T} Ion Popescu` && pv.operaiElenco[0].letto === null, pv.operaiElenco);
     const m = pv.operaiElenco.find(o => o.workerId === marco.id);
