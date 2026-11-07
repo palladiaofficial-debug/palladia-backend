@@ -259,6 +259,16 @@ function founderOnly(req, res, next) {
   next();
 }
 
+// F-456: la cornice deve sapere se mostrare la voce «Inviti coordinatori». Prima chiedeva
+// GET /psc/beta-invites e prendeva il 403 come «no»: un errore del server a ogni caricamento
+// per chiunque non sia il fondatore. Qui la risposta è sempre 200.
+router.get('/psc/beta-invites/conteggio', verifySupabaseJwt, h(async (req, res) => {
+  if (!isFounder(req.user.id)) return res.json({ founder: false });
+  const { data } = await supabase.from('psc_beta_invites').select('used_at, revoked');
+  const validi = (data || []).filter(i => !i.revoked);
+  res.json({ founder: true, usati: validi.filter(i => i.used_at).length, totali: validi.length });
+}));
+
 router.get('/psc/beta-invites', verifySupabaseJwt, founderOnly, h(async (req, res) => {
   const { data } = await supabase.from('psc_beta_invites').select('code, note, created_at, used_at, used_by_company, revoked, companies:used_by_company(name)').order('created_at', { ascending: false });
   res.json({ invites: (data || []).map(x => ({ ...x, link: `${APP_URL}/coordinatori/invito/${x.code}`, usato_da: x.companies ? x.companies.name : null })) });
