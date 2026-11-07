@@ -58,7 +58,7 @@ const giorno = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0,
     await ins('site_documents', { company_id: co.id, site_id: roma.id, name: 'POS consulente.pdf', category: 'pos', file_path: `${co.id}/${roma.id}/pos.pdf` });
 
     const posVerdi = await ins('pos_documents', { company_id: co.id, site_id: verdi.id, revision: 2, pos_data: { companyName: T }, content: 'x' });
-    await ins('pos_documents', { company_id: co.id, site_id: verdi.id, revision: 1, pos_data: { subcontractorId: rossi.id }, content: 'x' });
+    const posRossiVerdi = await ins('pos_documents', { company_id: co.id, site_id: verdi.id, revision: 1, pos_data: { subcontractorId: rossi.id }, content: 'x' });
     await ins('pos_documents', { company_id: co.id, site_id: corso.id, revision: 1, pos_data: { companyName: T }, content: 'x' });
     await ins('pos_documents', { company_id: co.id, site_id: sardegna.id, revision: 1, pos_data: { companyName: T }, content: 'x' });
 
@@ -81,6 +81,9 @@ const giorno = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0,
 
     check('Via Verdi: a posto, il tuo POS rev. 2 fatto con Palladia', v?.aPosto && v.pos.stato === 'presente' && v.pos.fonte === 'palladia' && v.pos.revisione === 2, v?.pos);
     check('Via Verdi: Edil Rossi col POS fatto con Palladia conta', v?.imprese[0]?.stato === 'ok', v?.imprese);
+    // F-450: il POS fatto con Palladia per l'impresa si apre dalla sicurezza del cantiere (prima solo da /pos)
+    check('F-450: Edil Rossi a Via Verdi porta il posId del POS fatto con Palladia', v?.imprese[0]?.posId === posRossiVerdi.id, v?.imprese);
+    check('F-450: il POS mandato dal link dell impresa non ha posId (non è un POS di Palladia)', b?.imprese.find(i => i.id === rossi.id)?.posId == null, b?.imprese);
     check('Via Verdi: 2 operai su 3 l\'hanno letto, azzurro', v?.operai?.letto === 2 && v.operai.attesi === 3 && v.frase === "A posto · 2 operai su 3 l'hanno letto" && v.tono === 'blu' && v.azione === 'operai', v && { operai: v.operai, frase: v.frase, tono: v.tono });
 
     check('Via Roma: lavori solo tu, il PSC non serve', r?.psc.stato === 'non_serve' && r.imprese.length === 0, r);
