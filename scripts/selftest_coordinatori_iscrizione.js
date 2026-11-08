@@ -9,6 +9,8 @@
  *  - il piano coordinatore è uno solo: il prezzo di 150 € l'anno (STRIPE_PRICE_COORDINATORE_150),
  *    e senza la variabile il pagamento lo dice invece di usare il vecchio prezzo;
  *  - la rotta di onboarding non rifiuta più un coordinatore senza codice.
+ * F-464 (8/11): i primi coordinatori (chi entra entro il 31/3/2027) hanno tutto gratis fino
+ * al 31/3/2027; dopo quella data tornano i 30 giorni (60 con l'invito).
  */
 'use strict';
 require('dotenv').config({ quiet: true });
@@ -21,7 +23,6 @@ function check(name, cond, got) {
   if (cond) { console.log(`  \x1b[32m✓\x1b[0m ${name}`); passed++; }
   else { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (got !== undefined) console.error(`    got: ${JSON.stringify(got).slice(0, 600)}`); failed++; }
 }
-const giorniDa = (iso) => Math.round((Date.parse(iso) - Date.now()) / 86400000);
 
 (async () => {
   console.log('\n\x1b[1mF-429 — l\'iscrizione libera dei coordinatori\x1b[0m');
@@ -37,12 +38,20 @@ const giorniDa = (iso) => Math.round((Date.parse(iso) - Date.now()) / 86400000);
     check('iscrizione libera: attivata', await I.attiva(libero.id, null) === true);
     const { data: f } = await supabase.from('company_feature_flags').select('enabled').eq('company_id', libero.id).eq('feature', 'psc_coordinatori').maybeSingle();
     const { data: c1 } = await supabase.from('companies').select('trial_ends_at').eq('id', libero.id).single();
-    check('area coordinatori accesa e 30 giorni di prova', f?.enabled === true && Math.abs(giorniDa(c1.trial_ends_at) - 30) <= 1, { f, trial: c1.trial_ends_at });
+    const attesa = I.fineProva(I.PROVA_GIORNI);
+    check('area coordinatori accesa e prova fino al 31/3/2027 (primi coordinatori)', f?.enabled === true && Math.abs(Date.parse(c1.trial_ends_at) - Date.parse(attesa)) < 120000
+      && (Date.now() > Date.parse(I.GRATIS_FINO_AL) || c1.trial_ends_at.slice(0, 10) === '2027-03-31'), { f, trial: c1.trial_ends_at });
+    // la regola, a date fisse
+    const ora = (d) => Date.parse(d);
+    check('il 10/2/2027: fino al 31/3/2027', I.fineProva(30, ora('2027-02-10T10:00:00Z')).startsWith('2027-03-31'), I.fineProva(30, ora('2027-02-10T10:00:00Z')));
+    check('il 20/3/2027: almeno i 30 giorni di prova (19/4)', I.fineProva(30, ora('2027-03-20T10:00:00Z')).startsWith('2027-04-19'), I.fineProva(30, ora('2027-03-20T10:00:00Z')));
+    check('il 20/3/2027 con l\'invito: i 60 giorni, che vanno oltre', I.fineProva(60, ora('2027-03-20T00:00:00Z')).startsWith('2027-05-19'), I.fineProva(60, ora('2027-03-20T00:00:00Z')));
+    check('dal 1/4/2027: di nuovo 30 giorni', I.fineProva(30, ora('2027-04-02T00:00:00Z')).startsWith('2027-05-02'), I.fineProva(30, ora('2027-04-02T00:00:00Z')));
 
     await ins('psc_beta_invites', { code: codice, note: T });
     check('col codice d\'invito: attivata', await I.attiva(invitato.id, codice) === true);
     const { data: c2 } = await supabase.from('companies').select('trial_ends_at').eq('id', invitato.id).single();
-    check('…con i 60 giorni dell\'invito', Math.abs(giorniDa(c2.trial_ends_at) - 60) <= 1, c2.trial_ends_at);
+    check('…col codice d\'invito: 60 giorni o fino al 31/3/2027, il più lungo', Math.abs(Date.parse(c2.trial_ends_at) - Date.parse(I.fineProva(60))) < 120000, c2.trial_ends_at);
 
     const vecchio = process.env.STRIPE_PRICE_COORDINATORE_150;
     const { getPriceId, PLAN_PRICES } = require('../services/stripe');
