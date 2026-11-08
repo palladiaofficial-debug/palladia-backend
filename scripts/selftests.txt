@@ -232,3 +232,4 @@ scripts/selftest_sicurezza_pacchetto.js
 scripts/selftest_coordinatori_iscrizione.js
 scripts/selftest_ore_correzioni.js
 scripts/selftest_conteggio_unico.js
+scripts/selftest_imprese_togli_cantiere.js

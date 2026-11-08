@@ -81,6 +81,10 @@ router.post('/imprese/:id/cantieri', ...auth, scrive, idValido('id'), async (req
   if (!UUID.test(String(req.body?.siteId || ''))) return res.status(400).json({ error: 'SITE_NOT_FOUND' });
   try { await I.mettiInCantiere(req.companyId, req.params.id, req.body.siteId); res.json({ ok: true }); } catch (err) { fallito(res, err, 'cantieri'); }
 });
+// F-462: toglie l'impresa da un cantiere; 409 HA_IMPORTI se sulla coppia ci sono budget, SAL o pagamenti
+router.delete('/imprese/:id/cantieri/:siteId', ...auth, scrive, idValido('id'), idValido('siteId'), async (req, res) => {
+  try { await I.togliDaCantiere(req.companyId, req.params.id, req.params.siteId); res.json({ ok: true }); } catch (err) { fallito(res, err, 'togli cantiere'); }
+});
 router.post('/imprese/:id/autonomo', ...auth, scrive, idValido('id'), async (req, res) => {
   try { res.json(await I.autonomo(req.companyId, req.params.id, req.body?.autonomo)); } catch (err) { fallito(res, err, 'autonomo'); }
 });
