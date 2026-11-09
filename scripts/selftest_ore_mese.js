@@ -106,10 +106,10 @@ async function main() {
     const ExcelJS = require('exceljs');
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(xbuf);
     const nomi = wb.worksheets.map(x => x.name);
-    check('F-435 foglio Excel: Ore del mese, Riepilogo, Movimenti, Ore per cantiere, Assenze, Da verificare', JSON.stringify(nomi) === JSON.stringify(['Ore del mese', 'Riepilogo', 'Movimenti', 'Ore per cantiere', 'Assenze', 'Da verificare']), nomi);
+    check('F-435 foglio Excel: Ore del mese, Riepilogo, Movimenti, Ore per cantiere, Assenze, Da verificare', JSON.stringify(nomi.filter(n => n !== 'Note sui giorni')) === JSON.stringify(['Ore del mese', 'Riepilogo', 'Movimenti', 'Ore per cantiere', 'Assenze', 'Da verificare']), nomi); // F-479: «Note sui giorni» se ce ne sono
     const riep = wb.getWorksheet('Riepilogo');
     let rigaA = null; riep.eachRow((row) => { if (row.getCell(1).value === wA.full_name) rigaA = row; });
-    check('Excel Riepilogo: Anna con codice fiscale, 4 ore di permesso, 1 ora di straordinario', rigaA && rigaA.getCell(2).value === wA.fiscal_code && rigaA.getCell(9).value === 4 && rigaA.getCell(5).value === 1, rigaA && rigaA.values);
+    check('Excel Riepilogo: Anna con codice fiscale, 4 ore di permesso, 1 ora di straordinario', rigaA && rigaA.getCell(2).value === wA.fiscal_code && rigaA.getCell(8).value?.result === 4 && rigaA.getCell(5).value?.result === 1, rigaA && rigaA.values); // F-479: formule con il risultato
     const { movimenti } = require('../lib/oreMeseFoglio');
     const mov = movimenti(r);
     const somma = (caus) => mov.filter(x => x.causale === caus).reduce((t, x) => t + x.min, 0);

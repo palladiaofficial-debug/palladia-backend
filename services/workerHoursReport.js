@@ -19,6 +19,7 @@ const { pairLogsByDay, shiftDateStr, resolveLunchBreakConfig, applyLunchBreak, i
 const { latestReasonsByLogId } = require('../lib/presenceLogReasons');
 // F-335: le ore si contano sull'orario di lavoro, come nel foglio del mese
 const { contaGiorno, risolviOrario, oreGiornoContratto, coppieDelGiorno, lavorativoIl, fmt, durataTesto } = require('../lib/oreContrattuali');
+const { giorniInizioAnticipato } = require('../lib/oreInizioAnticipato');
 
 // Un consulente del lavoro deve poter distinguere una timbratura reale da una
 // generata dal sistema o corretta a mano — altrimenti tratta un dato rettificato
@@ -120,6 +121,8 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
     .gte('work_date', from)
     .lte('work_date', to);
   const noLunchSet = new Set((lunchOverrides || []).map(o => `${o.worker_id}__${o.work_date}`));
+  // F-478: giorni «partito prima su richiesta» — si conta dall'entrata vera
+  const inizioPrimaSet = await giorniInizioAnticipato(companyId, from, to);
 
   // Presence logs
   // Finestra allargata di 1 giorno intero su ciascun lato (oltre al consueto
@@ -302,9 +305,9 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
       // chi entra prima non conta, straordinario solo dopo la fine + soglia.
       // Il tempo timbrato (meno pausa) resta in day_timbrato_minutes.
       const orario = risolviOrario({ company: company || {}, site, worker: info });
-      const conto = contaGiorno({ coppie: coppieDelGiorno({ entries }), orario, lavorativo: lavorativoIl(dk), pausaSaltata: skipLunchDeduction });
+      const conto = contaGiorno({ coppie: coppieDelGiorno({ entries }), orario, lavorativo: lavorativoIl(dk), pausaSaltata: skipLunchDeduction, daEntrata: inizioPrimaSet.has(`${wId}__${dk}`) });
       const contate = conto.ordinarie + conto.straordinario;
-      const conteggio = { conto, orario, contratto: oreGiornoContratto(orario), orarioTesto: `${fmt(orario.inizio)}–${fmt(orario.fine)}`, fonte: orario.fonte, pausaSaltata: skipLunchDeduction };
+      const conteggio = { conto, orario, contratto: oreGiornoContratto(orario), orarioTesto: `${fmt(orario.inizio)}–${fmt(orario.fine)}`, fonte: orario.fonte, pausaSaltata: skipLunchDeduction, daEntrata: inizioPrimaSet.has(`${wId}__${dk}`) };
       workerAgg.days.push({
         date_key:               dk,
         date_formatted:         fmtDateRome(dk),

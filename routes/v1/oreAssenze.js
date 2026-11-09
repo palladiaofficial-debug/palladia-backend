@@ -13,7 +13,8 @@ const { generateFoglioHtml, generateFoglioXlsx, foglioPdfOpts } = require('../..
 const { rendererPool } = require('../../pdf-renderer');
 
 // F-386: 'sospensione' = sospensione disciplinare (migrations/256)
-const TIPI = ['ferie', 'permesso', 'malattia', 'infortunio', 'ingiustificata', 'sospensione', 'altro'];
+// F-478: 'maltempo' = pioggia segnata dall'ufficio dal pannello del giorno («il resto della giornata era pioggia»), anche a ore (ore_min)
+const TIPI = ['ferie', 'permesso', 'malattia', 'infortunio', 'ingiustificata', 'sospensione', 'altro', 'maltempo'];
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const isTime = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -36,8 +37,15 @@ function validaAssenza(b) {
     if (al !== b.dal) return { error: 'un permesso a ore è in un solo giorno' };
     dalle = b.dalle; alle = b.alle;
   }
+  let oreMin = null;
+  if (b.tipo === 'maltempo' && b.ore_min != null) {
+    const n = Number(b.ore_min);
+    if (!Number.isInteger(n) || n < 1 || n > 960) return { error: 'ore_min deve essere tra 1 e 960 minuti' };
+    if (al !== b.dal) return { error: 'la pioggia a ore è in un solo giorno' };
+    oreMin = n;
+  }
   const s = (v, n) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : null);
-  return { row: { tipo: b.tipo, date_from: b.dal, date_to: al, ora_dalle: dalle, ora_alle: alle, protocollo: b.tipo === 'malattia' ? s(b.protocollo, 60) : null, note: s(b.note, 500) } };
+  return { row: { tipo: b.tipo, date_from: b.dal, date_to: al, ora_dalle: dalle, ora_alle: alle, protocollo: b.tipo === 'malattia' ? s(b.protocollo, 60) : null, note: s(b.note, 500), ...(oreMin ? { ore_min: oreMin } : {}) } };
 }
 
 // GET /api/v1/ore/mese?month=YYYY-MM

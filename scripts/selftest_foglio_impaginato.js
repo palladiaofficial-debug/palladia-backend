@@ -65,7 +65,7 @@ const data = {
   // toglievano ai giorni lo spazio e i numeri si toccavano.
   const riep = (html.match(/<table class="mese"[\s\S]*?<\/table>/) || [''])[0];
   check('una sola tabella del mese', !!riep && (html.match(/<table class="mese"/g) || []).length === 1);
-  check('niente più pagina «Riepilogo del mese» separata', !html.includes('Riepilogo del mese'));
+  check('il riepilogo del mese è una tabella del foglio (F-479), non una pagina a parte', html.includes('data-sez="riepilogo"') && !/page-break-before|break-before:s*page/.test(html));
   const rigaA = (riep.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*Anna Rossi[\s\S]*?<\/tr>/) || [''])[0];
   check('nella riga del mese niente cantieri (stanno sotto)', !!rigaA && !rigaA.includes('Via Balbi'), rigaA.slice(-300));
   const cant = (html.match(/<table class="lista" data-sez="cantieri"[\s\S]*?<\/table>/) || [''])[0];
@@ -85,7 +85,7 @@ const data = {
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await generateFoglioXlsx(data, 'Edile Prova srl'));
   check('Excel: primo foglio «Ore del mese»', wb.worksheets[0].name === 'Ore del mese', wb.worksheets.map(w => w.name));
   let rA0 = null; wb.worksheets[0].eachRow((row) => { if (row.getCell(1).value === 'Anna Rossi') rA0 = row; });
-  check('Excel Ore del mese: giorni, ore e cantieri nella riga di Anna', rA0 && rA0.getCell(2).value === '8 +1' && /Via Balbi 31 9 h/.test(String(rA0.getCell(4 + 4).value)), rA0 && rA0.values);
+  check('Excel Ore del mese: giorni, ore e cantieri nella riga di Anna', rA0 && rA0.getCell(2).value === 'Ordinarie' && rA0.getCell(3).value === 8 && wb.worksheets[0].getRow(rA0.number + 1).getCell(3).value === 1 && (() => { let t = ''; wb.getWorksheet('Riepilogo').eachRow(r => { if (r.getCell(1).value === 'Anna Rossi') t = String(r.values.join('|')); }); return /Via Balbi 31 · 9 h/.test(t); })(), rA0 && rA0.values); // F-479: numeri, straordinario sotto, cantieri nel Riepilogo
   check('Excel: foglio «Correzioni»', !!wb.getWorksheet('Correzioni'));
   const ws = wb.getWorksheet('Riepilogo');
   let head = null, rA = null;

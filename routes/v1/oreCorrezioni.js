@@ -67,8 +67,9 @@ router.post('/ore/correzioni/anteprima', verifySupabaseJwt, async (req, res) => 
   if (error) return sendDbError(res, error);
   const orario = risolviOrario({ company: company || {}, site: own.site, worker: own.worker });
   const lavorativo = lavorativoIl(v.row.giorno);
-  const c = contaCorrezione({ entrata: v.row.entrata, uscita: v.row.uscita, orario, lavorativo });
-  return res.json({ ordinarie: c.ordinarie, straordinario: c.straordinario, ritardo: c.ritardo, uscitoPrima: c.uscitoPrima, festivo: !lavorativo });
+  // F-478: il pannello manda anche i segni del giorno, così l'anteprima dice le ore vere
+  const c = contaCorrezione({ entrata: v.row.entrata, uscita: v.row.uscita, orario, lavorativo, pausaSaltata: req.body.pausa_saltata === true, daEntrata: req.body.da_entrata === true });
+  return res.json({ ordinarie: c.ordinarie, straordinario: c.straordinario, ritardo: c.ritardo, uscitoPrima: c.uscitoPrima, festivo: !lavorativo, inizioAnticipato: c.inizioAnticipato || 0 });
 });
 
 // POST /api/v1/ore/correzioni { worker_id, site_id, giorno, entrata, uscita, nota?, orig_entrata?, orig_uscita? }
@@ -115,4 +116,40 @@ router.delete('/ore/correzioni/:id', verifySupabaseJwt, async (req, res) => {
   return res.json({ ok: true });
 });
 
-module.exports = { router, validaCorrezione };
+// ── F-478: «partito prima su richiesta» (ore_inizio_anticipato, migr. 274) ──
+// Quel giorno si conta dall'entrata vera. Anche per i giorni passati.
+function validaInizioAnticipato(b, oggi = oggiRoma()) {
+  if (!uuid(b?.worker_id)) return { error: 'worker_id obbligatorio' };
+  if (!isDate(b.giorno)) return { error: 'giorno obbligatorio (YYYY-MM-DD)' };
+  if (b.giorno > oggi) return { error: 'Si può segnare solo oggi o un giorno passato' };
+  const nota = typeof b.nota === 'string' && b.nota.trim() ? b.nota.trim().slice(0, 200) : null;
+  return { row: { worker_id: b.worker_id, giorno: b.giorno, nota } };
+}
+
+// POST /api/v1/ore/inizio-anticipato { worker_id, giorno, nota? }
+router.post('/ore/inizio-anticipato', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  const v = validaInizioAnticipato(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const { data: w, error: wErr } = await supabase.from('workers').select('id').eq('id', v.row.worker_id).eq('company_id', req.companyId).maybeSingle();
+  if (wErr) return sendDbError(res, wErr);
+  if (!w) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+  const { data, error } = await supabase.from('ore_inizio_anticipato')
+    .upsert({ ...v.row, company_id: req.companyId, created_by: req.user?.id || null, created_by_email: req.user?.email || null }, { onConflict: 'company_id,worker_id,giorno' })
+    .select('id, worker_id, giorno, nota').single();
+  if (error) return sendDbError(res, error);
+  return res.json(data);
+});
+
+// DELETE /api/v1/ore/inizio-anticipato { worker_id, giorno } — torna a contare dall'inizio dell'orario
+router.delete('/ore/inizio-anticipato', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  const v = validaInizioAnticipato(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const { error } = await supabase.from('ore_inizio_anticipato').delete()
+    .eq('company_id', req.companyId).eq('worker_id', v.row.worker_id).eq('giorno', v.row.giorno);
+  if (error) return sendDbError(res, error);
+  return res.json({ ok: true });
+});
+
+module.exports = { router, validaCorrezione, validaInizioAnticipato };

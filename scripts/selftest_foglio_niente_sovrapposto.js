@@ -129,9 +129,9 @@ const data = {
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(await generateFoglioXlsx(data, 'MSCedilizia S.r.l.'));
   const ws = wb.getWorksheet('Ore del mese');
   let riga = null; ws.eachRow((row) => { if (row.getCell(1).value === 'Daniel Miosi') riga = row; });
-  const giorni = riga ? Array.from({ length: 31 }, (_, i) => riga.getCell(i + 2)) : [];
+  const giorni = riga ? Array.from({ length: 31 }, (_, i) => riga.getCell(i + 3)) : []; // F-479: A lavoratore, B voce, poi i giorni
   check('Excel: caselle dei giorni che rimpiccioliscono invece di debordare', giorni.length === 31 && giorni.every(c => c.alignment?.shrinkToFit === true), giorni[1]?.alignment);
-  check('Excel: colonne dei giorni larghe almeno 6', Array.from({ length: 31 }, (_, i) => ws.getColumn(i + 2).width).every(w => w >= 6), ws.getColumn(2).width);
+  check('Excel: colonne dei giorni larghe almeno 6', Array.from({ length: 31 }, (_, i) => ws.getColumn(i + 3).width).every(w => w >= 6), ws.getColumn(3).width);
 
   console.log(`\n${passed} passati, ${failed} falliti`);
   process.exit(failed ? 1 : 0);

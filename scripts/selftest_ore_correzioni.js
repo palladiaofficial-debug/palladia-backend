@@ -110,13 +110,13 @@ async function main() {
     check('PDF: nome del cantiere accanto al lavoratore', html.includes(`${T}-Balbi`));
     check('PDF: correzioni dell\'ufficio elencate con l\'orario di prima', html.includes('Correzioni dell') && html.includes('08:31 → 08:00'));
     check('PDF: legenda', html.includes('ferie') && html.includes('malattia') && html.includes('corretto'));
-    check('PDF: niente più pagina «Riepilogo del mese» separata', !html.includes('Riepilogo del mese'));
+    check('PDF: il riepilogo del mese è una tabella del foglio (F-479), non una pagina a parte', html.includes('data-sez="riepilogo"') && !/page-break-before|break-before:s*page/.test(html));
 
     const buf = await generateFoglioXlsx(dopo, T);
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf);
     const s1 = wb.worksheets[0];
     check('Excel: primo foglio «Ore del mese»', s1.name === 'Ore del mese', s1.name);
-    const testo = []; s1.eachRow(r => testo.push(r.values.join('|')));
+    const testo = []; wb.getWorksheet('Riepilogo').eachRow(r => testo.push(r.values.join('|'))); // F-479: i cantieri stanno nel Riepilogo
     check('Excel: colonna Cantieri e nome del cantiere', testo.some(t => t.includes('Cantieri')) && testo.some(t => t.includes(`${T}-Balbi`)), testo.slice(0, 8));
   } finally {
     await supabase.from('ore_correzioni').delete().eq('company_id', company.id);
