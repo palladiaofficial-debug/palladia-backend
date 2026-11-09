@@ -198,8 +198,11 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   const sexStr    = parseSexFromCf(worker.fiscal_code);
   const birthPlace = worker.birth_place || null;
 
+  // F-483: la foto va DENTRO il PDF. photo_url è il percorso nell'archivio
+  // privato (F-179): messo così in <img src> dava un'immagine rotta.
+  const photoSrc = await fotoPerPdf(worker.photo_url);
   const html = buildBadgePdfHtml({
-    worker, companyName, employerLabel, hireDateStr, dobStr, sexStr, birthPlace,
+    worker: { ...worker, photo_url: photoSrc }, companyName, employerLabel, hireDateStr, dobStr, sexStr, birthPlace,
     qrTimbrataUrl, qrVerifyDataUrl,
   });
 
@@ -220,6 +223,30 @@ router.get('/workers/:workerId/badge-pdf', verifySupabaseJwt, async (req, res) =
   res.setHeader('Content-Length', pdfBuffer.length);
   res.end(pdfBuffer);
 });
+
+// ── F-483: foto del lavoratore per il PDF del badge ──────────────────────────
+// Il percorso nell'archivio privato worker-photos diventa un'immagine dentro il
+// PDF (data:…;base64): niente link che scadono, niente rete nel renderer.
+// Un indirizzo web già pieno resta com'è. Se la foto non si trova: null → nel
+// badge il segnaposto della persona, mai l'icona dell'immagine rotta.
+const { BUCKET: FOTO_BUCKET } = require('../../lib/workerPhotoUrl');
+async function fotoPerPdf(photoUrl) {
+  if (!photoUrl || typeof photoUrl !== 'string') return null;
+  if (/^https?:\/\//i.test(photoUrl) || photoUrl.startsWith('data:image/')) return photoUrl;
+  try {
+    const { data, error } = await supabase.storage.from(FOTO_BUCKET).download(photoUrl);
+    if (error || !data) { console.error('[badge-pdf] foto non trovata:', photoUrl, error?.message || ''); return null; }
+    const buf = Buffer.from(await data.arrayBuffer());
+    if (!buf.length) return null;
+    const ext = (photoUrl.split('.').pop() || '').toLowerCase();
+    const tipo = /^image\//.test(data.type || '') ? data.type
+      : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    return `data:${tipo};base64,${buf.toString('base64')}`;
+  } catch (e) {
+    console.error('[badge-pdf] foto:', e.message);
+    return null;
+  }
+}
 
 // ── HTML builder per badge PDF ────────────────────────────────────────────────
 // Formato ISO ID-1: 85.6mm × 54mm (identico a patente / codice fiscale)
@@ -612,3 +639,4 @@ function esc(str) {
 }
 
 module.exports = router;
+module.exports.fotoPerPdf = fotoPerPdf; // F-483: per il selftest

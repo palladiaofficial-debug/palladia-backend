@@ -173,6 +173,7 @@ scripts/selftest_foglio_impaginato.js
 scripts/selftest_foglio_niente_sovrapposto.js
 scripts/selftest_f478_giorno_misto.js
 scripts/selftest_f481_motivi_mese_lungo.js
+scripts/selftest_f482_titolari_badge_foto.js
 scripts/selftest_ore_domande.js
 scripts/selftest_scan_exit_reason.js
 scripts/selftest_area_assenze.js
