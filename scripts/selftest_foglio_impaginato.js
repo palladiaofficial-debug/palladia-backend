@@ -60,17 +60,19 @@ const data = {
     check('piè di pagina del foglio presenze, non del POS', /presenze/i.test(o.footerLeft || '') && !/81\/2008/.test(o.footerLeft || ''), o);
   }
 
-  // 3. F-435: una tabella sola, i cantieri a destra nella riga del lavoratore
+  // 3. F-435 → F-476: una tabella del mese (lavoratore, giorni, ore, straordinario);
+  // i cantieri in una tabella loro sotto («Ore per cantiere»): nella riga del mese
+  // toglievano ai giorni lo spazio e i numeri si toccavano.
   const riep = (html.match(/<table class="mese"[\s\S]*?<\/table>/) || [''])[0];
-  check('una tabella sola del mese', !!riep && (html.match(/<table/g) || []).length === 1, (html.match(/<table/g) || []).length);
+  check('una sola tabella del mese', !!riep && (html.match(/<table class="mese"/g) || []).length === 1);
   check('niente più pagina «Riepilogo del mese» separata', !html.includes('Riepilogo del mese'));
   const rigaA = (riep.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*Anna Rossi[\s\S]*?<\/tr>/) || [''])[0];
-  check('riga di Anna: Via Balbi 31 con 9 h e Corso Sardegna 88 con 8 h', /Via Balbi 31[\s\S]*?9/.test(rigaA) && /Corso Sardegna 88[\s\S]*?8/.test(rigaA), rigaA);
-  check('i cantieri sono l\'ultima colonna della riga', /class="cant"[\s\S]*<\/td>\s*<\/tr>$/.test(rigaA.trim()), rigaA.slice(-200));
-  const rigaB = (riep.match(/<tr[^>]*>(?:(?!<\/tr>)[\s\S])*Bruno Bianchi[\s\S]*?<\/tr>/) || [''])[0];
-  check('riga di Bruno: solo Via Balbi 31', rigaB.includes('Via Balbi 31') && !rigaB.includes('Corso Sardegna'), rigaB);
+  check('nella riga del mese niente cantieri (stanno sotto)', !!rigaA && !rigaA.includes('Via Balbi'), rigaA.slice(-300));
+  const cant = (html.match(/<table class="lista" data-sez="cantieri"[\s\S]*?<\/table>/) || [''])[0];
+  check('«Ore per cantiere»: Anna con Via Balbi 31 9 h e Corso Sardegna 88 8 h', html.includes('Ore per cantiere') && /Anna Rossi<\/td><td>Via Balbi 31<\/td><td class="r">9</.test(cant) && /<td>Corso Sardegna 88<\/td><td class="r">8</.test(cant), cant.slice(0, 600));
+  check('«Ore per cantiere»: Bruno solo Via Balbi 31', /Bruno Bianchi<\/td><td>Via Balbi 31<\/td>/.test(cant) && (cant.match(/Corso Sardegna/g) || []).length === 1, cant);
   check('i giorni sono nella stessa riga del lavoratore', (rigaA.match(/class="d/g) || []).length === 4, (rigaA.match(/class="d/g) || []).length);
-  check('Anna, 2 ottobre: casella corretta (blu)', /class="d cor">8<\/td>/.test(rigaA), rigaA.slice(0, 600));
+  check('Anna, 2 ottobre: casella corretta (blu)', /class="d cor"><b>8<\/b><\/td>/.test(rigaA), rigaA.slice(0, 600));
   check('correzioni dell\'ufficio con l\'orario di prima e il perché', html.includes("Correzioni dell'ufficio") && html.includes('entrata 08:47 → 08:00') && html.includes('badge scarico'));
   check('legenda nella stessa pagina', /class="key"[\s\S]*ferie[\s\S]*corretto dall'ufficio/.test(html));
   check('spazio per la firma', html.includes('Firma del datore di lavoro'));

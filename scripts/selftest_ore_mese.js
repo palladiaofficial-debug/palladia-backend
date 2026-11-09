@@ -100,8 +100,8 @@ async function main() {
     check('giorni lavorativi di gennaio 2026: 20 (Capodanno ed Epifania esclusi)', r.giorniLavorativi === 20, r.giorniLavorativi);
 
     const html = generateFoglioHtml(r, T);
-    check('foglio PDF: lavoratori con codice fiscale, protocollo malattia, giorni senza timbrature da verificare', html.includes(wA.full_name) && html.includes(wA.fiscal_code) && html.includes('PROT-F265') && html.includes('giorni senza timbrature né assenza'));
-    check('F-335 foglio PDF: regole di conteggio in testa e legenda delle causali', html.includes('Orario 08:00–17:00, pausa 12:00–13:00') && html.includes('class="key"') && html.includes('>Cantieri</th>')); // F-435: legenda sotto la tabella, cantieri come colonna
+    check('foglio PDF: lavoratori con codice fiscale, protocollo malattia, giorni senza timbrature da verificare', html.includes(wA.full_name) && html.includes(wA.fiscal_code) && html.includes('PROT-F265') && /giorni senza timbrature né assenza/i.test(html));
+    check('F-335 foglio PDF: regole di conteggio in testa e legenda delle causali', html.includes('Orario 08:00–17:00, pausa 12:00–13:00') && html.includes('class="key"') && html.includes('Ore per cantiere')); // F-476: legenda sotto la tabella, cantieri in una tabella loro
     const xbuf = await generateFoglioXlsx(r, T);
     const ExcelJS = require('exceljs');
     const wb = new ExcelJS.Workbook(); await wb.xlsx.load(xbuf);

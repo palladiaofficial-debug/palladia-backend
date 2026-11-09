@@ -106,7 +106,7 @@ async function main() {
 
     const html = generateFoglioHtml(dopo, T);
     check('PDF: una tabella sola del mese', (html.match(/<table class="mese"/g) || []).length === 1, (html.match(/<table class="mese"/g) || []).length);
-    check('PDF: colonna Cantieri nella tabella', /<table class="mese"[\s\S]*?Cantieri[\s\S]*?<\/thead>/.test(html));
+    check('PDF: ore per cantiere sotto la tabella (F-476)', html.includes('Ore per cantiere') && html.includes('data-sez="cantieri"'));
     check('PDF: nome del cantiere accanto al lavoratore', html.includes(`${T}-Balbi`));
     check('PDF: correzioni dell\'ufficio elencate con l\'orario di prima', html.includes('Correzioni dell') && html.includes('08:31 → 08:00'));
     check('PDF: legenda', html.includes('ferie') && html.includes('malattia') && html.includes('corretto'));
