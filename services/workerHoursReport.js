@@ -174,7 +174,8 @@ async function buildWorkerHoursReport(siteId, companyId, from, to, workerId = nu
   // SEPARATO da annotation sopra: quello alimenta il pairing (glitch
   // tecnici), questo è solo testo mostrato in colonna Anomalie/Note, mai
   // letto da pairLogsByDay/applyLunchBreak/applyLateEntryDeduction.
-  const reasonByLogId = await latestReasonsByLogId(companyId, (logs || []).map(l => l.id));
+  // F-481: strict — senza motivi le ore di pioggia/permesso sparirebbero dal foglio paga
+  const reasonByLogId = await latestReasonsByLogId(companyId, (logs || []).map(l => l.id), { strict: true });
 
   // Group by worker SOLTANTO — stream cronologico completo, cross-cantiere.
   // F-222 (AUDIT.md): raggruppare prima per (worker, cantiere) presumeva che
