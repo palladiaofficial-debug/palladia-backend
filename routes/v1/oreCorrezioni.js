@@ -152,4 +152,52 @@ router.delete('/ore/inizio-anticipato', verifySupabaseJwt, async (req, res) => {
   return res.json({ ok: true });
 });
 
-module.exports = { router, validaCorrezione, validaInizioAnticipato };
+// ── F-480: «partito prima» per tutto il mese, con un tocco ──────────────────
+// Per chi parte prima quasi sempre (trasportatori): una riga per ogni giorno
+// lavorativo del mese fino a oggi. Dove è entrato all'orario o dopo non cambia
+// niente (contaGiorno sposta l'orario solo se l'entrata è prima dell'inizio).
+// Toglierlo cancella le righe di quel mese: si torna a contare dalle 8.
+async function segnaInizioAnticipatoMese({ companyId, workerId, month, on, oggi = oggiRoma(), user = null }) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month || '')) { const e = new Error('month deve essere YYYY-MM'); e.status = 400; throw e; }
+  const [y, m] = month.split('-').map(Number);
+  const nDays = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const from = `${month}-01`, to = `${month}-${String(nDays).padStart(2, '0')}`;
+  if (!on) {
+    const { error } = await supabase.from('ore_inizio_anticipato').delete()
+      .eq('company_id', companyId).eq('worker_id', workerId).gte('giorno', from).lte('giorno', to);
+    if (error) { const e = new Error(error.message); e.status = 500; throw e; }
+    return { ok: true, giorni: 0 };
+  }
+  const giorni = [];
+  for (let d = 1; d <= nDays; d++) {
+    const g = `${month}-${String(d).padStart(2, '0')}`;
+    if (g <= oggi && lavorativoIl(g)) giorni.push(g);
+  }
+  if (giorni.length) {
+    const rows = giorni.map(g => ({ company_id: companyId, worker_id: workerId, giorno: g, nota: 'tutto il mese', created_by: user?.id || null, created_by_email: user?.email || null }));
+    const { error } = await supabase.from('ore_inizio_anticipato').upsert(rows, { onConflict: 'company_id,worker_id,giorno', ignoreDuplicates: true });
+    if (error) { const e = new Error(error.message); e.status = 500; throw e; }
+  }
+  return { ok: true, giorni: giorni.length };
+}
+
+// POST/DELETE /api/v1/ore/inizio-anticipato/mese { worker_id, month }
+for (const method of ['post', 'delete']) {
+  router[method]('/ore/inizio-anticipato/mese', verifySupabaseJwt, async (req, res) => {
+    if (!ownerAdmin(req, res)) return;
+    const { worker_id: workerId, month } = req.body || {};
+    if (!uuid(workerId)) return res.status(400).json({ error: 'worker_id obbligatorio' });
+    const { data: w, error: wErr } = await supabase.from('workers').select('id').eq('id', workerId).eq('company_id', req.companyId).maybeSingle();
+    if (wErr) return sendDbError(res, wErr);
+    if (!w) return res.status(404).json({ error: 'WORKER_NOT_FOUND' });
+    try {
+      return res.json(await segnaInizioAnticipatoMese({ companyId: req.companyId, workerId, month, on: method === 'post', user: req.user }));
+    } catch (e) {
+      if (e.status === 400) return res.status(400).json({ error: e.message });
+      console.error('[ore/inizio-anticipato/mese]', e.message);
+      return res.status(500).json({ error: 'DATA_ERROR' });
+    }
+  });
+}
+
+module.exports = { router, validaCorrezione, validaInizioAnticipato, segnaInizioAnticipatoMese };

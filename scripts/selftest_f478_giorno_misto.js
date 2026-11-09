@@ -113,6 +113,35 @@ async function main() {
     let fRiep = null;
     s1.eachRow((row) => { if (String(row.getCell(1).value || '').includes(`${T} Carlo`)) row.eachCell((cell) => { if (!fRiep && cell.value && cell.value.formula && /Ore del mese/.test(cell.value.formula)) fRiep = cell.value.formula; }); });
     check('Excel: il Riepilogo prende i numeri dal foglio «Ore del mese» con formule', !!fRiep, fRiep);
+    // F-480: in CONTA.SE «?» è un jolly (= qualsiasi lettera): contava anche M e S come «da giustificare»
+    const formule = []; s1.eachRow((row) => row.eachCell((cell) => { if (cell.value && cell.value.formula) formule.push(cell.value.formula); }));
+    check('Excel: «da giustificare» conta il punto di domanda vero ("~?"), non ogni lettera', formule.some(f => f.includes('"~?"')) && !formule.some(f => /COUNTIF\([^)]*,"\?"\)/.test(f)), formule.filter(f => /COUNTIF/.test(f)).slice(-3));
+    const intest = []; s1.getRow(5).eachCell((c) => intest.push(String(c.value)));
+    check('Excel: intestazioni corte, che non si spezzano a metà parola', intest.every(t => t.split(/\s+/).every(p => p.length <= 13)), intest);
+    check('Excel: gli zeri non si stampano come «0,00»', s1.getColumn(4).numFmt && /;.*;/.test(s1.getColumn(4).numFmt), s1.getColumn(4).numFmt);
+
+    console.log('\n\x1b[1mF-480 — «partito prima» per tutto il mese, con un tocco\x1b[0m');
+    let seg = null;
+    try { ({ segnaInizioAnticipatoMese: seg } = require('../routes/v1/oreCorrezioni')); } catch { seg = null; }
+    check('esiste segnaInizioAnticipatoMese', typeof seg === 'function');
+    if (typeof seg === 'function') {
+      // lun 9 entra alle 07:00 → con il segno del mese conta dall'entrata
+      await log('ENTRY', '2026-02-09T07:00:00+01:00'); await log('EXIT', '2026-02-09T16:00:00+01:00');
+      const r1 = await seg({ companyId: company.id, workerId: w.id, month: '2026-02', on: true, oggi: '2026-03-01' });
+      const { count } = await supabase.from('ore_inizio_anticipato').select('id', { count: 'exact', head: true }).eq('worker_id', w.id);
+      check('mese segnato: una riga per ogni giorno lavorativo passato di febbraio (20)', count === 20 && r1.giorni === 20, { count, r1 });
+      const m2 = await buildOreMese(company.id, '2026-02', { today: '2026-03-01' });
+      const c9 = m2.lavoratori.find(l => l.id === w.id).cells.find(x => x.date === '2026-02-09');
+      check('lun 9 (07:00–16:00) conta 8 h grazie al segno del mese', c9.ore === 480 && c9.daEntrata && c9.inizioAnticipato === 60, c9);
+      const c5 = m2.lavoratori.find(l => l.id === w.id).cells.find(x => x.date === '2026-02-05');
+      check('gio 5 (entrato alle 08:00) non cambia', c5.ore === 360 && !c5.inizioAnticipato, c5);
+      const r2 = await seg({ companyId: company.id, workerId: w.id, month: '2026-02', on: false, oggi: '2026-03-01' });
+      const { count: dopo } = await supabase.from('ore_inizio_anticipato').select('id', { count: 'exact', head: true }).eq('worker_id', w.id);
+      check('tolto dal mese: nessuna riga rimasta', dopo === 0 && r2.ok, { dopo, r2 });
+      const futuro = await seg({ companyId: company.id, workerId: w.id, month: '2026-02', on: true, oggi: '2026-02-10' });
+      check('mese in corso: solo fino a oggi (7 giorni lavorativi fino al 10/2)', futuro.giorni === 7, futuro);
+      await seg({ companyId: company.id, workerId: w.id, month: '2026-02', on: false, oggi: '2026-03-01' });
+    }
   } finally {
     await supabase.from('companies').delete().eq('id', company.id);
   }
