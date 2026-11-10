@@ -49,7 +49,7 @@ async function main() {
 
     // Il mese: la pioggia conta, non è «uscito prima»
     const { buildOreMese } = require('../lib/oreMese');
-    const mese = await buildOreMese(company.id, '2026-02', { today: '2026-03-01' });
+    const mese = await buildOreMese(company.id, '2026-02', { today: '2026-03-01', esatto: true });
     const c = mese.lavoratori.find(l => l.id === w.id).cells.find(x => x.date === '2026-02-03');
     check('mese: 3/2 conta 2 h 34 (08:00–10:34) + pioggia 5 h 26, non «uscito prima»', c.ore === 154 && c.maltempoMin === 326 && c.uscitoPrima === 0 && c.uscitoPer === 'pioggia', c);
   } finally {

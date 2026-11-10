@@ -72,7 +72,7 @@ async function main() {
     await pioggia('2026-02-03', '08:00', '09:50'); // mar: entro le 10
     await pioggia('2026-02-04', '08:00', '10:34'); // mer: nessuna decisione
 
-    const cellaDi = async (d) => (await buildOreMese(company.id, '2026-02', { today: '2026-03-01' })).lavoratori.find(l => l.id === w.id).cells.find(x => x.date === `2026-02-${d}`);
+    const cellaDi = async (d) => (await buildOreMese(company.id, '2026-02', { today: '2026-03-01', esatto: true })).lavoratori.find(l => l.id === w.id).cells.find(x => x.date === `2026-02-${d}`);
     let c2 = await cellaDi('02'), c3 = await cellaDi('03');
     check('senza decisioni: lun 10:34 → 2 h 34 + pioggia (regola)', c2.tipo === 'lavoro' && c2.ore === 154 && c2.maltempoMin === 326, c2);
     check('senza decisioni: mar 09:50 → tutto il giorno pioggia (regola)', c3.tipo === 'maltempo' && c3.maltempoMin === 480, c3);

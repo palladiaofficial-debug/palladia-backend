@@ -101,7 +101,36 @@ const prima = JSON.stringify(data);
   const attesi = d2.lavoratori[1].cells.filter(c => c.tipo === 'lavoro').length - 1;
   check('giorno di 4 minuti → 0 ore e non conta tra i giorni lavorati', gl === attesi, { gl, attesi });
 
-  check('i dati del mese (tabella in Palladia) restano esatti, non modificati', JSON.stringify(data) === prima);
+  check('il foglio non modifica i dati che riceve (lavora su una copia)', JSON.stringify(data) === prima);
+
+  // ── Riaperto (10/11 sera): anche la TABELLA in Palladia (GET /ore/mese = buildOreMese) a mezz'ora ──
+  console.log('\n\x1b[1mF-484 riaperto — la tabella ore in Palladia a mezz\'ora (DB)\x1b[0m');
+  const { arrotondaCella } = require('../lib/oreMezzora');
+  const cm = arrotondaCella({ tipo: 'lavoro', ore: 154, straord: 0, maltempoMin: 0, permessoMin: 0, malattiaMin: 0, infortunioMin: 0, mancantiMin: 326, perCantiere: { s1: 154 } });
+  check('pannello: 2 h 34 lavorate + mancano 5 h 26 → 2,5 + 5,5 (somma ancora 8 h)', cm.ore === 150 && cm.mancantiMin === 330, cm);
+  require('dotenv').config();
+  const supabase = require('../lib/supabase');
+  const { buildOreMese } = require('../lib/oreMese');
+  const T = `TEST-F484-${Date.now()}`, stamp = String(Date.now()).slice(-8);
+  const ins = async (table, row) => { const { data: d, error } = await supabase.from(table).insert(row).select().single(); if (error) throw new Error(`${table}: ${error.message}`); return d; };
+  const company = await ins('companies', { name: T });
+  try {
+    const site = await ins('sites', { company_id: company.id, name: `${T}-cantiere`, address: 'Via Test 484', status: 'attivo' });
+    const w = await ins('workers', { company_id: company.id, full_name: `${T} Elvis`, is_active: true, fiscal_code: `F484AAAA${stamp}`, badge_code: `F484A${stamp}` });
+    const log = (type, ts) => ins('presence_logs', { company_id: company.id, site_id: site.id, worker_id: w.id, event_type: type, timestamp_server: ts, method: 'scan' });
+    await log('ENTRY', '2026-02-02T08:00:00+01:00'); await log('EXIT', '2026-02-02T10:34:00+01:00'); // come il 20/10
+    await log('ENTRY', '2026-02-03T08:00:00+01:00'); await log('EXIT', '2026-02-03T16:54:00+01:00'); // 7 h 54 → 8
+    const mese = await buildOreMese(company.id, '2026-02', { today: '2026-03-01' });
+    const L = mese.lavoratori.find(l => l.id === w.id);
+    const c2 = L.cells.find(x => x.date === '2026-02-02'), c3 = L.cells.find(x => x.date === '2026-02-03');
+    check('tabella: 08:00–10:34 → 2,5 h (non 2 h 34)', c2.ore === 150, c2.ore);
+    check('tabella: 08:00–16:54 → 8 h (non 7,9)', c3.ore === 480, c3.ore);
+    check('tabella: riepilogo del mese a mezz\'ora (2,5 + 8 = 10,5)', L.tot.ordinarieMin === 630, L.tot.ordinarieMin);
+    const esatto = await buildOreMese(company.id, '2026-02', { today: '2026-03-01', esatto: true });
+    check('conteggio esatto ancora disponibile per i controlli interni ({ esatto: true })', esatto.lavoratori.find(l => l.id === w.id).cells.find(x => x.date === '2026-02-02').ore === 154);
+  } finally {
+    await supabase.from('companies').delete().eq('id', company.id);
+  }
 
   console.log(`\n${passed} passati, ${failed} falliti.\n`);
   process.exit(failed ? 1 : 0);
