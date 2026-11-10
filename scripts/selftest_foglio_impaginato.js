@@ -74,7 +74,7 @@ const data = {
   check('i giorni sono nella stessa riga del lavoratore', (rigaA.match(/class="d/g) || []).length === 4, (rigaA.match(/class="d/g) || []).length);
   check('Anna, 2 ottobre: casella corretta (blu)', /class="d cor"><b>8<\/b><\/td>/.test(rigaA), rigaA.slice(0, 600));
   check('correzioni dell\'ufficio con l\'orario di prima e il perché', html.includes("Correzioni dell'ufficio") && html.includes('entrata 08:47 → 08:00') && html.includes('badge scarico'));
-  check('legenda nella stessa pagina', /class="key"[\s\S]*ferie[\s\S]*corretto dall'ufficio/.test(html));
+  check('legenda nella stessa pagina', /class="key"[\s\S]*corretto dall'ufficio[\s\S]*ferie/.test(html));
   check('spazio per la firma', html.includes('Firma del datore di lavoro'));
   check('niente «D.Lgs 81/2008» nel foglio', !html.includes('81/2008'));
   const font = html.indexOf('font-family: "Inter PDF"; font-weight: 400; src: url(data:font/ttf;base64,');

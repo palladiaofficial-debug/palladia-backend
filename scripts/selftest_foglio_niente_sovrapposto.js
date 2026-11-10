@@ -10,7 +10,7 @@
  *    stessa grandezza;
  *  - le righe dei lavoratori sono tutte alte uguali;
  *  - il totale non tocca la riga verticale;
- *  - la legenda sta su una riga sola;
+ *  - la legenda: due righe (numeri e lettere), ognuna su una riga sola (F-484);
  *  - la giornata di oggi, ancora aperta, non è rosa;
  *  - «Da verificare»: una riga per ogni cosa, non un muro di testo.
  * Excel «Ore del mese»: le caselle dei giorni non debordano (rimpiccioliscono).
@@ -108,7 +108,8 @@ const data = {
         const righe = [...document.querySelectorAll('table.mese tbody tr:not(.tot)')].map(tr => Math.round(r(tr).height * 10) / 10);
         const tot = document.querySelector('table.mese tr.tot td.s.first');
         const totTxt = tot ? (() => { const rg = document.createRange(); rg.selectNodeContents(tot); return rg.getBoundingClientRect().left - r(tot).left; })() : -1;
-        const legenda = [...new Set([...document.querySelectorAll('.key > span')].map(s => Math.round(r(s).top)))];
+        // F-484: legenda in due righe (numeri, lettere): ognuna sta su una riga sola
+        const legenda = [...document.querySelectorAll('.key .kr')].map(k => new Set([...k.querySelectorAll('span')].map(s => Math.round(r(s).top))).size);
         const giornoAperto = document.querySelectorAll('table.mese tbody tr')[0].querySelectorAll('td.d')[29];
         const verifica = [...document.querySelectorAll('[data-sez="verifica"] li, [data-sez="verifica"] tr')].length;
         return { n: tds.length, fuori, grandezze: [...grandezze], righe, totTxt, legenda, apertoRosa: giornoAperto ? getComputedStyle(giornoAperto).backgroundColor : null, verifica };
@@ -118,7 +119,7 @@ const data = {
       check('i numeri dei giorni hanno tutti la stessa grandezza', m.grandezze.length === 1, m.grandezze);
       check('le righe dei lavoratori sono alte uguali', new Set(m.righe).size === 1, m.righe);
       check('il totale non tocca la riga verticale (almeno 3 px)', m.totTxt >= 3, m.totTxt);
-      check('la legenda sta su una riga sola', m.legenda.length === 1, m.legenda);
+      check('la legenda: due righe (numeri, lettere), ognuna su una riga sola', m.legenda.length === 2 && m.legenda.every(n => n === 1), m.legenda);
       check('la giornata di oggi, ancora aperta, non è rosa', m.apertoRosa && !/251, 227, 224/.test(m.apertoRosa), m.apertoRosa);
       check('«Da verificare»: una riga per ogni cosa (ritardi di Canameti, giorni di Di Leonardo Carlo…)', m.verifica >= 2, m.verifica);
     } finally { await browser.close(); }
