@@ -200,4 +200,28 @@ for (const method of ['post', 'delete']) {
   });
 }
 
-module.exports = { router, validaCorrezione, validaInizioAnticipato, segnaInizioAnticipatoMese };
+// ── F-486: «pioggia tutto il giorno» deciso dall'ufficio (ore_pioggia_giorno, migr. 276) ──
+// intero: true = giornata di pioggia, false = ore lavorate + pioggia, null = torna la regola automatica
+function validaPioggiaGiorno(b, oggi = oggiRoma()) {
+  if (!uuid(b?.worker_id)) return { error: 'worker_id obbligatorio' };
+  if (!isDate(b.giorno)) return { error: 'giorno obbligatorio (YYYY-MM-DD)' };
+  if (b.giorno > oggi) return { error: 'Si può segnare solo oggi o un giorno passato' };
+  if (![true, false, null].includes(b.intero)) return { error: 'intero deve essere true, false o null' };
+  return { row: { worker_id: b.worker_id, giorno: b.giorno, intero: b.intero } };
+}
+
+// PUT /api/v1/ore/pioggia-giorno { worker_id, giorno, intero: true | false | null }
+router.put('/ore/pioggia-giorno', verifySupabaseJwt, async (req, res) => {
+  if (!ownerAdmin(req, res)) return;
+  const v = validaPioggiaGiorno(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const { segnaPioggiaGiorno } = require('../../lib/orePioggiaGiorno');
+  const r = await segnaPioggiaGiorno({ companyId: req.companyId, workerId: v.row.worker_id, giorno: v.row.giorno, intero: v.row.intero, user: req.user });
+  if (!r.ok) {
+    if (r.status >= 500) console.error('[ore/pioggia-giorno]', r.error);
+    return res.status(r.status).json({ error: r.status >= 500 ? 'Non sono riuscito a salvare. Riprova.' : r.error });
+  }
+  return res.json({ ok: true });
+});
+
+module.exports = { router, validaCorrezione, validaInizioAnticipato, segnaInizioAnticipatoMese, validaPioggiaGiorno };
