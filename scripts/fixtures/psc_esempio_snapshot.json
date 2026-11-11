@@ -1,0 +1,1524 @@
+{
+ "project": {
+  "id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+  "company_id": "00000000-0000-0000-0000-00000000c0de",
+  "created_by": "00000000-0000-0000-0000-0000000000a1",
+  "title": "Esempio · Ristrutturazione Scuola Media G. Mazzini",
+  "status": "bozza",
+  "revision": 0,
+  "source": "indirizzo",
+  "copied_from": null,
+  "address": "Via XX Settembre 20",
+  "comune": "Genova",
+  "provincia": "GE",
+  "lat": 44.4054085,
+  "lon": 8.9397173,
+  "descrizione": "Ristrutturazione interna del secondo piano, rifacimento della copertura in coppi, nuovo impianto elettrico, sostituzione dei serramenti e tinteggiature.",
+  "tipo_opera": "Edilizia scolastica, manutenzione straordinaria",
+  "start_date": "2026-10-12",
+  "end_date": "2026-12-23",
+  "importo_lavori": 136000,
+  "soggetti": {
+   "cse": {
+    "pec": "",
+    "nome": "Arch. Giulia Ferrando",
+    "email": "studio@esempio.it",
+    "studio": "Studio Ferrando",
+    "telefono": "",
+    "qualifica": ""
+   },
+   "csp": {
+    "nome": "Arch. Giulia Ferrando",
+    "qualifica": ""
+   },
+   "committente": {
+    "nome": "Comune di Genova (esempio)"
+   },
+   "responsabile_lavori": {
+    "nome": "Arch. Paolo Verdi (esempio)",
+    "qualifica": "RUP"
+   }
+  },
+  "contesto": {
+   "fonte": "esempio",
+   "domande": {
+    "edificio_in_uso": true
+   },
+   "ordigni": {
+    "esito": "nessuno_scavo",
+    "testo": "Non sono previsti scavi né perforazioni nel terreno: il rischio di rinvenimento di ordigni bellici inesplosi non è applicabile a questo cantiere."
+   },
+   "trovati": [
+    {
+     "key": "strada",
+     "fonte": "OpenStreetMap",
+     "attivo": true,
+     "misure": "Segnalazione dell'accesso carrabile e manovre dei mezzi assistite da un operatore a terra.",
+     "titolo": "Strada pubblica adiacente",
+     "dettaglio": "Corso Andrea Podestà, a 32 m",
+     "distanza_m": 32
+    },
+    {
+     "key": "scuola",
+     "fonte": "OpenStreetMap",
+     "attivo": true,
+     "misure": "Nessuna manovra di mezzi pesanti negli orari di ingresso e uscita degli alunni; recinzione continua e non scalabile; lavorazioni rumorose concordate con l'istituto.",
+     "titolo": "Scuola o asilo nelle vicinanze",
+     "dettaglio": "Scuola dell'infanzia a 49 m",
+     "distanza_m": 49
+    },
+    {
+     "key": "fermata_bus",
+     "fonte": "OpenStreetMap",
+     "attivo": true,
+     "misure": "Recinzione con percorso pedonale protetto lungo il fronte del cantiere; nessun deposito di materiali sul marciapiede; teli di protezione sul ponteggio verso il lato pedonale.",
+     "titolo": "Fermata dei mezzi pubblici vicina all'accesso",
+     "dettaglio": "a 77 m",
+     "distanza_m": 77
+    }
+   ],
+   "analizzato": true,
+   "da_sopralluogo": [
+    {
+     "key": "linee_aeree",
+     "titolo": "Linee elettriche aeree",
+     "domanda": "Linee elettriche aeree sopra o vicino all'area?",
+     "verificato": false
+    },
+    {
+     "key": "sottoservizi",
+     "titolo": "Sottoservizi (gas, acqua, elettricità, fognature)",
+     "domanda": "Sottoservizi sotto l'area degli scavi?",
+     "verificato": false
+    },
+    {
+     "key": "edifici_confinanti",
+     "titolo": "Edifici abitati confinanti",
+     "domanda": "Stato degli edifici confinanti?",
+     "verificato": false
+    }
+   ]
+  },
+  "organizzazione": {
+   "rls": {
+    "fonte": "palladia",
+    "testo": "Prima dell'accettazione del PSC e delle sue modifiche significative ogni datore di lavoro consulta il proprio rappresentante dei lavoratori per la sicurezza e gli fornisce i chiarimenti richiesti (art. 102).",
+    "attivo": true,
+    "approvata": true
+   },
+   "terra": {
+    "fonte": "palladia",
+    "testo": "L'impianto di terra è realizzato prima dell'uso delle macchine elettriche e denunciato entro 30 giorni (D.P.R. 462/2001). La necessità di protezione dalle scariche atmosferiche per gru e ponteggi è valutata con calcolo secondo CEI EN 62305.",
+    "attivo": true,
+    "approvata": true
+   },
+   "rifiuti": {
+    "fonte": "palladia",
+    "testo": "I rifiuti sono separati per tipologia in cassoni o big bag identificati, nell'area indicata nel layout, e allontanati con regolarità secondo la normativa vigente.",
+    "attivo": true,
+    "approvata": true
+   },
+   "servizi": {
+    "fonte": "palladia",
+    "testo": "Sono previsti spogliatoio riscaldato con armadietti, servizio igienico (bagno chimico o allacciato) con lavabo e acqua potabile, in numero adeguato agli addetti presenti contemporaneamente (Allegato XIII). La pulizia è a carico dell'impresa affidataria.",
+    "attivo": true,
+    "approvata": true
+   },
+   "impianti": {
+    "fonte": "palladia",
+    "testo": "L'impianto elettrico di cantiere è realizzato da impresa abilitata con quadri ASC conformi alla CEI EN 61439-4, protetto da interruttori differenziali; l'installatore rilascia la dichiarazione di conformità prima dell'uso. Cavi a terra protetti dal passaggio dei mezzi o posati in aereo.",
+    "attivo": true,
+    "approvata": true
+   },
+   "viabilita": {
+    "fonte": "palladia",
+    "testo": "I percorsi dei mezzi sono separati da quelli pedonali, mantenuti in piano e sgombri. Velocità dei mezzi a passo d'uomo; le manovre in retromarcia avvengono con l'assistenza di un operatore a terra.",
+    "attivo": true,
+    "approvata": true
+   },
+   "recinzione": {
+    "fonte": "palladia",
+    "testo": "L'area di cantiere è delimitata per tutto il perimetro da recinzione alta almeno 2 m, in pannelli metallici su basi stabili, chiusa fuori dall'orario di lavoro. Gli accessi carrabile e pedonale sono separati e segnalati; all'ingresso sono esposti il cartello di cantiere e la segnaletica di sicurezza (divieto di accesso ai non addetti, obbligo di casco e calzature di sicurezza).",
+    "attivo": true,
+    "approvata": true
+   },
+   "stoccaggio": {
+    "fonte": "palladia",
+    "testo": "I materiali sono stoccati in modo stabile, in altezza limitata, lontano dai bordi e dai percorsi. Le attrezzature non in uso sono riposte nel deposito.",
+    "attivo": true,
+    "approvata": true
+   },
+   "dislocazione": {
+    "fonte": "palladia",
+    "testo": "Baracche, quadri elettrici e depositi sono collocati come indicato nel layout di cantiere, fuori dal raggio di caduta dei carichi e lontano dai bordi degli scavi.",
+    "attivo": true,
+    "approvata": true
+   },
+   "infiammabili": {
+    "fonte": "palladia",
+    "testo": "Bombole, carburanti e prodotti infiammabili sono depositati in quantità minima, in area ventilata e segnalata, lontano da fonti di calore, con estintore nelle vicinanze. Le bombole sono fissate in posizione verticale.",
+    "attivo": true,
+    "approvata": true
+   },
+   "carico_scarico": {
+    "fonte": "palladia",
+    "testo": "Le operazioni di carico e scarico avvengono nell'area dedicata, delimitata durante la manovra; nessuno sosta sotto i carichi sospesi. Le consegne si concordano con l'impresa affidataria.",
+    "attivo": true,
+    "approvata": true
+   },
+   "coordinamento_imprese": {
+    "fonte": "palladia",
+    "testo": "L'impresa affidataria verifica le condizioni di sicurezza dei lavori affidati e coordina le imprese esecutrici (art. 97). Nessuna impresa o lavoratore autonomo entra in cantiere prima di aver ricevuto il PSC e di aver consegnato il proprio POS.",
+    "attivo": true,
+    "approvata": true
+   }
+  },
+  "uso_comune": [
+   {
+    "key": "ponteggio",
+    "fonte": "palladia",
+    "testo": "Montato, modificato e smontato solo dall'impresa che lo installa, secondo il PiMUS. Le altre imprese lo usano senza modificarlo; ogni modifica si chiede all'impresa installatrice. Il preposto dell'impresa installatrice lo verifica dopo eventi meteo e lunghe interruzioni.",
+    "titolo": "Ponteggio",
+    "approvata": true
+   },
+   {
+    "key": "impianto_elettrico",
+    "fonte": "palladia",
+    "testo": "Installato e mantenuto dall'impresa affidataria; le altre imprese si collegano solo ai quadri di cantiere, con prolunghe e attrezzature in buono stato. Nessuno modifica i quadri.",
+    "titolo": "Impianto elettrico di cantiere",
+    "approvata": true
+   },
+   {
+    "key": "servizi",
+    "fonte": "palladia",
+    "testo": "Messi a disposizione dall'impresa affidataria per tutte le imprese e i lavoratori autonomi; pulizia a carico dell'affidataria.",
+    "titolo": "Servizi igienico-assistenziali",
+    "approvata": true
+   },
+   {
+    "key": "recinzione",
+    "fonte": "palladia",
+    "testo": "Installati e mantenuti dall'impresa affidataria. Chi apre un varco lo richiude; a fine giornata l'ultimo preposto in uscita verifica la chiusura.",
+    "titolo": "Recinzione e accessi",
+    "approvata": true
+   }
+  ],
+  "emergenze": {
+   "numeri": [],
+   "gestione": "La gestione delle emergenze è affidata all'impresa affidataria, che garantisce in cantiere per tutta la durata dei lavori almeno un addetto al primo soccorso e uno all'antincendio formati, la cassetta di pronto soccorso e gli estintori. Le imprese esecutrici comunicano i nominativi dei propri addetti.",
+   "approvato": true,
+   "procedura": "In caso di infortunio o malore: chi è presente chiama il 112, avvisa il preposto e l'addetto al primo soccorso, non sposta l'infortunato salvo pericolo immediato. In caso di incendio: allontanamento dei lavoratori verso il punto di raccolta, intervento con estintori solo da parte degli addetti formati, chiamata ai Vigili del Fuoco tramite il 112. Il preposto dell'impresa affidataria verifica al punto di raccolta che tutti siano presenti.",
+   "punto_raccolta": "Cortile interno, lato via San Vincenzo",
+   "pronto_soccorso": {
+    "nome": "Ospedale Galliera",
+    "minuti": 3,
+    "indirizzo": "Via Alessandro Volta 8, Genova",
+    "distanza_km": 0.9
+   }
+  },
+  "coordinamento": {
+   "riunioni": "Il coordinatore per l'esecuzione convoca una riunione di coordinamento prima dell'inizio dei lavori, prima dell'ingresso in cantiere di ogni nuova impresa o lavoratore autonomo e almeno ogni due settimane, con verbale firmato dai presenti. Le imprese comunicano con almeno 3 giorni lavorativi di anticipo l'ingresso di nuovi subappaltatori, mezzi o lavorazioni non previste dal cronoprogramma.",
+   "approvato": true,
+   "informazione": "Ogni datore di lavoro informa i propri lavoratori sui contenuti del PSC che li riguardano e sulle misure di coordinamento, e mette a disposizione degli RLS copia del PSC e del POS almeno 10 giorni prima dell'inizio dei lavori (art. 100, c. 4).",
+   "riunioni_fonte": {
+    "fonte": "palladia"
+   }
+  },
+  "procedure": [],
+  "testi": {
+   "orari": "Orario di lavoro: dal lunedì al venerdì, 8:00-12:00 e 13:00-17:00, salvo diverse prescrizioni del regolamento comunale per le attività rumorose."
+  },
+  "layout_path": null,
+  "layout_name": null,
+  "computo": null,
+  "signed_at": null,
+  "signed_by": null,
+  "deleted_at": null,
+  "created_at": "2026-10-04T20:38:45.977028+00:00",
+  "updated_at": "2026-10-04T20:38:45.977028+00:00",
+  "esempio": true,
+  "crono_scala": "settimane",
+  "uomini_giorno": null
+ },
+ "lavorazioni": [
+  {
+   "id": "018f0eaf-3e87-4cab-adc0-b96cd05a7a61",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 0,
+   "nome": "Allestimento e smobilizzo del cantiere",
+   "descrizione": "Posa di recinzioni, baracche, segnaletica, impianto idrico, aree di stoccaggio, lavaggio ruote e raccolta rifiuti; rimozione a fine lavori.",
+   "scheda_id": "allestimento-cantiere",
+   "area": "",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "start_date": "2026-10-12",
+   "end_date": "2026-10-16",
+   "addetti": 3,
+   "uomini_giorno": 15,
+   "fasi": [
+    "Delimitazione e recinzione dell'area",
+    "Posa di baracche e moduli con autogru",
+    "Allacci provvisori e segnaletica",
+    "Smobilizzo a fine lavori"
+   ],
+   "rischi": [
+    {
+     "d": 4,
+     "p": 2,
+     "r": 8,
+     "id": "1c0d79615a6d",
+     "fonte": "palladia",
+     "testo": "Investimento da mezzi in manovra",
+     "livello": "Alto"
+    },
+    {
+     "d": 4,
+     "p": 2,
+     "r": 8,
+     "id": "122db87e81ba",
+     "fonte": "palladia",
+     "testo": "Caduta di moduli e materiali durante la posa",
+     "livello": "Alto"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "e59b481a27f7",
+     "fonte": "palladia",
+     "testo": "Movimentazione manuale di pannelli e paletti",
+     "livello": "Medio"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "dfce42e3a83e",
+     "fonte": "palladia",
+     "testo": "Tagli e schiacciamenti alle mani",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "f592b0baa334",
+     "fonte": "palladia",
+     "testo": "Baracche e moduli posati con autogru e nessuno sotto il carico",
+     "approvata": true
+    },
+    {
+     "id": "0abd9ba2b6e7",
+     "fonte": "palladia",
+     "testo": "Recinzione stabile, zavorrata e segnalata",
+     "approvata": true
+    },
+    {
+     "id": "4b5ac536a8e4",
+     "fonte": "palladia",
+     "testo": "Percorsi pedonali separati da quelli dei mezzi",
+     "approvata": true
+    },
+    {
+     "id": "990c32d09cc6",
+     "fonte": "palladia",
+     "testo": "Materiali stoccati in modo stabile, lontano dai passaggi",
+     "approvata": true
+    },
+    {
+     "id": "d11b5e0a3c0b",
+     "fonte": "palladia",
+     "testo": "Segnaletica di sicurezza all'ingresso",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Elmetto di protezione (UNI EN 397)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)",
+    "Guanti contro rischi meccanici (UNI EN 388)",
+    "Indumenti ad alta visibilità (UNI EN ISO 20471)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Autogru o gru su autocarro",
+     "verifica": "Verifiche periodiche, operatore abilitato"
+    },
+    {
+     "nome": "Recinzione mobile",
+     "verifica": "Basi zavorrate e giunti integri"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  },
+  {
+   "id": "4670ff36-77b2-4bcc-82e4-a2949a796529",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 1,
+   "nome": "Demolizioni e rimozioni interne non strutturali",
+   "descrizione": "Demolizione di tramezzi, rimozione di pavimenti, rivestimenti, intonaci, controsoffitti e impianti esistenti.",
+   "scheda_id": "demolizioni-interne",
+   "area": "aule secondo piano",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "start_date": "2026-10-19",
+   "end_date": "2026-10-30",
+   "addetti": 4,
+   "uomini_giorno": 40,
+   "fasi": [
+    "Distacco degli impianti",
+    "Demolizione manuale o con piccoli demolitori",
+    "Insacco e allontanamento delle macerie"
+   ],
+   "rischi": [
+    {
+     "d": 3,
+     "p": 4,
+     "r": 12,
+     "id": "1cf20b686a92",
+     "fonte": "palladia",
+     "testo": "Polveri con silice cristallina",
+     "livello": "Molto alto"
+    },
+    {
+     "d": 2,
+     "p": 4,
+     "r": 8,
+     "id": "54bfc9f06a31",
+     "fonte": "palladia",
+     "testo": "Rumore e vibrazioni da demolitori",
+     "livello": "Alto"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "a25342385a48",
+     "fonte": "palladia",
+     "testo": "Tagli e schiacciamenti alle mani",
+     "livello": "Medio"
+    },
+    {
+     "d": 2,
+     "p": 2,
+     "r": 4,
+     "id": "b8446dc7714f",
+     "fonte": "palladia",
+     "testo": "Caduta di parti di controsoffitto o intonaco",
+     "livello": "Medio"
+    },
+    {
+     "d": 4,
+     "p": 2,
+     "r": 8,
+     "id": "b064a5a5fc77",
+     "fonte": "palladia",
+     "testo": "Contatto con impianti elettrici non disattivati",
+     "livello": "Alto"
+    },
+    {
+     "d": 4,
+     "p": 1,
+     "r": 4,
+     "id": "4e31d555c1ee",
+     "fonte": "palladia",
+     "testo": "Materiali con amianto non individuati (pavimenti vinilici, colle, coibentazioni)",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "b966d9fbddb0",
+     "fonte": "palladia",
+     "testo": "Impianti staccati e verificati prima di demolire",
+     "approvata": true
+    },
+    {
+     "id": "adca0fd058d9",
+     "fonte": "palladia",
+     "testo": "Bagnare e aspirare per ridurre la polvere",
+     "approvata": true
+    },
+    {
+     "id": "fb4304563afa",
+     "fonte": "palladia",
+     "testo": "Materiali sospetti di amianto: fermarsi e far verificare",
+     "approvata": true
+    },
+    {
+     "id": "d6ad75dd0f08",
+     "fonte": "palladia",
+     "testo": "Pause e rotazione con i demolitori per le vibrazioni",
+     "approvata": true
+    },
+    {
+     "id": "0ecbdc6f9a88",
+     "fonte": "palladia",
+     "testo": "Macerie allontanate subito, percorsi liberi",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Elmetto di protezione (UNI EN 397)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)",
+    "Guanti contro rischi meccanici (UNI EN 388)",
+    "Facciale filtrante FFP3 (UNI EN 149)",
+    "Occhiali di protezione (UNI EN 166)",
+    "Otoprotettori (cuffie o inserti) (UNI EN 352)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Martello demolitore elettrico",
+     "verifica": "Controllo del cavo e dell'utensile prima dell'uso"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  },
+  {
+   "id": "e6fa42d1-f1d9-4588-9466-f12cca42f5cc",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 2,
+   "nome": "Montaggio, trasformazione e smontaggio del ponteggio",
+   "descrizione": "Montaggio, modifica e smontaggio di ponteggio metallico fisso secondo il PiMUS, da parte di squadra formata e sotto la sorveglianza di un preposto.",
+   "scheda_id": "ponteggio-montaggio",
+   "area": "facciata nord",
+   "impresa_id": "fc4c43ea-e078-41d6-bff4-48ee0a9887e9",
+   "start_date": "2026-10-19",
+   "end_date": "2026-11-06",
+   "addetti": 3,
+   "uomini_giorno": 45,
+   "fasi": [
+    "Verifica del piano di appoggio e posa delle basette",
+    "Montaggio a piani successivi con ancoraggi alla facciata",
+    "Posa di impalcati, parapetti e fermapiede",
+    "Smontaggio in ordine inverso con calo controllato degli elementi"
+   ],
+   "rischi": [
+    {
+     "d": 4,
+     "p": 3,
+     "r": 12,
+     "id": "5123ab734feb",
+     "fonte": "palladia",
+     "testo": "Caduta dall'alto durante il montaggio",
+     "livello": "Molto alto"
+    },
+    {
+     "d": 4,
+     "p": 3,
+     "r": 12,
+     "id": "31f72c4f69a3",
+     "fonte": "palladia",
+     "testo": "Caduta di elementi metallici su persone sotto",
+     "livello": "Molto alto"
+    },
+    {
+     "d": 4,
+     "p": 2,
+     "r": 8,
+     "id": "533b29ce0799",
+     "fonte": "palladia",
+     "testo": "Crollo per ancoraggi insufficienti o appoggio cedevole",
+     "livello": "Alto"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "a06b4830d123",
+     "fonte": "palladia",
+     "testo": "Movimentazione manuale di tubi e tavole",
+     "livello": "Medio"
+    },
+    {
+     "d": 4,
+     "p": 1,
+     "r": 4,
+     "id": "f49a9b177510",
+     "fonte": "palladia",
+     "testo": "Contatto con linee elettriche aeree",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "bac0e5a98b52",
+     "fonte": "palladia",
+     "testo": "Montaggio solo secondo il PiMUS e lo schema del libretto ministeriale",
+     "approvata": true
+    },
+    {
+     "id": "5121a7200752",
+     "fonte": "palladia",
+     "testo": "Squadra con formazione specifica e preposto sempre presente",
+     "approvata": true
+    },
+    {
+     "id": "c3f183d5eb2c",
+     "fonte": "palladia",
+     "testo": "Imbracatura agganciata in ogni fase, anche nei passaggi di piano",
+     "approvata": true
+    },
+    {
+     "id": "7e409eaf06cc",
+     "fonte": "palladia",
+     "testo": "Area sottostante delimitata e interdetta al passaggio",
+     "approvata": true
+    },
+    {
+     "id": "506f65aa8715",
+     "fonte": "palladia",
+     "testo": "Ancoraggi alla facciata posati man mano, mai a montaggio finito",
+     "approvata": true
+    },
+    {
+     "id": "5de7e9417d55",
+     "fonte": "palladia",
+     "testo": "Calo degli elementi con carrucola o argano, mai lanciati",
+     "approvata": true
+    },
+    {
+     "id": "d4aba023a1db",
+     "fonte": "palladia",
+     "testo": "Verifica di distanze da linee elettriche prima di iniziare",
+     "approvata": true
+    },
+    {
+     "id": "ff563cb27da3",
+     "fonte": "palladia",
+     "testo": "Sospendere con vento forte o pioggia",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Elmetto di protezione (UNI EN 397)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)",
+    "Guanti contro rischi meccanici (UNI EN 388)",
+    "Imbracatura anticaduta (UNI EN 361)",
+    "Cordino con assorbitore di energia (UNI EN 355)",
+    "Indumenti ad alta visibilità (UNI EN ISO 20471)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Ponteggio metallico fisso",
+     "verifica": "Autorizzazione ministeriale, libretto, PiMUS e verifica elementi prima del montaggio (Allegato XIX)"
+    },
+    {
+     "nome": "Argano o carrucola",
+     "verifica": "Verifica funi e ganci prima dell'uso"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  },
+  {
+   "id": "6a5f64a1-2a58-411b-bc5c-c81713d4f9bc",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 3,
+   "nome": "Lavori su coperture",
+   "descrizione": "Rifacimento, manutenzione e posa di manti di copertura (tegole, coppi, lamiera, guaine), lattonerie, gronde e linee vita.",
+   "scheda_id": "coperture-lavori",
+   "area": "copertura",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "start_date": "2026-11-09",
+   "end_date": "2026-12-04",
+   "addetti": 4,
+   "uomini_giorno": 80,
+   "fasi": [
+    "Verifica della portata e dei bordi",
+    "Allestimento di parapetti o linea vita",
+    "Rimozione e posa del manto",
+    "Lattonerie e chiusure"
+   ],
+   "rischi": [
+    {
+     "d": 4,
+     "p": 3,
+     "r": 12,
+     "id": "065be090ae06",
+     "fonte": "palladia",
+     "testo": "Caduta dal bordo della copertura",
+     "livello": "Molto alto"
+    },
+    {
+     "d": 3,
+     "p": 3,
+     "r": 9,
+     "id": "e537ffeae77f",
+     "fonte": "palladia",
+     "testo": "Scivolamento su falde inclinate o bagnate",
+     "livello": "Alto"
+    },
+    {
+     "d": 3,
+     "p": 3,
+     "r": 9,
+     "id": "ac024688a2f1",
+     "fonte": "palladia",
+     "testo": "Caduta di materiali verso il basso",
+     "livello": "Alto"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "698b14ec2825",
+     "fonte": "palladia",
+     "testo": "Movimentazione di carichi in posizioni scomode",
+     "livello": "Medio"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "67cb5ac0a19b",
+     "fonte": "palladia",
+     "testo": "Esposizione al sole e al caldo",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "47c0f21c8253",
+     "fonte": "palladia",
+     "testo": "Protezione dei bordi con parapetti o ponteggio a quota gronda",
+     "approvata": true
+    },
+    {
+     "id": "577c746e4e3d",
+     "fonte": "palladia",
+     "testo": "Dove manca: linea vita e imbracatura sempre agganciata",
+     "approvata": true
+    },
+    {
+     "id": "438935cbfacb",
+     "fonte": "palladia",
+     "testo": "Sollevamento materiali con montacarichi o gru, mai a mano su scale",
+     "approvata": true
+    },
+    {
+     "id": "6294e0c7201b",
+     "fonte": "palladia",
+     "testo": "Area sottostante delimitata",
+     "approvata": true
+    },
+    {
+     "id": "259d89ba8dbc",
+     "fonte": "palladia",
+     "testo": "Sospendere con pioggia, ghiaccio o vento forte",
+     "approvata": true
+    },
+    {
+     "id": "f5270d339936",
+     "fonte": "palladia",
+     "testo": "Pause e acqua nelle ore calde",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Elmetto di protezione (UNI EN 397)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)",
+    "Guanti contro rischi meccanici (UNI EN 388)",
+    "Imbracatura anticaduta (UNI EN 361)",
+    "Cordino con assorbitore di energia (UNI EN 355)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Linea vita provvisoria o permanente",
+     "verifica": "Conforme UNI EN 795, verifica di installazione"
+    },
+    {
+     "nome": "Montacarichi",
+     "verifica": "Verifica periodica"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  },
+  {
+   "id": "efd47584-054d-4c6d-b39b-eac3f1e542a8",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 4,
+   "nome": "Lavori su impianti elettrici",
+   "descrizione": "Realizzazione e modifica di impianti elettrici dell'edificio: quadri, linee, prese, illuminazione, impianto di terra.",
+   "scheda_id": "impianti-elettrici",
+   "area": "",
+   "impresa_id": "1414f42c-9958-47d1-b4e0-af0db8ff51ea",
+   "start_date": "2026-10-26",
+   "end_date": "2026-11-20",
+   "addetti": 2,
+   "uomini_giorno": 40,
+   "fasi": [
+    "Sezionamento e messa in sicurezza",
+    "Verifica di assenza di tensione",
+    "Esecuzione dei lavori",
+    "Collaudo e rimessa in tensione"
+   ],
+   "rischi": [
+    {
+     "d": 4,
+     "p": 2,
+     "r": 8,
+     "id": "83e0784e21e5",
+     "fonte": "palladia",
+     "testo": "Elettrocuzione per lavoro su parti in tensione",
+     "livello": "Alto"
+    },
+    {
+     "d": 4,
+     "p": 1,
+     "r": 4,
+     "id": "2df63bf51d3a",
+     "fonte": "palladia",
+     "testo": "Arco elettrico",
+     "livello": "Medio"
+    },
+    {
+     "d": 3,
+     "p": 2,
+     "r": 6,
+     "id": "04de3d8492fe",
+     "fonte": "palladia",
+     "testo": "Caduta da scale o trabattelli",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "56bafc83abf0",
+     "fonte": "palladia",
+     "testo": "Lavori fuori tensione: sezionare, bloccare con lucchetto, segnalare, verificare",
+     "approvata": true
+    },
+    {
+     "id": "d67532fc054d",
+     "fonte": "palladia",
+     "testo": "Solo personale PES/PAV secondo CEI 11-27",
+     "approvata": true
+    },
+    {
+     "id": "87793b35dce8",
+     "fonte": "palladia",
+     "testo": "Attrezzi isolati",
+     "approvata": true
+    },
+    {
+     "id": "dd9ba4d2fd92",
+     "fonte": "palladia",
+     "testo": "Rimessa in tensione solo da chi ha messo il blocco",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Guanti isolanti (CEI EN 60903)",
+    "Elmetto isolante per lavori elettrici (UNI EN 50365)",
+    "Visiera di protezione (UNI EN 166)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Rilevatore di tensione",
+     "verifica": "Prova di funzionamento prima dell'uso"
+    },
+    {
+     "nome": "Attrezzi isolati 1000 V",
+     "verifica": "Integrità dell'isolamento"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  },
+  {
+   "id": "8252843c-4584-4550-99c7-959d2b0c34a7",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 5,
+   "nome": "Posa di serramenti, porte e schermature",
+   "descrizione": "Posa di finestre, porte interne, portoncini, portoni da garage, persiane, tapparelle, grate e frangisole.",
+   "scheda_id": "serramenti",
+   "area": "aule secondo piano",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "start_date": "2026-11-23",
+   "end_date": "2026-12-04",
+   "addetti": 2,
+   "uomini_giorno": 20,
+   "fasi": [
+    "Trasporto al piano",
+    "Posa del controtelaio",
+    "Fissaggio e sigillatura con schiume",
+    "Regolazione"
+   ],
+   "rischi": [
+    {
+     "d": 4,
+     "p": 2,
+     "r": 8,
+     "id": "76af10571cd6",
+     "fonte": "palladia",
+     "testo": "Caduta dal vano finestra senza parapetto",
+     "livello": "Alto"
+    },
+    {
+     "d": 3,
+     "p": 3,
+     "r": 9,
+     "id": "293e6171a5cc",
+     "fonte": "palladia",
+     "testo": "Movimentazione di serramenti pesanti",
+     "livello": "Alto"
+    },
+    {
+     "d": 3,
+     "p": 2,
+     "r": 6,
+     "id": "e3648d3740c6",
+     "fonte": "palladia",
+     "testo": "Inalazione di schiume poliuretaniche (isocianati)",
+     "livello": "Medio"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "a8697a6d13fe",
+     "fonte": "palladia",
+     "testo": "Schiacciamento di dita e mani",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "92777c358881",
+     "fonte": "palladia",
+     "testo": "Vani verso il vuoto protetti finché il serramento non è fissato",
+     "approvata": true
+    },
+    {
+     "id": "085473792bdb",
+     "fonte": "palladia",
+     "testo": "Serramenti grandi movimentati in due o con mezzi",
+     "approvata": true
+    },
+    {
+     "id": "ac1b713101f6",
+     "fonte": "palladia",
+     "testo": "Schiume usate con guanti e ambienti aerati",
+     "approvata": true
+    },
+    {
+     "id": "c627955324bb",
+     "fonte": "palladia",
+     "testo": "Portoni da garage e motorizzazioni regolati solo a molle bloccate",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Guanti contro rischi meccanici (UNI EN 388)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)",
+    "Occhiali di protezione (UNI EN 166)",
+    "Guanti contro agenti chimici (UNI EN ISO 374-1)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Trapano e avvitatore",
+     "verifica": "Controllo cavo e utensile"
+    },
+    {
+     "nome": "Carrello portavetri",
+     "verifica": "Integrità e bloccaggi"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  },
+  {
+   "id": "198aadd6-b471-45fc-a366-5dddee140cba",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 6,
+   "nome": "Tinteggiature e verniciature",
+   "descrizione": "Tinteggiature interne ed esterne, verniciature di legno e ferro, trattamenti antimuffa e decorazioni, con carteggiatura e preparazione.",
+   "scheda_id": "tinteggiature",
+   "area": "aule secondo piano",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "start_date": "2026-12-07",
+   "end_date": "2026-12-18",
+   "addetti": 3,
+   "uomini_giorno": 30,
+   "fasi": [
+    "Protezione delle superfici",
+    "Carteggiatura e stuccatura",
+    "Applicazione a rullo, pennello o spruzzo",
+    "Pulizia degli attrezzi"
+   ],
+   "rischi": [
+    {
+     "d": 3,
+     "p": 2,
+     "r": 6,
+     "id": "e545a18d46dc",
+     "fonte": "palladia",
+     "testo": "Caduta da scale, trabattelli o ponteggio",
+     "livello": "Medio"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "617508a5703f",
+     "fonte": "palladia",
+     "testo": "Inalazione di vapori e nebbie di vernice",
+     "livello": "Medio"
+    },
+    {
+     "d": 3,
+     "p": 2,
+     "r": 6,
+     "id": "77351e0d32a1",
+     "fonte": "palladia",
+     "testo": "Polvere di carteggiatura, anche di vecchie vernici al piombo",
+     "livello": "Medio"
+    },
+    {
+     "d": 2,
+     "p": 3,
+     "r": 6,
+     "id": "61de67dddc51",
+     "fonte": "palladia",
+     "testo": "Schizzi negli occhi",
+     "livello": "Medio"
+    }
+   ],
+   "misure": [
+    {
+     "id": "ec697501adfc",
+     "fonte": "palladia",
+     "testo": "Lavori in altezza da trabattello o ponteggio, non da sedie o scale doppie in cima",
+     "approvata": true
+    },
+    {
+     "id": "d2532120f9fd",
+     "fonte": "palladia",
+     "testo": "Ambienti ventilati, prodotti all'acqua dove possibile",
+     "approvata": true
+    },
+    {
+     "id": "bbd3a3c0facd",
+     "fonte": "palladia",
+     "testo": "Vecchie vernici: carteggiatura con aspirazione",
+     "approvata": true
+    },
+    {
+     "id": "e950e417f6d7",
+     "fonte": "palladia",
+     "testo": "Contenitori chiusi, stracci in contenitori metallici",
+     "approvata": true
+    }
+   ],
+   "dpi": [
+    "Occhiali di protezione (UNI EN 166)",
+    "Facciale filtrante FFP2 (UNI EN 149)",
+    "Guanti contro agenti chimici (UNI EN ISO 374-1)",
+    "Semimaschera con filtri per vapori organici (A2P3) (UNI EN 140 / UNI EN 14387)",
+    "Calzature di sicurezza S3 (UNI EN ISO 20345)"
+   ],
+   "apprestamenti": [
+    {
+     "nome": "Trabattello",
+     "verifica": "Conforme UNI EN 1004"
+    },
+    {
+     "nome": "Pistola a spruzzo airless",
+     "verifica": "Controllo tubi e pressione"
+    }
+   ],
+   "voci_computo": [],
+   "created_at": "2026-10-04T20:38:46.515501+00:00",
+   "updated_at": "2026-10-04T20:38:46.515501+00:00"
+  }
+ ],
+ "imprese": [
+  {
+   "id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ragione_sociale": "Edil Rossi S.r.l. (esempio)",
+   "piva": null,
+   "email": null,
+   "telefono": null,
+   "referente": "Mario Rossi",
+   "ruolo": "affidataria",
+   "color": "#22384F",
+   "invite_token": null,
+   "invited_at": null,
+   "opened_at": null,
+   "pos_due_date": null,
+   "pos_status": "da_richiedere",
+   "pos_path": null,
+   "pos_name": null,
+   "pos_received_at": null,
+   "linked_company_id": null,
+   "linked_site_id": null,
+   "created_at": "2026-10-04T20:38:46.286748+00:00",
+   "psc_accettato_rev": null,
+   "psc_accettato_at": null,
+   "psc_accettato_da": null,
+   "rls_consultato": null,
+   "psc_proposte": null,
+   "datore_lavoro": null,
+   "indirizzo": null,
+   "cap": null,
+   "citta": null,
+   "codice_fiscale": null,
+   "posizione_inps": null,
+   "posizione_inail": null,
+   "cassa_edile": null,
+   "art97_nome": null,
+   "art97_mansione": null
+  },
+  {
+   "id": "fc4c43ea-e078-41d6-bff4-48ee0a9887e9",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ragione_sociale": "Ponteggi Riviera S.r.l. (esempio)",
+   "piva": null,
+   "email": null,
+   "telefono": null,
+   "referente": "Luca Neri",
+   "ruolo": "esecutrice",
+   "color": "#B7832F",
+   "invite_token": null,
+   "invited_at": null,
+   "opened_at": null,
+   "pos_due_date": null,
+   "pos_status": "da_richiedere",
+   "pos_path": null,
+   "pos_name": null,
+   "pos_received_at": null,
+   "linked_company_id": null,
+   "linked_site_id": null,
+   "created_at": "2026-10-04T20:38:46.286748+00:00",
+   "psc_accettato_rev": null,
+   "psc_accettato_at": null,
+   "psc_accettato_da": null,
+   "rls_consultato": null,
+   "psc_proposte": null,
+   "datore_lavoro": null,
+   "indirizzo": null,
+   "cap": null,
+   "citta": null,
+   "codice_fiscale": null,
+   "posizione_inps": null,
+   "posizione_inail": null,
+   "cassa_edile": null,
+   "art97_nome": null,
+   "art97_mansione": null
+  },
+  {
+   "id": "1414f42c-9958-47d1-b4e0-af0db8ff51ea",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ragione_sociale": "Elettro Sud S.n.c. (esempio)",
+   "piva": null,
+   "email": null,
+   "telefono": null,
+   "referente": "Anna Sala",
+   "ruolo": "esecutrice",
+   "color": "#3E7C78",
+   "invite_token": null,
+   "invited_at": null,
+   "opened_at": null,
+   "pos_due_date": null,
+   "pos_status": "da_richiedere",
+   "pos_path": null,
+   "pos_name": null,
+   "pos_received_at": null,
+   "linked_company_id": null,
+   "linked_site_id": null,
+   "created_at": "2026-10-04T20:38:46.286748+00:00",
+   "psc_accettato_rev": null,
+   "psc_accettato_at": null,
+   "psc_accettato_da": null,
+   "rls_consultato": null,
+   "psc_proposte": null,
+   "datore_lavoro": null,
+   "indirizzo": null,
+   "cap": null,
+   "citta": null,
+   "codice_fiscale": null,
+   "posizione_inps": null,
+   "posizione_inail": null,
+   "cassa_edile": null,
+   "art97_nome": null,
+   "art97_mansione": null
+  }
+ ],
+ "costi": [
+  {
+   "id": "6812fb6c-658a-47d1-a848-7e66ad0ca41a",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 0,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Recinzione di cantiere h 2 m in pannelli di rete elettrosaldata zincata su basi in calcestruzzo: montaggio, nolo per la durata dei lavori e smontaggio",
+   "um": "m",
+   "quantita": 120,
+   "prezzo": 12,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:recinzione",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "40d3f82c-78ee-4332-b21f-c3cd90095182",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 1,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Accesso carrabile con cancello in pannelli metallici: montaggio, nolo e smontaggio",
+   "um": "cad",
+   "quantita": 1,
+   "prezzo": 180,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:cancello",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "568d28e7-e73c-4682-9a93-7ed706744a25",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 2,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Box prefabbricato uso spogliatoio, compreso trasporto, posa e rimozione, nolo mensile",
+   "um": "mese",
+   "quantita": 3,
+   "prezzo": 220,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:baracca",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "38389a6f-1a7b-4503-9518-9930c724899c",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 3,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Bagno chimico portatile, nolo mensile compresa pulizia settimanale",
+   "um": "mese",
+   "quantita": 3,
+   "prezzo": 150,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:wc",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "241945d4-02a4-4622-a8fb-1d2892686481",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 4,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Ponteggio metallico fisso: montaggio, nolo per il primo mese e smontaggio, misurato in proiezione di facciata",
+   "um": "m²",
+   "quantita": 420,
+   "prezzo": 14,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "fc4c43ea-e078-41d6-bff4-48ee0a9887e9",
+   "lavorazione_id": null,
+   "origine": "catalogo:ponteggio",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "f94a9a94-417c-46a2-be9f-659b667d2780",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 5,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Ponteggio metallico fisso: nolo per ogni mese successivo al primo",
+   "um": "m²·mese",
+   "quantita": 420,
+   "prezzo": 1.5,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "fc4c43ea-e078-41d6-bff4-48ee0a9887e9",
+   "lavorazione_id": null,
+   "origine": "catalogo:ponteggio_nolo",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "6349b296-fea9-4380-8835-f4df65e20592",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 6,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Mantovana parasassi su ponteggio: montaggio, nolo e smontaggio",
+   "um": "m",
+   "quantita": 35,
+   "prezzo": 22,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "fc4c43ea-e078-41d6-bff4-48ee0a9887e9",
+   "lavorazione_id": null,
+   "origine": "catalogo:mantovana",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "0b9a83bf-1202-4c33-b84d-8f4e4a716d4f",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 7,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Telo o rete di protezione contro la caduta di materiali e le polveri, su ponteggio",
+   "um": "m²",
+   "quantita": 420,
+   "prezzo": 3.5,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "fc4c43ea-e078-41d6-bff4-48ee0a9887e9",
+   "lavorazione_id": null,
+   "origine": "catalogo:teli",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "1b320212-1717-4012-9b28-369b618d352e",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 8,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Parapetto provvisorio di protezione dei bordi (UNI EN 13374) con tavola fermapiede: montaggio, nolo e smontaggio",
+   "um": "m",
+   "quantita": 90,
+   "prezzo": 18,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:parapetti",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "44f699ef-519d-4c10-b880-3b0520732652",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 9,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Linea di ancoraggio provvisoria orizzontale (UNI EN 795 tipo C): installazione, nolo e rimozione",
+   "um": "m",
+   "quantita": 40,
+   "prezzo": 25,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:linea_vita",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "fed3fd66-7cb0-41d3-af15-3e9c8355239f",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 10,
+   "categoria": "a",
+   "codice": null,
+   "descrizione": "Percorso pedonale protetto lungo il fronte del cantiere: montaggio, nolo e smontaggio",
+   "um": "m",
+   "quantita": 1,
+   "prezzo": 45,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:tunnel",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "9a1ec726-f491-4b0d-bbd2-b5967b3208c8",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 11,
+   "categoria": "b",
+   "codice": null,
+   "descrizione": "Delimitazione dell'area interdetta sotto le lavorazioni in quota durante le lavorazioni interferenti",
+   "um": "m",
+   "quantita": 40,
+   "prezzo": 5,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:transenne_interferenze",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "031ec4fb-7560-4af8-8e7c-808bf035bda5",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 12,
+   "categoria": "b",
+   "codice": null,
+   "descrizione": "Cartellonistica di sicurezza (divieto, obbligo, pericolo, emergenza) per il cantiere",
+   "um": "cad",
+   "quantita": 12,
+   "prezzo": 15,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:cartelli",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "5915b242-0a16-45ca-a433-f73de52d58ea",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 13,
+   "categoria": "c",
+   "codice": null,
+   "descrizione": "Impianto di messa a terra del cantiere con dispersori e collegamenti equipotenziali, compresa verifica",
+   "um": "a corpo",
+   "quantita": 1,
+   "prezzo": 450,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:terra",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "239ab3fb-40ca-4ac3-9d8d-eb28e8ee5e2f",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 14,
+   "categoria": "c",
+   "codice": null,
+   "descrizione": "Estintore portatile a polvere 6 kg, nolo per la durata dei lavori, compresa verifica semestrale",
+   "um": "cad",
+   "quantita": 4,
+   "prezzo": 35,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:estintori",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "8f3db898-fba2-4908-9699-e6cf7019364b",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 15,
+   "categoria": "d",
+   "codice": null,
+   "descrizione": "Segnaletica stradale temporanea di cantiere (D.M. 10/07/2002): posa, nolo e rimozione",
+   "um": "a corpo",
+   "quantita": 1,
+   "prezzo": 250,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:segnaletica_stradale",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "12c4133f-17ca-4a64-a774-165270a91041",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 16,
+   "categoria": "d",
+   "codice": null,
+   "descrizione": "Cassetta di pronto soccorso (D.M. 388/2003), fornitura e reintegro",
+   "um": "cad",
+   "quantita": 1,
+   "prezzo": 60,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:pronto_soccorso",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "df5e46d8-20cf-4f98-99b1-ceefa4708a2b",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 17,
+   "categoria": "g",
+   "codice": null,
+   "descrizione": "Partecipazione dei datori di lavoro o preposti delle imprese alle riunioni di coordinamento",
+   "um": "ora",
+   "quantita": 21,
+   "prezzo": 35,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:riunioni",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  },
+  {
+   "id": "a5ad25f3-c99c-4b87-af08-c420b28343ed",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "ordine": 18,
+   "categoria": "g",
+   "codice": null,
+   "descrizione": "Informazione dei lavoratori sui contenuti del PSC alla riunione di inizio lavori",
+   "um": "ora",
+   "quantita": 1,
+   "prezzo": 30,
+   "prezzo_fonte": "manuale",
+   "impresa_id": "b93191f8-e4de-4e7c-8e87-e83237319b2b",
+   "lavorazione_id": null,
+   "origine": "catalogo:informazione",
+   "created_at": "2026-10-04T20:38:47.489301+00:00",
+   "prezzario_fonte": null
+  }
+ ],
+ "decisioni": [
+  {
+   "id": "690dedf5-69a0-4adb-93bf-52dfbaff86c9",
+   "project_id": "631aa8ec-76b2-4794-a669-be7d9c232d74",
+   "company_id": "00000000-0000-0000-0000-00000000c0de",
+   "lav_a": "e6fa42d1-f1d9-4588-9466-f12cca42f5cc",
+   "lav_b": "efd47584-054d-4c6d-b39b-eac3f1e542a8",
+   "soluzione": "misure",
+   "testo": "Durante la sovrapposizione la zona sotto \"Montaggio, trasformazione e smontaggio del ponteggio\" è interdetta con transenne e cartelli; sul ponteggio è installata la mantovana parasassi; \"Lavori su impianti elettrici\" lavora fuori dalla proiezione della zona in quota. Il preposto di Ponteggi Riviera S.r.l. (esempio) è presente e coordina gli accessi.",
+   "rischio": "caduta di materiale dall'alto su chi lavora sotto o vicino a \"Montaggio, trasformazione e smontaggio del ponteggio\"",
+   "decided_by": "00000000-0000-0000-0000-0000000000a1",
+   "decided_at": "2026-10-04T20:38:46.772417+00:00"
+  }
+ ],
+ "revisioni": []
+}
