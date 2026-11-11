@@ -164,7 +164,8 @@ app.use(cors({
   // Header custom sulle risposte binarie (es. PDF) che il frontend deve poter
   // leggere via fetch() — di default il browser espone solo gli header
   // "safelisted" CORS, non i nostri custom X-*.
-  exposedHeaders: ['X-Contract-Archived', 'X-Contract-Archived-Site'],
+  // F-491: Content-Disposition leggibile dal browser, così i file scaricati hanno il loro nome (non «POS.docx»)
+  exposedHeaders: ['X-Contract-Archived', 'X-Contract-Archived-Site', 'Content-Disposition'],
 }));
 app.use(requestLogger);
 // ── Supabase Auth Hook — DEVE stare prima di express.json() ─────────────────
