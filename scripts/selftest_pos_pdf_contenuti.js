@@ -21,6 +21,8 @@ function check(name, cond, got) {
 }
 const text = (html) => html.replace(/<style[\s\S]*?<\/style>/g, '').replace(/<[^>]+>/g, ' ').replace(/&#160;|&nbsp;/g, ' ').replace(/\s+/g, ' ');
 const count = (s, sub) => s.split(sub).length - 1;
+// F-489: i titoli sono «10 Sostanze e preparati pericolosi», non più «Sezione 10 — …»
+const SEZ = { 10: '10 Sostanze e preparati pericolosi', 11: '11 Gestione rifiuti', 12: '12 Formazione e informazione dei lavoratori', 13: '13 Sorveglianza sanitaria' };
 
 const WORKS = ['allestimento-cantiere', 'ponteggio-montaggio', 'ponteggio-uso', 'rimozione-guaine-copertura', 'guaina-fiamma', 'lattonerie-canne-fumarie', 'spicconatura-intonaci', 'intonaci', 'tinteggiature', 'macerie'];
 const base = {
@@ -49,10 +51,10 @@ async function main() {
   const t = text(html);
 
   // Copertina e intestazione
-  check('copertina: oggetto = descrizione del lavoro, non le categorie', /Oggetto Manutenzione straordinaria della copertura e delle facciate/.test(t) && !/Oggetto Lavori in quota, Demolizioni/.test(t));
+  check('copertina: oggetto = descrizione del lavoro, non le categorie', /Oggetto dei lavori Manutenzione straordinaria della copertura e delle facciate/.test(t) && !/Oggetto dei lavori Lavori in quota, Demolizioni/.test(t));
   check('copertina: datore di lavoro = la persona', /Datore di lavoro Ricardo Carpio/i.test(t), t.slice(t.indexOf('Firme del documento'), t.indexOf('Firme del documento') + 120));
   check('sede legale e telefono dell\'impresa (All. XV 3.2.1 a.1)', t.includes('Sede legale Corte Lambruschini 40 int 44, Genova') && t.includes('Telefono 010 555123'));
-  check('tipo di appalto e importo', t.includes('Tipo di appalto Privato') && /Importo lavori EUR 52\.000/.test(t));
+  check('tipo di appalto e importo', t.includes('Tipo di appalto Privato') && /Importo dei lavori € 52\.000/.test(t));
 
   // Lavoratori e formazione reale
   check('niente colonna "Matricola" vuota per tutti', !t.includes('Matricola'));
@@ -66,24 +68,24 @@ async function main() {
   check('4: numerazione senza buchi', sub4.every((n, i) => n === i + 1), sub4);
 
   // Sezione 9: verifiche e abilitazioni pertinenti
-  check('9.2: niente gru a torre né PLE se non si usano', !/Gru a torre/.test(t.slice(t.indexOf('9.2 '), t.indexOf('Sezione 10 — '))) && !/Piattaforme elevabili/.test(t.slice(t.indexOf('9.2 '), t.indexOf('Sezione 10 — '))));
+  check('9.2: niente gru a torre né PLE se non si usano', !/Gru a torre/.test(t.slice(t.indexOf('9.2 '), t.indexOf(SEZ[10]))) && !/Piattaforme elevabili/.test(t.slice(t.indexOf('9.2 '), t.indexOf(SEZ[10]))));
   check('9.2: il montacarichi usato ha la sua verifica', /9\.2[\s\S]*Montacarichi/.test(t));
   check('9: abilitazioni citano l\'Accordo 17/04/2025, non quello del 2012', !t.includes('22/02/2012'));
   const conGru = text(await generatePosHtml({ ...base, macchine: ['Gru a torre'] }, 1, '', []));
   check('gru a torre in edilizia: verifica periodica annuale (All. VII), non biennale', /Gru a torre [^]*?Annuale/.test(conGru.slice(conGru.indexOf('9.2'))) && !/Gru a torre[^.]{0,80}Biennale/.test(conGru));
 
   // Sezione 10: sostanze vere
-  const s10 = t.slice(t.indexOf('Sezione 10 — '), t.indexOf('Sezione 11 — '));
+  const s10 = t.slice(t.indexOf(SEZ[10]), t.indexOf(SEZ[11]));
   check('10: bitumi e gas in bombole descritti', /Bitumi/.test(s10) && /propano|GPL/.test(s10) && /H220/.test(s10));
   check('10: niente resine epossidiche, gasolio, amianto se non usati', !/Resine epossidiche|Gasolio|Amianto/.test(s10), s10.slice(0, 600));
 
   // Sezione 11: rifiuti del lavoro
-  const s11 = t.slice(t.indexOf('Sezione 11 — '), t.indexOf('Sezione 12 — '));
+  const s11 = t.slice(t.indexOf(SEZ[11]), t.indexOf(SEZ[12]));
   check('11: guaine rimosse = 17 03 02, lattonerie = metalli', s11.includes('17 03 02') && /17 04 0[124]/.test(s11));
   check('11: niente amianto se non c\'è', !/amianto/i.test(s11));
 
   // Sezione 12: formazione aggiornata
-  const s12 = t.slice(t.indexOf('Sezione 12 — '), t.indexOf('Sezione 13 — '));
+  const s12 = t.slice(t.indexOf(SEZ[12]), t.indexOf(SEZ[13]));
   check('12: Accordo Stato-Regioni 17/04/2025, non 21/12/2011', s12.includes('17/04/2025') && !s12.includes('21/12/2011'));
   check('12: preposto 12 ore', /Preposto 12 ore/.test(s12), s12.slice(0, 500));
   check('12: presa visione registrata dal badge spiegata', /badge/i.test(s12));
@@ -98,8 +100,8 @@ async function main() {
 
   // Compatibilità: POS del vecchio generatore (senza i campi nuovi) si genera ancora
   const old = text(await generatePosHtml({ siteAddress: 'Via X', companyName: 'Ditta', workType: 'Ristrutturazione', workers: [{ name: 'Mario', qualification: 'Muratore', matricola: 'M12' }] }, 2, '', []));
-  check('vecchio generatore: oggetto = natura dei lavori, matricola mostrata se c\'è', /Oggetto Ristrutturazione/.test(old) && old.includes('M12'));
-  check('vecchio generatore: tabelle 9.2, 10 e 11 ancora presenti', old.includes('9.2') && old.includes('Sezione 10') && old.includes('17 09 04'));
+  check('vecchio generatore: oggetto = natura dei lavori, matricola mostrata se c\'è', /Natura dei lavori Ristrutturazione/.test(old) && old.includes('M12'));
+  check('vecchio generatore: tabelle 9.2, 10 e 11 ancora presenti', old.includes('9.2') && old.includes(SEZ[10]) && old.includes('17 09 04'));
 
   console.log(`\n${passed} passati, ${failed} falliti`);
   process.exit(failed ? 1 : 0);

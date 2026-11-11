@@ -16,7 +16,7 @@ const { isBillingActive } = require('./lib/billing');
 const { logUsage } = require('./lib/ladiaUsageLog');
 const { isModuleEnabledGlobally } = require('./lib/featureFlags');
 const { selectSigns } = require('./sign-selector');
-const { generatePosHtml } = require('./pos-html-generator');
+const { generatePosHtml, posPdfOptions } = require('./pos-html-generator');
 const { ESTIMATED_HOURS_SAVED } = require('./services/valueMetrics');
 const { rendererPool } = require('./pdf-renderer');
 const { apiLimiter, aiLimiter } = require('./middleware/rateLimit');
@@ -1205,11 +1205,10 @@ app.post('/api/generate-pdf', verifyJwtOnly, apiLimiter, async (req, res) => {
     const rev      = revision || 1;
     const name     = siteName || posData.siteAddress || 'Cantiere';
     const fileName = `POS-Rev${rev}-${name.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-    const docTitle = `POS – ${name} – Rev. ${rev}`;
 
     const signs     = selectSigns(posData);
     const html      = await generatePosHtml(posData, rev, content || '', signs);
-    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: rev });
+    const pdfBuffer = await rendererPool.render(html, posPdfOptions(posData, rev, name));
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -1275,9 +1274,8 @@ app.get('/api/pos/:posId/pdf', verifyJwtOnly, async (req, res) => {
 
     const signs     = selectSigns(pos.pos_data || {});
     const html      = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
-    const docTitle  = `POS – ${siteName} – Rev. ${pos.revision}`;
     const fileName  = `POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
-    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pos.revision });
+    const pdfBuffer = await rendererPool.render(html, posPdfOptions(pos.pos_data, pos.revision, siteName));
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -1553,10 +1551,9 @@ app.post('/api/generate-pdf-html', verifyJwtOnly, apiLimiter, async (req, res) =
 
     const signs    = selectSigns(posData);
     const html     = await generatePosHtml(posData, revision || 1, content || '', signs);
-    const docTitle = `POS – ${siteName || posData.siteAddress || 'Cantiere'} – Rev. ${revision || 1}`;
     const fileName = `POS-Rev${revision || 1}-${(siteName || 'Cantiere').replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
-    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: revision || 1 });
+    const pdfBuffer = await rendererPool.render(html, posPdfOptions(posData, revision || 1, siteName || posData.siteAddress));
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
@@ -1586,10 +1583,9 @@ app.get('/api/pos/:posId/pdf-html', verifyJwtOnly, async (req, res) => {
 
     const signs    = selectSigns(pos.pos_data || {});
     const html     = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
-    const docTitle = `POS – ${siteName} – Rev. ${pos.revision}`;
     const fileName = `POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
 
-    const pdfBuffer = await rendererPool.render(html, { docTitle, revision: pos.revision });
+    const pdfBuffer = await rendererPool.render(html, posPdfOptions(pos.pos_data, pos.revision, siteName));
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);

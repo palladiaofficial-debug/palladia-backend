@@ -24,10 +24,17 @@ function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 }
+// F-489: un campo vuoto o sporco («UNKNOWN», «N/A», «[DA COMPILARE]») non si
+// stampa mai: nelle righe chiave/valore la riga sparisce, altrove un trattino.
+const VUOTO = /^\s*(?:<?\s*(?:unknown|n\/?a|null|undefined|da compilare)\s*>?|\[\s*da compilare\s*\]|-|—)?\s*$/i;
+function pieno(val) {
+  return val !== null && val !== undefined && !VUOTO.test(String(val));
+}
 function v(val) {
-  return (val && val !== 'N/A')
-    ? esc(val)
-    : '<span class="placeholder">[DA COMPILARE]</span>';
+  return pieno(val) ? esc(val) : '<span class="placeholder">—</span>';
+}
+function riga(label, val, html) {
+  return pieno(val) ? `<tr><td>${esc(label)}</td><td>${html || esc(val)}</td></tr>` : '';
 }
 function boldify(text) {
   if (!text) return '';
@@ -163,7 +170,7 @@ function parseMd(md) {
     // Markdown headings ## and # → styled sub-headers within lavorazioni
     if (/^#{1,2}\s/.test(t)) {
       const text = t.replace(/^#+\s+/, '');
-      html += `<p class="bold-line" style="font-size:10pt;color:#2C2C2C;margin-top:6pt">${boldify(text)}</p>`;
+      html += `<p class="bold-line">${boldify(text)}</p>`;
       continue;
     }
     if (/^\*\*[^*].*(\*\*:?|:)$/.test(t)) { html += `<p class="bold-line">${boldify(t)}</p>`; continue; }
@@ -175,12 +182,35 @@ function parseMd(md) {
 }
 
 // ── LAVORAZIONE BLOCKS ────────────────────────────────────────────────────────
+// F-489: la legenda P×D era scritta sotto ogni lavorazione (11 volte in un
+// POS): si toglie dai blocchi e si stampa una volta in testa alla sezione.
+const LEGENDA_RE = /^\s*Legenda:\s*P\s*=\s*probabilit[aà].*$/gim;
+const LEGENDA = 'Legenda: P = probabilità (1 improbabile, 4 molto probabile); D = danno (1 lieve, 4 molto grave); R = P×D (1-3 basso, 4-7 medio, 8-11 alto, 12-16 molto alto).';
+
+// Ogni titolo di blocco («Fasi operative:», «DPI obbligatori:», …) resta sulla
+// stessa pagina del suo contenuto: titolo + elemento seguente in un .blk.
+function blocchiInteri(html) {
+  const parti = html.match(/<(p|ul|ol|table)\b[^>]*>[\s\S]*?<\/\1>/g) || [html];
+  let out = '';
+  for (let i = 0; i < parti.length; i++) {
+    const cur = parti[i];
+    const next = parti[i + 1];
+    if (/^<p class="bold-line"/.test(cur) && next) {
+      const righe = (next.match(/<tr>/g) || []).length;
+      out += righe > 14 ? `${cur}${next}` : `<div class="blk">${cur}${next}</div>`;
+      i++;
+    } else out += cur;
+  }
+  return out;
+}
+
 function buildLavorazioneHtml(aiRisks) {
   if (!aiRisks || !aiRisks.trim()) {
     return '<div class="callout">Nessuna lavorazione generata. Integrare manualmente.</div>';
   }
   const blocks = aiRisks.split(/(?=^### )/m).filter(b => b.trim());
   let html = '';
+  let legenda = false;
   for (const block of blocks) {
     const lines  = block.split('\n');
     let title    = '';
@@ -193,14 +223,20 @@ function buildLavorazioneHtml(aiRisks) {
       }
     }
     if (!title) continue;
-    const bodyStr = lines.slice(bodyIdx).join('\n').replace(/^---\s*$/mg, '').trim();
+    let bodyStr = lines.slice(bodyIdx).join('\n').replace(/^---\s*$/mg, '').trim();
+    if (LEGENDA_RE.test(bodyStr)) { legenda = true; LEGENDA_RE.lastIndex = 0; bodyStr = bodyStr.replace(LEGENDA_RE, '').trim(); }
+    LEGENDA_RE.lastIndex = 0;
+    const body = blocchiInteri(parseMd(bodyStr));
+    // testata + prima riga (di solito la descrizione) non si separano mai
+    const prima = body.match(/^<p\b(?! class="bold-line")[^>]*>[\s\S]*?<\/p>/);
     html += `
     <div class="lavorazione-block">
-      <div class="lav-header">${esc(title)}</div>
-      <div class="lav-body">${parseMd(bodyStr)}</div>
+      <div class="lav-top"><div class="lav-header">${esc(title)}</div>${prima ? `<div class="lav-body">${prima[0]}</div>` : ''}</div>
+      <div class="lav-body">${prima ? body.slice(prima[0].length) : body}</div>
     </div>`;
   }
-  return html || '<div class="callout">Nessuna lavorazione generata.</div>';
+  if (!html) return '<div class="callout">Nessuna lavorazione generata.</div>';
+  return (legenda ? `<p class="legenda">${esc(LEGENDA)}</p>` : '') + html;
 }
 
 // ── SEGNALETICA — helpers ─────────────────────────────────────────────────────
@@ -269,7 +305,7 @@ function buildSegnaleticaHtml(signsWithImages) {
     html += `<tr>
       <td><span class="cat-dot" style="background:${meta.color}"></span></td>
       <td><strong>${meta.label}</strong></td>
-      <td style="font-size:8pt;color:#555">D.lgs 81/08 Titolo V${meta.iso ? ` — ISO 7010 ${meta.iso}xxx` : ''}</td>
+      <td style="font-size:8pt;color:#5B6672">D.lgs 81/08 Titolo V${meta.iso ? ` — ISO 7010 ${meta.iso}xxx` : ''}</td>
       <td style="text-align:center;font-weight:bold">${catCounts[cat]}</td>
     </tr>`;
   }
@@ -311,656 +347,156 @@ function buildSegnaleticaHtml(signsWithImages) {
 function buildCss() {
   return `
 /* ═══════════════════════════════════════════════════════════════════
-   PALLADIA PDF — Stylesheet v10
-   Architettura header/footer Puppeteer nativo (displayHeaderFooter:true):
-     @page { size:A4; margin:0 }  → zero margini CSS (nessun doppio margine).
-     Verticale  : Puppeteer margin top:26mm / bottom:24mm → Chrome riserva
-                  le bande H/F; il contenuto DOM non le invade MAI.
-     Orizzontale: .doc { padding: 0 16mm } → allineato ai template H/F
-                  che usano anch'essi padding:0 16mm.
-     Numerazione: pageNumber / totalPages iniettati da Chrome internamente
-                  (deterministici, zero stima, zero 2-pass manuale).
+   PALLADIA PDF — POS, stile v11 (F-489)
+   Stessa famiglia del PSC (F-492) e della piattaforma (F-442): inchiostro
+   #10171F, grigi freddi, azzurro #E8F1F9/#B5D3EE, titoli in Archivo
+   condensato, testo in Plus Jakarta Sans. Misure in px a mezzi pixel (F-302).
+   Intestazione e piè di pagina: Puppeteer nativo, margini fissi 26/24 mm
+   (vedi le regole di stampa in fondo, invariate).
    ═══════════════════════════════════════════════════════════════════ */
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,600..900&family=Plus+Jakarta+Sans:wght@400..800&display=swap');
 
-/* ── RESET ─────────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-  word-break: break-word;
-  overflow-wrap: break-word;
-  min-width: 0;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; word-break: break-word; overflow-wrap: break-word; min-width: 0; }
+html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 420; line-height: 1.55; color: #10171F; background: #FFFFFF; }
+.doc { width: 100%; padding: 0 16mm; }
+.doc.debug { outline: 1px dashed #9F2F25; }
+img { max-width: 100%; }
+strong, b { font-weight: 700; }
+.disp, .cover-title, .cover-rev b, .cover-opera .t, .section-title, .emergency-number { font-family: 'Archivo', 'Arial Narrow', sans-serif; font-stretch: 72%; font-weight: 800; letter-spacing: -0.2px; }
+.ey { font-size: 9.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: #5B6672; }
 
-/* ── BASE ───────────────────────────────────────────────────────────── */
-html, body {
-  margin: 0;
-  padding: 0;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-body {
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 10pt;
-  color: #1E1E1E;
-  line-height: 1.65;
-  background: #FFFFFF;
-  /* Nessun padding sul body — tutto il padding è in .doc */
-}
+/* ── Copertina ───────────────────────────────────────────────────── */
+.cover { display: flex; flex-direction: column; break-after: page; page-break-after: always; }
+.cover-kind { display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; }
+.cover-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-bottom: 6mm; border-bottom: 1.5px solid #10171F; }
+.cover-title { font-size: 56px; line-height: 0.95; margin-top: 4mm; }
+.cover-rev { text-align: right; white-space: nowrap; }
+.cover-rev b { display: block; font-size: 29px; line-height: 1; }
+.cover-rev span { font-size: 11px; color: #5B6672; }
+.cover-opera { margin-top: 9mm; padding: 6mm 7mm; background: #F5F7F9; border-left: 2.2mm solid #B5D3EE; border-radius: 0 2.5mm 2.5mm 0; }
+.cover-opera .t { font-size: 25px; line-height: 1.15; margin-top: 1.5mm; }
+.cover-opera .a { font-size: 14px; margin-top: 1mm; color: #3A4652; }
+.cover-pill { display: inline-block; margin-top: 3mm; background: #FFFFFF; border: 0.8px solid #CBD3DB; border-radius: 10mm; padding: 0.7mm 3mm; font-size: 10.5px; font-weight: 700; }
+.cover-opera .d { font-size: 12px; color: #3A4652; margin-top: 3mm; }
+.cover-dati { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 5mm; padding-top: 3.5mm; border-top: 0.8px solid #CBD3DB; }
+.cover-dati div { padding-right: 3mm; }
+.cover-dati b { display: block; font-size: 16px; margin-top: 0.6mm; }
+.cover-persone { margin-top: 9mm; }
+.cover-persone table { margin-top: 2mm; font-size: 13px; }
+.cover-persone td { padding: 2.4mm 2mm 2.4mm 0; border-bottom: 0.8px solid #E3E7EC; background: none; }
+.cover-persone td.k { width: 62mm; color: #5B6672; }
+.cover-firme { margin-top: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 8mm; }
+.cover-firma { border: 0.8px solid #CBD3DB; border-radius: 2.5mm; padding: 3.5mm 4mm; height: 30mm; display: flex; flex-direction: column; }
+.cover-firma .n { font-weight: 700; margin-top: 1mm; }
+.cover-firma .s { margin-top: auto; border-bottom: 0.8px solid #8A949E; font-size: 9px; color: #8A949E; padding-bottom: 0.6mm; }
+.cover-colophon { margin-top: 3mm; display: flex; justify-content: space-between; font-size: 10px; color: #8A949E; }
 
-/* ── DOC WRAPPER ─────────────────────────────────────────────────────
-   .doc gestisce SOLO il padding laterale (16mm sx/dx).
-   Il padding verticale NON è nel DOM: Puppeteer margin top:26mm /
-   bottom:24mm riserva le bande H/F — il contenuto non le invade mai.
-   width:100% → non supera mai la larghezza pagina. */
-.doc {
-  width: 100%;
-  max-width: 100%;
-  box-sizing: border-box;
-  padding: 0 16mm;
-}
-.doc.debug { outline: 1px dashed #ff0000; }
+/* ── Sezioni ─────────────────────────────────────────────────────── */
+.section-title { display: flex; align-items: baseline; gap: 3.5mm; font-size: 27px; line-height: 1.05; color: #10171F; margin: 10mm 0 4mm; padding-bottom: 2.6mm; border-bottom: 1.5px solid #10171F; }
+.section-title .n { font-size: 27px; color: #8A949E; min-width: 6mm; }
+.section-title:first-child { margin-top: 0; }
+.section-title.page-break { margin-top: 0; }
+.sub-title { font-size: 15px; font-weight: 750; color: #10171F; margin: 5.5mm 0 2mm; }
+p { margin: 0 0 2.4mm; }
+ul, ol { margin: 0 0 3mm; padding-left: 0; }
+ul { list-style: none; }
+ul li { position: relative; padding-left: 5mm; margin: 0 0 1.2mm; }
+ul li::before { content: ''; position: absolute; left: 1mm; top: 2.3mm; width: 1.4mm; height: 1.4mm; border-radius: 1mm; background: #3A4652; }
+ol { padding-left: 6mm; }
+ol li { margin: 0 0 1.2mm; padding-left: 1mm; }
+.muted { color: #5B6672; }
+.placeholder { color: #8A949E; }
+hr { border: 0; border-top: 0.8px solid #E3E7EC; margin: 5mm 0; }
+.callout { background: #F5F7F9; border-radius: 2mm; padding: 2.4mm 3.5mm; font-size: 12px; color: #3A4652; margin: 0 0 3mm; }
+.legenda { font-size: 11.5px; color: #5B6672; margin: 0 0 5mm; }
 
-img {
-  max-width: 100%;
-  height: auto;
-  display: block;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-table {
-  max-width: 100%;
-}
+/* ── Tabelle ─────────────────────────────────────────────────────── */
+table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 1.5mm 0 4mm; font-size: 12px; }
+th { text-align: left; color: #5B6672; font-weight: 800; font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; padding: 1.8mm 2.2mm; border-bottom: 1.3px solid #10171F; background: none; }
+td { padding: 2mm 2.2mm; border-bottom: 0.8px solid #E3E7EC; vertical-align: top; background: none; overflow-wrap: anywhere; }
+table.kv td:first-child { width: 62mm; color: #5B6672; padding-left: 0; }
+table.kv td:last-child { font-weight: 600; }
+.badge { display: inline-block; min-width: 17mm; text-align: center; padding: 0.3mm 2mm; border-radius: 6mm; font-size: 10px; font-weight: 800; white-space: nowrap; }
+.badge-low { background: #E9F3EC; color: #2F6A43; }
+.badge-medium { background: #FDF0E1; color: #9A520E; }
+.badge-high { background: #FBE7E4; color: #9F2F25; }
+.badge-very-high { background: #9F2F25; color: #FFFFFF; }
+.risk-num { font-weight: 800; font-variant-numeric: tabular-nums; }
+.risk-low { color: #2F6A43; } .risk-medium { color: #9A520E; } .risk-high { color: #9F2F25; } .risk-very-high { color: #9F2F25; }
 
-/* ── ANTI-TAGLIO ─────────────────────────────────────────────────────
-   Titoli: non isolare in fondo a una pagina.
-   Righe tabella: non dividere a metà. thead si ripete.
-   Le tabelle possono continuare su più pagine (NO table break-inside:avoid). */
-h1, h2, h3 {
-  break-after: avoid-page;
-  page-break-after: avoid;
-}
-tr {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-thead {
-  display: table-header-group;
-}
-.no-break {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
+/* ── Lavorazioni ─────────────────────────────────────────────────── */
+.lavorazione-block { margin: 0 0 8mm; }
+.lav-header { background: #E8F1F9; color: #10171F; font-size: 16.5px; font-weight: 800; padding: 3mm 4mm; border-radius: 2mm; }
+.lav-body { padding: 2.4mm 4mm 0; }
+.lav-body p { font-size: 12.5px; }
+.lav-body .bold-line { font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #3A4652; margin: 4mm 0 1.6mm; }
+.lav-body .bold-line strong { font-weight: 800; }
+.lav-body p.desc .bold-line, .lav-body p.desc strong { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: #10171F; }
+.lav-body ul, .lav-body ol { font-size: 12.5px; }
+.lav-body table { font-size: 12px; }
+.lav-top, .blk { break-inside: avoid; page-break-inside: avoid; }
 
-/* ── COVER ─────────────────────────────────────────────────────────────
-   height = A4 (297mm) - Puppeteer top (26mm) - Puppeteer bottom (24mm)
-          = 247mm → cover occupa esattamente la prima pagina di contenuto.
-   ───────────────────────────────────────────────────────────────────── */
-.cover {
-  break-after: page;
-  page-break-after: always;
-  display: flex;
-  width: 100%;
-  max-width: 100%;
-}
-.cover-sidebar {
-  width: 62mm;
-  max-width: 62mm;
-  flex-shrink: 0;
-  background: #2C2C2C;
-  color: #FFFFFF;
-  padding: 12mm 9mm 10mm 10mm;
-  display: flex;
-  flex-direction: column;
-}
-.cover-sidebar-brand {
-  font-size: 10pt;
-  font-weight: bold;
-  letter-spacing: 3.5pt;
-  text-transform: uppercase;
-  color: #AAAAAA;
-  margin-bottom: 10mm;
-  padding-bottom: 6mm;
-  border-bottom: 0.5pt solid #484848;
-}
-.cover-sidebar-item {
-  margin-bottom: 6mm;
-}
-.cover-label {
-  font-size: 5.5pt;
-  letter-spacing: 1.2pt;
-  text-transform: uppercase;
-  color: #888888;
-  margin-bottom: 2pt;
-}
-.cover-value {
-  font-size: 8.5pt;
-  font-weight: bold;
-  color: #FFFFFF;
-  line-height: 1.35;
-}
-.cover-sidebar-footer {
-  margin-top: auto;
-  font-size: 6.5pt;
-  color: #666666;
-  padding-top: 5mm;
-  border-top: 0.5pt solid #444444;
-  line-height: 1.5;
-}
-.cover-main {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  max-width: 100%;
-  padding: 12mm 10mm 10mm 12mm;
-  display: flex;
-  flex-direction: column;
-  background: #FFFFFF;
-}
-.cover-top { flex: 1; min-height: 0; }
-.cover-title {
-  font-size: 22pt;
-  font-weight: bold;
-  color: #1E1E1E;
-  text-transform: uppercase;
-  letter-spacing: 0.3pt;
-  line-height: 1.15;
-  margin-bottom: 4mm;
-}
-.cover-subtitle {
-  font-size: 9pt;
-  color: #777777;
-  margin-bottom: 7mm;
-  font-style: italic;
-}
-.cover-rev-badge {
-  display: inline-block;
-  background: #2C2C2C;
-  color: #FFFFFF;
-  font-size: 8.5pt;
-  font-weight: bold;
-  padding: 3pt 11pt;
-  border-radius: 2pt;
-  margin-bottom: 7mm;
-  letter-spacing: 0.3pt;
-}
-.cover-divider {
-  border: none;
-  border-top: 0.75pt solid #E8E8E8;
-  margin: 0 0 6mm 0;
-}
-.cover-info-box {
-  border: 0.75pt solid #E8E8E8;
-  border-radius: 2pt;
-  padding: 5mm 7mm;
-  background: #F8F8F8;
-  margin-bottom: 6mm;
-}
-.cover-info-row {
-  display: flex;
-  align-items: baseline;
-  margin-bottom: 4pt;
-  font-size: 8.5pt;
-}
-.cover-info-row:last-child { margin-bottom: 0; }
-.cover-info-label {
-  font-weight: bold;
-  color: #2C2C2C;
-  width: 34mm;
-  flex-shrink: 0;
-  font-size: 8pt;
-}
-.cover-info-val {
-  color: #333333;
-  flex: 1;
-  font-size: 8.5pt;
-}
-.cover-bottom { flex-shrink: 0; }
-.cover-sig-row {
-  display: flex;
-  gap: 5pt;
-  margin-top: 5mm;
-}
-.cover-sig-box {
-  flex: 1;
-  border: 0.5pt solid #DDDDDD;
-  border-top: 2pt solid #2C2C2C;
-  padding: 7pt 8pt 10pt;
-  min-height: 38mm;
-}
-.cover-sig-label {
-  font-size: 5.5pt;
-  color: #999999;
-  text-transform: uppercase;
-  letter-spacing: 0.5pt;
-  margin-bottom: 3pt;
-}
-.cover-sig-name {
-  font-size: 8pt;
-  font-weight: bold;
-  color: #1E1E1E;
-}
-.cover-footer-note {
-  font-size: 6.5pt;
-  color: #BBBBBB;
-  margin-top: 4mm;
-  padding-top: 3mm;
-  border-top: 0.5pt solid #EEEEEE;
-  line-height: 1.4;
-}
+/* ── Segnaletica ─────────────────────────────────────────────────── */
+.sign-intro { font-size: 12.5px; }
+.sign-summary-table td { font-size: 12px; }
+.sign-summary-total td { font-weight: 800; border-top: 1.3px solid #10171F; border-bottom: 0; }
+.cat-dot { display: inline-block; width: 3mm; height: 3mm; border-radius: 1mm; }
+.sign-zone-header { font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #3A4652; margin: 6mm 0 2mm; padding-bottom: 1.5mm; border-bottom: 0.8px solid #E3E7EC; }
+.signs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-bottom: 3mm; }
+.sign-card { border: 0.8px solid #E3E7EC; border-radius: 2mm; padding: 2.5mm; text-align: center; }
+.sign-img { width: 22mm; height: 22mm; object-fit: contain; display: block; margin: 0 auto 1.5mm; }
+.sign-img-placeholder { width: 22mm; height: 22mm; margin: 0 auto 1.5mm; background: #F5F7F9; border-radius: 1mm; }
+.sign-name { font-size: 10.5px; font-weight: 700; line-height: 1.3; }
+.sign-iso { font-size: 9.5px; font-weight: 800; margin-top: 0.5mm; }
+.sign-location-text { font-size: 9px; color: #5B6672; margin-top: 1mm; line-height: 1.35; }
 
-/* ── SECTION TITLE ──────────────────────────────────────────────────── */
-.section-title {
-  background: #2C2C2C;
-  color: #FFFFFF;
-  font-size: 9.5pt;
-  font-weight: bold;
-  text-transform: uppercase;
-  letter-spacing: 1pt;
-  padding: 8pt 11pt;
-  margin: 16pt 0 14pt 0;
-  break-after: avoid;
-  page-break-after: avoid;
-  break-before: avoid;
-  page-break-before: avoid;
-}
-.section-title:first-child { margin-top: 8pt; }
+/* ── Emergenza ───────────────────────────────────────────────────── */
+.emergency-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 2mm 0 4mm; }
+.emergency-card { border: 0.8px solid #CBD3DB; border-radius: 2.5mm; padding: 3mm 4mm; background: #FFFFFF; }
+.emergency-card.alt { background: #F5F7F9; }
+.emergency-number { display: block; font-size: 29px; line-height: 1; color: #10171F; }
+.emergency-number.small { font-size: 19px; }
+.emergency-label { font-size: 11px; color: #5B6672; margin-top: 1mm; }
 
-/* ── SUB-TITLE ──────────────────────────────────────────────────────── */
-.sub-title {
-  background: #F0F0F0;
-  border-left: 3pt solid #2C2C2C;
-  font-size: 9pt;
-  font-weight: bold;
-  padding: 6pt 10pt;
-  margin: 18pt 0 9pt 0;
-  break-after: avoid;
-  page-break-after: avoid;
-  color: #1E1E1E;
-}
-
-/* ── TABLES ─────────────────────────────────────────────────────────── */
-table {
-  width: 100%;
-  max-width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 9pt;
-  margin: 6pt 0 14pt 0;
-}
-th, td {
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-table.allow-break {
-  break-inside: auto;
-  page-break-inside: auto;
-}
-table.allow-break thead { display: table-header-group; }
-thead th {
-  background: #2C2C2C;
-  color: #FFFFFF;
-  font-weight: bold;
-  font-size: 8pt;
-  padding: 5pt 7pt;
-  text-align: left;
-  border: 0.5pt solid #1E1E1E;
-  overflow: hidden;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-  line-height: 1.4;
-}
-tbody tr:nth-child(even) { background: #F7F7F7; }
-tbody tr:nth-child(odd)  { background: #FFFFFF; }
-tbody td {
-  padding: 6pt 8pt;
-  border: 0.5pt solid #DDDDDD;
-  vertical-align: top;
-  line-height: 1.6;
-  word-break: break-word;
-  overflow-wrap: anywhere;
-}
-
-/* ── RISK BADGES ────────────────────────────────────────────────────── */
-.badge {
-  display: inline-block;
-  border-radius: 2pt;
-  padding: 1.5pt 6pt;
-  font-size: 7.5pt;
-  font-weight: bold;
-  color: #FFFFFF;
-  white-space: nowrap;
-}
-.badge-low       { background: #2E7D32; }
-.badge-medium    { background: #E65100; }
-.badge-high      { background: #B71C1C; }
-.badge-very-high { background: #880E4F; }
-.risk-num {
-  display: inline-block;
-  border-radius: 2pt;
-  padding: 1.5pt 5pt;
-  font-size: 8pt;
-  font-weight: bold;
-  color: #FFFFFF;
-  min-width: 22pt;
-  text-align: center;
-}
-.risk-low       { background: #2E7D32; }
-.risk-medium    { background: #E65100; }
-.risk-high      { background: #B71C1C; }
-.risk-very-high { background: #880E4F; }
-
-/* ── CALLOUT ────────────────────────────────────────────────────────── */
-.callout {
-  background: #FFFDE7;
-  border-left: 3pt solid #F9A825;
-  padding: 7pt 10pt;
-  margin: 8pt 0;
-  font-size: 9pt;
-  break-inside: avoid;
-  border-radius: 0 2pt 2pt 0;
-}
-
-/* ── LAVORAZIONE BLOCKS ─────────────────────────────────────────────── */
-.lavorazione-block {
-  border: 0.75pt solid #DDDDDD;
-  border-radius: 2pt;
-  margin: 16pt 0 22pt 0;
-  break-inside: auto;
-  page-break-inside: auto;
-}
-.lav-header {
-  background: #484848;
-  color: #FFFFFF;
-  font-weight: bold;
-  font-size: 9.5pt;
-  padding: 8pt 11pt;
-  break-after: avoid;
-  page-break-after: avoid;
-  letter-spacing: 0.2pt;
-}
-.lav-body { padding: 11pt 13pt 10pt 13pt; }
-.lav-body p          { margin-bottom: 6pt; }
-.lav-body ul         { margin: 5pt 0 8pt 18pt; }
-.lav-body ol         { margin: 5pt 0 8pt 20pt; }
-.lav-body li         { margin-bottom: 4pt; }
-.lav-body .bold-line { font-weight: bold; margin: 8pt 0 3pt 0; color: #2C2C2C; }
-.lav-body table      { margin: 6pt 0 9pt 0; font-size: 8.5pt; }
-
-/* ── SEGNALETICA ────────────────────────────────────────────────────── */
-.sign-intro {
-  margin-bottom: 10pt;
-  font-size: 9pt;
-  line-height: 1.6;
-  color: #444444;
-}
-.sign-summary-table { margin-bottom: 14pt !important; }
-.sign-summary-table thead th { background: #1E1E1E; }
-.sign-summary-total td {
-  background: #EEEEEE !important;
-  border-top: 1pt solid #AAAAAA;
-}
-.cat-dot {
-  display: inline-block;
-  width: 9pt;
-  height: 9pt;
-  border-radius: 50%;
-  vertical-align: middle;
-}
-.sign-zone-header {
-  background: #1E1E1E;
-  color: #FFFFFF;
-  font-size: 8pt;
-  font-weight: bold;
-  letter-spacing: 1pt;
-  text-transform: uppercase;
-  padding: 5pt 9pt;
-  margin: 14pt 0 6pt 0;
-  break-after: avoid;
-  page-break-after: avoid;
-}
-.signs-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 7pt;
-  margin: 0 0 8pt 0;
-  break-inside: auto;
-}
-.sign-card {
-  border: 0.5pt solid #E0E0E0;
-  border-radius: 0 0 2pt 2pt;
-  padding: 6pt 4pt 5pt;
-  text-align: center;
-  background: #FFFFFF;
-  break-inside: avoid;
-  page-break-inside: avoid;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-.sign-img {
-  width: 100%;
-  max-width: 32mm;
-  height: 26mm;
-  object-fit: contain;
-  display: block;
-  margin: 3pt auto 5pt;
-  background: #FFFFFF;
-}
-.sign-img-placeholder {
-  width: 32mm;
-  height: 26mm;
-  background: #F0F0F0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13pt;
-  color: #AAAAAA;
-  margin: 3pt auto 5pt;
-}
-.sign-name {
-  font-size: 6pt;
-  font-weight: bold;
-  color: #1A1A1A;
-  margin-bottom: 2pt;
-  line-height: 1.3;
-}
-.sign-iso {
-  font-size: 5.5pt;
-  font-weight: bold;
-  letter-spacing: 0.3pt;
-  margin-bottom: 2pt;
-  text-transform: uppercase;
-}
-.sign-location-text {
-  font-size: 5pt;
-  color: #777777;
-  font-style: italic;
-  line-height: 1.3;
-  text-align: center;
-  margin-top: auto;
-  padding-top: 2pt;
-}
-
-/* ── EMERGENCY GRID ─────────────────────────────────────────────────── */
-.emergency-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 7pt;
-  margin: 8pt 0 14pt 0;
-}
-.emergency-card {
-  background: #2C2C2C;
-  color: #FFFFFF;
-  text-align: center;
-  padding: 9pt 6pt;
-  border-radius: 2pt;
-  break-inside: avoid;
-  overflow: hidden;
-}
-.emergency-number { font-size: 17pt; font-weight: bold; display: block; letter-spacing: 0.5pt; }
-.emergency-label  { font-size: 6.5pt; color: #AAAAAA; margin-top: 3pt; line-height: 1.3; }
-
-/* ── SIGNATURES ─────────────────────────────────────────────────────── */
-.signature-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14pt;
-  margin: 12pt 0;
-}
-.signature-box {
-  border: 0.5pt solid #DDDDDD;
-  border-left: 3pt solid #2C2C2C;
-  border-radius: 0 2pt 2pt 0;
-  padding: 11pt 13pt 14pt;
-  min-height: 75mm;
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-.sig-role {
-  font-weight: bold;
-  font-size: 9pt;
-  color: #1A1A1A;
-  margin-bottom: 3pt;
-  padding-bottom: 6pt;
-  border-bottom: 0.5pt solid #EEEEEE;
-  line-height: 1.4;
-}
-.sig-name  { font-size: 8.5pt; color: #555555; margin-bottom: 12pt; margin-top: 4pt; }
-.sig-body  { display: flex; gap: 12pt; align-items: flex-start; }
-.sig-stamp {
-  flex-shrink: 0;
-  width: 34mm;
-  height: 28mm;
-  border: 0.5pt dashed #CCCCCC;
-  border-radius: 2pt;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #DDDDDD;
-  font-size: 6pt;
-  letter-spacing: 1pt;
-  text-transform: uppercase;
-}
-.sig-fields { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14pt; }
-.sig-field  { flex: 1; min-width: 0; }
-.sig-label  { font-size: 6.5pt; color: #888888; margin-bottom: 5pt; text-transform: uppercase; letter-spacing: 0.3pt; }
-.sig-line   { border-bottom: 0.5pt solid #BBBBBB; min-height: 20pt; }
-
-/* ── TYPOGRAPHY ─────────────────────────────────────────────────────── */
-p          { margin-bottom: 8pt; line-height: 1.7; orphans: 3; widows: 3; }
-ul, ol     { margin: 6pt 0 10pt 19pt; }
-li         { margin-bottom: 5pt; line-height: 1.6; }
-strong     { font-weight: bold; }
-.bold-line { font-weight: bold; margin: 9pt 0 3pt 0; }
-.muted     { color: #888888; font-size: 8.5pt; }
-.placeholder { color: #C0852A; font-weight: bold; font-style: italic; }
-hr         { border: none; border-top: 0.5pt solid #E8E8E8; margin: 12pt 0; }
-h1, h2, h3 { break-after: avoid; page-break-after: avoid; }
-h1 { font-size: 13pt; margin: 16pt 0 8pt 0; color: #1E1E1E; }
-h2 { font-size: 11pt; margin: 14pt 0 6pt 0; color: #1E1E1E; }
-h3 { font-size: 10pt; margin: 11pt 0 5pt 0; color: #1E1E1E; }
-
-/* ── CONTENT WRAPPER ─────────────────────────────────────────────────
-   Il div.content avvolge tutte le sezioni dopo la cover.
-   Nessun padding aggiuntivo: lo spazio verticale è già in .doc. */
-.content { }
-
-/* ── PAGE BREAK UTILITIES ───────────────────────────────────────────── */
+/* ── Firme ───────────────────────────────────────────────────────── */
+.signature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin: 4mm 0; }
+.signature-box { border: 0.8px solid #CBD3DB; border-radius: 2.5mm; padding: 3.5mm 4mm; }
+.signature-box.wide { margin: 5mm 0; }
+.sig-role { font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #5B6672; }
+.sig-name { font-weight: 700; margin-top: 1mm; min-height: 5mm; }
+.sig-body { display: flex; gap: 4mm; margin-top: 3mm; }
+.sig-stamp { flex: 0 0 22mm; height: 18mm; border: 0.8px dashed #CBD3DB; border-radius: 1.5mm; font-size: 9px; color: #8A949E; display: flex; align-items: center; justify-content: center; }
+.sig-fields { flex: 1; display: flex; flex-direction: column; gap: 3mm; }
+.sig-field { display: flex; align-items: flex-end; gap: 2mm; }
+.sig-label { font-size: 9px; color: #8A949E; width: 9mm; }
+.sig-line { flex: 1; border-bottom: 0.8px solid #8A949E; height: 6mm; }
 .page-break { break-before: page; page-break-before: always; }
-.no-break   { break-inside: avoid; page-break-inside: avoid; }
-.keep-next  { break-after: avoid; page-break-after: avoid; }
+.no-break, .keep-next { break-inside: avoid; page-break-inside: avoid; }
 
 /* ══════════════════════════════════════════════════════════════════════
-   BLOCCO FINALE v13 — vince su tutto (cascata CSS, ultimo = forte)
-   CRITICO: @page margin DEVE coincidere con Puppeteer margin top/bottom.
-   - @page { margin: 26mm 0 24mm 0 } → Chrome layout con area utile
-     247mm/pag (297-26-24). Contenuto DENTRO quell'area, H/F fuori.
-   - Puppeteer margin { top:'26mm', bottom:'24mm' } → stessa banda fisica.
-   - top:26mm = header 10mm + 16mm respiro visivo sopra il contenuto.
-   - bottom:24mm = 15mm respiro visivo + footer 9mm.
-   - Margini aumentati da 22/20 a 26/24 per eliminare la percezione di
-     sovrapposizione tra blocchi dark-bg e le bande header/footer.
+   REGOLE DI STAMPA — invariate (vedi memoria pdf-architecture)
+   @page margin = Puppeteer margin 26/24 mm → layout su 247mm/pag.
    ══════════════════════════════════════════════════════════════════════ */
-
 @page { size: A4; margin: 26mm 0 24mm 0; }
-
-*, *::before, *::after { box-sizing: border-box; }
-
-html, body {
-  margin: 0 !important;
-  padding: 0 !important;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-/* ── DOC: solo padding laterale — verticale gestito da Puppeteer ────── */
-.doc {
-  width: 100% !important;
-  max-width: 100% !important;
-  padding: 0 16mm !important;
-  box-sizing: border-box !important;
-}
-
-/* ── COVER — altezza esatta dell'area contenuto ─────────────────────────
-   height: 247mm = 297mm - 26mm top - 24mm bottom.
-   Garantisce che il background scuro della sidebar non sfori mai
-   nell'area footer (24mm) anche con dati variabili o subpixel rounding.
-   overflow:hidden taglia qualsiasi overflow senza rompere il layout.     */
-.cover {
-  height: 247mm !important;
-  overflow: hidden !important;
-}
-
-/* ── TABELLE anti-overflow ───────────────────────────────────────────── */
-table {
-  width: 100% !important;
-  max-width: 100% !important;
-  table-layout: fixed !important;
-  border-collapse: collapse !important;
-}
-th, td {
-  max-width: 100% !important;
-  overflow-wrap: anywhere !important;
-  word-break: break-word !important;
-}
+html, body { margin: 0 !important; padding: 0 !important; }
+.doc { width: 100% !important; max-width: 100% !important; padding: 0 16mm !important; box-sizing: border-box !important; }
+.cover { height: 247mm !important; overflow: hidden !important; }
+table { width: 100% !important; max-width: 100% !important; table-layout: fixed !important; border-collapse: collapse !important; }
+th, td { max-width: 100% !important; overflow-wrap: anywhere !important; word-break: break-word !important; }
 thead { display: table-header-group; }
 tfoot { display: table-footer-group; }
-tr    { break-inside: avoid; page-break-inside: avoid; }
-
-/* Nelle tabelle multi-pagina (allow-break) le righe possono spezzarsi:
-   impedisce a righe molto alte di sforare nell'area footer/header.     */
-table.allow-break tr {
-  break-inside: auto !important;
-  page-break-inside: auto !important;
-}
-
-/* ── ANTI-TAGLIO ─────────────────────────────────────────────────────── */
-h1, h2, h3, .section-title, .sub-title, .lav-header {
-  break-after: avoid-page !important;
-  page-break-after: avoid !important;
-}
-/* Tieni lav-header insieme al corpo: non isolare mai l'intestazione
-   di una lavorazione in fondo a una pagina senza almeno 1 riga di corpo. */
-.lav-header {
-  break-before: auto;
-  break-after: avoid-page !important;
-  page-break-after: avoid !important;
-}
-img, .card, .signature-box, .callout, .lav-header, .sign-card,
-.emergency-card, .sign-cat-title {
-  break-inside: avoid !important;
-  page-break-inside: avoid !important;
-}
+tr { break-inside: avoid; page-break-inside: avoid; }
+table.allow-break tr { break-inside: auto !important; page-break-inside: auto !important; }
+h1, h2, h3, .section-title, .sub-title, .lav-header, .bold-line, .sign-zone-header { break-after: avoid-page !important; page-break-after: avoid !important; }
+img, .signature-box, .callout, .lav-header, .sign-card, .emergency-card { break-inside: avoid !important; page-break-inside: avoid !important; }
 `;
 }
 
 // ── FIRMA BOX — helper riusabile ──────────────────────────────────────────────
 function buildSigBox(role, name, fullWidth = false) {
   return `
-  <div class="signature-box"${fullWidth ? ' style="margin:8pt 0;"' : ''}>
+  <div class="signature-box${fullWidth ? ' wide' : ''}">
     <div class="sig-role">${esc(role)}</div>
     <div class="sig-name">${name}</div>
     <div class="sig-body">
@@ -993,163 +529,104 @@ async function generatePosHtml(posData, revision, aiRisks, signs = []) {
 
   const workersCount = (d.workers && d.workers.length > 0)
     ? d.workers.length
-    : (d.numWorkers || '[DA COMPILARE]');
+    : (pieno(d.numWorkers) ? d.numWorkers : '');
 
+  // F-489: righe vuote da compilare a mano, mai segnaposto stampati
   const workerDeclRows = (d.workers && d.workers.length > 0)
     ? d.workers.map((w, i) => `<tr>
-        <td>${i + 1}</td><td>${v(w.name)}</td><td>&nbsp;</td><td>&nbsp;</td>
+        <td>${i + 1}</td><td>${pieno(w.name) ? esc(w.name) : '&nbsp;'}</td><td>&nbsp;</td><td>&nbsp;</td>
       </tr>`).join('')
-    : `<tr><td>1</td><td><span class="placeholder">[DA COMPILARE]</span></td><td>&nbsp;</td><td>&nbsp;</td></tr>
-       <tr><td>2</td><td><span class="placeholder">[DA COMPILARE]</span></td><td>&nbsp;</td><td>&nbsp;</td></tr>
-       <tr><td>3</td><td><span class="placeholder">[DA COMPILARE]</span></td><td>&nbsp;</td><td>&nbsp;</td></tr>`;
+    : [1, 2, 3, 4, 5, 6].map(i => `<tr><td>${i}</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`).join('');
 
   // Carica immagini cartelli in parallelo
   const signsWithImages = await enrichSignsWithImages(signs);
 
-  // ── COPERTINA ──────────────────────────────────────────────────────────────
+  // ── COPERTINA (F-489: stessa famiglia del PSC) ────────────────────────────
+  const tipo = pieno(d.tipoAppalto) ? d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1) : '';
+  const pill = [tipo, d.presentedBy === 'subappaltatore' && pieno(d.affidatariaName) ? `affidataria ${d.affidatariaName}` : ''].filter(Boolean).join(' · ');
+  const titoloCantiere = [d.siteName, d.client, siteName].find(pieno) || 'Cantiere';
+  const indirizzo = pieno(d.siteAddress) && d.siteAddress !== titoloCantiere ? d.siteAddress : '';
+  const descrizione = [d.descrizioneOpera, d.workType].filter(pieno).join(': ');
+  const dati = [
+    ['Inizio lavori', pieno(d.startDate) ? formatDate(d.startDate) : ''],
+    ['Fine lavori', pieno(d.endDate) ? formatDate(d.endDate) : ''],
+    ['Operai in cantiere', workersCount ? String(workersCount) : ''],
+    pieno(d.budget) ? ['Importo lavori', `€ ${formatBudget(d.budget)}`] : ['Orario', `${d.inizioTurno || '08:00'} · ${d.oreLavorative || '8'} ore`],
+  ].filter(([, val]) => val);
+  const figure = [
+    ['Datore di lavoro', d.datoreLavoro], ['RSPP', d.rspp], ['Medico competente', d.medico],
+    ['Coordinatore per l\'esecuzione (CSE)', d.cse],
+  ].filter(([, val]) => pieno(val));
   const cover = `
-<div class="cover">
-
-  <div class="cover-sidebar">
-    <div class="cover-sidebar-brand" style="display:flex;align-items:center;gap:5pt">Palladia</div>
-
-    <div class="cover-sidebar-item">
-      <div class="cover-label">Oggetto</div>
-      <div class="cover-value">${esc(d.descrizioneOpera || d.workType || '[DA COMPILARE]')}</div>
-    </div>
-    <div class="cover-sidebar-item">
-      <div class="cover-label">Committente</div>
-      <div class="cover-value">${esc(d.client || '[DA COMPILARE]')}</div>
-    </div>
-    <div class="cover-sidebar-item">
-      <div class="cover-label">Cantiere</div>
-      <div class="cover-value">${esc(siteName)}</div>
-    </div>
-    <div class="cover-sidebar-item">
-      <div class="cover-label">Impresa esecutrice</div>
-      <div class="cover-value">${esc(d.companyName || '[DA COMPILARE]')}</div>
-    </div>
-    <div class="cover-sidebar-item">
-      <div class="cover-label">P.IVA</div>
-      <div class="cover-value">${esc(d.companyVat || '[DA COMPILARE]')}</div>
-    </div>
-    <div class="cover-sidebar-item">
-      <div class="cover-label">Revisione</div>
-      <div class="cover-value">Rev.&#160;${rev}</div>
-    </div>
-    <div class="cover-sidebar-item">
-      <div class="cover-label">Data emissione</div>
-      <div class="cover-value">${oggi}</div>
-    </div>
-
-    <div class="cover-sidebar-footer">
-      Redatto ai sensi del D.lgs 81/2008 e s.m.i.<br>
-      Generato con Palladia
-    </div>
+<section class="cover">
+  <div class="cover-kind"><span class="ey">D.Lgs. 81/2008 · art. 89 c.1 h e Allegato XV</span><span class="ey">${esc([d.companyName, pieno(d.companyVat) ? `P.IVA ${d.companyVat}` : ''].filter(pieno).join(' · '))}</span></div>
+  <div class="cover-head"><div class="cover-title">Piano Operativo<br>di Sicurezza</div><div class="cover-rev"><b>Rev.&#160;${rev}</b><span>${oggi}</span></div></div>
+  <div class="cover-opera">
+    <span class="ey">Cantiere</span>
+    <div class="t">${esc(titoloCantiere)}</div>
+    ${indirizzo ? `<div class="a">${esc(indirizzo)}</div>` : ''}
+    ${pill ? `<span class="cover-pill">${esc(pill)}</span>` : ''}
+    ${descrizione ? `<div class="d">${esc(descrizione.length > 300 ? `${descrizione.slice(0, 297)}…` : descrizione)}</div>` : ''}
+    ${dati.length ? `<div class="cover-dati">${dati.map(([k, val]) => `<div><span class="ey">${esc(k)}</span><b>${esc(val)}</b></div>`).join('')}</div>` : ''}
   </div>
-
-  <div class="cover-main">
-    <div class="cover-top">
-      <div class="cover-title">Piano Operativo<br>di Sicurezza</div>
-      <div class="cover-subtitle">ai sensi del D.lgs 81/2008 e s.m.i. — Allegato XV</div>
-      <div class="cover-rev-badge">Revisione ${rev}</div>
-      <div class="cover-divider"></div>
-      <div class="cover-info-box">
-        ${d.descrizioneOpera ? `<div class="cover-info-row"><span class="cover-info-label">Lavori</span><span class="cover-info-val">${esc(d.descrizioneOpera)}</span></div>` : ''}
-        ${d.workType    ? `<div class="cover-info-row"><span class="cover-info-label">Natura dei lavori</span><span class="cover-info-val">${esc(d.workType)}</span></div>` : ''}
-        ${d.client      ? `<div class="cover-info-row"><span class="cover-info-label">Committente</span><span class="cover-info-val">${esc(d.client)}</span></div>` : ''}
-        ${siteName      ? `<div class="cover-info-row"><span class="cover-info-label">Cantiere</span><span class="cover-info-val">${esc(siteName)}</span></div>` : ''}
-        ${(d.startDate||d.endDate) ? `<div class="cover-info-row"><span class="cover-info-label">Periodo</span><span class="cover-info-val">${esc(formatDate(d.startDate)||'')}&#160;–&#160;${esc(formatDate(d.endDate)||'')}</span></div>` : ''}
-        ${d.budget      ? `<div class="cover-info-row"><span class="cover-info-label">Importo lavori</span><span class="cover-info-val">€&#160;${esc(formatBudget(d.budget))}</span></div>` : ''}
-        <div class="cover-info-row"><span class="cover-info-label">Impresa</span><span class="cover-info-val">${esc(d.companyName||'[DA COMPILARE]')}</span></div>
-      </div>
-    </div>
-
-    <div class="cover-bottom">
-      <div style="font-size:6pt;color:#AAAAAA;text-transform:uppercase;letter-spacing:0.8pt;margin-bottom:5pt;">Firme del documento</div>
-      <div class="cover-sig-row">
-        <div class="cover-sig-box">
-          <div class="cover-sig-label">Datore di lavoro</div>
-          <div class="cover-sig-name">${esc(d.datoreLavoro || d.companyName || '—')}</div>
-        </div>
-        <div class="cover-sig-box">
-          <div class="cover-sig-label">RSPP</div>
-          <div class="cover-sig-name">${esc(d.rspp||'[DA COMPILARE]')}</div>
-        </div>
-        <div class="cover-sig-box">
-          <div class="cover-sig-label">CSE (presa visione)</div>
-          <div class="cover-sig-name">${esc(d.cse||'[DA COMPILARE]')}</div>
-        </div>
-      </div>
-      <div class="cover-footer-note">
-        Elaborato ai sensi del D.lgs 81/2008 art. 89 c.1 lett. h) — Versione digitale generata con Palladia
-      </div>
-    </div>
+  ${figure.length ? `<div class="cover-persone"><span class="ey">Figure della sicurezza</span><table><tbody>${figure.map(([k, val]) => `<tr><td class="k">${esc(k)}</td><td><b>${esc(val)}</b></td></tr>`).join('')}</tbody></table></div>` : ''}
+  <div class="cover-firme">
+    <div class="cover-firma"><span class="ey">Il datore di lavoro</span><span class="n">${esc(pieno(d.datoreLavoro) ? d.datoreLavoro : (d.companyName || ''))}</span><span class="s">Firma</span></div>
+    <div class="cover-firma"><span class="ey">Il CSE, per presa visione</span><span class="n">${pieno(d.cse) ? esc(d.cse) : '&nbsp;'}</span><span class="s">Firma e data</span></div>
   </div>
-
-</div>`;
+  <div class="cover-colophon"><span>Redatto ai sensi del D.Lgs. 81/2008, art. 89 c.1 lett. h</span><span>Redatto con Palladia</span></div>
+</section>`;
 
   // ── PAGINA FIRME (INIZIO DOCUMENTO) ────────────────────────────────────────
   const s0_firme = `
-<div class="section-title page-break">Firme e Sottoscrizione del Documento</div>
+<div class="section-title page-break">Firme e sottoscrizione del documento</div>
 <p>Il presente Piano Operativo di Sicurezza, redatto ai sensi dell'art. 89 comma 1 lettera h)
 del D.lgs 81/2008 e s.m.i., viene sottoscritto dalle figure responsabili dell'impresa esecutrice
 per attestazione di redazione, presa visione e accettazione delle disposizioni contenute.</p>
 <div class="signature-grid">
-  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', d.datoreLavoro ? esc(d.datoreLavoro) : v(d.companyName))}
-  ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', v(d.rspp))}
-  ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', v(d.rls))}
-  ${buildSigBox('Medico Competente', v(d.medico))}
+  ${buildSigBox('Datore di Lavoro dell\'impresa esecutrice', pieno(d.datoreLavoro) ? esc(d.datoreLavoro) : esc(d.companyName || ''))}
+  ${buildSigBox('RSPP — Responsabile Servizio Prevenzione e Protezione', pieno(d.rspp) ? esc(d.rspp) : '')}
+  ${buildSigBox('RLS — Rappresentante dei Lavoratori per la Sicurezza', pieno(d.rls) ? esc(d.rls) : '')}
+  ${buildSigBox('Medico Competente', pieno(d.medico) ? esc(d.medico) : '')}
 </div>
-${buildSigBox('CSE — Coordinatore per la Sicurezza in fase di Esecuzione (per presa visione)', v(d.cse), true)}
+${buildSigBox('CSE — Coordinatore per la Sicurezza in fase di Esecuzione (per presa visione)', pieno(d.cse) ? esc(d.cse) : '', true)}
 <p class="muted" style="margin-top:10pt;font-size:8pt;text-align:center;">
   Le firme apposte nella presente pagina, corredate del timbro aziendale, attestano l'avvenuta
   redazione e condivisione del POS ai sensi del D.lgs 81/2008.
 </p>`;
 
+  // F-489: la sezione 1 è l'impresa; i dati del lavoro stanno solo nella 2.1
   const s1 = `
 <div class="section-title">Sezione 1 — Intestazione e Dati Identificativi</div>
 <p>Il presente Piano Operativo di Sicurezza (POS) viene redatto ai sensi dell'art. 89, comma 1, lettera h)
 del D.lgs 81/2008 e s.m.i., come documento complementare al Piano di Sicurezza e Coordinamento (PSC),
 ove previsto, e contiene le misure preventive e protettive specifiche dell'impresa esecutrice.</p>
-<table class="no-break">
-  <thead><tr><th style="width:40%">Campo</th><th>Valore</th></tr></thead>
-  <tbody>
-    <tr><td>Impresa esecutrice</td><td>${v(d.companyName)}</td></tr>
-    <tr><td>Partita IVA</td><td>${v(d.companyVat)}</td></tr>
-    <tr><td>Sede legale</td><td>${v(d.companyAddress)}</td></tr>
-    <tr><td>Telefono</td><td>${v(d.companyPhone)}</td></tr>
-    <tr><td>Datore di lavoro</td><td>${v(d.datoreLavoro)}</td></tr>
-    <tr><td>Cantiere</td><td>${v(d.siteAddress)}</td></tr>
-    ${d.descrizioneOpera ? `<tr><td>Oggetto dei lavori</td><td>${esc(d.descrizioneOpera)}</td></tr>` : ''}
-    <tr><td>Committente</td><td>${v(d.client)}</td></tr>
-    ${d.cfCommittente ? `<tr><td>Codice Fiscale Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
-    <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
-    <tr><td>Natura dei lavori</td><td>${v(d.workType)}</td></tr>
-    ${d.presentedBy === 'subappaltatore' ? `<tr><td>Posizione dell'impresa</td><td>Impresa subappaltatrice</td></tr><tr><td>Impresa affidataria</td><td>${v(d.affidatariaName)}</td></tr>` : ''}
-    <tr><td>Revisione</td><td>${rev}</td></tr>
-    <tr><td>Data di emissione</td><td>${oggi}</td></tr>
-  </tbody>
-</table>`;
+<table class="kv no-break"><tbody>
+  ${riga('Impresa esecutrice', d.companyName)}
+  ${riga('Partita IVA', d.companyVat)}
+  ${riga('Sede legale', d.companyAddress)}
+  ${riga('Telefono', d.companyPhone)}
+  ${riga('Datore di lavoro', d.datoreLavoro)}
+  ${d.presentedBy === 'subappaltatore' ? `${riga('Posizione dell\'impresa', 'Impresa subappaltatrice')}${riga('Impresa affidataria', d.affidatariaName)}` : ''}
+  ${riga('Revisione', String(rev))}
+  ${riga('Data di emissione', oggi)}
+</tbody></table>`;
 
   const s2 = `
 <div class="section-title">Sezione 2 — Dati Generali del Lavoro</div>
 <div class="sub-title">2.1 Descrizione dell'opera</div>
-<table class="no-break">
-  <thead><tr><th style="width:40%">Campo</th><th>Valore</th></tr></thead>
-  <tbody>
-    <tr><td>Indirizzo cantiere</td><td>${v(d.siteAddress)}</td></tr>
-    ${d.descrizioneOpera ? `<tr><td>Oggetto dei lavori</td><td>${esc(d.descrizioneOpera)}</td></tr>` : ''}
-    <tr><td>Committente</td><td>${v(d.client)}</td></tr>
-    ${d.cfCommittente ? `<tr><td>CF Committente</td><td>${esc(d.cfCommittente)}</td></tr>` : ''}
-    <tr><td>Tipo di appalto</td><td>${d.tipoAppalto ? esc(d.tipoAppalto.charAt(0).toUpperCase() + d.tipoAppalto.slice(1)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
-    <tr><td>Natura dei lavori</td><td>${v(d.workType)}</td></tr>
-    <tr><td>Importo lavori</td><td>${d.budget ? `EUR&#160;${esc(formatBudget(d.budget))}` : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
-    <tr><td>Data inizio prevista</td><td>${d.startDate ? esc(formatDate(d.startDate)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
-    <tr><td>Data fine prevista</td><td>${d.endDate ? esc(formatDate(d.endDate)) : '<span class="placeholder">[DA COMPILARE]</span>'}</td></tr>
-    <tr><td>Numero massimo operai</td><td>${esc(String(workersCount))}</td></tr>
-  </tbody>
-</table>
+<table class="kv no-break"><tbody>
+  ${riga('Indirizzo del cantiere', d.siteAddress)}
+  ${riga('Oggetto dei lavori', d.descrizioneOpera)}
+  ${riga('Committente', d.client)}
+  ${riga('Codice fiscale del committente', d.cfCommittente)}
+  ${riga('Tipo di appalto', tipo)}
+  ${riga('Natura dei lavori', d.workType)}
+  ${riga('Importo dei lavori', pieno(d.budget) ? `€ ${formatBudget(d.budget)}` : '')}
+  ${riga('Inizio lavori previsto', pieno(d.startDate) ? formatDate(d.startDate) : '')}
+  ${riga('Fine lavori prevista', pieno(d.endDate) ? formatDate(d.endDate) : '')}
+  ${riga('Numero massimo di operai', workersCount ? String(workersCount) : '')}
+</tbody></table>
 <div class="sub-title">2.2 Elenco lavoratori impiegati in cantiere</div>
 ${PC.tabellaLavoratori(d)}
 <div class="sub-title">2.3 Orario di lavoro</div>
@@ -1209,12 +686,12 @@ ${(d.fasi && d.fasi.length > 0)
     <th style="width:22%">Email</th>
   </tr></thead>
   <tbody>
-    <tr><td>CSE</td><td>${v(d.cse)}</td><td>${d.cseTel ? esc(d.cseTel) : '—'}</td><td>${d.cseEmail ? esc(d.cseEmail) : '—'}</td></tr>
-    <tr><td>RSPP</td><td>${v(d.rspp)}</td><td>${d.rsppTel ? esc(d.rsppTel) : '—'}</td><td>${d.rsppEmail ? esc(d.rsppEmail) : '—'}</td></tr>
-    <tr><td>RLS</td><td>${v(d.rls)}</td><td>${d.rlsTel ? esc(d.rlsTel) : '—'}</td><td>—</td></tr>
-    <tr><td>Medico Competente</td><td>${v(d.medico)}</td><td>${d.medicoTel ? esc(d.medicoTel) : '—'}</td><td>—</td></tr>
-    <tr><td>Addetto Primo Soccorso</td><td>${v(d.primoSoccorso)}</td><td>${d.primoSoccorsoTel ? esc(d.primoSoccorsoTel) : '—'}</td><td>—</td></tr>
-    <tr><td>Addetto Antincendio</td><td>${v(d.antincendio)}</td><td>${d.antincendioTel ? esc(d.antincendioTel) : '—'}</td><td>—</td></tr>
+    <tr><td>CSE</td><td>${v(d.cse)}</td><td>${v(d.cseTel)}</td><td>${v(d.cseEmail)}</td></tr>
+    <tr><td>RSPP</td><td>${v(d.rspp)}</td><td>${v(d.rsppTel)}</td><td>${v(d.rsppEmail)}</td></tr>
+    <tr><td>RLS</td><td>${v(d.rls)}</td><td>${v(d.rlsTel)}</td><td>—</td></tr>
+    <tr><td>Medico Competente</td><td>${v(d.medico)}</td><td>${v(d.medicoTel)}</td><td>—</td></tr>
+    <tr><td>Addetto Primo Soccorso</td><td>${v(d.primoSoccorso)}</td><td>${v(d.primoSoccorsoTel)}</td><td>—</td></tr>
+    <tr><td>Addetto Antincendio</td><td>${v(d.antincendio)}</td><td>${v(d.antincendioTel)}</td><td>—</td></tr>
   </tbody>
 </table>
 <div class="sub-title">3.3 Compiti e responsabilità</div>
@@ -1319,8 +796,8 @@ ${buildSegnaleticaHtml(signsWithImages)}`;
   <div class="emergency-card"><span class="emergency-number">118</span><div class="emergency-label">Emergenza Sanitaria</div></div>
   <div class="emergency-card"><span class="emergency-number">113</span><div class="emergency-label">Polizia di Stato</div></div>
   <div class="emergency-card"><span class="emergency-number">112</span><div class="emergency-label">Carabinieri</div></div>
-  <div class="emergency-card" style="background:#555;">
-    <span class="emergency-number" style="font-size:12pt;">02 66101029</span>
+  <div class="emergency-card alt">
+    <span class="emergency-number small">02 66101029</span>
     <div class="emergency-label">Centro Antiveleni — Milano</div>
   </div>
 </div>
@@ -1482,8 +959,11 @@ ai sensi dell'art. 17 D.lgs 81/2008.</p>
   Documento generato con Palladia — D.lgs 81/2008 e s.m.i. — ${oggi} — Revisione ${rev}
 </p>`;
 
+  // F-489: «Sezione N — Titolo In Maiuscole» → numero grigio e titolo normale
+  const sezione = (html) => html.replace(/<div class="section-title( page-break)?">Sezione (\d+) — ([^<]+)<\/div>/g, (_, pb, n, t) => `<div class="section-title${pb || ''}"><span class="n">${n}</span>${titoloSezione(t)}</div>`);
+
   // F-302: dimensioni a mezzo pixel e niente crenatura → testo modificabile in Acrobat
-  return editablePdfHtml(`<!DOCTYPE html>
+  return editablePdfHtml(sezione(`<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8">
@@ -1500,7 +980,28 @@ ${s1}${s2}${s3}${s4}${s5}${s6}${s7}${s8}${s9}${s10}${s11}${s12}${s13}${s14}
 </div>
 
 </body>
-</html>`);
+</html>`));
 }
 
-module.exports = { generatePosHtml };
+// «Intestazione e Dati Identificativi» → «Intestazione e dati identificativi»; sigle intatte
+function titoloSezione(t) {
+  return t.split(' ').map((w, i) => (i === 0 || /^[A-Z0-9().]{2,}$/.test(w) ? w : w.toLowerCase())).join(' ');
+}
+
+/**
+ * F-489: opzioni di stampa del POS. In testa a ogni pagina l'impresa che fa il
+ * POS (prima «PALLADIA», il valore di riserva del piè di pagina).
+ */
+function posPdfOptions(posData, revision, siteName) {
+  const d = posData || {};
+  const rev = revision || 1;
+  const cantiere = siteName || d.siteName || d.siteAddress || 'Cantiere';
+  return {
+    docTitle: `POS · ${cantiere} · Rev. ${rev}`,
+    headerLeft: pieno(d.companyName) ? d.companyName : 'POS',
+    footerLeft: 'D.Lgs. 81/2008 · Allegato XV',
+    revision: rev,
+  };
+}
+
+module.exports = { generatePosHtml, posPdfOptions };

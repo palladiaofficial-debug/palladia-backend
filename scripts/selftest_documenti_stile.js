@@ -80,6 +80,48 @@ async function paginePdf(buf) {
   check('nessuna testata di lavorazione da sola in fondo alla pagina', lavInTesta.length === 0, lavInTesta);
   check('il PDF ha copertina, indice e le 12 sezioni', pagine.length >= 10 && pagine.some(p => p.righe.some(r => /Procedure complementari/.test(r.t))), pagine.length);
 
+  // ── F-489: POS ──────────────────────────────────────────────────────────────
+  console.log('\n\x1b[1mF-489 — POS nella stessa famiglia del PSC, senza dati sporchi\x1b[0m');
+  const POS = require('../pos-html-generator');
+  const { selectSigns } = require('../sign-selector');
+  // Dati inventati con gli stessi buchi del POS vero di Via Chiodo 9C:
+  // codice fiscale del committente «UNKNOWN», email del CSE «<UNKNOWN>»,
+  // telefono e importo mancanti.
+  const posData = {
+    companyName: 'Edil Prova S.r.l.', companyVat: '01234567890', companyAddress: 'Via Milano 1, 16100 Genova (GE)',
+    datoreLavoro: 'Mario Rossi', rspp: 'Giulia Verdi', medico: 'Dott. Luca Neri', cse: 'Ing. Anna Bassi', cseEmail: '<UNKNOWN>',
+    client: 'Condominio Via Prova 9', cfCommittente: 'UNKNOWN', siteAddress: 'Via Prova 9, Genova', siteName: 'Condominio Via Prova 9',
+    descrizioneOpera: 'Manutenzione ordinaria del condominio', workType: 'Lavori in quota, demolizioni e rimozioni',
+    tipoAppalto: 'subappalto', presentedBy: 'subappaltatore', affidatariaName: 'Impresa Affidataria S.r.l.',
+    startDate: '2026-06-12', endDate: '2027-07-14',
+    workers: [{ name: 'Luca Bianchi', qualification: 'Muratore' }, { name: 'Ahmed Kouri', qualification: 'Manovale' }],
+  };
+  const legenda = 'Legenda: P = probabilità (1 improbabile, 4 molto probabile); D = danno (1 lieve, 4 molto grave); R = P×D (1-3 basso, 4-7 medio, 8-11 alto, 12-16 molto alto).';
+  const blocco = (nome) => [`### ${nome}`, '', '**Descrizione tecnica:** Lavorazione di prova.', '', '**Fasi operative:**', '- Prima fase', '- Seconda fase', '',
+    '**Rischi identificati e valutazione (matrice P x D):**', '', '| Rischio | P (1-4) | D (1-4) | R (PxD) | Livello |', '|---|---|---|---|---|',
+    '| Caduta dall\'alto | 3 | 4 | 12 | Molto alto |', '| Rumore | 3 | 2 | 6 | Medio |', '', legenda, '',
+    '**Misure di prevenzione e protezione:**', '- Parapetti su tutti i lati', '- Otoprotettori', '', '**DPI obbligatori:**', '', '| DPI | Norma |', '|---|---|', '| Elmetto | UNI EN 397 |', ''].join('\n');
+  const content = Array.from({ length: 9 }, (_, i) => blocco(`Lavorazione di prova ${i + 1}`)).join('\n\n---\n\n');
+  const posHtml = await POS.generatePosHtml(posData, 1, content, selectSigns(posData));
+  const sporchi = ['[DA COMPILARE]', 'UNKNOWN', '&lt;UNKNOWN&gt;'].filter(t => posHtml.includes(t));
+  check('niente «[DA COMPILARE]» né «UNKNOWN» stampati', sporchi.length === 0, sporchi);
+  const posCss = (posHtml.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+  check('POS: titoli in Archivo condensato e testo in Plus Jakarta Sans', /Archivo/.test(posCss) && /font-stretch:\s*7\d%/.test(posCss) && /body\s*{[^}]*Plus Jakarta Sans/.test(posCss));
+  const posVecchi = ['#2C2C2C', '#1E1E1E', '#555555', '#AAAAAA'].concat(VECCHI).filter(c => posHtml.toUpperCase().includes(c));
+  check('POS: nessun colore della grafica vecchia (barre nere, grigi caldi)', posVecchi.length === 0, posVecchi);
+  check('POS: niente marchio «Palladia» in copertina', !/cover-sidebar-brand|>\s*Palladia\s*</.test(posHtml));
+  const nLeg = (posHtml.match(/Legenda: P = probabilità/g) || []).length;
+  check('POS: legenda dei rischi una volta sola (era sotto ogni lavorazione)', nLeg === 1, nLeg);
+  const nOggetto = (posHtml.match(/>Oggetto dei lavori</g) || []).length;
+  check('POS: oggetto dei lavori scritto una volta sola (era in sezione 1 e in 2.1)', nOggetto <= 1, nOggetto);
+  const po = POS.posPdfOptions ? POS.posPdfOptions(posData, 1, 'Condominio Via Prova 9') : {};
+  check('POS: in testa a ogni pagina l\'impresa, non «PALLADIA»', po.headerLeft === 'Edil Prova S.r.l.', po);
+  const posPdf = await require('../pdf-renderer').rendererPool.render(posHtml, po.docTitle ? po : { docTitle: 'POS', revision: 1 });
+  const posPagine = await paginePdf(posPdf);
+  const TITOLI_POS = ['Fasi operative:', 'Rischi identificati e valutazione (matrice P x D):', 'Misure di prevenzione e protezione:', 'DPI obbligatori:', 'FASI OPERATIVE:', 'RISCHI IDENTIFICATI E VALUTAZIONE (MATRICE P X D):', 'MISURE DI PREVENZIONE E PROTEZIONE:', 'DPI OBBLIGATORI:'];
+  const posOrfani = posPagine.filter(p => p.righe.length && (TITOLI_POS.includes(p.righe[p.righe.length - 1].t) || /^Lavorazione di prova \d$/.test(p.righe[p.righe.length - 1].t))).map(p => `pag. ${p.n}: «${p.righe[p.righe.length - 1].t}»`);
+  check('POS: nessun titolo di blocco o di lavorazione da solo in fondo alla pagina', posOrfani.length === 0, posOrfani);
+
   console.log(`\n${passed} passati, ${failed} falliti`);
   await require('../pdf-renderer').rendererPool.close().catch(() => {});
   process.exit(failed ? 1 : 0);

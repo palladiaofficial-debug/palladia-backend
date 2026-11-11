@@ -186,11 +186,11 @@ router.post('/psc-pub/invito/:token/pos-palladia', verifySupabaseJwt, h(async (r
   if (!isUuid(posId)) throw fail(400, 'POS mancante');
   const { data: pos } = await supabase.from('pos_documents').select('*').eq('id', posId).eq('company_id', req.companyId).maybeSingle();
   if (!pos) throw fail(404, 'POS non trovato');
-  const { generatePosHtml } = require('../../pos-html-generator');
+  const { generatePosHtml, posPdfOptions } = require('../../pos-html-generator');
   const { selectSigns } = require('../../sign-selector');
   const { rendererPool } = require('../../pdf-renderer');
   const html = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', selectSigns(pos.pos_data || {}));
-  const pdf = await rendererPool.render(html, { docTitle: `POS – ${all.project.title} – Rev. ${pos.revision}`, revision: pos.revision });
+  const pdf = await rendererPool.render(html, posPdfOptions(pos.pos_data, pos.revision, all.project.title));
   const path = `${i.company_id}/${i.project_id}/pos/${i.id}-${Date.now()}.pdf`;
   await store.upload(path, pdf, 'application/pdf');
   await supabase.from('psc_imprese').update({ pos_path: path, pos_name: `POS ${i.ragione_sociale} rev ${pos.revision}.pdf`, pos_status: 'ricevuto', pos_received_at: new Date().toISOString() }).eq('id', i.id);

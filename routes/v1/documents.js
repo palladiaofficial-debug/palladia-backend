@@ -274,16 +274,13 @@ router.get('/coordinator/:token/pos/:posId/pdf', coordinatorLimiter, async (req,
 
   try {
     // Lazy require — stessi moduli usati in server.js
-    const { generatePosHtml } = require('../../pos-html-generator');
+    const { generatePosHtml, posPdfOptions } = require('../../pos-html-generator');
     const { selectSigns }     = require('../../sign-selector');
     const { rendererPool }    = require('../../pdf-renderer');
 
     const signs     = selectSigns(pos.pos_data || {});
     const html      = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', signs);
-    const pdfBuffer = await rendererPool.render(html, {
-      docTitle: `POS – ${site?.name || 'Cantiere'} – Rev. ${pos.revision}`,
-      revision: pos.revision,
-    });
+    const pdfBuffer = await rendererPool.render(html, posPdfOptions(pos.pos_data, pos.revision, site?.name));
 
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="POS-Rev${pos.revision}-${siteName}.pdf"`);
