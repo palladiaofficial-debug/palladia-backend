@@ -26,6 +26,29 @@ function check(name, cond, got) {
   else { console.error(`  \x1b[31m✗\x1b[0m ${name}`); if (got !== undefined) console.error(`    got: ${JSON.stringify(got).slice(0, 600)}`); failed++; }
 }
 
+// F-493: quota di lettere scritte una per una nel PDF (Acrobat modifica bene solo testo a frasi intere)
+const zlib = require('zlib');
+function lettereSeparate(buf) {
+  const t = buf.toString('latin1'); const re = /stream\r?\n/g; let m, sep = 0, whole = 0;
+  while ((m = re.exec(t))) {
+    const st = m.index + m[0].length, en = t.indexOf('endstream', st);
+    let d; try { d = zlib.inflateSync(buf.subarray(st, en)).toString('latin1'); } catch { continue; }
+    for (const blk of d.match(/BT[\s\S]*?ET/g) || []) {
+      const tj = blk.match(/<[0-9A-Fa-f]+>\s*Tj/g) || [];
+      const n = tj.reduce((a, x) => a + x.match(/<([0-9A-Fa-f]+)>/)[1].length / 4, 0);
+      if (tj.length > 1) sep += n; else whole += n;
+    }
+  }
+  return sep / Math.max(1, sep + whole);
+}
+// I caratteri incorporati nel PDF (/BaseFont /AAAAAA+ArialMT …)
+// Chrome scrive i caratteri scaricati come «Type3» (disegni senza nome): contano come non-Arial
+const caratteriPdf = (buf) => {
+  const t = buf.toString('latin1');
+  const nomi = [...new Set((t.match(/\/BaseFont\s*\/[A-Z]{6}\+([A-Za-z0-9-]+)/g) || []).map(x => x.replace(/.*\+/, '')))];
+  return /\/Subtype\s*\/Type3/.test(t) ? nomi.concat('Type3') : nomi;
+};
+
 const VECCHI = ['#F6F4F0', '#22384F', '#15120E', '#5F584F', '#D9D3C9', '#E4DED5', '#6A635A', '#FAF8F5', '#E7E2D8', '#FFFEFC', '#9C948A'];
 const TITOLI_BLOCCO = ['Fasi di lavoro', 'Rischi', 'Misure di prevenzione e protezione', 'Macchine e attrezzature'];
 
@@ -61,8 +84,10 @@ async function paginePdf(buf) {
   const css = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
   const trovati = VECCHI.filter(c => html.toUpperCase().includes(c));
   check('nessun colore della generazione precedente nel PSC', trovati.length === 0, trovati);
-  check('titoli in Archivo condensato', /Archivo/.test(css) && /font-stretch:\s*7\d%/.test(css));
-  check('testo in Plus Jakarta Sans', /Plus Jakarta Sans/.test(css));
+  // F-493: Arial (su ogni PC; Chrome lo scrive a frasi intere), niente caratteri scaricati, niente spaziature tra lettere
+  check('PSC: tutto in Arial, nessun carattere scaricato dal web (F-493)', /font-family:\s*Arial/.test(css) && !/Plus Jakarta|Archivo|fonts\.googleapis/.test(css), (css.match(/font-family:[^;]+/g) || []).slice(0, 4));
+  const ls = (css.match(/letter-spacing:\s*-?[\d.]+(px|pt|em)/g) || []).filter(x => !/:\s*0(px|pt|em)?$/.test(x));
+  check('PSC: nessuna spaziatura tra le lettere (spezza il testo in Acrobat)', ls.length === 0, ls.slice(0, 5));
   const pt = css.match(/font-size:\s*[\d.]+pt/g) || [];
   check('misure del testo in px, nessuna in pt (F-302)', pt.length === 0, pt.slice(0, 5));
   const hf = buildHeaderTemplate('PSC · prova', 'Studio Ferrando') + buildFooterTemplate(0, 'D.Lgs. 81/2008', null);
@@ -79,6 +104,10 @@ async function paginePdf(buf) {
   const lavInTesta = pagine.filter(p => p.righe.length >= 2 && /^Settiman/.test(p.righe[p.righe.length - 1].t)).map(p => p.n);
   check('nessuna testata di lavorazione da sola in fondo alla pagina', lavInTesta.length === 0, lavInTesta);
   check('il PDF ha copertina, indice e le 12 sezioni', pagine.length >= 10 && pagine.some(p => p.righe.some(r => /Procedure complementari/.test(r.t))), pagine.length);
+  const sepPsc = lettereSeparate(Buffer.from(buf));
+  check(`PSC: testo a frasi intere, lettere separate ≤ 15% (ora ${Math.round(sepPsc * 100)}%) (F-493)`, sepPsc <= 0.15, sepPsc);
+  const fPsc = caratteriPdf(Buffer.from(buf));
+  check('PSC: nel PDF solo Arial (c\'è su ogni PC, Acrobat e Affinity lo usano per modificare)', fPsc.length > 0 && fPsc.every(f => /^Arial(MT|-BoldMT|-ItalicMT|-BoldItalicMT)$/.test(f)), fPsc);
 
   // ── F-489: POS ──────────────────────────────────────────────────────────────
   console.log('\n\x1b[1mF-489 — POS nella stessa famiglia del PSC, senza dati sporchi\x1b[0m');
@@ -106,7 +135,9 @@ async function paginePdf(buf) {
   const sporchi = ['[DA COMPILARE]', 'UNKNOWN', '&lt;UNKNOWN&gt;'].filter(t => posHtml.includes(t));
   check('niente «[DA COMPILARE]» né «UNKNOWN» stampati', sporchi.length === 0, sporchi);
   const posCss = (posHtml.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
-  check('POS: titoli in Archivo condensato e testo in Plus Jakarta Sans', /Archivo/.test(posCss) && /font-stretch:\s*7\d%/.test(posCss) && /body\s*{[^}]*Plus Jakarta Sans/.test(posCss));
+  check('POS: tutto in Arial, nessun carattere scaricato dal web (F-493)', /body\s*{[^}]*font-family:\s*Arial/.test(posCss) && !/Plus Jakarta|Archivo|fonts\.googleapis/.test(posCss), (posCss.match(/font-family:[^;]+/g) || []).slice(0, 4));
+  const lsPos = (posHtml.match(/letter-spacing:\s*-?[\d.]+(px|pt|em)/g) || []).filter(x => !/:\s*0(px|pt|em)?$/.test(x));
+  check('POS: nessuna spaziatura tra le lettere (spezza il testo in Acrobat)', lsPos.length === 0, lsPos.slice(0, 5));
   const posVecchi = ['#2C2C2C', '#1E1E1E', '#555555', '#AAAAAA'].concat(VECCHI).filter(c => posHtml.toUpperCase().includes(c));
   check('POS: nessun colore della grafica vecchia (barre nere, grigi caldi)', posVecchi.length === 0, posVecchi);
   check('POS: niente marchio «Palladia» in copertina', !/cover-sidebar-brand|>\s*Palladia\s*</.test(posHtml));
@@ -123,6 +154,10 @@ async function paginePdf(buf) {
   const TITOLI_POS = ['Fasi operative:', 'Rischi identificati e valutazione (matrice P x D):', 'Misure di prevenzione e protezione:', 'DPI obbligatori:', 'FASI OPERATIVE:', 'RISCHI IDENTIFICATI E VALUTAZIONE (MATRICE P X D):', 'MISURE DI PREVENZIONE E PROTEZIONE:', 'DPI OBBLIGATORI:'];
   const posOrfani = posPagine.filter(p => p.righe.length && (TITOLI_POS.includes(p.righe[p.righe.length - 1].t) || /^Lavorazione di prova \d$/.test(p.righe[p.righe.length - 1].t))).map(p => `pag. ${p.n}: «${p.righe[p.righe.length - 1].t}»`);
   check('POS: nessun titolo di blocco o di lavorazione da solo in fondo alla pagina', posOrfani.length === 0, posOrfani);
+  const sepPos = lettereSeparate(Buffer.from(posPdf));
+  check(`POS: testo a frasi intere, lettere separate ≤ 15% (ora ${Math.round(sepPos * 100)}%) (F-493)`, sepPos <= 0.15, sepPos);
+  const fPos = caratteriPdf(Buffer.from(posPdf));
+  check('POS: nel PDF solo Arial', fPos.length > 0 && fPos.every(f => /^Arial(MT|-BoldMT|-ItalicMT|-BoldItalicMT)$/.test(f)), fPos);
 
   // ── F-490 / F-491: Word vero ─────────────────────────────────────────────────
   console.log('\n\x1b[1mF-490 / F-491 — PSC e POS in Word (.docx vero)\x1b[0m');
@@ -144,7 +179,9 @@ async function paginePdf(buf) {
   check('PSC Word: in testa lo studio, in fondo «Pagina X di Y» con i campi di Word', /Studio Ferrando/.test(W.header) && /PAGE/.test(W.footer) && /NUMPAGES/.test(W.footer));
   const salti = (W.doc.match(/<w:pageBreakBefore\/>/g) || []).length;
   check('PSC Word: indice e sezioni principali su pagina nuova', salti >= 4, salti);
-  check('PSC Word: caratteri della piattaforma incorporati (Plus Jakarta Sans, Archivo)', /Plus Jakarta Sans[\s\S]*embedRegular/.test(W.fontTable) && /Archivo Condensed[\s\S]*embedRegular/.test(W.fontTable) && W.z.getEntries().some(e => /^word\/fonts\//.test(e.entryName)), W.fontTable.slice(0, 400));
+  // F-493: Arial, che c'è su ogni PC e in Word, LibreOffice e Google Docs (i caratteri incorporati lì vengono ignorati)
+  const fontiWord = [...new Set((W.doc.match(/w:ascii="([^"]+)"/g) || []).map(x => x.slice(9, -1)))];
+  check('PSC Word: tutto in Arial (si modifica uguale in Word, LibreOffice e Google Docs)', fontiWord.length > 0 && fontiWord.every(f => f === 'Arial') && !W.z.getEntries().some(e => /^word\/fonts\//.test(e.entryName)), fontiWord);
   check('PSC Word: cronoprogramma come tabella con le barre colorate', /w:fill="(10171F|B7832F|3E7C78)"/.test(W.doc));
   const posDocx = await htmlToDocx(posHtml, { ...po, title: po.docTitle });
   const PW = leggi(posDocx);

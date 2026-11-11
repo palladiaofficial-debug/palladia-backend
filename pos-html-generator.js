@@ -348,34 +348,33 @@ function buildCss() {
   return `
 /* ═══════════════════════════════════════════════════════════════════
    PALLADIA PDF — POS, stile v11 (F-489)
-   Stessa famiglia del PSC (F-492) e della piattaforma (F-442): inchiostro
-   #10171F, grigi freddi, azzurro #E8F1F9/#B5D3EE, titoli in Archivo
-   condensato, testo in Plus Jakarta Sans. Misure in px a mezzi pixel (F-302).
+   Stessa famiglia del PSC (F-492), colori della piattaforma (F-442).
+   F-493: tutto in Arial, senza spaziature tra le lettere, misure in px a
+   mezzi pixel (F-302): il PDF si modifica bene in Acrobat e Affinity.
    Intestazione e piè di pagina: Puppeteer nativo, margini fissi 26/24 mm
    (vedi le regole di stampa in fondo, invariate).
    ═══════════════════════════════════════════════════════════════════ */
-@import url('https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,600..900&family=Plus+Jakarta+Sans:wght@400..800&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; word-break: break-word; overflow-wrap: break-word; min-width: 0; }
 html, body { margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-body { font-family: 'Plus Jakarta Sans', Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 420; line-height: 1.55; color: #10171F; background: #FFFFFF; }
+body { font-family: Arial, Helvetica, sans-serif; font-size: 13px; font-weight: 400; line-height: 1.55; color: #10171F; background: #FFFFFF; }
 .doc { width: 100%; padding: 0 16mm; }
 .doc.debug { outline: 1px dashed #9F2F25; }
 img { max-width: 100%; }
 strong, b { font-weight: 700; }
-.disp, .cover-title, .cover-rev b, .cover-opera .t, .section-title, .emergency-number { font-family: 'Archivo', 'Arial Narrow', sans-serif; font-stretch: 72%; font-weight: 800; letter-spacing: -0.2px; }
-.ey { font-size: 9.5px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: #5B6672; }
+.disp, .cover-title, .cover-rev b, .cover-opera .t, .section-title, .emergency-number { font-family: Arial, Helvetica, sans-serif; font-weight: 700; }
+.ey { font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #5B6672; }
 
 /* ── Copertina ───────────────────────────────────────────────────── */
 .cover { display: flex; flex-direction: column; break-after: page; page-break-after: always; }
 .cover-kind { display: flex; justify-content: space-between; align-items: baseline; gap: 6mm; }
 .cover-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 8mm; padding-bottom: 6mm; border-bottom: 1.5px solid #10171F; }
-.cover-title { font-size: 56px; line-height: 0.95; margin-top: 4mm; }
+.cover-title { font-size: 42px; line-height: 1.05; margin-top: 4mm; }
 .cover-rev { text-align: right; white-space: nowrap; }
-.cover-rev b { display: block; font-size: 29px; line-height: 1; }
+.cover-rev b { display: block; font-size: 24px; line-height: 1; }
 .cover-rev span { font-size: 11px; color: #5B6672; }
 .cover-opera { margin-top: 9mm; padding: 6mm 7mm; background: #F5F7F9; border-left: 2.2mm solid #B5D3EE; border-radius: 0 2.5mm 2.5mm 0; }
-.cover-opera .t { font-size: 25px; line-height: 1.15; margin-top: 1.5mm; }
+.cover-opera .t { font-size: 20px; line-height: 1.15; margin-top: 1.5mm; }
 .cover-opera .a { font-size: 14px; margin-top: 1mm; color: #3A4652; }
 .cover-pill { display: inline-block; margin-top: 3mm; background: #FFFFFF; border: 0.8px solid #CBD3DB; border-radius: 10mm; padding: 0.7mm 3mm; font-size: 10.5px; font-weight: 700; }
 .cover-opera .d { font-size: 12px; color: #3A4652; margin-top: 3mm; }
@@ -393,11 +392,11 @@ strong, b { font-weight: 700; }
 .cover-colophon { margin-top: 3mm; display: flex; justify-content: space-between; font-size: 10px; color: #8A949E; }
 
 /* ── Sezioni ─────────────────────────────────────────────────────── */
-.section-title { display: flex; align-items: baseline; gap: 3.5mm; font-size: 27px; line-height: 1.05; color: #10171F; margin: 10mm 0 4mm; padding-bottom: 2.6mm; border-bottom: 1.5px solid #10171F; }
-.section-title .n { font-size: 27px; color: #8A949E; min-width: 6mm; }
+.section-title { display: flex; align-items: baseline; gap: 3.5mm; font-size: 21px; line-height: 1.15; color: #10171F; margin: 10mm 0 4mm; padding-bottom: 2.6mm; border-bottom: 1.5px solid #10171F; }
+.section-title .n { font-size: 21px; color: #8A949E; min-width: 6mm; }
 .section-title:first-child { margin-top: 0; }
 .section-title.page-break { margin-top: 0; }
-.sub-title { font-size: 15px; font-weight: 750; color: #10171F; margin: 5.5mm 0 2mm; }
+.sub-title { font-size: 15px; font-weight: 700; color: #10171F; margin: 5.5mm 0 2mm; }
 p { margin: 0 0 2.4mm; }
 ul, ol { margin: 0 0 3mm; padding-left: 0; }
 ul { list-style: none; }
@@ -413,25 +412,25 @@ hr { border: 0; border-top: 0.8px solid #E3E7EC; margin: 5mm 0; }
 
 /* ── Tabelle ─────────────────────────────────────────────────────── */
 table { width: 100%; border-collapse: collapse; table-layout: fixed; margin: 1.5mm 0 4mm; font-size: 12px; }
-th { text-align: left; color: #5B6672; font-weight: 800; font-size: 9.5px; letter-spacing: 0.9px; text-transform: uppercase; padding: 1.8mm 2.2mm; border-bottom: 1.3px solid #10171F; background: none; }
+th { text-align: left; color: #5B6672; font-weight: 700; font-size: 9.5px; text-transform: uppercase; padding: 1.8mm 2.2mm; border-bottom: 1.3px solid #10171F; background: none; }
 td { padding: 2mm 2.2mm; border-bottom: 0.8px solid #E3E7EC; vertical-align: top; background: none; overflow-wrap: anywhere; }
 table.kv td:first-child { width: 62mm; color: #5B6672; padding-left: 0; }
-table.kv td:last-child { font-weight: 600; }
-.badge { display: inline-block; min-width: 17mm; text-align: center; padding: 0.3mm 2mm; border-radius: 6mm; font-size: 10px; font-weight: 800; white-space: nowrap; }
+table.kv td:last-child { font-weight: 700; }
+.badge { display: inline-block; min-width: 17mm; text-align: center; padding: 0.3mm 2mm; border-radius: 6mm; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .badge-low { background: #E9F3EC; color: #2F6A43; }
 .badge-medium { background: #FDF0E1; color: #9A520E; }
 .badge-high { background: #FBE7E4; color: #9F2F25; }
 .badge-very-high { background: #9F2F25; color: #FFFFFF; }
-.risk-num { font-weight: 800; font-variant-numeric: tabular-nums; }
+.risk-num { font-weight: 700; font-variant-numeric: tabular-nums; }
 .risk-low { color: #2F6A43; } .risk-medium { color: #9A520E; } .risk-high { color: #9F2F25; } .risk-very-high { color: #9F2F25; }
 
 /* ── Lavorazioni ─────────────────────────────────────────────────── */
 .lavorazione-block { margin: 0 0 8mm; }
-.lav-header { background: #E8F1F9; color: #10171F; font-size: 16.5px; font-weight: 800; padding: 3mm 4mm; border-radius: 2mm; }
+.lav-header { background: #E8F1F9; color: #10171F; font-size: 16.5px; font-weight: 700; padding: 3mm 4mm; border-radius: 2mm; }
 .lav-body { padding: 2.4mm 4mm 0; }
 .lav-body p { font-size: 12.5px; }
-.lav-body .bold-line { font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #3A4652; margin: 4mm 0 1.6mm; }
-.lav-body .bold-line strong { font-weight: 800; }
+.lav-body .bold-line { font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: #3A4652; margin: 4mm 0 1.6mm; }
+.lav-body .bold-line strong { font-weight: 700; }
 .lav-body p.desc .bold-line, .lav-body p.desc strong { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: #10171F; }
 .lav-body ul, .lav-body ol { font-size: 12.5px; }
 .lav-body table { font-size: 12px; }
@@ -440,22 +439,22 @@ table.kv td:last-child { font-weight: 600; }
 /* ── Segnaletica ─────────────────────────────────────────────────── */
 .sign-intro { font-size: 12.5px; }
 .sign-summary-table td { font-size: 12px; }
-.sign-summary-total td { font-weight: 800; border-top: 1.3px solid #10171F; border-bottom: 0; }
+.sign-summary-total td { font-weight: 700; border-top: 1.3px solid #10171F; border-bottom: 0; }
 .cat-dot { display: inline-block; width: 3mm; height: 3mm; border-radius: 1mm; }
-.sign-zone-header { font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #3A4652; margin: 6mm 0 2mm; padding-bottom: 1.5mm; border-bottom: 0.8px solid #E3E7EC; }
+.sign-zone-header { font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: #3A4652; margin: 6mm 0 2mm; padding-bottom: 1.5mm; border-bottom: 0.8px solid #E3E7EC; }
 .signs-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3mm; margin-bottom: 3mm; }
 .sign-card { border: 0.8px solid #E3E7EC; border-radius: 2mm; padding: 2.5mm; text-align: center; }
 .sign-img { width: 22mm; height: 22mm; object-fit: contain; display: block; margin: 0 auto 1.5mm; }
 .sign-img-placeholder { width: 22mm; height: 22mm; margin: 0 auto 1.5mm; background: #F5F7F9; border-radius: 1mm; }
 .sign-name { font-size: 10.5px; font-weight: 700; line-height: 1.3; }
-.sign-iso { font-size: 9.5px; font-weight: 800; margin-top: 0.5mm; }
+.sign-iso { font-size: 9.5px; font-weight: 700; margin-top: 0.5mm; }
 .sign-location-text { font-size: 9px; color: #5B6672; margin-top: 1mm; line-height: 1.35; }
 
 /* ── Emergenza ───────────────────────────────────────────────────── */
 .emergency-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin: 2mm 0 4mm; }
 .emergency-card { border: 0.8px solid #CBD3DB; border-radius: 2.5mm; padding: 3mm 4mm; background: #FFFFFF; }
 .emergency-card.alt { background: #F5F7F9; }
-.emergency-number { display: block; font-size: 29px; line-height: 1; color: #10171F; }
+.emergency-number { display: block; font-size: 24px; line-height: 1; color: #10171F; }
 .emergency-number.small { font-size: 19px; }
 .emergency-label { font-size: 11px; color: #5B6672; margin-top: 1mm; }
 
@@ -463,7 +462,7 @@ table.kv td:last-child { font-weight: 600; }
 .signature-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin: 4mm 0; }
 .signature-box { border: 0.8px solid #CBD3DB; border-radius: 2.5mm; padding: 3.5mm 4mm; }
 .signature-box.wide { margin: 5mm 0; }
-.sig-role { font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: #5B6672; }
+.sig-role { font-size: 9.5px; font-weight: 700; text-transform: uppercase; color: #5B6672; }
 .sig-name { font-weight: 700; margin-top: 1mm; min-height: 5mm; }
 .sig-body { display: flex; gap: 4mm; margin-top: 3mm; }
 .sig-stamp { flex: 0 0 22mm; height: 18mm; border: 0.8px dashed #CBD3DB; border-radius: 1.5mm; font-size: 9px; color: #8A949E; display: flex; align-items: center; justify-content: center; }

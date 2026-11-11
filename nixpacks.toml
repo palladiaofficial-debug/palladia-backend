@@ -24,11 +24,12 @@ nixPkgs = [
   'xorg.libxcb',
   'udev',
   'fontconfig',
-  'freetype'
+  'freetype',
+  'cabextract'
 ]
 
 [phases.install]
-cmds = ['npm ci']
+cmds = ['npm ci', 'node scripts/installa_arial.js']
 
 [start]
 cmd = 'npm start'

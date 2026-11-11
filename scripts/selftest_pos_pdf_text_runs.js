@@ -7,8 +7,8 @@
  * dimensioni in pt cadevano su un terzo di pixel (10pt = 13,33px) e per la
  * crenatura. Verifica sul PDF vero, generato con la stessa pipeline della
  * rotta /api/generate-pdf:
- *  - (fino all'11/11/2026) al massimo il 15% delle lettere scritto lettera per
- *    lettera: superato da F-489, vedi il commento sotto;
+ *  - al massimo il 15% delle lettere scritto lettera per lettera (soglia tolta
+ *    da F-489 e rimessa da F-493 lo stesso giorno);
  *  - nessuna dimensione del carattere in pt nell'HTML finale (tutte in px, a
  *    multipli di mezzo pixel);
  *  - il testo estratto dal PDF resta quello giusto, accenti ed euro compresi.
@@ -55,14 +55,14 @@ async function main() {
 
   const pdf = Buffer.from(await rendererPool.render(html, { docTitle: 'POS – Prova – Rev. 1', revision: 1 }));
   const r = glyphRuns(pdf);
-  // F-489 (11/11/2026): il POS ora usa i caratteri della piattaforma (Plus
-  // Jakarta Sans, Archivo), come il PSC da F-300. Chrome scrive QUALUNQUE
-  // carattere che non sia un font di sistema con hinting completo (Arial,
-  // Segoe) lettera per lettera: provati statici, variabili, incorporati,
-  // installati, con hinting aggiunto, senza GPOS, upm diverse — sempre 100%.
-  // Scelta per l'aspetto, messo al primo posto dal titolare l'11/11; la modifica passa dal file Word del POS
-  // (F-491). Il controllo resta come misura, non come soglia.
-  console.log(`  · lettere scritte una per una: ${Math.round(r.share * 100)}% (misura, vedi F-489)`);
+  // F-489 (11/11/2026) aveva tolto la soglia; F-493 (11/11/2026) la rimette: il titolare
+  // vuole la modifica in Acrobat «perfetta e semplice», quindi il POS è in Arial.
+  // Storia: con i caratteri della piattaforma (Plus Jakarta Sans, Archivo) Chrome
+  // scrive QUALUNQUE carattere che non sia un font di sistema con hinting
+  // completo (Arial, Segoe) lettera per lettera: provati statici, variabili,
+  // incorporati, installati, con hinting aggiunto, senza GPOS, upm diverse —
+  // sempre 100%.
+  check(`PDF: lettere scritte una per una ≤ 15% (ora ${Math.round(r.share * 100)}%)`, r.share <= 0.15, r);
 
   const { PDFParse } = require('pdf-parse');
   const text = (await new PDFParse({ data: pdf }).getText()).text.replace(/\s+/g, ' ');

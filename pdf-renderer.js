@@ -21,6 +21,36 @@
 let puppeteer;
 try { puppeteer = require('puppeteer'); } catch { puppeteer = null; }
 
+// ── F-493: Arial anche sul server ─────────────────────────────────────────────
+// I PDF sono in Arial (testo a frasi intere, carattere su ogni PC: Acrobat e
+// Affinity li modificano bene). Su Linux Arial non c'è: scripts/installa_arial.js
+// lo estrae in fonts-arial/ durante la costruzione; qui, prima di avviare
+// Chrome, lo si fa trovare a fontconfig (cartella ~/.fonts e un fonts.conf
+// che aggiunge fonts-arial/ alla configurazione di prima).
+/* eslint-disable security/detect-non-literal-fs-filename -- percorsi fissi del codice: fonts-arial/, ~/.fonts, /tmp */
+function preparaArial() {
+  if (process.platform !== 'linux') return;
+  const fs = require('fs'); const os = require('os'); const path = require('path');
+  const dir = path.join(__dirname, 'fonts-arial');
+  if (!fs.existsSync(path.join(dir, 'arial.ttf'))) { console.warn('[PDF] Arial non trovato in fonts-arial/: carattere di riserva'); return; }
+  try {
+    const home = path.join(os.homedir(), '.fonts');
+    fs.mkdirSync(home, { recursive: true });
+    for (const f of fs.readdirSync(dir)) if (f.endsWith('.ttf') && !fs.existsSync(path.join(home, f))) fs.copyFileSync(path.join(dir, f), path.join(home, f));
+  } catch (e) { console.warn('[PDF] ~/.fonts non scrivibile:', e.message); }
+  try {
+    const prima = [process.env.FONTCONFIG_FILE, '/etc/fonts/fonts.conf'];
+    try { for (const n of fs.readdirSync('/nix/store')) if (/-fontconfig-[\d.]+(-bin)?$/.test(n)) prima.push(`/nix/store/${n}/etc/fonts/fonts.conf`); } catch { /* niente nix */ }
+    const inc = [...new Set(prima.filter(Boolean))].filter(f => f !== '/tmp/palladia-fonts.conf' && fs.existsSync(f)).map(f => `  <include ignore_missing="yes">${f}</include>`).join('\n');
+    const conf = `<?xml version="1.0"?>\n<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n<fontconfig>\n  <dir>${dir}</dir>\n${inc}\n  <cachedir>/tmp/fontconfig-cache</cachedir>\n</fontconfig>\n`;
+    fs.writeFileSync('/tmp/palladia-fonts.conf', conf);
+    process.env.FONTCONFIG_FILE = '/tmp/palladia-fonts.conf';
+    console.log('[PDF] Arial pronto per Chrome (fonts-arial/)');
+  } catch (e) { console.warn('[PDF] fonts.conf non scritto:', e.message); }
+}
+/* eslint-enable security/detect-non-literal-fs-filename */
+preparaArial();
+
 // PDF_DEBUG=true → report overflow (max 10 righe). Default false.
 const PDF_DEBUG = process.env.PDF_DEBUG === 'true';
 
@@ -47,8 +77,8 @@ function escT(str) {
  * CRITICO: non usare proprietà che fanno crescere il box in altezza (no wrap).
  */
 function buildHeaderTemplate(docTitle, headerLeft) {
-  return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #E3E7EC;background:#FFFFFF;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
-  <span style="font-size:9px;font-weight:800;color:#10171F;letter-spacing:0.5pt;line-height:1.1;white-space:nowrap;flex:0 0 auto;">${escT(headerLeft || 'PALLADIA')}</span>
+  return `<div style="box-sizing:border-box;width:100%;height:10mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-bottom:0.5pt solid #E3E7EC;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
+  <span style="font-size:9px;font-weight:700;color:#10171F;line-height:1.1;white-space:nowrap;flex:0 0 auto;">${escT(headerLeft || 'PALLADIA')}</span>
   <span style="font-size:9px;color:#8A949E;line-height:1.1;flex:1;text-align:right;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding-left:8px;">${escT(docTitle)}</span>
 </div>`;
 }
@@ -66,7 +96,7 @@ function buildFooterTemplate(revision, footerLeft, footerRight) {
   const rev = escT(String(revision || 1));
   const left = escT(footerLeft || 'D.Lgs 81/2008 e s.m.i.');
   const right = footerRight ? escT(footerRight) : `Rev.&#160;${rev}`;
-  return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #E3E7EC;background:#FFFFFF;font-family:'Plus Jakarta Sans',Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
+  return `<div style="box-sizing:border-box;width:100%;height:9mm;display:flex;align-items:center;justify-content:space-between;padding:0 16mm;border-top:0.5pt solid #E3E7EC;background:#FFFFFF;font-family:Arial,Helvetica,sans-serif;font-size:0;line-height:1.1;">
   <span style="font-size:8.5px;color:#8A949E;line-height:1.1;flex:1;white-space:nowrap;">${left}</span>
   <span style="font-size:8.5px;color:#10171F;font-weight:700;line-height:1.1;white-space:nowrap;flex:0 0 auto;">Pagina&#160;<span class="pageNumber" style="font-size:8.5px;"></span>&#160;/&#160;<span class="totalPages" style="font-size:8.5px;"></span></span>
   <span style="font-size:8.5px;color:#8A949E;line-height:1.1;flex:1;text-align:right;white-space:nowrap;">${right}</span>
