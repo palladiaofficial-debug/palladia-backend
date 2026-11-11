@@ -1287,6 +1287,28 @@ app.get('/api/pos/:posId/pdf', verifyJwtOnly, async (req, res) => {
   }
 });
 
+// --- F-491: POS in Word (.docx vero), stesso contenuto del PDF ---
+app.get('/api/pos/:posId/word', verifyJwtOnly, async (req, res) => {
+  try {
+    const pos = await checkPosOwnership(req, res, req.params.posId);
+    if (!pos) return;
+    let siteName = 'Cantiere';
+    if (pos.site_id) {
+      const { data: site } = await supabase.from('sites').select('name, address').eq('id', pos.site_id).single();
+      if (site) siteName = site.name || site.address || 'Cantiere';
+    }
+    const html = await generatePosHtml(pos.pos_data || {}, pos.revision, pos.content || '', selectSigns(pos.pos_data || {}));
+    const opts = posPdfOptions(pos.pos_data, pos.revision, siteName);
+    const buf = await require('./lib/docxDocumento').htmlToDocx(html, { ...opts, title: opts.docTitle });
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="POS-Rev${pos.revision}-${siteName.replace(/[^a-zA-Z0-9]/g, '_')}.docx"`);
+    res.send(buf);
+  } catch (error) {
+    console.error('POS word error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: error.message });
+  }
+});
+
 // --- POS Template Generation (non-streaming, hybrid mode) ---
 app.post('/api/generate-pos-template', verifyJwtOnly, aiLimiter, async (req, res) => {
   try {

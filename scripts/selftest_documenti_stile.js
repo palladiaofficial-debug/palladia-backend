@@ -124,6 +124,35 @@ async function paginePdf(buf) {
   const posOrfani = posPagine.filter(p => p.righe.length && (TITOLI_POS.includes(p.righe[p.righe.length - 1].t) || /^Lavorazione di prova \d$/.test(p.righe[p.righe.length - 1].t))).map(p => `pag. ${p.n}: «${p.righe[p.righe.length - 1].t}»`);
   check('POS: nessun titolo di blocco o di lavorazione da solo in fondo alla pagina', posOrfani.length === 0, posOrfani);
 
+  // ── F-490 / F-491: Word vero ─────────────────────────────────────────────────
+  console.log('\n\x1b[1mF-490 / F-491 — PSC e POS in Word (.docx vero)\x1b[0m');
+  const AdmZip = require('adm-zip');
+  const { htmlToDocx } = require('../lib/docxDocumento');
+  const leggi = (buf) => {
+    const z = new AdmZip(buf);
+    const g = (n) => { const e = z.getEntry(n); return e ? e.getData().toString('utf8') : ''; };
+    const tutti = (re) => z.getEntries().filter(e => re.test(e.entryName)).map(e => e.getData().toString('utf8')).join('');
+    return { z, doc: g('word/document.xml'), header: tutti(/^word\/header\d*\.xml$/), footer: tutti(/^word\/footer\d*\.xml$/), fontTable: g('word/fontTable.xml') };
+  };
+  const testo = (xml) => (xml.match(/<w:t[^>]*>[^<]*<\/w:t>/g) || []).map(t => t.replace(/<[^>]+>/g, '')).join('');
+  const pscDocx = await htmlToDocx(documento.pscHtml(snap, { perWord: true }), { headerLeft: 'Studio Ferrando', docTitle: 'PSC · prova', footerLeft: 'D.Lgs. 81/2008 · Allegato XV', revision: 0 });
+  const W = leggi(pscDocx);
+  check('PSC: è un .docx vero (zip con word/document.xml), non HTML rinominato', W.doc.includes('<w:body>') && pscDocx[0] === 0x50 && pscDocx[1] === 0x4B);
+  const tw = testo(W.doc);
+  check('PSC Word: copertina con titolo, revisione e opera', /Piano di Sicurezza/.test(tw) && /Rev\. 0/.test(tw) && /Scuola Media/.test(tw));
+  check('PSC Word: niente testi incollati («Rev. 011 novembre», «1Identificazione»)', !/Rev\. 0\d{1,2} novembre/.test(tw) && !/\b1Identificazione/.test(tw), tw.slice(0, 300));
+  check('PSC Word: in testa lo studio, in fondo «Pagina X di Y» con i campi di Word', /Studio Ferrando/.test(W.header) && /PAGE/.test(W.footer) && /NUMPAGES/.test(W.footer));
+  const salti = (W.doc.match(/<w:pageBreakBefore\/>/g) || []).length;
+  check('PSC Word: indice e sezioni principali su pagina nuova', salti >= 4, salti);
+  check('PSC Word: caratteri della piattaforma incorporati (Plus Jakarta Sans, Archivo)', /Plus Jakarta Sans[\s\S]*embedRegular/.test(W.fontTable) && /Archivo Condensed[\s\S]*embedRegular/.test(W.fontTable) && W.z.getEntries().some(e => /^word\/fonts\//.test(e.entryName)), W.fontTable.slice(0, 400));
+  check('PSC Word: cronoprogramma come tabella con le barre colorate', /w:fill="(10171F|B7832F|3E7C78)"/.test(W.doc));
+  const posDocx = await htmlToDocx(posHtml, { ...po, title: po.docTitle });
+  const PW = leggi(posDocx);
+  const ptw = testo(PW.doc);
+  check('POS Word: esiste, con copertina e le 14 sezioni', /Piano Operativo/.test(ptw) && /Presa visione dei lavoratori/.test(ptw));
+  check('POS Word: in testa l\'impresa, niente segnaposto né UNKNOWN', /Edil Prova S\.r\.l\./.test(PW.header) && !/DA COMPILARE|UNKNOWN/.test(ptw));
+  check('POS Word: «Pagina X di Y»', /NUMPAGES/.test(PW.footer));
+
   console.log(`\n${passed} passati, ${failed} falliti`);
   await require('../pdf-renderer').rendererPool.close().catch(() => {});
   process.exit(failed ? 1 : 0);

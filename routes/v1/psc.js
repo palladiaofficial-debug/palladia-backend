@@ -810,9 +810,15 @@ router.get('/psc/projects/:id/pdf', ...auth, h(async (req, res) => {
 router.get('/psc/projects/:id/word', ...auth, h(async (req, res) => {
   const all = await store.loadAll(req.companyId, req.params.id);
   if (!all) throw fail(404, 'Cantiere non trovato', 'NOT_FOUND');
-  res.setHeader('Content-Type', 'application/msword; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${safeName(`PSC ${all.project.title}`)}.doc"`);
-  res.send(String.fromCharCode(0xFEFF) + documento.pscWord(all)); // BOM: Word riconosce l'UTF-8
+  // F-490: file Word vero (.docx), non più l'HTML rinominato .doc
+  const cse = (all.project.soggetti && all.project.soggetti.cse) || {};
+  const buf = await require('../../lib/docxDocumento').htmlToDocx(documento.pscHtml(all, { perWord: true }), {
+    headerLeft: cse.studio || cse.nome || 'PSC', docTitle: `PSC · ${all.project.title}`,
+    footerLeft: 'D.Lgs. 81/2008 · Allegato XV', revision: all.project.revision || 0, title: `PSC ${all.project.title}`,
+  });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName(`PSC ${all.project.title}`)}.docx"`);
+  res.send(buf);
 }));
 
 router.get('/psc/projects/:id/fascicolo', ...auth, h(async (req, res) => {
