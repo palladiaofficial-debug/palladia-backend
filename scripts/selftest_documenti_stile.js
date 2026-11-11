@@ -116,6 +116,8 @@ async function paginePdf(buf) {
   check('POS: oggetto dei lavori scritto una volta sola (era in sezione 1 e in 2.1)', nOggetto <= 1, nOggetto);
   const po = POS.posPdfOptions ? POS.posPdfOptions(posData, 1, 'Condominio Via Prova 9') : {};
   check('POS: in testa a ogni pagina l\'impresa, non «PALLADIA»', po.headerLeft === 'Edil Prova S.r.l.', po);
+  const po2 = POS.posPdfOptions(posData, 1, 'Cantiere');
+  check('POS: se la rotta non trova il nome usa il cantiere del POS, non «Cantiere»', /Condominio Via Prova 9/.test(po2.docTitle), po2.docTitle);
   const posPdf = await require('../pdf-renderer').rendererPool.render(posHtml, po.docTitle ? po : { docTitle: 'POS', revision: 1 });
   const posPagine = await paginePdf(posPdf);
   const TITOLI_POS = ['Fasi operative:', 'Rischi identificati e valutazione (matrice P x D):', 'Misure di prevenzione e protezione:', 'DPI obbligatori:', 'FASI OPERATIVE:', 'RISCHI IDENTIFICATI E VALUTAZIONE (MATRICE P X D):', 'MISURE DI PREVENZIONE E PROTEZIONE:', 'DPI OBBLIGATORI:'];

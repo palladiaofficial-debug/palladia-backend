@@ -1266,10 +1266,10 @@ app.get('/api/pos/:posId/pdf', verifyJwtOnly, async (req, res) => {
     if (pos.site_id) {
       const { data: site } = await supabase
         .from('sites')
-        .select('name, site_name, address')
+        .select('name, address')
         .eq('id', pos.site_id)
         .single();
-      if (site) siteName = site.site_name || site.name || site.address || 'Cantiere';
+      if (site) siteName = site.name || site.address || 'Cantiere';
     }
 
     const signs     = selectSigns(pos.pos_data || {});
@@ -1575,10 +1575,10 @@ app.get('/api/pos/:posId/pdf-html', verifyJwtOnly, async (req, res) => {
     if (pos.site_id) {
       const { data: site } = await supabase
         .from('sites')
-        .select('name, site_name, address')
+        .select('name, address')
         .eq('id', pos.site_id)
         .single();
-      if (site) siteName = site.site_name || site.name || site.address || 'Cantiere';
+      if (site) siteName = site.name || site.address || 'Cantiere';
     }
 
     const signs    = selectSigns(pos.pos_data || {});

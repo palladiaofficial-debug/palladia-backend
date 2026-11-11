@@ -995,7 +995,8 @@ function titoloSezione(t) {
 function posPdfOptions(posData, revision, siteName) {
   const d = posData || {};
   const rev = revision || 1;
-  const cantiere = siteName || d.siteName || d.siteAddress || 'Cantiere';
+  // «Cantiere» è il valore di riserva delle rotte quando non trovano il nome: lì vale quello del POS
+  const cantiere = [siteName !== 'Cantiere' ? siteName : '', d.siteName, d.siteAddress].find(pieno) || 'Cantiere';
   return {
     docTitle: `POS · ${cantiere} · Rev. ${rev}`,
     headerLeft: pieno(d.companyName) ? d.companyName : 'POS',
