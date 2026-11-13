@@ -48,4 +48,20 @@ router.post('/buste/carica/:id/conferma', ...auth, idValido, async (req, res) =>
   } catch (err) { fallito(res, err, 'conferma'); }
 });
 
+// F-494: le pagine esatte di un pezzo del file, da guardare prima di mandare
+router.get('/buste/carica/:id/anteprima/:indice', ...auth, idValido, async (req, res) => {
+  try {
+    const pdf = await B.anteprima(req.companyId, req.params.id, Number(req.params.indice));
+    res.set({ 'Content-Type': 'application/pdf', 'Cache-Control': 'no-store' }).send(pdf);
+  } catch (err) { fallito(res, err, 'anteprima'); }
+});
+
+// F-494: i prospetti del commercialista (paghe di tutti), solo ufficio
+router.get('/buste/riepiloghi', ...auth, async (req, res) => {
+  try { res.json(await B.riepiloghi(req.companyId)); } catch (err) { fallito(res, err, 'riepiloghi'); }
+});
+router.get('/buste/riepiloghi/:id', ...auth, idValido, async (req, res) => {
+  try { res.json({ url: await B.riepilogoUrl(req.companyId, req.params.id) }); } catch (err) { fallito(res, err, 'riepilogo'); }
+});
+
 module.exports = router;

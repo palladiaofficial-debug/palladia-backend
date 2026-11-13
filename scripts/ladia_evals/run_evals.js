@@ -49,6 +49,7 @@ const SKIP = {
   M07: 'richiede un documento davvero allegato in chat (upload) — non simulato in questo harness v1',
   F04: 'richiede un secondo utente di test con ruolo "tech" (non admin) — non ancora nell\'identità di questo harness',
   W12: 'presuppone create_expense: modulo economia congelato dal 24/09 (F-229) — Ladia ora dice onestamente che non è attivo',
+  F494: 'richiede un utente di test «tech» (come F04); il rifiuto di get_payslips è provato direttamente in scripts/selftest_f494_buste_solo_ufficio.js',
   F242: 'vale solo con il modulo subappaltatori congelato: riacceso il 26/09 (F-244), ora la stessa richiesta è coperta da F247',
   F05: 'richiede un account Studio CDL di test distinto — non ancora nell\'identità di questo harness',
 };

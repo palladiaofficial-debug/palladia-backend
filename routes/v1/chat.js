@@ -3537,6 +3537,14 @@ async function executeTool(toolName, toolInput, companyId, userId, req = null, c
       }
 
       case 'get_payslips': {
+        // F-494 (AUDIT.md del frontend): buste paga solo a titolare e amministratori
+        const { vedeBuste } = require('../../lib/busteRiservate');
+        let ruolo = req?.userRole;
+        if (!ruolo && userId) {
+          const { data: m } = await supabase.from('company_users').select('role').eq('company_id', companyId).eq('user_id', userId).maybeSingle();
+          ruolo = m?.role;
+        }
+        if (!vedeBuste(ruolo)) return { error: 'Le buste paga le vedono solo il titolare e gli amministratori dell\'impresa.' };
         let workerIds = null;
         if (toolInput.worker_id) {
           workerIds = [toolInput.worker_id];

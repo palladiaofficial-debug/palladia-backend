@@ -27,6 +27,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { isFeatureEnabled } = require('../../lib/featureFlags');
 const { sendDbError } = require('../../lib/httpErrors');
+const { senzaBuste } = require('../../lib/busteRiservate');
 
 // F-100 (AUDIT.md): scoped ai propri path — un router.use(verifySupabaseJwt)
 // non scoped viene eseguito da Express per OGNI richiesta che attraversa
@@ -87,6 +88,7 @@ router.get('/archive/documents', async (req, res) => {
   if (category)           query = query.eq('category', category);
   if (sourceTables?.length) query = query.in('source_table', sourceTables);
   if (q)                  query = query.ilike('name', `%${q}%`);
+  query = senzaBuste(query, req.userRole);  // F-494: buste paga solo all'ufficio
 
   const { data, error, count } = await query;
   if (error) return sendDbError(res, error);
@@ -136,19 +138,19 @@ function expiryStatusFor(doc, ora, presto) {
   return !scad ? 'senza_scadenza' : scad < ora ? 'scaduto' : scad < presto ? 'in_scadenza' : 'valido';
 }
 
-function baseDocsQuery(companyId) {
-  return supabase
+function baseDocsQuery(companyId, role) {
+  return senzaBuste(supabase
     .from('documents')
     .select('id, source_table, legacy_id, owner_type, site_id, worker_id, subcontractor_id, equipment_id, category, name, expiry_date, ai_expiry_date, created_at')
     .eq('company_id', companyId)
     .is('deleted_at', null)
-    .neq('source_table', 'ladia_document_templates');
+    .neq('source_table', 'ladia_document_templates'), role);
 }
 
 // GET /api/v1/document-folders — cartelle radice con conteggi
 router.get('/document-folders', async (req, res) => {
   const companyId = req.companyId;
-  const { data: docs, error } = await baseDocsQuery(companyId);
+  const { data: docs, error } = await baseDocsQuery(companyId, req.userRole);
   if (error) return sendDbError(res, error);
 
   const { data: sites }   = await supabase.from('sites').select('id').eq('company_id', companyId);
@@ -199,7 +201,7 @@ router.get('/document-folders/:type', async (req, res) => {
     return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
   }
 
-  const { data: docs, error } = await baseDocsQuery(companyId);
+  const { data: docs, error } = await baseDocsQuery(companyId, req.userRole);
   if (error) return sendDbError(res, error);
 
   const ora = today(), presto = futureDate(30);
@@ -236,7 +238,7 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
   // Cartella smart: nessuna "casa" reale, calcolata al volo sulla scadenza —
   // niente logica di document_extra_homes qui, :key è ignorato (sempre 'tutti').
   if (type === 'scaduti') {
-    const { data: docs, error } = await baseDocsQueryFull(companyId);
+    const { data: docs, error } = await baseDocsQueryFull(companyId, req.userRole);
     if (error) return sendDbError(res, error);
     const ora = today(), presto = futureDate(30);
     const scaduti = (docs || []).filter(d => {
@@ -250,7 +252,7 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
     return res.status(400).json({ error: 'TIPO_NON_VALIDO' });
   }
 
-  let primaryQuery = baseDocsQueryFull(companyId);
+  let primaryQuery = baseDocsQueryFull(companyId, req.userRole);
   if (type === 'cantieri')            primaryQuery = primaryQuery.eq('site_id', key);
   else if (type === 'lavoratori')     primaryQuery = primaryQuery.eq('worker_id', key);
   else if (type === 'subappaltatori') primaryQuery = primaryQuery.eq('subcontractor_id', key);
@@ -276,7 +278,7 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
 
   let extraDocs = [];
   if (missingExtraIds.length) {
-    const { data } = await baseDocsQueryFull(companyId).in('id', missingExtraIds);
+    const { data } = await baseDocsQueryFull(companyId, req.userRole).in('id', missingExtraIds);
     extraDocs = data || [];
   }
 
@@ -284,8 +286,8 @@ router.get('/document-folders/:type/:key/documents', async (req, res) => {
   res.json({ type, key, documents: await attachHomes(allDocs) });
 });
 
-function baseDocsQueryFull(companyId) {
-  return supabase
+function baseDocsQueryFull(companyId, role) {
+  return senzaBuste(supabase
     .from('documents')
     .select(`
       id, source_table, legacy_id, owner_type, company_id, site_id, worker_id,
@@ -297,7 +299,7 @@ function baseDocsQueryFull(companyId) {
     `)
     .eq('company_id', companyId)
     .is('deleted_at', null)
-    .neq('source_table', 'ladia_document_templates');
+    .neq('source_table', 'ladia_document_templates'), role);
 }
 
 // Arricchisce ogni documento con `expiry_status` e la lista di TUTTE le sue

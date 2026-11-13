@@ -10,7 +10,9 @@
  *  - un codice fiscale che non è di nessuno → «da guardare», col nome che somiglia;
  *  - il mese letto dal file; una scansione senza testo rifiutata;
  *  - alla conferma: una busta per operaio, mandata, con le pagine giuste;
- *    riepilogo in Documenti; chi l'aveva già firmata la deve rifirmare;
+ *    prospetti col caricamento, solo ufficio (F-494, non più in Documenti);
+ *    anteprima delle pagine esatte prima di mandare (F-494);
+ *    chi l'aveva già firmata la deve rifirmare;
  *    il file caricato si cancella; due volte no.
  * Se c'è scripts/../scratch/CI10119_original.pdf (il file vero di MSC, non nel
  * repo) prova anche quello: 17 buste, pagine 31-51 all'azienda.
@@ -115,6 +117,15 @@ async function db() {
     const ott = await B.esistentiPer(co.id, r.id, { anno: 2026, mese: 10 });
     check('esistenti: per ottobre nessuno ha già la busta', ott.length === 0, ott);
 
+    // F-494: prima di mandare, le pagine esatte di ogni pezzo
+    const pag = async (buf) => (await PDFDocument.load(buf)).getPageCount();
+    check('anteprima (F-494): la busta di Mario sono 2 pagine, la «da guardare» 1, i prospetti 2',
+      await pag(await B.anteprima(co.id, r.id, 0)) === 2 && await pag(await B.anteprima(co.id, r.id, 2)) === 1 && await pag(await B.anteprima(co.id, r.id, 3)) === 2);
+    const antAltra = await rifiuta(() => B.anteprima(altra.id, r.id, 0));
+    check('anteprima: un’altra azienda non la vede', antAltra?.status === 404, antAltra?.code);
+    const antFuori = await rifiuta(() => B.anteprima(co.id, r.id, 99));
+    check('anteprima: un pezzo che non esiste → 404', antFuori?.status === 404, antFuori?.code);
+
     const fuori = await rifiuta(() => B.conferma(co.id, null, r.id, { anno: 2026, mese: 9, assegna: { 2: estraneo.id } }));
     check('conferma: un operaio di un\'altra azienda è rifiutato', fuori?.code === 'OPERAIO_NON_VALIDO', fuori?.code);
     const altraCo = await rifiuta(() => B.conferma(altra.id, null, r.id, { anno: 2026, mese: 9 }));
@@ -127,15 +138,24 @@ async function db() {
     check('conferma: Mario la deve rifirmare (la busta è cambiata)', ps.find(p => p.worker_id === A.id)?.acknowledged_at === null);
     const pagine = async (wid) => { const f = await supabase.storage.from('site-documents').download(ps.find(p => p.worker_id === wid).file_path); return (await PDFDocument.load(Buffer.from(await f.data.arrayBuffer()))).getPageCount(); };
     check('conferma: pagine giuste (Mario 2, Luigi 2, Paolo 1)', await pagine(A.id) === 2 && await pagine(Bw.id) === 2 && await pagine(C.id) === 1);
+    // F-494: i prospetti (paghe di tutti) NON in Documenti › Impresa, ma col caricamento, solo ufficio
     const { data: docs } = await supabase.from('company_documents').select('name, file_path').eq('company_id', co.id);
-    paths.push(...(docs || []).map(d => d.file_path));
-    check('conferma: prospetti e riepiloghi in Documenti › Impresa', docs?.length === 1 && /Settembre 2026 — prospetti e riepiloghi/.test(docs[0].name) && c.riepilogo, docs);
+    check('conferma (F-494): niente prospetti in Documenti › Impresa', (docs || []).length === 0, docs);
+    const { data: car } = await supabase.from('buste_caricamenti').select('riepilogo_path, riepilogo_pagine').eq('id', r.id).single();
+    paths.push(car?.riepilogo_path);
+    check('conferma (F-494): prospetti salvati col caricamento, 2 pagine, sotto payslips/', c.riepilogo && car?.riepilogo_pagine === 2 && car.riepilogo_path?.startsWith(`payslips/${co.id}/_riepiloghi/`), car);
+    const elenco = await B.riepiloghi(co.id);
+    check('riepiloghi: quello di settembre 2026 in elenco', elenco.length === 1 && elenco[0].mese === 9 && /settembre 2026/.test(elenco[0].nome), elenco);
+    check('riepiloghi: si apre con un link firmato', /^https:/.test(await B.riepilogoUrl(co.id, r.id)));
+    check('riepiloghi: un’altra azienda non li vede', (await B.riepiloghi(altra.id)).length === 0);
+    const antDopo = await rifiuta(() => B.anteprima(co.id, r.id, 0));
     check('conferma: ResultCard verificata, «ognuno la trova nel suo badge»', c.resultCard.fatto.verified && /3 buste mandate/.test(c.resultCard.fatto.after), c.resultCard);
     // L'elenco della cartella, non download(): lo storage risponde dalla cache (max-age 3600)
     const { data: rimasti } = await supabase.storage.from('site-documents').list(`payslips/${co.id}/_caricamenti`);
     check('conferma: il file caricato è cancellato', !(rimasti || []).some(f => row.file_path.endsWith(f.name)), rimasti);
     const due = await rifiuta(() => B.conferma(co.id, null, r.id, { anno: 2026, mese: 9 }));
     check('conferma due volte: rifiutata', due?.code === 'GIA_MANDATE', due?.code);
+    check('anteprima dopo aver mandato: non c’è più (il file caricato è cancellato)', antDopo?.code === 'GIA_MANDATE', antDopo?.code);
     check('Gianni (non nel file) non riceve niente', !ps.some(p => p.worker_id === D.id));
 
     const scans = await rifiuta(async () => B.leggi(co.id, null, { buffer: await pdfDa(['', '']), originalname: 'scan.pdf' }));

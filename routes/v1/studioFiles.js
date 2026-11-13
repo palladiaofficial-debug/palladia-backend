@@ -21,6 +21,7 @@
 const crypto  = require('crypto');
 const path    = require('path');
 const multer  = require('multer');
+const { soloUfficio } = require('../../lib/busteRiservate');  // F-494
 const router  = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifyStudioJwt }    = require('../../middleware/verifyStudio');
@@ -298,7 +299,7 @@ router.get('/studio/docs-for-me/:id/download', verifySupabaseJwt, async (req, re
   res.json({ url: data.signedUrl });
 });
 
-router.get('/studio/payslips-for-me', verifySupabaseJwt, async (req, res) => {
+router.get('/studio/payslips-for-me', verifySupabaseJwt, soloUfficio, async (req, res) => {
   const { data, error } = await supabase
     .from('payslips')
     .select('id, worker_id, period_year, period_month, filename, file_size, created_at, workers(full_name)')
@@ -311,7 +312,7 @@ router.get('/studio/payslips-for-me', verifySupabaseJwt, async (req, res) => {
   res.json(data || []);
 });
 
-router.get('/studio/payslips-for-me/:id/download', verifySupabaseJwt, async (req, res) => {
+router.get('/studio/payslips-for-me/:id/download', verifySupabaseJwt, soloUfficio, async (req, res) => {
   const { data: slip } = await supabase
     .from('payslips')
     .select('file_path')

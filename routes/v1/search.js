@@ -13,6 +13,7 @@
 const router   = require('express').Router();
 const supabase  = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
+const { senzaBuste } = require('../../lib/busteRiservate');
 
 const EMPTY_RESULTS = { sites: [], workers: [], subcontractors: [], equipment: [], documents: [] };
 
@@ -63,13 +64,13 @@ router.get('/search', verifySupabaseJwt, async (req, res) => {
       .order('name')
       .limit(5),
 
-    supabase
+    senzaBuste(supabase  // F-494: buste paga solo all'ufficio
       .from('documents')
       .select('id, name, category, owner_type, site_id, worker_id, subcontractor_id, equipment_id')
       .eq('company_id', companyId)
       .is('deleted_at', null)
       .not('name', 'is', null)
-      .ilike('name', term)
+      .ilike('name', term), req.userRole)
       .order('name')
       .limit(5),
   ]);

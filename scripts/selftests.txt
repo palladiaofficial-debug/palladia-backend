@@ -221,6 +221,7 @@ scripts/selftest_semplice_per_tutti.js
 scripts/selftest_sospeso_licenziato.js
 scripts/selftest_contratti.js
 scripts/selftest_buste_carica.js
+scripts/selftest_f494_buste_solo_ufficio.js
 scripts/selftest_imprese_carica.js
 scripts/selftest_imprese_email.js
 scripts/selftest_carica_tutto.js

@@ -18,6 +18,13 @@ const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { validate } = require('../../middleware/validate');
 const { auditLog } = require('../../lib/audit');
 const { sendPayerAccessEmail } = require('../../services/email');
+const { soloUfficio } = require('../../lib/busteRiservate');
+
+// F-494 (AUDIT.md del frontend, 13/11/2026): ogni strada di questo file è
+// riservata all'ufficio (titolare e amministratori). Prima bastava essere un
+// account dell'impresa: un «tech» o un «viewer» apriva elenco e PDF di tutti.
+// Scoped ai propri path (vedi F-100 in archive.js).
+router.use(['/payslips', '/workers/:workerId/payslips'], verifySupabaseJwt, soloUfficio);
 
 // F-212 (AUDIT.md, 2026-09-17): era 365gg fisso — un link mandato per errore
 // restava valido un anno intero su tutte le buste paga dell'azienda.
