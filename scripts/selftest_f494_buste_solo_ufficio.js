@@ -113,6 +113,8 @@ async function main() {
       check(`${role}: apre il PDF`, d.status === 200 && !!d.body?.url, d);
       const r = await call(role, 'GET', '/buste/riepiloghi');
       check(`${role}: vede i prospetti del commercialista`, r.status === 200 && Array.isArray(r.body), r);
+      const ar = await call(role, 'GET', '/archive/documents?source_tables=payslips');
+      check(`${role}: nell'archivio documenti la busta c'è (controprova del filtro)`, Array.isArray(ar.body?.results) && ar.body.results.some(d => d.source_table === 'payslips'), ar);
     }
 
     // Ladia (get_payslips, codice locale): stessa regola, anche senza req (bot) col ruolo dal DB
