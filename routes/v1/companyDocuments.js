@@ -17,6 +17,7 @@ const router   = require('express').Router();
 const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt } = require('../../middleware/verifyJwt');
 const { analyzeCompanyDoc } = require('../../services/documentAI');
+const { fermaPaghe } = require('../../lib/bustePaga/riconosci');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -96,6 +97,10 @@ router.post('/company-documents',
     const { category = 'altro' } = req.body;
     if (!req.file) return res.status(400).json({ error: 'FILE_REQUIRED' });
     if (!CATEGORIES.includes(category)) return res.status(400).json({ error: 'INVALID_CATEGORY' });
+
+    // F-496: una busta o un prospetto paghe va in Buste paga (solo ufficio), non qui
+    const paghe = await fermaPaghe({ companyId: req.companyId, userId: req.user?.id, buffer: req.file.buffer, mime: req.file.mimetype, nomeFile: req.file.originalname, da: 'company-documents' });
+    if (paghe.fermata) return res.status(409).json({ error: 'BUSTE_PAGA', message: paghe.message });
 
     const fileId   = crypto.randomUUID();
     const filename = safeName(req.file.originalname);

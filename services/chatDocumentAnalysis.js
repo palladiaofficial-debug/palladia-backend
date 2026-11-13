@@ -19,6 +19,7 @@ const { sanitizeCategory } = require('../lib/documentCategory');
 const { syncWorkerExpiry } = require('../lib/workerDocSync');
 const { syncToFormazione } = require('./documentAI');
 const { isFeatureEnabled } = require('../lib/featureFlags');
+const { fermaPaghe } = require('../lib/bustePaga/riconosci');
 
 // F-247 (AUDIT.md): documenti di un subappaltatore — stesse categorie del
 // caricamento manuale (routes/v1/subcontractors.js) e campo della scheda che
@@ -276,6 +277,20 @@ async function archiveChatUpload({
   const dlResp = await fetch(signedTmp.signedUrl);
   if (!dlResp.ok) return { error: 'Download file temporaneo fallito.' };
   const fileBuf = Buffer.from(await dlResp.arrayBuffer());
+
+  // F-496 (AUDIT.md): il 16/08 Ladia aveva archiviato i prospetti paghe di
+  // luglio in Documenti › Impresa col nome «busta_paga», dove li vedono tecnici
+  // e coordinatori. Buste e prospetti vanno in Buste paga, solo ufficio.
+  // `error` perché chat.js (congelato) si ferma lì senza scheda «archiviato».
+  if (['site_documents', 'company_documents', 'worker_documents', 'worker_certificates'].includes(destination)) {
+    const detto = /bust[ae][ _-]?pag|cedolin|prospett\w*[ _-]?pag|libro[ _-]?unico/i.test(`${name} ${category} ${upload.original_name}`);
+    const f = await fermaPaghe({ companyId, userId, buffer: fileBuf, mime: upload.mime_type, nomeFile: upload.original_name, da: 'ladia', forza: detto });
+    if (f.fermata) {
+      await supabase.from('chat_uploads').update({ archived: true }).eq('id', uploadId);
+      supabase.storage.from(BUCKET).remove([upload.storage_path]).catch(() => {});
+      return { error: f.message, spostato_in_buste_paga: true };
+    }
+  }
 
   const { error: storErr } = await supabase.storage
     .from(destBucket)

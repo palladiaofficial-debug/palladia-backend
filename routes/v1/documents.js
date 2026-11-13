@@ -7,6 +7,7 @@ const supabase = require('../../lib/supabase');
 const { verifySupabaseJwt }  = require('../../middleware/verifyJwt');
 const { coordinatorLimiter } = require('../../middleware/rateLimit');
 const { analyzeSiteDoc }     = require('../../services/documentAI');
+const { fermaPaghe } = require('../../lib/bustePaga/riconosci');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -65,6 +66,10 @@ router.post('/sites/:siteId/documents', verifySupabaseJwt,
     const { data: site } = await supabase
       .from('sites').select('id').eq('id', siteId).eq('company_id', req.companyId).maybeSingle();
     if (!site) return res.status(404).json({ error: 'SITE_NOT_FOUND_OR_FORBIDDEN' });
+
+    // F-496: una busta o un prospetto paghe va in Buste paga (solo ufficio), non nel cantiere
+    const paghe = await fermaPaghe({ companyId: req.companyId, userId: req.user?.id, buffer: req.file.buffer, mime: req.file.mimetype, nomeFile: req.file.originalname, da: 'site-documents' });
+    if (paghe.fermata) return res.status(409).json({ error: 'BUSTE_PAGA', message: paghe.message });
 
     const fileId   = crypto.randomUUID();
     const filename = safeName(req.file.originalname);

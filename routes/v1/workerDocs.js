@@ -23,6 +23,7 @@ const { validate } = require('../../middleware/validate');
 const { createWorkerDocSchema, patchWorkerDocSchema } = require('../../lib/schemas/workerDocs');
 const { sendDbError } = require('../../lib/httpErrors');
 const { syncWorkerExpiry } = require('../../lib/workerDocSync');
+const { fermaPaghe } = require('../../lib/bustePaga/riconosci');
 
 const BUCKET   = 'site-documents';
 const MAX_SIZE = 20 * 1024 * 1024;
@@ -128,6 +129,12 @@ router.post('/workers/:workerId/documents',
 
     let filePath = null;
     let fileUrl  = null;
+
+    // F-496: una busta o un prospetto paghe va in Buste paga (solo ufficio), non fra i documenti del lavoratore
+    if (req.file) {
+      const paghe = await fermaPaghe({ companyId: req.companyId, userId: req.user?.id, buffer: req.file.buffer, mime: req.file.mimetype, nomeFile: req.file.originalname, da: 'worker-documents' });
+      if (paghe.fermata) return res.status(409).json({ error: 'BUSTE_PAGA', message: paghe.message });
+    }
 
     // Upload file se allegato
     if (req.file) {

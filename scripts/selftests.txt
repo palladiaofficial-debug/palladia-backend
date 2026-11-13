@@ -223,6 +223,7 @@ scripts/selftest_contratti.js
 scripts/selftest_buste_carica.js
 scripts/selftest_f494_buste_solo_ufficio.js
 scripts/selftest_f495_paghe_fuori_documenti.js
+scripts/selftest_f496_paghe_dal_contenuto.js
 scripts/selftest_imprese_carica.js
 scripts/selftest_imprese_email.js
 scripts/selftest_carica_tutto.js
