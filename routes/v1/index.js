@@ -121,6 +121,7 @@ router.use('/', require('./badgeUscitaAnticipata'));
 // F-340: sunto del POS dopo l'entrata (file separato, la timbratura non cambia)
 router.use('/', require('./badgeSuntoSicurezza'));
 router.use('/', require('./badgeDdt'));
+router.use('/', require('./bolleAutisti'));  // F-500: «Fotografa la bolla» dal badge degli autisti (file separato, la timbratura non cambia)
 
 // Area Lavoratore: auth CF + profilo/timbrature/payslips/documenti (endpoint pubblici)
 // DEVE stare prima di qualsiasi sub-router con router.use(verifySupabaseJwt) globale

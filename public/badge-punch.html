@@ -224,11 +224,11 @@
 
     /* Barra DDT fissa (F-227) — separata dal flusso di timbratura per
        costruzione: mai dentro #wrap, mai ridisegnata dai renderXxx() della
-       timbratura. z-index sotto la guida GPS (400) e sopra la guida PWA
-       (300): se compare durante il salvataggio Home resta comunque
-       raggiungibile, non la blocca né viene bloccata da essa. */
+       timbratura. F-500: z-index SOTTO la guida PWA (300) e la guida GPS
+       (400): prima stava sopra la guida «Salva sulla schermata Home» e ne
+       copriva il tasto «Adesso no, faccio dopo». */
     .ddt-bar {
-      position: fixed; left: 0; right: 0; bottom: 0; z-index: 350;
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 250;
       display: flex; justify-content: center;
       padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
       background: var(--surface);
@@ -712,11 +712,13 @@
        flusso DDT stesso. -->
   <div id="ddt-bar" class="ddt-bar hidden">
     <button class="ddt-bar-btn" id="ddt-bar-btn" onclick="openDdtSitePicker()">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>
-      <span id="ddt-bar-label">DDT</span>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      <span id="ddt-bar-label">Fotografa la bolla</span>
     </button>
   </div>
 
+  <!-- F-500: le bolle mandate senza rete partono anche da qui (non tocca la timbratura) -->
+  <script src="/bolla-coda.js" defer></script>
   <script>
   'use strict';
 
@@ -832,7 +834,7 @@
       // F-213 (AUDIT.md): caricamento DDT trasportatori interni.
       ddt: {
         buttonLabel: 'Carica DDT',
-        bottomLabel: 'DDT',
+        bottomLabel: 'Fotografa la bolla',
         chooseSiteTitle: 'A quale cantiere?',
         chooseSiteHint: 'Seleziona il cantiere per la consegna.',
         cameraTitle: 'Fotografa il DDT',
@@ -1016,7 +1018,7 @@
       // traducere proprie, nu verificată de un vorbitor nativ (ca și restul paginii).
       ddt: {
         buttonLabel: 'Încarcă DDT',
-        bottomLabel: 'DDT',
+        bottomLabel: 'Fotografiază avizul',
         chooseSiteTitle: 'La ce șantier?',
         chooseSiteHint: 'Selectează șantierul pentru livrare.',
         cameraTitle: 'Fotografiază DDT-ul',
@@ -1207,7 +1209,7 @@
       // përkthim jo i verifikuar nga një folës amtare (si pjesa tjetër e faqes).
       ddt: {
         buttonLabel: 'Ngarko DDT',
-        bottomLabel: 'DDT',
+        bottomLabel: 'Fotografo fletëdërgesën',
         chooseSiteTitle: 'Në cilin kantier?',
         chooseSiteHint: 'Zgjidh kantierin për dorëzimin.',
         cameraTitle: 'Fotografo DDT-në',
@@ -1391,7 +1393,7 @@
       // خاصة غير مراجَعة من متحدث أصلي (مثل بقية الصفحة).
       ddt: {
         buttonLabel: 'تحميل مستند التسليم',
-        bottomLabel: 'DDT',
+        bottomLabel: 'صوّر وصل التسليم',
         chooseSiteTitle: 'إلى أي ورشة؟',
         chooseSiteHint: 'اختر الورشة الخاصة بالتسليم.',
         cameraTitle: 'صوّر مستند التسليم',
@@ -2032,6 +2034,7 @@
   // routes/v1/badgeDdt.js — nascondere il bottone non basta).
   function showDdtBar() {
     if (!workerData || workerData.ddt_upload_enabled !== true) return;
+    try { document.getElementById('ddt-bar-label').textContent = t().ddt.bottomLabel; } catch (e) {}
     document.getElementById('ddt-bar').classList.remove('hidden');
     document.body.classList.add('has-ddt-bar');
   }
@@ -2044,6 +2047,13 @@
   // cantiere, mai dal cantiere già selezionato per la timbratura (anche se
   // coincidono spesso nella pratica, sono due stati indipendenti nel codice).
   function openDdtSitePicker() {
+    // F-500 (AUDIT.md): «Fotografa la bolla» apre la pagina nuova accanto al
+    // badge (public/bolla-autista.html): la bolla va nelle Bolle del cantiere
+    // e al confronto con la fattura. Il vecchio flusso DDT qui sotto resta
+    // solo come riserva se manca il codice.
+    var parts = location.pathname.split('/').filter(Boolean);
+    var bc = parts[parts.indexOf('timbratura') + 1] || '';
+    if (/^[A-Fa-f0-9]{18}$/.test(bc)) { location.href = '/timbratura/' + bc + '/bolla'; return; }
     ddtReturnTo = _rerenderCurrent;
     hideDdtBar();
     renderDdtSitePicker();

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#ffffff">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Archivo:wdth,wght@62..125,500..900&display=swap" rel="stylesheet">
+<title>Fotografa la bolla — Palladia</title>
+<!--
+  F-500 (AUDIT.md del frontend): «Fotografa la bolla» per i nostri autisti.
+  Disegno approvato il 14/11/2026 (https://claude.ai/artifact/LPH4yjojwZ2reVsnJ8Jhry).
+  Una cosa per schermata, una domanda sola: «Si legge bene?».
+  - Niente modulo: fornitore, numero, materiali e cantiere li legge il server.
+  - Il cantiere lo chiedo solo se non si capisce (né timbratura di oggi né
+    destinazione scritta): «Non lo so: decide l'ufficio».
+  - Senza rete la bolla resta nel telefono e parte da sola (bolla-coda.js).
+  Stessa identità del badge, nessun login: /api/v1/badge/:code/bolle.
+  Stile: quello nuovo di Palladia (bianco, titoli Archivo, un tasto scuro).
+  Lingue: quella scelta nel badge (palladia_badge_lang). Traduzioni non ancora
+  riviste da un madrelingua.
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  :root { --ink: #10171F; --muted: #5B6470; --line: #E4E7EA; --soft: #F6F7F8; --ok: #1F6B3A; --warn: #A15C07; }
+  html, body { margin: 0; background: #fff; color: var(--ink); font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+  body { min-height: 100dvh; }
+  .app { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .indietro { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-weight: 600; font-size: 16px; font-family: inherit; text-decoration: none; cursor: pointer; }
+  .chi { font-size: 15px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  main { flex: 1; display: flex; flex-direction: column; padding: 20px 20px 0; gap: 16px; }
+  .disp { font-family: 'Archivo', 'Arial Narrow', sans-serif; font-stretch: 72%; font-variation-settings: 'wdth' 72; font-weight: 800; letter-spacing: 0; }
+  h1 { margin: 0; font-size: 40px; line-height: 1; }
+  p { margin: 0; }
+  .frase { font-size: 17px; line-height: 1.45; color: #3B4450; }
+  [hidden] { display: none !important; }
+  .piede { position: sticky; bottom: 0; margin: auto -20px 0; padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; background: #fff; }
+  .pieno { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 64px; border: 0; border-radius: 12px; background: var(--ink); color: #fff; font-weight: 700; font-size: 19px; font-family: inherit; cursor: pointer; text-decoration: none; }
+  .bordo { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 58px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); font-weight: 600; font-size: 17px; font-family: inherit; cursor: pointer; text-decoration: none; }
+  .link { min-height: 48px; border: 0; background: transparent; color: var(--ink); font-weight: 600; font-size: 17px; font-family: inherit; text-decoration: underline; text-decoration-color: #C5CBD2; text-underline-offset: 5px; cursor: pointer; }
+  .pieno:disabled { opacity: .6; }
+  .pagine { display: flex; gap: 8px; }
+  .pagina { position: relative; flex: 1; min-width: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+  .pagina img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .pagina .n { position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.92); font-size: 12px; font-weight: 600; color: var(--muted); }
+  .pagina .pdf { font-size: 15px; font-weight: 700; color: var(--muted); }
+  .testa { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .quante { font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+  .scheda { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-family: inherit; color: var(--ink); text-align: start; width: 100%; cursor: pointer; }
+  .scheda .t { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .scheda .l { font-size: 13px; color: var(--muted); }
+  .scheda .v { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
+  .scheda .c { font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
+  .elenco { border: 1px solid var(--line); border-radius: 12px; padding: 2px 18px; }
+  .riga { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 68px; border: 0; border-top: 1px solid #EEF0F2; background: #fff; text-align: start; font-family: inherit; color: var(--ink); cursor: pointer; padding: 8px 0; }
+  .riga:first-child { border-top: 0; }
+  .riga .a { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+  .riga .b { font-size: 14px; color: var(--muted); }
+  .fatte { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); padding-top: 12px; }
+  .fatte .tit { font-size: 13.5px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+  .fatte .r { display: flex; justify-content: space-between; gap: 12px; min-height: 40px; align-items: center; font-size: 15px; border-top: 1px solid #EEF0F2; }
+  .fatte .r:first-of-type { border-top: 0; }
+  .centro { padding-top: 70px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
+  .tondo { width: 96px; height: 96px; border-radius: 48px; display: grid; place-items: center; }
+  .tondo.ok { background: #E3F1E7; color: var(--ok); }
+  .tondo.warn { background: #FDF0DC; color: var(--warn); }
+  .giro { width: 40px; height: 40px; border: 4px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: giro .8s linear infinite; }
+  @keyframes giro { to { transform: rotate(360deg); } }
+  .attesa { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #FDF0DC; color: #7A3410; font-size: 15px; font-weight: 600; }
+  .nascosto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+  [dir="rtl"] .indietro svg { transform: scaleX(-1); }
+  @media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <a class="indietro" id="torna" href="#" data-testid="bolla-torna"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span id="torna-l">Badge</span></a>
+    <span class="chi" id="chi"></span>
+  </header>
+  <main id="m" aria-live="polite"><div class="centro"><span class="giro" aria-hidden="true"></span></div></main>
+</div>
+<input type="file" id="cam" class="nascosto" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+<input type="file" id="file" class="nascosto" accept="image/*,application/pdf" tabindex="-1" aria-hidden="true">
+<script src="/bolla-coda.js"></script>
+<script>
+'use strict';
+(function () {
+  var T = {
+    it: {
+      badge: 'Badge', titolo: 'Fotografa la bolla', sotto: 'Fai una foto alla bolla, tutta dentro, dritta. Il resto lo leggo io.',
+      foto: 'Fai la foto', file: 'Scegli una foto o un PDF', oggi: 'Oggi hai mandato',
+      legge: 'Si legge bene?', pagine: function (n) { return n === 1 ? '1 pagina' : n + ' pagine'; }, pagina: function (n) { return 'Pagina ' + n; },
+      perCantiere: 'Per il cantiere', cambia: 'Cambia', loLeggo: 'Lo leggo dalla bolla',
+      manda: 'Sì, mandala', altra: 'Ha un’altra pagina', rifai: 'No, rifai la foto',
+      mando: 'La mando…', mandoSotto: 'Ci vogliono pochi secondi.',
+      quale: 'Per quale cantiere?', qualeSotto: 'Oggi non hai timbrato e sulla bolla non si legge.', qualeSottoPrima: 'Scegli il cantiere di questa bolla.', nonSo: 'Non lo so: decide l’ufficio',
+      mandata: 'Mandata', arrivata: function (c) { return c ? 'La bolla di ' + c + ' è arrivata in ufficio.' : 'La bolla è arrivata in ufficio.'; },
+      cera: 'C’era già', ceraSotto: 'Questa bolla l’avevi già mandata. Non serve rifarla.',
+      torna: 'Torna al badge', ancora: 'Un’altra bolla',
+      rete: 'Niente rete', reteSotto: 'Tranquillo: la bolla è nel telefono. Parte da sola appena c’è segnale.',
+      inAttesa: function (n) { return n === 1 ? '1 bolla aspetta la rete: parte da sola.' : n + ' bolle aspettano la rete: partono da sole.'; },
+      troppe: 'Al massimo 6 pagine per bolla.', tipo: 'Serve una foto o un PDF.', grande: 'Il file è troppo grande.',
+      noBadge: 'Questo badge non può mandare bolle. Chiedi all’ufficio.', errore: 'Non riesco a caricare la pagina. Riprova.', riprova: 'Riprova',
+      errManda: 'Non sono riuscito a mandarla. Riprova.'
+    },
+    ro: {
+      badge: 'Badge', titolo: 'Fotografiază avizul', sotto: 'Fă o poză avizului, întreg și drept. Restul îl citesc eu.',
+      foto: 'Fă poza', file: 'Alege o poză sau un PDF', oggi: 'Azi ai trimis',
+      legge: 'Se citește bine?', pagine: function (n) { return n === 1 ? '1 pagină' : n + ' pagini'; }, pagina: function (n) { return 'Pagina ' + n; },
+      perCantiere: 'Pentru șantierul', cambia: 'Schimbă', loLeggo: 'Îl citesc de pe aviz',
+      manda: 'Da, trimite-l', altra: 'Are încă o pagină', rifai: 'Nu, refă poza',
+      mando: 'Îl trimit…', mandoSotto: 'Durează câteva secunde.',
+      quale: 'Pentru ce șantier?', qualeSotto: 'Azi nu ai pontat și pe aviz nu se citește.', qualeSottoPrima: 'Alege șantierul acestui aviz.', nonSo: 'Nu știu: decide biroul',
+      mandata: 'Trimis', arrivata: function (c) { return c ? 'Avizul pentru ' + c + ' a ajuns la birou.' : 'Avizul a ajuns la birou.'; },
+      cera: 'Exista deja', ceraSotto: 'Acest aviz l-ai trimis deja. Nu trebuie refăcut.',
+      torna: 'Înapoi la badge', ancora: 'Încă un aviz',
+      rete: 'Fără semnal', reteSotto: 'Liniștit: avizul e în telefon. Pleacă singur când revine semnalul.',
+      inAttesa: function (n) { return n === 1 ? '1 aviz așteaptă semnal: pleacă singur.' : n + ' avize așteaptă semnal: pleacă singure.'; },
+      troppe: 'Cel mult 6 pagini pentru un aviz.', tipo: 'Trebuie o poză sau un PDF.', grande: 'Fișierul este prea mare.',
+      noBadge: 'Acest badge nu poate trimite avize. Întreabă la birou.', errore: 'Nu reușesc să încarc pagina. Încearcă din nou.', riprova: 'Încearcă din nou',
+      errManda: 'Nu am reușit să-l trimit. Încearcă din nou.'
+    },
+    sq: {
+      badge: 'Badge', titolo: 'Fotografo fletëdërgesën', sotto: 'Bëji një foto fletëdërgesës, të gjithë dhe drejt. Pjesën tjetër e lexoj unë.',
+      foto: 'Bëj foton', file: 'Zgjidh një foto ose PDF', oggi: 'Sot ke dërguar',
+      legge: 'Lexohet mirë?', pagine: function (n) { return n === 1 ? '1 faqe' : n + ' faqe'; }, pagina: function (n) { return 'Faqja ' + n; },
+      perCantiere: 'Për kantierin', cambia: 'Ndrysho', loLeggo: 'E lexoj nga fletëdërgesa',
+      manda: 'Po, dërgoje', altra: 'Ka edhe një faqe', rifai: 'Jo, bëje foton përsëri',
+      mando: 'Po e dërgoj…', mandoSotto: 'Duhen pak sekonda.',
+      quale: 'Për cilin kantier?', qualeSotto: 'Sot nuk ke regjistruar hyrjen dhe në fletëdërgesë nuk lexohet.', qualeSottoPrima: 'Zgjidh kantierin e kësaj fletëdërgese.', nonSo: 'Nuk e di: vendos zyra',
+      mandata: 'U dërgua', arrivata: function (c) { return c ? 'Fletëdërgesa për ' + c + ' arriti në zyrë.' : 'Fletëdërgesa arriti në zyrë.'; },
+      cera: 'Ishte tashmë', ceraSotto: 'Këtë fletëdërgesë e ke dërguar tashmë. Nuk duhet ribërë.',
+      torna: 'Kthehu te badge', ancora: 'Një fletëdërgesë tjetër',
+      rete: 'Pa rrjet', reteSotto: 'Qetë: fletëdërgesa është në telefon. Niset vetë sapo të ketë sinjal.',
+      inAttesa: function (n) { return n === 1 ? '1 fletëdërgesë pret rrjetin: niset vetë.' : n + ' fletëdërgesa presin rrjetin: nisen vetë.'; },
+      troppe: 'Më së shumti 6 faqe për fletëdërgesë.', tipo: 'Duhet një foto ose PDF.', grande: 'Skedari është shumë i madh.',
+      noBadge: 'Ky badge nuk mund të dërgojë fletëdërgesa. Pyet zyrën.', errore: 'Nuk arrij ta ngarkoj faqen. Provo përsëri.', riprova: 'Provo përsëri',
+      errManda: 'Nuk arrita ta dërgoj. Provo përsëri.'
+    },
+    ar: {
+      badge: 'البطاقة', titolo: 'صوّر وصل التسليم', sotto: 'صوّر الوصل كاملاً ومستقيماً. الباقي أقرأه أنا.',
+      foto: 'التقط الصورة', file: 'اختر صورة أو ملف PDF', oggi: 'أرسلت اليوم',
+      legge: 'هل يُقرأ جيداً؟', pagine: function (n) { return n === 1 ? 'صفحة واحدة' : n + ' صفحات'; }, pagina: function (n) { return 'الصفحة ' + n; },
+      perCantiere: 'للورشة', cambia: 'غيّر', loLeggo: 'أقرأها من الوصل',
+      manda: 'نعم، أرسله', altra: 'فيه صفحة أخرى', rifai: 'لا، أعد الصورة',
+      mando: 'أرسله…', mandoSotto: 'يستغرق بضع ثوانٍ.',
+      quale: 'لأي ورشة؟', qualeSotto: 'لم تسجّل حضورك اليوم ولا يُقرأ ذلك على الوصل.', qualeSottoPrima: 'اختر ورشة هذا الوصل.', nonSo: 'لا أعرف: يقرر المكتب',
+      mandata: 'تم الإرسال', arrivata: function (c) { return c ? 'وصل ' + c + ' وصل إلى المكتب.' : 'الوصل وصل إلى المكتب.'; },
+      cera: 'موجود مسبقاً', ceraSotto: 'هذا الوصل أرسلته من قبل. لا داعي لإعادته.',
+      torna: 'العودة إلى البطاقة', ancora: 'وصل آخر',
+      rete: 'لا توجد شبكة', reteSotto: 'لا تقلق: الوصل محفوظ في الهاتف. سيُرسل وحده عند عودة الإشارة.',
+      inAttesa: function (n) { return n === 1 ? 'وصل واحد ينتظر الشبكة: سيُرسل وحده.' : n + ' وصولات تنتظر الشبكة: ستُرسل وحدها.'; },
+      troppe: '6 صفحات كحد أقصى لكل وصل.', tipo: 'يلزم صورة أو ملف PDF.', grande: 'الملف كبير جداً.',
+      noBadge: 'هذه البطاقة لا يمكنها إرسال الوصولات. اسأل المكتب.', errore: 'لا أستطيع تحميل الصفحة. حاول مرة أخرى.', riprova: 'حاول مرة أخرى',
+      errManda: 'لم أتمكن من إرساله. حاول مرة أخرى.'
+    }
+  };
+  var lingua = 'it';
+  try { var s = localStorage.getItem('palladia_badge_lang'); if (s && T[s]) lingua = s; } catch (e) { /* */ }
+  if (lingua === 'it' && !(function () { try { return localStorage.getItem('palladia_badge_lang'); } catch (e) { return null; } })()) {
+    var nav = (navigator.language || '').slice(0, 2).toLowerCase(); if (T[nav]) lingua = nav;
+  }
+  var t = T[lingua];
+  document.documentElement.lang = lingua;
+  document.documentElement.dir = lingua === 'ar' ? 'rtl' : 'ltr';
+
+  var parti = location.pathname.split('/').filter(Boolean);
+  var code = parti[parti.indexOf('timbratura') + 1] || '';
+  var BADGE = '/timbratura/' + encodeURIComponent(code);
+  var API = '/api/v1/badge/' + encodeURIComponent(code) + '/bolle';
+  var MAX = 6, MAXB = 12 * 1024 * 1024;
+
+  var m = document.getElementById('m');
+  var cam = document.getElementById('cam'), fileIn = document.getElementById('file');
+  document.getElementById('torna').href = BADGE;
+  document.getElementById('torna-l').textContent = t.badge;
+
+  var info = null;          // { nome, cantiereOggi, cantieri, oggi }
+  var pagine = [];          // [{ blob, type, name, url }]
+  var scelto = null;        // { id, nome } scelto dall'autista prima di mandare
+  var ultima = null;        // { id } ultima bolla mandata senza cantiere
+  var dopoCantiere = null;  // 'prima' | 'dopo'
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function mostra(html) { m.innerHTML = html; window.scrollTo(0, 0); }
+  function su(id, fn) { var el = document.getElementById(id); if (el) el.onclick = fn; }
+  function uuid() { try { return crypto.randomUUID(); } catch (e) { return Date.now().toString(36) + Math.random().toString(36).slice(2); } }
+  var CAMERA = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+  var PIU = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+  var SPUNTA = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
+  var NORETE = '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0M12 19h.01M3 3l18 18"/></svg>';
+
+  // ── Le foto: rimpicciolite prima di mandarle (la rete in cantiere è lenta) ──
+  function rimpicciolisci(f) {
+    return new Promise(function (ok) {
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type) || !window.createImageBitmap) return ok(f);
+      createImageBitmap(f).then(function (img) {
+        var lato = 2000, k = Math.min(1, lato / Math.max(img.width, img.height));
+        if (k === 1 && f.size < 2.5 * 1024 * 1024) return ok(f);
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(function (b) { ok(b && b.size < f.size ? b : f); }, 'image/jpeg', 0.85);
+      }).catch(function () { ok(f); });
+    });
+  }
+  function prendi(f) {
+    if (!f) return;
+    if (!/^image\//.test(f.type) && f.type !== 'application/pdf') return avviso(t.tipo);
+    if (pagine.length >= MAX) return avviso(t.troppe);
+    rimpicciolisci(f).then(function (b) {
+      if (b.size > MAXB) return avviso(t.grande);
+      var tipo = b.type || f.type;
+      pagine.push({ blob: b, type: tipo, name: 'pagina-' + (pagine.length + 1) + (tipo === 'application/pdf' ? '.pdf' : '.jpg'), url: /^image\//.test(tipo) ? URL.createObjectURL(b) : null });
+      vistaFoto();
+    });
+  }
+  cam.onchange = function () { var f = cam.files && cam.files[0]; cam.value = ''; prendi(f); };
+  fileIn.onchange = function () { var f = fileIn.files && fileIn.files[0]; fileIn.value = ''; prendi(f); };
+  function apriCamera() { cam.click(); }
+  function svuotaPagine() { pagine.forEach(function (p) { if (p.url) URL.revokeObjectURL(p.url); }); pagine = []; }
+  function avviso(testo) {
+    var el = document.getElementById('avviso');
+    if (el) { el.textContent = testo; el.hidden = false; }
+  }
+
+  // ── Schermate ──
+  function vistaInizio() {
+    svuotaPagine(); scelto = null;
+    var fatte = (info && info.oggi || []);
+    mostra(
+      '<h1 class="disp">' + esc(t.titolo) + '</h1>' +
+      '<p class="frase">' + esc(t.sotto) + '</p>' +
+      '<div id="attesa"></div>' +
+      '<p id="avviso" class="attesa" role="alert" hidden></p>' +
+      (fatte.length ? '<section class="fatte" data-testid="bolla-oggi"><span class="tit">' + esc(t.oggi) + '</span>' +
+        fatte.map(function (b) { return '<div class="r"><span>' + esc(b.fornitore || '—') + (b.cantiere ? ' · ' + esc(b.cantiere) : '') + '</span><span style="color:var(--muted)">' + esc(b.ora) + '</span></div>'; }).join('') + '</section>' : '') +
+      '<div class="piede"><button type="button" class="pieno" id="b-foto" data-testid="bolla-fai-foto">' + CAMERA + esc(t.foto) + '</button>' +
+      '<button type="button" class="link" id="b-file" data-testid="bolla-scegli-file">' + esc(t.file) + '</button></div>'
+    );
+    su('b-foto', apriCamera); su('b-file', function () { fileIn.click(); });
+    mostraAttesa();
+  }
+  function cantiereFrase() {
+    if (scelto) return scelto.nome;
+    if (info && info.cantiereOggi) return info.cantiereOggi.nome || '—';
+    return t.loLeggo;
+  }
+  function vistaFoto() {
+    var n = pagine.length, alta = n === 1 ? 'min(38dvh, 400px)' : 'min(32dvh, 300px)';
+    mostra(
+      '<div class="testa"><h1 class="disp">' + esc(t.legge) + '</h1><span class="quante" data-testid="bolla-quante">' + esc(t.pagine(n)) + '</span></div>' +
+      '<div class="pagine" style="height:' + alta + '">' + pagine.map(function (p, i) {
+        return '<span class="pagina">' + (p.url ? '<img src="' + p.url + '" alt="' + esc(t.pagina(i + 1)) + '">' : '<span class="pdf">PDF</span>') + '<span class="n">' + esc(t.pagina(i + 1)) + '</span></span>';
+      }).join('') + '</div>' +
+      '<p id="avviso" class="attesa" role="alert" hidden></p>' +
+      '<button type="button" class="scheda" id="b-cambia" data-testid="bolla-cantiere"><span class="t"><span class="l">' + esc(t.perCantiere) + '</span><span class="v">' + esc(cantiereFrase()) + '</span></span><span class="c">' + esc(t.cambia) + '</span></button>' +
+      '<div class="piede"><button type="button" class="pieno" id="b-manda" data-testid="bolla-manda">' + esc(t.manda) + '</button>' +
+      (n < MAX ? '<button type="button" class="bordo" id="b-altra" data-testid="bolla-altra">' + PIU + esc(t.altra) + '</button>' : '') +
+      '<button type="button" class="link" id="b-rifai" data-testid="bolla-rifai">' + esc(t.rifai) + '</button></div>'
+    );
+    su('b-manda', manda); su('b-altra', apriCamera);
+    su('b-rifai', function () { svuotaPagine(); apriCamera(); vistaInizio(); });
+    su('b-cambia', function () { dopoCantiere = 'prima'; vistaCantiere(); });
+  }
+  function vistaCantiere() {
+    var lista = (info && info.cantieri) || [];
+    mostra(
+      '<h1 class="disp">' + esc(t.quale) + '</h1>' +
+      '<p class="frase">' + esc(dopoCantiere === 'dopo' ? t.qualeSotto : t.qualeSottoPrima) + '</p>' +
+      '<p id="avviso" class="attesa" role="alert" hidden></p>' +
+      '<section class="elenco" data-testid="bolla-cantieri">' + lista.map(function (c) {
+        return '<button type="button" class="riga" data-id="' + esc(c.id) + '"><span class="a">' + esc(c.nome) + '</span>' + (c.indirizzo ? '<span class="b">' + esc(c.indirizzo) + '</span>' : '') + '</button>';
+      }).join('') + '</section>' +
+      '<div class="piede"><button type="button" class="link" id="b-nonso" data-testid="bolla-non-so">' + esc(t.nonSo) + '</button></div>'
+    );
+    Array.prototype.forEach.call(m.querySelectorAll('.riga'), function (b) {
+      b.onclick = function () {
+        var c = lista.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
+        if (!c) return;
+        if (dopoCantiere === 'dopo') return dopoScelta(c);
+        scelto = { id: c.id, nome: c.nome }; vistaFoto();
+      };
+    });
+    su('b-nonso', function () {
+      if (dopoCantiere === 'dopo') return vistaMandata(null);
+      scelto = null; vistaFoto();
+    });
+  }
+  function dopoScelta(c) {
+    mostra('<div class="centro"><span class="giro" aria-hidden="true"></span></div>');
+    fetch(API + '/' + encodeURIComponent(ultima.id) + '/cantiere', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site_id: c.id }) })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { vistaMandata(j && j.cantiere || c.nome); })
+      .catch(function () { vistaMandata(null); });
+  }
+  function vistaMando() {
+    mostra('<div class="centro"><span class="giro" aria-hidden="true"></span><h1 class="disp" style="font-size:36px">' + esc(t.mando) + '</h1><p class="frase">' + esc(t.mandoSotto) + '</p></div>');
+  }
+  function vistaMandata(cantiere) {
+    if (info) info.oggi = null; // si ricarica al prossimo giro
+    mostra(
+      '<div class="centro" data-testid="bolla-mandata"><span class="tondo ok">' + SPUNTA + '</span><h1 class="disp" style="font-size:44px">' + esc(t.mandata) + '</h1><p class="frase" style="font-size:19px">' + esc(t.arrivata(cantiere)) + '</p></div>' +
+      '<div class="piede"><a class="pieno" href="' + BADGE + '" data-testid="bolla-torna-badge">' + esc(t.torna) + '</a><button type="button" class="bordo" id="b-ancora" data-testid="bolla-ancora">' + esc(t.ancora) + '</button></div>'
+    );
+    su('b-ancora', function () { carica().then(vistaInizio); });
+  }
+  function vistaGia() {
+    mostra(
+      '<div class="centro" data-testid="bolla-cera"><span class="tondo ok">' + SPUNTA + '</span><h1 class="disp" style="font-size:44px">' + esc(t.cera) + '</h1><p class="frase" style="font-size:19px">' + esc(t.ceraSotto) + '</p></div>' +
+      '<div class="piede"><a class="pieno" href="' + BADGE + '">' + esc(t.torna) + '</a><button type="button" class="bordo" id="b-ancora">' + esc(t.ancora) + '</button></div>'
+    );
+    su('b-ancora', function () { carica().then(vistaInizio); });
+  }
+  function vistaSenzaRete() {
+    mostra(
+      '<div class="centro" data-testid="bolla-senza-rete"><span class="tondo warn">' + NORETE + '</span><h1 class="disp" style="font-size:44px">' + esc(t.rete) + '</h1><p class="frase" style="font-size:19px">' + esc(t.reteSotto) + '</p></div>' +
+      '<div class="piede"><a class="pieno" href="' + BADGE + '">' + esc(t.torna) + '</a></div>'
+    );
+  }
+  function vistaErrore(testo, conRiprova) {
+    mostra('<div class="centro"><p class="frase" role="alert" style="font-size:19px">' + esc(testo) + '</p></div>' +
+      '<div class="piede">' + (conRiprova ? '<button type="button" class="pieno" id="b-riprova">' + esc(t.riprova) + '</button>' : '') + '<a class="' + (conRiprova ? 'bordo' : 'pieno') + '" href="' + BADGE + '">' + esc(t.torna) + '</a></div>');
+    su('b-riprova', avvio);
+  }
+  function mostraAttesa() {
+    if (!window.PalladiaBolleCoda) return;
+    PalladiaBolleCoda.conta(code).then(function (n) {
+      var el = document.getElementById('attesa'); if (!el) return;
+      el.innerHTML = n ? '<p class="attesa" data-testid="bolla-in-attesa">' + esc(t.inAttesa(n)) + '</p>' : '';
+    });
+  }
+  window.addEventListener('palladia-bolle-mandate', function () { mostraAttesa(); });
+
+  // ── Mandare ──
+  function manda() {
+    if (!pagine.length) return;
+    var voce = { client_id: uuid(), code: code, site_id: scelto ? scelto.id : null, at: Date.now(), pagine: pagine.map(function (p) { return { blob: p.blob, type: p.type, name: p.name }; }) };
+    vistaMando();
+    var inCoda = function () {
+      if (!window.PalladiaBolleCoda) return vistaErrore(t.errManda, false);
+      PalladiaBolleCoda.aggiungi(voce).then(function () { svuotaPagine(); vistaSenzaRete(); }, function () { vistaErrore(t.errManda, false); });
+    };
+    if (navigator.onLine === false || !window.PalladiaBolleCoda) return inCoda();
+    PalladiaBolleCoda.manda(voce).then(function (r) {
+      svuotaPagine();
+      if (r.doppione) return vistaGia();
+      if (!r.cantiere) { ultima = { id: r.id }; dopoCantiere = 'dopo'; return (info && info.cantieri && info.cantieri.length) ? vistaCantiere() : vistaMandata(null); }
+      vistaMandata(r.cantiere);
+    }, function (e) {
+      if (e.message === 'rete' || e.status >= 500 || e.status === 429) return inCoda();
+      vistaFoto();
+      avviso(e.message === 'FILE_TOO_LARGE' ? t.grande : e.message === 'TROPPE_PAGINE' ? t.troppe : e.message === 'FILE_NON_VALIDO' ? t.tipo : t.errManda);
+    });
+  }
+
+  function carica() {
+    return fetch(API, { cache: 'no-store' }).then(function (r) {
+      if (r.status === 401 || r.status === 403) { var e = new Error('badge'); e.badge = true; throw e; }
+      if (!r.ok) throw new Error('http');
+      return r.json();
+    }).then(function (j) { info = j; document.getElementById('chi').textContent = j.nome || ''; return j; });
+  }
+  function avvio() {
+    if (!/^[A-Fa-f0-9]{18}$/.test(code)) return vistaErrore(t.noBadge, false);
+    carica().then(vistaInizio, function (e) {
+      if (e.badge) return vistaErrore(t.noBadge, false);
+      // senza rete: si può fotografare lo stesso, la bolla parte dopo
+      if (navigator.onLine === false) { info = { nome: null, cantiereOggi: null, cantieri: [], oggi: [] }; return vistaInizio(); }
+      vistaErrore(t.errore, true);
+    });
+  }
+  avvio();
+})();
+</script>
+</body>
+</html>

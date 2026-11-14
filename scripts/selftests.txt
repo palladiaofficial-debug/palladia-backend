@@ -246,3 +246,4 @@ scripts/selftest_ore_correzioni.js
 scripts/selftest_conteggio_unico.js
 scripts/selftest_imprese_togli_cantiere.js
 scripts/selftest_documenti_stile.js
+scripts/selftest_f500_bolle_autisti.js

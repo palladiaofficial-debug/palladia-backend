@@ -29,6 +29,22 @@ router.get('/bolle/:id/file', verifySupabaseJwt, async (req, res) => {
 });
 
 const WRITE_ROLES = ['owner', 'admin', 'tech'];
+// F-500: le bolle da controllare (anche dei nostri autisti), il dettaglio con le pagine, la correzione
+//   GET   /api/v1/bolle/da-controllare → { bolle, cantieri }
+//   GET   /api/v1/bolle/:id            → la bolla con i link alle pagine
+//   PATCH /api/v1/bolle/:id            → { fornitore, numero, data, siteId, righe, stato: 'a_posto'|'scartata' }
+router.get('/bolle/da-controllare', verifySupabaseJwt, async (req, res) => {
+  try { res.json(await B.daControllare(req.companyId)); } catch (err) { fallito(res, err, 'da controllare'); }
+});
+router.get('/bolle/:id', verifySupabaseJwt, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'NOT_FOUND' });
+  try { res.json(await B.dettaglio(req.companyId, req.params.id)); } catch (err) { fallito(res, err, 'dettaglio'); }
+});
+router.patch('/bolle/:id', verifySupabaseJwt, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'NOT_FOUND' });
+  if (req.userRole && !WRITE_ROLES.includes(req.userRole)) return res.status(403).json({ error: 'FORBIDDEN' });
+  try { res.json(await B.correggi(req.companyId, req.user?.id, req.params.id, req.body || {})); } catch (err) { fallito(res, err, 'correggi'); }
+});
 router.get('/fatture/:id', verifySupabaseJwt, async (req, res) => {
   if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'NOT_FOUND' });
   try { res.json(await F.scheda(req.companyId, req.params.id)); } catch (err) { fallito(res, err, 'fattura'); }

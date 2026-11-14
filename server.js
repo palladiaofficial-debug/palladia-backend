@@ -600,6 +600,15 @@ app.get('/timbratura/:code/manifest.json', (req, res) => {
   });
 });
 
+// F-500 (AUDIT.md del frontend): «Fotografa la bolla» per gli autisti abilitati.
+// Accanto al badge (stessa origine e stesso ambito della app salvata): il service
+// worker la tiene anche senza rete, e la coda delle bolle non mandate la svuota
+// anche il badge (public/bolla-coda.js).
+app.get('/timbratura/:code/bolla', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile('bolla-autista.html', { root: __dirname + '/public' });
+});
+
 // Timbratura via badge personale lavoratore (nuovo flusso primario)
 app.get('/timbratura/:code', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
