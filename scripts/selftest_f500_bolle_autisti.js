@@ -108,6 +108,9 @@ async function main() {
     const H = { Authorization: `Bearer ${ses.session.access_token}`, 'X-Company-Id': CO };
     x = await api('GET', '/bolle/da-controllare', undefined, H);
     check('ufficio: 2 bolle da controllare, con autista e dubbi', x.status === 200 && x.body?.bolle?.length === 2 && x.body.bolle.every(b => b.autista === 'Marco Autista') && x.body.bolle.some(b => b.dubbi.includes('numero')), x.body?.bolle?.map(b => ({ dubbi: b.dubbi, autista: b.autista })));
+    x = await api('GET', '/oggi', undefined, H);
+    const rigaOggi = JSON.stringify(x.body || {}).includes('2 bolle da controllare');
+    check('Oggi: la riga «2 bolle da controllare» che porta a /bolle', x.status === 200 && rigaOggi && JSON.stringify(x.body).includes('"/bolle"'), x.status);
     x = await api('GET', `/bolle/${idDubbio}`, undefined, H);
     check('ufficio: il dettaglio ha le 2 pagine con il link', x.status === 200 && x.body?.foto?.length === 2 && x.body.foto.every(f => /^https?:/.test(f.url || '')), x.body?.foto);
     x = await api('PATCH', `/bolle/${idDubbio}`, JSON.stringify({ numero: '88', stato: 'a_posto' }), { ...H, 'Content-Type': 'application/json' });
