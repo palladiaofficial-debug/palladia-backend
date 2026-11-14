@@ -85,6 +85,13 @@ router.post('/imprese/:id/cantieri', ...auth, scrive, idValido('id'), async (req
 router.delete('/imprese/:id/cantieri/:siteId', ...auth, scrive, idValido('id'), idValido('siteId'), async (req, res) => {
   try { await I.togliDaCantiere(req.companyId, req.params.id, req.params.siteId); res.json({ ok: true }); } catch (err) { fallito(res, err, 'togli cantiere'); }
 });
+// F-498: il tipo d'impresa (con_operai | da_solo | familiare) e il link ritirato
+router.post('/imprese/:id/tipo', ...auth, scrive, idValido('id'), async (req, res) => {
+  try { res.json(await I.tipo(req.companyId, req.params.id, req.body?.tipo)); } catch (err) { fallito(res, err, 'tipo'); }
+});
+router.post('/imprese/:id/link/ritira', ...auth, scrive, idValido('id'), async (req, res) => {
+  try { res.json(await L.ritiraLink(req.companyId, req.params.id)); } catch (err) { fallito(res, err, 'ritira link'); }
+});
 router.post('/imprese/:id/autonomo', ...auth, scrive, idValido('id'), async (req, res) => {
   try { res.json(await I.autonomo(req.companyId, req.params.id, req.body?.autonomo)); } catch (err) { fallito(res, err, 'autonomo'); }
 });
@@ -104,6 +111,10 @@ router.get('/impresa-link/:token', impresaLinkLimiter, async (req, res) => {
 router.post('/impresa-link/:token/carica', impresaLinkLimiter, impresaCaricaLimiter, unFile, async (req, res) => {
   const siteId = req.body?.siteId && UUID.test(req.body.siteId) ? req.body.siteId : null;
   try { res.status(201).json(await L.caricaDaImpresa(req.params.token, { tipo: req.body?.tipo, siteId, file: req.file })); } catch (err) { fallito(res, err, 'link carica'); }
+});
+// F-498: «Non ce l'ho» → quando lo avrà
+router.post('/impresa-link/:token/promessa', impresaLinkLimiter, async (req, res) => {
+  try { res.json(await L.promettiDaImpresa(req.params.token, req.body || {})); } catch (err) { fallito(res, err, 'promessa'); }
 });
 router.post('/impresa-link/:token/dati', impresaLinkLimiter, async (req, res) => {
   try { await L.salvaDati(req.params.token, req.body || {}); res.json({ ok: true }); } catch (err) { fallito(res, err, 'link dati impresa'); }

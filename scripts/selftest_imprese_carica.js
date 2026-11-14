@@ -209,7 +209,7 @@ async function db() {
     check('un\'altra azienda non vede il caricamento', presto?.status === 404);
     s = await K.stato(co.id, id);
     check('dopo la correzione il DVR è di Edil Bianchi', s.imprese.find(g => g.id === B.id)?.documenti.some(d => d.tipo === 'dvr'));
-    check('…e a Impianti Verdi torna a mancare il DVR', s.imprese.find(g => g.id === A.id)?.dopo.mancano.join(',') === 'Patente a crediti,DVR o autocertificazione,Dichiarazione che non è sospesa', s.imprese.find(g => g.id === A.id)?.dopo);
+    check('…e a Impianti Verdi torna a mancare il DVR', s.imprese.find(g => g.id === A.id)?.dopo.mancano.join(',') === 'Patente a crediti,DVR,Dichiarazione che non è sospesa', s.imprese.find(g => g.id === A.id)?.dopo);
 
     const r = await K.salva(co.id, null, id);
     check('salva: 8 documenti (il POS doppio no), 2 imprese, 1 operaio nuovo, ResultCard verificata', r.salvati === 8 && r.imprese.length === 2 && r.operaiNuovi === 1 && r.resultCard.fatto.verified, r);

@@ -46,7 +46,7 @@ const tra = (g) => { const x = new Date(); x.setDate(x.getDate() + g); return x.
     check('scaduti dal più vecchio: DURC di Edil Bianchi, assicurazione del furgone, visita di Lika, visita di Paolo Neri',
       r.scaduti.map(x => `${x.chi}|${x.cosa}`).join(',') === ['Edil Bianchi Srl|DURC', 'Furgone Iveco Daily|Assicurazione', 'Elton Lika|Visita medica', 'Paolo Neri (Edil Bianchi Srl)|Visita medica'].join(','), r.scaduti);
     check('mancano: il corso sicurezza di Carlo Bianco, DVR e dichiarazione di Edil Bianchi; MAI l’assicurazione RC (consigliata)',
-      !!trova(r.mancano, 'Carlo Bianco', 'Corso sicurezza') && !!trova(r.mancano, 'Edil Bianchi Srl', 'DVR o autocertificazione') && !r.mancano.some(x => x.cosa === 'Assicurazione RC'), r.mancano);
+      !!trova(r.mancano, 'Carlo Bianco', 'Corso sicurezza') && !!trova(r.mancano, 'Edil Bianchi Srl', 'DVR') && !r.mancano.some(x => x.cosa === 'Assicurazione RC'), r.mancano);
     check('entro un mese: il DURC della tua impresa (tra 20 giorni); la Panda (tra 60) no',
       r.entroUnMese.length === 1 && r.entroUnMese[0].chi === 'La tua impresa' && r.entroUnMese[0].cosa === 'DURC' && r.entroUnMese[0].scadenza === tra(20), r.entroUnMese);
     const visita = trova(r.scaduti, 'Elton Lika', 'Visita medica');
