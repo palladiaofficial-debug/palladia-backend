@@ -3,6 +3,7 @@
 // Titolare (JWT):
 //   GET  /api/v1/imprese/panoramica          → prima cosa, una riga per impresa
 //   GET  /api/v1/imprese/:id/scheda          → può lavorare? documenti, cantieri, operai, conti
+//   GET  /api/v1/imprese/:id/dichiarazione.pdf → il modulo art. 14 già compilato (F-502)
 //   POST /api/v1/imprese                     → { nome, piva } oppure { telefono } (+ siteId)
 //   POST /api/v1/imprese/leggi               → foto alla visura / DURC → nome, P.IVA, sede (non salva)
 //   POST /api/v1/imprese/:id/chiedi          → link + messaggio WhatsApp/email ({ rifare: docId })
@@ -67,6 +68,14 @@ router.post('/imprese/leggi', ...auth, scrive, aiLimiter, unFile, async (req, re
   try { res.json(await I.leggiPerAggiungere(req.companyId, req.file)); }
   catch (err) { logger.error({ err }, 'imprese: leggi'); res.status(502).json({ error: 'LETTURA_NON_RIUSCITA' }); }
 });
+// F-502: il modulo della dichiarazione art. 14 già compilato, da stampare per l'impresa
+router.get('/imprese/:id/dichiarazione.pdf', ...auth, idValido('id'), async (req, res) => {
+  try {
+    const pdf = await dichiarazionePdf(await L.dichiarazioneDelTitolare(req.companyId, req.params.id));
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="dichiarazione-art14.pdf"', 'Cache-Control': 'no-store' });
+    res.send(pdf);
+  } catch (err) { fallito(res, err, 'dichiarazione titolare'); }
+});
 router.post('/imprese/:id/chiedi', ...auth, scrive, idValido('id'), async (req, res) => {
   const rifare = req.body?.rifare && UUID.test(req.body.rifare) ? req.body.rifare : null;
   try { res.json(await I.chiedi(req.companyId, req.user?.id, req.params.id, { rifare })); } catch (err) { fallito(res, err, 'chiedi'); }
@@ -128,11 +137,7 @@ router.post('/impresa-link/:token/operai/:id/carica', impresaLinkLimiter, impres
 router.get('/impresa-link/:token/dichiarazione.pdf', impresaLinkLimiter, async (req, res) => {
   try {
     const { link, impresa, azienda } = await L.daToken(req.params.token);
-    const cantieri = await L.cantieriImpresa(link.company_id, impresa.id);
-    const pdf = await dichiarazionePdf({
-      impresa: { nome: impresa.da_completare ? null : impresa.company_name, piva: impresa.piva, indirizzo: impresa.legal_address, referente: impresa.contact_person },
-      azienda: azienda.name, cantieri,
-    });
+    const pdf = await dichiarazionePdf(await L.datiDichiarazione(link.company_id, impresa, azienda.name));
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': 'attachment; filename="dichiarazione-art14.pdf"', 'Cache-Control': 'no-store' });
     res.send(pdf);
   } catch (err) { fallito(res, err, 'dichiarazione'); }

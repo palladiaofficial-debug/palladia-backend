@@ -110,7 +110,7 @@ const letto = (x) => ({ tipo: 'altro', ragioneSociale: null, piva: null, sede: n
       let p = await I.panoramica(E2E);
       check('il titolare: prima cosa «ha mandato 3 documenti»', p.prima?.tipo === 'guardare' && p.prima.id === id && p.prima.quanti === 3, p.prima);
       let s = await I.scheda(E2E, id);
-      const dich = s.ricevuti.find(x => x.label === 'Dichiarazione che non è sospesa');
+      const dich = s.ricevuti.find(x => x.label === "Dichiarazione: non è sospesa dall'Ispettorato");
       check('nella scheda: 3 ricevuti, la dichiarazione col motivo in italiano «Manca la firma»', s.ricevuti.length === 3 && dich?.motivo === 'Manca la firma' && !s.puoLavorare, s.ricevuti);
       const rif = await I.chiedi(E2E, null, id, { rifare: dich.id });
       check('«Chiedile di rifarla»: il messaggio dice cosa non va', /non va: manca la firma/.test(rif.testo), rif.testo);
