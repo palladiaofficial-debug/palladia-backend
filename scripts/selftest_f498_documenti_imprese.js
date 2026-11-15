@@ -39,16 +39,18 @@ async function main() {
   const chiavi = (row) => requirementsFor('subappaltatori', row).map(r => r.key).sort().join(',');
   check('con operai: visura, DURC, patente, DVR, dichiarazione (+ assicurazione facoltativa)', chiavi({ tipo_impresa: 'con_operai' }) === 'assicurazione,dichiarazione,durc,dvr,patente,visura', chiavi({ tipo_impresa: 'con_operai' }));
   check('da solo: niente DVR né dichiarazione; attrezzature e DPI', chiavi({ tipo_impresa: 'da_solo' }) === 'assicurazione,attrezzature,dpi,durc,patente,visura', chiavi({ tipo_impresa: 'da_solo' }));
-  check('impresa familiare: solo visura, DURC, patente (attrezzature e DPI aspettano il consulente)', chiavi({ tipo_impresa: 'familiare' }) === 'assicurazione,durc,patente,visura', chiavi({ tipo_impresa: 'familiare' }));
+  // F-501: all'impresa familiare si applica l'art. 21 come all'autonomo → anche attrezzature e DPI
+  check('impresa familiare: come da solo (art. 21): attrezzature e DPI, niente DVR', chiavi({ tipo_impresa: 'familiare' }) === chiavi({ tipo_impresa: 'da_solo' }), chiavi({ tipo_impresa: 'familiare' }));
   check('tipo non noto: come con operai (come prima)', chiavi({}) === chiavi({ tipo_impresa: 'con_operai' }));
   check('il vecchio flag autonomo vale ancora «da solo»', chiavi({ autonomo: true }) === chiavi({ tipo_impresa: 'da_solo' }));
   const dvr = REQUIREMENTS.subappaltatori.find(r => r.key === 'dvr');
   check('si chiede «DVR», non più «DVR o autocertificazione»', dvr.label === 'DVR' && !dvr.cats('autocertificazione_dvr'), dvr.label);
   check('visura SRLS → con operai', tipoDaVisura({ formaGiuridica: 'società a responsabilità limitata semplificata', addetti: 0 }) === 'con_operai');
   check('visura ditta individuale con 0 addetti → da solo', tipoDaVisura({ formaGiuridica: 'impresa individuale', addetti: 0 }) === 'da_solo');
-  check('visura ditta individuale con 3 addetti → con operai', tipoDaVisura({ formaGiuridica: 'impresa individuale', addetti: 3 }) === 'con_operai');
+  check('visura ditta individuale con 3 dipendenti → con operai', tipoDaVisura({ formaGiuridica: 'impresa individuale', addetti: 4, dipendenti: 3 }) === 'con_operai');
+  check('visura ditta individuale con 3 addetti senza dire quanti dipendenti → non decido (F-501)', tipoDaVisura({ formaGiuridica: 'impresa individuale', addetti: 3 }) === null);
   check('visura ditta individuale senza addetti scritti → non decido', tipoDaVisura({ formaGiuridica: 'impresa individuale', addetti: null }) === null);
-  check('visura impresa familiare → familiare', tipoDaVisura({ formaGiuridica: 'impresa familiare', addetti: 2 }) === 'familiare');
+  check('visura impresa familiare, 0 dipendenti → familiare', tipoDaVisura({ formaGiuridica: 'impresa familiare', addetti: 2, dipendenti: 0 }) === 'familiare');
 
   const URL_ = process.env.SUPABASE_URL, SERVICE = process.env.SUPABASE_SERVICE_ROLE_KEY, ANON = process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY;
   if (!URL_ || !SERVICE || !ANON || !process.env.PIN_SIGNING_SECRET) { console.log('  – skip parte dal vivo: env mancante'); return fine(); }
@@ -85,7 +87,7 @@ async function main() {
     check('tipo non previsto → 400', r.status === 400, r);
     r = await owner('POST', `/imprese/${sub.id}/tipo`, { tipo: 'familiare' });
     r = await pub();
-    check('impresa familiare → visura, DURC, patente', keys(r.body) === 'assicurazione,durc,patente,visura', keys(r.body));
+    check('impresa familiare → come da solo (F-501)', keys(r.body) === 'assicurazione,attrezzature,dpi,durc,patente,visura', keys(r.body));
     await owner('POST', `/imprese/${sub.id}/tipo`, { tipo: 'con_operai' });
 
     // La visura decide solo se il titolare non ha scelto
