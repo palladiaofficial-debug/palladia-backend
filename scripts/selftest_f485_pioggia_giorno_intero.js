@@ -34,8 +34,16 @@ if (regola) {
   check('…nessuna ora per cantiere (non sono ore lavorate)', Object.keys(c.perCantiere).length === 0, c.perCantiere);
   c = applica(cella('09:30', 90));
   check('uscito alle 09:30 → tutto il giorno pioggia', c.tipo === 'maltempo' && c.ore === 0 && c.maltempoMin === 480, c);
+  // F-505: il margine è già nell'ora limite, la tolleranza dell'orario NON si aggiunge
   c = applica(cella('10:04', 124));
-  check('uscito alle 10:04 (entro la tolleranza di 5 min) → tutto il giorno pioggia', c.tipo === 'maltempo', c);
+  check('F-505: uscito alle 10:04 con limite 10:00 → ore + pioggia (niente tolleranza in più)', c.tipo === 'lavoro' && c.ore === 124 && !c.pioggiaGiornoIntero, c);
+  const msc = { limite: '10:30', tolleranza: 5, contratto: 480 };
+  c = applica(cella('10:30', 150), msc);
+  check('F-505 (MSC, limite 10:30): uscito alle 10:30 → tutto il giorno pioggia', c.tipo === 'maltempo' && c.ore === 0 && c.maltempoMin === 480, c);
+  c = applica(cella('10:34', 154), msc);
+  check('F-505 (Elton Lika, 20/10): uscito alle 10:34 → 2 h 34 lavorate + 5 h 26 di pioggia', c.tipo === 'lavoro' && c.ore === 154 && c.maltempoMin === 326 && !c.pioggiaGiornoIntero, c);
+  c = applica(cella('10:31', 151), msc);
+  check('F-505: uscito alle 10:31 → ore + pioggia', c.tipo === 'lavoro' && c.ore === 151, c);
   c = applica(cella('10:30', 150));
   check('uscito alle 10:30 → 2,5 h lavorate + 5,5 h di pioggia (come prima)', c.tipo === 'lavoro' && c.ore === 150 && c.maltempoMin === 330 && !c.pioggiaGiornoIntero, c);
   c = applica(cella('12:00', 240));
@@ -48,6 +56,23 @@ if (regola) {
   check('uscita per permesso alle 10 → non cambia', c.tipo === 'lavoro' && c.ore === 120 && c.permessoMin === 360, c);
   c = applica(cella('10:00', 120, { straord: 60 }));
   check('giorno con straordinario (rientrato dopo) → non cambia', c.tipo === 'lavoro' && c.ore === 120, c);
+}
+
+// F-505: la riga della proposta «Da vedere» dice all'ufficio cosa sta confermando
+try { require('dotenv').config({ quiet: true }); } catch { /* le variabili possono già esserci */ }
+let riga = null;
+try { riga = require('../lib/pioggiaDaConfermare').rigaUscita; } catch { riga = null; }
+check('F-505: esiste rigaUscita in lib/pioggiaDaConfermare.js', typeof riga === 'function');
+if (typeof riga === 'function') {
+  const g = (ordinarie) => ({ contratto: 480, straord: 0, ordinarie });
+  let r = riga({ kind: 'pioggia', uscita: '10:30', rientro: false, g: g(150), limite: '10:30', oreMin: 330 });
+  check('F-505 proposta: uscito alle 10:30 → tutto il giorno (8 h di pioggia, 0 lavoro, «entro le 10:30»)', r.giornoIntero === true && r.oreMin === 480 && r.lavoratoMin === 0 && r.entro === '10:30', r);
+  r = riga({ kind: 'pioggia', uscita: '10:34', rientro: false, g: g(154), limite: '10:30', oreMin: 326 });
+  check('F-505 proposta: uscito alle 10:34 → 2 h 34 di lavoro + 5 h 26 di pioggia, «dopo le 10:30»', !r.giornoIntero && r.oreMin === 326 && r.lavoratoMin === 154 && r.dopo === '10:30', r);
+  r = riga({ kind: 'pioggia', uscita: '09:00', rientro: true, g: g(400), limite: '10:30', oreMin: 80 });
+  check('F-505 proposta: uscito presto ma rientrato → ore + pioggia', !r.giornoIntero && r.lavoratoMin === 400, r);
+  r = riga({ kind: 'caldo', uscita: '10:00', rientro: false, g: g(120), limite: '10:30', oreMin: 360 });
+  check('F-505 proposta: il caldo non diventa mai tutto il giorno', !r.giornoIntero && !r.dopo, r);
 }
 
 // Il foglio per la commercialista dice la regola e spiega il giorno
