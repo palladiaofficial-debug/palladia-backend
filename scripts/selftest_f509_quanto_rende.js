@@ -57,6 +57,18 @@ async function main() {
   check('il magazzino non è un cantiere', !conto.cantieri.some(c => /Magazzino/.test(c.nome)), conto.cantieri);
   check('spese generali = costo del mese − cantieri (tecnico, magazzino, ore non timbrate)', conto.speseGenerali === 10040 - 2100 && conto.aiCantieri === 2100, conto);
 
+  // 3b. Congruità (DM 143/2021, tabella verificata sul decreto il 18/11/2026)
+  check('17 categorie, come la tabella del decreto', Object.keys(Q.CATEGORIE).length === 17);
+  check('ristrutturazione civile 22%, nuova civile 14,28%, restauro tutelati 30%',
+    Q.CATEGORIE.ristrutturazione_civile.perc === 22 && Q.CATEGORIE.nuova_civile.perc === 14.28 && Q.CATEGORIE.restauro_tutelati.perc === 30);
+  const cg = Q.congruita({ valore: 100000, categoria: 'ristrutturazione_civile', manodopera: 13995 });
+  check('esempio del disegno: servono 22.000 €, fatti 13.995 €, 64%, mancano 8.005 €',
+    cg && cg.serve === 22000 && cg.fatta === 13995 && cg.percentuale === 64 && cg.mancano === 8005 && cg.obbligatoria, cg);
+  check('sotto 70.000 € la congruità non è obbligatoria', Q.congruita({ valore: 69999, categoria: 'nuova_civile', manodopera: 0 }).obbligatoria === false);
+  check('a 70.000 € esatti sì (pari o superiore)', Q.congruita({ valore: 70000, categoria: 'nuova_civile', manodopera: 0 }).obbligatoria === true);
+  check('senza valore o senza tipo di lavoro nessun numero inventato',
+    Q.congruita({ valore: null, categoria: 'nuova_civile', manodopera: 1 }) === null && Q.congruita({ valore: 1000, categoria: null, manodopera: 1 }) === null);
+
   // 4. Dal vivo
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     console.log('  – skip controlli dal vivo: Supabase non configurato');
@@ -74,6 +86,18 @@ async function main() {
     }
     const nov = await Q.quantoRendeMese(CO, '2099-01');
     check('un mese senza prospetto non inventa numeri', nov.pronto === false && nov.manca === 'prospetto', nov);
+
+    // Il cantiere: Via Balbi 31 = somma dei suoi mesi; la memoria risponde in fretta
+    const { data: balbi } = await require('../lib/supabase').from('sites').select('id').eq('company_id', CO).eq('name', 'Via Balbi 31').maybeSingle();
+    if (balbi) {
+      await Q.soldiCantiere(CO, balbi.id);
+      const t0 = Date.now();
+      const sc = await Q.soldiCantiere(CO, balbi.id);
+      const ms = Date.now() - t0;
+      check('Via Balbi: operai = somma dei mesi', sc.speso.operai === sc.mesi.reduce((s, m) => s + m.costo, 0) && sc.mesi.length >= 2, sc);
+      check('Via Balbi: ottobre uguale al conto del mese', sc.mesi.find(m => m.mese === '2026-10')?.costo === ott.cantieri?.find(c => c.siteId === balbi.id)?.costo, sc.mesi);
+      check(`dalla memoria in meno di 3 secondi (${ms} ms)`, ms < 3000, ms);
+    }
 
     // 5. Via HTTP, con lo stesso JWT/header dell'app
     const base = process.env.SELFTEST_API_URL || 'https://palladia-backend-production.up.railway.app';
@@ -98,6 +122,22 @@ async function main() {
         const { data: u } = await supabase.auth.admin.getUserById(tech.user_id);
         const rt = await chiama(await sessione(u.user.email));
         check('HTTP tech: 403 (sono paghe)', rt.status === 403, rt.status);
+        const rtp = await fetch(`${base}/api/v1/quanto-rende/cantiere/${balbi?.id}`, { method: 'PATCH', headers: { Authorization: `Bearer ${await sessione(u.user.email)}`, 'X-Company-Id': CO, 'Content-Type': 'application/json' }, body: JSON.stringify({ valore: 1 }) });
+        check('HTTP tech non può scrivere il valore del lavoro: 403', rtp.status === 403, rtp.status);
+      }
+      if (balbi) {
+        const h = { Authorization: `Bearer ${owner}`, 'X-Company-Id': CO, 'Content-Type': 'application/json' };
+        const rc = await fetch(`${base}/api/v1/quanto-rende/cantiere/${balbi.id}`, { headers: h });
+        const jc = await rc.json();
+        check('HTTP cantiere: 200 con speso, mesi e le 17 categorie', rc.status === 200 && jc.speso && Array.isArray(jc.mesi) && jc.categorie?.length === 17, { status: rc.status, jc });
+        const bad = await fetch(`${base}/api/v1/quanto-rende/cantiere/${balbi.id}`, { method: 'PATCH', headers: h, body: JSON.stringify({ categoria: 'inventata' }) });
+        check('HTTP: un tipo di lavoro inventato → 400', bad.status === 400, bad.status);
+        const neg = await fetch(`${base}/api/v1/quanto-rende/cantiere/${balbi.id}`, { method: 'PATCH', headers: h, body: JSON.stringify({ valore: -5 }) });
+        check('HTTP: un valore negativo → 400', neg.status === 400, neg.status);
+        // Riscrive i valori che c'erano già: prova il salvataggio senza cambiare i dati veri
+        const same = await fetch(`${base}/api/v1/quanto-rende/cantiere/${balbi.id}`, { method: 'PATCH', headers: h, body: JSON.stringify({ valore: jc.valore, categoria: jc.categoria }) });
+        const js = await same.json();
+        check('HTTP: il salvataggio risponde col conto aggiornato, dati invariati', same.status === 200 && js.valore === jc.valore && js.categoria === jc.categoria, { status: same.status, js });
       }
     }
   }
