@@ -33,6 +33,9 @@ async function main() {
   check('un testo che non è un prospetto contabile → null', Q.leggiProspetto('PROSPETTO DETTAGLIO FONDI Retribuzioni lorde 1.000,00') === null);
   check('busta: imponibile F.P.L.D. letto', Q.leggiImponibile('Ore mal./inf.: | IMP.LE F.P.L.D. 2655,00 IMP.LE IMP.LE TOTALE') === 2655);
   check('busta senza imponibile → null', Q.leggiImponibile('CEDOLINO PAGA') === null);
+  // F-512: le 2 buste di MSC che non si leggevano (ottobre 2026)
+  check('busta con «IMP.LE F.P.L.D» senza punto finale (Daniel Miosi)', Q.leggiImponibile('Ore mal./inf.: IMP.LE F.P.L.D 2051,00 IMP.LE IMP.LE TOTALE COMPETENZE') === 2051);
+  check('busta di amministratore in gestione separata «IMP.LE F.A.P.» (Catalano)', Q.leggiImponibile('PERIODO COMP. 01/10/26 31/10/26 IMP.LE F.A.P. 3990,00 IMP.LE IMP.LE TOTALE') === 3990);
 
   // 2. Ripartizione
   const r = Q.ripartisci({ lorde: 10000, oneri: 4000, imponibili: { a: 3000, b: 5000, c: null, d: null } });
@@ -82,7 +85,7 @@ async function main() {
       const fuori = ott.cantieri.filter(c => c.ore >= 50 && (c.costo / c.ore < 15 || c.costo / c.ore > 35));
       check('costo orario dei cantieri plausibile (15-35 €/h)', fuori.length === 0, fuori);
       check('nessun magazzino fra i cantieri', !ott.cantieri.some(c => Q.NON_CANTIERE.test(c.nome)), ott.cantieri.map(c => c.nome));
-      check('almeno 14 buste su 17 lette', ott.affidabilita.busteLette >= 14, ott.affidabilita);
+      check('tutte le buste di ottobre lette (17 su 17, F-512)', ott.affidabilita.busteLette === ott.affidabilita.buste && ott.affidabilita.buste >= 17, ott.affidabilita);
     }
     const nov = await Q.quantoRendeMese(CO, '2099-01');
     check('un mese senza prospetto non inventa numeri', nov.pronto === false && nov.manca === 'prospetto', nov);
