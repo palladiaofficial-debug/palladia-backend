@@ -253,3 +253,4 @@ scripts/selftest_f509_quanto_rende.js
 scripts/selftest_f510_fatture_cantiere.js
 scripts/selftest_f511_oggi_soldi.js
 scripts/selftest_f513_estratto_conto.js
+scripts/selftest_f514_manodopera_nascosta.js

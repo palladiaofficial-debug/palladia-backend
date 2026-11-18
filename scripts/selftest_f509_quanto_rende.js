@@ -115,7 +115,18 @@ async function main() {
     const chiama = async (jwt) => fetch(`${base}/api/v1/quanto-rende?mese=2026-10`, { headers: { Authorization: `Bearer ${jwt}`, 'X-Company-Id': CO } });
     const owner = await sessione('carpio@mscedilizia.it');
     const ro = await chiama(owner);
-    if (ro.status === 404) {
+    const jo0 = ro.status === 404 ? await ro.clone().json().catch(() => ({})) : {};
+    if (ro.status === 404 && jo0.error === 'FEATURE_DISABLED') {
+      // F-514: a MSC il costo della manodopera è nascosto finché il commercialista non conferma il conto
+      // (selftest_f514). Il tecnico deve restare fuori comunque.
+      console.log('  – HTTP owner: nascosto per F-514 (flag quanto_rende spento), salto i controlli del titolare');
+      const { data: tech } = await supabase.from('company_users').select('user_id').eq('company_id', CO).eq('role', 'tech').limit(1).maybeSingle();
+      if (tech) {
+        const { data: u } = await supabase.auth.admin.getUserById(tech.user_id);
+        const rt = await chiama(await sessione(u.user.email));
+        check('HTTP tech: 403 (sono paghe)', rt.status === 403, rt.status);
+      }
+    } else if (ro.status === 404) {
       console.log(`  – skip HTTP: la rotta non è ancora pubblicata su ${base}`);
     } else {
       const jo = await ro.json();

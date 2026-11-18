@@ -21,13 +21,19 @@ function soloUfficio(req, res, next) {
   if (['owner', 'admin'].includes(req.userRole)) return next();
   return res.status(403).json({ error: 'SOLO_UFFICIO', message: 'Lo vedono solo il titolare e gli amministratori.' });
 }
+// F-514: il costo della manodopera è nascosto finché il conto non è corretto e confermato
+const { isFeatureEnabled } = require('../../lib/featureFlags');
+async function conAcceso(req, res, next) {
+  if (await isFeatureEnabled(req.companyId, 'quanto_rende')) return next();
+  return res.status(404).json({ error: 'FEATURE_DISABLED' });
+}
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sbaglio = (res, err, cosa) => {
   logger.error({ err }, `[quanto-rende] ${cosa}`);
   res.status(500).json({ error: 'ERRORE', message: 'Non riesco a fare il conto. Riprova.' });
 };
 
-router.get('/quanto-rende', verifySupabaseJwt, soloUfficio, async (req, res) => {
+router.get('/quanto-rende', verifySupabaseJwt, soloUfficio, conAcceso, async (req, res) => {
   try {
     const mesi = await Q.mesiConProspetto(req.companyId);
     const mese = String(req.query.mese || mesi[0] || '');
@@ -43,7 +49,7 @@ router.get('/quanto-rende', verifySupabaseJwt, soloUfficio, async (req, res) => 
   } catch (err) { sbaglio(res, err, 'mese'); }
 });
 
-router.get('/quanto-rende/cantiere/:siteId', verifySupabaseJwt, soloUfficio, async (req, res) => {
+router.get('/quanto-rende/cantiere/:siteId', verifySupabaseJwt, soloUfficio, conAcceso, async (req, res) => {
   if (!UUID.test(req.params.siteId)) return res.status(404).json({ error: 'NOT_FOUND' });
   try {
     const r = await Q.soldiCantiere(req.companyId, req.params.siteId);
@@ -52,7 +58,7 @@ router.get('/quanto-rende/cantiere/:siteId', verifySupabaseJwt, soloUfficio, asy
   } catch (err) { sbaglio(res, err, 'cantiere'); }
 });
 
-router.patch('/quanto-rende/cantiere/:siteId', verifySupabaseJwt, soloUfficio, async (req, res) => {
+router.patch('/quanto-rende/cantiere/:siteId', verifySupabaseJwt, soloUfficio, conAcceso, async (req, res) => {
   if (!UUID.test(req.params.siteId)) return res.status(404).json({ error: 'NOT_FOUND' });
   const { valore, categoria } = req.body || {};
   const patch = {};
