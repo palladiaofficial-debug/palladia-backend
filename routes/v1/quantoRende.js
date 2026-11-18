@@ -33,7 +33,13 @@ router.get('/quanto-rende', verifySupabaseJwt, soloUfficio, async (req, res) => 
     const mese = String(req.query.mese || mesi[0] || '');
     if (!mese) return res.json({ mese: null, pronto: false, manca: 'prospetto', mesi });
     if (!/^\d{4}-\d{2}$/.test(mese)) return res.status(400).json({ error: 'MESE_NON_VALIDO', message: 'mese deve essere YYYY-MM' });
-    res.json({ ...(await Q.quantoRendeMeseRicordato(req.companyId, mese)), mesi });
+    const [conto, { data: siti }] = await Promise.all([
+      Q.quantoRendeMeseRicordato(req.companyId, mese),
+      supabase.from('sites').select('id, budget_totale').eq('company_id', req.companyId).not('budget_totale', 'is', null),
+    ]);
+    // il valore del lavoro dei cantieri che ce l'hanno: la riga mostra «Quanto vale il lavoro?» solo dove manca
+    const valori = Object.fromEntries((siti || []).map(s => [s.id, Number(s.budget_totale)]));
+    res.json({ ...conto, mesi, valori });
   } catch (err) { sbaglio(res, err, 'mese'); }
 });
 
