@@ -34,7 +34,7 @@ async function main() {
   check('riga Cassa Edile con importo in euro senza decimali', cg && cg.titolo === 'Cassa Edile: a Via Balbi 31 mancano 8.005 € di manodopera', cg);
   check('riga Cassa Edile porta alla scheda Soldi del cantiere', cg && cg.link === '/cantieri/s1/soldi' && /10 dicembre/.test(cg.sotto), cg);
   const ft = r.righe.find(x => x.id === 'fatture-cantiere');
-  check('riga «5 fatture senza cantiere» con «Dimmelo»', ft && ft.titolo === '5 fatture senza cantiere' && ft.tasto === 'Dimmelo' && ft.link === '/soldi?vista=cantieri&fatture=1', ft);
+  check('riga «5 fatture senza cantiere» con «Dimmelo»', ft && ft.titolo === '5 fatture senza cantiere' && ft.tasto === 'Dimmelo' && ft.link === '/soldi?fatture=1', ft);
   check('senza dati sui soldi nessuna riga nuova', componi({ items: [], oggi }).righe.every(x => !/congruita|fatture-cantiere/.test(x.id)));
 
   if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
