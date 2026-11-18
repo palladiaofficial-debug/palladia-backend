@@ -45,7 +45,10 @@ async function main() {
     const { data: own } = await supabase.from('company_users').select('user_id').eq('company_id', CO).eq('role', 'owner').limit(1).maybeSingle();
     const titolare = await costruisci(CO, own?.user_id, 'owner');
     const riga = titolare.righe.find(x => x.id === 'fatture-cantiere');
-    check(`MSC titolare: la riga c'è se ci sono fatture senza cantiere (${count})`, count ? !!riga && riga.titolo.startsWith(String(count) === '1' ? 'Una' : String(count)) : !riga, { count, riga });
+    const pag = titolare.righe.find(x => x.id === 'pagamenti');
+    // F-357 (decisione del titolare, ottobre): su Oggi al massimo UNA riga sulle fatture
+    check(`MSC titolare: mai due righe sulle fatture su Oggi (da pagare: ${!!pag}, senza cantiere: ${count})`, !(pag && riga), titolare.righe.map(x => x.id));
+    check('MSC titolare: «fatture senza cantiere» c\'è quando non c\'è già la riga da pagare', pag || !count ? true : !!riga, { count, riga });
     const { data: tech } = await supabase.from('company_users').select('user_id').eq('company_id', CO).eq('role', 'tech').limit(1).maybeSingle();
     if (tech) {
       const t = await costruisci(CO, tech.user_id, 'tech');
