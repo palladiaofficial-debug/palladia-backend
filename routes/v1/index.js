@@ -41,6 +41,7 @@ router.use('/', require('./oreDaVedere')); // F-318 pioggia da confermare, malat
 router.use('/', require('./siteRiepilogo')); // F-321 scheda cantiere senza cartelle: Riepilogo e Da sistemare
 router.use('/', require('./lavagna')); // F-331 Lavagna cantieri
 router.use('/', require('./daPagare')); // F-338 Da pagare
+router.use('/', require('./quantoRende')); // F-509 Quanto rende ogni cantiere
 router.use('/', require('./contiSub')); // F-360 Conti dei sub
 router.use('/', require('./subPagamenti')); // F-497 subappaltatori: lavori e pagamenti
 router.use('/', require('./oggi')); // F-364 Palladia semplice: la home Oggi
