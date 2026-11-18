@@ -103,10 +103,10 @@ async function main() {
 
   // ── 5. Vincolo esplicito: un fallimento di sync non deve MAI bloccare la scrittura storica ──
   {
-    // NOT VALID: non controlla le righe esistenti (altrimenti fallirebbe subito,
-    // 1=0 è falso per ognuna) ma blocca ogni INSERT/UPDATE successivo — esattamente
-    // quello che serve per rompere la sync di proposito senza toccare i dati reali.
-    const breakErr = await execSql(`ALTER TABLE documents ADD CONSTRAINT test_force_sync_failure CHECK (1 = 0) NOT VALID;`);
+    // NOT VALID: non controlla le righe esistenti. Il vincolo blocca solo le righe
+    // dell'impresa temporanea di questo test: con CHECK (1 = 0) si perdevano per
+    // qualche secondo i salvataggi veri di tutte le imprese (F-508, AUDIT.md).
+    const breakErr = await execSql(`ALTER TABLE documents ADD CONSTRAINT test_force_sync_failure CHECK (company_id IS DISTINCT FROM '${companyId}'::uuid) NOT VALID;`);
     check('Vincolo impossibile applicato a documents (per rompere la sync di proposito)', !breakErr, breakErr);
 
     const { data: row, error: insertErr } = await supabase.from('site_documents')

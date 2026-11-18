@@ -118,7 +118,7 @@ async function main() {
 
   // ── 4. Resilienza: anche i trigger di Scaglione 3 non bloccano mai la scrittura storica ──
   {
-    const breakErr = await execSql(`ALTER TABLE documents ADD CONSTRAINT test_force_sync_failure_t3 CHECK (1 = 0) NOT VALID;`);
+    const breakErr = await execSql(`ALTER TABLE documents ADD CONSTRAINT test_force_sync_failure_t3 CHECK (company_id IS DISTINCT FROM '${companyId}'::uuid) NOT VALID;`);
     check('Vincolo impossibile applicato a documents', !breakErr, breakErr);
 
     const { data: row, error: insertErr } = await supabase.from('ladia_document_templates')
