@@ -78,4 +78,28 @@ router.patch('/quanto-rende/cantiere/:siteId', verifySupabaseJwt, soloUfficio, a
   } catch (err) { sbaglio(res, err, 'salva'); }
 });
 
+// ── F-510: le fatture dei fornitori sul cantiere giusto, una domanda alla volta ──
+const FC = require('../../lib/fattureCantiere');
+
+router.get('/quanto-rende/fatture-senza-cantiere', verifySupabaseJwt, soloUfficio, async (req, res) => {
+  try { res.json(await FC.fattureSenzaCantiere(req.companyId)); }
+  catch (err) { sbaglio(res, err, 'fatture senza cantiere'); }
+});
+
+router.patch('/quanto-rende/fattura/:id', verifySupabaseJwt, soloUfficio, async (req, res) => {
+  if (!UUID.test(req.params.id)) return res.status(404).json({ error: 'NOT_FOUND' });
+  const { siteId } = req.body || {};
+  if (siteId !== null && !(typeof siteId === 'string' && UUID.test(siteId))) {
+    return res.status(400).json({ error: 'CANTIERE_NON_VALIDO', message: 'Scegli un cantiere oppure «spesa generale».' });
+  }
+  try {
+    const r = await FC.assegna(req.companyId, req.params.id, siteId);
+    auditLog({ companyId: req.companyId, userId: req.user?.id || null, userRole: req.userRole, action: 'fattura.cantiere', targetType: 'company_expense', targetId: req.params.id, payload: { siteId }, req }).catch(() => {});
+    res.json(r);
+  } catch (err) {
+    if (err.status === 404) return res.status(404).json({ error: 'NOT_FOUND', message: err.message });
+    sbaglio(res, err, 'assegna fattura');
+  }
+});
+
 module.exports = router;

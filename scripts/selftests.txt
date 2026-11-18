@@ -250,3 +250,4 @@ scripts/selftest_f500_bolle_autisti.js
 scripts/selftest_f506_f507_documenti_impresa.js
 scripts/selftest_f508_sync_test_non_tocca_prod.js
 scripts/selftest_f509_quanto_rende.js
+scripts/selftest_f510_fatture_cantiere.js
