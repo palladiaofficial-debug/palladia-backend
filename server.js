@@ -53,6 +53,7 @@ const { startStudioMonthlyReportCron } = require('./services/studioMonthlyReport
 const { startSdiConsultationPollCron } = require('./services/sdiConsultationPollCron');
 const { startSmartImportRecoveryCron } = require('./services/smartImportRecoveryCron');
 const { startDocumentsSyncVerifyCron } = require('./services/documentsSyncVerifyCron');
+const { startDocumentiRiletturaCron } = require('./lib/documentiRilettura'); // F-507
 const { startRecurringExpenseCron } = require('./services/recurringExpenseCron');
 
 // Prevent Node.js 20 from crashing the process on unhandled errors
@@ -2046,6 +2047,7 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     frozen('economia', startSdiConsultationPollCron);
     startSmartImportRecoveryCron();
     startDocumentsSyncVerifyCron();
+    startDocumentiRiletturaCron(); // F-507: rilegge i documenti d'impresa mai letti
     frozen('economia', startRecurringExpenseCron);
 
     // Migrazione one-shot: popola worker_certificates dai worker_documents esistenti

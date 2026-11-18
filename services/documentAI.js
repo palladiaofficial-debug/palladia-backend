@@ -13,6 +13,7 @@ const Anthropic          = require('@anthropic-ai/sdk');
 const supabase           = require('../lib/supabase');
 const { extractPdfText } = require('../lib/pdfExtract');
 const { logUsage }       = require('../lib/ladiaUsageLog');
+const { sanitizeCategory } = require('../lib/documentCategory'); // F-507
 
 const MODEL_TEXT   = 'claude-haiku-4-5-20251001'; // PDF con testo OCR — veloce, economico
 const MODEL_VISION = 'claude-sonnet-4-6';          // PDF scansionati e immagini — visione accurata
@@ -39,8 +40,11 @@ Se il documento ha una data di emissione ma NON una scadenza esplicita, e conosc
 CALCOLA la scadenza: expiry_date = data_emissione + renewal_years anni (o mesi per DURC).
 Restituisci null SOLO se non riesci a determinare né emissione né scadenza.
 
-Periodi standard: DURC=3 mesi (renewal_years=0, calcola comunque scadenza), DVR=null (nessun limite),
-SOA=5 anni, ISO=3 anni, assicurazione=1 anno, polizza=1 anno, visura=nessuna scadenza (null).
+Periodi standard: DURC=120 giorni dalla richiesta (renewal_years=0, calcola comunque scadenza), DVR=null (nessun limite),
+SOA=5 anni, ISO=3 anni (vale la data di scadenza scritta sul certificato), assicurazione=1 anno, polizza=1 anno,
+visura=nessuna scadenza (null), nomina medico competente / nomina RSPP / nomina preposto=nessuna scadenza (null),
+attestato corso o aggiornamento RSPP=5 anni, attestato corso o aggiornamento RLS=1 anno,
+attestato primo soccorso=3 anni, attestato antincendio=5 anni, attestato preposto=2 anni.
 Scrivi issues solo se ci sono problemi reali. Output: SOLO JSON grezzo senza markdown.`;
 
 // ── Prompt documenti mezzi/veicoli (F-096, AUDIT.md) ──────────────────────────
@@ -237,56 +241,58 @@ function normalizeDate(val) {
 
 // ── Analisi documento aziendale ────────────────────────────────────────────────
 
-async function analyzeCompanyDoc(docId, filePath, mimeType) {
+/**
+ * F-507 (AUDIT.md): dalla risposta dell'IA ai campi da salvare. Se il documento
+ * era «altro» e l'IA ne riconosce il tipo (ammesso in quella tabella), il tipo si
+ * salva: in Documenti compare «Attestazione SOA», non il nome del file. Un tipo
+ * scelto dal titolare non si tocca mai.
+ */
+function patchLettura(raw, tabella, categoriaAttuale) {
+  const patch = {
+    ai_summary:        (raw.summary       || '').slice(0, 2000) || null,
+    ai_expiry_date:    normalizeDate(raw.expiry_date),
+    ai_renewal_years:  Number.isInteger(raw.renewal_years) ? raw.renewal_years : null,
+    ai_issued_by:      (raw.issued_by     || '').slice(0, 500)  || null,
+    ai_issues:         Array.isArray(raw.issues) ? raw.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
+    ai_validity_ok:    typeof raw.validity_ok === 'boolean' ? raw.validity_ok : null,
+    ai_analyzed_at:    new Date().toISOString(),
+  };
+  const tipo = sanitizeCategory(tabella, String(raw.doc_type_detected || '').trim().toLowerCase());
+  if ((!categoriaAttuale || categoriaAttuale === 'altro') && tipo !== 'altro') patch.category = tipo;
+  return patch;
+}
+
+// Lettura di un documento d'impresa o di cantiere. Ritorna true se è riuscita
+// (F-507: chi non riesce resta con ai_analyzed_at vuoto e la rilettura di
+// lib/documentiRilettura.js lo riprova).
+async function leggiESalva(tabella, callSite, docId, filePath, mimeType) {
   try {
+    const { data: row } = await supabase.from(tabella).select('category').eq('id', docId).maybeSingle();
     const buffer  = await downloadFileBuffer(filePath);
     const result  = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
-    if (!result) return; // formato non analizzabile
+    if (!result) return false; // formato non analizzabile
     const { data: raw, usage, model } = result;
-
-    const patch = {
-      ai_summary:        (raw.summary       || '').slice(0, 2000) || null,
-      ai_expiry_date:    normalizeDate(raw.expiry_date),
-      ai_renewal_years:  Number.isInteger(raw.renewal_years) ? raw.renewal_years : null,
-      ai_issued_by:      (raw.issued_by     || '').slice(0, 500)  || null,
-      ai_issues:         Array.isArray(raw.issues) ? raw.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
-      ai_validity_ok:    typeof raw.validity_ok === 'boolean' ? raw.validity_ok : null,
-      ai_analyzed_at:    new Date().toISOString(),
-    };
-
-    const { data: updated } = await supabase.from('company_documents').update(patch).eq('id', docId).select('company_id').maybeSingle();
-    if (updated?.company_id) logUsage({ companyId: updated.company_id, model, callSite: 'company_doc_analysis', usage });
+    const patch = patchLettura(raw, tabella, row?.category);
+    const { data: updated, error } = await supabase.from(tabella).update(patch).eq('id', docId).select('company_id').maybeSingle();
+    if (error) throw new Error(error.message);
+    if (updated?.company_id) logUsage({ companyId: updated.company_id, model, callSite, usage });
+    return true;
   } catch (err) {
-    console.error('[documentAI] company doc analysis failed:', docId, err.message);
+    console.error(`[documentAI] ${callSite} failed:`, docId, err.message);
+    return false;
   }
+}
+
+function analyzeCompanyDoc(docId, filePath, mimeType) {
+  return leggiESalva('company_documents', 'company_doc_analysis', docId, filePath, mimeType);
 }
 
 // ── Analisi documento di cantiere ──────────────────────────────────────────────
 // Stessa logica di analyzeCompanyDoc — site_documents usa le stesse categorie
 // (pos, psc, notifica_asl, durc, dvr, assicurazione, altro), stesso prompt.
 
-async function analyzeSiteDoc(docId, filePath, mimeType) {
-  try {
-    const buffer  = await downloadFileBuffer(filePath);
-    const result  = await analyzeDocument(buffer, mimeType, COMPANY_DOC_PROMPT);
-    if (!result) return; // formato non analizzabile
-    const { data: raw, usage, model } = result;
-
-    const patch = {
-      ai_summary:        (raw.summary       || '').slice(0, 2000) || null,
-      ai_expiry_date:    normalizeDate(raw.expiry_date),
-      ai_renewal_years:  Number.isInteger(raw.renewal_years) ? raw.renewal_years : null,
-      ai_issued_by:      (raw.issued_by     || '').slice(0, 500)  || null,
-      ai_issues:         Array.isArray(raw.issues) ? raw.issues.slice(0, 10).map(s => String(s).slice(0, 300)) : [],
-      ai_validity_ok:    typeof raw.validity_ok === 'boolean' ? raw.validity_ok : null,
-      ai_analyzed_at:    new Date().toISOString(),
-    };
-
-    const { data: updated } = await supabase.from('site_documents').update(patch).eq('id', docId).select('company_id').maybeSingle();
-    if (updated?.company_id) logUsage({ companyId: updated.company_id, model, callSite: 'site_doc_analysis', usage });
-  } catch (err) {
-    console.error('[documentAI] site doc analysis failed:', docId, err.message);
-  }
+function analyzeSiteDoc(docId, filePath, mimeType) {
+  return leggiESalva('site_documents', 'site_doc_analysis', docId, filePath, mimeType);
 }
 
 // ── Analisi documento lavoratore ───────────────────────────────────────────────
@@ -501,7 +507,7 @@ async function analyzeSubcontractorDocBuffer(fileBuffer, mimeType, companyId = n
 }
 
 module.exports = {
-  analyzeCompanyDoc, analyzeSiteDoc, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione,
+  analyzeCompanyDoc, analyzeSiteDoc, patchLettura, analyzeWorkerDoc, analyzeDocumentBuffer, analyzeSubcontractorDocBuffer, syncToFormazione,
   // Esportati per riuso da services/smartImportAI.js (Importazione Intelligente) —
   // stessi prompt per tipo documento, nessuna duplicazione.
   COMPANY_DOC_PROMPT, WORKER_DOC_PROMPT, PAYSLIP_PROMPT, EQUIPMENT_DOC_PROMPT, MODEL_TEXT, MODEL_VISION, MAX_TOKENS,

@@ -538,7 +538,8 @@ async function confirmItem(itemId, companyId, userId, req = null) {
   }
 
   const fields = item.extracted_fields || {};
-  const name = fields.issued_to?.value || fields.doc_type_detected?.value || item.doc_type || item.original_name;
+  // F-506: mai il codice del tipo («altro») come nome: si ripiega sul nome del file
+  const name = nomeLeggibile(fields.issued_to?.value || fields.doc_type_detected?.value, item.original_name);
   const expiryDate = fields.expiry_date?.value || null;
   const issuingBody = fields.issued_by?.value || null;
   const issueDate = fields.issue_date?.value || null;
@@ -624,7 +625,7 @@ async function rejectItem(itemId, companyId) {
 // errore SQL grezzo in faccia all'utente in fase di conferma.
 // Estratto in lib/documentCategory.js (F-094, AUDIT.md) — riusato anche da
 // services/chatDocumentAnalysis.js, che non aveva questa protezione.
-const { sanitizeCategory } = require('../lib/documentCategory');
+const { sanitizeCategory, nomeLeggibile } = require('../lib/documentCategory');
 
 const GREEN_THRESHOLD = 0.85;
 

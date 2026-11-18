@@ -15,7 +15,7 @@ const supabase = require('../lib/supabase');
 const { logUsage } = require('../lib/ladiaUsageLog');
 const { logAction } = require('../lib/ladiaActionLog');
 const { matchSite, matchEquipment } = require('../lib/entityMatch');
-const { sanitizeCategory } = require('../lib/documentCategory');
+const { sanitizeCategory, nomeLeggibile } = require('../lib/documentCategory');
 const { syncWorkerExpiry } = require('../lib/workerDocSync');
 const { syncToFormazione } = require('./documentAI');
 const { isFeatureEnabled } = require('../lib/featureFlags');
@@ -142,6 +142,8 @@ async function archiveChatUpload({
     .maybeSingle();
   if (!upload)         return { error: 'File non trovato o accesso negato.' };
   if (upload.archived) return { error: 'Questo file è già stato archiviato.' };
+  // F-506: mai il codice del tipo («altro») come nome, ma il nome del file
+  name = nomeLeggibile(name, upload.original_name);
 
   const validDests = ['site_documents', 'company_documents', 'worker_documents', 'worker_certificates', 'payslips', 'equipment_documents', 'subcontractor_documents'];
   if (!validDests.includes(destination)) return { error: 'destination non valida: ' + destination };
@@ -247,7 +249,8 @@ async function archiveChatUpload({
     }
   }
 
-  const ext    = path.extname(upload.original_name) || '';
+  // F-506: «X.PDF (pag. 39-44)» → «.PDF», non «.PDF (pag. 39-44)»
+  const ext    = path.extname(String(upload.original_name).replace(/\s*\(pag\.[^)]*\)\s*$/i, '')) || '';
   const safeFn = String(name).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80) + ext;
   const newId  = crypto.randomUUID();
   const safeMo = String(periodMonth).padStart(2, '0');
