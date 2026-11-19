@@ -28,8 +28,11 @@ async function main() {
   console.log('\nPalladia regression — F-509: quanto rende ogni cantiere\n');
 
   // 1. Lettura
-  const P = 'PROSPETTO CONTABILE PERIODO LIQUIDAZIONE OTTOBRE 2026 N0100 Retribuzioni lorde 38.471,53 ... DZTOT Totale oneri ditta 15.087,48 W Totale contr.';
-  check('prospetto: lorde e oneri ditta letti', JSON.stringify(Q.leggiProspetto(P)) === JSON.stringify({ lorde: 38471.53, oneri: 15087.48 }), Q.leggiProspetto(P));
+  // F-514: il prospetto si legge riga per riga, sezione GENERALE (il conto completo è in selftest_f514_conto_manodopera)
+  const P = ['PROSPETTO CONTABILE', 'TIPO SUDDIVISIONE PROSPETTO CDC 1', 'GENERALE',
+    'N0100 Retribuzioni lorde 38.471,53', 'DZTOT Totale oneri ditta 15.087,48'].join('\n');
+  const PL = Q.leggiProspetto(P);
+  check('prospetto: lorde e oneri ditta letti', PL?.lorde === 38471.53 && PL?.oneri === 15087.48, PL);
   check('un testo che non è un prospetto contabile → null', Q.leggiProspetto('PROSPETTO DETTAGLIO FONDI Retribuzioni lorde 1.000,00') === null);
   check('busta: imponibile F.P.L.D. letto', Q.leggiImponibile('Ore mal./inf.: | IMP.LE F.P.L.D. 2655,00 IMP.LE IMP.LE TOTALE') === 2655);
   check('busta senza imponibile → null', Q.leggiImponibile('CEDOLINO PAGA') === null);
@@ -80,7 +83,8 @@ async function main() {
     const ott = await Q.quantoRendeMese(CO, '2026-10');
     check('MSC ottobre 2026: conto pronto', ott.pronto === true, ott);
     if (ott.pronto) {
-      check('costo del mese = prospetto (38.471,53 + 15.087,48)', ott.costoMese === Math.round(38471.53 + 15087.48), ott.costoMese);
+      // F-514: non più lorde + oneri e basta, ma il conto voce per voce (+ TFR, ratei, ferie, amministratore)
+      check('costo del mese = conto voce per voce del prospetto (64.458, F-514)', ott.costoMese === 64458, ott.costoMese);
       check('totale = cantieri + spese generali', ott.aiCantieri + ott.speseGenerali === ott.costoMese, ott);
       const fuori = ott.cantieri.filter(c => c.ore >= 50 && (c.costo / c.ore < 15 || c.costo / c.ore > 35));
       check('costo orario dei cantieri plausibile (15-35 €/h)', fuori.length === 0, fuori);
