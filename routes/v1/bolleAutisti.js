@@ -52,4 +52,17 @@ router.post('/badge/:code/bolle/:id/cantiere', badgePunchLimiter, async (req, re
   try { res.json(await BA.scegliCantiere(w, req.params.id, req.body?.site_id)); } catch (err) { fallito(res, err, 'cantiere'); }
 });
 
+// F-515: «Rifai la foto» (la bolla sbagliata si scarta) e «ha un'altra pagina».
+// Solo le bolle dell'autista mandate oggi.
+//   POST /api/v1/badge/:code/bolle/:id/scarta
+//   POST /api/v1/badge/:code/bolle/:id/pagine  → multipart: pagine (1–5 foto o PDF)
+router.post('/badge/:code/bolle/:id/scarta', badgePunchLimiter, async (req, res) => {
+  const w = await autista(req, res); if (!w) return;
+  try { res.json(await BA.scarta(w, req.params.id)); } catch (err) { fallito(res, err, 'scarta'); }
+});
+router.post('/badge/:code/bolle/:id/pagine', badgePunchLimiter, aiLimiter, conPagine, async (req, res) => {
+  const w = await autista(req, res); if (!w) return;
+  try { res.json(await BA.aggiungiPagine(w, req.params.id, req.files)); } catch (err) { fallito(res, err, 'pagine'); }
+});
+
 module.exports = router;

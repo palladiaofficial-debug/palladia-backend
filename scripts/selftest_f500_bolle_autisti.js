@@ -72,7 +72,8 @@ async function main() {
     await admin.from('presence_logs').insert([{ company_id: CO, site_id: s1.id, worker_id: marco.id, event_type: 'ENTRY', timestamp_server: new Date().toISOString(), method: 'worker_self_punch' }]);
     r = await BA.manda(w, { files: [foto('c'), foto('c2')], clientId: 'c-4' }, { leggi: letto({ numero: null, ragioneSociale: 'Ferramenta Ligure', piva: null, cantiere: 'Via Chiodo 9C' }) });
     b = (await admin.from('bolle').select('*').eq('id', r.id).single()).data;
-    check('ha timbrato oggi a Via Riboli → la bolla va lì (vince sulla destinazione)', b.site_id === s1.id && b.cantiere_da === 'timbratura', { site: b.site_id, da: b.cantiere_da });
+    // F-515 (19/11): la destinazione scritta sulla bolla vince sulla timbratura
+    check('ha timbrato oggi a Via Riboli ma la bolla dice Via Chiodo → Via Chiodo (vince la bolla, F-515)', b.site_id === s2.id && b.cantiere_da === 'bolla', { site: b.site_id, da: b.cantiere_da });
     check('numero non letto → da controllare, dubbio «numero»; 2 pagine salvate', b.stato === 'da_controllare' && b.dubbi.includes('numero') && b.pagine.length === 2, { stato: b.stato, dubbi: b.dubbi, pagine: b.pagine.length });
     const idDubbio = b.id;
     r = await BA.manda(w, { files: [foto('d')], siteId: s2.id, clientId: 'c-5' }, { leggi: letto({ numero: '900' }) });
@@ -119,7 +120,8 @@ async function main() {
     x = await api('PATCH', `/bolle/${altra.id}`, JSON.stringify({ stato: 'scartata' }), { ...H, 'Content-Type': 'application/json' });
     const ancora = (await admin.from('bolle').select('id, stato').eq('id', altra.id).single()).data;
     check('«Non è una bolla» → nascosta, non cancellata', x.status === 200 && ancora?.stato === 'scartata', ancora);
-    x = await api('GET', `/cantieri/${s1.id}/bolle`, undefined, H);
+    // F-515: la bolla da 2 pagine dice Via Chiodo, quindi è lì (non a Via Riboli dove Marco ha timbrato)
+    x = await api('GET', `/cantieri/${s2.id}/bolle`, undefined, H);
     check('Bolle del cantiere: c\'è la bolla di Marco, dal badge, 2 pagine', x.status === 200 && x.body?.bolle?.some(b => b.autista === 'Marco Autista' && b.origine === 'badge' && b.pagine === 2), x.body?.bolle);
     x = await api('GET', '/bolle/da-controllare', undefined, H);
     check('ufficio: non ne resta nessuna da controllare', x.body?.bolle?.length === 0, x.body?.bolle?.length);

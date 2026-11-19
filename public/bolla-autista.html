@@ -5,19 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#ffffff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Bolle">
+<link rel="apple-touch-icon" href="/bolle-icon-180.png">
+<link rel="manifest" id="manifesto" href="/manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Archivo:wdth,wght@62..125,500..900&display=swap" rel="stylesheet">
-<title>Fotografa la bolla — Palladia</title>
+<title>Bolle</title>
 <!--
-  F-500 (AUDIT.md del frontend): «Fotografa la bolla» per i nostri autisti.
-  Disegno approvato il 14/11/2026 (https://claude.ai/artifact/LPH4yjojwZ2reVsnJ8Jhry).
-  Una cosa per schermata, una domanda sola: «Si legge bene?».
-  - Niente modulo: fornitore, numero, materiali e cantiere li legge il server.
-  - Il cantiere lo chiedo solo se non si capisce (né timbratura di oggi né
-    destinazione scritta): «Non lo so: decide l'ufficio».
-  - Senza rete la bolla resta nel telefono e parte da sola (bolla-coda.js).
-  Stessa identità del badge, nessun login: /api/v1/badge/:code/bolle.
-  Stile: quello nuovo di Palladia (bianco, titoli Archivo, un tasto scuro).
+  F-515 (AUDIT.md del frontend, 19/11/2026): l'app «Bolle» degli autisti.
+  Disegno approvato: https://claude.ai/artifact/E4d9HCsoL8AdgkEhXuFgvW
+  (prima versione F-500 del 14/11: https://claude.ai/artifact/LPH4yjojwZ2reVsnJ8Jhry)
+  - Si mette sulla schermata Home dal link personale /timbratura/:code/foto
+    (manifest /timbratura/:code/foto.webmanifest, icona /bolle-icon-180.png).
+    Lo stesso file si apre dal tasto del badge su /timbratura/:code/bolla.
+  - 4 tocchi: icona → «Fotografa la bolla» → scatto → «Usa foto». Poi parte da
+    sola: «✓ Presa» (è nel telefono), «✓✓ Arrivata» (è in ufficio). Niente
+    «Manda», niente domande: il cantiere lo capisce il server, se no l'ufficio.
+  - Se la lettura dice che non è una bolla: «Non sembra una bolla» → «Rifai la
+    foto» (scarta la sbagliata). «Questa bolla ha un'altra pagina» la aggiunge.
+  - Prima di mandarla la bolla va nella coda del telefono (bolla-coda.js): se
+    la rete manca o l'app si chiude, parte da sola alla prossima occasione.
   Lingue: quella scelta nel badge (palladia_badge_lang). Traduzioni non ancora
   riviste da un madrelingua.
 -->
@@ -26,61 +36,70 @@
   :root { --ink: #10171F; --muted: #5B6470; --line: #E4E7EA; --soft: #F6F7F8; --ok: #1F6B3A; --warn: #A15C07; }
   html, body { margin: 0; background: #fff; color: var(--ink); font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
   body { min-height: 100dvh; }
-  .app { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; }
-  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); }
+  .app { max-width: 520px; margin: 0 auto; min-height: 100dvh; display: flex; flex-direction: column; background: #fff; }
+  @media (min-width: 700px) { body { background: var(--soft); } .app { border-left: 1px solid var(--line); border-right: 1px solid var(--line); } }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: calc(10px + env(safe-area-inset-top, 0px)) 20px 10px; border-bottom: 1px solid var(--line); min-height: 58px; }
+  .marchio { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; }
+  .logo { width: 30px; height: 30px; border-radius: 8px; background: var(--ink); display: grid; place-items: center; flex: 0 0 30px; }
   .indietro { display: inline-flex; align-items: center; gap: 4px; min-height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-weight: 600; font-size: 16px; font-family: inherit; text-decoration: none; cursor: pointer; }
   .chi { font-size: 15px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  main { flex: 1; display: flex; flex-direction: column; padding: 20px 20px 0; gap: 16px; }
+  main { flex: 1; display: flex; flex-direction: column; padding: 20px 20px 0; gap: 20px; }
   .disp { font-family: 'Archivo', 'Arial Narrow', sans-serif; font-stretch: 72%; font-variation-settings: 'wdth' 72; font-weight: 800; letter-spacing: 0; }
-  h1 { margin: 0; font-size: 40px; line-height: 1; }
+  h1 { margin: 0; line-height: 1; }
   p { margin: 0; }
-  .frase { font-size: 17px; line-height: 1.45; color: #3B4450; }
   [hidden] { display: none !important; }
+  .frase { font-size: 19px; line-height: 1.45; color: #3B4450; }
   .piede { position: sticky; bottom: 0; margin: auto -20px 0; padding: 12px 20px calc(20px + env(safe-area-inset-bottom, 0px)); display: flex; flex-direction: column; gap: 10px; background: #fff; }
-  .pieno { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 64px; border: 0; border-radius: 12px; background: var(--ink); color: #fff; font-weight: 700; font-size: 19px; font-family: inherit; cursor: pointer; text-decoration: none; }
-  .bordo { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 58px; border: 1px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); font-weight: 600; font-size: 17px; font-family: inherit; cursor: pointer; text-decoration: none; }
-  .link { min-height: 48px; border: 0; background: transparent; color: var(--ink); font-weight: 600; font-size: 17px; font-family: inherit; text-decoration: underline; text-decoration-color: #C5CBD2; text-underline-offset: 5px; cursor: pointer; }
-  .pieno:disabled { opacity: .6; }
-  .pagine { display: flex; gap: 8px; }
-  .pagina { position: relative; flex: 1; min-width: 0; border-radius: 12px; border: 1px solid var(--line); background: var(--soft); overflow: hidden; display: flex; align-items: center; justify-content: center; }
-  .pagina img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .pagina .n { position: absolute; left: 8px; bottom: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.92); font-size: 12px; font-weight: 600; color: var(--muted); }
-  .pagina .pdf { font-size: 15px; font-weight: 700; color: var(--muted); }
-  .testa { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-  .quante { font-size: 15px; font-weight: 600; color: var(--muted); white-space: nowrap; }
-  .scheda { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 8px 16px; border: 1px solid var(--line); border-radius: 12px; background: #fff; font-family: inherit; color: var(--ink); text-align: start; width: 100%; cursor: pointer; }
-  .scheda .t { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-  .scheda .l { font-size: 13px; color: var(--muted); }
-  .scheda .v { font-size: 17px; font-weight: 700; overflow-wrap: anywhere; }
-  .scheda .c { font-size: 15px; font-weight: 600; text-decoration: underline; text-underline-offset: 4px; }
-  .elenco { border: 1px solid var(--line); border-radius: 12px; padding: 2px 18px; }
-  .riga { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 68px; border: 0; border-top: 1px solid #EEF0F2; background: #fff; text-align: start; font-family: inherit; color: var(--ink); cursor: pointer; padding: 8px 0; }
-  .riga:first-child { border-top: 0; }
-  .riga .a { font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
-  .riga .b { font-size: 14px; color: var(--muted); }
-  .fatte { display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); padding-top: 12px; }
-  .fatte .tit { font-size: 13.5px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
-  .fatte .r { display: flex; justify-content: space-between; gap: 12px; min-height: 40px; align-items: center; font-size: 15px; border-top: 1px solid #EEF0F2; }
-  .fatte .r:first-of-type { border-top: 0; }
-  .centro { padding-top: 70px; display: flex; flex-direction: column; align-items: center; gap: 16px; text-align: center; }
-  .tondo { width: 96px; height: 96px; border-radius: 48px; display: grid; place-items: center; }
+  .pieno { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 68px; border: 0; border-radius: 14px; background: var(--ink); color: #fff; font-weight: 700; font-size: 19px; font-family: inherit; cursor: pointer; text-decoration: none; }
+  .bordo { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 58px; border: 1px solid var(--line); border-radius: 14px; background: #fff; color: var(--ink); font-weight: 600; font-size: 17px; font-family: inherit; cursor: pointer; text-decoration: none; }
+  .link { align-self: center; min-height: 48px; border: 0; background: transparent; color: var(--ink); font-weight: 600; font-size: 17px; font-family: inherit; text-decoration: underline; text-decoration-color: #C5CBD2; text-underline-offset: 5px; cursor: pointer; padding: 0 8px; }
+  .tastone { flex: 0 0 auto; min-height: min(470px, 56dvh); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; border: 0; border-radius: 22px; background: var(--ink); color: #fff; font-family: inherit; cursor: pointer; padding: 24px; text-align: center; }
+  .tastone:active { transform: scale(.99); }
+  .tastone .t { font-size: 44px; }
+  .tastone .s { font-size: 17px; color: #C9CED4; }
+  .oggi { display: flex; flex-direction: column; }
+  .oggi .testa { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; gap: 12px; }
+  .oggi .tit { font-size: 18px; font-weight: 800; }
+  .oggi .n { font-size: 15px; font-weight: 700; color: var(--ok); white-space: nowrap; }
+  .oggi .r { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 56px; border-top: 1px solid #EEF0F2; font-size: 16px; }
+  .oggi .r .a { display: flex; flex-direction: column; min-width: 0; }
+  .oggi .r .f { font-weight: 700; overflow-wrap: anywhere; }
+  .oggi .r .c { font-size: 14px; color: var(--muted); }
+  .oggi .r .o { color: var(--muted); white-space: nowrap; }
+  .spunte { display: flex; gap: 14px; align-items: center; padding: 12px; border: 1px solid var(--line); border-radius: 14px; }
+  .mini { width: 72px; height: 96px; border-radius: 8px; background: var(--soft); border: 1px solid var(--line); overflow: hidden; display: grid; place-items: center; flex: 0 0 72px; font-size: 13px; font-weight: 700; color: var(--muted); }
+  .mini img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .righe-spunte { display: flex; flex-direction: column; gap: 8px; font-size: 15px; font-weight: 700; }
+  .sp { display: flex; align-items: center; gap: 6px; color: var(--ok); }
+  .sp.attesa-sp { color: var(--muted); font-weight: 600; }
+  .centro { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px; padding-top: 30px; }
+  .centro.alto { padding-top: 70px; }
+  .tondo { width: 104px; height: 104px; border-radius: 52px; display: grid; place-items: center; }
   .tondo.ok { background: #E3F1E7; color: var(--ok); }
   .tondo.warn { background: #FDF0DC; color: var(--warn); }
-  .giro { width: 40px; height: 40px; border: 4px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: giro .8s linear infinite; }
+  .grande { font-size: 48px; }
+  .nota { font-size: 15px; color: var(--muted); }
+  .giro { width: 18px; height: 18px; border: 3px solid var(--line); border-top-color: var(--ink); border-radius: 50%; animation: giro .8s linear infinite; flex: 0 0 18px; }
+  .giro.g { width: 40px; height: 40px; border-width: 4px; }
   @keyframes giro { to { transform: rotate(360deg); } }
-  .attesa { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; background: #FDF0DC; color: #7A3410; font-size: 15px; font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: #FDF0DC; color: #7A3410; font-size: 15px; font-weight: 600; }
+  .avviso { padding: 12px 14px; border-radius: 12px; background: #FDF0DC; color: #7A3410; font-size: 15px; font-weight: 600; }
+  .passi { margin: 0; padding: 4px 18px; list-style: none; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; }
+  .passi li { display: flex; align-items: center; gap: 14px; min-height: 76px; font-size: 18px; line-height: 1.35; }
+  .passi li + li { border-top: 1px solid #EEF0F2; }
+  .passi .num { width: 34px; height: 34px; border-radius: 17px; background: var(--ink); color: #fff; display: grid; place-items: center; font-weight: 800; flex: 0 0 34px; }
+  .passi .tx { flex: 1; }
+  .info { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--soft); font-size: 15px; line-height: 1.4; color: #3B4450; }
+  .giu { display: flex; flex-direction: column; align-items: center; gap: 6px; color: var(--muted); font-size: 14px; text-align: center; }
   .nascosto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
   [dir="rtl"] .indietro svg { transform: scaleX(-1); }
-  @media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } }
+  @media (prefers-reduced-motion: reduce) { .giro { animation-duration: 3s; } .tastone:active { transform: none; } }
 </style>
 </head>
 <body>
-<div class="app">
-  <header>
-    <a class="indietro" id="torna" href="#" data-testid="bolla-torna"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span id="torna-l">Badge</span></a>
-    <span class="chi" id="chi"></span>
-  </header>
-  <main id="m" aria-live="polite"><div class="centro"><span class="giro" aria-hidden="true"></span></div></main>
+<div class="app" data-testid="bolle-app">
+  <header id="testa"></header>
+  <main id="m" aria-live="polite"><div class="centro alto"><span class="giro g" aria-hidden="true"></span></div></main>
 </div>
 <input type="file" id="cam" class="nascosto" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
 <input type="file" id="file" class="nascosto" accept="image/*,application/pdf" tabindex="-1" aria-hidden="true">
@@ -90,108 +109,124 @@
 (function () {
   var T = {
     it: {
-      badge: 'Badge', titolo: 'Fotografa la bolla', sotto: 'Fai una foto alla bolla, tutta dentro, dritta. Il resto lo leggo io.',
-      foto: 'Fai la foto', file: 'Scegli una foto o un PDF', oggi: 'Oggi hai mandato',
-      legge: 'Si legge bene?', pagine: function (n) { return n === 1 ? '1 pagina' : n + ' pagine'; }, pagina: function (n) { return 'Pagina ' + n; },
-      perCantiere: 'Per il cantiere', cambia: 'Cambia', loLeggo: 'Lo leggo dalla bolla',
-      manda: 'Sì, mandala', altra: 'Ha un’altra pagina', rifai: 'No, rifai la foto',
-      mando: 'La mando…', mandoSotto: 'Ci vogliono pochi secondi.',
-      quale: 'Per quale cantiere?', qualeSotto: 'Oggi non hai timbrato e sulla bolla non si legge.', qualeSottoPrima: 'Scegli il cantiere di questa bolla.', nonSo: 'Non lo so: decide l’ufficio',
-      mandata: 'Mandata', arrivata: function (c) { return c ? 'La bolla di ' + c + ' è arrivata in ufficio.' : 'La bolla è arrivata in ufficio.'; },
+      badge: 'Badge', titolo: 'Fotografa la bolla', sotto: 'Tutta dentro, dritta. Parte da sola.',
+      titoloPc: 'Scegli la foto della bolla', sottoPc: 'Dal computer si sceglie un file: foto o PDF.',
+      scegli: 'Ce l’hai già nelle foto? Sceglila', oggi: 'Oggi hai mandato',
+      arrivate: function (n) { return n === 1 ? '1 arrivata' : n + ' arrivate'; }, bolla: 'Bolla', daScegliere: 'Il cantiere lo sceglie l’ufficio',
+      presa: 'Presa', arrivataUff: 'Arrivata in ufficio', mando: 'La mando in ufficio…', arrivata: 'Arrivata', per: 'per',
+      dallaBolla: 'Il cantiere l’ho letto sulla bolla.', dallaTimbratura: 'Il cantiere è quello dove hai timbrato oggi.', ufficioSceglie: 'Il cantiere lo sceglie l’ufficio.', laLegge: 'La legge l’ufficio.',
+      pagine: function (n) { return n + ' pagine'; }, altra: 'Fotografa un’altra bolla', altraPagina: 'Questa bolla ha un’altra pagina', aggiungo: 'Aggiungo la pagina…',
+      nonBolla: 'Non sembra una bolla', sembraFattura: 'Sembra una fattura.', ddt: 'Sulla bolla c’è scritto «Documento di trasporto» o «DDT».', rifai: 'Rifai la foto', lascia: 'È una bolla: lasciala così',
       cera: 'C’era già', ceraSotto: 'Questa bolla l’avevi già mandata. Non serve rifarla.',
-      torna: 'Torna al badge', ancora: 'Un’altra bolla',
-      rete: 'Niente rete', reteSotto: 'Tranquillo: la bolla è nel telefono. Parte da sola appena c’è segnale.',
-      inAttesa: function (n) { return n === 1 ? '1 bolla aspetta la rete: parte da sola.' : n + ' bolle aspettano la rete: partono da sole.'; },
-      troppe: 'Al massimo 6 pagine per bolla.', tipo: 'Serve una foto o un PDF.', grande: 'Il file è troppo grande.',
-      noBadge: 'Questo badge non può mandare bolle. Chiedi all’ufficio.', errore: 'Non riesco a caricare la pagina. Riprova.', riprova: 'Riprova',
-      errManda: 'Non sono riuscito a mandarla. Riprova.'
+      reteSotto: 'Qui non c’è rete. La bolla è al sicuro nel telefono e parte da sola appena c’è segnale.',
+      inAttesa: function (n) { return n === 1 ? '1 bolla aspetta la rete' : n + ' bolle aspettano la rete'; },
+      serveRete: 'Per aggiungere una pagina serve la rete.', troppe: 'Al massimo 6 pagine per bolla.', tipo: 'Serve una foto o un PDF.', grande: 'Il file è troppo grande.',
+      noBadge: 'Questo link non può mandare bolle. Chiedi all’ufficio.', errore: 'Non riesco a caricare la pagina. Riprova.', riprova: 'Riprova', errManda: 'Non sono riuscito a mandarla. Riprova.',
+      insTitolo: 'Metti «Bolle» sul telefono', insCiao: function (n) { return (n ? 'Ciao ' + n + '. ' : '') + 'Si fa una volta sola, poi la apri come WhatsApp.'; },
+      p1: ['Tocca ', 'Condividi', ' in basso'], p2: ['Scegli ', 'Aggiungi alla schermata Home', ''], p3: ['Tocca ', 'Aggiungi', ' in alto a destra'],
+      safari: 'Se non vedi Condividi, apri questo link con Safari.', qui: 'Condividi è qui sotto, nella barra di Safari', usaQui: 'Usala qui senza installarla'
     },
     ro: {
-      badge: 'Badge', titolo: 'Fotografiază avizul', sotto: 'Fă o poză avizului, întreg și drept. Restul îl citesc eu.',
-      foto: 'Fă poza', file: 'Alege o poză sau un PDF', oggi: 'Azi ai trimis',
-      legge: 'Se citește bine?', pagine: function (n) { return n === 1 ? '1 pagină' : n + ' pagini'; }, pagina: function (n) { return 'Pagina ' + n; },
-      perCantiere: 'Pentru șantierul', cambia: 'Schimbă', loLeggo: 'Îl citesc de pe aviz',
-      manda: 'Da, trimite-l', altra: 'Are încă o pagină', rifai: 'Nu, refă poza',
-      mando: 'Îl trimit…', mandoSotto: 'Durează câteva secunde.',
-      quale: 'Pentru ce șantier?', qualeSotto: 'Azi nu ai pontat și pe aviz nu se citește.', qualeSottoPrima: 'Alege șantierul acestui aviz.', nonSo: 'Nu știu: decide biroul',
-      mandata: 'Trimis', arrivata: function (c) { return c ? 'Avizul pentru ' + c + ' a ajuns la birou.' : 'Avizul a ajuns la birou.'; },
+      badge: 'Badge', titolo: 'Fotografiază avizul', sotto: 'Întreg și drept. Pleacă singur.',
+      titoloPc: 'Alege poza avizului', sottoPc: 'De pe calculator alegi un fișier: poză sau PDF.',
+      scegli: 'O ai deja în poze? Alege-o', oggi: 'Azi ai trimis',
+      arrivate: function (n) { return n === 1 ? '1 ajuns' : n + ' ajunse'; }, bolla: 'Aviz', daScegliere: 'Șantierul îl alege biroul',
+      presa: 'Luat', arrivataUff: 'Ajuns la birou', mando: 'Îl trimit la birou…', arrivata: 'Ajuns', per: 'pentru',
+      dallaBolla: 'Șantierul l-am citit de pe aviz.', dallaTimbratura: 'Șantierul este cel unde ai pontat azi.', ufficioSceglie: 'Șantierul îl alege biroul.', laLegge: 'Îl citește biroul.',
+      pagine: function (n) { return n + ' pagini'; }, altra: 'Fotografiază alt aviz', altraPagina: 'Avizul are încă o pagină', aggiungo: 'Adaug pagina…',
+      nonBolla: 'Nu pare un aviz', sembraFattura: 'Pare o factură.', ddt: 'Pe aviz scrie «Documento di trasporto» sau «DDT».', rifai: 'Refă poza', lascia: 'Este un aviz: lasă-l așa',
       cera: 'Exista deja', ceraSotto: 'Acest aviz l-ai trimis deja. Nu trebuie refăcut.',
-      torna: 'Înapoi la badge', ancora: 'Încă un aviz',
-      rete: 'Fără semnal', reteSotto: 'Liniștit: avizul e în telefon. Pleacă singur când revine semnalul.',
-      inAttesa: function (n) { return n === 1 ? '1 aviz așteaptă semnal: pleacă singur.' : n + ' avize așteaptă semnal: pleacă singure.'; },
-      troppe: 'Cel mult 6 pagini pentru un aviz.', tipo: 'Trebuie o poză sau un PDF.', grande: 'Fișierul este prea mare.',
-      noBadge: 'Acest badge nu poate trimite avize. Întreabă la birou.', errore: 'Nu reușesc să încarc pagina. Încearcă din nou.', riprova: 'Încearcă din nou',
-      errManda: 'Nu am reușit să-l trimit. Încearcă din nou.'
+      reteSotto: 'Aici nu e semnal. Avizul e în siguranță în telefon și pleacă singur când revine semnalul.',
+      inAttesa: function (n) { return n === 1 ? '1 aviz așteaptă semnal' : n + ' avize așteaptă semnal'; },
+      serveRete: 'Pentru a adăuga o pagină e nevoie de semnal.', troppe: 'Cel mult 6 pagini pentru un aviz.', tipo: 'Trebuie o poză sau un PDF.', grande: 'Fișierul este prea mare.',
+      noBadge: 'Acest link nu poate trimite avize. Întreabă la birou.', errore: 'Nu reușesc să încarc pagina. Încearcă din nou.', riprova: 'Încearcă din nou', errManda: 'Nu am reușit să-l trimit. Încearcă din nou.',
+      insTitolo: 'Pune «Bolle» pe telefon', insCiao: function (n) { return (n ? 'Salut ' + n + '. ' : '') + 'Se face o singură dată, apoi o deschizi ca pe WhatsApp.'; },
+      p1: ['Atinge ', 'Partajează', ' jos'], p2: ['Alege ', 'Adaugă pe ecranul principal', ''], p3: ['Atinge ', 'Adaugă', ' sus în dreapta'],
+      safari: 'Dacă nu vezi Partajează, deschide linkul cu Safari.', qui: 'Partajează este aici jos, în bara Safari', usaQui: 'Folosește-o aici fără s-o instalezi'
     },
     sq: {
-      badge: 'Badge', titolo: 'Fotografo fletëdërgesën', sotto: 'Bëji një foto fletëdërgesës, të gjithë dhe drejt. Pjesën tjetër e lexoj unë.',
-      foto: 'Bëj foton', file: 'Zgjidh një foto ose PDF', oggi: 'Sot ke dërguar',
-      legge: 'Lexohet mirë?', pagine: function (n) { return n === 1 ? '1 faqe' : n + ' faqe'; }, pagina: function (n) { return 'Faqja ' + n; },
-      perCantiere: 'Për kantierin', cambia: 'Ndrysho', loLeggo: 'E lexoj nga fletëdërgesa',
-      manda: 'Po, dërgoje', altra: 'Ka edhe një faqe', rifai: 'Jo, bëje foton përsëri',
-      mando: 'Po e dërgoj…', mandoSotto: 'Duhen pak sekonda.',
-      quale: 'Për cilin kantier?', qualeSotto: 'Sot nuk ke regjistruar hyrjen dhe në fletëdërgesë nuk lexohet.', qualeSottoPrima: 'Zgjidh kantierin e kësaj fletëdërgese.', nonSo: 'Nuk e di: vendos zyra',
-      mandata: 'U dërgua', arrivata: function (c) { return c ? 'Fletëdërgesa për ' + c + ' arriti në zyrë.' : 'Fletëdërgesa arriti në zyrë.'; },
+      badge: 'Badge', titolo: 'Fotografo fletëdërgesën', sotto: 'E gjitha brenda, drejt. Niset vetë.',
+      titoloPc: 'Zgjidh foton e fletëdërgesës', sottoPc: 'Nga kompjuteri zgjidhet një skedar: foto ose PDF.',
+      scegli: 'E ke tashmë te fotot? Zgjidhe', oggi: 'Sot ke dërguar',
+      arrivate: function (n) { return n === 1 ? '1 arriti' : n + ' arritën'; }, bolla: 'Fletëdërgesë', daScegliere: 'Kantierin e zgjedh zyra',
+      presa: 'U mor', arrivataUff: 'Arriti në zyrë', mando: 'Po e dërgoj në zyrë…', arrivata: 'Arriti', per: 'për',
+      dallaBolla: 'Kantierin e lexova në fletëdërgesë.', dallaTimbratura: 'Kantieri është ai ku ke regjistruar hyrjen sot.', ufficioSceglie: 'Kantierin e zgjedh zyra.', laLegge: 'E lexon zyra.',
+      pagine: function (n) { return n + ' faqe'; }, altra: 'Fotografo një fletëdërgesë tjetër', altraPagina: 'Kjo fletëdërgesë ka edhe një faqe', aggiungo: 'Po shtoj faqen…',
+      nonBolla: 'Nuk duket fletëdërgesë', sembraFattura: 'Duket faturë.', ddt: 'Në fletëdërgesë shkruan «Documento di trasporto» ose «DDT».', rifai: 'Bëje foton përsëri', lascia: 'Është fletëdërgesë: lëre kështu',
       cera: 'Ishte tashmë', ceraSotto: 'Këtë fletëdërgesë e ke dërguar tashmë. Nuk duhet ribërë.',
-      torna: 'Kthehu te badge', ancora: 'Një fletëdërgesë tjetër',
-      rete: 'Pa rrjet', reteSotto: 'Qetë: fletëdërgesa është në telefon. Niset vetë sapo të ketë sinjal.',
-      inAttesa: function (n) { return n === 1 ? '1 fletëdërgesë pret rrjetin: niset vetë.' : n + ' fletëdërgesa presin rrjetin: nisen vetë.'; },
-      troppe: 'Më së shumti 6 faqe për fletëdërgesë.', tipo: 'Duhet një foto ose PDF.', grande: 'Skedari është shumë i madh.',
-      noBadge: 'Ky badge nuk mund të dërgojë fletëdërgesa. Pyet zyrën.', errore: 'Nuk arrij ta ngarkoj faqen. Provo përsëri.', riprova: 'Provo përsëri',
-      errManda: 'Nuk arrita ta dërgoj. Provo përsëri.'
+      reteSotto: 'Këtu nuk ka rrjet. Fletëdërgesa është e sigurt në telefon dhe niset vetë sapo të ketë sinjal.',
+      inAttesa: function (n) { return n === 1 ? '1 fletëdërgesë pret rrjetin' : n + ' fletëdërgesa presin rrjetin'; },
+      serveRete: 'Për të shtuar një faqe duhet rrjeti.', troppe: 'Më së shumti 6 faqe për fletëdërgesë.', tipo: 'Duhet një foto ose PDF.', grande: 'Skedari është shumë i madh.',
+      noBadge: 'Kjo lidhje nuk mund të dërgojë fletëdërgesa. Pyet zyrën.', errore: 'Nuk arrij ta ngarkoj faqen. Provo përsëri.', riprova: 'Provo përsëri', errManda: 'Nuk arrita ta dërgoj. Provo përsëri.',
+      insTitolo: 'Vendos «Bolle» në telefon', insCiao: function (n) { return (n ? 'Përshëndetje ' + n + '. ' : '') + 'Bëhet vetëm një herë, pastaj e hap si WhatsApp.'; },
+      p1: ['Prek ', 'Shpërndaj', ' poshtë'], p2: ['Zgjidh ', 'Shto në ekranin bazë', ''], p3: ['Prek ', 'Shto', ' lart djathtas'],
+      safari: 'Nëse nuk sheh Shpërndaj, hape lidhjen me Safari.', qui: 'Shpërndaj është këtu poshtë, në shiritin e Safari', usaQui: 'Përdore këtu pa e instaluar'
     },
     ar: {
-      badge: 'البطاقة', titolo: 'صوّر وصل التسليم', sotto: 'صوّر الوصل كاملاً ومستقيماً. الباقي أقرأه أنا.',
-      foto: 'التقط الصورة', file: 'اختر صورة أو ملف PDF', oggi: 'أرسلت اليوم',
-      legge: 'هل يُقرأ جيداً؟', pagine: function (n) { return n === 1 ? 'صفحة واحدة' : n + ' صفحات'; }, pagina: function (n) { return 'الصفحة ' + n; },
-      perCantiere: 'للورشة', cambia: 'غيّر', loLeggo: 'أقرأها من الوصل',
-      manda: 'نعم، أرسله', altra: 'فيه صفحة أخرى', rifai: 'لا، أعد الصورة',
-      mando: 'أرسله…', mandoSotto: 'يستغرق بضع ثوانٍ.',
-      quale: 'لأي ورشة؟', qualeSotto: 'لم تسجّل حضورك اليوم ولا يُقرأ ذلك على الوصل.', qualeSottoPrima: 'اختر ورشة هذا الوصل.', nonSo: 'لا أعرف: يقرر المكتب',
-      mandata: 'تم الإرسال', arrivata: function (c) { return c ? 'وصل ' + c + ' وصل إلى المكتب.' : 'الوصل وصل إلى المكتب.'; },
+      badge: 'البطاقة', titolo: 'صوّر وصل التسليم', sotto: 'كاملاً ومستقيماً. يُرسل وحده.',
+      titoloPc: 'اختر صورة الوصل', sottoPc: 'من الحاسوب يُختار ملف: صورة أو PDF.',
+      scegli: 'هل هي في صورك؟ اخترها', oggi: 'أرسلت اليوم',
+      arrivate: function (n) { return n === 1 ? 'وصل واحد' : n + ' وصلت'; }, bolla: 'وصل', daScegliere: 'المكتب يختار الورشة',
+      presa: 'تم الحفظ', arrivataUff: 'وصل إلى المكتب', mando: 'أرسله إلى المكتب…', arrivata: 'وصل', per: 'لـ',
+      dallaBolla: 'قرأت الورشة من الوصل.', dallaTimbratura: 'الورشة هي التي سجّلت فيها حضورك اليوم.', ufficioSceglie: 'المكتب يختار الورشة.', laLegge: 'يقرؤه المكتب.',
+      pagine: function (n) { return n + ' صفحات'; }, altra: 'صوّر وصلاً آخر', altraPagina: 'لهذا الوصل صفحة أخرى', aggiungo: 'أضيف الصفحة…',
+      nonBolla: 'لا يبدو وصل تسليم', sembraFattura: 'يبدو فاتورة.', ddt: 'على الوصل مكتوب «Documento di trasporto» أو «DDT».', rifai: 'أعد الصورة', lascia: 'إنه وصل: اتركه هكذا',
       cera: 'موجود مسبقاً', ceraSotto: 'هذا الوصل أرسلته من قبل. لا داعي لإعادته.',
-      torna: 'العودة إلى البطاقة', ancora: 'وصل آخر',
-      rete: 'لا توجد شبكة', reteSotto: 'لا تقلق: الوصل محفوظ في الهاتف. سيُرسل وحده عند عودة الإشارة.',
-      inAttesa: function (n) { return n === 1 ? 'وصل واحد ينتظر الشبكة: سيُرسل وحده.' : n + ' وصولات تنتظر الشبكة: ستُرسل وحدها.'; },
-      troppe: '6 صفحات كحد أقصى لكل وصل.', tipo: 'يلزم صورة أو ملف PDF.', grande: 'الملف كبير جداً.',
-      noBadge: 'هذه البطاقة لا يمكنها إرسال الوصولات. اسأل المكتب.', errore: 'لا أستطيع تحميل الصفحة. حاول مرة أخرى.', riprova: 'حاول مرة أخرى',
-      errManda: 'لم أتمكن من إرساله. حاول مرة أخرى.'
+      reteSotto: 'لا توجد شبكة هنا. الوصل محفوظ في الهاتف وسيُرسل وحده عند عودة الإشارة.',
+      inAttesa: function (n) { return n === 1 ? 'وصل واحد ينتظر الشبكة' : n + ' وصولات تنتظر الشبكة'; },
+      serveRete: 'لإضافة صفحة تحتاج إلى الشبكة.', troppe: '6 صفحات كحد أقصى لكل وصل.', tipo: 'يلزم صورة أو ملف PDF.', grande: 'الملف كبير جداً.',
+      noBadge: 'هذا الرابط لا يمكنه إرسال الوصولات. اسأل المكتب.', errore: 'لا أستطيع تحميل الصفحة. حاول مرة أخرى.', riprova: 'حاول مرة أخرى', errManda: 'لم أتمكن من إرساله. حاول مرة أخرى.',
+      insTitolo: 'ضع «Bolle» على الهاتف', insCiao: function (n) { return (n ? 'مرحباً ' + n + '. ' : '') + 'تُفعل مرة واحدة فقط، ثم تفتحه مثل واتساب.'; },
+      p1: ['اضغط ', 'مشاركة', ' في الأسفل'], p2: ['اختر ', 'إضافة إلى الشاشة الرئيسية', ''], p3: ['اضغط ', 'إضافة', ' في الأعلى'],
+      safari: 'إذا لم ترَ زر المشاركة، افتح هذا الرابط بـ Safari.', qui: 'زر المشاركة هنا في الأسفل، في شريط Safari', usaQui: 'استخدمه هنا بدون تثبيت'
     }
   };
   var lingua = 'it';
-  try { var s = localStorage.getItem('palladia_badge_lang'); if (s && T[s]) lingua = s; } catch (e) { /* */ }
-  if (lingua === 'it' && !(function () { try { return localStorage.getItem('palladia_badge_lang'); } catch (e) { return null; } })()) {
-    var nav = (navigator.language || '').slice(0, 2).toLowerCase(); if (T[nav]) lingua = nav;
-  }
+  try { var s = localStorage.getItem('palladia_badge_lang'); if (s && T[s]) lingua = s; else { var nav = (navigator.language || '').slice(0, 2).toLowerCase(); if (T[nav]) lingua = nav; } } catch (e) { /* */ }
   var t = T[lingua];
   document.documentElement.lang = lingua;
   document.documentElement.dir = lingua === 'ar' ? 'rtl' : 'ltr';
 
   var parti = location.pathname.split('/').filter(Boolean);
   var code = parti[parti.indexOf('timbratura') + 1] || '';
+  var dalBadge = parti[parti.length - 1] === 'bolla';  // aperta dal tasto del badge: c'è «‹ Badge»
   var BADGE = '/timbratura/' + encodeURIComponent(code);
   var API = '/api/v1/badge/' + encodeURIComponent(code) + '/bolle';
   var MAX = 6, MAXB = 12 * 1024 * 1024;
+  var Coda = window.PalladiaBolleCoda || null;
+  var touch = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  var iOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  var installata = navigator.standalone === true || !!(window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+
+  if (/^[A-Fa-f0-9]{18}$/.test(code)) document.getElementById('manifesto').href = '/timbratura/' + code + '/foto.webmanifest';
+  try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function () {}); } catch (e) { /* */ }
 
   var m = document.getElementById('m');
   var cam = document.getElementById('cam'), fileIn = document.getElementById('file');
-  document.getElementById('torna').href = BADGE;
-  document.getElementById('torna-l').textContent = t.badge;
-
-  var info = null;          // { nome, cantiereOggi, cantieri, oggi }
-  var pagine = [];          // [{ blob, type, name, url }]
-  var scelto = null;        // { id, nome } scelto dall'autista prima di mandare
-  var ultima = null;        // { id } ultima bolla mandata senza cantiere
-  var dopoCantiere = null;  // 'prima' | 'dopo'
+  var info = null;     // { nome, oggi: [...] }
+  var ultima = null;   // { id, r, mini, presa, arrivata, pagine }
+  var modo = 'nuova';  // 'nuova' | 'pagina'
 
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function mostra(html) { m.innerHTML = html; window.scrollTo(0, 0); }
   function su(id, fn) { var el = document.getElementById(id); if (el) el.onclick = fn; }
   function uuid() { try { return crypto.randomUUID(); } catch (e) { return Date.now().toString(36) + Math.random().toString(36).slice(2); } }
-  var CAMERA = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+  function ora() { return new Date().toLocaleTimeString(lingua === 'ar' ? 'ar' : 'it-IT', { hour: '2-digit', minute: '2-digit' }); }
+  var CAM = function (w, sw) { return '<svg width="' + w + '" height="' + w + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (sw || 2.2) + '" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>'; };
   var PIU = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
-  var SPUNTA = '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>';
-  var NORETE = '<svg width="46" height="46" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0M12 19h.01M3 3l18 18"/></svg>';
+  var SPUNTA = function (w) { return '<svg width="' + w + '" height="' + w + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5 9-10"/></svg>'; };
+  var DOPPIA = '<svg width="22" height="18" viewBox="0 0 30 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12l5 5 9-10"/><path d="M12 15l2 2 9-10"/></svg>';
+  var ATTENZIONE = '<svg width="50" height="50" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="9.5"/></svg>';
+  var NORETE = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M2 8.5a15 15 0 0 1 20 0M5 12a10 10 0 0 1 14 0M8.5 15.5a5 5 0 0 1 7 0M12 19h.01M3 3l18 18"/></svg>';
+
+  // ── Intestazione ──
+  function testa() {
+    var h = document.getElementById('testa');
+    var nome = info && info.nome ? '<span class="chi" id="chi">' + esc(info.nome) + '</span>' : '<span class="chi" id="chi"></span>';
+    h.innerHTML = dalBadge
+      ? '<a class="indietro" href="' + BADGE + '" data-testid="bolla-torna"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg><span>' + esc(t.badge) + '</span></a>' + nome
+      : '<span class="marchio"><span class="logo" style="color:#fff">' + CAM(18) + '</span>Bolle</span>' + nome;
+  }
 
   // ── Le foto: rimpicciolite prima di mandarle (la rete in cantiere è lenta) ──
   function rimpicciolisci(f) {
@@ -206,21 +241,21 @@
       }).catch(function () { ok(f); });
     });
   }
-  function prendi(f) {
+  function scatta(cosa) { modo = cosa || 'nuova'; (touch ? cam : fileIn).click(); }
+  function scegliFile(cosa) { modo = cosa || 'nuova'; fileIn.click(); }
+  function preso(input) {
+    var f = input.files && input.files[0]; input.value = '';
     if (!f) return;
     if (!/^image\//.test(f.type) && f.type !== 'application/pdf') return avviso(t.tipo);
-    if (pagine.length >= MAX) return avviso(t.troppe);
     rimpicciolisci(f).then(function (b) {
       if (b.size > MAXB) return avviso(t.grande);
       var tipo = b.type || f.type;
-      pagine.push({ blob: b, type: tipo, name: 'pagina-' + (pagine.length + 1) + (tipo === 'application/pdf' ? '.pdf' : '.jpg'), url: /^image\//.test(tipo) ? URL.createObjectURL(b) : null });
-      vistaFoto();
+      var p = { blob: b, type: tipo, name: 'pagina.' + (tipo === 'application/pdf' ? 'pdf' : 'jpg'), url: /^image\//.test(tipo) ? URL.createObjectURL(b) : null };
+      if (modo === 'pagina' && ultima) aggiungiPagina(p); else mandaNuova(p);
     });
   }
-  cam.onchange = function () { var f = cam.files && cam.files[0]; cam.value = ''; prendi(f); };
-  fileIn.onchange = function () { var f = fileIn.files && fileIn.files[0]; fileIn.value = ''; prendi(f); };
-  function apriCamera() { cam.click(); }
-  function svuotaPagine() { pagine.forEach(function (p) { if (p.url) URL.revokeObjectURL(p.url); }); pagine = []; }
+  cam.onchange = function () { preso(cam); };
+  fileIn.onchange = function () { preso(fileIn); };
   function avviso(testo) {
     var el = document.getElementById('avviso');
     if (el) { el.textContent = testo; el.hidden = false; }
@@ -228,132 +263,152 @@
 
   // ── Schermate ──
   function vistaInizio() {
-    svuotaPagine(); scelto = null;
-    var fatte = (info && info.oggi || []);
+    ultima = null;
+    var fatte = (info && info.oggi) || [];
     mostra(
-      '<h1 class="disp">' + esc(t.titolo) + '</h1>' +
-      '<p class="frase">' + esc(t.sotto) + '</p>' +
+      '<button type="button" class="tastone" id="b-foto" data-testid="bolla-fai-foto">' + CAM(84, 1.8) +
+        '<span class="t disp">' + esc(touch ? t.titolo : t.titoloPc) + '</span><span class="s">' + esc(touch ? t.sotto : t.sottoPc) + '</span></button>' +
       '<div id="attesa"></div>' +
-      '<p id="avviso" class="attesa" role="alert" hidden></p>' +
-      (fatte.length ? '<section class="fatte" data-testid="bolla-oggi"><span class="tit">' + esc(t.oggi) + '</span>' +
-        fatte.map(function (b) { return '<div class="r"><span>' + esc(b.fornitore || '—') + (b.cantiere ? ' · ' + esc(b.cantiere) : '') + '</span><span style="color:var(--muted)">' + esc(b.ora) + '</span></div>'; }).join('') + '</section>' : '') +
-      '<div class="piede"><button type="button" class="pieno" id="b-foto" data-testid="bolla-fai-foto">' + CAMERA + esc(t.foto) + '</button>' +
-      '<button type="button" class="link" id="b-file" data-testid="bolla-scegli-file">' + esc(t.file) + '</button></div>'
+      '<p id="avviso" class="avviso" role="alert" hidden></p>' +
+      (fatte.length ? '<section class="oggi" data-testid="bolla-oggi"><div class="testa"><span class="tit">' + esc(t.oggi) + '</span><span class="n">' + esc(t.arrivate(fatte.length)) + '</span></div>' +
+        fatte.map(function (b) { return '<div class="r"><span class="a"><span class="f">' + esc(b.fornitore || t.bolla) + '</span><span class="c">' + esc(b.cantiere || t.daScegliere) + '</span></span><span class="o">' + esc(b.ora) + '</span></div>'; }).join('') + '</section>' : '') +
+      (touch ? '<div class="piede"><button type="button" class="link" id="b-file" data-testid="bolla-scegli-file">' + esc(t.scegli) + '</button></div>' : '')
     );
-    su('b-foto', apriCamera); su('b-file', function () { fileIn.click(); });
+    su('b-foto', function () { scatta('nuova'); });
+    su('b-file', function () { scegliFile('nuova'); });
     mostraAttesa();
   }
-  function cantiereFrase() {
-    if (scelto) return scelto.nome;
-    if (info && info.cantiereOggi) return info.cantiereOggi.nome || '—';
-    return t.loLeggo;
+  function spunte(u, inViaggio) {
+    return '<div class="spunte"><span class="mini">' + (u.mini ? '<img src="' + u.mini + '" alt="">' : 'PDF') + '</span><span class="righe-spunte">' +
+      '<span class="sp" data-testid="bolla-presa">' + SPUNTA(18) + esc(t.presa) + ' ' + esc(u.presa) + '</span>' +
+      (inViaggio ? '<span class="sp attesa-sp"><span class="giro" aria-hidden="true"></span>' + esc(t.mando) + '</span>'
+        : '<span class="sp" data-testid="bolla-arrivata-uff">' + DOPPIA + esc(t.arrivataUff) + ' ' + esc(u.arrivata) + '</span>') +
+      (u.pagine > 1 ? '<span class="sp attesa-sp">' + esc(t.pagine(u.pagine)) + '</span>' : '') +
+      '</span></div>';
   }
-  function vistaFoto() {
-    var n = pagine.length, alta = n === 1 ? 'min(38dvh, 400px)' : 'min(32dvh, 300px)';
-    mostra(
-      '<div class="testa"><h1 class="disp">' + esc(t.legge) + '</h1><span class="quante" data-testid="bolla-quante">' + esc(t.pagine(n)) + '</span></div>' +
-      '<div class="pagine" style="height:' + alta + '">' + pagine.map(function (p, i) {
-        return '<span class="pagina">' + (p.url ? '<img src="' + p.url + '" alt="' + esc(t.pagina(i + 1)) + '">' : '<span class="pdf">PDF</span>') + '<span class="n">' + esc(t.pagina(i + 1)) + '</span></span>';
-      }).join('') + '</div>' +
-      '<p id="avviso" class="attesa" role="alert" hidden></p>' +
-      '<button type="button" class="scheda" id="b-cambia" data-testid="bolla-cantiere"><span class="t"><span class="l">' + esc(t.perCantiere) + '</span><span class="v">' + esc(cantiereFrase()) + '</span></span><span class="c">' + esc(t.cambia) + '</span></button>' +
-      '<div class="piede"><button type="button" class="pieno" id="b-manda" data-testid="bolla-manda">' + esc(t.manda) + '</button>' +
-      (n < MAX ? '<button type="button" class="bordo" id="b-altra" data-testid="bolla-altra">' + PIU + esc(t.altra) + '</button>' : '') +
-      '<button type="button" class="link" id="b-rifai" data-testid="bolla-rifai">' + esc(t.rifai) + '</button></div>'
-    );
-    su('b-manda', manda); su('b-altra', apriCamera);
-    su('b-rifai', function () { svuotaPagine(); apriCamera(); vistaInizio(); });
-    su('b-cambia', function () { dopoCantiere = 'prima'; vistaCantiere(); });
+  function vistaInViaggio(u, testo) {
+    mostra(spunte(u, true) + (testo ? '<div class="centro"><span class="giro g" aria-hidden="true"></span><p class="frase">' + esc(testo) + '</p></div>' : ''));
   }
-  function vistaCantiere() {
-    var lista = (info && info.cantieri) || [];
+  function vistaArrivata() {
+    var u = ultima, r = u.r || {};
+    var da = r.cantiereDa === 'bolla' ? t.dallaBolla : r.cantiereDa === 'timbratura' ? t.dallaTimbratura : '';
     mostra(
-      '<h1 class="disp">' + esc(t.quale) + '</h1>' +
-      '<p class="frase">' + esc(dopoCantiere === 'dopo' ? t.qualeSotto : t.qualeSottoPrima) + '</p>' +
-      '<p id="avviso" class="attesa" role="alert" hidden></p>' +
-      '<section class="elenco" data-testid="bolla-cantieri">' + lista.map(function (c) {
-        return '<button type="button" class="riga" data-id="' + esc(c.id) + '"><span class="a">' + esc(c.nome) + '</span>' + (c.indirizzo ? '<span class="b">' + esc(c.indirizzo) + '</span>' : '') + '</button>';
-      }).join('') + '</section>' +
-      '<div class="piede"><button type="button" class="link" id="b-nonso" data-testid="bolla-non-so">' + esc(t.nonSo) + '</button></div>'
+      spunte(u, false) +
+      '<div class="centro" data-testid="bolla-mandata"><span class="tondo ok">' + SPUNTA(52) + '</span><h1 class="disp grande">' + esc(t.arrivata) + '</h1>' +
+        '<p class="frase">' + (r.fornitore ? esc(r.fornitore) + '<br>' : '') + (r.cantiere ? esc(t.per) + ' <b>' + esc(r.cantiere) + '</b>' : esc(t.ufficioSceglie)) + '</p>' +
+        (r.cantiere && da ? '<p class="nota">' + esc(da) + '</p>' : '') + (r.letta === false ? '<p class="nota">' + esc(t.laLegge) + '</p>' : '') + '</div>' +
+      '<p id="avviso" class="avviso" role="alert" hidden></p>' +
+      '<div class="piede"><button type="button" class="pieno" id="b-ancora" data-testid="bolla-ancora">' + CAM(24) + esc(t.altra) + '</button>' +
+        (u.pagine < MAX ? '<button type="button" class="bordo" id="b-pagina" data-testid="bolla-altra">' + PIU + esc(t.altraPagina) + '</button>' : '') + '</div>'
     );
-    Array.prototype.forEach.call(m.querySelectorAll('.riga'), function (b) {
-      b.onclick = function () {
-        var c = lista.filter(function (x) { return x.id === b.getAttribute('data-id'); })[0];
-        if (!c) return;
-        if (dopoCantiere === 'dopo') return dopoScelta(c);
-        scelto = { id: c.id, nome: c.nome }; vistaFoto();
-      };
-    });
-    su('b-nonso', function () {
-      if (dopoCantiere === 'dopo') return vistaMandata(null);
-      scelto = null; vistaFoto();
+    su('b-ancora', function () { scatta('nuova'); });
+    su('b-pagina', function () {
+      if (navigator.onLine === false) return avviso(t.serveRete);
+      scatta('pagina');
     });
   }
-  function dopoScelta(c) {
-    mostra('<div class="centro"><span class="giro" aria-hidden="true"></span></div>');
-    fetch(API + '/' + encodeURIComponent(ultima.id) + '/cantiere', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ site_id: c.id }) })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) { vistaMandata(j && j.cantiere || c.nome); })
-      .catch(function () { vistaMandata(null); });
-  }
-  function vistaMando() {
-    mostra('<div class="centro"><span class="giro" aria-hidden="true"></span><h1 class="disp" style="font-size:36px">' + esc(t.mando) + '</h1><p class="frase">' + esc(t.mandoSotto) + '</p></div>');
-  }
-  function vistaMandata(cantiere) {
-    if (info) info.oggi = null; // si ricarica al prossimo giro
+  function vistaNonBolla() {
+    var r = ultima.r || {};
     mostra(
-      '<div class="centro" data-testid="bolla-mandata"><span class="tondo ok">' + SPUNTA + '</span><h1 class="disp" style="font-size:44px">' + esc(t.mandata) + '</h1><p class="frase" style="font-size:19px">' + esc(t.arrivata(cantiere)) + '</p></div>' +
-      '<div class="piede"><a class="pieno" href="' + BADGE + '" data-testid="bolla-torna-badge">' + esc(t.torna) + '</a><button type="button" class="bordo" id="b-ancora" data-testid="bolla-ancora">' + esc(t.ancora) + '</button></div>'
+      '<div class="centro alto" data-testid="bolla-non-bolla"><span class="tondo warn">' + ATTENZIONE + '</span><h1 class="disp" style="font-size:44px">' + esc(t.nonBolla) + '</h1>' +
+        '<p class="frase">' + esc(t.ddt) + '</p></div>' +
+      '<div class="piede"><button type="button" class="pieno" id="b-rifai" data-testid="bolla-rifai">' + CAM(24) + esc(t.rifai) + '</button>' +
+        '<button type="button" class="link" id="b-lascia" data-testid="bolla-lascia">' + esc(t.lascia) + '</button></div>'
     );
-    su('b-ancora', function () { carica().then(vistaInizio); });
+    su('b-rifai', function () {
+      var id = ultima && ultima.id;
+      scatta('nuova');  // la fotocamera si apre subito (serve il tocco); la sbagliata si scarta intanto
+      if (id) fetch(API + '/' + encodeURIComponent(id) + '/scarta', { method: 'POST', keepalive: true }).catch(function () {});
+    });
+    su('b-lascia', vistaArrivata);
   }
   function vistaGia() {
     mostra(
-      '<div class="centro" data-testid="bolla-cera"><span class="tondo ok">' + SPUNTA + '</span><h1 class="disp" style="font-size:44px">' + esc(t.cera) + '</h1><p class="frase" style="font-size:19px">' + esc(t.ceraSotto) + '</p></div>' +
-      '<div class="piede"><a class="pieno" href="' + BADGE + '">' + esc(t.torna) + '</a><button type="button" class="bordo" id="b-ancora">' + esc(t.ancora) + '</button></div>'
+      '<div class="centro alto" data-testid="bolla-cera"><span class="tondo ok">' + SPUNTA(52) + '</span><h1 class="disp" style="font-size:44px">' + esc(t.cera) + '</h1><p class="frase">' + esc(t.ceraSotto) + '</p></div>' +
+      '<div class="piede"><button type="button" class="pieno" id="b-ancora">' + CAM(24) + esc(t.altra) + '</button></div>'
     );
-    su('b-ancora', function () { carica().then(vistaInizio); });
+    su('b-ancora', function () { scatta('nuova'); });
   }
   function vistaSenzaRete() {
     mostra(
-      '<div class="centro" data-testid="bolla-senza-rete"><span class="tondo warn">' + NORETE + '</span><h1 class="disp" style="font-size:44px">' + esc(t.rete) + '</h1><p class="frase" style="font-size:19px">' + esc(t.reteSotto) + '</p></div>' +
-      '<div class="piede"><a class="pieno" href="' + BADGE + '">' + esc(t.torna) + '</a></div>'
+      '<div class="centro alto" data-testid="bolla-senza-rete"><span class="tondo ok">' + SPUNTA(52) + '</span><h1 class="disp grande">' + esc(t.presa) + '</h1><p class="frase">' + esc(t.reteSotto) + '</p><div id="attesa"></div></div>' +
+      '<div class="piede"><button type="button" class="pieno" id="b-ancora">' + CAM(24) + esc(t.altra) + '</button></div>'
     );
+    su('b-ancora', function () { scatta('nuova'); });
+    mostraAttesa();
   }
   function vistaErrore(testo, conRiprova) {
-    mostra('<div class="centro"><p class="frase" role="alert" style="font-size:19px">' + esc(testo) + '</p></div>' +
-      '<div class="piede">' + (conRiprova ? '<button type="button" class="pieno" id="b-riprova">' + esc(t.riprova) + '</button>' : '') + '<a class="' + (conRiprova ? 'bordo' : 'pieno') + '" href="' + BADGE + '">' + esc(t.torna) + '</a></div>');
+    mostra('<div class="centro alto"><p class="frase" role="alert">' + esc(testo) + '</p></div>' +
+      '<div class="piede">' + (conRiprova ? '<button type="button" class="pieno" id="b-riprova">' + esc(t.riprova) + '</button>' : '') +
+      (dalBadge ? '<a class="' + (conRiprova ? 'bordo' : 'pieno') + '" href="' + BADGE + '">' + esc(t.badge) + '</a>' : '') + '</div>');
     su('b-riprova', avvio);
   }
+  function vistaInstalla() {
+    var p = function (x) { return esc(x[0]) + '<b>' + esc(x[1]) + '</b>' + esc(x[2]); };
+    document.getElementById('testa').innerHTML = '<span class="marchio"><span class="logo" style="color:#fff">' + CAM(18) + '</span>Bolle</span>' + (info && info.nome ? '<span class="chi">' + esc(info.nome) + '</span>' : '');
+    mostra(
+      '<section data-testid="bolle-installa" style="display:flex;flex-direction:column;gap:20px">' +
+      '<h1 class="disp" style="font-size:42px">' + esc(t.insTitolo) + '</h1>' +
+      '<p class="frase" style="font-size:18px">' + esc(t.insCiao(info && info.nome)) + '</p>' +
+      '<ol class="passi">' +
+        '<li><span class="num">1</span><span class="tx">' + p(t.p1) + '</span><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="#0A66D6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M6 11H5v10h14V11h-1"/></svg></li>' +
+        '<li><span class="num">2</span><span class="tx">' + p(t.p2) + '</span><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg></li>' +
+        '<li><span class="num">3</span><span class="tx">' + p(t.p3) + '</span></li>' +
+      '</ol>' +
+      '<p class="info">' + esc(t.safari) + '</p></section>' +
+      '<div class="piede"><div class="giu"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#0A66D6" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>' + esc(t.qui) + '</div>' +
+        '<button type="button" class="link" id="b-qui" data-testid="bolle-usa-qui">' + esc(t.usaQui) + '</button></div>'
+    );
+    su('b-qui', function () { try { sessionStorage.setItem('palladia_bolle_qui', '1'); } catch (e) { /* */ } testa(); vistaInizio(); });
+  }
   function mostraAttesa() {
-    if (!window.PalladiaBolleCoda) return;
-    PalladiaBolleCoda.conta(code).then(function (n) {
+    if (!Coda) return;
+    Coda.conta(code).then(function (n) {
       var el = document.getElementById('attesa'); if (!el) return;
-      el.innerHTML = n ? '<p class="attesa" data-testid="bolla-in-attesa">' + esc(t.inAttesa(n)) + '</p>' : '';
+      el.innerHTML = n ? '<span class="chip" data-testid="bolla-in-attesa">' + NORETE + esc(t.inAttesa(n)) + '</span>' : '';
     });
   }
-  window.addEventListener('palladia-bolle-mandate', function () { mostraAttesa(); });
+  window.addEventListener('palladia-bolle-mandate', function () { mostraAttesa(); if (!ultima) carica().then(function () { if (!ultima) vistaInizio(); }, function () {}); });
 
-  // ── Mandare ──
-  function manda() {
-    if (!pagine.length) return;
-    var voce = { client_id: uuid(), code: code, site_id: scelto ? scelto.id : null, at: Date.now(), pagine: pagine.map(function (p) { return { blob: p.blob, type: p.type, name: p.name }; }) };
-    vistaMando();
-    var inCoda = function () {
-      if (!window.PalladiaBolleCoda) return vistaErrore(t.errManda, false);
-      PalladiaBolleCoda.aggiungi(voce).then(function () { svuotaPagine(); vistaSenzaRete(); }, function () { vistaErrore(t.errManda, false); });
-    };
-    if (navigator.onLine === false || !window.PalladiaBolleCoda) return inCoda();
-    PalladiaBolleCoda.manda(voce).then(function (r) {
-      svuotaPagine();
-      if (r.doppione) return vistaGia();
-      if (!r.cantiere) { ultima = { id: r.id }; dopoCantiere = 'dopo'; return (info && info.cantieri && info.cantieri.length) ? vistaCantiere() : vistaMandata(null); }
-      vistaMandata(r.cantiere);
-    }, function (e) {
-      if (e.message === 'rete' || e.status >= 500 || e.status === 429) return inCoda();
-      vistaFoto();
-      avviso(e.message === 'FILE_TOO_LARGE' ? t.grande : e.message === 'TROPPE_PAGINE' ? t.troppe : e.message === 'FILE_NON_VALIDO' ? t.tipo : t.errManda);
+  // ── Mandare: prima nel telefono («Presa»), poi in ufficio («Arrivata») ──
+  function mandaNuova(p) {
+    var voce = { client_id: uuid(), code: code, site_id: null, at: Date.now(), pagine: [{ blob: p.blob, type: p.type, name: p.name }] };
+    ultima = { id: null, r: null, mini: p.url, presa: ora(), arrivata: null, pagine: 1 };
+    vistaInViaggio(ultima);
+    var nelTelefono = Coda ? Coda.aggiungi(voce).then(function () { return true; }, function () { return false; }) : Promise.resolve(false);
+    nelTelefono.then(function (salvata) {
+      var perdi = function () { if (salvata && Coda.togli) Coda.togli(voce.client_id).catch(function () {}); };
+      if (navigator.onLine === false) return salvata ? vistaSenzaRete() : vistaErrore(t.errManda, false);
+      var manda = Coda ? Coda.manda : null;
+      if (!manda) return vistaErrore(t.errManda, false);
+      manda(voce).then(function (r) {
+        perdi();
+        if (info) info.oggi = null;
+        ultima.id = r.id; ultima.r = r; ultima.arrivata = ora();
+        if (r.doppione) return vistaGia();
+        if (r.nonBolla) return vistaNonBolla();
+        vistaArrivata();
+      }, function (e) {
+        if (e.message === 'rete' || !e.status || e.status >= 500 || e.status === 429) return salvata ? vistaSenzaRete() : vistaErrore(t.errManda, false);
+        perdi();
+        vistaErrore(e.message === 'FILE_TOO_LARGE' ? t.grande : e.message === 'TROPPE_PAGINE' ? t.troppe : e.message === 'FILE_NON_VALIDO' ? t.tipo : e.status === 401 || e.status === 403 ? t.noBadge : t.errManda, false);
+      });
     });
+  }
+  function aggiungiPagina(p) {
+    var u = ultima;
+    vistaInViaggio(u, t.aggiungo);
+    var fd = new FormData(); fd.append('pagine', p.blob, p.name);
+    fetch(API + '/' + encodeURIComponent(u.id) + '/pagine', { method: 'POST', body: fd })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { if (!r.ok) { var e = new Error(j.error || 'HTTP'); e.status = r.status; throw e; } return j; }); })
+      .then(function (j) {
+        u.pagine = j.pagine || (u.pagine + 1); u.arrivata = ora();
+        u.r = Object.assign({}, u.r, { fornitore: j.fornitore || u.r.fornitore, cantiere: j.cantiere || u.r.cantiere, cantiereDa: j.cantiere && j.cantiere !== u.r.cantiere ? 'bolla' : u.r.cantiereDa });
+        vistaArrivata();
+      }, function (e) {
+        vistaArrivata();
+        avviso(e.message === 'TROPPE_PAGINE' ? t.troppe : e.message === 'FILE_TOO_LARGE' ? t.grande : !e.status ? t.serveRete : t.errManda);
+      });
   }
 
   function carica() {
@@ -361,14 +416,17 @@
       if (r.status === 401 || r.status === 403) { var e = new Error('badge'); e.badge = true; throw e; }
       if (!r.ok) throw new Error('http');
       return r.json();
-    }).then(function (j) { info = j; document.getElementById('chi').textContent = j.nome || ''; return j; });
+    }).then(function (j) { info = j; testa(); return j; });
   }
   function avvio() {
+    testa();
     if (!/^[A-Fa-f0-9]{18}$/.test(code)) return vistaErrore(t.noBadge, false);
-    carica().then(vistaInizio, function (e) {
+    var qui = false; try { qui = sessionStorage.getItem('palladia_bolle_qui') === '1'; } catch (e) { /* */ }
+    var guida = !dalBadge && iOS && !installata && !qui;
+    carica().then(function () { guida ? vistaInstalla() : vistaInizio(); }, function (e) {
       if (e.badge) return vistaErrore(t.noBadge, false);
       // senza rete: si può fotografare lo stesso, la bolla parte dopo
-      if (navigator.onLine === false) { info = { nome: null, cantiereOggi: null, cantieri: [], oggi: [] }; return vistaInizio(); }
+      if (navigator.onLine === false) { info = { nome: null, oggi: [] }; return vistaInizio(); }
       vistaErrore(t.errore, true);
     });
   }

@@ -609,6 +609,28 @@ app.get('/timbratura/:code/bolla', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.sendFile('bolla-autista.html', { root: __dirname + '/public' });
 });
+// F-515: la stessa pagina come app «Bolle» da mettere sulla schermata Home
+// (link personale dell'autista, niente password), col suo manifest e la sua icona.
+app.get('/timbratura/:code/foto', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile('bolla-autista.html', { root: __dirname + '/public' });
+});
+app.get('/timbratura/:code/foto.webmanifest', (req, res) => {
+  const { code } = req.params;
+  if (!/^[A-Fa-f0-9]{18}$/.test(code)) return res.status(400).json({ error: 'invalid' });
+  res.setHeader('Content-Type', 'application/manifest+json');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({
+    name: 'Bolle', short_name: 'Bolle', description: 'Fotografa la bolla e mandala in ufficio',
+    id: `/timbratura/${code}/foto`, start_url: `/timbratura/${code}/foto`, scope: `/timbratura/${code}/foto`,
+    display: 'standalone', background_color: '#ffffff', theme_color: '#ffffff', orientation: 'portrait', lang: 'it',
+    icons: [
+      { src: '/bolle-icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/bolle-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/bolle-icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
+});
 
 // Timbratura via badge personale lavoratore (nuovo flusso primario)
 app.get('/timbratura/:code', (req, res) => {

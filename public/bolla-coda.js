@@ -82,7 +82,8 @@
     });
   }
 
-  window.PalladiaBolleCoda = { aggiungi: aggiungi, svuota: svuota, conta: conta, manda: manda };
+  // togli: F-515, l'app Bolle mette la bolla in coda PRIMA di mandarla («Presa») e la toglie quando è arrivata
+  window.PalladiaBolleCoda = { aggiungi: aggiungi, svuota: svuota, conta: conta, manda: manda, togli: togli };
   try {
     window.addEventListener('online', function () { svuota(); });
     if (document.readyState === 'complete') setTimeout(svuota, 1500);
