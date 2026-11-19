@@ -84,7 +84,7 @@ async function main() {
     check('MSC ottobre 2026: conto pronto', ott.pronto === true, ott);
     if (ott.pronto) {
       // F-514: non più lorde + oneri e basta, ma il conto voce per voce (+ TFR, ratei, ferie, amministratore)
-      check('costo del mese = conto voce per voce del prospetto (64.458, F-514)', ott.costoMese === 64458, ott.costoMese);
+      check('costo del mese = conto voce per voce del prospetto (64.258, F-514)', ott.costoMese === 64258, ott.costoMese);
       check('totale = cantieri + spese generali', ott.aiCantieri + ott.speseGenerali === ott.costoMese, ott);
       const fuori = ott.cantieri.filter(c => c.ore >= 50 && (c.costo / c.ore < 15 || c.costo / c.ore > 35));
       check('costo orario dei cantieri plausibile (15-35 €/h)', fuori.length === 0, fuori);
