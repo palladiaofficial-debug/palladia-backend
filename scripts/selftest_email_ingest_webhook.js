@@ -155,6 +155,15 @@ async function main() {
     return;
   }
 
+  // F-520 (20/11): fatture per email messe da parte. Il server di prova legge lo stesso .env:
+  // finché FEATURE_EMAIL_INGEST_MANUAL_FORWARD_SETUP_DEFAULT non è true il webhook le scarta di proposito.
+  if (!require('../lib/featureFlags').isModuleEnabledGlobally('email_ingest_manual_forward_setup')) {
+    skip('webhook end-to-end', 'fatture per email messe da parte (F-520): FEATURE_EMAIL_INGEST_MANUAL_FORWARD_SETUP_DEFAULT non è true');
+    console.log(`
+${passed} passati, ${failed} falliti, ${skipped} skippati
+`);
+    return;
+  }
   let healthy = false;
   try { healthy = (await fetch(`${BASE}/`)).ok || true; } catch { healthy = false; }
   if (!healthy) {

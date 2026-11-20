@@ -18,6 +18,7 @@ const P = require('../../lib/prontoSubappalto');
 const { dichiarazionePdf } = require('../../lib/impreseDichiarazione');
 const supabase = require('../../lib/supabase');
 const logger = require('../../lib/logger');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
 
 const WRITE_ROLES = ['owner', 'admin', 'tech'];
 const scrive = (req, res, next) => (req.userRole && !WRITE_ROLES.includes(req.userRole) ? res.status(403).json({ error: 'FORBIDDEN' }) : next());
@@ -33,14 +34,25 @@ const posFacoltativo = (req, res, next) => upload.single('pos')(req, res, (err) 
   next();
 });
 
-router.get('/pronto', verifySupabaseJwt, async (req, res) => {
+// F-520: «Pronta a lavorare» messa da parte il 20/11 — spenta per tutti finché
+// FEATURE_PRONTA_A_LAVORARE_DEFAULT non è true; anche i link già mandati non si aprono.
+const spento = (res) => res.status(404).json({ error: 'FEATURE_DISABLED' });
+const modulo = async (req, res, next) => ((await isFeatureEnabled(req.companyId, 'pronta_a_lavorare').catch(() => false)) ? next() : spento(res));
+const linkAcceso = async (req, res, next) => {
+  try {
+    const p = await P.daToken(req.params.token);
+    return (await isFeatureEnabled(p.company_id, 'pronta_a_lavorare').catch(() => false)) ? next() : spento(res);
+  } catch (err) { return fallito(res, err, 'link'); }
+};
+
+router.get('/pronto', verifySupabaseJwt, modulo, async (req, res) => {
   try {
     const [st, link] = await Promise.all([P.statoTuo(req.companyId), P.elenco(req.companyId)]);
     res.json({ ...st, link });
   } catch (err) { fallito(res, err, 'stato'); }
 });
 
-router.post('/pronto/pacchetti', verifySupabaseJwt, scrive, posFacoltativo, async (req, res) => {
+router.post('/pronto/pacchetti', verifySupabaseJwt, modulo, scrive, posFacoltativo, async (req, res) => {
   try {
     const b = req.body || {};
     const operai = Array.isArray(b.operai) ? b.operai : typeof b.operai === 'string' && b.operai ? b.operai.split(',') : [];
@@ -48,12 +60,12 @@ router.post('/pronto/pacchetti', verifySupabaseJwt, scrive, posFacoltativo, asyn
   } catch (err) { fallito(res, err, 'crea'); }
 });
 
-router.post('/pronto/pacchetti/:id/spegni', verifySupabaseJwt, scrive, async (req, res) => {
+router.post('/pronto/pacchetti/:id/spegni', verifySupabaseJwt, modulo, scrive, async (req, res) => {
   if (!/^[0-9a-f-]{36}$/i.test(req.params.id)) return res.status(404).json({ error: 'NOT_FOUND' });
   try { res.json(await P.spegni(req.companyId, req.params.id)); } catch (err) { fallito(res, err, 'spegni'); }
 });
 
-router.get('/pronto/dichiarazione.pdf', verifySupabaseJwt, async (req, res) => {
+router.get('/pronto/dichiarazione.pdf', verifySupabaseJwt, modulo, async (req, res) => {
   try {
     const { data: co } = await supabase.from('companies').select('name, piva, vat_number, address, city, legale_rappresentante').eq('id', req.companyId).maybeSingle();
     const pdf = await dichiarazionePdf({
@@ -67,13 +79,13 @@ router.get('/pronto/dichiarazione.pdf', verifySupabaseJwt, async (req, res) => {
 });
 
 // ── Chi riceve il link ──
-router.get('/documenti-per/:token', impresaLinkLimiter, async (req, res) => {
+router.get('/documenti-per/:token', impresaLinkLimiter, linkAcceso, async (req, res) => {
   try { res.json(await P.pubblico(req.params.token)); } catch (err) { fallito(res, err, 'pubblico'); }
 });
-router.get('/documenti-per/:token/file/:chiave', impresaLinkLimiter, async (req, res) => {
+router.get('/documenti-per/:token/file/:chiave', impresaLinkLimiter, linkAcceso, async (req, res) => {
   try { res.json(await P.file(req.params.token, String(req.params.chiave).slice(0, 120))); } catch (err) { fallito(res, err, 'file'); }
 });
-router.get('/documenti-per/:token/tutto.pdf', impresaLinkLimiter, async (req, res) => {
+router.get('/documenti-per/:token/tutto.pdf', impresaLinkLimiter, linkAcceso, async (req, res) => {
   try {
     const r = await P.pdf(req.params.token);
     res.setHeader('Content-Type', 'application/pdf');

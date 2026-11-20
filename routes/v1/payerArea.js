@@ -42,6 +42,7 @@ const router    = require('express').Router();
 const rateLimit = require('express-rate-limit');
 const supabase  = require('../../lib/supabase');
 const { auditLog } = require('../../lib/audit');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
 
 const areaLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -78,6 +79,10 @@ async function verifyPayerToken(req, res, next) {
   const session = await resolvePayerSession(req.params.token);
   if (!session) {
     return res.status(401).json({ error: 'LINK_INVALID', message: 'Questo link non è più valido. Chiedi all\'azienda di inviartene uno nuovo.' });
+  }
+  // F-520: area di chi paga le buste messa da parte il 20/11
+  if (!(await isFeatureEnabled(session.company_id, 'pagamenti_buste').catch(() => false))) {
+    return res.status(404).json({ error: 'FEATURE_DISABLED', message: 'Questo link non è più attivo.' });
   }
   req.payerSession = session;
   const newExpiry = new Date(Date.now() + SLIDING_WINDOW_DAYS * 86400000).toISOString();

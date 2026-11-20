@@ -9,6 +9,8 @@
  */
 'use strict';
 require('dotenv').config();
+// F-520 (20/11): modulo messo da parte, spento per tutti; qui si riaccende per continuare a provare il codice che resta
+process.env.FEATURE_DOCUMENTI_PER_EMAIL_DEFAULT = 'true';
 const supabase = require('../lib/supabase');
 
 const E2E = process.env.E2E_COMPANY_ID || 'fda73bf5-403a-4a0e-be6d-501e3f3c5c4d';

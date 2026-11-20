@@ -45,6 +45,7 @@ const { ingestMappedExpense } = require('./sdiInvoices');
 const { resolveCompanyByToken, getSenderRule, isStaffSender, logIngestEvent, consumeTestNonce, checkRetiredToken } = require('./emailIngestConfig');
 const { segnaComeDaPagare } = require('../lib/daPagareEmail');
 const impreseEmail = require('../lib/impreseEmail');
+const { isFeatureEnabled } = require('../lib/featureFlags');
 
 const MAX_MESSAGE_SIZE_BYTES = 22 * 1024 * 1024; // sotto i 25MB di Mailgun, margine per gli header multipart
 const ALLOWED_EXTENSIONS = ['.xml', '.p7m', '.zip', '.pdf'];
@@ -367,6 +368,13 @@ async function handleInboundWebhook(body, files, headers) {
     }
     await logIngestEvent({ ...logBase, outcome: 'unknown_token', reject_reason: `token '${token}' non risolto a nessuna azienda` });
     return { httpStatus: 200, body: { ok: true, outcome: 'unknown_token' } };
+  }
+
+  // F-520: le fatture per email sono messe da parte dal 20/11 (con Da pagare):
+  // l'indirizzo vale come non più attivo, niente entra in archivio senza che nessuno lo veda.
+  if (!(await isFeatureEnabled(companyId, 'email_ingest_manual_forward_setup').catch(() => false))) {
+    await logIngestEvent({ ...logBase, outcome: 'token_retired', reject_reason: 'fatture per email messe da parte (F-520)' });
+    return { httpStatus: 200, body: { ok: true, outcome: 'token_retired' } };
   }
 
   // Email di prova (pulsante "Invia email di prova"): il nonce nel subject è la

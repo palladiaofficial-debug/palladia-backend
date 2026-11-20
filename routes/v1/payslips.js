@@ -19,6 +19,9 @@ const { validate } = require('../../middleware/validate');
 const { auditLog } = require('../../lib/audit');
 const { sendPayerAccessEmail } = require('../../services/email');
 const { soloUfficio } = require('../../lib/busteRiservate');
+const { isFeatureEnabled } = require('../../lib/featureFlags');
+// F-520: area di chi paga le buste messa da parte il 20/11
+const pagatoreAcceso = async (req, res, next) => ((await isFeatureEnabled(req.companyId, 'pagamenti_buste').catch(() => false)) ? next() : res.status(404).json({ error: 'FEATURE_DISABLED' }));
 
 // F-494 (AUDIT.md del frontend, 13/11/2026): ogni strada di questo file è
 // riservata all'ufficio (titolare e amministratori). Prima bastava essere un
@@ -349,7 +352,7 @@ router.patch('/payslips/:id/mark-unpaid', verifySupabaseJwt, async (req, res) =>
 // seguenti): niente più link+PIN da rigenerare e ricopiare a mano — un
 // invito via email diretta, più inviti allo stesso indirizzo restano tutti
 // validi. Non torna mai il token (solo l'hash esiste lato server).
-router.get('/payslips/payer-sessions', verifySupabaseJwt, async (req, res) => {
+router.get('/payslips/payer-sessions', verifySupabaseJwt, pagatoreAcceso, async (req, res) => {
   const { data, error } = await supabase
     .from('payslip_payer_sessions')
     .select('id, email, created_at, last_used_at, expires_at, revoked_at')
@@ -367,7 +370,7 @@ router.get('/payslips/payer-sessions', verifySupabaseJwt, async (req, res) => {
 // vecchio PIN qui non c'è nessun valore da ricopiare a mano su un altro
 // canale: chi lo riceve clicca e basta, l'unico modo di procurarsi un link
 // valido è essere il destinatario reale di quella email.
-router.post('/payslips/payer-invite', verifySupabaseJwt, validate(payerInviteSchema), async (req, res) => {
+router.post('/payslips/payer-invite', verifySupabaseJwt, pagatoreAcceso, validate(payerInviteSchema), async (req, res) => {
   if (!isAdminOrOwner(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN', message: 'Solo owner e admin possono invitare chi paga.' });
   }
@@ -403,7 +406,7 @@ router.post('/payslips/payer-invite', verifySupabaseJwt, validate(payerInviteSch
 });
 
 // ── POST /api/v1/payslips/payer-sessions/:id/revoke — revoca un accesso ──────
-router.post('/payslips/payer-sessions/:id/revoke', verifySupabaseJwt, async (req, res) => {
+router.post('/payslips/payer-sessions/:id/revoke', verifySupabaseJwt, pagatoreAcceso, async (req, res) => {
   if (!isAdminOrOwner(req.userRole)) {
     return res.status(403).json({ error: 'FORBIDDEN' });
   }

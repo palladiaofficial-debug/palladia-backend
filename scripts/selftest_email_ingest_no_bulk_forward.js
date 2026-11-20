@@ -24,6 +24,8 @@
  */
 'use strict';
 require('dotenv').config();
+// F-520 (20/11): modulo messo da parte, spento per tutti; qui si riaccende per continuare a provare il codice che resta
+process.env.FEATURE_EMAIL_INGEST_MANUAL_FORWARD_SETUP_DEFAULT = 'true';
 const { isFeatureEnabled, FROZEN_FEATURES } = require('../lib/featureFlags');
 const { EMAIL_PROVIDERS } = require('../lib/emailIngestProviders');
 

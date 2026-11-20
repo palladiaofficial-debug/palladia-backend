@@ -72,6 +72,8 @@ router.post('/imprese/caricamenti/:id/salva', ...auth, idValidi, async (req, res
 
 // F-410: l'indirizzo email per i documenti delle imprese e le email arrivate da guardare
 router.get('/imprese/email', ...auth, async (req, res) => {
+  // F-520: documenti per email messi da parte il 20/11 — nessun indirizzo nuovo
+  if (!(await isFeatureEnabled(req.companyId, 'documenti_per_email').catch(() => false))) return res.status(404).json({ error: 'FEATURE_DISABLED' });
   try {
     const [a, arrivati] = await Promise.all([E.indirizzo(req.companyId, req.user?.id), E.arrivati(req.companyId)]);
     res.json({ ...a, arrivati });

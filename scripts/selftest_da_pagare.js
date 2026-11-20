@@ -15,6 +15,8 @@
  */
 'use strict';
 require('dotenv').config({ quiet: true });
+// F-520 (20/11): modulo messo da parte, spento per tutti; qui si riaccende per continuare a provare il codice che resta
+process.env.FEATURE_DA_PAGARE_DEFAULT = 'true';
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');

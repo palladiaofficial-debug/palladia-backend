@@ -16,7 +16,7 @@
 require('dotenv').config();
 
 const FLAGS = ['home_semplice', 'menu_semplice', 'documenti_semplici', 'lavagna',
-  'presenze_imprese', 'da_pagare', 'conti_sub'];
+  'presenze_imprese', 'conti_sub']; // da_pagare tolto: messo da parte il 20/11 (F-520), vedi selftest_f520_da_parte.js
 const envName = f => `FEATURE_${f.toUpperCase()}_DEFAULT`;
 
 let passed = 0, failed = 0;

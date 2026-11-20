@@ -123,7 +123,8 @@ async function rotta() {
     const vuota = await (await get(A.id)).json();
     // F-411: senza cantieri la prima cosa è crearne uno (prima qui si aspettava «Tutto a posto»)
     check('azienda nuova: «crea il tuo primo cantiere», 0 dentro', vuota.prima?.id === 'primo-cantiere' && vuota.cantiere?.dentro === 0, vuota);
-    check('il titolare vede il riquadro Soldi (0 €)', vuota.soldi?.totaleTesto === '0 €', vuota.soldi);
+    // F-520 (20/11): Da pagare messo da parte → niente riquadro Soldi, anche con la riga accesa
+    check('il riquadro Soldi non c’è (Da pagare messo da parte)', !vuota.soldi, vuota.soldi);
 
     const site = await ins('sites', { company_id: A.id, name: 'TEST Via Roma', address: 'Via Roma 1, Genova', status: 'attivo' });
     const sub = await ins('subcontractors', { company_id: A.id, company_name: 'AYAT SRLS' });
