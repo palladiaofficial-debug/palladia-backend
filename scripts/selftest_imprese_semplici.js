@@ -49,7 +49,7 @@ const letto = (x) => ({ tipo: 'altro', ragioneSociale: null, piva: null, sede: n
   g = giudica('dvr', letto({ tipo: 'dvr', ragioneSociale: 'Ayat srls' }), { impresa, oggi: OGGI });
   check('DVR «Ayat srls» (stessa impresa scritta diversa), senza scadenza → va bene', g.esito === 'va_bene', g);
   g = giudica('visura', letto({ tipo: 'visura', piva: '13371360960', dataDocumento: '2026-02-10' }), { impresa, oggi: OGGI });
-  check('visura di febbraio (più di 6 mesi) → non va (visura vecchia)', g.esito === 'non_va' && g.motivo.codice === 'visura_vecchia' && g.motivo.valore === '2026-02-10', g);
+  check('visura di febbraio (più di 6 mesi) → va bene con l\'avviso (F-516: non blocca)', g.esito === 'va_bene' && g.motivo.codice === 'visura_vecchia' && g.motivo.valore === '2026-02-10', g);
   g = giudica('visura', letto({ tipo: 'visura', piva: '13371360960', dataDocumento: '2026-09-15' }), { impresa, oggi: OGGI });
   check('visura di settembre → va bene, vale fino al 15/03/2027', g.esito === 'va_bene' && g.scadenza === '2027-03-15', g);
   g = giudica('dichiarazione', letto({ tipo: 'dichiarazione', piva: '13371360960', firmato: false }), { impresa, oggi: OGGI });
@@ -101,10 +101,10 @@ const letto = (x) => ({ tipo: 'altro', ragioneSociale: null, piva: null, sede: n
       r = await L.caricaDaImpresa(token, { tipo: 'dichiarazione', file }, finto({ tipo: 'dichiarazione', partita_iva: '12345678903', firmato: false }));
       check('dichiarazione senza firma → non va', r.esito === 'non_va' && r.motivo.codice === 'senza_firma', r);
       r = await L.caricaDaImpresa(token, { tipo: 'visura', file }, finto({ tipo: 'visura', partita_iva: '12345678903', data_documento: '2025-12-01' }));
-      check('visura di dicembre 2025 → non va (vecchia)', r.esito === 'non_va' && r.motivo.codice === 'visura_vecchia', r);
+      check('visura di dicembre 2025 → va bene con l\'avviso «vecchia» (F-516)', r.esito === 'va_bene' && r.motivo.codice === 'visura_vecchia', r);
       d = await L.datiPubblici(token);
       const stato = Object.fromEntries(d.richieste.map(x => [x.key, x.stato]));
-      check('l\'impresa vede: DURC ok, dichiarazione e visura «non va» col motivo, DVR manca', stato.durc === 'ok' && stato.dichiarazione === 'non_va' && stato.visura === 'non_va' && stato.dvr === 'manca'
+      check('l\'impresa vede: DURC ok, dichiarazione «non va» col motivo, visura «vecchia» (F-516), DVR manca', stato.durc === 'ok' && stato.dichiarazione === 'non_va' && stato.visura === 'vecchia' && stato.dvr === 'manca'
         && d.richieste.find(x => x.key === 'dichiarazione').motivo?.codice === 'senza_firma', d.richieste);
 
       let p = await I.panoramica(E2E);
@@ -156,8 +156,10 @@ const letto = (x) => ({ tipo: 'altro', ragioneSociale: null, piva: null, sede: n
   const ayat = pm.imprese.find(x => x.nome === 'AYAT SRLS');
   check('MSC: AYAT c\'è, non può ancora lavorare', ayat && !ayat.puoLavorare, ayat);
   const sm = await I.scheda(MSC, ayat.id);
-  const manca = [...sm.requisiti.filter(r => !r.consigliata), ...sm.pos].filter(r => r.stato !== 'ok' && r.stato !== 'in_scadenza').map(r => r.label); // «in scadenza» è ancora valido (come in impreseLink.statoImpresa)
-  check('MSC: mancano patente a crediti (F-419), visura (di novembre 2025), DVR, dichiarazione, POS per Via Riboli 4b e Via Chiodo 9C', manca.length === 6 && manca.includes('Patente a crediti') && manca.includes('Visura camerale') && manca.includes('POS per Via Chiodo 9C'), manca);
+  const manca = [...sm.requisiti.filter(r => !r.consigliata), ...sm.pos].filter(r => !['ok', 'in_scadenza', 'vecchia'].includes(r.stato)).map(r => r.label); // «in scadenza» e «vecchia» (F-516) valgono ancora (come in impreseLink.statoImpresa)
+  // Allineato al 20/11: la patente è arrivata; la visura del 28/11/2025 è «vecchia» (F-516), non manca
+  check('MSC: AYAT, mancano DVR, dichiarazione e i POS dei suoi cantieri; la visura è «vecchia», non manca (F-516)', manca.includes('DVR') && !manca.includes('Visura camerale') && !manca.includes('Patente a crediti') && manca.includes('POS per Via Chiodo 9C')
+    && sm.requisiti.find(r => r.key === 'visura')?.stato === 'vecchia', { manca, visura: sm.requisiti.find(r => r.key === 'visura') });
   check('MSC: il DURC c\'è, fino al 28 novembre', sm.requisiti.find(r => r.key === 'durc')?.scadenza === '2026-11-28');
 
   console.log(`\n${passed} ok, ${failed} falliti`);

@@ -88,7 +88,7 @@ function attribuzione() {
   p = attribuisci(L({ tipo: 'dichiarazione', partita_iva: PIVA.A, firmato: false }), CTX);
   check('dichiarazione senza firma → non va, «Manca la firma»', p.esito === 'non_va' && p.motivo.codice === 'senza_firma', p);
   p = attribuisci(L({ tipo: 'visura', partita_iva: PIVA.A, data_documento: '2026-01-10' }), CTX);
-  check('visura di gennaio → non va, più di 6 mesi', p.esito === 'non_va' && p.motivo.codice === 'visura_vecchia', p);
+  check('visura di gennaio → va bene con l\'avviso «più di 6 mesi» (F-516: non blocca)', p.esito === 'va_bene' && p.motivo.codice === 'visura_vecchia', p);
   p = attribuisci(L({ tipo: 'durc', partita_iva: PIVA.A, scadenza: '2026-09-30' }), CTX);
   check('DURC scaduto → non va, scaduto', p.esito === 'non_va' && p.motivo.codice === 'scaduto', p);
   const letto = L({ tipo: 'durc', partita_iva: PIVA.A, scadenza: '2027-01-30' });
