@@ -150,8 +150,6 @@ scripts/selftest_da_fare.js
 scripts/selftest_da_fare_fatto.js
 scripts/selftest_documenti_semplici.js
 scripts/selftest_documenti_correggi.js
-scripts/selftest_lavagna.js
-scripts/selftest_lavagna_in_corso.js
 scripts/selftest_chat_archive_subcontractor_documents.js
 scripts/selftest_prompt_confirmation_rules.js
 scripts/selftest_alert_digest.js
@@ -257,3 +255,4 @@ scripts/selftest_f511_oggi_soldi.js
 scripts/selftest_f513_estratto_conto.js
 scripts/selftest_f514_manodopera_nascosta.js
 scripts/selftest_f520_da_parte.js
+scripts/selftest_f521_tolti.js

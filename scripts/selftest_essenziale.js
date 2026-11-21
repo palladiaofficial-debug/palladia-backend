@@ -3,9 +3,10 @@
  * scripts/selftest_essenziale.js — F-418 (AUDIT.md del frontend).
  *
  * «Palladia essenziale» su un'azienda di prova vera (DB):
- *  - impresa nuova (nessuna riga): essenziale acceso, lavagna/da_pagare/conti_sub
+ *  - impresa nuova (nessuna riga): essenziale acceso, da_pagare/conti_sub
  *    spenti, sia per il server (isFeatureEnabled) sia per la pagina (flagsPer);
- *  - una riga esplicita «lavagna = sì» la riaccende solo lei;
+ *  - una riga esplicita «conti_sub = sì» la riaccende solo lei (la lavagna è
+ *    tolta dal codice, F-521; da_pagare è da parte e una riga non lo riaccende, F-520);
  *  - essenziale spento (come MSC): tutto torna come prima;
  *  - POS/PSC e subappaltatori non cambiano;
  *  - Oggi: «N documenti scaduti» porta a Da rinnovare.
@@ -30,12 +31,12 @@ function check(name, cond, got) {
   try {
     let f = await flagsPer(co.id);
     check('impresa nuova: essenziale acceso', f.essenziale === true && await isFeatureEnabled(co.id, 'essenziale'), f.essenziale);
-    check('impresa nuova: lavagna, da pagare, conti dei sub spenti (pagina e server)',
-      !f.lavagna && !f.da_pagare && !f.conti_sub && !(await isFeatureEnabled(co.id, 'lavagna')) && !(await isFeatureEnabled(co.id, 'da_pagare')) && !(await isFeatureEnabled(co.id, 'conti_sub')), { lavagna: f.lavagna, da_pagare: f.da_pagare, conti_sub: f.conti_sub });
+    check('impresa nuova: da pagare e conti dei sub spenti (pagina e server)',
+      !f.da_pagare && !f.conti_sub && !(await isFeatureEnabled(co.id, 'da_pagare')) && !(await isFeatureEnabled(co.id, 'conti_sub')), { da_pagare: f.da_pagare, conti_sub: f.conti_sub });
     check('impresa nuova: imprese, documenti, Oggi e menu restano come il default', f.subappaltatori === FEATURES.subappaltatori && f.documenti_semplici === FEATURES.documenti_semplici && f.home_semplice === FEATURES.home_semplice && f.menu_semplice === FEATURES.menu_semplice && f.psc_coordinatori === FEATURES.psc_coordinatori, f);
-    await riga('lavagna', true);
+    await riga('conti_sub', true);
     f = await flagsPer(co.id);
-    check('una riga «lavagna = sì» la riaccende solo lei', f.lavagna === true && await isFeatureEnabled(co.id, 'lavagna') && !f.da_pagare, f);
+    check('una riga «conti_sub = sì» la riaccende solo lei', f.conti_sub === true && await isFeatureEnabled(co.id, 'conti_sub') && !f.da_pagare, f);
     await riga('essenziale', false);
     f = await flagsPer(co.id);
     check('essenziale spento (come MSC): da pagare e conti dei sub tornano come prima', f.da_pagare === FEATURES.da_pagare && f.conti_sub === FEATURES.conti_sub && (await isFeatureEnabled(co.id, 'da_pagare')) === FEATURES.da_pagare, f);

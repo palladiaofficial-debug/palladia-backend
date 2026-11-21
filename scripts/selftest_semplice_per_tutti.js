@@ -2,7 +2,7 @@
 /**
  * scripts/selftest_semplice_per_tutti.js — F-395 (AUDIT.md, 2026-10-22).
  *
- * La Palladia semplice (home Oggi, menu a 5 voci, Documenti, Lavagna,
+ * La Palladia semplice (home Oggi, menu a 5 voci, Documenti,
  * presenze delle imprese, Da pagare, conti dei sub) era accesa solo per MSC e
  * per l'azienda E2E con righe in company_feature_flags: tutte le altre
  * aziende vedevano la versione vecchia. Ora i 7 flag sono accesi di default.
@@ -15,8 +15,8 @@
 'use strict';
 require('dotenv').config();
 
-const FLAGS = ['home_semplice', 'menu_semplice', 'documenti_semplici', 'lavagna',
-  'presenze_imprese', 'conti_sub']; // da_pagare tolto: messo da parte il 20/11 (F-520), vedi selftest_f520_da_parte.js
+const FLAGS = ['home_semplice', 'menu_semplice', 'documenti_semplici',
+  'presenze_imprese', 'conti_sub']; // lavagna tolta dal codice (F-521); da_pagare tolto: messo da parte il 20/11 (F-520), vedi selftest_f520_da_parte.js
 const envName = f => `FEATURE_${f.toUpperCase()}_DEFAULT`;
 
 let passed = 0, failed = 0;

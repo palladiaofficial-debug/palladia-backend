@@ -39,7 +39,6 @@ router.use('/', require('./oreAggiunte').router); // F-432 ore in più dall'uffi
 router.use('/', require('./oreCorrezioni').router); // F-435 correzioni dell'orario dalla tabella delle ore
 router.use('/', require('./oreDaVedere')); // F-318 pioggia da confermare, malattie e infortuni dagli operai
 router.use('/', require('./siteRiepilogo')); // F-321 scheda cantiere senza cartelle: Riepilogo e Da sistemare
-router.use('/', require('./lavagna')); // F-331 Lavagna cantieri
 router.use('/', require('./daPagare')); // F-338 Da pagare
 router.use('/', require('./quantoRende')); // F-509 Quanto rende ogni cantiere
 router.use('/', require('./estrattoConto')); // F-513 estratto conto

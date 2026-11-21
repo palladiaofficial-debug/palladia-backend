@@ -29,7 +29,7 @@ const { sendDbError } = require('../../lib/httpErrors');
 // ── GET /api/v1/feature-flags ─────────────────────────────────────────────────
 router.get('/feature-flags', verifySupabaseJwt, async (req, res) => {
   // Riga per azienda > default env; master company tutto ON tranne i congelati;
-  // F-418 «essenziale» spegne lavagna/da_pagare/conti_sub (lib/featureFlags.flagsPer)
+  // F-418 «essenziale» spegne da_pagare/conti_sub (lib/featureFlags.flagsPer)
   res.json(await flagsPer(req.companyId));
 });
 
